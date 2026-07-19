@@ -105,8 +105,11 @@ public enum SubtitleSelector {
     /// loaded item, given the user's mode and preferred language.
     ///
     /// * `.off` → never auto-enable anything (the viewer can still pick manually).
-    /// * `.forcedOnly` → prefer a forced option in the preferred language, then
-    ///   any forced option, else nothing.
+    /// * `.forcedOnly` → prefer a forced option in the preferred language, then a
+    ///   forced option that is untagged or matches the active `audioLanguage`
+    ///   (forced subs translate foreign dialogue *within* the audio you hear, so a
+    ///   forced track in a different language is never auto-enabled when the audio
+    ///   language is known), else nothing.
     /// * `.all` → prefer a non-forced option in the preferred language, then a
     ///   forced option in that language, then — only for an *untagged* default
     ///   track — the stream's default option, else nothing (a tagged
@@ -115,7 +118,8 @@ public enum SubtitleSelector {
     public static func decide(
         candidates: [SubtitleCandidate],
         mode: SubtitleMode,
-        preferredLanguage: String?
+        preferredLanguage: String?,
+        audioLanguage: String? = nil
     ) -> SubtitleDecision {
         guard !candidates.isEmpty else { return .none }
 
@@ -129,11 +133,23 @@ public enum SubtitleSelector {
 
         case .forcedOnly:
             let forced = candidates.filter(\.isForced)
+            // A forced subtitle in the subtitle preferred language is always right.
             if let inLanguage = forced.first(where: matchingLanguage) {
                 return .select(id: inLanguage.id)
             }
-            if let anyForced = forced.first {
-                return .select(id: anyForced.id)
+            // "Any forced" fallback: forced subtitles translate foreign dialogue/signs
+            // *within the audio you are hearing*, so a forced track tagged for a
+            // language other than the active audio (e.g. a Turkish forced track while
+            // English audio plays) is wrong and must not be auto-enabled. Enable a
+            // forced track only when it is untagged, matches the active audio language,
+            // or when the audio language is unknown (historical behavior — we can't
+            // prove the track is foreign to what the viewer hears).
+            if let safeForced = forced.first(where: { candidate in
+                audioLanguage == nil
+                    || LanguageMatch.normalized(candidate.languageCode) == nil
+                    || LanguageMatch.matches(candidate.languageCode, audioLanguage)
+            }) {
+                return .select(id: safeForced.id)
             }
             return .none
 
@@ -165,6 +181,46 @@ public enum SubtitleSelector {
 // MARK: - Existing-subtitle suitability (drives auto-download)
 
 public extension Array where Element == MediaTrack {
+    /// The language of the audio the viewer will actually hear, used to gate the
+    /// `.forcedOnly` subtitle default so a forced track in a language foreign to the
+    /// audio (e.g. a Turkish forced track under English audio) is not auto-enabled.
+    ///
+    /// Resolves the race at initial load where the engine's *confirmed* active audio
+    /// id (`confirmedID`) can still read the container's (possibly foreign) default
+    /// for a beat before the load-time preferred pick settles — which would otherwise
+    /// re-introduce the exact foreign-forced-subtitle bug. Precedence:
+    ///  1. `pendingID` — an explicit in-flight optimistic pick is the clearest intent.
+    ///  2. `preferredLanguages` — the load-time requested language(s), but only when a
+    ///     matching audio track actually exists (that is the track the engine will
+    ///     settle on), so this beats a momentarily-lagging `confirmedID`.
+    ///  3. `confirmedID` — the engine's authoritatively-resolved active track.
+    ///  4. the container's default audio track (last resort).
+    /// `nil` when nothing is known, so the selector keeps its historical behavior.
+    func activeAudioLanguage(
+        pendingID: Int?,
+        confirmedID: Int?,
+        preferredLanguages: [String]
+    ) -> String? {
+        let audio = filter { $0.kind == .audio }
+        func language(ofTrackID id: Int?) -> String? {
+            guard let id, let track = audio.first(where: { $0.id == id }),
+                  let language = track.language, !language.isEmpty else { return nil }
+            return language
+        }
+        if let pending = language(ofTrackID: pendingID) { return pending }
+        for requested in preferredLanguages where !requested.isEmpty {
+            if audio.contains(where: { LanguageMatch.matches($0.language, requested) }) {
+                return LanguageMatch.normalized(requested) ?? requested
+            }
+        }
+        if let active = language(ofTrackID: confirmedID) { return active }
+        if let byDefault = (audio.first(where: { $0.isDefault }) ?? audio.first)?.language,
+           !byDefault.isEmpty {
+            return byDefault
+        }
+        return nil
+    }
+
     /// Whether this list already contains a subtitle stream usable for
     /// `language` (any subtitle when `language` is `nil`). When `false` and
     /// auto-download is enabled, the player should fetch one in the background.
@@ -182,7 +238,8 @@ public extension Array where Element == MediaTrack {
     /// reason about which subtitle the user will actually get.
     func defaultSubtitleSelection(
         mode: SubtitleMode,
-        preferredLanguage: String?
+        preferredLanguage: String?,
+        audioLanguage: String? = nil
     ) -> MediaTrack? {
         let subtitles = filter { $0.kind == .subtitle }
         guard !subtitles.isEmpty else { return nil }
@@ -191,7 +248,8 @@ public extension Array where Element == MediaTrack {
                               isForced: $0.isForced, isDefault: $0.isDefault)
         }
         guard case .select(let id) = SubtitleSelector.decide(
-            candidates: candidates, mode: mode, preferredLanguage: preferredLanguage
+            candidates: candidates, mode: mode, preferredLanguage: preferredLanguage,
+            audioLanguage: audioLanguage
         ) else { return nil }
         return subtitles.first { $0.id == id }
     }
