@@ -12,6 +12,9 @@ public struct TVmazeResolved: Sendable, Equatable {
     public var posterURL: URL?
     public var episodeStillURL: URL?
     public var overview: String?
+    /// The show's language as TVmaze reports it — an English display *name*
+    /// (`English`, `Japanese`). Normalized to ISO-639-1 by the enrichment adapter.
+    public var language: String?
 
     public init(
         showID: Int,
@@ -19,7 +22,8 @@ public struct TVmazeResolved: Sendable, Equatable {
         tvdbID: String? = nil,
         posterURL: URL? = nil,
         episodeStillURL: URL? = nil,
-        overview: String? = nil
+        overview: String? = nil,
+        language: String? = nil
     ) {
         self.showID = showID
         self.imdbID = imdbID
@@ -27,6 +31,7 @@ public struct TVmazeResolved: Sendable, Equatable {
         self.posterURL = posterURL
         self.episodeStillURL = episodeStillURL
         self.overview = overview
+        self.language = language
     }
 }
 
@@ -66,6 +71,7 @@ public struct TVmazeClient: TVmazeEnriching {
         out.imdbID = show.externals?.imdb.flatMap { $0.isEmpty ? nil : $0 }
         out.tvdbID = show.externals?.thetvdb.map(String.init)
         out.posterURL = show.image?.original.flatMap { URL(string: $0) }
+        out.language = show.language?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmptyOrNil
 
         if let season = query.seasonNumber, let episode = query.episodeNumber,
            wantEpisodeStill || wantOverview,
@@ -89,6 +95,37 @@ public struct TVmazeClient: TVmazeEnriching {
               let url = URL(string: "https://api.tvmaze.com/singlesearch/shows?q=\(escaped)")
         else { return nil }
         return await MetadataHTTP.get(Show.self, url: url)
+    }
+
+    /// The show's original language as a **transient-aware** ``OriginalLanguageOutcome``
+    /// for the play-time audio chain. TVmaze's public API is keyless (no auth), so a
+    /// value is `.authoritative`, a reachable "not found" is an `.authoritative(nil)`
+    /// miss, and an unreachable call (offline / 5xx / throttle) is `.transient` — so
+    /// a TVmaze hiccup never gets cached as a permanent "no original language".
+    /// TVmaze is TV-only (it carries no movies), so the router only reaches this for
+    /// TV/anime/unknown content; the resolved `language` is an English display *name*
+    /// (`English`, `Japanese`) that ``OriginalLanguageNormalizer`` folds to a code.
+    public func originalLanguageOutcome(for query: MetadataQuery) async -> OriginalLanguageOutcome {
+        let (show, reachable) = await fetchShowWithStatus(for: query)
+        guard let show else { return reachable ? .authoritative(nil) : .transient }
+        return .authoritative(show.language?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmptyOrNil)
+    }
+
+    /// Like ``fetchShow(for:)`` but surfaces reachability so a transient TVmaze
+    /// failure is not mistaken for a real "no such show". An IMDb-id lookup that is
+    /// unreachable short-circuits as transient; a reachable IMDb miss falls through
+    /// to the title search, whose own reachability is returned.
+    private func fetchShowWithStatus(for query: MetadataQuery) async -> (Show?, reachable: Bool) {
+        if let imdb = query.providerIDs.providerID(.imdb), !imdb.isEmpty,
+           let url = URL(string: "https://api.tvmaze.com/lookup/shows?imdb=\(imdb)") {
+            let (show, reachable) = await MetadataHTTP.getWithStatus(Show.self, url: url)
+            if let show { return (show, true) }
+            if !reachable { return (nil, false) }
+        }
+        guard let escaped = metadataEscaped(query.title),
+              let url = URL(string: "https://api.tvmaze.com/singlesearch/shows?q=\(escaped)")
+        else { return (nil, true) }
+        return await MetadataHTTP.getWithStatus(Show.self, url: url)
     }
 
     private func fetchEpisode(showID: Int, season: Int, episode: Int) async -> Episode? {
@@ -136,6 +173,7 @@ public struct TVmazeClient: TVmazeEnriching {
         let summary: String?
         let image: Image?
         let externals: Externals?
+        let language: String?
         struct Externals: Decodable {
             let imdb: String?
             let thetvdb: Int?
@@ -177,7 +215,7 @@ private extension String {
 /// source. TV only; anime is served by AniList/Kitsu.
 public struct TVmazeEnrichmentProvider: MetadataEnrichmentProvider {
     public let id: MetadataSource = .tvmaze
-    public let capabilities: Set<MetadataCapability> = [.externalIDs, .canonicalText, .episodeStill, .poster, .nextAiringEpisode]
+    public let capabilities: Set<MetadataCapability> = [.externalIDs, .canonicalText, .episodeStill, .poster, .nextAiringEpisode, .originalLanguage]
     public let policy: ProviderPolicy
     private let client: any TVmazeEnriching
 
@@ -203,6 +241,7 @@ public struct TVmazeEnrichmentProvider: MetadataEnrichmentProvider {
         let wantStill = missing.contains(.episodeThumbnail)
         let wantOverview = missing.contains(.overview)
         let wantsShowResolve = wantStill || wantOverview || missing.contains(.posterURL)
+            || missing.contains(.originalLanguage)
             || missing.contains { $0.rawValue.hasPrefix("providerID.") }
         guard wantsShowResolve, let resolved = await client.resolve(
             query, wantEpisodeStill: wantStill, wantOverview: wantOverview
@@ -223,6 +262,10 @@ public struct TVmazeEnrichmentProvider: MetadataEnrichmentProvider {
         }
         if wantStill, let still = resolved.episodeStillURL {
             out.episodeStillURL = SourcedValue(value: still, source: .tvmaze, sourceURL: sourceURL)
+        }
+        if missing.contains(.originalLanguage),
+           let code = OriginalLanguageNormalizer.normalized(resolved.language) {
+            out.originalLanguage = SourcedValue(value: code, source: .tvmaze, sourceURL: sourceURL)
         }
         return out
     }

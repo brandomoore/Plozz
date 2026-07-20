@@ -13,10 +13,14 @@ public struct TVDBMetadata: Sendable, Equatable {
     /// The show's canonical name as TheTVDB records it ("Avatar: The Last
     /// Airbender"), used to upgrade a generic folder-derived title ("Avatar").
     public var title: String?
+    /// The work's original language as TheTVDB records it (`originalLanguage` on the
+    /// extended record, `primary_language` on a search hit) — an ISO-639-2/1 code
+    /// like `eng`/`jpn`. Normalized to ISO-639-1 by the enrichment adapter.
+    public var originalLanguage: String?
 
     public init(tvdbID: String? = nil, imdbID: String? = nil, tmdbID: String? = nil,
                 overview: String? = nil, posterURL: URL? = nil, genres: [String] = [], year: Int? = nil,
-                title: String? = nil) {
+                title: String? = nil, originalLanguage: String? = nil) {
         self.tvdbID = tvdbID
         self.imdbID = imdbID
         self.tmdbID = tmdbID
@@ -25,6 +29,7 @@ public struct TVDBMetadata: Sendable, Equatable {
         self.genres = genres
         self.year = year
         self.title = title
+        self.originalLanguage = originalLanguage
     }
 }
 
@@ -140,8 +145,63 @@ public actor TVDBClient {
             posterURL: data.image.flatMap(Self.imageURL),
             genres: (data.genres ?? []).compactMap { $0.name?.nonEmpty },
             year: data.year.flatMap { Int($0) },
-            title: name
+            title: name,
+            originalLanguage: data.originalLanguage?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
         )
+    }
+
+    // MARK: - Original language (transient-aware, for the play-time audio chain)
+
+    /// The work's original language via an EXACT TheTVDB id, returned as a
+    /// **transient-aware** ``OriginalLanguageOutcome`` so the play-time provider
+    /// chain can fall through to the next source without poisoning the cache.
+    ///
+    /// `.transient` when the record is unreachable (offline / 5xx / a likely-expired
+    /// token) — the caller must NOT cache it; `.authoritative(code)` for a reachable
+    /// record's `originalLanguage`; `.authoritative(nil)` for a reachable record
+    /// with no language, a `404`, an empty id, or an unconfigured (keyless) tier —
+    /// all real verdicts the caller may cache once the whole chain is exhausted.
+    public func originalLanguageOutcome(byTVDBID id: String, isMovie: Bool) async -> OriginalLanguageOutcome {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard config.isConfigured, !trimmed.isEmpty else { return .authoritative(nil) }
+        // Configured but no token → the login itself failed (network), so treat it
+        // as transient rather than an authoritative "no language".
+        guard let token = await ensureToken() else { return .transient }
+        let type = isMovie ? "movies" : "series"
+        guard let url = URL(string: "\(config.apiBaseURL.absoluteString)/\(type)/\(trimmed)/extended") else {
+            return .authoritative(nil)
+        }
+        let (response, reachable) = await MetadataHTTP.getWithStatus(
+            SeriesExtendedResponse.self, url: url, headers: ["Authorization": "Bearer \(token)"]
+        )
+        guard let data = response?.data else {
+            if !reachable { self.token = nil; return .transient }   // likely-expired token / offline
+            return .authoritative(nil)                              // reachable 404 → real miss
+        }
+        return .authoritative(data.originalLanguage?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty)
+    }
+
+    /// The work's original language via a title+year SEARCH — the fallback when no
+    /// exact TheTVDB id is stamped — returned as a **transient-aware**
+    /// ``OriginalLanguageOutcome``. Tries each candidate title in order and returns
+    /// the first search hit's `primary_language`; an authoritative miss only when
+    /// every reachable search found none, and `.transient` if any search was
+    /// unreachable (so the chain can retry on a later play).
+    public func originalLanguageOutcome(titles: [String], year: Int?, isMovie: Bool) async -> OriginalLanguageOutcome {
+        guard config.isConfigured else { return .authoritative(nil) }
+        var seen = Set<String>()
+        var sawTransient = false
+        for raw in titles {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = trimmed.lowercased()
+            guard !trimmed.isEmpty, seen.insert(key).inserted else { continue }
+            let (meta, reachable) = await searchWithStatus(
+                query: trimmed, year: year, isMovie: isMovie, episodeHints: [], allowRelogin: true
+            )
+            if let lang = meta?.originalLanguage?.nonEmpty { return .authoritative(lang) }
+            if !reachable { sawTransient = true }
+        }
+        return sawTransient ? .transient : .authoritative(nil)
     }
 
     /// The series' next scheduled episode by a known TheTVDB id.
@@ -268,10 +328,27 @@ public actor TVDBClient {
     private func search(query: String, year: Int?, isMovie: Bool,
                         episodeHints: [SeriesEpisodeHint] = [],
                         allowRelogin: Bool) async -> TVDBMetadata? {
-        guard let token = await ensureToken(),
-              let escaped = query.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) else { return nil }
+        await searchWithStatus(query: query, year: year, isMovie: isMovie,
+                               episodeHints: episodeHints, allowRelogin: allowRelogin).0
+    }
+
+    /// The search core, additionally surfacing whether the call was **reachable**
+    /// (a decoded 2xx or a definitive 404 → `true`; a transport failure / transient
+    /// server error → `false`). ``search`` drops the flag for the metadata callers;
+    /// the transient-aware original-language path keeps it so an unreachable search
+    /// becomes `.transient` instead of a cached miss.
+    private func searchWithStatus(query: String, year: Int?, isMovie: Bool,
+                                  episodeHints: [SeriesEpisodeHint] = [],
+                                  allowRelogin: Bool) async -> (TVDBMetadata?, reachable: Bool) {
+        // Configured but no token → login failed (network) → transient.
+        guard let token = await ensureToken() else { return (nil, false) }
+        guard let escaped = query.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) else {
+            return (nil, true)   // an unencodable query is a deterministic no-match, not a network failure
+        }
         let type = isMovie ? "movie" : "series"
-        guard let url = URL(string: "\(config.apiBaseURL.absoluteString)/search?query=\(escaped)&type=\(type)") else { return nil }
+        guard let url = URL(string: "\(config.apiBaseURL.absoluteString)/search?query=\(escaped)&type=\(type)") else {
+            return (nil, true)
+        }
 
         let (response, reachable) = await MetadataHTTP.getWithStatus(
             SearchResponse.self, url: url, headers: ["Authorization": "Bearer \(token)"]
@@ -280,13 +357,13 @@ public actor TVDBClient {
             // A likely-expired token (unreachable non-404) → drop it and retry once.
             if allowRelogin, !reachable {
                 self.token = nil
-                return await search(query: query, year: year, isMovie: isMovie,
-                                    episodeHints: episodeHints, allowRelogin: false)
+                return await searchWithStatus(query: query, year: year, isMovie: isMovie,
+                                              episodeHints: episodeHints, allowRelogin: false)
             }
-            return nil
+            return (nil, reachable)
         }
         let results = response.data ?? []
-        guard !results.isEmpty else { return nil }
+        guard !results.isEmpty else { return (nil, true) }   // reachable, genuinely no results
 
         // Drop non-canonical variants the query didn't ask for (a folder named
         // "Sword Art Online" must never resolve to "Sword Art Online: Abridged", the
@@ -319,11 +396,12 @@ public actor TVDBClient {
         }
         // Fallback: TheTVDB's own relevance order.
         if chosen == nil { chosen = pool.first }
-        guard let chosen else { return nil }
+        guard let chosen else { return (nil, true) }
         // Prefer the English name/overview when the base record is another language
         // (TheTVDB serves the primary-language text for many anime — Japanese for
         // Death Note / One Piece / "…Slime").
-        return await preferEnglish(chosen.asMetadata(), query: query, isMovie: isMovie, token: token)
+        let meta = await preferEnglish(chosen.asMetadata(), query: query, isMovie: isMovie, token: token)
+        return (meta, true)
     }
 
     /// Overlay the official English name/overview onto a metadata whose base text is
@@ -531,6 +609,8 @@ public actor TVDBClient {
         let remoteIds: [RemoteID]?
         /// A bare `yyyy-MM-dd` calendar day for the next scheduled episode (no time).
         let nextAired: String?
+        /// The work's original language (`eng`, `jpn`, …).
+        let originalLanguage: String?
         struct Genre: Decodable { let name: String? }
         struct RemoteID: Decodable { let id: String?; let sourceName: String? }
     }
@@ -578,6 +658,8 @@ public actor TVDBClient {
         let year: String?
         let genres: [String]?
         let remote_ids: [RemoteID]?
+        /// TheTVDB search hit's original language code (`eng`, `jpn`, …).
+        let primary_language: String?
 
         struct RemoteID: Decodable {
             let id: String?
@@ -600,7 +682,8 @@ public actor TVDBClient {
                 posterURL: image_url.flatMap { URL(string: $0) },
                 genres: genres ?? [],
                 year: year.flatMap { Int($0) },
-                title: name?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+                title: name?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty,
+                originalLanguage: primary_language?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
             )
         }
     }
