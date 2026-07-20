@@ -857,6 +857,7 @@ public final class PlayerViewModel {
         // fallback, which reuse self.request) inherits it. Subtitle language
         // steering is intentionally left empty — Plozz owns subtitle selection
         // via the SDR overlay, so the engine must not activate its own track.
+        await fillOriginalLanguageIfNeeded(for: &request)
         request.preferredAudioLanguages = preferredAudioLanguages(for: request.item)
         let kind = routeEngine(for: request, forceTranscode: forceTranscode)
         return PrefetchedPlayback(itemID: itemID, request: request, engineKind: kind)
@@ -901,6 +902,39 @@ public final class PlayerViewModel {
             subtitleRule: effectiveSubtitleRule(for: request.item)
         )
     }
+
+    /// Fills `request.item.originalLanguage` for a SERVER-backed item that lacks it
+    /// (Plex/Jellyfin/Emby never provide `original_language`) so the "prefer
+    /// original language" audio policy can steer to the real spoken language
+    /// instead of the server/container default. Resolved once (cached in the shared
+    /// ``ArtworkRouter``) from an exact-ID TMDB lookup keyed on the item's external
+    /// ids — the same provider-id-keyed seam artwork already uses for server items.
+    ///
+    /// Deliberately gated so it's a no-op (and issues NO network call) unless the
+    /// effective preference is `.original` with no remembered per-series language
+    /// and the value is still unknown: `.device`/`.language(code)` are unchanged,
+    /// and direct-share items (which arrive already enriched) never re-resolve.
+    ///
+    /// The bring-up wait is bounded (``originalLanguageFillTimeout``) so a first
+    /// uncached play on a degraded network never stalls playback START for the full
+    /// request timeout: on timeout this play proceeds with the container default
+    /// while the lookup finishes in the background and warms the cache, so the next
+    /// play/episode gets the resolved language.
+    private func fillOriginalLanguageIfNeeded(for request: inout PlaybackRequest) async {
+        guard request.item.originalLanguage == nil,
+              rememberedAudioLanguage(for: request.item) == nil,
+              case .original = effectiveAudioPreference(for: request.item)
+        else { return }
+        let item = request.item
+        let resolved = await ArtworkRouter.boundedValue(within: Self.originalLanguageFillTimeout) {
+            await ArtworkRouter.shared.originalLanguage(for: item)
+        }
+        if let resolved { request.item.originalLanguage = resolved }
+    }
+
+    /// Upper bound on how long a first uncached original-language fill may delay
+    /// playback bring-up; the lookup keeps running past this to warm the cache.
+    private static let originalLanguageFillTimeout: Duration = .seconds(2)
 
     /// Resolves the ordered audio-language preference for a load from per-series
     /// memory (when enabled) and the per-content-type audio policy. A remembered

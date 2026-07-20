@@ -25,6 +25,9 @@ public struct MetadataSource: RawRepresentable, Codable, Hashable, Sendable {
     public static let wikipedia = Self(rawValue: "wikipedia")
     public static let kitsu = Self(rawValue: "kitsu")
     public static let mal = Self(rawValue: "mal")
+    public static let omdb = Self(rawValue: "omdb")
+    public static let deezer = Self(rawValue: "deezer")
+    public static let musicbrainz = Self(rawValue: "musicbrainz")
     public static let legacyUnknown = Self(rawValue: "legacyUnknown")
 }
 
@@ -46,6 +49,8 @@ public struct MetadataField: RawRepresentable, Codable, Hashable, Sendable {
     public static let homeHero = Self(rawValue: "homeHero")
     public static let detailBackdrop = Self(rawValue: "detailBackdrop")
     public static let episodeThumbnail = Self(rawValue: "episodeThumbnail")
+    public static let seasonPoster = Self(rawValue: "seasonPoster")
+    public static let banner = Self(rawValue: "banner")
 
     // MARK: - NFO / local-sidecar descriptive fields (Step 3)
     //
@@ -54,6 +59,12 @@ public struct MetadataField: RawRepresentable, Codable, Hashable, Sendable {
     // local sidecar parser can attribute the extra descriptive facts an NFO
     // carries (Kodi/Jellyfin `movie`/`tvshow`/`episodedetails` documents).
     public static let originalTitle = Self(rawValue: "originalTitle")
+    /// The work's original/production audio language as an ISO-639-1 code
+    /// (lowercased). Supplied by external providers (TMDb `original_language`,
+    /// TheTVDB `originalLanguage`, TVmaze `language`) and projected onto
+    /// ``MediaItem/originalLanguage`` to drive the prefer-original-language audio
+    /// policy. Additive; older builds ignore the unknown field.
+    public static let originalLanguage = Self(rawValue: "originalLanguage")
     /// The catalog's SORT projection only (never `assets.sort_title`, which stays
     /// scan-owned) — see `ShareCatalogStore`'s grid ORDER BY.
     public static let sortTitle = Self(rawValue: "sortTitle")
@@ -68,6 +79,10 @@ public struct MetadataField: RawRepresentable, Codable, Hashable, Sendable {
     public static let seasonNumber = Self(rawValue: "seasonNumber")
     public static let episodeNumber = Self(rawValue: "episodeNumber")
     public static let ratings = Self(rawValue: "ratings")
+    /// A series-level upcoming-episode schedule (Step 8). Requested only by the
+    /// schedule resolver — never on the ordinary MediaItem field-fill path — so it
+    /// adds no work to normal enrichment.
+    public static let nextAiringEpisode = Self(rawValue: "nextAiringEpisode")
 
     public static func providerID(_ namespace: String) -> Self {
         Self(rawValue: "providerID.\(namespace.lowercased())")

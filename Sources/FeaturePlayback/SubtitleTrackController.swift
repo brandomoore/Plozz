@@ -326,7 +326,8 @@ final class SubtitleTrackController {
         let rule = host.trackRequest.map { host.trackEffectiveSubtitleRule(for: $0.item) }
         let chosen = tracks.defaultSubtitleSelection(
             mode: rule?.mode ?? host.trackBehavior.subtitleMode,
-            preferredLanguage: rule?.preferredLanguage ?? host.trackBehavior.resolvedPreferredLanguage
+            preferredLanguage: rule?.preferredLanguage ?? host.trackBehavior.resolvedPreferredLanguage,
+            audioLanguage: activeAudioLanguage()
         )
         guard let chosen, !chosen.isImageBasedSubtitle else {
             engine.selectSubtitleTrack(nil)
@@ -336,6 +337,24 @@ final class SubtitleTrackController {
             return
         }
         selectSubtitleOption(id: chosen.id, userInitiated: false)
+    }
+
+    /// The language of the audio the viewer is actually hearing, used to keep the
+    /// `.forcedOnly` default from auto-enabling a forced subtitle in a language
+    /// foreign to the audio (e.g. a Turkish forced track under English audio).
+    ///
+    /// Delegates to the pure ``Array/activeAudioLanguage(pendingID:confirmedID:preferredLanguages:)``
+    /// resolver, feeding it the in-flight optimistic pick (`pendingAudioTrackID`), the
+    /// engine's confirmed active id, and the load-time requested languages — so the
+    /// intended original language wins during the initial-load window when the
+    /// confirmed id can still lag on the container's (foreign) default.
+    private func activeAudioLanguage() -> String? {
+        guard let host else { return nil }
+        return host.trackEngine.audioTracks.activeAudioLanguage(
+            pendingID: pendingAudioTrackID,
+            confirmedID: host.trackEngine.currentAudioTrackID,
+            preferredLanguages: host.trackRequest?.preferredAudioLanguages ?? []
+        )
     }
 
     #if DEBUG

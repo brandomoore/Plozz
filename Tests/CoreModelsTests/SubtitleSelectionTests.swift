@@ -41,6 +41,53 @@ final class SubtitleSelectionTests: XCTestCase {
         )
     }
 
+    func testForcedOnlyDoesNotEnableForeignForcedAgainstAudioLanguage() {
+        // The Spider-Man subtitle case: English audio, a Turkish forced track, and a
+        // subtitle preference that isn't Turkish. The Turkish forced track must NOT be
+        // auto-enabled just because it's the only forced option.
+        let candidates = [sub(0, "en"), sub(1, "tr", forced: true)]
+        XCTAssertEqual(
+            SubtitleSelector.decide(
+                candidates: candidates, mode: .forcedOnly, preferredLanguage: "en", audioLanguage: "en"
+            ),
+            .none
+        )
+    }
+
+    func testForcedOnlyEnablesForcedMatchingAudioLanguage() {
+        // A forced track in the audio language (English forced under English audio)
+        // is the correct forced-subtitle behavior and is auto-enabled.
+        let candidates = [sub(0, "en", forced: true), sub(1, "tr", forced: true)]
+        XCTAssertEqual(
+            SubtitleSelector.decide(
+                candidates: candidates, mode: .forcedOnly, preferredLanguage: "de", audioLanguage: "en"
+            ),
+            .select(id: 0)
+        )
+    }
+
+    func testForcedOnlyEnablesUntaggedForcedRegardlessOfAudio() {
+        // An untagged forced track can't be proven foreign, so it is still honored.
+        let candidates = [sub(0, nil, forced: true)]
+        XCTAssertEqual(
+            SubtitleSelector.decide(
+                candidates: candidates, mode: .forcedOnly, preferredLanguage: "en", audioLanguage: "en"
+            ),
+            .select(id: 0)
+        )
+    }
+
+    func testForcedOnlyUnknownAudioPreservesAnyForcedFallback() {
+        // With an unknown audio language the historical "any forced" behavior stands.
+        let candidates = [sub(0, "en"), sub(1, "tr", forced: true)]
+        XCTAssertEqual(
+            SubtitleSelector.decide(
+                candidates: candidates, mode: .forcedOnly, preferredLanguage: "en", audioLanguage: nil
+            ),
+            .select(id: 1)
+        )
+    }
+
     func testAllPrefersFullSubtitleInLanguageOverForced() {
         let candidates = [sub(0, "en", forced: true), sub(1, "en")]
         XCTAssertEqual(
@@ -153,6 +200,71 @@ final class ImageSubtitleRoutingTests: XCTestCase {
     func testEmptyTracksDoNotNeedHybrid() {
         let tracks: [MediaTrack] = []
         XCTAssertFalse(tracks.defaultSubtitleNeedsHybridEngine(mode: .all, preferredLanguage: "en"))
+    }
+}
+
+final class ActiveAudioLanguageTests: XCTestCase {
+    private func audio(_ id: Int, _ lang: String?, isDefault: Bool = false) -> MediaTrack {
+        MediaTrack(id: id, kind: .audio, displayTitle: lang ?? "Audio", language: lang, isDefault: isDefault)
+    }
+    private func sub(_ id: Int, _ lang: String?, forced: Bool = false) -> MediaTrack {
+        MediaTrack(id: id, kind: .subtitle, displayTitle: lang ?? "Sub", language: lang, isForced: forced)
+    }
+
+    func testPreferredWinsOverLaggingConfirmedContainerDefault() {
+        // The load-time race: the engine's confirmed active id still points at the
+        // Turkish container default while the requested original (English) pick is in
+        // flight. The requested language, which has a real matching track, must win.
+        let tracks = [audio(0, "tr", isDefault: true), audio(1, "en")]
+        let lang = tracks.activeAudioLanguage(
+            pendingID: nil, confirmedID: 0, preferredLanguages: ["en"]
+        )
+        XCTAssertEqual(lang, "en")
+    }
+
+    func testPendingPickWinsOverEverything() {
+        let tracks = [audio(0, "tr", isDefault: true), audio(1, "en")]
+        let lang = tracks.activeAudioLanguage(
+            pendingID: 1, confirmedID: 0, preferredLanguages: []
+        )
+        XCTAssertEqual(lang, "en")
+    }
+
+    func testConfirmedUsedWhenPreferredHasNoMatchingTrack() {
+        // Requested English but the file has no English audio; the engine settles on
+        // the confirmed Turkish track, which is what the viewer actually hears.
+        let tracks = [audio(0, "tr", isDefault: true), audio(1, "de")]
+        let lang = tracks.activeAudioLanguage(
+            pendingID: nil, confirmedID: 0, preferredLanguages: ["en"]
+        )
+        XCTAssertEqual(lang, "tr")
+    }
+
+    func testFallsBackToContainerDefaultThenNil() {
+        let tracks = [audio(0, "tr", isDefault: true), audio(1, "en")]
+        XCTAssertEqual(
+            tracks.activeAudioLanguage(pendingID: nil, confirmedID: nil, preferredLanguages: []),
+            "tr"
+        )
+        XCTAssertNil(
+            [MediaTrack]().activeAudioLanguage(pendingID: nil, confirmedID: nil, preferredLanguages: [])
+        )
+    }
+
+    func testForcedForeignSubtitleNotEnabledDuringAudioRace() {
+        // End-to-end: English audio requested (original), Turkish container default
+        // audio still confirmed for a beat, and a Turkish forced subtitle. The
+        // resolved audio language is English, so the Turkish forced sub is NOT
+        // auto-enabled under .forcedOnly.
+        let audioTracks = [audio(0, "tr", isDefault: true), audio(1, "en")]
+        let resolved = audioTracks.activeAudioLanguage(
+            pendingID: nil, confirmedID: 0, preferredLanguages: ["en"]
+        )
+        let subtitles = [sub(10, "tr", forced: true)]
+        let decision = subtitles.defaultSubtitleSelection(
+            mode: .forcedOnly, preferredLanguage: "en", audioLanguage: resolved
+        )
+        XCTAssertNil(decision, "A Turkish forced subtitle must not auto-enable under English audio")
     }
 }
 

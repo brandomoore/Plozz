@@ -1,6 +1,7 @@
 import Foundation
 import SQLite3
 import CoreModels
+import MetadataKit
 
 /// Pure row/candidate → `MediaItem` mapping and metadata-overlay policy for the
 /// share catalog read path. It holds NO SQLite handle, transport, network,
@@ -41,6 +42,8 @@ enum ShareCatalogReadProjection {
             return CatalogJSON.decode(URL.self, valueJSON) == record.backdropURL
         case .logoURL:
             return CatalogJSON.decode(URL.self, valueJSON) == record.logoURL
+        case .originalLanguage:
+            return CatalogJSON.decode(String.self, valueJSON) == record.originalLanguage
         default:
             let prefix = "providerID."
             guard field.rawValue.hasPrefix(prefix) else { return false }
@@ -53,13 +56,14 @@ enum ShareCatalogReadProjection {
     }
 
     /// Decode the enrichment columns (provider_ids_json, overview, genres_json,
-    /// runtime, poster_url, backdrop_url, logo_url, title) starting at `startingAt`
-    /// into a record. Shared by the standalone `enrichmentRow` lookup and the JOINed
-    /// grid queries (movies/series), so a page fetch reads enrichment in ONE query
-    /// instead of N+1 per-row lookups. Returns nil when the core columns are all NULL
-    /// (no enrichment row matched the LEFT JOIN); `title` is a supplementary 8th
-    /// column not counted in that emptiness check.
-    static func enrichmentRecord(fromColumns stmt: OpaquePointer?, startingAt base: Int32) -> EnrichmentRecord? {
+    /// runtime, poster_url, backdrop_url, logo_url, title, original_language)
+    /// starting at `startingAt` into a record. Shared by the standalone `enrichmentRow`
+    /// lookup and the JOINed grid queries (movies/series), so a page fetch reads
+    /// enrichment in ONE query instead of N+1 per-row lookups. Returns nil when the
+    /// core columns are all NULL (no enrichment row matched the LEFT JOIN); `title`
+    /// (8th) and `original_language` (9th) are supplementary columns not counted in
+    /// that emptiness check.
+    static func enrichmentRecord(fromColumns stmt: OpaquePointer?, startingAt base: Int32, includeOriginalLanguage: Bool = true) -> EnrichmentRecord? {
         let allNull = (0..<7).allSatisfy { sqlite3_column_type(stmt, base + $0) == SQLITE_NULL }
         if allNull { return nil }
         var rec = EnrichmentRecord()
@@ -71,6 +75,12 @@ enum ShareCatalogReadProjection {
         rec.backdropURL = CatalogConnection.columnText(stmt, base + 5).flatMap(URL.init(string:))
         rec.logoURL = CatalogConnection.columnText(stmt, base + 6).flatMap(URL.init(string:))
         rec.title = CatalogConnection.columnText(stmt, base + 7)
+        // `original_language` is an additive column; a legacy catalog (or one whose
+        // schema migration was rolled back) omits it from the SELECT, so read it only
+        // when the caller included it.
+        if includeOriginalLanguage {
+            rec.originalLanguage = CatalogConnection.columnText(stmt, base + 8)
+        }
         return rec
     }
 
@@ -174,12 +184,21 @@ enum ShareCatalogReadProjection {
     /// portable provenance.
     static func applyLocalArtwork(
         _ item: MediaItem,
-        _ selections: [ArtworkSelection]
+        _ selections: [ArtworkSelection],
+        metadataConfig: MetadataEnrichmentConfig = MetadataEnrichmentConfig()
     ) -> MediaItem {
         var copy = item
         guard !selections.isEmpty else { return copy }
         var byPlacement = Dictionary(uniqueKeysWithValues: copy.artworkSelections.map { ($0.placement, $0) })
         for selection in selections where !selection.references.isEmpty {
+            if onlineArtworkOutranksLocal(
+                for: selection.placement,
+                in: copy,
+                config: metadataConfig
+            ) {
+                byPlacement.removeValue(forKey: selection.placement)
+                continue
+            }
             byPlacement[selection.placement] = selection
             let field: MetadataField
             switch selection.placement {
@@ -195,6 +214,91 @@ enum ShareCatalogReadProjection {
         }
         copy.artworkSelections = byPlacement.values.sorted { $0.placement.rawValue < $1.placement.rawValue }
         return copy
+    }
+
+    private static func onlineArtworkOutranksLocal(
+        for placement: ArtworkPlacement,
+        in item: MediaItem,
+        config: MetadataEnrichmentConfig
+    ) -> Bool {
+        func outranks(
+            precedenceField: MetadataField,
+            provenanceField: MetadataField,
+            hasValue: Bool
+        ) -> Bool {
+            guard hasValue,
+                  let source = item.metadataProvenance[provenanceField]?.source,
+                  ![.localNFO, .server, .localArtwork, .embedded, .filename, .generated]
+                    .contains(source)
+            else { return false }
+            // Legacy enrichment rows predate exact provider provenance but are still
+            // known to be online. Preserve the preference for those cached records.
+            if source == .legacyUnknown { return config.preferOnlineArtwork }
+            let precedence = config.precedenceSources(
+                for: precedenceField,
+                query: MetadataQuery(item)
+            )
+            guard let onlineIndex = precedence.firstIndex(of: source),
+                  let localIndex = precedence.firstIndex(of: .localArtwork) else {
+                return false
+            }
+            return onlineIndex < localIndex
+        }
+
+        switch placement {
+        case .homeHero:
+            return outranks(
+                precedenceField: .homeHero,
+                provenanceField: .backdropURL,
+                hasValue: item.heroBackdropURL != nil || item.backdropURL != nil
+            )
+        case .detailBackdrop:
+            return outranks(
+                precedenceField: .detailBackdrop,
+                provenanceField: .backdropURL,
+                hasValue: item.heroBackdropURL != nil || item.backdropURL != nil
+            )
+        case .poster:
+            return outranks(
+                precedenceField: .posterURL,
+                provenanceField: .posterURL,
+                hasValue: item.posterURL != nil
+            )
+        case .seasonPoster:
+            return outranks(
+                precedenceField: .seasonPoster,
+                provenanceField: .posterURL,
+                hasValue: item.posterURL != nil
+            )
+        case .seriesPoster:
+            return outranks(
+                precedenceField: .posterURL,
+                provenanceField: .posterURL,
+                hasValue: item.seriesPosterURL != nil || item.posterURL != nil
+            )
+        case .logo:
+            return outranks(
+                precedenceField: .logoURL,
+                provenanceField: .logoURL,
+                hasValue: item.logoURL != nil
+            )
+        case .episodeThumbnail:
+            return outranks(
+                precedenceField: .episodeThumbnail,
+                provenanceField: .posterURL,
+                hasValue: item.posterURL != nil
+            ) || outranks(
+                precedenceField: .episodeThumbnail,
+                provenanceField: .backdropURL,
+                hasValue: item.backdropURL != nil
+            )
+        case .banner:
+            return false
+        case .seasonBanner:
+            return false
+        default:
+            return false
+        }
     }
 
     /// Merge an already-fetched enrichment record onto an item. Extracted from
@@ -245,6 +349,13 @@ enum ShareCatalogReadProjection {
         if copy.logoURL == nil, let logo = rec.logoURL {
             copy.logoURL = logo
             adopt(.logoURL)
+        }
+        // Original language: the pipeline resolves the work's true original audio
+        // language (ISO-639-1). Never blank an existing value; adopt when the item
+        // has none so the prefer-original-language audio policy can use it.
+        if (copy.originalLanguage?.isEmpty ?? true), let lang = rec.originalLanguage, !lang.isEmpty {
+            copy.originalLanguage = lang
+            adopt(.originalLanguage)
         }
         // Display-title upgrade (series/movies only, never episodes): overlay the
         // resolved canonical name when it's IDENTICAL, MORE SPECIFIC (current is a
