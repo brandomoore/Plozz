@@ -171,10 +171,10 @@ frames, artwork-only pause, ordered foreground stages, early Back, direct-play
 bypass, missing/replaced source fallback, nested-page ownership, and removal of
 input guards and visual covers. Real framed and borderless poster tests also
 check that the source crop excludes the caption under Reduce Transparency.
-The entrance uses 550ms for the zoom, a 500ms visible-artwork pause, and overlapping
-320ms foreground reveals spaced 180ms apart. Shows reveal the episode browser
-after the controls, retaining the navigation guard through its final 320ms fade;
-movies do not acquire that extra stage. Back uses a 380ms return without
+The entrance uses 400ms for the zoom, a 250ms visible-artwork pause, and overlapping
+240ms foreground reveals spaced 120ms apart. Shows reveal the episode browser
+after the controls, retaining the navigation guard through its final 240ms fade;
+movies do not acquire that extra stage. Back uses a 280ms return without
 the pause. Reduce Motion bypasses the custom sequence and its input wait.
 Source snapshots are per-activation, not per-frame; full-window covers are
 released at the artwork handoff, and the small return-card image is scoped to its page.
@@ -207,7 +207,7 @@ stack change without a second native navigation animation. Unprepared routes
 retain their normal animation. A UIKit appearance observer keeps the opening
 cover until both the artwork has landed and the destination has appeared.
 Production detail pages also wait for a displayed backdrop preview before
-starting the 500ms pause and title/button reveals. Full-resolution upgrades do
+starting the 250ms pause and title/button reveals. Full-resolution upgrades do
 not restart that sequence. Exhausted artwork candidates release the cover and
 controls without a picture; Back remains available while artwork is pending,
 and a playing trailer satisfies backdrop readiness without waiting for a still.
@@ -244,6 +244,13 @@ Back restores the captured source page behind the moving artwork immediately,
 not a snapshot of the outgoing detail page. The popped content stays hidden
 through teardown. The cover remains until both reverse motion and the real pop
 finish; source scroll offsets and focus are restored beneath it before removal.
+The return waits for UIKit's transition coordinator and crosses one render
+boundary before requesting focus: navigation's deferred after-commit focus reset
+must finish first, or it can overwrite an already-focused source card. This is a
+one-shot display callback, not a timed retry or navigation cooldown; forced
+teardown and app deactivation cancel it. Recreated cards are resolved by stable
+item identity within the surviving source scroll container, then by captured
+geometry. Non-card routes retain their captured focus target.
 Home and detail hero focus handlers ignore these restoration events rather than
 starting another scroll/recede animation. Ordinary user-driven timing is unchanged.
 Coverage deliberately delays the pop by 700ms (longer than the reverse animation),
@@ -272,10 +279,22 @@ not run a second chrome animation beneath the cinematic cover.
 Presented detail sessions also hold chrome ownership independently of delayed
 stack-depth reports, releasing it on dismissal/disappearance. A late appearance
 callback cannot let a closing page reclaim that ownership. Source layout is
-resolved before focus restoration, and a rejected native focus request falls
-through to the explicit SwiftUI focus binding.
+resolved before focus restoration. Native commands have distinct generations,
+wait for an attached, sized, enabled control, and announce the SwiftUI focus owner
+only when that control is eligible. Repeating a request does not depend on a
+Boolean changing from false to true. Ordinary native focus observations remain
+separate from commands, preventing navigation snapback.
 `PinnedChromeTransitionHostedTests` queries the real rail's native focus targets,
-checks hiding through zero-depth reports, and covers rejected source-focus requests.
+checks hiding through zero-depth reports, and covers explicit source-focus
+requests and recreated-card lookup. `NativeFocusRequestHostedTests` covers repeat,
+pre-mount, and disabled-control commands with a competing native card.
+
+Fresh processes start on Home with the pinned rail's real rows unfocusable until
+explicit navigation entry. Scene selection remains available during same-process
+root reconstruction (including add-server/profile flows); explicit routes and
+standalone Live TV admission retain their priority. `DetailReturnFocusRemoteTests`
+starts on the production Home hero with navigation closed, then opens and closes
+real detail pages repeatedly, including moving to a neighboring source card.
 
 Pinned rail ends use non-focusable layout spacing, not invisible focus bumpers.
 Up at Profile and Down at the last destination retain the actual item's focus;

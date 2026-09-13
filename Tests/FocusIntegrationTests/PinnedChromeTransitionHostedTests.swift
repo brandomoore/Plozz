@@ -4,6 +4,7 @@ import CoreModels
 import Observation
 import SwiftUI
 import UIKit
+import TVUIKit
 import XCTest
 
 @MainActor
@@ -11,6 +12,7 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
     func testReturningRailHasNoNativeFocusTargetsUntilInputIsReleased() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
+        fixture.model.interaction?.requestOpen()
         try await waitUntil { !self.targets(in: fixture.window).isEmpty }
         let guardView = DetailTransitionNavigation.installInputGuard(in: fixture.window, phase: .returning)
         try await waitUntil { self.targets(in: fixture.window).isEmpty }
@@ -62,7 +64,68 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         XCTAssertFalse(fixture.model.chrome.isChromeHidden)
         XCTAssertTrue(targets(in: fixture.window).isEmpty)
         guardView.invalidate()
+        fixture.model.interaction?.requestOpen()
         try await waitUntil { !self.targets(in: fixture.window).isEmpty }
+    }
+
+    func testPinnedRailStartsClosedUntilExplicitEntry() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        XCTAssertTrue(targets(in: fixture.window).isEmpty)
+        XCTAssertFalse(fixture.model.chrome.isChromeHidden)
+        fixture.model.interaction?.requestOpen()
+        try await waitUntil { !self.targets(in: fixture.window).isEmpty }
+    }
+
+    func testFreshLaunchStartsOnHomeWithoutResettingSameProcessNavigation() {
+        for destination in [NavigationRailDestination.settings, .search, .music, .home] {
+            XCTAssertEqual(
+                MainTabView.launchDestination(stored: destination, recordedProcess: "old", currentProcess: "new"),
+                .home
+            )
+            XCTAssertEqual(
+                MainTabView.launchDestination(stored: destination, recordedProcess: "same", currentProcess: "same"),
+                destination
+            )
+        }
+    }
+
+    func testRecreatedSourceUsesItemIdentityAndItsOriginalScrollContainer() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let controller = UIViewController()
+        fixture.window.rootViewController = controller
+        controller.view.frame = fixture.window.bounds
+        let firstRow = UIScrollView(frame: CGRect(x: 100, y: 100, width: 800, height: 300))
+        let secondRow = UIScrollView(frame: CGRect(x: 100, y: 500, width: 800, height: 300))
+        controller.view.addSubview(firstRow)
+        controller.view.addSubview(secondRow)
+        let references = [firstRow, secondRow].map { row in
+            let marker = DetailTransitionSourceView(frame: CGRect(x: 100, y: 20, width: 200, height: 250))
+            row.addSubview(marker)
+            let reference = DetailTransitionSourceReference()
+            reference.view = marker
+            reference.itemKey = "same-title"
+            marker.reference = reference
+            return reference
+        }
+        let secondFrame = try XCTUnwrap(references[1].visibleFrame(in: fixture.window))
+        XCTAssertTrue(DetailTransitionSourceReference.liveSource(
+            in: fixture.window, itemKey: "same-title", scrollContext: firstRow, near: secondFrame
+        ) === references[0])
+        XCTAssertTrue(DetailTransitionSourceReference.liveSource(
+            in: fixture.window, itemKey: "same-title", scrollContext: nil, near: secondFrame
+        ) === references[1])
+        XCTAssertNil(DetailTransitionSourceReference.liveSource(
+            in: fixture.window, itemKey: "same-title", scrollContext: nil, near: nil
+        ))
+        XCTAssertNil(DetailTransitionSourceReference.liveSource(
+            in: fixture.window, itemKey: "removed-title", scrollContext: firstRow, near: secondFrame
+        ))
+        references[0].view?.isHidden = true
+        XCTAssertNil(DetailTransitionSourceReference.liveSource(
+            in: fixture.window, itemKey: "same-title", scrollContext: firstRow, near: secondFrame
+        ))
     }
 
     func testRejectedNativeSourceFocusFallsBackToTheExplicitBinding() async throws {
@@ -114,7 +177,10 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let fixture = Fixture(scene: scene)
-        try await waitUntil { DetailTransitionNavigation.chromeModel(in: fixture.window) === fixture.model.chrome }
+        try await waitUntil {
+            DetailTransitionNavigation.chromeModel(in: fixture.window) === fixture.model.chrome
+                && fixture.model.interaction != nil
+        }
         return fixture
     }
 
@@ -156,6 +222,7 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         let profile = Profile(name: "Viewer")
         let chrome = NavigationChromeModel()
         var selection = NavigationRailDestination.home
+        @ObservationIgnored var interaction: PlozzPinnedSidebarInteraction?
     }
 
     private struct RailFixture: View {
@@ -166,10 +233,20 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
                 profile: model.profile, entries: [], destinations: [.home, .search, .settings],
                 selection: $model.selection, onOpenProfileSwitcher: {},
                 chrome: model.chrome,
-                content: Button("Page content") {}
-                    .frame(width: 400, height: 100)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                content: PageContent(model: model)
             )
+        }
+    }
+
+    private struct PageContent: View {
+        let model: Model
+        @Environment(\.plozzPinnedSidebarInteraction) private var interaction
+
+        var body: some View {
+            Button("Page content") {}
+                .frame(width: 400, height: 100)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onAppear { model.interaction = interaction }
         }
     }
 
@@ -179,7 +256,7 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
 
     private final class FocusFallbackController: UIViewController {
         let hero = UIButton(type: .system)
-        let card = UIButton(type: .system)
+        let card = TVCardView()
         var allowsCardFocus = false
         override var preferredFocusEnvironments: [any UIFocusEnvironment] {
             [allowsCardFocus ? card : hero]
@@ -188,7 +265,7 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
             super.viewDidLoad()
             hero.setTitle("Hero", for: .normal)
             hero.frame = CGRect(x: 700, y: 100, width: 300, height: 100)
-            card.setTitle("Source card", for: .normal)
+            card.contentSize = CGSize(width: 260, height: 160)
             card.frame = CGRect(x: 700, y: 600, width: 300, height: 200)
             view.addSubview(hero)
             view.addSubview(card)
@@ -206,6 +283,8 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
         func requestFocus() -> Bool {
             requests += 1
             controller.allowsCardFocus = true
+            controller.setNeedsFocusUpdate()
+            controller.updateFocusIfNeeded()
             return true
         }
     }

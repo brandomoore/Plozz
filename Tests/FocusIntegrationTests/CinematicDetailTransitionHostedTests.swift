@@ -7,6 +7,14 @@ import XCTest
 
 @MainActor
 final class CinematicDetailTransitionHostedTests: XCTestCase {
+    func testDetailTimingUsesTheFasterSequence() {
+        let timing = DetailEntranceTiming()
+        let movie = timing.zoom + timing.artworkPause + timing.stagger * 2 + timing.reveal
+        XCTAssertLessThanOrEqual(movie, 1.15)
+        XCTAssertLessThanOrEqual(movie + timing.reveal, 1.4)
+        XCTAssertLessThanOrEqual(timing.reverse, 0.3)
+    }
+
     func testReturnConsumesAHeldPressPastVisualCompletion() async throws {
         final class HeldLeft: UIPress {
             override var type: UIPress.PressType { .leftArrow }
@@ -59,7 +67,7 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
             guard let frame = initial.cardContainer.layer.presentation()?.frame else { return false }
             return frame.width > sourceFrame.width + 30 && frame.width < fixture.window.bounds.width - 30
         }
-        fixture.model.path.append(1)
+        DetailTransitionNavigation.performNavigation { fixture.model.path.append(1) }
         try await waitUntil { fixture.model.session != nil }
         let session = try XCTUnwrap(fixture.model.session)
         XCTAssertEqual(initial.card.contentMode, .scaleAspectFill)
@@ -257,7 +265,7 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         defer { session.finishImmediately() }
         session.attach(to: fixture.window, enabled: true, waitsForPageAppearance: true)
         let cover = try XCTUnwrap(overlays(in: fixture.window).first)
-        try await Task.sleep(for: .milliseconds(700))
+        try await Task.sleep(for: .seconds(session.timing.zoom + session.timing.artworkPause / 4))
         XCTAssertTrue(cover.superview === fixture.window)
         XCTAssertEqual(cover.alpha, 1)
         XCTAssertEqual(cover.cardContainer.frame, fixture.window.bounds)
@@ -410,7 +418,7 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(700))
         XCTAssertEqual(session.stage, .artwork)
         session.resolvedDestinationVideo()
-        try await Task.sleep(for: .milliseconds(200))
+        try await Task.sleep(for: .seconds(session.timing.artworkPause / 3))
         XCTAssertEqual(session.stage, .artwork)
         try await waitUntil { session.stage == .complete }
     }

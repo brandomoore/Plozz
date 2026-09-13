@@ -24,7 +24,8 @@ enum NativePosterText {
 final class NativeTVMediaCoordinator {
     var focus: PlozzCardFocus.Binding
     var action: () -> Void
-    private var lastRequest = false
+    private var handledGeneration: UInt64 = 0
+    private var isRequestScheduled = false
 
     init(focus: PlozzCardFocus.Binding, action: @escaping () -> Void) {
         self.focus = focus
@@ -34,12 +35,50 @@ final class NativeTVMediaCoordinator {
     func update(focus: PlozzCardFocus.Binding, action: @escaping () -> Void, view: TVLockupView) {
         self.focus = focus
         self.action = action
-        let requested = focus.focusState.wrappedValue
-        defer { lastRequest = requested }
-        guard requested, !lastRequest, view.window != nil, view.isEnabled, !view.isFocused else { return }
-        let system = UIFocusSystem.focusSystem(for: view)
-        system?.requestFocusUpdate(to: view)
-        system?.updateFocusIfNeeded()
+        requestFocusIfReady(in: view)
+    }
+
+    private var hasPendingRequest: Bool {
+        let request = focus.request.wrappedValue
+        return request.wantsFocus && request.generation != handledGeneration
+    }
+
+    func requestFocusIfReady(in view: TVLockupView) {
+        guard hasPendingRequest, !isRequestScheduled,
+              view.window != nil, view.isEnabled, view.canBecomeFocused, !view.bounds.isEmpty else { return }
+        isRequestScheduled = true
+        DispatchQueue.main.async { [weak self, weak view] in
+            guard let self else { return }
+            defer { isRequestScheduled = false }
+            guard hasPendingRequest, let view, let window = view.window,
+                  view.isEnabled, view.canBecomeFocused, !view.bounds.isEmpty,
+                  let system = UIFocusSystem.focusSystem(for: view) else { return }
+            if focus.request.wrappedValue.animated {
+                applyFocus(to: view, in: window, using: system)
+            } else {
+                UIView.performWithoutAnimation {
+                    var transaction = Transaction(animation: nil)
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) { self.applyFocus(to: view, in: window, using: system) }
+                }
+            }
+        }
+    }
+
+    private func applyFocus(to view: TVLockupView, in window: UIWindow, using system: UIFocusSystem) {
+        focus.focusState.wrappedValue = true
+        window.layoutIfNeeded()
+        guard hasPendingRequest, view.window === window, view.isEnabled, view.canBecomeFocused else { return }
+        var request = focus.request.wrappedValue
+        handledGeneration = request.generation
+        request.wantsFocus = false
+        focus.request.wrappedValue = request
+        guard !view.isFocused else { return }
+        system.requestFocusUpdate(to: view)
+        system.updateFocusIfNeeded()
+        if !view.isFocused {
+            PlozzLog.app.debug("Native media focus request was not accepted by the current focus scope")
+        }
     }
 
     func observe(_ focused: Bool) {
@@ -72,6 +111,9 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
             host.bottomAnchor.constraint(equalTo: view.contentView.bottomAnchor)
         ])
         view.onFocus = { [weak coordinator = context.coordinator] in coordinator?.observe($0) }
+        view.onAvailable = { [weak coordinator = context.coordinator, weak view] in
+            if let view { coordinator?.requestFocusIfReady(in: view) }
+        }
         view.addAction(UIAction { [weak coordinator = context.coordinator] _ in coordinator?.activate() },
                        for: .primaryActionTriggered)
         return view
@@ -129,6 +171,17 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
     final class Card: TVCardView {
         var hostedContent: (UIView & UIContentView)?
         var onFocus: ((Bool) -> Void)?
+        var onAvailable: (() -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            onAvailable?()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            onAvailable?()
+        }
 
         override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
             super.didUpdateFocus(in: context, with: coordinator)
@@ -252,6 +305,9 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
             ])
         }
         view.onFocus = { [weak coordinator = context.coordinator] in coordinator?.focus.observe($0) }
+        view.onAvailable = { [weak coordinator = context.coordinator, weak view] in
+            if let view { coordinator?.focus.requestFocusIfReady(in: view) }
+        }
         view.addAction(UIAction { [weak coordinator = context.coordinator] _ in coordinator?.focus.activate() },
                        for: .primaryActionTriggered)
         return view
@@ -306,6 +362,17 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
     final class Poster: TVPosterView {
         var hostedOverlay: (UIView & UIContentView)?
         var onFocus: ((Bool) -> Void)?
+        var onAvailable: (() -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            onAvailable?()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            onAvailable?()
+        }
 
         override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
             super.didUpdateFocus(in: context, with: coordinator)
@@ -371,6 +438,9 @@ struct NativeTVMonogram: UIViewRepresentable {
         let view = Monogram()
         view.contentSize = CGSize(width: diameter, height: diameter)
         view.onFocus = { [weak coordinator = context.coordinator] in coordinator?.focus.observe($0) }
+        view.onAvailable = { [weak coordinator = context.coordinator, weak view] in
+            if let view { coordinator?.focus.requestFocusIfReady(in: view) }
+        }
         view.addAction(UIAction { [weak coordinator = context.coordinator] _ in coordinator?.focus.activate() },
                        for: .primaryActionTriggered)
         return view
@@ -396,6 +466,17 @@ struct NativeTVMonogram: UIViewRepresentable {
     final class Monogram: TVMonogramView {
         var displayedName: String?
         var onFocus: ((Bool) -> Void)?
+        var onAvailable: (() -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            onAvailable?()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            onAvailable?()
+        }
 
         override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
             super.didUpdateFocus(in: context, with: coordinator)

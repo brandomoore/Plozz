@@ -492,6 +492,8 @@ struct MainTabView: View {
     /// switching chrome never lands on a destination the other style can't show.
     @SceneStorage("navigationRail.selection")
     private var railSelectionRaw = NavigationRailDestination.home.storageValue
+    @SceneStorage("mainTab.processLaunch") private var recordedProcessLaunch = ""
+    private static let processLaunch = UUID().uuidString
     /// Carries the currently-visible top-bar destination into rail/sidebar when
     /// the style changes, without erasing the separately remembered library
     /// destination. Cleared when the viewer chooses a real library-navigation
@@ -532,6 +534,7 @@ struct MainTabView: View {
             // library selected in rail/sidebar mode, use the top bar, then return
             // without that library destination being erased.
             set: {
+                recordedProcessLaunch = Self.processLaunch
                 releaseExplicitLiveTVEntry(ifLeavingFor: destination(for: $0))
                 selectedTabRaw = resolvedTopBarTab($0).rawValue
             }
@@ -539,7 +542,10 @@ struct MainTabView: View {
     }
 
     private var resolvedSelectedTab: MainTab {
-        let stored = MainTab(rawValue: selectedTabRaw) ?? .home
+        let stored = mainTab(for: Self.launchDestination(
+            stored: destination(for: MainTab(rawValue: selectedTabRaw) ?? .home),
+            recordedProcess: recordedProcessLaunch, currentProcess: Self.processLaunch
+        ))
         if let startup = standaloneStartupDestination(
             current: destination(for: stored),
             destinations: topBarDestinations
@@ -616,6 +622,20 @@ struct MainTabView: View {
         if pendingStandaloneLiveTVEntry { onConsumeStandaloneLiveTVEntry?() }
     }
 
+    static func launchDestination(
+        stored: NavigationRailDestination, recordedProcess: String, currentProcess: String
+    ) -> NavigationRailDestination {
+        recordedProcess == currentProcess ? stored : .home
+    }
+
+    private func settleFreshLaunch() {
+        guard recordedProcessLaunch != Self.processLaunch else { return }
+        selectedTabRaw = MainTab.home.rawValue
+        railSelectionRaw = NavigationRailDestination.home.storageValue
+        libraryNavigationEntryOverride = nil
+        recordedProcessLaunch = Self.processLaunch
+    }
+
     private func releaseExplicitLiveTVEntry(ifLeavingFor destination: NavigationRailDestination) {
         #if DEBUG
         if destination != .liveTV { retainsExplicitLiveTVEntry = false }
@@ -655,6 +675,7 @@ struct MainTabView: View {
         Binding(
             get: { activeLibraryNavigationDestination },
             set: { destination in
+                recordedProcessLaunch = Self.processLaunch
                 releaseExplicitLiveTVEntry(ifLeavingFor: destination)
                 libraryNavigationEntryOverride = nil
                 railSelectionRaw = destination.storageValue
@@ -739,7 +760,10 @@ struct MainTabView: View {
 
     /// The stored selection before pruning. Only used to notice divergence.
     private var storedRailSelection: NavigationRailDestination {
-        NavigationRailDestination(storageValue: railSelectionRaw) ?? .home
+        Self.launchDestination(
+            stored: NavigationRailDestination(storageValue: railSelectionRaw) ?? .home,
+            recordedProcess: recordedProcessLaunch, currentProcess: Self.processLaunch
+        )
     }
 
     /// Commits the pruning, so a destination that has genuinely gone away stops
@@ -1495,6 +1519,7 @@ struct MainTabView: View {
         let _ = PlozzBodyRate.tick("MainTabView")
         return shellContent
         .onChange(of: pendingStandaloneLiveTVEntry, initial: true) { _, _ in
+            settleFreshLaunch()
             settleStandaloneStartup()
         }
         .background {

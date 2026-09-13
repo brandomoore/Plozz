@@ -4,28 +4,30 @@ import FeatureHome
 import FeatureHomeCore
 import SwiftUI
 import UIKit
+@testable import AppShell
 
 struct ProductionHomeFixture: View {
     @State private var fixture: ProductionHomeState?
+    @State private var path: [MediaItem] = []
+    @State private var selection = NavigationRailDestination.home
+    @State private var profile = Profile(name: "Viewer")
+
+    private var isPinned: Bool { ProcessInfo.processInfo.arguments.contains("--pinned-home") }
 
     var body: some View {
         Group {
             if let fixture {
-                NavigationStack {
-                    HomeView(
-                        viewModel: fixture.model,
-                        visibility: fixture.visibility,
-                        heroSettings: fixture.heroSettings,
-                        heroBackground: fixture.background,
-                        heroTrailerController: fixture.trailer,
-                        heroIsFrontmost: true,
-                        heroRuntime: fixture.runtime,
-                        heroArtworkProvider: { $0.backdropURL },
-                        heroArtworkValidator: { _ in true },
-                        onSelectItem: { _ in },
-                        onPlayItem: { _ in },
-                        onSelectLibrary: { _ in }
-                    )
+                Group {
+                    if isPinned {
+                        NavigationRailShell(
+                            profile: profile, entries: [], destinations: [.home, .search, .settings],
+                            selection: $selection, onOpenProfileSwitcher: {},
+                            chrome: fixture.chrome,
+                            content: ProductionHomeContent(fixture: fixture, path: $path, isPinned: true)
+                        )
+                    } else {
+                        ProductionHomeContent(fixture: fixture, path: $path, isPinned: false)
+                    }
                 }
                 .overlay(alignment: .topTrailing) {
                     Text("Production Home ready")
@@ -45,6 +47,49 @@ struct ProductionHomeFixture: View {
     }
 }
 
+private struct ProductionHomeContent: View {
+    let fixture: ProductionHomeState
+    @Binding var path: [MediaItem]
+    let isPinned: Bool
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            HomeView(
+                viewModel: fixture.model,
+                visibility: fixture.visibility,
+                heroSettings: fixture.heroSettings,
+                heroBackground: fixture.background,
+                heroTrailerController: fixture.trailer,
+                heroIsFrontmost: path.isEmpty,
+                heroRuntime: fixture.runtime,
+                heroArtworkProvider: { $0.backdropURL },
+                heroArtworkValidator: { _ in true },
+                navigationStyle: isPinned ? .rail : .default,
+                onSelectItem: { item in withCinematicDetailNavigation(for: item) { path.append(item) } },
+                onPlayItem: { _ in },
+                onSelectLibrary: { _ in }
+            )
+            .navigationDestination(for: MediaItem.self) { item in
+                ItemDetailView(
+                    viewModel: fixture.detail(for: item),
+                    onPlay: { _ in },
+                    onSelectChild: { next in
+                        withCinematicDetailNavigation(for: next) { path.append(next) }
+                    }
+                )
+                .environment(fixture.trailer)
+                .environment(fixture.background)
+                .overlay(alignment: .topTrailing) {
+                    Text("Detail fixture \(item.title)")
+                        .font(.caption2)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+        .reportsNavigationDepth(path.count, to: isPinned ? fixture.chrome : nil)
+    }
+}
+
 @MainActor
 private final class ProductionHomeState {
     let model: HomeViewModel
@@ -53,9 +98,13 @@ private final class ProductionHomeState {
     let background = HeroBackgroundSettingsModel()
     let trailer = HeroTrailerController()
     let runtime = HomeHeroRuntimeState()
+    let chrome = NavigationChromeModel()
+    private let provider: ProductionHomeProvider
+    private var details: [String: ItemDetailViewModel] = [:]
 
     private init(poster: URL, backdrop: URL, logo: URL) {
         let provider = ProductionHomeProvider(poster: poster, backdrop: backdrop, logo: logo)
+        self.provider = provider
         let account = Account(
             id: "home-fixture", server: provider.session.server,
             userID: "fixture", userName: "Fixture", deviceID: "fixture"
@@ -71,6 +120,13 @@ private final class ProductionHomeState {
         settings.trailersEnabled = false
         heroSettings.settings = settings
         background.settings.homeTrailerEnabled = false
+    }
+
+    func detail(for item: MediaItem) -> ItemDetailViewModel {
+        if let existing = details[item.id] { return existing }
+        let model = ItemDetailViewModel(provider: provider, itemID: item.id, initialItem: item)
+        details[item.id] = model
+        return model
     }
 
     static func load() async -> ProductionHomeState {

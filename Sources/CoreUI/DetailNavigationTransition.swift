@@ -9,11 +9,11 @@ public enum DetailEntranceStage: Int, Comparable, Sendable {
 }
 
 public struct DetailEntranceTiming: Equatable, Sendable {
-    public var zoom: TimeInterval = 0.55
-    public var artworkPause: TimeInterval = 0.5
-    public var stagger: TimeInterval = 0.18
-    public var reveal: TimeInterval = 0.32
-    public var reverse: TimeInterval = 0.38
+    public var zoom: TimeInterval = 0.4
+    public var artworkPause: TimeInterval = 0.25
+    public var stagger: TimeInterval = 0.12
+    public var reveal: TimeInterval = 0.24
+    public var reverse: TimeInterval = 0.28
 
     public init() {}
 }
@@ -58,6 +58,7 @@ public extension View {
 import CoreNetworking
 import Observation
 import UIKit
+import TVUIKit
 
 public struct DetailTransitionArtworkLayout: Equatable {
     public let frame: CGRect
@@ -175,36 +176,46 @@ public final class DetailTransitionSourceReference {
         return DetailTransitionSourceGeometry(frame: frame, cornerRadius: cornerRadius * scale)
     }
 
+    static func liveSource(
+        in window: UIWindow, itemKey: String,
+        scrollContext: UIScrollView?, near frame: CGRect?
+    ) -> DetailTransitionSourceReference? {
+        var candidates: [(reference: DetailTransitionSourceReference, frame: CGRect)] = []
+        var pending = [window.rootViewController?.viewIfLoaded].compactMap { $0 }
+        while let view = pending.popLast() {
+            if let marker = view as? DetailTransitionSourceView,
+               let reference = marker.reference, reference.itemKey == itemKey,
+               (scrollContext.map { marker.isDescendant(of: $0) } ?? true),
+               let visible = reference.visibleFrame(in: window) {
+                candidates.append((reference, visible))
+            }
+            pending.append(contentsOf: view.subviews)
+        }
+        guard let frame else { return candidates.count == 1 ? candidates[0].reference : nil }
+        return candidates.min {
+            hypot($0.frame.midX - frame.midX, $0.frame.midY - frame.midY)
+                < hypot($1.frame.midX - frame.midX, $1.frame.midY - frame.midY)
+        }?.reference
+    }
+
     func restoreFocus(in window: UIWindow, preferred: (any UIFocusEnvironment)?) {
         guard let frame = visibleFrame(in: window), let view else { return }
+        // Synchronize the owning SwiftUI focus scope even if UIKit has already
+        // restored the control; otherwise a later scope update can replace it.
+        if focusRequester?.requestFocus() == true {
+            return
+        }
         let system = UIFocusSystem.focusSystem(for: window)
         var nativeOwner = nativeArtworkView?.superview
         while let current = nativeOwner {
-            if current.canBecomeFocused {
+            if current is TVLockupView, current.canBecomeFocused {
                 system?.requestFocusUpdate(to: current)
                 system?.updateFocusIfNeeded()
                 let focused = system?.focusedItem.flatMap { TVNavigationExitProtectionFocus.containingView(of: $0) }
                 if current.isFocused || focused?.isDescendant(of: current) == true { return }
-                // A restored SwiftUI scope can reject the native request; its
-                // explicit focus binding below must still get a chance.
                 break
             }
             nativeOwner = current.superview
-        }
-        if focusRequester?.requestFocus() == true {
-            var responder: UIResponder? = view
-            while let current = responder {
-                if let controller = current as? UIViewController {
-                    controller.setNeedsFocusUpdate()
-                    system?.requestFocusUpdate(to: controller)
-                    system?.updateFocusIfNeeded()
-                    window.rootViewController?.setNeedsFocusUpdate()
-                    window.rootViewController?.updateFocusIfNeeded()
-                    return
-                }
-
-                responder = current.next
-            }
         }
         if let preferred = preferred as? any UIFocusItem, preferred.canBecomeFocused,
            TVNavigationExitProtectionFocus.containingView(of: preferred)?.window === window {
@@ -243,22 +254,30 @@ public struct DetailTransitionSourceAnchor: UIViewRepresentable {
     private let cornerRadius: CGFloat
     private let isFocused: Bool?
     private let focus: FocusState<Bool>.Binding?
+    private let cardFocus: PlozzCardFocus.Binding?
 
     public init(
         reference: DetailTransitionSourceReference, itemKey: String,
-        cornerRadius: CGFloat, isFocused: Bool? = nil, focus: FocusState<Bool>.Binding? = nil
+        cornerRadius: CGFloat, isFocused: Bool? = nil, focus: FocusState<Bool>.Binding? = nil,
+        cardFocus: PlozzCardFocus.Binding? = nil
     ) {
         self.reference = reference
         self.itemKey = itemKey
         self.cornerRadius = cornerRadius
         self.isFocused = isFocused
         self.focus = focus
+        self.cardFocus = cardFocus
     }
 
     public final class Coordinator: DetailTransitionFocusRequesting {
         var focus: FocusState<Bool>.Binding?
+        var cardFocus: PlozzCardFocus.Binding?
 
         func requestFocus() -> Bool {
+            if let cardFocus {
+                cardFocus.requestFocus(animated: false)
+                return true
+            }
             guard let focus else { return false }
             focus.wrappedValue = true
             return true
@@ -280,6 +299,7 @@ public struct DetailTransitionSourceAnchor: UIViewRepresentable {
         reference.cornerRadius = cornerRadius
         reference.isFocused = isFocused
         context.coordinator.focus = focus
+        context.coordinator.cardFocus = cardFocus
         reference.focusRequester = context.coordinator
         (view as? DetailTransitionSourceView)?.reference = reference
     }
@@ -531,10 +551,11 @@ final class PendingDetailEntrance {
         self.card = card
         windowSize = window.bounds.size
         focusedItem = UIFocusSystem.focusSystem(for: window)?.focusedItem
+        let focusedView = source?.view ?? (focusedItem as? any UIFocusItem).flatMap {
+            TVNavigationExitProtectionFocus.containingView(of: $0)
+        }
         scrollPositions = DetailTransitionScrollPosition.capture(
-            from: source?.view ?? (focusedItem as? any UIFocusItem).flatMap {
-                TVNavigationExitProtectionFocus.containingView(of: $0)
-            }
+            from: focusedView
         )
         overlay = DetailTransitionOverlay(screen: screen, card: card)
         overlay.frame = window.bounds
@@ -623,7 +644,9 @@ public final class TVDetailEntranceSession {
     @ObservationIgnored private var pageIsVisible = false
     @ObservationIgnored private var returnMotionFinished = false
     @ObservationIgnored private var returnNavigationFinished = false
+    @ObservationIgnored private var navigationTransitionPending = false
     @ObservationIgnored private var returnHandoffScheduled = false
+    @ObservationIgnored private var returnFrame: DetailReturnFrame?
     @ObservationIgnored private var scrollPositions: [DetailTransitionScrollPosition] = []
     @ObservationIgnored private let restoreToken = UUID()
     @ObservationIgnored private var backdropRequest: DetailBackdropArtworkRequest?
@@ -780,8 +803,20 @@ public final class TVDetailEntranceSession {
         pageIsVisible = false
         navigationChrome?.detailDisappeared(chromeToken)
         guard isClosing else { return }
-        returnNavigationFinished = true
+        returnNavigationFinished = !navigationTransitionPending
         finishReturnIfReady()
+    }
+
+    func navigationWillDisappear(using coordinator: any UIViewControllerTransitionCoordinator) {
+        guard isClosing else { return }
+        navigationTransitionPending = true
+        let registered = coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            guard let self else { return }
+            navigationTransitionPending = false
+            returnNavigationFinished = !pageIsVisible
+            finishReturnIfReady()
+        }
+        if !registered { navigationTransitionPending = false }
     }
 
     private func removeOpeningCoverIfReady() {
@@ -934,10 +969,11 @@ public final class TVDetailEntranceSession {
             return
         }
         returnHandoffScheduled = true
-        // Restore only after the source is mounted. Keep its captured page over
-        // focus/scroll restoration and the following SwiftUI update, not just
-        // until the independent artwork animator happens to finish.
-        DispatchQueue.main.async { [self] in
+        // Navigation unlocks its focus tree after the Core Animation commit.
+        // A main-queue block can run before that deferred reset and lose focus
+        // again. Cross one render boundary after the real pop, under the cover.
+        returnFrame = DetailReturnFrame { [self] in
+            returnFrame = nil
             guard isClosing, overlay === cover else { return }
             UIView.performWithoutAnimation {
                 var transaction = Transaction(animation: nil)
@@ -947,9 +983,7 @@ public final class TVDetailEntranceSession {
                         scrollPositions.forEach { $0.restore(in: window) }
                     }
                     window.layoutIfNeeded()
-                    if source?.itemKey == sourceKey {
-                        source?.restoreFocus(in: window, preferred: returnFocus)
-                    }
+                    restoreReturnFocus(in: window)
                     window.layoutIfNeeded()
                 }
             }
@@ -975,6 +1009,32 @@ public final class TVDetailEntranceSession {
         }
     }
 
+    private func restoreReturnFocus(in window: UIWindow) {
+        if let source, let sourceKey {
+            let context = scrollPositions.first?.view.flatMap { $0.window === window ? $0 : nil }
+            let original = source.itemKey == sourceKey && source.visibleFrame(in: window) != nil ? source : nil
+            let live = original ?? DetailTransitionSourceReference.liveSource(
+                in: window, itemKey: sourceKey, scrollContext: context, near: activationGeometry?.frame
+            )
+            if let live {
+                live.restoreFocus(in: window, preferred: returnFocus)
+                return
+            }
+        }
+        guard let preferred = returnFocus as? any UIFocusItem,
+              preferred.canBecomeFocused,
+              TVNavigationExitProtectionFocus.containingView(of: preferred)?.window === window,
+              let system = UIFocusSystem.focusSystem(for: window) else {
+            PlozzLog.app.debug("Detail return has no surviving source focus target")
+            return
+        }
+        system.requestFocusUpdate(to: preferred)
+        system.updateFocusIfNeeded()
+        if system.focusedItem !== preferred {
+            PlozzLog.app.debug("Detail return focus request was not accepted by the current focus scope")
+        }
+    }
+
     func disappeared() {
         navigationChrome?.detailDisappeared(chromeToken)
         guard !isClosing else { return }
@@ -989,7 +1049,10 @@ public final class TVDetailEntranceSession {
     }
 
     func finishImmediately() {
+        returnFrame?.invalidate()
+        returnFrame = nil
         let wasStarted = hasStarted
+        navigationTransitionPending = false
         hasStarted = true
         foregroundSequenceStarted = true
         backdropRequest?.cancel()
@@ -1021,6 +1084,32 @@ public final class TVDetailEntranceSession {
         if force { inputGuard?.invalidate() }
         else { inputGuard?.releaseWhenIdle() }
         inputGuard = nil
+    }
+}
+
+@MainActor
+private final class DetailReturnFrame: NSObject {
+    private var link: CADisplayLink?
+    private var action: (() -> Void)?
+
+    init(action: @escaping () -> Void) {
+        self.action = action
+        super.init()
+        let link = CADisplayLink(target: self, selector: #selector(fire))
+        self.link = link
+        link.add(to: .main, forMode: .common)
+    }
+
+    @objc private func fire() {
+        let action = action
+        invalidate()
+        action?()
+    }
+
+    func invalidate() {
+        link?.invalidate()
+        link = nil
+        action = nil
     }
 }
 
@@ -1141,6 +1230,11 @@ private final class DetailEntranceController: UIViewController {
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         session?.pageDisappeared()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if let transitionCoordinator { session?.navigationWillDisappear(using: transitionCoordinator) }
     }
 }
 

@@ -167,7 +167,7 @@ struct NavigationRailView: View {
     /// Makes every row unfocusable while focus is moving to the page. The rows stay
     /// unavailable until the next explicit request to open the rail, so a slow
     /// destination cannot let tvOS fall back into the menu.
-    @State private var isReleasingFocus = false
+    @State private var isReleasingFocus = true
     /// Continuously tracks how much content has moved past each edge, so the mask
     /// follows the scroll instead of flashing on at a threshold.
     @State private var libraryListFade = ListEdgeFade()

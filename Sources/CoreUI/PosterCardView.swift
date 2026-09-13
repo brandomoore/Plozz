@@ -186,7 +186,7 @@ public struct PosterCardView: View {
                     itemKey: item.stablePresentationID,
                     cornerRadius: transitionArtworkCornerRadius,
                     isFocused: isFocused,
-                    focus: $isFocused.focusState
+                    cardFocus: $isFocused
                 )
             }
             #endif

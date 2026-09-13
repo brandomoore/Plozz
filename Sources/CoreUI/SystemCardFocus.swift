@@ -16,6 +16,7 @@ extension EnvironmentValues {
 public struct PlozzCardFocus: DynamicProperty {
     @FocusState private var focused: Bool
     @State private var observed = false
+    @State private var request = Request()
     @Environment(\.plozzCardFocusStyle) private var style
 
     public init() {}
@@ -28,14 +29,57 @@ public struct PlozzCardFocus: DynamicProperty {
             focused
             #endif
         }
-        nonmutating set { focused = newValue }
+        nonmutating set {
+            if newValue {
+                projectedValue.requestFocus()
+            } else {
+                request.wantsFocus = false
+                focused = false
+            }
+        }
     }
 
-    public var projectedValue: Binding { Binding(focusState: $focused, observed: $observed) }
+    private var usesNativeFocus: Bool {
+        #if os(tvOS)
+        style.usesSystemEffect
+        #else
+        false
+        #endif
+    }
+
+    struct Request: Equatable {
+        var generation: UInt64 = 0
+        var wantsFocus = false
+        var animated = true
+    }
+
+    public var projectedValue: Binding {
+        Binding(
+            focusState: $focused, observed: $observed, request: $request,
+            requestSnapshot: request, usesNativeFocus: usesNativeFocus
+        )
+    }
 
     public struct Binding {
         public let focusState: FocusState<Bool>.Binding
         let observed: SwiftUI.Binding<Bool>
+        let request: SwiftUI.Binding<Request>
+        // The command value participates in SwiftUI invalidation even when the
+        // native coordinator is the only consumer of the writable binding.
+        let requestSnapshot: Request
+        let usesNativeFocus: Bool
+
+        public func requestFocus(animated: Bool = true) {
+            if usesNativeFocus {
+                var next = request.wrappedValue
+                next.generation &+= 1
+                next.wantsFocus = true
+                next.animated = animated
+                request.wrappedValue = next
+            } else {
+                focusState.wrappedValue = true
+            }
+        }
     }
 }
 
