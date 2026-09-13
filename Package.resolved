@@ -1,12 +1,12 @@
 {
-  "originHash" : "9487d01f2a278a2535279669bffeb8a6b8ea925dda0ddaa25a3c68feea9dfeb0",
+  "originHash" : "50a5e18849f6e22fd4f1b476c4d003c4fb4445b80151935926380fd5364a6725",
   "pins" : [
     {
       "identity" : "aetherengine",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/superuser404notfound/AetherEngine",
       "state" : {
-        "revision" : "1eebae01f7d94c012a8a158179d5f0924b8449ad"
+        "revision" : "565f5ec9cdc5033d085d6cb556faf16875efb4f0"
       }
     },
     {
@@ -14,8 +14,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/superuser404notfound/FFmpegBuild",
       "state" : {
-        "revision" : "421e13be7061de67d91b85ac34a6b22a002b164f",
-        "version" : "3.0.0"
+        "revision" : "4e58942403d37cceff3a3212e3e026f4205146a2",
+        "version" : "3.3.0"
       }
     },
     {
