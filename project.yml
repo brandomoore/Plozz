@@ -434,6 +434,7 @@ targets:
     platform: tvOS
     sources:
       - path: Tests/FocusHost
+      - path: Tests/FeatureLiveTVRemoteTests/NavigationRailFixture.swift
       - path: App/Resources/Assets.xcassets
     settings:
       base:
@@ -450,6 +451,8 @@ targets:
         product: FeatureHome
       - package: Plozz
         product: FeatureHomeCore
+      - package: Plozz
+        product: AppShell
 
   PlozzHomeRemoteTests:
     type: bundle.ui-testing

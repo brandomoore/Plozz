@@ -4,8 +4,13 @@ import Observation
 import SwiftUI
 @testable import AppShell
 
-struct NavigationRailFixture: View {
+struct NavigationRailFixture<SearchContent: View>: View {
     @State private var model = NavigationRailFixtureModel()
+    let searchContent: SearchContent
+
+    init(@ViewBuilder searchContent: () -> SearchContent) {
+        self.searchContent = searchContent()
+    }
 
     var body: some View {
         NavigationRailShell(
@@ -17,7 +22,7 @@ struct NavigationRailFixture: View {
             chrome: model.chrome,
             content: NavigationStack {
                 if model.selection == .search {
-                    SearchFixture()
+                    searchContent
                 } else {
                     NavigationRailFixturePage(model: model)
                 }
@@ -38,7 +43,8 @@ private final class NavigationRailFixtureModel {
     init() {
         let destination: NavigationRailDestination =
             ProcessInfo.processInfo.arguments.contains("--navigation-search") ? .search : .settings
-        entries = (0..<30).map { index in
+        let count = ProcessInfo.processInfo.arguments.contains("--navigation-short") ? 2 : 30
+        entries = (0..<count).map { index in
             NavigationRailLibraryEntry(
                 key: "account:\(index)",
                 library: AggregatedLibrary(

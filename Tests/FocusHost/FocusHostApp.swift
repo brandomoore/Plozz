@@ -7,7 +7,9 @@ import CoreModels
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--production-home-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--navigation-fixture") {
+                NavigationRailFixture { Color.clear }
+            } else if ProcessInfo.processInfo.arguments.contains("--production-home-fixture") {
                 ProductionHomeFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--native-media-cell-comparison") {
                 NativeMediaCellComparisonScreen()

@@ -79,6 +79,12 @@ does not regenerate the shipping app project or install the app on an Apple TV.
   on entry, return to page controls, collapse, explicit opening and reentry after
   reordering, plus repeated entry and return around the native Search keyboard.
   They do not substitute focus-state assignments for remote input.
+  The shared fixture also accepts `--navigation-short` for a two-library rail.
+  `PinnedRailBoundaryTests` in the main project's `PlozzHomeFixtureTests` scheme
+  exercises repeated/held Up and Down at both ends of short and long rails,
+  then verifies normal Right exit. Generate that project with
+  `tools/generate-project.sh` and select
+  `-only-testing:PlozzHomeRemoteTests/PinnedRailBoundaryTests`.
 
 UI tests terminate their fixture application after each test. They do not access
 real accounts, servers, playlists, production preferences, or playback streams.

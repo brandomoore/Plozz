@@ -267,7 +267,7 @@ and the real pinned-edge callback changing UIKit focus.
 Input filtering is not enough to exclude native Up/Down focus moves. The pinned
 shell registers its observable `NavigationChromeModel` with the window:
 opening hides the rail immediately; return can draw the rail but disables every
-row, page button, and bumper through input release. Those visibility changes do
+row and page button through input release. Those visibility changes do
 not run a second chrome animation beneath the cinematic cover.
 Presented detail sessions also hold chrome ownership independently of delayed
 stack-depth reports, releasing it on dismissal/disappearance. A late appearance
@@ -276,6 +276,13 @@ resolved before focus restoration, and a rejected native focus request falls
 through to the explicit SwiftUI focus binding.
 `PinnedChromeTransitionHostedTests` queries the real rail's native focus targets,
 checks hiding through zero-depth reports, and covers rejected source-focus requests.
+
+Pinned rail ends use non-focusable layout spacing, not invisible focus bumpers.
+Up at Profile and Down at the last destination retain the actual item's focus;
+there is no deferred bounce/recenter or artificial held-focus styling.
+`PinnedRailBoundaryTests` drives repeated and held native remote input against
+short and long production rails, checks both ends, and verifies Right still
+returns to page content. It also captures the profile name after top-boundary input.
 
 Card focus has three independent options: System (native tvOS projection),
 Highlight (custom sheen/lean) and Outline (custom glass). Absent per-profile

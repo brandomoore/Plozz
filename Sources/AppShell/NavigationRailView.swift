@@ -58,7 +58,7 @@ enum NavigationRailMetrics {
     static func expandedContentVerticalPadding(safeAreaInset: CGFloat) -> CGFloat {
         expandedPanelLayoutInset
             + expandedPanelContentInset
-            - bumperHeight
+            - edgeSpacerHeight
             - itemVerticalPadding
             - safeAreaInset
     }
@@ -108,7 +108,7 @@ enum NavigationRailMetrics {
     /// and Settings up by the same amount. Only enough is needed for the focus
     /// engine to find one directly beyond the end row — it picks the nearest
     /// candidate in the direction of travel, and nothing else is closer.
-    static let bumperHeight: CGFloat = 10
+    static let edgeSpacerHeight: CGFloat = 10
     /// How far the destination list dissolves at its top and bottom edges. Roughly
     /// one row tall, so a row is fully gone by the time it reaches either edge.
     static let listEdgeFade: CGFloat = 44
@@ -164,9 +164,6 @@ struct NavigationRailView: View {
     @State private var pendingFocusRequest: Int?
     @State private var pendingFocusTarget: RailFocusTarget?
     @State private var focusRequestGeneration = 0
-    /// The last row that actually held focus, so an edge bumper can hand focus
-    /// straight back to it.
-    @State private var lastFocusedRow: RailFocusTarget?
     /// Makes every row unfocusable while focus is moving to the page. The rows stay
     /// unavailable until the next explicit request to open the rail, so a slow
     /// destination cannot let tvOS fall back into the menu.
@@ -246,21 +243,14 @@ struct NavigationRailView: View {
 
     var body: some View {
         return VStack(alignment: .leading, spacing: 0) {
-            // Invisible focus walls. Pressing Up from the top row (or Down from
-            // Settings) must do NOTHING — the rail is a list you leave sideways,
-            // not by falling out of either end. The focus engine will happily jump
-            // to a page card that is merely near, so the reliable block is to give
-            // it a nearer candidate inside the rail and hand focus straight back.
-            // The bumper draws nothing, so the bounce is invisible: the row you
-            // were on simply stays put.
-            edgeBumper(.topBumper)
+            edgeSpacing
 
             profileButton
                 .padding(.bottom, PlozzTheme.Spacing.large)
 
             destinationList
 
-            edgeBumper(.bottomBumper)
+            edgeSpacing
         }
         .padding(.vertical, animatedVerticalPadding)
         .padding(.leading, NavigationRailMetrics.leadingInset)
@@ -324,37 +314,13 @@ struct NavigationRailView: View {
         .onChange(of: focusReleaseToken) { _, _ in
             releaseFocusToPage()
         }
-        .onChange(of: focusedTarget) { _, target in
-            switch target {
-            case .topBumper, .bottomBumper:
-                returnFromBumper()
-            case .some(let row):
-                lastFocusedRow = row
-            case nil:
-                break
-            }
-        }
     }
 
-    /// A zero-chrome focus target at each end of the rail. It renders nothing, so
-    /// landing on it and bouncing away is invisible.
-    private func edgeBumper(_ target: RailFocusTarget) -> some View {
-        // A bare focusable, not a Button: on tvOS a Button paints the system focus
-        // platter behind its label and `.focusEffectDisabled()` does not fully
-        // remove it, which flashed a white slab over the rail as focus passed
-        // through. Same reason `CircularFocusTile` and the media cards avoid one.
+    private var edgeSpacing: some View {
         Color.clear
-            .frame(height: NavigationRailMetrics.bumperHeight)
+            .frame(height: NavigationRailMetrics.edgeSpacerHeight)
             .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            // Only a wall while focus is actually inside the rail — otherwise it
-            // would be one more thing competing to catch a Left press from the page.
-            // It also stands down while focus is being handed BACK to the page: the
-            // wall exists to stop focus falling out of the ENDS of the rail, not to
-            // stop it leaving sideways, and catching it here trapped the hand-off.
-            .focusable(hasFocus && !isReleasingFocus)
-            .focusEffectDisabled()
-            .focused($focusedTarget, equals: target)
+            .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
 
@@ -379,33 +345,6 @@ struct NavigationRailView: View {
         pendingFocusTarget = nil
         isReleasingFocus = true
         focusedTarget = nil
-    }
-
-    /// Whether `target` is the row an edge bumper is currently bouncing focus back
-    /// to, so it can keep its highlight for that one run-loop turn.
-    private func isBouncingOffBumper(_ target: RailFocusTarget) -> Bool {
-        guard focusedTarget == .topBumper || focusedTarget == .bottomBumper else {
-            return false
-        }
-        return (lastFocusedRow ?? .destination(selection)) == target
-    }
-
-    /// Hands focus back to the row the viewer was on, so an Up/Down press at
-    /// either end of the rail is a no-op rather than an exit.
-    ///
-    /// Deliberately no re-entrancy guard: the destination is never a bumper, so
-    /// this cannot recurse — and a guard that latched would leave focus parked on
-    /// an invisible row, which is the one outcome worse than the bounce itself.
-    /// The hand-back waits a run-loop turn because assigning `@FocusState` from
-    /// inside its own `onChange` is dropped (the same reason the reorder list
-    /// restores focus after layout).
-    private func returnFromBumper() {
-        // Never bounce while handing focus to the page. Focus passing through a
-        // bumper on its way OUT is the hand-off working; bouncing it back here is
-        // what made Right from Home appear to do nothing — focus left the row,
-        // landed on the wall, and was immediately returned to the rail.
-        guard !isReleasingFocus else { return }
-        adoptFocus(lastFocusedRow ?? .destination(selection))
     }
 
     /// The row's UIKit marker waits for its control to exist before handing off.
@@ -633,8 +572,7 @@ struct NavigationRailView: View {
             NavigationRailItemStyle(
                 expansionProgress: expansionProgress,
                 isSelected: selection == destination,
-                accent: palette.accent,
-                holdsFocusStyling: isBouncingOffBumper(.destination(destination))
+                accent: palette.accent
             )
         )
         .padding(.vertical, NavigationRailMetrics.itemVerticalPadding)
@@ -658,7 +596,7 @@ struct NavigationRailView: View {
         for target: RailFocusTarget,
         isSelected: Bool
     ) -> Color {
-        let focused = focusedTarget == target || isBouncingOffBumper(target)
+        let focused = focusedTarget == target
         if focused {
             return colorScheme == .dark ? .black : .white
         }
@@ -755,9 +693,6 @@ private struct ListEdgeFade: Equatable {
 private enum RailFocusTarget: Hashable {
     case profile
     case destination(NavigationRailDestination)
-    /// The invisible walls at each end that stop focus falling out of the rail.
-    case topBumper
-    case bottomBumper
 }
 
 /// Rail row chrome. Focus is the standard tvOS inverted card; the *selected*
@@ -767,20 +702,10 @@ private struct NavigationRailItemStyle: ButtonStyle {
     let expansionProgress: CGFloat
     let isSelected: Bool
     let accent: Color
-    /// Keeps the row drawn as focused while an edge bumper briefly holds focus.
-    ///
-    /// Pressing Down on the last row must do NOTHING. The block works by giving
-    /// the focus engine an invisible row to land on and handing focus straight
-    /// back — but that round trip takes a run-loop turn, during which this row is
-    /// genuinely unfocused and its highlight dropped. That flicker read as the row
-    /// being re-focused on every press. Holding the highlight makes the bounce
-    /// invisible, which is what "nothing happens" should look like.
-    var holdsFocusStyling: Bool = false
     @Environment(\.isFocused) private var isFocused
     @Environment(\.colorScheme) private var colorScheme
 
     func makeBody(configuration: Configuration) -> some View {
-        let isFocused = isFocused || holdsFocusStyling
         let invertedFill: Color = colorScheme == .dark ? .white : .black
         let invertedText: Color = colorScheme == .dark ? .black : .white
         let foreground: AnyShapeStyle = isFocused
