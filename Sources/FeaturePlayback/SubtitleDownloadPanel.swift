@@ -140,6 +140,97 @@ struct SubtitleDownloadScreen: View {
     }
 }
 
+#if DEBUG && os(tvOS)
+/// An opt-in visual fixture using the real search rows, without a player or server.
+@MainActor
+public struct SubtitleFileMatchPreview: View {
+    @State private var model = SubtitleFileMatchPreview.makeModel()
+    @State private var selectedExample: String?
+    @FocusState private var focus: PlayerControls.FocusSlot?
+    private let onClose: () -> Void
+
+    public init(onClose: @escaping () -> Void) {
+        self.onClose = onClose
+    }
+
+    public static func isRequested(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Bool {
+        environment["PLOZZ_SUBTITLE_FILE_MATCH_PREVIEW"] == "1"
+    }
+
+    static func makeModel() -> PlayerControlsModel {
+        let model = PlayerControlsModel()
+        model.subtitleDownload.state = .results([
+            RemoteSubtitle(
+                id: "preview-hash-match",
+                name: "Example.with.file.match.en.srt",
+                language: "eng",
+                isHashMatch: true
+            ),
+            RemoteSubtitle(
+                id: "preview-unconfirmed",
+                name: "Example.without.file.match.en.srt",
+                language: "eng"
+            )
+        ])
+        return model
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            SubtitleFileMatchPreviewHeader()
+            SubtitleDownloadScreen(
+                model: model,
+                actions: PlayerOptionsActions(downloadRemoteSubtitle: {
+                    selectedExample = $0.name
+                }),
+                focus: $focus
+            )
+            .padding(.vertical, 14)
+            .background(Color(white: 0.12), in: RoundedRectangle(cornerRadius: 32))
+            SubtitleFileMatchPreviewFooter(selectedExample: selectedExample, onClose: onClose)
+        }
+        .frame(width: 640)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .foregroundStyle(.white)
+        .background(Color.black.ignoresSafeArea())
+        .environment(\.colorScheme, .dark)
+        .defaultFocus($focus, .row(0))
+        .onExitCommand(perform: onClose)
+    }
+}
+
+private struct SubtitleFileMatchPreviewHeader: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(verbatim: "Subtitle badge preview")
+                .font(.title2.bold())
+            Text(verbatim: "Visual examples only, not matches from your server.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct SubtitleFileMatchPreviewFooter: View {
+    let selectedExample: String?
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Text(verbatim: selectedExample.map {
+                "Selected example: \($0)\nNothing was downloaded."
+            } ?? "Move between the rows to compare the badge with and without focus. Selecting an example will not download anything.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Done", action: onClose)
+        }
+    }
+}
+#endif
+
 /// The compact subtitle **timing** screen reached from the header Sync chip:
 /// nudge the primary subtitle earlier/later to line it up with the audio. A
 /// single − / value / + stepper in 50 ms steps (matching the Speed stepper's

@@ -62,6 +62,12 @@ Get more subtitles, keylessly, on both providers, and surface local sidecars.
   Missing or false flags, filenames, and Plex relevance scores do not earn it.
   The existing external-track badge remains independent; search ranking and
   automatic download selection are unchanged.
+  For a tvOS Debug visual check, launch with
+  `PLOZZ_SUBTITLE_FILE_MATCH_PREVIEW=1`. A labeled, server-free preview opens
+  immediately using the real search-row UI, with one synthetic matched example
+  and one unconfirmed example. Selecting either only shows local feedback;
+  nothing is downloaded. Done/Back opens the normal app. The preview is absent
+  from Release builds and stays off on ordinary launches.
 - ✅ **Automatic subtitle download** when a policy match is missing —
   `autoDownloadIfMissing` is now capability-gated (Plex included), applies the
   SDH/Forced preference, requires a genuine language match (no wrong-language

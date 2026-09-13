@@ -6,6 +6,48 @@ import XCTest
 
 @MainActor
 final class SubtitleFileMatchBadgeTests: XCTestCase {
+    #if DEBUG && os(tvOS)
+    func testPreviewRequiresExplicitLaunchOptIn() {
+        XCTAssertFalse(SubtitleFileMatchPreview.isRequested(environment: [:]))
+        XCTAssertFalse(SubtitleFileMatchPreview.isRequested(
+            environment: ["PLOZZ_SUBTITLE_FILE_MATCH_PREVIEW": "0"]
+        ))
+        XCTAssertFalse(SubtitleFileMatchPreview.isRequested(
+            environment: ["PLOZZ_SUBTITLE_FILE_MATCH_PREVIEW": "true"]
+        ))
+        XCTAssertTrue(SubtitleFileMatchPreview.isRequested(
+            environment: ["PLOZZ_SUBTITLE_FILE_MATCH_PREVIEW": "1"]
+        ))
+    }
+
+    func testPreviewUsesIsolatedExamplesWithoutServerSearch() throws {
+        let model = SubtitleFileMatchPreview.makeModel()
+        XCTAssertFalse(model.subtitleDownload.canSearch)
+        guard case .results(let examples) = model.subtitleDownload.state else {
+            return XCTFail("Expected the local visual fixture")
+        }
+        XCTAssertEqual(examples.map(\.id), ["preview-hash-match", "preview-unconfirmed"])
+        XCTAssertEqual(examples.map(\.isHashMatch), [true, false])
+        XCTAssertTrue(examples.allSatisfy { $0.providerName == nil })
+        XCTAssertFalse(model === SubtitleFileMatchPreview.makeModel())
+    }
+
+    func testPreviewRendersAtTVSize() throws {
+        let renderer = ImageRenderer(content:
+            SubtitleFileMatchPreview(onClose: {})
+                .frame(width: 1920, height: 1080)
+        )
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage)
+        XCTAssertEqual(image.width, 1920)
+        XCTAssertEqual(image.height, 1080)
+        let attachment = XCTAttachment(image: UIImage(cgImage: image))
+        attachment.name = "Subtitle file-match visual preview"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+    #endif
+
     func testOnlyConfirmedMatchesDrawABadgeInLightDarkAndFocusedRows() throws {
         for scheme in [ColorScheme.light, .dark] {
             for focused in [false, true] {
