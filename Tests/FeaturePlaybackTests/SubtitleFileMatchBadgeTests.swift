@@ -48,6 +48,36 @@ final class SubtitleFileMatchBadgeTests: XCTestCase {
     }
     #endif
 
+    #if os(tvOS)
+    func testTVBadgeUsesLargerTypeAndCompactIconSpacing() throws {
+        let reference = HStack(spacing: 4) {
+            Image(systemName: "checkmark.seal.fill")
+            Text(verbatim: "File match")
+        }
+        .font(.system(size: 14, weight: .heavy))
+        .tracking(0.4)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 2)
+        let referenceRenderer = ImageRenderer(content: reference)
+        referenceRenderer.scale = 1
+        let expected = try XCTUnwrap(referenceRenderer.cgImage)
+
+        for focused in [false, true] {
+            let renderer = ImageRenderer(content: SubtitleFileMatchBadge(isHashMatch: true)
+                .labelStyle(.titleAndIcon)
+                .font(.body)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.playerMenuRowIsFocused, focused)
+            )
+            renderer.scale = 1
+            let image = try XCTUnwrap(renderer.cgImage)
+            XCTAssertEqual(image.width, expected.width, "Do not inherit the standard Label icon gutter")
+            XCTAssertEqual(image.height, expected.height)
+            XCTAssertGreaterThanOrEqual(image.height, 21, "Keep the TV badge readable beside its metadata")
+        }
+    }
+    #endif
+
     func testOnlyConfirmedMatchesDrawABadgeInLightDarkAndFocusedRows() throws {
         for scheme in [ColorScheme.light, .dark] {
             for focused in [false, true] {

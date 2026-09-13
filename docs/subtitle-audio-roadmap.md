@@ -62,6 +62,8 @@ Get more subtitles, keylessly, on both providers, and surface local sidecars.
   Missing or false flags, filenames, and Plex relevance scores do not earn it.
   The existing external-track badge remains independent; search ranking and
   automatic download selection are unchanged.
+  On tvOS, the file-match badge uses larger type and compact icon spacing for
+  readability beside the search metadata; External and iOS styling are unchanged.
   For a tvOS Debug visual check, launch with
   `PLOZZ_SUBTITLE_FILE_MATCH_PREVIEW=1`. A labeled, server-free preview opens
   immediately using the real search-row UI, with one synthetic matched example

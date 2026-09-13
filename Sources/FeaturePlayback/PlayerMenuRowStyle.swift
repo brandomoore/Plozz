@@ -116,6 +116,12 @@ public struct SubtitleFileMatchBadge: View {
     private let isHashMatch: Bool
     @Environment(\.playerMenuRowIsFocused) private var focused
 
+    #if os(tvOS)
+    private static let fontSize: CGFloat = 14
+    #else
+    private static let fontSize: CGFloat = 11
+    #endif
+
     public init(isHashMatch: Bool) {
         self.isHashMatch = isHashMatch
     }
@@ -128,8 +134,12 @@ public struct SubtitleFileMatchBadge: View {
             } icon: {
                 Image(systemName: "checkmark.seal.fill")
             }
+            #if os(tvOS)
+            .labelStyle(CompactSubtitleBadgeLabelStyle())
+            #endif
             .modifier(SubtitleBadgeStyle(
-                fill: focused ? Color.black.opacity(0.62) : Color.primary.opacity(0.6)
+                fill: focused ? Color.black.opacity(0.62) : Color.primary.opacity(0.6),
+                fontSize: Self.fontSize
             ))
             .fixedSize()
             .accessibilityLabel(Text(
@@ -140,12 +150,24 @@ public struct SubtitleFileMatchBadge: View {
     }
 }
 
+#if os(tvOS)
+private struct CompactSubtitleBadgeLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 4) {
+            configuration.icon
+            configuration.title
+        }
+    }
+}
+#endif
+
 private struct SubtitleBadgeStyle: ViewModifier {
     let fill: Color
+    var fontSize: CGFloat = 11
 
     func body(content: Content) -> some View {
         content
-            .font(.system(size: 11, weight: .heavy))
+            .font(.system(size: fontSize, weight: .heavy))
             .tracking(0.4)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
