@@ -140,16 +140,11 @@ struct AppearanceDetailView: View {
                 CompactNavigationPicker(selection: $navigation.style)
 
                 #if os(tvOS)
-                SettingsDetailGroup(
-                    title: "Leaving Plozz",
-                    description: "The Back button won't close the app."
-                ) {
-                    Toggle(
-                        "Prevent Accidental Exit",
-                        isOn: $navigation.preventsAccidentalExit
-                    )
-                    .toggleStyle(SettingsSwitchToggleStyle())
-                }
+                Toggle(
+                    "Prevent Accidental Exit",
+                    isOn: $navigation.preventsAccidentalExit
+                )
+                .toggleStyle(SettingsSwitchToggleStyle())
                 #endif
 
                 SettingsDetailGroup(
