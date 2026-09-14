@@ -263,6 +263,10 @@ Key reading tips:
   the content actually depicts, not a requested identity that still shows old
   content. Older/cancelled callbacks must not release a newer request. Do not
   replace this with an immediate focus clear or a fixed loading delay.
+- **Native Sidebar needs its own content gate.** `NativeSidebarFocusDestination`
+  excludes inactive and not-yet-presented tab content without replacing native
+  chrome. Final focus alone is not sufficient evidence: check the whole handoff
+  and keep incoming/outgoing diagnostic regions distinct when tabs share a host.
 - **Avoid false diagnostics.** Unhosted package tests have no window scene/focus
   system; use them for policy/geometry, not end-to-end focus proof.
   **`UIFocusDebugger` is LLDB-only:** calling it from app code throws

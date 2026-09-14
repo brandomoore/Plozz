@@ -47,6 +47,7 @@ struct NavigationRailShell<Content: View>: View {
     @State private var isOpeningNavigation = false
     @State private var hasEnteredSearchContent = false
     @State private var destinationFocus = NavigationDestinationFocusHandoff()
+    @State private var contentFocusRequest: UInt64?
 
     var body: some View {
         let hidden = chrome.isChromeHidden
@@ -59,6 +60,11 @@ struct NavigationRailShell<Content: View>: View {
         )
         return ZStack(alignment: .leading) {
             content
+                .background {
+                    NavigationContentFocusRequester(
+                        request: contentFocusRequest, onCompleted: contentFocusCompleted
+                    )
+                }
                 .background {
                     NavigationDestinationPresentationAnchor(
                         destination: contentDestination,
@@ -158,6 +164,7 @@ struct NavigationRailShell<Content: View>: View {
                         isExpandedOutward: $railExpanded,
                         onOpenProfileSwitcher: {
                             destinationFocus.cancel()
+                            contentFocusRequest = nil
                             onOpenProfileSwitcher()
                         },
                         onSelectDestination: selectDestination,
@@ -211,6 +218,7 @@ struct NavigationRailShell<Content: View>: View {
             // without this the rail would stay hidden after leaving a detail page
             // by switching destinations rather than by pressing Back.
             if previous != destination {
+                contentFocusRequest = nil
                 if let request = destinationFocus.request, request.destination != destination {
                     destinationFocus.cancel()
                 }
@@ -220,8 +228,9 @@ struct NavigationRailShell<Content: View>: View {
                 pinnedSidebarInteraction.setSearchResultsFocused(false)
             }
         }
-        .onChange(of: railExpanded) { _, _ in
+        .onChange(of: railExpanded) { _, expanded in
             isOpeningNavigation = false
+            if !expanded { contentFocusRequest = nil }
         }
         .onChange(of: destinationFocus.request) { _, request in
             if let request, request.destination != selection {
@@ -230,6 +239,7 @@ struct NavigationRailShell<Content: View>: View {
         }
         .onChange(of: chrome.transitionSuppressesFocus) { _, suppressed in
             if suppressed {
+                contentFocusRequest = nil
                 destinationFocus.cancel()
                 isOpeningNavigation = false
                 railExpanded = false
@@ -237,6 +247,7 @@ struct NavigationRailShell<Content: View>: View {
         }
         .onChange(of: hidden) { _, hidden in
             if hidden {
+                contentFocusRequest = nil
                 destinationFocus.cancel()
                 isOpeningNavigation = false
                 railExpanded = false
@@ -245,7 +256,10 @@ struct NavigationRailShell<Content: View>: View {
         .onChange(of: pinnedSidebarInteraction.openRequest) { _, _ in
             requestNavigationFocus()
         }
-        .onDisappear { destinationFocus.cancel() }
+        .onDisappear {
+            destinationFocus.cancel()
+            contentFocusRequest = nil
+        }
     }
 
     private func selectDestination(_ destination: NavigationRailDestination) {
@@ -261,17 +275,26 @@ struct NavigationRailShell<Content: View>: View {
         guard destinationFocus.complete(request) else { return }
         guard selection == request.destination,
               !chrome.transitionSuppressesFocus, !chrome.isChromeHidden else { return }
+        contentFocusRequest = request.generation
+    }
+
+    private func contentFocusCompleted(_ request: UInt64, didFocus: Bool) {
+        guard contentFocusRequest == request else { return }
+        contentFocusRequest = nil
+        // Keep the real rail row eligible until the content request has run.
+        // Removing it first lets spatial focus flash on a later card.
         railReturnToken &+= 1
     }
 
     private func returnFocusToPage() {
-        guard !destinationFocus.isWaiting else { return }
+        guard !destinationFocus.isWaiting, contentFocusRequest == nil else { return }
         railReturnToken &+= 1
     }
 
     private func requestNavigationFocus() {
         guard !DetailTransitionNavigation.isNavigationInputSuppressed,
               !chrome.isChromeHidden, !isOpeningNavigation, !railExpanded else { return }
+        contentFocusRequest = nil
         hasEnteredSearchContent = false
         isOpeningNavigation = true
         focusRequestToken &+= 1

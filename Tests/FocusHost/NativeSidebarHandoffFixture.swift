@@ -3,19 +3,24 @@ import CoreUI
 import Observation
 import SwiftUI
 import UIKit
+@testable import AppShell
 
 struct NativeSidebarHandoffFixture: View {
     @State private var model = NativeSidebarHandoffModel()
 
     var body: some View {
-        TabView(selection: $model.selection) {
+        TabView(selection: Binding(get: { model.selection }, set: { model.select($0) })) {
             Tab("Home", systemImage: "house", value: NavigationRailDestination.home) {
-                NativeSidebarHandoffPage(destination: .home, model: model)
-                    .tvNavigationExitProtectionContent()
+                NativeSidebarFocusDestination(
+                    destination: .home, selection: model.selection, handoff: model.handoff,
+                    content: NativeSidebarHandoffPage(destination: .home, model: model)
+                ).tvNavigationExitProtectionContent()
             }
             Tab("Settings", systemImage: "gearshape", value: NavigationRailDestination.settings) {
-                NativeSidebarHandoffPage(destination: .settings, model: model)
-                    .tvNavigationExitProtectionContent()
+                NativeSidebarFocusDestination(
+                    destination: .settings, selection: model.selection, handoff: model.handoff,
+                    content: NativeSidebarHandoffPage(destination: .settings, model: model)
+                ).tvNavigationExitProtectionContent()
             }
         }
         .tabViewStyle(.sidebarAdaptable)
@@ -23,6 +28,11 @@ struct NativeSidebarHandoffFixture: View {
         .onPlayPauseCommand {
             model.expected = model.selection == .home ? .settings : .home
             model.prematureFocusCount = 0
+            model.unpresentedFocusCount = 0
+        }
+        .overlay(alignment: .bottomTrailing) {
+            Text(model.handoff.isWaiting ? "waiting" : "ready")
+                .accessibilityIdentifier("native-handoff-status")
         }
     }
 }
@@ -33,9 +43,17 @@ private final class NativeSidebarHandoffModel {
     var selection = NavigationRailDestination.home
     var expected: NavigationRailDestination?
     var prematureFocusCount = 0
+    var unpresentedFocusCount = 0
+    let handoff = NavigationDestinationFocusHandoff()
+
+    func select(_ destination: NavigationRailDestination) {
+        if destination != selection { handoff.begin(destination) }
+        selection = destination
+    }
 
     func focused(_ destination: NavigationRailDestination) {
         if let expected, destination != expected { prematureFocusCount += 1 }
+        if handoff.isWaiting { unpresentedFocusCount += 1 }
     }
 }
 
@@ -49,6 +67,8 @@ private struct NativeSidebarHandoffPage: View {
                 .frame(width: 500, height: 100)
             Text("\(model.prematureFocusCount)")
                 .accessibilityIdentifier("native-premature-focus-\(destination.storageValue)")
+            Text("\(model.unpresentedFocusCount)")
+                .accessibilityIdentifier("native-unpresented-focus-\(destination.storageValue)")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(destination == .home ? Color.black : Color.blue.opacity(0.2))

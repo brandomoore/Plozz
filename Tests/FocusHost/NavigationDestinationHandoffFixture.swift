@@ -37,10 +37,12 @@ private final class NavigationDestinationHandoffFixtureModel {
     var requested = NavigationRailDestination.home
     var presented = NavigationRailDestination.home
     var prematureFocusCount = 0
+    var laterCardFocusCount = 0
     private let holdsPages = ProcessInfo.processInfo.arguments.contains("--manual-navigation-handoff")
 
     func select(_ destination: NavigationRailDestination) {
         prematureFocusCount = 0
+        laterCardFocusCount = 0
         requested = destination
     }
 
@@ -71,12 +73,38 @@ private struct NavigationHandoffFixturePage: View {
 
     var body: some View {
         VStack(spacing: 40) {
-            NavigationHandoffFixtureButton(destination: model.presented, onFocus: model.focused)
-                .frame(width: 500, height: 90)
+            if ProcessInfo.processInfo.arguments.contains("--navigation-card-row") {
+                HStack(spacing: 40) {
+                    NavigationHandoffFixtureButton(destination: model.presented, onFocus: model.focused)
+                        .frame(width: 240, height: 160)
+                    NavigationHandoffFixtureButton(
+                        destination: model.presented, suffix: "-second", onFocus: {
+                            model.focused($0)
+                            model.laterCardFocusCount += 1
+                        }
+                    )
+                    .frame(width: 240, height: 160)
+                    NavigationHandoffFixtureButton(
+                        destination: model.presented, suffix: "-third", onFocus: {
+                            model.focused($0)
+                            model.laterCardFocusCount += 1
+                        }
+                    )
+                    .frame(width: 240, height: 160)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 80)
                 .id(model.presented)
+            } else {
+                NavigationHandoffFixtureButton(destination: model.presented, onFocus: model.focused)
+                    .frame(width: 500, height: 90)
+                    .id(model.presented)
+            }
             Text("Ready \(model.presented.storageValue)")
             Text("\(model.prematureFocusCount)")
                 .accessibilityIdentifier("handoff-premature-focus")
+            Text("\(model.laterCardFocusCount)")
+                .accessibilityIdentifier("handoff-later-card-focus")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.black)
@@ -85,12 +113,13 @@ private struct NavigationHandoffFixturePage: View {
 
 private struct NavigationHandoffFixtureButton: UIViewRepresentable {
     let destination: NavigationRailDestination
+    var suffix = ""
     let onFocus: (NavigationRailDestination) -> Void
 
     func makeUIView(context: Context) -> Button {
         let button = Button(type: .system)
         button.setTitle("Page \(destination.storageValue)", for: .normal)
-        button.accessibilityIdentifier = "handoff-page-\(destination.storageValue)"
+        button.accessibilityIdentifier = "handoff-page-\(destination.storageValue)\(suffix)"
         return button
     }
 

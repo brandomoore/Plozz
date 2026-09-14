@@ -13,6 +13,7 @@ struct ProductionHomeFixture: View {
     @State private var profile = Profile(name: "Viewer")
     @State private var expectedNativeDestination: NavigationRailDestination?
     @State private var prematureNativeHomeFocusCount = 0
+    @State private var nativeSidebarFocus = NavigationDestinationFocusHandoff()
 
     private var isPinned: Bool { ProcessInfo.processInfo.arguments.contains("--pinned-home") }
     private var isNativeSidebar: Bool {
@@ -32,9 +33,17 @@ struct ProductionHomeFixture: View {
                             contentDestination: .home
                         )
                     } else if isNativeSidebar {
-                        TabView(selection: $selection) {
+                        TabView(selection: Binding(
+                            get: { selection },
+                            set: { destination in
+                                if destination != selection { nativeSidebarFocus.begin(destination) }
+                                selection = destination
+                            }
+                        )) {
                             Tab("Home", systemImage: "house", value: NavigationRailDestination.home) {
-                                AnyView(ProductionHomeContent(
+                                AnyView(NativeSidebarFocusDestination(
+                                    destination: .home, selection: selection, handoff: nativeSidebarFocus,
+                                    content: ProductionHomeContent(
                                     fixture: fixture, path: $path, isPinned: false,
                                     isActive: selection == .home
                                 )
@@ -50,14 +59,16 @@ struct ProductionHomeFixture: View {
                                         .frame(height: geometry.size.height / 2)
                                         .frame(maxHeight: .infinity, alignment: .bottom)
                                     }
-                                }
+                                })
                                 .tvNavigationExitProtectionContent())
                             }
                             Tab("Settings", systemImage: "gearshape", value: NavigationRailDestination.settings) {
-                                AnyView(Button("Native settings content") {}
+                                AnyView(NativeSidebarFocusDestination(
+                                    destination: .settings, selection: selection, handoff: nativeSidebarFocus,
+                                    content: Button("Native settings content") {}
                                     .accessibilityIdentifier("native-production-settings")
                                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                                    .tvNavigationExitProtectionContent())
+                                ).tvNavigationExitProtectionContent())
                             }
                         }
                         .tabViewStyle(.sidebarAdaptable)

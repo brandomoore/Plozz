@@ -334,6 +334,11 @@ It rejects any focus visit to the outgoing page, covers reselecting the current
 page, and holds readiness explicitly while replacing a pending destination or
 pressing Right. The rail remains usable until the latest matching page is
 presented; no invisible focus target or fixed navigation delay is introduced.
+New-page completion requests the first visible content control while retaining
+the focused navigation row until that request runs, instead of dropping focus
+into the expanded rail's nearest neighbor. A multi-card fixture checks that the first card,
+not the second card beside the expanded menu, receives entry focus. Right-return
+to the already-selected page retains its existing behavior.
 
 `NativeSidebarHandoffTests` distinguishes Select from Right using stock native
 tabs and the production Home hero. Select must enter the chosen destination
@@ -343,6 +348,15 @@ that return also acts as a positive control for the recorder. The incoming test
 control deliberately occupies a disjoint region, because retained tab content
 can share a hosting ancestor. These focus checks do not rule out a transient
 visual highlight or establish physical Apple TV behavior.
+
+Native Sidebar wraps every content destination in `NativeSidebarFocusDestination`.
+Selection begins a generation-checked handoff before the binding changes; inactive
+and not-yet-presented pages cannot accept focus. The shared presentation anchor
+waits for `viewDidAppear` and a render boundary before enabling the selected page.
+Native tab transitions and sidebar controls remain system-owned. Revisited tabs
+use the same gate; reselecting the current tab does not wait for another appearance.
+Hosted tests hold destination mounting while checking outgoing focus eligibility,
+and remote tests reject focus arriving before the handoff completes.
 
 Card focus has three independent options: System (native tvOS projection),
 Highlight (custom sheen/lean) and Outline (custom glass). Absent per-profile

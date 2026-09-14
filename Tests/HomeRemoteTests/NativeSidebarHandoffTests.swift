@@ -78,6 +78,26 @@ final class NativeSidebarHandoffTests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 10), app.debugDescription)
         assertFocused(settings, app: app)
         XCTAssertEqual(app.staticTexts["native-premature-focus-settings"].label, "0", app.debugDescription)
+        XCTAssertEqual(app.staticTexts["native-unpresented-focus-settings"].label, "0",
+                       "Destination focus must wait for appearance and a rendered frame.")
+        XCTAssertEqual(app.staticTexts["native-handoff-status"].label, "ready")
+
+        XCUIRemote.shared.press(.left)
+        assertFocused(app.buttons["Settings"], app: app)
+        XCUIRemote.shared.press(.playPause)
+        XCUIRemote.shared.press(.up)
+        assertFocused(app.buttons["Home"], app: app)
+        XCUIRemote.shared.press(.select)
+        assertFocused(home, app: app)
+        XCTAssertEqual(app.staticTexts["native-premature-focus-home"].label, "0")
+        XCTAssertEqual(app.staticTexts["native-unpresented-focus-home"].label, "0")
+        XCTAssertEqual(app.staticTexts["native-handoff-status"].label, "ready")
+
+        XCUIRemote.shared.press(.left)
+        assertFocused(app.buttons["Home"], app: app)
+        XCUIRemote.shared.press(.select)
+        assertFocused(home, app: app)
+        XCTAssertEqual(app.staticTexts["native-handoff-status"].label, "ready")
     }
 
     private func assertFocused(

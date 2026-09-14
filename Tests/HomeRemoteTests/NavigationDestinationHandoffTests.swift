@@ -2,6 +2,27 @@ import XCTest
 
 @MainActor
 final class NavigationDestinationHandoffTests: XCTestCase {
+    func testNewPageStartsAtFirstCardRatherThanTheClosestCardToExpandedNavigation() {
+        let app = launchFixture(arguments: ["--navigation-card-row"])
+        defer { app.terminate() }
+        let first = app.buttons["handoff-page-home"]
+        XCTAssertTrue(first.waitForExistence(timeout: 15))
+        assertFocused(first)
+        XCUIRemote.shared.press(.left)
+        assertFocused(app.buttons["Home"])
+        XCUIRemote.shared.press(.down)
+        XCUIRemote.shared.press(.down)
+        assertFocused(app.buttons["Settings"])
+        XCUIRemote.shared.press(.select)
+        let destination = app.buttons["handoff-page-settings"]
+        XCTAssertTrue(destination.waitForExistence(timeout: 10))
+        assertFocused(destination)
+        XCTAssertFalse(app.buttons["handoff-page-settings-second"].hasFocus)
+        XCTAssertEqual(app.staticTexts["handoff-later-card-focus"].label, "0",
+                       "Focus must not visit a later card before settling on the first.")
+        XCTAssertEqual(app.staticTexts["handoff-premature-focus"].label, "0")
+    }
+
     func testDestinationSelectionDoesNotFocusTheOutgoingPageWhileLoading() {
         let app = launchFixture()
         defer { app.terminate() }
