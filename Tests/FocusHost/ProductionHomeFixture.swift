@@ -11,8 +11,13 @@ struct ProductionHomeFixture: View {
     @State private var path: [MediaItem] = []
     @State private var selection = NavigationRailDestination.home
     @State private var profile = Profile(name: "Viewer")
+    @State private var expectedNativeDestination: NavigationRailDestination?
+    @State private var prematureNativeHomeFocusCount = 0
 
     private var isPinned: Bool { ProcessInfo.processInfo.arguments.contains("--pinned-home") }
+    private var isNativeSidebar: Bool {
+        ProcessInfo.processInfo.arguments.contains("--native-sidebar-home")
+    }
 
     var body: some View {
         Group {
@@ -26,6 +31,50 @@ struct ProductionHomeFixture: View {
                             content: ProductionHomeContent(fixture: fixture, path: $path, isPinned: true),
                             contentDestination: .home
                         )
+                    } else if isNativeSidebar {
+                        TabView(selection: $selection) {
+                            Tab("Home", systemImage: "house", value: NavigationRailDestination.home) {
+                                AnyView(ProductionHomeContent(
+                                    fixture: fixture, path: $path, isPinned: false,
+                                    isActive: selection == .home
+                                )
+                                .background {
+                                    // Native tabs can share a hosting ancestor. Keep the
+                                    // measured hero region disjoint from Settings' target.
+                                    GeometryReader { geometry in
+                                        NativeFocusRegionObserver {
+                                            if expectedNativeDestination == .settings {
+                                                prematureNativeHomeFocusCount += 1
+                                            }
+                                        }
+                                        .frame(height: geometry.size.height / 2)
+                                        .frame(maxHeight: .infinity, alignment: .bottom)
+                                    }
+                                }
+                                .tvNavigationExitProtectionContent())
+                            }
+                            Tab("Settings", systemImage: "gearshape", value: NavigationRailDestination.settings) {
+                                AnyView(Button("Native settings content") {}
+                                    .accessibilityIdentifier("native-production-settings")
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                                    .tvNavigationExitProtectionContent())
+                            }
+                        }
+                        .tabViewStyle(.sidebarAdaptable)
+                        .tvNavigationExitProtection(isEnabled: true)
+                        .onPlayPauseCommand {
+                            expectedNativeDestination = .settings
+                            prematureNativeHomeFocusCount = 0
+                        }
+                        .overlay(alignment: .bottomTrailing) {
+                            VStack {
+                                Text(expectedNativeDestination?.storageValue ?? "idle")
+                                    .accessibilityIdentifier("native-production-armed")
+                                Text("\(prematureNativeHomeFocusCount)")
+                                    .accessibilityIdentifier("native-production-premature-focus")
+                            }
+                            .allowsHitTesting(false)
+                        }
                     } else {
                         ProductionHomeContent(fixture: fixture, path: $path, isPinned: false)
                     }
@@ -52,6 +101,7 @@ private struct ProductionHomeContent: View {
     let fixture: ProductionHomeState
     @Binding var path: [MediaItem]
     let isPinned: Bool
+    var isActive = true
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -61,7 +111,7 @@ private struct ProductionHomeContent: View {
                 heroSettings: fixture.heroSettings,
                 heroBackground: fixture.background,
                 heroTrailerController: fixture.trailer,
-                heroIsFrontmost: path.isEmpty,
+                heroIsFrontmost: isActive && path.isEmpty,
                 heroRuntime: fixture.runtime,
                 heroArtworkProvider: { $0.backdropURL },
                 heroArtworkValidator: { _ in true },

@@ -335,6 +335,15 @@ page, and holds readiness explicitly while replacing a pending destination or
 pressing Right. The rail remains usable until the latest matching page is
 presented; no invisible focus target or fixed navigation delay is introduced.
 
+`NativeSidebarHandoffTests` distinguishes Select from Right using stock native
+tabs and the production Home hero. Select must enter the chosen destination
+without visiting Home's measured focus region. Right closes native navigation
+and returns to the current page without selecting a different highlighted tab;
+that return also acts as a positive control for the recorder. The incoming test
+control deliberately occupies a disjoint region, because retained tab content
+can share a hosting ancestor. These focus checks do not rule out a transient
+visual highlight or establish physical Apple TV behavior.
+
 Card focus has three independent options: System (native tvOS projection),
 Highlight (custom sheen/lean) and Outline (custom glass). Absent per-profile
 preferences use System; saved `highlight` and `outlined` values are not migrated.
