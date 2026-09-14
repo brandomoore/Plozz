@@ -18,6 +18,16 @@ public struct DetailEntranceTiming: Equatable, Sendable {
     public init() {}
 }
 
+enum DetailEntranceMotion {
+    static let pickup = UnitPoint(x: 0.22, y: 0.64)
+    static let landing = UnitPoint(x: 0.30, y: 1)
+    static let foregroundTravel: CGFloat = 10
+
+    static func reveal(duration: TimeInterval) -> Animation {
+        .timingCurve(pickup.x, pickup.y, landing.x, landing.y, duration: duration)
+    }
+}
+
 @MainActor
 public func withCinematicDetailNavigation(for item: MediaItem, _ navigate: () -> Void) {
     #if os(tvOS)
@@ -155,7 +165,7 @@ public final class DetailTransitionSourceReference {
         }
         let frame: CGRect
         if nativeArtworkView != nil {
-            guard let projected = NativeFocusProjection.frame(of: view.layer, in: window.layer) else {
+            guard let projected = NativeFocusProjection.artworkFrame(of: view, in: window) else {
                 PlozzLog.app.debug("Native artwork projection is unavailable for the detail transition")
                 return nil
             }
@@ -1174,9 +1184,13 @@ private struct TVDetailStageReveal: ViewModifier {
             || (session.map { $0.stage >= stage && !$0.isClosing } ?? true)
         let duration = session?.isClosing == true ? 0.12 : (session?.timing.reveal ?? 0)
         content
-            .offset(y: visible ? 0 : 14)
+            .offset(y: visible ? 0 : DetailEntranceMotion.foregroundTravel)
             .mask { Rectangle().padding(-600).opacity(visible ? 1 : 0) }
-            .animation(reduceMotion ? nil : .easeOut(duration: duration), value: visible)
+            .animation(
+                reduceMotion ? nil : session?.isClosing == true
+                    ? .easeOut(duration: duration) : DetailEntranceMotion.reveal(duration: duration),
+                value: visible
+            )
     }
 }
 
@@ -1317,16 +1331,24 @@ final class DetailTransitionOverlay: UIView {
 
     func animateOpening(duration: TimeInterval, completion: @escaping () -> Void) -> UIViewPropertyAnimator {
         layoutIfNeeded()
-        let animation = UIViewPropertyAnimator(duration: duration, curve: .easeInOut)
+        let animation = UIViewPropertyAnimator(
+            duration: duration,
+            timingParameters: UICubicTimingParameters(
+                controlPoint1: CGPoint(x: DetailEntranceMotion.pickup.x, y: DetailEntranceMotion.pickup.y),
+                controlPoint2: CGPoint(x: DetailEntranceMotion.landing.x, y: DetailEntranceMotion.landing.y)
+            )
+        )
         animation.addAnimations {
             self.cardContainer.frame = self.bounds
             self.cardContainer.layer.cornerRadius = 0
-        }
-        UIView.animateKeyframes(withDuration: duration, delay: 0, options: [.calculationModeLinear]) {
-            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.3) {
-                self.card.alpha = 0
-                self.screen.alpha = 0
-                self.destination.alpha = 1
+            // The blend shares the zoom's clock and cancellation instead of
+            // continuing as a separate linear animation during an early Back.
+            UIView.animateKeyframes(withDuration: duration, delay: 0, options: [.calculationModeLinear]) {
+                UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.3) {
+                    self.card.alpha = 0
+                    self.screen.alpha = 0
+                    self.destination.alpha = 1
+                }
             }
         }
         animation.addCompletion { position in

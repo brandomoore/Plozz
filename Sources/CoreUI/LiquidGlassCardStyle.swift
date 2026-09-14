@@ -290,10 +290,17 @@ public struct PlozzFocusableCardModifier: ViewModifier {
         self.variant = variant
     }
 
+    private var focusPadding: CGFloat {
+        switch variant {
+        case .filled: 0
+        case .borderless(let padding): padding
+        }
+    }
+
     public func body(content: Content) -> some View {
         #if os(tvOS)
         if focusStyle.usesSystemEffect {
-            NativeTVCard(content: content, focus: $focused, isEnabled: true, action: {})
+            NativeTVCard(content: content.padding(focusPadding), focus: $focused, isEnabled: true, action: {})
                 .focused($focused.focusState)
                 .accessibilityRemoveTraits(.isButton)
         } else {
@@ -313,10 +320,6 @@ public struct PlozzFocusableCardModifier: ViewModifier {
 
     @ViewBuilder
     private var surface: some View {
-        let focusPadding = switch variant {
-        case .filled: CGFloat.zero
-        case .borderless(let padding): padding
-        }
         let surfaceCorner = cornerRadius
         let shape = RoundedRectangle(cornerRadius: surfaceCorner, style: .continuous)
 

@@ -8,6 +8,49 @@ import XCTest
 
 @MainActor
 final class NativeFocusRequestHostedTests: XCTestCase {
+    func testNativeCardVisibleSurfaceFillsItsSwiftUILayoutSlot() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        func findCard(in view: UIView) -> TVCardView? {
+            if let card = view as? TVCardView { return card }
+            return view.subviews.lazy.compactMap { findCard(in: $0) }.first
+        }
+        let card = try XCTUnwrap(findCard(in: fixture.window))
+        XCTAssertFalse(card.isFocused)
+        let slot = try XCTUnwrap(card.superview)
+        let expected = slot.convert(slot.bounds, to: fixture.window)
+        let visible = card.contentView.convert(card.contentView.bounds, to: fixture.window)
+        XCTAssertEqual(visible.minX, expected.minX, accuracy: 0.5)
+        XCTAssertEqual(visible.minY, expected.minY, accuracy: 0.5)
+        XCTAssertEqual(visible.width, expected.width, accuracy: 0.5)
+        XCTAssertEqual(visible.height, expected.height, accuracy: 0.5)
+    }
+
+    func testNativeCaptionSpacingSurvivesFocusWithoutChangingTheLayoutSlot() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let poster = try XCTUnwrap(nativePoster(in: fixture.window))
+        let title = try XCTUnwrap(poster.footerView?.titleLabel)
+        let restingSize = poster.intrinsicContentSize
+        func gap() throws -> CGFloat {
+            let imageFrame = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.imageView, in: fixture.window))
+            let titleFrame = try XCTUnwrap(NativeFocusProjection.frame(of: title.layer, in: fixture.window.layer))
+            return titleFrame.minY - imageFrame.maxY
+        }
+        XCTAssertEqual(poster.contentViewInsets.bottom, -(18 + max(0, -poster.focusSizeIncrease.bottom)))
+        XCTAssertGreaterThanOrEqual(try gap(), 17)
+        fixture.model.cardFocus?.requestFocus(animated: false)
+        try await waitUntil { fixture.model.cardFocused }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertGreaterThanOrEqual(try gap(), 17)
+        XCTAssertEqual(poster.intrinsicContentSize, restingSize)
+    }
+
+    private func nativePoster(in view: UIView) -> TVPosterView? {
+        if let poster = view as? TVPosterView { return poster }
+        return view.subviews.lazy.compactMap { self.nativePoster(in: $0) }.first
+    }
+
     func testRepeatedNativeRequestsDoNotRequireABooleanReset() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -136,6 +179,7 @@ private struct NativeFocusRequestView: View {
                 NativeTVPoster(
                     image: nil, treatment: .original, aspectRatio: 2,
                     fallbackWidth: 400, title: .content("Target poster"), subtitle: nil,
+                    captionSpacing: 18,
                     overlay: Color.clear, focus: $cardFocused, action: {}
                 )
                     .frame(width: 400, height: 250)

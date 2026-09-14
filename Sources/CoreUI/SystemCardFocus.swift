@@ -190,8 +190,25 @@ import UIKit
 /// Geometry only: retain Z until ancestor perspective is applied when capturing
 /// a native focused image for the separate detail-page transition.
 enum NativeFocusProjection {
-    static func frame(of layer: CALayer, in ancestor: CALayer) -> CGRect? {
-        let bounds = (layer.presentation() ?? layer).bounds
+    static func artworkFrame(of view: UIView, in window: UIWindow) -> CGRect? {
+        var bounds: CGRect?
+        if let image = view as? UIImageView, image.adjustsImageWhenAncestorFocused {
+            var ancestor: UIView? = image
+            while let current = ancestor {
+                if current.isFocused {
+                    // UIImageView's native focus rendering need not change its
+                    // layer transform. The public guide describes the painted image.
+                    bounds = image.focusedFrameGuide.layoutFrame
+                    break
+                }
+                ancestor = current.superview
+            }
+        }
+        return frame(of: view.layer, in: window.layer, bounds: bounds)
+    }
+
+    static func frame(of layer: CALayer, in ancestor: CALayer, bounds: CGRect? = nil) -> CGRect? {
+        let bounds = bounds ?? (layer.presentation() ?? layer).bounds
         guard !bounds.isEmpty else { return nil }
         var points = [
             Point(x: bounds.minX, y: bounds.minY), Point(x: bounds.maxX, y: bounds.minY),

@@ -466,7 +466,10 @@ struct NavigationRailView: View {
             item(.watchlist, symbol: "bookmark.fill", label: Text(Self.watchlistTitle))
         #if DEBUG
         case .liveTV:
-            item(.liveTV, symbol: "antenna.radiowaves.left.and.right", label: Text(Self.liveTVTitle))
+            item(
+                .liveTV, symbol: "antenna.radiowaves.left.and.right",
+                label: Text(Self.liveTVTitle), isExperimental: true
+            )
         #endif
         case .music:
             item(.music, symbol: "music.note", label: Text(Self.musicTitle))
@@ -526,7 +529,8 @@ struct NavigationRailView: View {
     private func item(
         _ destination: NavigationRailDestination,
         symbol: String,
-        label: Text
+        label: Text,
+        isExperimental: Bool = false
     ) -> some View {
         Button {
             selection = destination
@@ -546,14 +550,26 @@ struct NavigationRailView: View {
             .frame(height: NavigationRailMetrics.rowContentHeight)
             .frame(width: animatedRowContentWidth, alignment: .leading)
             .overlay(alignment: .leading) {
-                railLabel(
-                    label,
-                    color: foregroundColor(
-                        for: .destination(destination),
-                        isSelected: selection == destination
-                    ),
-                    isFocused: focusedTarget == .destination(destination)
-                )
+                VStack(alignment: .leading, spacing: 0) {
+                    railLabel(
+                        label,
+                        color: foregroundColor(
+                            for: .destination(destination),
+                            isSelected: selection == destination
+                        ),
+                        isFocused: focusedTarget == .destination(destination),
+                        font: isExperimental
+                            ? .system(size: 22, weight: .semibold) : NavigationRailMetrics.labelFont
+                    )
+                    if isExperimental {
+                        Text("Experimental")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(foregroundColor(
+                                for: .destination(destination),
+                                isSelected: selection == destination
+                            ))
+                    }
+                }
                 .frame(width: NavigationRailMetrics.expandedLabelWidth, alignment: .leading)
                 .offset(x: NavigationRailMetrics.expandedLabelOffset)
                 .opacity(animatedLabelOpacity)
@@ -578,13 +594,17 @@ struct NavigationRailView: View {
         .padding(.vertical, NavigationRailMetrics.itemVerticalPadding)
         .offset(x: animatedContentOffset)
         .accessibilityLabel(label)
+        .accessibilityValue(isExperimental ? Text("Experimental") : Text(""))
         .accessibilityAddTraits(selection == destination ? [.isSelected] : [])
     }
 
-    private func railLabel(_ text: Text, color: Color, isFocused: Bool) -> some View {
+    private func railLabel(
+        _ text: Text, color: Color, isFocused: Bool,
+        font: Font = NavigationRailMetrics.labelFont
+    ) -> some View {
         PlozzMarqueeText(
             text: text,
-            font: NavigationRailMetrics.labelFont,
+            font: font,
             color: color,
             inset: 0,
             fadeWidth: 16,

@@ -7,6 +7,59 @@ import XCTest
 
 @MainActor
 final class CinematicDetailTransitionHostedTests: XCTestCase {
+    func testOpeningCurvePicksUpQuicklyAndSettlesWithoutOvershoot() {
+        let curve = UnitCurve.bezier(
+            startControlPoint: DetailEntranceMotion.pickup,
+            endControlPoint: DetailEntranceMotion.landing
+        )
+        XCTAssertEqual(curve.value(at: 0), 0, accuracy: 0.0001)
+        XCTAssertEqual(curve.value(at: 1), 1, accuracy: 0.0001)
+        XCTAssertGreaterThan(curve.value(at: 0.25), UnitCurve.easeInOut.value(at: 0.25))
+        XCTAssertLessThan(
+            curve.value(at: 1) - curve.value(at: 0.9),
+            UnitCurve.easeInOut.value(at: 1) - UnitCurve.easeInOut.value(at: 0.9)
+        )
+        var previous = 0.0
+        for step in 0...100 {
+            let value = curve.value(at: Double(step) / 100)
+            XCTAssertGreaterThanOrEqual(value, previous)
+            XCTAssertLessThanOrEqual(value, 1)
+            previous = value
+        }
+        XCTAssertLessThan(DetailEntranceMotion.foregroundTravel, 14)
+    }
+
+    func testOpeningArtworkBlendPausesWithTheZoom() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let artwork = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 18)).image {
+            UIColor.blue.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 32, height: 18))
+        }
+        let cover = DetailTransitionOverlay(
+            screen: DetailTransitionSurface(image: artwork), card: DetailTransitionSurface(image: artwork)
+        )
+        cover.frame = fixture.window.bounds
+        cover.destination.image = artwork
+        cover.configureOpening(sourceFrame: CGRect(x: 200, y: 300, width: 260, height: 390), cornerRadius: 20)
+        fixture.window.addSubview(cover)
+        let animator = cover.animateOpening(duration: 1) {}
+        defer {
+            animator.stopAnimation(true)
+            cover.removeFromSuperview()
+        }
+        animator.pauseAnimation()
+        animator.fractionComplete = 0.1
+        try await Task.sleep(for: .milliseconds(30))
+        let alpha = try XCTUnwrap(cover.card.layer.presentation()).opacity
+        let frame = try XCTUnwrap(cover.cardContainer.layer.presentation()).frame
+        XCTAssertGreaterThan(alpha, 0.05)
+        XCTAssertLessThan(alpha, 0.99)
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(try XCTUnwrap(cover.card.layer.presentation()).opacity, alpha, accuracy: 0.02)
+        XCTAssertEqual(try XCTUnwrap(cover.cardContainer.layer.presentation()).frame.width, frame.width, accuracy: 1)
+    }
+
     func testDetailTimingUsesTheFasterSequence() {
         let timing = DetailEntranceTiming()
         let movie = timing.zoom + timing.artworkPause + timing.stagger * 2 + timing.reveal
@@ -50,7 +103,7 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(150))
         let fading = try pixel(fixture.window, at: frame)[0]
         XCTAssertGreaterThan(fading, 20)
-        try await waitUntil { session.stage == .complete }
+        try await waitUntil { session.stage == .complete && fixture.model.stages.last == .complete }
         XCTAssertGreaterThan(try pixel(fixture.window, at: frame)[0], 240)
         XCTAssertFalse(session.blocksNavigation)
         XCTAssertEqual(fixture.model.stages, [.artwork, .logo, .metadata, .controls, .episodes, .complete])

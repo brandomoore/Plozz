@@ -71,6 +71,11 @@ public struct LiveChannelPlayerView: View {
     @State private var playbackStartPolicy = LiveChannelPlaybackStartPolicy<LiveChannelSource>()
     @FocusState private var focusedControl: LiveChannelControl?
 
+    private var plozzChannelID: String? {
+        if case .libraryChannel = input { return channelID }
+        return nil
+    }
+
     public init(
         channelID: String,
         title: String, // l10n:content — provider-supplied channel name
@@ -242,6 +247,7 @@ public struct LiveChannelPlayerView: View {
                         LiveChannelOverlay(
                             title: title,
                             logoURL: logoURL,
+                            plozzChannelID: plozzChannelID,
                             phase: sourceMatches ? model.phase : .loading,
                             isAtLiveEdge: sourceMatches ? model.isAtLiveEdge : true,
                             canPause: sourceMatches && model.canPause,
@@ -899,6 +905,7 @@ private struct LiveChannelRevealSurface: View {
 private struct LiveChannelOverlay: View {
     let title: String // l10n:content — provider-supplied channel name
     let logoURL: URL?
+    let plozzChannelID: String?
     let phase: LiveChannelPlaybackPhase
     let isAtLiveEdge: Bool
     let canPause: Bool
@@ -922,6 +929,7 @@ private struct LiveChannelOverlay: View {
             LiveChannelHeader(
                 title: title,
                 logoURL: logoURL,
+                plozzChannelID: plozzChannelID,
                 status: phase.statusLabel(isAtLiveEdge: isAtLiveEdge),
                 statusColor: phase.statusColor(isAtLiveEdge: isAtLiveEdge),
                 focus: $focus,
@@ -977,6 +985,7 @@ private struct LiveChannelOverlay: View {
 private struct LiveChannelHeader: View {
     let title: String // l10n:content — provider-supplied channel name
     let logoURL: URL?
+    let plozzChannelID: String?
     let status: LocalizedStringResource
     let statusColor: Color
     @FocusState.Binding var focus: LiveChannelControl?
@@ -988,7 +997,8 @@ private struct LiveChannelHeader: View {
                 name: title,
                 logoURL: logoURL,
                 size: logoSize,
-                cornerRadius: 12
+                cornerRadius: 12,
+                plozzChannelID: plozzChannelID
             )
 
             VStack(alignment: .leading, spacing: 6) {

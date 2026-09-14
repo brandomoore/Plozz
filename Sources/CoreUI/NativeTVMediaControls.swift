@@ -98,8 +98,9 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
         NativeTVMediaCoordinator(focus: focus, action: action)
     }
 
-    func makeUIView(context: Context) -> Card {
+    func makeUIView(context: Context) -> Container {
         let view = Card()
+        view.cardBackgroundColor = UIColor(context.environment.themePalette.raised.fill)
         let host = configuration(in: context).makeContentView()
         view.hostedContent = host
         view.contentView.addSubview(host)
@@ -116,33 +117,30 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
         }
         view.addAction(UIAction { [weak coordinator = context.coordinator] _ in coordinator?.activate() },
                        for: .primaryActionTriggered)
-        return view
+        return Container(card: view)
     }
 
-    func updateUIView(_ view: Card, context: Context) {
+    func updateUIView(_ container: Container, context: Context) {
+        let view = container.card
+        let background = UIColor(context.environment.themePalette.raised.fill)
+        if view.cardBackgroundColor != background { view.cardBackgroundColor = background }
         view.hostedContent?.configuration = configuration(in: context)
         view.isEnabled = isEnabled && context.environment.isEnabled
         context.coordinator.update(focus: focus, action: action, view: view)
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: Card, context: Context) -> CGSize? {
-        guard let content = uiView.hostedContent,
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: Container, context: Context) -> CGSize? {
+        let card = uiView.card
+        guard let content = card.hostedContent,
               let width = proposal.width, width.isFinite, width > 0 else { return nil }
-        let intrinsic = uiView.intrinsicContentSize
-        let chrome = CGSize(
-            width: max(0, intrinsic.width - uiView.contentSize.width),
-            height: max(0, intrinsic.height - uiView.contentSize.height)
-        )
-        let contentWidth = width - chrome.width
-        guard contentWidth > 0 else { return CGSize(width: width, height: chrome.height) }
         let contentHeight = proposal.height.flatMap { height in
-            height.isFinite ? max(0, height - chrome.height) : nil
+            height.isFinite ? max(0, height) : nil
         }
         // An unspecified height is an intrinsic-height query, not a 10,000pt
         // offer. Flexible rating labels otherwise stretch and inflate About's
-        // cross-column text measurements. Reserve TVCardView's own insets too.
+        // cross-column text measurements.
         let size = content.systemLayoutSizeFitting(
-            CGSize(width: contentWidth, height: contentHeight ?? 0),
+            CGSize(width: width, height: contentHeight ?? 0),
             withHorizontalFittingPriority: .required,
             verticalFittingPriority: (contentHeight ?? 0) > 0 ? .required : .fittingSizeLevel
         )
@@ -150,9 +148,13 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
             PlozzLog.app.error("Native card content returned invalid fitting dimensions")
             return nil
         }
-        let contentSize = CGSize(width: contentWidth, height: size.height)
-        if uiView.contentSize != contentSize { uiView.contentSize = contentSize }
-        return CGSize(width: width, height: size.height + chrome.height)
+        let contentSize = CGSize(width: width, height: size.height)
+        if card.contentSize != contentSize {
+            card.contentSize = contentSize
+            uiView.invalidateIntrinsicContentSize()
+            uiView.setNeedsLayout()
+        }
+        return contentSize
     }
 
     private func configuration(in context: Context) -> any UIContentConfiguration {
@@ -160,12 +162,34 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
             content
                 .environment(\.self, context.environment)
                 .environment(\.plozzNativeFocusSurface, true)
-                // TVCardView supplies a light native platter; app-dark text
-                // colors must not be carried onto that light surface.
-                .environment(\.colorScheme, .light)
-                .environment(\.themePalette, .light)
         }
         .margins(.all, 0)
+    }
+
+    final class Container: UIView {
+        let card: Card
+
+        init(card: Card) {
+            self.card = card
+            super.init(frame: .zero)
+            addSubview(card)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override var intrinsicContentSize: CGSize { card.contentSize }
+        override var preferredFocusEnvironments: [any UIFocusEnvironment] { [card] }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            // TVCardView reserves symmetric space for its focus expansion.
+            // Keep that invisible space outside the visible surface's layout slot.
+            let intrinsic = card.intrinsicContentSize
+            let horizontal = max(0, intrinsic.width - card.contentSize.width) / 2
+            let vertical = max(0, intrinsic.height - card.contentSize.height) / 2
+            let frame = bounds.insetBy(dx: -horizontal, dy: -vertical)
+            if card.frame != frame { card.frame = frame }
+        }
     }
 
     final class Card: TVCardView {
@@ -204,6 +228,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
     let subtitle: String?
     var titleFontSize: CGFloat? = nil
     var subtitleFontSize: CGFloat? = nil
+    var captionSpacing: CGFloat? = nil
     let overlay: Overlay
     let focus: PlozzCardFocus.Binding
     var source: DetailTransitionSourceReference? = nil
@@ -333,6 +358,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
             image, treatment: treatment, size: view.contentSize, scale: context.environment.displayScale
         )
         if view.image !== prepared { view.image = prepared }
+        updateCaptionSpacing(in: view)
         view.isEnabled = context.environment.isEnabled
         source?.nativeArtworkView = view.imageView
         context.coordinator.focus.update(focus: focus, action: action, view: view)
@@ -347,7 +373,16 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
             image, treatment: treatment, size: size, scale: context.environment.displayScale
         )
         if uiView.image !== prepared { uiView.image = prepared }
+        updateCaptionSpacing(in: uiView)
         return uiView.intrinsicContentSize
+    }
+
+    private func updateCaptionSpacing(in view: Poster) {
+        guard let captionSpacing else { return }
+        var insets = view.contentViewInsets
+        let nativeClearance = max(0, -view.focusSizeIncrease.bottom)
+        insets.bottom = view.title != nil || view.subtitle != nil ? -(captionSpacing + nativeClearance) : 0
+        if view.contentViewInsets != insets { view.contentViewInsets = insets }
     }
 
     private func overlayConfiguration(in context: Context) -> any UIContentConfiguration {

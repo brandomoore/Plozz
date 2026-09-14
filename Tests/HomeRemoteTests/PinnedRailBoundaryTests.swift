@@ -7,6 +7,34 @@ final class PinnedRailBoundaryTests: XCTestCase {
     func testLongRailStopsAtProfile() { exerciseBoundary(top: true, short: false) }
     func testShortRailStopsAtProfile() { exerciseBoundary(top: true, short: true) }
 
+    func testLiveTVExperimentalLabelPreservesNavigationRowGeometry() {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--navigation-fixture", "--navigation-short", "--navigation-live-tv"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["navigation-page"].waitForExistence(timeout: 15))
+        XCUIRemote.shared.press(.left)
+        let liveTV = app.buttons["Live TV"]
+        assertFocused(liveTV)
+        XCTAssertEqual(liveTV.value as? String, "Experimental")
+        XCUIRemote.shared.press(.up)
+        let ordinaryRow = app.buttons["Library 1"]
+        assertFocused(ordinaryRow)
+        let ordinaryFocusedHeight = ordinaryRow.frame.height
+        XCUIRemote.shared.press(.down)
+        assertFocused(liveTV)
+        XCTAssertEqual(liveTV.frame.height, ordinaryFocusedHeight, accuracy: 1)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "pinned-live-tv-experimental"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        XCUIRemote.shared.press(.down)
+        assertFocused(liveTV)
+        XCUIRemote.shared.press(.right)
+        XCTAssertFalse(liveTV.hasFocus)
+    }
+
     private func exerciseBoundary(top: Bool, short: Bool) {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")

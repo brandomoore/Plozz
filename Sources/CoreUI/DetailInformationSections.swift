@@ -65,6 +65,7 @@ public struct DetailInformationSections: View {
     /// than a guess. Measured, so it tracks Dynamic Type.
     @State private var bodyLineHeight: CGFloat = 0
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzCardFocusStyle) private var cardFocusStyle
 
     public init(
         item: MediaItem,
@@ -233,7 +234,7 @@ public struct DetailInformationSections: View {
 
     private var infoColumnFocusInset: CGFloat {
         #if os(tvOS)
-        cardPadding + 8
+        cardFocusStyle.usesSystemEffect ? 0 : cardPadding + 8
         #else
         0
         #endif

@@ -10,6 +10,7 @@ public struct ChannelLogoArtwork: View {
     private let size: CGSize
     private let cornerRadius: CGFloat
     private let artworkInset: CGFloat
+    private let plozzChannelID: String?
     @State private var loaded: LoadedLogo?
 
     public init(
@@ -17,13 +18,15 @@ public struct ChannelLogoArtwork: View {
         logoURL: URL?,
         size: CGSize,
         cornerRadius: CGFloat,
-        artworkInset: CGFloat? = nil
+        artworkInset: CGFloat? = nil,
+        plozzChannelID: String? = nil
     ) {
         self.name = name
         self.logoURL = logoURL
         self.size = size
         self.cornerRadius = cornerRadius
         self.artworkInset = artworkInset ?? size.height * 20 / 128
+        self.plozzChannelID = plozzChannelID
     }
 
     private var current: LoadedLogo? {
@@ -36,11 +39,20 @@ public struct ChannelLogoArtwork: View {
     }
 
     public var body: some View {
-        ChannelLogoPlateContent(
-            name: name, image: current?.image,
-            plate: current?.plate ?? ChannelLogoPlate(tone: nil),
-            size: size, cornerRadius: cornerRadius, artworkInset: artworkInset
-        )
+        Group {
+            if let plozzChannelID, logoURL == nil {
+                PlozzChannelWordmark(
+                    name: name, identity: PlozzChannelIdentity(channelID: plozzChannelID),
+                    size: size, cornerRadius: cornerRadius
+                )
+            } else {
+                ChannelLogoPlateContent(
+                    name: name, image: current?.image,
+                    plate: current?.plate ?? ChannelLogoPlate(tone: nil),
+                    size: size, cornerRadius: cornerRadius, artworkInset: artworkInset
+                )
+            }
+        }
         .task(id: logoURL) {
             guard let logoURL else {
                 loaded = nil

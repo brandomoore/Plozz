@@ -178,6 +178,11 @@ movies do not acquire that extra stage. Back uses a 280ms return without
 the pause. Reduce Motion bypasses the custom sequence and its input wait.
 Source snapshots are per-activation, not per-frame; full-window covers are
 released at the artwork handoff, and the small return-card image is scoped to its page.
+The opening uses an asymmetric cubic curve with a quick pickup and gentle landing,
+without overshoot. The early artwork blend belongs to that same property animator,
+so pausing or canceling the zoom also pauses or cancels the blend. Foreground
+reveals use the matching curve with 10-point travel; timings and reveal order are
+unchanged. Hosted checks cover curve monotonicity and coordinated pause behavior.
 
 `DetailTransitionVisualRegressionTests` uses the production show page and real
 poster cards. It asserts that the outgoing thumbnail is transparent within the
@@ -186,6 +191,8 @@ detail image joins the expansion as soon as it is available. Reverse endpoints
 are compared against rendered focused-artwork pixels for framed/borderless and
 outlined/highlight cards; corner radii scale with the artwork and use continuous
 corners. The source's focused rectangle and radius are captured at activation;
+native UIImageView artwork uses its public `focusedFrameGuide`, since the painted
+focus expansion need not appear in the image layer's transform.
 Back starts toward that shape immediately while native focus restores underneath.
 A replaced source or changed window size uses a nonspatial fallback. A temporarily
 unrealized source still returns to its captured shape without waiting for focus.
@@ -323,17 +330,25 @@ Pin decorations to the native overlay container with constraints; do not rewrite
 their frames during native focus layout.
 `TVCardView` hosts live content in its documented `contentView`. Neither control
 overrides `focusSizeIncrease`, adds transforms or manufactures lighting/outlines.
-Hosted text uses a light-surface palette inside TVCardView so the native light
-platter does not receive white text from the surrounding dark app. Card fitting
+The documented `cardBackgroundColor` uses the active theme's raised surface,
+and hosted text retains that same theme rather than being forced into Light.
+TVUIKit still owns the state-dependent alpha, projection and lighting. This keeps
+detail information and attribution surfaces from becoming pale platters in a dark
+app. Borderless information groups retain padding inside the native surface,
+without borrowing the custom focus style's extra column gutter.
+Card fitting
 honors finite width proposals; unspecified-width probes must not install the
 10,000-point expanded fitting size as the card's content width.
 Unspecified-height queries use compressed Auto Layout fitting, not an expanded
 height: flexible rating labels otherwise become 10,000 points tall and inflate
-the About column's text measurements. Subtract the control's native chrome
-(`intrinsicContentSize - contentSize`) before measuring its hosted content, then
-add it back once to the returned size. `NativeInformationCardHostedTests` covers
+the About column's text measurements. A non-focusable container reports the visible
+content size to SwiftUI and positions TVCardView's intrinsic focus outsets outside
+that slot. The resting plate therefore aligns with its section heading; native
+focus can still expand beyond it without changing layout.
+`NativeInformationCardHostedTests` covers
 the actual information grid with a long synopsis and four ratings, checking
-bounded, stable card dimensions and matching native/SwiftUI widths.
+bounded, stable card dimensions. `NativeFocusRequestHostedTests` compares the
+actual resting `contentView` bounds against its SwiftUI layout container.
 Native monogram photos are prepared as square, circular-alpha image data, so a
 tall source portrait cannot protrude into its caption on focus.
 System bypasses app-defined focus surfaces, edge strokes, resting shadows and
@@ -346,7 +361,14 @@ thumbnail and interactive loading/retry placeholder use TVPosterView, so the
 native outline and image use the same corner geometry. Cast/artist portraits use
 TVMonogramView, with their captions outside the native control rather than on a
 focused card platter. Regular media poster footer labels retain the existing
-density-aware title/subtitle font sizes. Custom Highlight/Outline retain
+density-aware title/subtitle font sizes. Native poster footers reserve at least
+18 density-scaled points of artwork clearance (more for larger type), using the
+documented negative bottom `contentViewInsets`. TVUIKit's own focus expansion
+moves the footer; no extra translation or focus-time layout change is added.
+The reserved inset includes native footer travel so clearance holds at rest too.
+Rows that reserve a subtitle line keep it even when the year/subtitle is absent,
+so folder and media cards retain equal heights. Captionless episode controls
+keep their existing geometry. Custom Highlight/Outline retain
 their existing whole-column focus routing and artwork-only visuals.
 
 `NativePosterComparisonTests` is an opt-in, simulator-only comparison, enabled by

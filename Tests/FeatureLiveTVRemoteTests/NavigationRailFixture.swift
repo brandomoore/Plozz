@@ -42,7 +42,8 @@ private final class NavigationRailFixtureModel {
 
     init() {
         let destination: NavigationRailDestination =
-            ProcessInfo.processInfo.arguments.contains("--navigation-search") ? .search : .settings
+            ProcessInfo.processInfo.arguments.contains("--navigation-live-tv") ? .liveTV
+                : ProcessInfo.processInfo.arguments.contains("--navigation-search") ? .search : .settings
         let count = ProcessInfo.processInfo.arguments.contains("--navigation-short") ? 2 : 30
         entries = (0..<count).map { index in
             NavigationRailLibraryEntry(

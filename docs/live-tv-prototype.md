@@ -25,6 +25,9 @@ navigation. Apple TV supports the top tabs, native sidebar and custom
 navigation rail variations; iPhone/iPad expose the same destination in their
 tab shell. Device installation must be authorized; a build alone does not
 install anything.
+tvOS navigation marks the destination **Experimental**: the pinned rail uses a
+subtitle within the existing row height, and native tabs/sidebar qualify the
+title. The pinned row also announces that status to accessibility.
 
 For isolated physical-TV iteration, build a branded Debug app using the existing
 per-branch build configuration. It has its own bundle ID, preferences and data;
@@ -186,6 +189,14 @@ is no prior in-memory history to migrate on the first updated launch.
   logo and its backing together, so a warmed guide logo appears immediately in
   the player with the same appearance. Hero/search/player sizes remain
   independent of the full-row guide treatment.
+  Plozz library channels without supplied artwork use a locally rendered wordmark:
+  heavy compressed channel lettering, a small rounded Plozz signature and a
+  solid broadcast-style color field. FNV-1a over the stable channel identity picks
+  from a fixed palette, so names, schedules, view size and app restarts do not
+  randomly change the branding. Guide and player pass the same channel identity
+  to the shared renderer. Real source logos still take precedence; missing
+  external-channel logos keep their ordinary name fallback. No network service,
+  generated image asset or per-channel manual design is needed.
   Station tiles show only the logo, or a name fallback when artwork is missing,
   rather than repeating names, numbers and badges beside it. Names and numbers
   remain searchable and available to accessibility; the focused channel's name

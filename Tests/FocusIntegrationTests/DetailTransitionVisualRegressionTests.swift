@@ -182,7 +182,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
                     XCTAssertNotNil(source.nativeArtworkView, "System artwork must use native UIKit geometry.")
                 }
                 source.prepare(for: model.item)
-                model.path.append(1)
+                DetailTransitionNavigation.performNavigation { model.path.append(1) }
                 try await waitUntil { model.session != nil }
                 let session = try XCTUnwrap(model.session)
                 try await waitUntil { session.stage == .complete }

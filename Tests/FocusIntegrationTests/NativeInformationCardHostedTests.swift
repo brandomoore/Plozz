@@ -49,6 +49,9 @@ final class NativeInformationCardHostedTests: XCTestCase {
         try await Task.sleep(for: .seconds(2))
         let cards = nativeCards(in: window)
         XCTAssertFalse(cards.isEmpty)
+        for card in cards {
+            XCTAssertEqual(card.cardBackgroundColor, UIColor(ThemePalette.dark.raised.fill))
+        }
         let before = cards.map { $0.convert($0.bounds, to: window) }
         try await Task.sleep(for: .seconds(1))
         let after = cards.map { $0.convert($0.bounds, to: window) }
@@ -65,9 +68,62 @@ final class NativeInformationCardHostedTests: XCTestCase {
         attachment.name = "native-information-card-frames"
         attachment.lifetime = .keepAlways
         add(attachment)
+        let screenshot = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
+        screenshot.name = "native-information-themed-surfaces"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    func testNativeTextSurfacePreservesTheSelectedTheme() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKeyAndVisible()
+        }
+        for palette in [ThemePalette.dark, .pureBlack, .light] {
+            let scheme: ColorScheme = palette.isLight ? .light : .dark
+            var observedPalette: ThemePalette?
+            var observedScheme: ColorScheme?
+            window.rootViewController = UIHostingController(rootView:
+                NativeInformationThemeProbe { observedPalette = $0; observedScheme = $1 }
+                    .padding(24)
+                    .plozzFocusableCard(cornerRadius: 24)
+                    .frame(width: 600)
+                    .environment(\.plozzCardFocusStyle, .system)
+                    .environment(\.themePalette, palette)
+                    .environment(\.colorScheme, scheme)
+            )
+            window.makeKeyAndVisible()
+            window.layoutIfNeeded()
+            let deadline = ContinuousClock.now + .seconds(3)
+            while observedPalette == nil, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let card = try XCTUnwrap(nativeCards(in: window).first)
+            XCTAssertEqual(card.cardBackgroundColor, UIColor(palette.raised.fill))
+            XCTAssertEqual(observedPalette, palette)
+            XCTAssertEqual(observedScheme, scheme)
+        }
     }
 
     private func nativeCards(in view: UIView) -> [TVCardView] {
         (view as? TVCardView).map { [$0] } ?? view.subviews.flatMap(nativeCards(in:))
+    }
+
+    private struct NativeInformationThemeProbe: View {
+        let observe: (ThemePalette, ColorScheme) -> Void
+        @Environment(\.themePalette) private var palette
+        @Environment(\.colorScheme) private var scheme
+
+        var body: some View {
+            Text("Credits and license information")
+                .plozzForeground(.primary)
+                .onAppear { observe(palette, scheme) }
+        }
     }
 }

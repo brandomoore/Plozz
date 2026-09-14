@@ -145,7 +145,8 @@ struct PrototypeStationMark: View {
     var body: some View {
         ChannelLogoArtwork(
             name: channel.name, logoURL: channel.logoURL, size: dimensions,
-            cornerRadius: cornerRadius, artworkInset: artworkInset
+            cornerRadius: cornerRadius, artworkInset: artworkInset,
+            plozzChannelID: channel.source == .plozz ? channel.id : nil
         )
     }
 }
