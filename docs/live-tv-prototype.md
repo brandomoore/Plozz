@@ -295,6 +295,15 @@ is no prior in-memory history to migrate on the first updated launch.
   promoting a channel into Recents cannot make transport bounce between stations.
   This channel history never writes movie/episode progress or watched status.
 
+Straight Up/Down browsing initially enters each channel's currently airing program
+(or its current guide gap), independent of how wide the previous program was.
+Only the active row exposes its other programs. A deliberate Left/Right press,
+horizontal focus move or timeline drag hands navigation back to tvOS's ordinary
+spatial behavior. **Now**, playback's current-time restoration, or a fresh guide
+restores current-program entry. Explicit focus restoration still takes priority,
+and VoiceOver keeps unrestricted native navigation. No after-the-fact focus bounce
+or invisible focusable target is used.
+
 ### Preview display mode and original titles
 
 On tvOS, ordinary guide previews do not request content-matched dynamic range or
@@ -311,6 +320,11 @@ superseded requests, source replacement and stop cannot revive an older policy.
 Failed changes surface through playback recovery instead of silently retrying.
 This can require one playback/output transition when entering or leaving watching,
 but not a new HDMI mode switch for every automatically previewed channel.
+Plozz channels play normal library files through that decoder, with a scheduling
+controller choosing the file and position; they are not actual live broadcasts.
+Shared loading messages say **Loading channel** rather than “live stream.”
+Scheduled-channel playback uses **ON NOW**, **DELAYED**, and **Jump to now**;
+genuine stream sources retain their **LIVE** and **Go Live** controls.
 
 Library-channel catch-up waits for a usable playback position, not merely an
 engine `ready` notification. Plozzigen requires its real first frame and settled

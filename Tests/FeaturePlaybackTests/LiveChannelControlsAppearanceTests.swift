@@ -6,6 +6,25 @@ import XCTest
 
 @MainActor
 final class LiveChannelControlsAppearanceTests: XCTestCase {
+    func testScheduledChannelsDoNotClaimToBeLiveBroadcasts() {
+        XCTAssertEqual(String(localized: LiveChannelPlaybackPhase.loading.activityLabel), "Loading channel…")
+        XCTAssertEqual(
+            String(localized: LiveChannelPlaybackPhase.playing.statusLabel(isAtLiveEdge: true, isScheduledChannel: true)),
+            "ON NOW"
+        )
+        XCTAssertEqual(
+            String(localized: LiveChannelPlaybackPhase.playing.statusLabel(isAtLiveEdge: false, isScheduledChannel: true)),
+            "DELAYED"
+        )
+        XCTAssertEqual(
+            String(localized: LibraryChannelPlaybackCopy.returnToCurrentTitle(isScheduledChannel: true)), "Jump to now"
+        )
+        XCTAssertEqual(String(localized: LiveChannelPlaybackPhase.playing.statusLabel(isAtLiveEdge: true)), "LIVE")
+        XCTAssertEqual(
+            String(localized: LibraryChannelPlaybackCopy.returnToCurrentTitle(isScheduledChannel: false)), "Go Live"
+        )
+    }
+
     func testNormalPlayerActionStyleKeepsFocusedLabelsBlackOnWhite() throws {
         for title in ["Pause", "Add to Favorites", "Remove from Favorites", "Try Again", "Close"] {
             let image = try render(title: title, focused: true)

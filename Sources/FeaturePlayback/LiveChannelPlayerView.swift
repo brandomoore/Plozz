@@ -956,7 +956,9 @@ private struct LiveChannelOverlay: View {
                 plozzChannelID: plozzChannelID,
                 libraryItem: libraryItem,
                 openLibraryItem: openLibraryItem,
-                status: phase.statusLabel(isAtLiveEdge: isAtLiveEdge),
+                status: phase.statusLabel(
+                    isAtLiveEdge: isAtLiveEdge, isScheduledChannel: plozzChannelID != nil
+                ),
                 statusColor: phase.statusColor(isAtLiveEdge: isAtLiveEdge),
                 focus: $focus,
                 onClose: onClose
@@ -979,7 +981,8 @@ private struct LiveChannelOverlay: View {
                 onGoLive: onGoLive,
                 onNext: onNext,
                 onToggleFavorite: onToggleFavorite,
-                onMultiview: onMultiview
+                onMultiview: onMultiview,
+                isScheduledChannel: plozzChannelID != nil
                 )
             }
         }
@@ -1084,6 +1087,7 @@ private struct LiveChannelTransport: View {
     let onNext: () -> Void
     let onToggleFavorite: () -> Void
     let onMultiview: (() -> Void)?
+    var isScheduledChannel = false
 
     var body: some View {
         transportButtons
@@ -1159,7 +1163,11 @@ private struct LiveChannelTransport: View {
 
     private var goLiveButton: some View {
         Button(action: onGoLive) {
-            Label("Go Live", systemImage: "dot.radiowaves.left.and.right")
+            Label {
+                Text(LibraryChannelPlaybackCopy.returnToCurrentTitle(isScheduledChannel: isScheduledChannel))
+            } icon: {
+                Image(systemName: isScheduledChannel ? "clock.arrow.circlepath" : "dot.radiowaves.left.and.right")
+            }
         }
         .focused($focus, equals: .goLive)
         .buttonStyle(InfoActionButtonStyle(prominent: true))
@@ -1255,7 +1263,7 @@ private struct LiveChannelStartupView: View {
             ProgressView()
                 .controlSize(.large)
                 .tint(.white)
-            Text("Connecting to Live Stream…")
+            Text(LiveChannelPlaybackPhase.loading.activityLabel)
                 .font(.headline)
                 .foregroundStyle(.white)
             Button("Close", action: onClose)
@@ -2288,7 +2296,7 @@ enum LiveChannelPlaybackPhase: Equatable {
         }
     }
 
-    func statusLabel(isAtLiveEdge: Bool) -> LocalizedStringResource {
+    func statusLabel(isAtLiveEdge: Bool, isScheduledChannel: Bool = false) -> LocalizedStringResource {
         switch self {
         case .loading:
             return "CONNECTING"
@@ -2299,13 +2307,14 @@ enum LiveChannelPlaybackPhase: Equatable {
         case .reconnecting:
             return "RECONNECTING"
         case .playing:
+            if isScheduledChannel { return isAtLiveEdge ? "ON NOW" : "DELAYED" }
             return isAtLiveEdge ? "LIVE" : "BEHIND LIVE"
         case .paused:
             return "PAUSED"
         case .failed:
-            return "STREAM ERROR"
+            return "PLAYBACK ERROR"
         case .ended:
-            return "STREAM ENDED"
+            return "PLAYBACK ENDED"
         }
     }
 
@@ -2324,10 +2333,10 @@ enum LiveChannelPlaybackPhase: Equatable {
 
     var activityLabel: LocalizedStringResource {
         switch self {
-        case .seeking: "Returning to Live…"
-        case .reconnecting: "Reconnecting to Live Stream…"
-        case .buffering: "Buffering Live Stream…"
-        default: "Connecting to Live Stream…"
+        case .seeking: "Seeking…"
+        case .reconnecting: "Reconnecting…"
+        case .buffering: "Buffering…"
+        default: "Loading channel…"
         }
     }
 }
@@ -2357,12 +2366,16 @@ enum LiveChannelPlaybackFailure: Equatable {
         case .cancelled:
             "Opening this channel was cancelled."
         default:
-            "Plozz could not start this live stream. Try another channel or retry later."
+            "Plozz could not start playback. Retry or choose another channel."
         }
     }
 }
 
 enum LibraryChannelPlaybackCopy {
+    static func returnToCurrentTitle(isScheduledChannel: Bool) -> LocalizedStringResource {
+        isScheduledChannel ? "Jump to now" : "Go Live"
+    }
+
     static func failureTitle(for kind: MediaItemKind?) -> LocalizedStringResource {
         switch kind {
         case .movie: "Couldn't play this movie"
@@ -2399,13 +2412,13 @@ private struct LiveChannelInterruption {
         case .startupTimedOut:
             base = LiveChannelInterruption(
                 icon: "exclamationmark.triangle.fill",
-                title: "Live Stream Timed Out",
+                title: "Playback timed out",
                 message: "The channel did not present video in time."
             )
         case .bufferingTimedOut:
             base = LiveChannelInterruption(
                 icon: "wifi.exclamationmark",
-                title: "Live Stream Stalled",
+                title: "Playback stalled",
                 message: "The channel stopped delivering playable video."
             )
         case .engine(let error):
@@ -2427,8 +2440,8 @@ private struct LiveChannelInterruption {
     static func ended(retryLimitReached: Bool) -> LiveChannelInterruption {
         let base = LiveChannelInterruption(
             icon: "stop.circle.fill",
-            title: "Live Stream Ended",
-            message: "The channel ended its stream."
+            title: "Playback ended",
+            message: "The channel stopped playing."
         )
         return retryLimitReached ? base.withRetryLimitMessage() : base
     }

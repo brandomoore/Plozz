@@ -264,6 +264,12 @@ the real Plozzigen decoder in a visible window. It checks nonzero-start readines
 and retained preview/display-policy reloads without mistaking them for movie
 completion. Its temporary media is removed after the test; it is not an HDMI
 hardware acceptance test.
+`GuideVerticalNavigationRemoteTests` uses the production recycled guide with a
+wide movie above shorter programs. It checks current-program Up/Down entry,
+offscreen rows and no-guide content, deliberate horizontal handoff to native
+navigation, and the Now reset. Row focus eligibility participates in the cached
+row revision so only affected visible rows are rebuilt. The collection's optional
+focus delegate has no superclass implementation to call.
 
 Back restores the captured source page behind the moving artwork immediately,
 not a snapshot of the outgoing detail page. The popped content stays hidden
@@ -377,8 +383,12 @@ In the season episode row, the System focus owner encloses only the thumbnail
 and its artwork badges, not the title or synopsis below it. Both the episode
 thumbnail and interactive loading/retry placeholder use TVPosterView, so the
 native outline and image use the same corner geometry. Cast/artist portraits use
-TVMonogramView, with their captions outside the native control rather than on a
-focused card platter. Regular media poster footer labels retain the existing
+the circular tile component. Its generic System path uses TVMonogramView, but
+detail-page cast cards deliberately resolve System to the existing circular
+Outline treatment: the legacy monogram adapter's focused image shifts, expands
+into its caption, and gains a square platter. This exception is scoped to cast
+cards; poster/native information controls and saved Highlight/Outline choices
+are unchanged. Regular media poster footer labels retain the existing
 density-aware title/subtitle font sizes. Native poster footers reserve at least
 18 density-scaled points of artwork clearance (more for larger type), using the
 documented negative bottom `contentViewInsets`. TVUIKit's own focus expansion
@@ -388,6 +398,10 @@ Rows that reserve a subtitle line keep it even when the year/subtitle is absent,
 so folder and media cards retain equal heights. Captionless episode controls
 keep their existing geometry. Custom Highlight/Outline retain
 their existing whole-column focus routing and artwork-only visuals.
+`CastFocusRemoteTests` uses the real cast row with full names and portrait-shaped
+images, checks focused image/label bounds and circular corner pixels, and verifies
+Select still opens the person. A square image with no name is not sufficient
+coverage for this native-monogram regression.
 
 `NativePosterComparisonTests` is an opt-in, simulator-only comparison, enabled by
 `TEST_RUNNER_PLOZZ_NATIVE_POSTER_COMPARISON=1` on `PlozzHomeRemoteTests`. It captures

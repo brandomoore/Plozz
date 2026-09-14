@@ -26,6 +26,7 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
     let scrollController: PrototypeGuideScrollController
     let scrolled: (LiveTVGuideRowID?, CGFloat) -> Void
     let revision: (LiveTVGuideRowID) -> Revision
+    var horizontalNavigation: () -> Void = {}
     @ViewBuilder let content: (LiveTVGuideRowID) -> Content
 
     struct RowEnvironment: Equatable {
@@ -146,6 +147,9 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
             collectionView.remembersLastFocusedIndexPath = false
             collectionView.contentInsetAdjustmentBehavior = .never
             collectionView.register(Cell.self, forCellWithReuseIdentifier: "guide-row")
+            collectionView.addGestureRecognizer(HorizontalPressObserver { [weak self] in
+                self?.parentView?.horizontalNavigation()
+            })
             if let parentView, let swiftUIEnvironment { update(parentView, environment: swiftUIEnvironment) }
         }
 
@@ -193,6 +197,16 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
         }
 
         override func scrollViewDidScroll(_ scrollView: UIScrollView) { reportScroll() }
+
+        override func collectionView(
+            _ collectionView: UICollectionView, didUpdateFocusIn context: UICollectionViewFocusUpdateContext,
+            with coordinator: UIFocusAnimationCoordinator
+        ) {
+            guard context.focusHeading == .left || context.focusHeading == .right,
+                  let previous = context.previouslyFocusedIndexPath,
+                  previous == context.nextFocusedIndexPath else { return }
+            parentView?.horizontalNavigation()
+        }
 
         private func configure(_ cell: Cell, row: LiveTVGuideRowID) {
             guard let parentView, let swiftUIEnvironment else { return }
@@ -279,6 +293,34 @@ struct PrototypeNativeGuideList<Revision: Equatable, Content: View>: UIViewContr
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    }
+}
+
+private final class HorizontalPressObserver: UIGestureRecognizer {
+    private let onHorizontal: () -> Void
+
+    init(onHorizontal: @escaping () -> Void) {
+        self.onHorizontal = onHorizontal
+        super.init(target: nil, action: nil)
+        allowedPressTypes = [
+            NSNumber(value: UIPress.PressType.leftArrow.rawValue),
+            NSNumber(value: UIPress.PressType.rightArrow.rawValue)
+        ]
+        allowedTouchTypes = []
+        cancelsTouchesInView = false
+        delaysTouchesBegan = false
+        delaysTouchesEnded = false
+    }
+
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent) {
+        if presses.contains(where: { $0.type == .leftArrow || $0.type == .rightArrow }),
+           DetailTransitionNavigation.navigationInputEpoch(in: view) != nil {
+            onHorizontal()
+        }
+        state = .failed
     }
 }
 #endif

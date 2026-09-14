@@ -3,6 +3,33 @@ import XCTest
 @testable import FeatureLiveTVCore
 
 final class LiveTVGuideTimelineTests: XCTestCase {
+    func testInactiveRowsOnlyExposeCurrentContentUntilNativeNavigationIsRequested() {
+        let current = LiveTVGuideFocusTarget.program(channelID: "channel", programID: "current")
+        let future = LiveTVGuideFocusTarget.program(channelID: "channel", programID: "future")
+        let logo = LiveTVGuideFocusTarget.channel("channel")
+        let inactive = LiveTVGuideRowFocusPolicy(entryTarget: current, isActiveRow: false, usesNativeNavigation: false)
+        XCTAssertTrue(inactive.allows(current))
+        XCTAssertFalse(inactive.allows(future))
+        XCTAssertFalse(inactive.allows(logo))
+        for policy in [
+            LiveTVGuideRowFocusPolicy(entryTarget: current, isActiveRow: true, usesNativeNavigation: false),
+            LiveTVGuideRowFocusPolicy(entryTarget: current, isActiveRow: false, usesNativeNavigation: true)
+        ] {
+            XCTAssertTrue(policy.allows(current))
+            XCTAssertTrue(policy.allows(future))
+            XCTAssertTrue(policy.allows(logo))
+            XCTAssertFalse(policy.allows(.program(channelID: "other", programID: "current")))
+        }
+    }
+
+    func testCurrentEntryGatePreservesGapsAndRepeatedChannelOccurrences() {
+        let gap = LiveTVGuideFocusTarget.channelContent("channel", slotID: "gap", section: .favorites)
+        let policy = LiveTVGuideRowFocusPolicy(entryTarget: gap, isActiveRow: false, usesNativeNavigation: false)
+        XCTAssertTrue(policy.allows(gap))
+        XCTAssertFalse(policy.allows(.channelContent("channel", slotID: "gap", section: .channels)))
+        XCTAssertFalse(policy.allows(.channelContent("channel", slotID: "later-gap", section: .favorites)))
+    }
+
     private let start = Date(timeIntervalSince1970: 1_800_000_000)
 
     private func program(_ id: String, _ from: TimeInterval, _ to: TimeInterval) -> LiveTVPrototypeProgram {
