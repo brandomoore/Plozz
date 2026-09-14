@@ -339,6 +339,7 @@ struct ArtistCard: View {
                     .frame(width: slot)
             }
         )
+        .plozzCircularFocusStyle()
     }
 }
 

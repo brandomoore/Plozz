@@ -314,6 +314,7 @@ private struct ProfileTile: View {
             ProfileTileButtonStyle(), cornerRadius: ProfilePickerLayout.avatarSize / 2,
             contentSuppliesProjection: true
         )
+        .plozzCircularFocusStyle()
     }
 }
 
@@ -406,6 +407,7 @@ private struct AddProfileTile: View {
             ProfileTileButtonStyle(), cornerRadius: ProfilePickerLayout.avatarSize / 2,
             contentSuppliesProjection: true
         )
+        .plozzCircularFocusStyle()
     }
 }
 

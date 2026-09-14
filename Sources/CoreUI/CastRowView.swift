@@ -107,6 +107,7 @@ private struct CastMemberCard: View {
                 .multilineTextAlignment(.center)
             }
         )
+        .plozzCircularFocusStyle()
     }
 
     @ViewBuilder

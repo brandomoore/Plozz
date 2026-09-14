@@ -440,6 +440,7 @@ public struct ProfileEditorView: View {
             CircularSelectionButtonStyle(diameter: diameter), cornerRadius: diameter / 2,
             contentSuppliesProjection: true
         )
+        .plozzCircularFocusStyle()
         .accessibilityLabel(Text("Delete Profile"))
     }
 
@@ -703,6 +704,7 @@ public struct ProfileEditorView: View {
             CircularSelectionButtonStyle(diameter: diameter), cornerRadius: diameter / 2,
             contentSuppliesProjection: true
         )
+        .plozzCircularFocusStyle()
         .accessibilityLabel(Text(symbolAccessibilityName(symbol)))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
@@ -787,6 +789,7 @@ public struct ProfileEditorView: View {
             CircularSelectionButtonStyle(diameter: diameter), cornerRadius: diameter / 2,
             contentSuppliesProjection: true
         )
+        .plozzCircularFocusStyle()
         .accessibilityLabel(Text("Emoji \(emoji)"))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
@@ -865,6 +868,7 @@ public struct ProfileEditorView: View {
             CircularSelectionButtonStyle(diameter: diameter), cornerRadius: diameter / 2,
             contentSuppliesProjection: true
         )
+        .plozzCircularFocusStyle()
         .accessibilityLabel(Text("Neutral background"))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
@@ -901,6 +905,7 @@ public struct ProfileEditorView: View {
             CircularSelectionButtonStyle(diameter: diameter), cornerRadius: diameter / 2,
             contentSuppliesProjection: true
         )
+        .plozzCircularFocusStyle()
         .accessibilityLabel(Text(ProfileTileColor.accessibilityName(forIndex: index)))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
@@ -972,6 +977,7 @@ public struct ProfileEditorView: View {
                 CircularSelectionButtonStyle(diameter: diameter), cornerRadius: diameter / 2,
                 contentSuppliesProjection: true
             )
+            .plozzCircularFocusStyle()
             .accessibilityLabel(Text("Photo from \(candidate.detailLabel)"))
             .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
 

@@ -18,4 +18,30 @@ public extension EnvironmentValues {
         set { self[PlozzCardFocusStyleKey.self] = newValue }
     }
 }
+
+public extension View {
+    /// Scope both the control's focus owner and its visuals to the circular treatment,
+    /// without changing the saved media-card preference.
+    func plozzCircularFocusStyle() -> some View {
+        modifier(CircularFocusStyleScope())
+    }
+}
+
+enum CircularControlFocusStyle {
+    static func resolve(_ selected: CardFocusStyle) -> CardFocusStyle {
+        selected.usesSystemEffect ? .outlined : selected
+    }
+}
+
+private struct CircularFocusStyleScope: ViewModifier {
+    @Environment(\.plozzCardFocusStyle) private var selected
+
+    func body(content: Content) -> some View {
+        #if os(tvOS)
+        content.environment(\.plozzCardFocusStyle, CircularControlFocusStyle.resolve(selected))
+        #else
+        content
+        #endif
+    }
+}
 #endif

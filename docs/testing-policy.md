@@ -374,8 +374,8 @@ focus can still expand beyond it without changing layout.
 the actual information grid with a long synopsis and four ratings, checking
 bounded, stable card dimensions. `NativeFocusRequestHostedTests` compares the
 actual resting `contentView` bounds against its SwiftUI layout container.
-Native monogram photos are prepared as square, circular-alpha image data, so a
-tall source portrait cannot protrude into its caption on focus.
+The standalone native monogram adapter prepares square, circular-alpha image
+data; production avatar controls use the scoped custom treatment instead.
 System bypasses app-defined focus surfaces, edge strokes, resting shadows and
 focused z-index changes. Custom Highlight/Outline retain their styling.
 Horizontal rails do not clip native focus overflow.
@@ -383,9 +383,12 @@ Captions reserve clearance without an additional custom focus animation.
 In the season episode row, the System focus owner encloses only the thumbnail
 and its artwork badges, not the title or synopsis below it. Both the episode
 thumbnail and interactive loading/retry placeholder use TVPosterView, so the
-native outline and image use the same corner geometry. Cast/artist portraits use
-TVMonogramView, with their captions outside the native control rather than on a
-focused card platter. Regular media poster footer labels retain the existing
+native outline and image use the same corner geometry. Cast/artist portraits and
+profile avatar controls use the existing circular Outline treatment when System
+is selected. `plozzCircularFocusStyle` scopes both the focus owner and its visuals;
+it does not change the saved preference or ordinary media-card focus. Existing
+Highlight/Outline selections remain unchanged. Regular media poster footer labels
+retain the existing
 density-aware title/subtitle font sizes. Native poster footers reserve at least
 18 density-scaled points of artwork clearance (more for larger type), using the
 documented negative bottom `contentViewInsets`. TVUIKit's own focus expansion
