@@ -286,24 +286,27 @@ struct HomeTab: View {
                     // server picker), so best-source selection still happens there and
                     // at play time (requestPlay).
                     let item = $0
-                    Task { @MainActor in
-                        await heroTrailerController.captureHandoffFrame()
-                        if heroTrailerController.isShowing(item.id),
-                           heroTrailerController.isPlaying {
-                            // A system NavigationStack push snapshots/composites
-                            // the newly-created detail hierarchy before its video
-                            // layer is live, which exposes a backdrop for a few
-                            // frames. A playing hero trailer is a visual continuity
-                            // handoff, not a spatial page move: atomically replace
-                            // only the foreground metadata. Pop remains animated.
-                            var transaction = Transaction()
-                            transaction.disablesAnimations = true
-                            withTransaction(transaction) {
-                                navigate(item)
-                            }
-                        } else {
+                    let handsOffTrailer = heroTrailerController.isShowing(item.id)
+                        && heroTrailerController.isPlaying
+                    #if os(tvOS)
+                    DetailTransitionNavigation.prepare(
+                        for: item,
+                        artworkSnapshot: handsOffTrailer ? heroTrailerController.handoffImage : nil
+                    )
+                    #endif
+                    if handsOffTrailer {
+                        Task { @MainActor in
+                            await heroTrailerController.captureHandoffFrame()
+                        }
+                        // Keep the live player handoff, but never make navigation
+                        // or the first animation frame wait for video decoding.
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
                             navigate(item)
                         }
+                    } else {
+                        navigate(item)
                     }
                 },
                 onPlayItem: { requestPlay($0) },
@@ -430,11 +433,8 @@ struct HomeTab: View {
                 // defaults to the smart best version (no library origin).
                 itemDetail(for: item, libraryOrigin: nil)
             }
-            .onChange(of: pendingTitleRoute) { _, item in
-                guard isActiveTab, let item else { return }
-                pendingTitleRoute = nil
-                path.append(item)
-            }
+            .onChange(of: pendingTitleRoute) { _, _ in consumePendingTitleRoute() }
+            .onChange(of: isActiveTab, initial: true) { _, _ in consumePendingTitleRoute() }
             .onChange(of: pendingPersonRoute) { _, route in
                 // Raised by the in-player Cast card and pushed once the player
                 // has gone. Cleared immediately so the same person can be
@@ -605,6 +605,9 @@ struct HomeTab: View {
                 // sense, and costs nothing on the way in: the player is presented
                 // over the stack, so the page is simply already there underneath.
                 onResolved: { item in
+                    #if os(tvOS)
+                    DetailTransitionNavigation.suppressNextEntranceForPlayback()
+                    #endif
                     navigate(item)
                     // Next runloop turn, so the push is committed before the
                     // player is presented over it. Presenting into a navigation
@@ -1000,23 +1003,31 @@ struct HomeTab: View {
         libraryOrigin: String? = nil,
         asOwnSubject: Bool = false
     ) {
-        if item.kind == .episode, asOwnSubject {
-            path.append(item)
-        } else if item.kind == .episode, item.seriesID != nil {
-            path.append(EpisodeContextRoute(
-                episode: item,
-                originAccountID: libraryOrigin
-            ))
-        } else if item.kind == .season, item.seriesID != nil {
-            path.append(SeasonContextRoute(
-                season: item,
-                originAccountID: libraryOrigin
-            ))
-        } else if let libraryOrigin {
-            path.append(LibraryDetailRoute(item: item, originAccountID: libraryOrigin))
-        } else {
-            path.append(item)
+        withCinematicDetailNavigation(for: item) {
+            if item.kind == .episode, asOwnSubject {
+                path.append(item)
+            } else if item.kind == .episode, item.seriesID != nil {
+                path.append(EpisodeContextRoute(
+                    episode: item,
+                    originAccountID: libraryOrigin
+                ))
+            } else if item.kind == .season, item.seriesID != nil {
+                path.append(SeasonContextRoute(
+                    season: item,
+                    originAccountID: libraryOrigin
+                ))
+            } else if let libraryOrigin {
+                path.append(LibraryDetailRoute(item: item, originAccountID: libraryOrigin))
+            } else {
+                path.append(item)
+            }
         }
+    }
+
+    private func consumePendingTitleRoute() {
+        guard isActiveTab, let item = pendingTitleRoute else { return }
+        pendingTitleRoute = nil
+        withCinematicDetailNavigation(for: item) { path.append(item) }
     }
 
     /// Builds the item-detail page, threading the optional `libraryOrigin` into the

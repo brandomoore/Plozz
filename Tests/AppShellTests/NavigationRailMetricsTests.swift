@@ -20,7 +20,7 @@ final class NavigationRailMetricsTests: XCTestCase {
         let verticalInset = NavigationRailMetrics.expandedContentVerticalPadding(
             safeAreaInset: safeAreaInset
         )
-            + NavigationRailMetrics.bumperHeight
+            + NavigationRailMetrics.edgeSpacerHeight
             + NavigationRailMetrics.itemVerticalPadding
             - NavigationRailMetrics.expandedPanelVerticalPadding(
                 safeAreaInset: safeAreaInset

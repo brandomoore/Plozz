@@ -65,6 +65,7 @@ public struct DetailInformationSections: View {
     /// than a guess. Measured, so it tracks Dynamic Type.
     @State private var bodyLineHeight: CGFloat = 0
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzCardFocusStyle) private var cardFocusStyle
 
     public init(
         item: MediaItem,
@@ -233,7 +234,7 @@ public struct DetailInformationSections: View {
 
     private var infoColumnFocusInset: CGFloat {
         #if os(tvOS)
-        cardPadding + 8
+        cardFocusStyle.usesSystemEffect ? 0 : cardPadding + 8
         #else
         0
         #endif
@@ -374,11 +375,9 @@ public struct DetailInformationSections: View {
             // Same lift as the read-only cards beside it. The style's default is
             // a browse-card 1.07, which on a panel this wide both mismatched its
             // neighbours and grew far enough to overlap the Ratings column.
-            .buttonStyle(
-                PlozzCardButtonStyle(
-                    cornerRadius: cardCornerRadius,
-                    focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale
-                )
+            .plozzCardButton(
+                cornerRadius: cardCornerRadius,
+                focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale
             )
             .sheet(isPresented: $showsFullOverview) {
                 overviewSheet

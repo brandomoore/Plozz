@@ -534,7 +534,7 @@ private struct LiveTVGuideOverview: View {
     var body: some View {
         SettingsSectionGroup("Guide coverage") {
             Text("\(imports.matchedChannelCount) channels matched")
-            Text("\(imports.retainedProgramCount) cached programme listings")
+            Text("\(imports.retainedProgramCount) cached program listings")
             if let start = imports.coverageStart, let end = imports.coverageEnd {
                 Text(start..<end, format: .interval.day().month().hour().minute())
             }

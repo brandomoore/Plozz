@@ -11,22 +11,22 @@ public enum LibraryChannelError: Error, Equatable, Sendable {
     public var message: LocalizedStringResource {
         switch self {
         case .invalidRecipe: "Choose a name, accessible libraries and valid channel rules."
-        case .invalidSnapshot: "The library returned invalid programme metadata."
+        case .invalidSnapshot: "The library returned invalid program details."
         case .emptyCatalog: "No playable movies or episodes match these rules."
         case .catalogTooLarge: "This channel matches too many items. Choose fewer libraries or narrower rules."
         case .catalogChanged: "The library changed while loading. Preview the channel again."
         case .authorizationChanged: "Your profile or server access changed. Choose the channel again."
         case .sourceUnavailable: "A library used by this channel isn't available to this profile."
         case .snapshotUnavailable: "This channel's saved schedule isn't available on this device."
-        case .historyExpired: "This delayed programme is no longer retained. Go Live to continue."
+        case .historyExpired: "This earlier program is no longer retained. Go Live to continue."
         case .incompatiblePlaybackMode: "This file requires a server playback mode that cannot safely separate watch history. Choose another channel."
-        case .mediaChanged: "The scheduled file changed or is unavailable. The next programme will start on schedule."
+        case .mediaChanged: "The scheduled video changed or is unavailable. The next program will start on schedule."
         case .storageFailed: "Your channel couldn't be saved. Existing channels have not been replaced."
         case .unsupportedVersion: "This channel was saved by a newer version of Plozz."
         case .publicationConflict: "This channel changed while editing. Open it again before saving."
-        case .tooManyRevisions: "This channel has too many retained schedule changes. Wait until older programmes expire."
-        case .unableToJoinLive: "This file couldn't join the current programme in time. Retry or choose another channel."
-        case .playbackFailed: "This programme couldn't play. Retry or wait for the next scheduled programme."
+        case .tooManyRevisions: "This channel has too many retained schedule changes. Wait until older programs expire."
+        case .unableToJoinLive: "Playback couldn't catch up to the channel. Retry or choose another channel."
+        case .playbackFailed: "Playback failed. Retry or wait for the next program."
         }
     }
 }
@@ -155,6 +155,24 @@ public struct LibraryChannelItem: Codable, Hashable, Identifiable, Sendable {
     public let rating: String?
     public let durationSeconds: Int64
     public var id: String { "\(library.id):\(itemID.utf8.count):\(itemID)" }
+
+    public var navigationSubject: MediaItem {
+        let subjectID = kind == .episode ? seriesID : nil
+        let opensSeries = subjectID != nil
+        return MediaItem(
+            id: subjectID ?? itemID,
+            title: opensSeries ? seriesTitle ?? title : title,
+            kind: opensSeries ? .series : kind,
+            allowsTitleBasedMetadataMatching: false,
+            sourceAccountID: library.accountID,
+            libraryID: library.libraryID
+        )
+    }
+
+    public var navigationTitle: LocalizedStringResource {
+        if kind == .movie { return "Go to movie" }
+        return seriesID == nil ? "Go to episode" : "Go to show"
+    }
 
     public init(item: MediaItem, library: LibraryChannelLibrary, serverID: String, userID: String) throws {
         guard (item.kind == .movie || item.kind == .episode),

@@ -467,6 +467,9 @@ public struct HomeView: View {
                                 // way UP feel much slower than the way down. The
                                 // observer still clears it as a backstop.)
                                 onFocusGained: {
+                                    #if os(tvOS)
+                                    guard !DetailTransitionNavigation.isRestoringSourcePage else { return }
+                                    #endif
                                     HomePerfDiagnostics.emitLine("HOME-TRANSITION hero-focus UP")
                                     if heroRecedeModel.isReceded {
                                         HomePerfDiagnostics.recordNavigationAnimation(receding: false)
@@ -590,6 +593,9 @@ public struct HomeView: View {
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     heroActive && geometry.contentOffset.y > Self.recedeScrollThreshold
                 } action: { _, shouldRecede in
+                    #if os(tvOS)
+                    guard !DetailTransitionNavigation.isRestoringSourcePage else { return }
+                    #endif
                     HomePerfDiagnostics.emitLine("HOME-TRANSITION receded=\(shouldRecede)")
                     if shouldRecede {
                         HomePerfDiagnostics.recordNavigationAnimation(receding: true)
@@ -1557,7 +1563,7 @@ private struct LibraryCardView: View {
     var isUpdating: Bool = false
     let action: () -> Void
 
-    @FocusState private var isFocused: Bool
+    @PlozzCardFocus private var isFocused: Bool
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.plozzMetrics) private var metrics
@@ -1599,7 +1605,7 @@ private struct LibraryCardView: View {
         VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
             artwork
                 .frame(width: metrics.landscapeWidth, height: metrics.landscapeHeight)
-                .clipShape(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
+                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
                 .plozzMediaEdge(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -1624,14 +1630,14 @@ private struct LibraryCardView: View {
         }
         .padding(metrics.cardInset)
         .plozzGlassCard(cornerRadius: metrics.landscapeCardCornerRadius, isFocused: surfaceFocused)
-        .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius, action: action)
         .plozzCardRasterize(reduceTransparency: reduceTransparency)
-        .shadow(color: .black.opacity(isFocused ? 0.36 : 0.15), radius: isFocused ? 20 : 8, y: isFocused ? 10 : 4)
+        .plozzRestingCardShadow(isFocused: isFocused)
         .plozzCardFocusLift(
             isFocused: isFocused,
             cornerRadius: metrics.landscapeCardCornerRadius,
             outlineScale: PlozzTheme.Metrics.mediumFocusedCardScale
         )
+        .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius, action: action)
         .plozzCardFocusTransition(isFocused: isFocused)
     }
 
@@ -1648,7 +1654,7 @@ private struct LibraryCardView: View {
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
                 .frame(width: width)
                 .overlay { artwork }
-                .clipShape(RoundedRectangle(cornerRadius: metrics.landscapeCardCornerRadius, style: .continuous))
+                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: metrics.landscapeCardCornerRadius, style: .continuous))
                 .plozzMediaEdge(cornerRadius: metrics.landscapeCardCornerRadius)
                 .plozzFocusHalo(
                     cornerRadius: metrics.landscapeCardCornerRadius,
@@ -1663,7 +1669,7 @@ private struct LibraryCardView: View {
                 isFocused: isFocused
             )
             .frame(width: width)
-            .offset(y: isFocused ? 0 : -push)
+            .offset(y: focusStyle.usesSystemEffect || isFocused ? 0 : -push)
         }
         .padding(.horizontal, metrics.borderlessCardSideMargin)
         .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius, action: action)

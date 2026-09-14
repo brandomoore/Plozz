@@ -65,6 +65,8 @@ public final class LibraryChannelPlaybackSession {
     @ObservationIgnored private var preferredAudioLanguages: [String] = []
     @ObservationIgnored private var preferredSubtitleLanguages: [String] = []
     @ObservationIgnored private var loadingStarted: TimeInterval?
+    private static let joinTolerance: TimeInterval = 2
+    private static let maximumPlayingDrift: TimeInterval = 3
 
     public convenience init(
         channelID: UUID, engine: any VideoEngine,
@@ -128,6 +130,12 @@ public final class LibraryChannelPlaybackSession {
         guard let slot = currentSlot else { return nil }
         let cursor = pausedCursor ?? slot.start.addingTimeInterval(engine.currentTime)
         return max(0, clock().timeIntervalSince(cursor))
+    }
+
+    public var navigationItem: LibraryChannelItem? {
+        guard let activeAuthorization, authorization() == activeAuthorization,
+              schedule() != nil, let item = currentSlot?.item, provider(item) != nil else { return nil }
+        return item
     }
 
     /// The source remains valid and its timer will advance at the next immutable
@@ -340,15 +348,15 @@ public final class LibraryChannelPlaybackSession {
             return
         }
         if pendingReconciliation {
-            guard engine.status == .ready else { return }
+            guard engine.status == .ready, engine.isPlaybackPositionReady else { return }
             pendingReconciliation = false
             reconcileLoaded()
             return
         }
         guard !intendedPause, let currentSlot else { return }
-        if !isDelayed, state == .playing, engine.status == .ready,
+        if !isDelayed, state == .playing, engine.status == .ready, engine.isPlaybackPositionReady,
            !engine.isPaused, engine.preventsDisplaySleep,
-           abs(engine.currentTime - currentSlot.offset(at: clock())) > 3 {
+           abs(engine.currentTime - currentSlot.offset(at: clock())) > Self.maximumPlayingDrift {
             state = .loading
             loadingStarted = uptime()
             reconcileLoaded()
@@ -448,6 +456,11 @@ public final class LibraryChannelPlaybackSession {
             }
             await engine.load(request: resolved, startPosition: resolved.startPosition)
             try check(stamp)
+            HandoffDiagnostics.emit(
+                "LIBRARY_CHANNEL event=loaded engineReady=\(engine.status == .ready)"
+                    + " positionReady=\(engine.isPlaybackPositionReady)"
+                    + " position=\(engine.currentTime) requested=\(resolved.startPosition)"
+            )
             if case .unavailable = state { return }
             if case .failed(let error) = engine.status { throw Self.playbackIssue(error) }
             pendingReconciliation = true
@@ -463,11 +476,15 @@ public final class LibraryChannelPlaybackSession {
 
     private func reconcileLoaded() {
         guard let slot = currentSlot else { return }
-        pendingReconciliation = false
         if !isDelayed, clock() >= slot.end {
             prepare(at: clock())
             return
         }
+        guard engine.status == .ready, engine.isPlaybackPositionReady else {
+            waitForPlaybackPosition()
+            return
+        }
+        pendingReconciliation = false
         if intendedPause {
             engine.pause()
             let target = slot.offset(at: pausedCursor ?? preparedCursor ?? clock())
@@ -484,6 +501,10 @@ public final class LibraryChannelPlaybackSession {
                         return
                     }
                     if case .unavailable = self.state { return }
+                    guard self.engine.isPlaybackPositionReady else {
+                        self.waitForPlaybackPosition()
+                        return
+                    }
                     self.loadingStarted = nil
                     if self.intendedPause { self.engine.pause(); self.state = .paused }
                     else { self.engine.play(); self.state = .playing }
@@ -502,6 +523,10 @@ public final class LibraryChannelPlaybackSession {
                 self.coverage.discontinuity()
                 var desired = target
                 for attempt in 0..<3 {
+                    HandoffDiagnostics.emit(
+                        "LIBRARY_CHANNEL event=joinSeek attempt=\(attempt + 1)"
+                            + " position=\(self.engine.currentTime) target=\(desired)"
+                    )
                     await self.engine.seek(to: desired, kind: .exact)
                     guard !Task.isCancelled, self.generation == stamp else { return }
                     guard self.authorization() == self.activeAuthorization else {
@@ -510,8 +535,12 @@ public final class LibraryChannelPlaybackSession {
                         return
                     }
                     if !self.isDelayed, self.clock() >= slot.end { self.prepare(at: self.clock()); return }
+                    guard self.engine.isPlaybackPositionReady else {
+                        self.waitForPlaybackPosition()
+                        return
+                    }
                     let latest = self.isDelayed ? desired : slot.offset(at: self.clock())
-                    if abs(latest - self.engine.currentTime) <= 2 { break }
+                    if abs(latest - self.engine.currentTime) <= Self.joinTolerance { break }
                     if attempt == 2 {
                         self.engine.pause()
                         self.fail(.unableToJoinLive)
@@ -537,13 +566,27 @@ public final class LibraryChannelPlaybackSession {
         }
     }
 
+    private func waitForPlaybackPosition() {
+        pendingReconciliation = true
+        state = .loading
+        if loadingStarted == nil { loadingStarted = uptime() }
+    }
+
     private func ended() {
         sampleHistory()
         coverage.discontinuity()
         guard let slot = currentSlot else { return }
         if isDelayed { prepare(at: slot.end) }
         else if clock() >= slot.end { prepare(at: clock()) }
-        else {
+        else if slot.end.timeIntervalSince(clock()) <= Self.maximumPlayingDrift,
+                engine.currentTime >= Double(slot.item.durationSeconds) - Self.joinTolerance {
+            // A join can legitimately land slightly ahead of the broadcast clock.
+            // Hold the last frame until its published boundary instead of reporting
+            // a missing file or starting the next scheduled program early.
+            state = .loading
+            loadingStarted = uptime()
+            pendingReconciliation = false
+        } else {
             // A shortened/missing cut does not shift the virtual broadcast.
             engine.pause()
             fail(.mediaChanged)
@@ -569,7 +612,7 @@ public final class LibraryChannelPlaybackSession {
         coverage.sample(
             position: engine.currentTime, instant: uptime(),
             isPlaying: isWatching && state == .playing && engine.status == .ready
-                && !engine.isPaused && engine.preventsDisplaySleep
+                && engine.isPlaybackPositionReady && !engine.isPaused && engine.preventsDisplaySleep
         )
         secondsWatched = coverage.secondsWatched
         guard isWatching, state == .playing, coverage.isComplete, !reportedCompletion, let token = currentToken,
@@ -612,6 +655,13 @@ public final class LibraryChannelPlaybackSession {
 
     private func fail(_ error: LibraryChannelError) {
         guard state != .unavailable(error) else { return }
+        loadingStarted = nil
+        pendingReconciliation = false
+        HandoffDiagnostics.emit(
+            "LIBRARY_CHANNEL event=failure reason=\(error)"
+                + " engineReady=\(engine.status == .ready)"
+                + " positionReady=\(engine.isPlaybackPositionReady) position=\(engine.currentTime)"
+        )
         state = .unavailable(error)
         onPlaybackFailure?(error)
     }

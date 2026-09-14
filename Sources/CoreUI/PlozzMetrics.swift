@@ -194,7 +194,7 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// own offset must both come from here, or the card's footprint changes with
     /// focus and the whole row shifts.
     public func focusCaptionPush(for focusStyle: CardFocusStyle) -> CGFloat {
-        guard !focusStyle.drawsFocusOutline else { return focusCaptionPush }
+        guard focusStyle == .highlight else { return focusCaptionPush }
         return (focusCaptionPush * PlozzTheme.Metrics.highlightCaptionPushRatio).rounded()
     }
 
@@ -262,6 +262,12 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// Landscape / music card counterpart of `posterCaptionTopSpacing`.
     public var landscapeCaptionTopSpacing: CGFloat {
         PlozzTheme.Metrics.cardCaptionSpacing + landscapeCaptionInset * PlozzTheme.Metrics.captionTopClearanceFactor
+    }
+
+    /// Native lockups reserve this below the artwork; TVUIKit moves the footer
+    /// with its own focus expansion, without changing the card's layout slot.
+    public var nativePosterCaptionSpacing: CGFloat {
+        max(18 * scale, cardTitleFontSize * 0.55).rounded()
     }
 
     /// - Parameter dynamicTypeSize: the reader's current text size. Pass the

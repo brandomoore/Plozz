@@ -189,7 +189,7 @@ public struct MediaRowView: View {
     /// The card focus was on when this row's page was covered — see `isCovered`.
     @State private var coveredFocusID: String?
     @Namespace private var episodeEntrySpace
-    @FocusState private var entryPlaceholderFocused: Bool
+    @PlozzCardFocus private var entryPlaceholderFocused: Bool
     @State private var entryLayout = MediaRowEntryLayout()
     @State private var pendingEntryHandoff = false
     @State private var alignedEntryTarget: String?
@@ -363,6 +363,7 @@ public struct MediaRowView: View {
     /// card. `PosterCardView` ignores `isEnabled`, so this affects focusability
     /// only, never appearance.
     private func cardIsDisabled(_ item: MediaItem) -> Bool {
+        if episodeEntry?.isEnabled == false { return true }
         // While the page is covered, the only focusable card is the one focus
         // will be restored to. The system re-establishes focus by geometry as
         // the page reappears, and leaving the other cards focusable let it land
@@ -492,6 +493,7 @@ public struct MediaRowView: View {
                         // rows are unchanged; only the drawing area grows.
                         .padding(.vertical, layoutMetrics.railShadowClearance)
                     }
+                    .scrollClipDisabled()
                     .padding(.top, layoutMetrics.railTopClearanceOffset)
                     .padding(.bottom, layoutMetrics.railBottomClearanceOffset)
                     .coordinateSpace(name: episodeEntrySpace)
@@ -513,7 +515,7 @@ public struct MediaRowView: View {
                     .background {
                         #if os(tvOS)
                         if episodeEntry != nil {
-                            NativeFocusRegionObserver(isEnabled: !isCovered) {
+                            NativeFocusRegionObserver(isEnabled: !isCovered && episodeEntry?.isEnabled != false) {
                                 if showsEntryPlaceholder {
                                     pendingEntryHandoff = true
                                     reportEpisodeEntry()
@@ -829,19 +831,35 @@ public struct MediaRowView: View {
         )
     }
 
+    private func selectEpisodeEntryPlaceholder() {
+        guard episodeEntry?.isEnabled != false else { return }
+        if episodeEntry?.phase == .failed { episodeEntry?.onRetry?() }
+    }
+
     private var episodeEntryPlaceholder: some View {
         HStack(alignment: .top, spacing: layoutMetrics.cardSpacing) {
                 EpisodeRowEntryPlaceholder(
                     phase: episodeEntry?.phase ?? .loading,
-                    showsStatus: true, isFocused: entryPlaceholderFocused
+                    showsStatus: true, isFocused: entryPlaceholderFocused,
+                    nativeFocus: $entryPlaceholderFocused,
+                    onSelect: selectEpisodeEntryPlaceholder
                 )
-                .focusable()
-                .focusEffectDisabled()
-                .focused($entryPlaceholderFocused)
-                .onTapGesture {
-                    if episodeEntry?.phase == .failed { episodeEntry?.onRetry?() }
-                }
+                #if os(tvOS)
+                .focusableCard(
+                    isFocused: $entryPlaceholderFocused,
+                    cornerRadius: layoutMetrics.landscapeCardCornerRadius,
+                    isEnabled: episodeEntry?.isEnabled != false,
+                    nativeFocusInContent: true,
+                    action: selectEpisodeEntryPlaceholder
+                )
+                #else
+                .focusable(episodeEntry?.isEnabled != false)
+                .plozzCardFocusEffect()
+                .focused($entryPlaceholderFocused.focusState)
+                .onTapGesture(perform: selectEpisodeEntryPlaceholder)
+                #endif
                 .accessibilityIdentifier("episode-entry-placeholder")
+                .environment(\.plozzCardStyle, .borderless)
                 if episodeEntry?.phase == .loading || episodeEntry?.phase == .ready {
                     ForEach(0..<3, id: \.self) { _ in
                         EpisodeRowEntryPlaceholder().accessibilityHidden(true)
@@ -874,7 +892,8 @@ public struct MediaRowView: View {
         guard episodeEntry != nil, !focusEngaged else { return }
         if entryLayout != layout { entryLayout = layout }
         guard episodeEntry?.phase == .ready,
-              let target = gateTarget, itemIDSet.contains(target), !isCovered else { return }
+              let target = gateTarget, itemIDSet.contains(target), !isCovered,
+              episodeEntry?.isEnabled != false else { return }
         if MediaRowEpisodeEntryPolicy.targetReady(target, layout: layout) {
             guard pendingEntryHandoff else { return }
             // The real target is already laid out. Remove the loading leaf and
@@ -1022,7 +1041,7 @@ public struct MediaRowView: View {
     /// runloop tick so SwiftUI has installed the focusable cards before we move
     /// focus onto one.
     private func applyInitialFocus(using proxy: ScrollViewProxy) {
-        guard !isCovered else { return }
+        guard !isCovered, episodeEntry?.isEnabled != false else { return }
         if episodeEntry != nil, initialFocusID != nil,
            !didApplyInitialFocus, showsEntryPlaceholder {
             didApplyInitialFocus = true
@@ -1176,6 +1195,11 @@ public struct MediaRowView: View {
               !prefetchedHeroIDs.contains(item.stablePresentationID) else {
             return
         }
+        #if os(tvOS)
+        // Movie/show cards warm the policy-selected backdrop themselves. Do not
+        // compete with that request by also warming a different library image.
+        if item.kind == .movie || item.kind == .series { return }
+        #endif
         let references = item.artworkReferences(for: .detailBackdrop)
         guard let reference = references.first else { return }
         prefetchedHeroIDs.insert(item.stablePresentationID)

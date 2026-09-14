@@ -204,7 +204,7 @@ struct SearchTab: View {
             .onChange(of: pendingTitleRoute) { _, item in
                 guard isActiveTab, let item else { return }
                 pendingTitleRoute = nil
-                path.append(item)
+                withCinematicDetailNavigation(for: item) { path.append(item) }
             }
             .onChange(of: pendingPersonRoute) { _, route in
                 // Raised by the in-player Cast card and pushed once the player
@@ -335,10 +335,12 @@ struct SearchTab: View {
     /// own page; "Go to Season" hands over a season, so the two are
     /// distinguishable by kind.
     private func navigateToItem(_ item: MediaItem) {
-        if item.kind == .season, item.seriesID != nil {
-            path.append(SeasonContextRoute(season: item, originAccountID: nil))
-        } else {
-            path.append(item)
+        withCinematicDetailNavigation(for: item) {
+            if item.kind == .season, item.seriesID != nil {
+                path.append(SeasonContextRoute(season: item, originAccountID: nil))
+            } else {
+                path.append(item)
+            }
         }
     }
 
@@ -373,19 +375,21 @@ struct SearchTab: View {
     }
 
     private func open(_ item: MediaItem) {
-        switch item.kind {
-        case .episode where item.seriesID != nil:
-            path.append(EpisodeContextRoute(
-                episode: item,
-                originAccountID: nil
-            ))
-        case .season where item.seriesID != nil:
-            path.append(SeasonContextRoute(
-                season: item,
-                originAccountID: nil
-            ))
-        default:
-            path.append(item)
+        withCinematicDetailNavigation(for: item) {
+            switch item.kind {
+            case .episode where item.seriesID != nil:
+                path.append(EpisodeContextRoute(
+                    episode: item,
+                    originAccountID: nil
+                ))
+            case .season where item.seriesID != nil:
+                path.append(SeasonContextRoute(
+                    season: item,
+                    originAccountID: nil
+                ))
+            default:
+                path.append(item)
+            }
         }
     }
 

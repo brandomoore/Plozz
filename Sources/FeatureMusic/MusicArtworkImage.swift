@@ -62,7 +62,7 @@ struct MusicArtworkImage: View {
                 placeholder
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .plozzCardArtworkClip(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .modifier(OptionalMediaEdge(cornerRadius: cornerRadius, enabled: showsMediaEdge))
     }
 
@@ -104,7 +104,7 @@ struct MusicCard: View {
     var asyncFallbackURL: (@Sendable () async -> URL?)? = nil
     let action: () -> Void
 
-    @FocusState private var isFocused: Bool
+    @PlozzCardFocus private var isFocused: Bool
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var cardStyle
@@ -183,14 +183,14 @@ struct MusicCard: View {
         }
         .padding(metrics.cardInset)
         .plozzGlassCard(cornerRadius: metrics.landscapeCardCornerRadius, isFocused: surfaceFocused)
-        .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius, action: action)
         .plozzCardRasterize(reduceTransparency: reduceTransparency)
-        .shadow(color: .black.opacity(isFocused ? 0.36 : 0.15), radius: isFocused ? 20 : 8, y: isFocused ? 10 : 4)
+        .plozzRestingCardShadow(isFocused: isFocused)
         .plozzCardFocusLift(
             isFocused: isFocused,
             cornerRadius: metrics.landscapeCardCornerRadius,
             outlineScale: PlozzTheme.Metrics.mediumFocusedCardScale
         )
+        .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius, action: action)
         .plozzCardFocusTransition(isFocused: isFocused)
     }
 
@@ -218,7 +218,7 @@ struct MusicCard: View {
             // Push the caption down on focus with a pure transform (see
             // `borderlessCaptionSpacing`) so the footprint stays fixed and focusing
             // a tile never shifts the grid/row.
-            .offset(y: isFocused ? 0 : -captionPush)
+            .offset(y: focusStyle.usesSystemEffect || isFocused ? 0 : -captionPush)
         }
         .padding(.horizontal, metrics.borderlessCardSideMargin)
         .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius, action: action)
@@ -321,6 +321,7 @@ struct ArtistCard: View {
             diameter: diameter,
             focusPadding: metrics.circleFocusPadding,
             action: action,
+            nativeName: artist.name,
             avatar: {
                 MusicArtworkImage(
                     url: artist.artworkURL,

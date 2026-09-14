@@ -7,11 +7,8 @@ import MetadataKit
 /// progress bar, and title/subtitle. The standard building block of Home rows
 /// and library grids.
 ///
-/// Both styles drive focus through a plain `.focusable` view (never a `Button`,
-/// whose tvOS focus *platter* paints a stark white plate over our glass) plus an
-/// `.onTapGesture` select handler. The focus visual is entirely our own
-/// Twozz-ported liquid-glass lift: a theme-tinted glass surface with a
-/// focused-only drop shadow and a series-aware title treatment for episodes.
+/// Both card layouts keep one focus owner and one select handler. System focus
+/// uses tvOS projection; Highlight and Outline retain their custom treatment.
 public struct PosterCardView: View {
     public enum Style { case poster, landscape }
 
@@ -52,7 +49,11 @@ public struct PosterCardView: View {
     private let isPendingRemoval: Bool
     private let action: () -> Void
 
-    @FocusState private var isFocused: Bool
+    @PlozzCardFocus private var isFocused: Bool
+    #if os(tvOS)
+    @State private var detailTransitionSource = DetailTransitionSourceReference()
+    @State private var nativePosterArtwork = ArtworkResolutionState()
+    #endif
     /// This card's resolved logo tone, and the tone of the artwork it sits on.
     /// Together they decide how far the artwork is dimmed behind it — see
     /// ``ContinueWatchingCardShape/artworkDim(logo:background:)``. Either being
@@ -141,10 +142,12 @@ public struct PosterCardView: View {
     /// "lift" surface. Centralised in `PlozzCardCaption` so every card type flips
     /// identically.
     private var titleColor: Color {
-        PlozzCardCaption.titleColor(isFocused: surfaceFocused, reduceTransparency: reduceTransparency)
+        focusStyle.usesSystemEffect ? .primary
+            : PlozzCardCaption.titleColor(isFocused: surfaceFocused, reduceTransparency: reduceTransparency)
     }
     private var subtitleColor: Color {
-        PlozzCardCaption.subtitleColor(isFocused: surfaceFocused, reduceTransparency: reduceTransparency)
+        focusStyle.usesSystemEffect ? .secondary
+            : PlozzCardCaption.subtitleColor(isFocused: surfaceFocused, reduceTransparency: reduceTransparency)
     }
 
     private var size: CGSize {
@@ -174,10 +177,36 @@ public struct PosterCardView: View {
             // strength on focus. No-op off tvOS.
             .plozzChromeFocused(isFocused)
             .mediaItemContextMenu(for: item)
+            .preloadDetailBackdropOnFocus(for: item, isFocused: isFocused)
+            #if os(tvOS)
+            .coordinateSpace(name: detailTransitionSource.coordinateSpace)
+            .background {
+                DetailTransitionSourceAnchor(
+                    reference: detailTransitionSource,
+                    itemKey: item.stablePresentationID,
+                    cornerRadius: transitionArtworkCornerRadius,
+                    isFocused: isFocused,
+                    cardFocus: $isFocused
+                )
+            }
+            #endif
     }
 
     @ViewBuilder
     private var cardBody: some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect && cardStyle == .borderless {
+            nativePosterCard
+        } else {
+            styledCardBody
+        }
+        #else
+        styledCardBody
+        #endif
+    }
+
+    @ViewBuilder
+    private var styledCardBody: some View {
         switch cardStyle {
         case .framed:
             switch style {
@@ -190,6 +219,94 @@ public struct PosterCardView: View {
             borderlessCard
         }
     }
+
+    #if os(tvOS)
+    private var nativePosterTitle: NativePosterText? {
+        guard !showsSeriesArtwork else { return nil }
+        if item.kind == .episode, let series = item.parentTitle, !series.isEmpty {
+            return .content(series)
+        }
+        if hideText { return .localized(spoilerSettings.maskedTitle(for: item)) }
+        return .content(item.title)
+    }
+
+    private var nativeUsesProtectedArtwork: Bool {
+        showsSpoilerSafePoster || (hideThumbnail && spoilerSettings.mode == .placeholder)
+    }
+
+    private var nativePosterTreatment: NativePosterImageTreatment {
+        if showsSeriesArtwork { return .extended }
+        return hideThumbnail && !nativeUsesProtectedArtwork ? .blurred : .original
+    }
+
+    private var nativePosterReferences: [ArtworkReference] {
+        if showsSeriesArtwork { return seriesArtworkReferences }
+        return nativeUsesProtectedArtwork ? placeholderArtworkReferences : artworkReferences
+    }
+
+    private var nativePosterFallback: (@Sendable () async -> URL?)? {
+        if showsSeriesArtwork { return seriesArtworkFallback }
+        return nativeUsesProtectedArtwork ? placeholderArtworkFallback : asyncArtworkFallback
+    }
+
+    private var nativePosterCard: some View {
+        NativeTVPoster(
+            image: nativePosterArtwork.image,
+            treatment: nativePosterTreatment,
+            aspectRatio: borderlessAspectRatio,
+            fallbackWidth: size.width,
+            title: nativePosterTitle,
+            subtitle: showsSeriesArtwork ? nil : subtitleText ?? (reservesSubtitleSpace ? " " : nil),
+            titleFontSize: metrics.cardTitleFontSize,
+            subtitleFontSize: metrics.cardSubtitleFontSize,
+            captionSpacing: metrics.nativePosterCaptionSpacing,
+            overlay: nativePosterOverlay,
+            focus: $isFocused,
+            source: detailTransitionSource,
+            action: selectCard
+        )
+        .focused($isFocused.focusState)
+        .padding(.horizontal, metrics.borderlessCardSideMargin)
+        .background {
+            FallbackAsyncImage(
+                references: nativePosterReferences,
+                maxAspectRatio: posterAspectGuard,
+                variant: artworkVariant,
+                previewVariant: style == .poster ? .posterPreview : nil,
+                asyncFallbackURL: nativePosterFallback,
+                onResolveReference: { reference in
+                    artworkAlreadyCarriesTitle = reference.map(titleBearingArtwork.contains) ?? false
+                },
+                pinIdentity: item.stablePresentationID,
+                content: { _ in Color.clear },
+                placeholder: { Color.clear }
+            )
+            .environment(\.artworkResolutionState, nativePosterArtwork)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+        }
+    }
+
+    private var nativePosterOverlay: some View {
+        ZStack {
+            if nativePosterArtwork.image == nil { neutralPlaceholder }
+            if showsSeriesArtwork && !suppressesSeriesLogo { seriesLogo }
+            MediaCardPlaybackIndicators(
+                item: item,
+                hidesStatus: hideThumbnail,
+                showsProgressBar: !showsResumeChip,
+                badgeInset: borderlessBadgeInset,
+                progressHeight: metrics.progressBarHeight,
+                progressHorizontalInset: borderlessProgressInset,
+                progressBottomInset: borderlessProgressInset,
+                downloadState: showsResumeChip ? nil : downloadState
+            )
+            resumeChip
+            pendingRemovalOverlay
+        }
+        .overlay(alignment: .topLeading) { statusCue(inset: borderlessBadgeInset) }
+    }
+    #endif
 
     // MARK: Poster
 
@@ -214,11 +331,14 @@ public struct PosterCardView: View {
                 }
                 .overlay { resumeChip }
                 .overlay { pendingRemovalOverlay }
-                .clipShape(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius, style: .continuous))
+                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius, style: .continuous))
                 .plozzMediaEdge(
                     cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius,
                     isEnabled: MediaArtworkPlaceholder.Symbol(for: item) == .playback
                 )
+                #if os(tvOS)
+                .recordDetailTransitionArtwork(detailTransitionSource)
+                #endif
 
             captionBlock(inset: metrics.posterCaptionInset, spacing: 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -228,19 +348,19 @@ public struct PosterCardView: View {
             innerCornerRadius: PlozzTheme.Metrics.posterArtCornerRadius,
             isFocused: surfaceFocused
         )
-        .focusableCard(isFocused: $isFocused, cornerRadius: metrics.posterCardCornerRadius, action: action)
         .plozzCardRasterize(reduceTransparency: reduceTransparency)
         // Resting posters carry a soft drop shadow so they read as raised cards
         // (essential in Light mode against a white background); the focused card
         // deepens it. Resting cards now wear the cheap frosted `.ultraThinMaterial`
         // (no live-glass per-frame cost), so the surface returns without the scroll
         // lag that a live resting `.glassEffect` caused.
-        .shadow(color: .black.opacity(isFocused ? 0.36 : 0.15), radius: isFocused ? 20 : 8, y: isFocused ? 10 : 4)
+        .plozzRestingCardShadow(isFocused: isFocused)
         .plozzCardFocusLift(
             isFocused: isFocused,
             cornerRadius: metrics.posterCardCornerRadius,
             outlineScale: PlozzTheme.Metrics.focusedCardScale
         )
+        .focusableCard(isFocused: $isFocused, cornerRadius: metrics.posterCardCornerRadius, action: selectCard)
         .plozzCardFocusTransition(isFocused: isFocused)
     }
 
@@ -265,11 +385,14 @@ public struct PosterCardView: View {
                 }
                 .overlay { resumeChip }
                 .overlay { pendingRemovalOverlay }
-                .clipShape(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
+                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
                 .plozzMediaEdge(
                     cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
                     isEnabled: MediaArtworkPlaceholder.Symbol(for: item) == .playback
                 )
+                #if os(tvOS)
+                .recordDetailTransitionArtwork(detailTransitionSource)
+                #endif
 
             // Series-artwork cards say everything on the artwork itself — the show
             // as its logo, the episode and time in the chip — so there is no
@@ -286,14 +409,14 @@ public struct PosterCardView: View {
             innerCornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
             isFocused: surfaceFocused
         )
-        .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius, action: action)
         .plozzCardRasterize(reduceTransparency: reduceTransparency)
-        .shadow(color: .black.opacity(isFocused ? 0.36 : 0.15), radius: isFocused ? 20 : 8, y: isFocused ? 10 : 4)
+        .plozzRestingCardShadow(isFocused: isFocused)
         .plozzCardFocusLift(
             isFocused: isFocused,
             cornerRadius: metrics.landscapeCardCornerRadius,
             outlineScale: PlozzTheme.Metrics.mediumFocusedCardScale
         )
+        .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius, action: selectCard)
         .plozzCardFocusTransition(isFocused: isFocused)
     }
 
@@ -327,11 +450,11 @@ public struct PosterCardView: View {
                 // gap when unfocused, dropping back down on focus. Because it's an
                 // offset (like `scaleEffect`), the card's footprint is identical in both
                 // states, so focusing one card can't shift the row or the page.
-                .offset(y: isFocused ? 0 : -captionPush)
+                .offset(y: focusStyle.usesSystemEffect || isFocused ? 0 : -captionPush)
             }
         }
         .padding(.horizontal, metrics.borderlessCardSideMargin)
-        .focusableCard(isFocused: $isFocused, cornerRadius: borderlessCornerRadius, action: action)
+        .focusableCard(isFocused: $isFocused, cornerRadius: borderlessCornerRadius, action: selectCard)
         // A borderless card's focus halo + scale bloom extend *beyond* the layout
         // bounds. `compositingGroup` composites them as one unit without clipping;
         // `drawingGroup` (what `plozzCardRasterize` uses under Reduce Transparency)
@@ -362,11 +485,14 @@ public struct PosterCardView: View {
             }
             .overlay { resumeChip }
             .overlay { pendingRemovalOverlay }
-            .clipShape(RoundedRectangle(cornerRadius: borderlessCornerRadius, style: .continuous))
+            .plozzCardArtworkClip(RoundedRectangle(cornerRadius: borderlessCornerRadius, style: .continuous))
             .plozzMediaEdge(
                 cornerRadius: borderlessCornerRadius,
                 isEnabled: MediaArtworkPlaceholder.Symbol(for: item) == .playback
             )
+            #if os(tvOS)
+            .recordDetailTransitionArtwork(detailTransitionSource)
+            #endif
             .plozzFocusHalo(
                 cornerRadius: borderlessCornerRadius,
                 focusScale: borderlessFocusScale,
@@ -671,6 +797,25 @@ public struct PosterCardView: View {
 
     @ViewBuilder
     private var artwork: some View {
+        resolvedArtwork
+    }
+
+    private var transitionArtworkCornerRadius: CGFloat {
+        if cardStyle == .borderless { return borderlessCornerRadius }
+        return style == .poster
+            ? PlozzTheme.Metrics.posterArtCornerRadius
+            : PlozzTheme.Metrics.mediumMediaCornerRadius
+    }
+
+    private func selectCard() {
+        #if os(tvOS)
+        if !playsOnSelect { detailTransitionSource.prepare(for: item) }
+        #endif
+        action()
+    }
+
+    @ViewBuilder
+    private var resolvedArtwork: some View {
         if PosterCardPresentation.usesFolderArtwork(for: item.kind) {
             folderArtwork
         } else if showsSeriesArtwork {
@@ -1375,14 +1520,7 @@ private struct FolderNavigationBadge: View {
 }
 
 public extension View {
-    /// Makes a card a focusable, tappable surface **without** wrapping it in a
-    /// `Button`. On tvOS a `Button` (even `.buttonStyle(.plain)`) paints the
-    /// system focus *platter* — a stark white plate behind the focused card that
-    /// `.focusEffectDisabled()` can't fully remove and that buries our own glass
-    /// focus treatment (most visible on dark and Pure Black themes). Following Twozz's
-    /// card pattern, we instead drive focus with `.focusable` + `.onTapGesture`
-    /// (the select-press fires the tap) and disable the system focus effect, so
-    /// the only focus visuals are the ones we draw via `plozzGlassCard`.
+    /// Ordinary SwiftUI focus for surfaces that supply their own focus visuals.
     func focusableCard(
         isFocused: FocusState<Bool>.Binding,
         cornerRadius: CGFloat,
@@ -1398,12 +1536,65 @@ public extension View {
             .disabled(!isEnabled)
             .accessibilityAddTraits(.isButton)
         #else
+        contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        #endif
+    }
+
+    /// Media-card focus with separate native observations and explicit requests.
+    func focusableCard(
+        isFocused: PlozzCardFocus.Binding,
+        cornerRadius: CGFloat,
+        isEnabled: Bool = true,
+        nativeFocusInContent: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        #if os(tvOS)
+        modifier(CardFocusOwner(
+            isFocused: isFocused, cornerRadius: cornerRadius, isEnabled: isEnabled,
+            nativeFocusInContent: nativeFocusInContent, action: action
+        ))
+        #else
         contentShape(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         )
         #endif
     }
 }
+
+#if os(tvOS)
+private struct CardFocusOwner: ViewModifier {
+    let isFocused: PlozzCardFocus.Binding
+    let cornerRadius: CGFloat
+    let isEnabled: Bool
+    let nativeFocusInContent: Bool
+    let action: () -> Void
+    @Environment(\.plozzCardFocusStyle) private var style
+    @Environment(\.isEnabled) private var parentEnabled
+
+    func body(content: Content) -> some View {
+        if style.usesSystemEffect {
+            if nativeFocusInContent {
+                content.disabled(!isEnabled || !parentEnabled)
+            } else {
+                NativeTVCard(
+                    content: content, focus: isFocused,
+                    isEnabled: isEnabled && parentEnabled, action: action
+                )
+                    .focused(isFocused.focusState)
+            }
+        } else {
+            content
+                .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .focusable(isEnabled)
+                .focused(isFocused.focusState)
+                .focusEffectDisabled()
+                .onTapGesture(perform: action)
+                .disabled(!isEnabled)
+                .accessibilityAddTraits(.isButton)
+        }
+    }
+}
+#endif
 
 public extension MediaItem {
     /// Ordered real-image candidates a `PosterCardView` of `style` will try before

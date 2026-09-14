@@ -12,17 +12,20 @@ public struct MediaRowEpisodeEntry {
 
     public let phase: Phase
     public let isActive: Bool
+    public let isEnabled: Bool
     public let onPlaceholderFocus: (@MainActor () -> Void)?
     public let onRetry: (@MainActor () -> Void)?
 
     public init(
         phase: Phase,
         isActive: Bool,
+        isEnabled: Bool = true,
         onPlaceholderFocus: (@MainActor () -> Void)? = nil,
         onRetry: (@MainActor () -> Void)? = nil
     ) {
         self.phase = phase
         self.isActive = isActive
+        self.isEnabled = isEnabled
         self.onPlaceholderFocus = onPlaceholderFocus
         self.onRetry = onRetry
     }
@@ -73,23 +76,16 @@ struct EpisodeRowEntryPlaceholder: View {
     var phase: MediaRowEpisodeEntry.Phase = .loading
     var showsStatus = false
     var isFocused = false
+    var nativeFocus: PlozzCardFocus.Binding?
+    var onSelect: () -> Void = {}
     @Environment(\.themePalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
     private let metrics = PlozzMetrics.standard
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            RoundedRectangle(cornerRadius: metrics.landscapeCardCornerRadius)
-                // Like real artwork, the tile must hide the center of its
-                // expanding focus halo rather than reveal a second surface.
-                .fill(palette.cardOpaqueSurface)
-                .frame(width: EpisodeColumnCard.artworkSize.width, height: EpisodeColumnCard.artworkSize.height)
-                .plozzMediaEdge(cornerRadius: metrics.landscapeCardCornerRadius)
-                .plozzFocusHalo(
-                    cornerRadius: metrics.landscapeCardCornerRadius,
-                    focusScale: reduceMotion ? 1 : PlozzTheme.Metrics.mediumFocusedCardScale,
-                    isFocused: isFocused
-                )
+            artwork
             VStack(alignment: .leading, spacing: 10) {
                 Group {
                     if showsStatus {
@@ -123,11 +119,43 @@ struct EpisodeRowEntryPlaceholder: View {
                 .frame(height: 24, alignment: .leading)
             }
             .padding(.top, metrics.landscapeCaptionTopSpacing + metrics.focusCaptionPush)
-            .offset(y: reduceMotion || isFocused ? 0 : -metrics.focusCaptionPush)
+            .offset(y: reduceMotion || focusStyle.usesSystemEffect || isFocused ? 0 : -metrics.focusCaptionPush)
         }
         .frame(width: EpisodeColumnCard.artworkSize.width, alignment: .leading)
         .padding(.horizontal, EpisodeColumnCard.sideMargin)
         .compositingGroup()
         .plozzCardFocusTransition(isFocused: isFocused, animates: !reduceMotion)
+    }
+
+    @ViewBuilder
+    private var artwork: some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect, let nativeFocus {
+            NativeTVPoster(
+                image: nil, treatment: .original,
+                aspectRatio: EpisodeColumnCard.artworkSize.width / EpisodeColumnCard.artworkSize.height,
+                fallbackWidth: EpisodeColumnCard.artworkSize.width,
+                title: nil, subtitle: nil, overlay: EmptyView(), focus: nativeFocus, action: onSelect
+            )
+            .focused(nativeFocus.focusState)
+            .frame(width: EpisodeColumnCard.artworkSize.width, height: EpisodeColumnCard.artworkSize.height)
+        } else {
+            customArtwork
+        }
+        #else
+        customArtwork
+        #endif
+    }
+
+    private var customArtwork: some View {
+        RoundedRectangle(cornerRadius: metrics.landscapeCardCornerRadius)
+            .fill(palette.cardOpaqueSurface)
+            .frame(width: EpisodeColumnCard.artworkSize.width, height: EpisodeColumnCard.artworkSize.height)
+            .plozzMediaEdge(cornerRadius: metrics.landscapeCardCornerRadius)
+            .plozzFocusHalo(
+                cornerRadius: metrics.landscapeCardCornerRadius,
+                focusScale: reduceMotion ? 1 : PlozzTheme.Metrics.mediumFocusedCardScale,
+                isFocused: isFocused
+            )
     }
 }

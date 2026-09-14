@@ -1,5 +1,6 @@
 #if DEBUG
 import CoreUI
+import CoreModels
 import FeatureLiveTVCore
 import SwiftUI
 
@@ -34,8 +35,8 @@ public struct LiveTVProgramSearchView: View {
     public var body: some View {
         let request = searchRequest
         let displayedPrograms = visiblePrograms(for: request)
-        SettingsSectionGroup("Programmes") {
-            if loading { ProgressView("Searching programmes") }
+        SettingsSectionGroup("Programs") {
+            if loading { ProgressView("Searching programs") }
             ForEach(displayedPrograms) { program in
                 if let channel = model.channel(id: program.channelID) {
                     Button {
@@ -51,9 +52,9 @@ public struct LiveTVProgramSearchView: View {
                 }
             }
             if failed, completedRequest == request {
-                Text("Programme search couldn't load. Your channel results are still available.")
+                Text("Program search couldn't load. Your channel results are still available.")
             } else if !loading, completedRequest == request, displayedPrograms.isEmpty, !request.query.isEmpty {
-                Text("No matching programmes in the retained guide.")
+                Text("No matching programs in the retained guide.")
             }
         }
         .task(id: request) {
@@ -191,12 +192,15 @@ public struct LiveTVProgramDetailsView: View {
     private let isFavorite: Bool
     private let toggleFavorite: (() -> Void)?
     private let watchTitle: LocalizedStringResource
+    private let openLibraryItem: ((LibraryChannelItem) -> Void)?
 
     public init(
         program: LiveTVPrototypeProgram, channelName: String, now: Date,
         guideSourceName: String? = nil, isFavorite: Bool = false,
         toggleFavorite: (() -> Void)? = nil,
-        watchTitle: LocalizedStringResource = "Watch channel", watch: @escaping () -> Void
+        watchTitle: LocalizedStringResource = "Watch channel",
+        openLibraryItem: ((LibraryChannelItem) -> Void)? = nil,
+        watch: @escaping () -> Void
     ) {
         self.program = program
         self.channelName = channelName
@@ -206,10 +210,11 @@ public struct LiveTVProgramDetailsView: View {
         self.isFavorite = isFavorite
         self.toggleFavorite = toggleFavorite
         self.watchTitle = watchTitle
+        self.openLibraryItem = openLibraryItem
     }
 
     public var body: some View {
-        LiveTVSettingsPage(title: "Programme details") {
+        LiveTVSettingsPage(title: "Program details") {
             SettingsSectionGroup {
                 LiveTVProgramSearchRow(program: program, channelName: channelName, now: now)
                 if !program.subtitle.isEmpty { Text(program.subtitle) }
@@ -229,16 +234,20 @@ public struct LiveTVProgramDetailsView: View {
                     if !details.categories.isEmpty { Text(details.categories.joined(separator: " · ")) }
                     if !details.languages.isEmpty { Text(details.languages.joined(separator: " · ")) }
                     if let rating = details.rating { Text(rating) }
-                    if details.endWasInferred { Text("End time estimated from the next programme.").font(.caption) }
+                    if details.endWasInferred { Text("End time estimated from the next program.").font(.caption) }
                 }
                 Button(action: watch) { Text(watchTitle) }
                     .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                if let item = program.libraryItem, let openLibraryItem {
+                    LibraryChannelNavigationButton(item: item, action: openLibraryItem)
+                        .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                }
                 if let toggleFavorite {
                     Button(isFavorite ? "Remove from Favorites" : "Add to Favorites", action: toggleFavorite)
                         .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                 }
             } footer: {
-                Text("Watching tunes the channel live, not this programme from the beginning.")
+                Text("Watching tunes the channel live, not this program from the beginning.")
             }
         }
     }

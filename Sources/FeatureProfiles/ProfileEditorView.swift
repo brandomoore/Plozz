@@ -436,8 +436,10 @@ public struct ProfileEditorView: View {
             .frame(width: diameter, height: diameter)
             .overlay { Circle().strokeBorder(palette.cardBorder, lineWidth: 1) }
         }
-        .buttonStyle(CircularSelectionButtonStyle(diameter: diameter))
-        .focusEffectDisabled()
+        .plozzCardFocusButtonStyle(
+            CircularSelectionButtonStyle(diameter: diameter), cornerRadius: diameter / 2,
+            contentSuppliesProjection: true
+        )
         .accessibilityLabel(Text("Delete Profile"))
     }
 
@@ -697,8 +699,10 @@ public struct ProfileEditorView: View {
             .overlay { Circle().strokeBorder(palette.cardBorder, lineWidth: 1) }
             .overlay(alignment: .bottomTrailing) { selectionBadge(isSelected) }
         }
-        .buttonStyle(CircularSelectionButtonStyle(diameter: diameter))
-        .focusEffectDisabled()
+        .plozzCardFocusButtonStyle(
+            CircularSelectionButtonStyle(diameter: diameter), cornerRadius: diameter / 2,
+            contentSuppliesProjection: true
+        )
         .accessibilityLabel(Text(symbolAccessibilityName(symbol)))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
@@ -779,8 +783,10 @@ public struct ProfileEditorView: View {
             .overlay { Circle().strokeBorder(palette.cardBorder, lineWidth: 1) }
             .overlay(alignment: .bottomTrailing) { selectionBadge(isSelected) }
         }
-        .buttonStyle(CircularSelectionButtonStyle(diameter: diameter))
-        .focusEffectDisabled()
+        .plozzCardFocusButtonStyle(
+            CircularSelectionButtonStyle(diameter: diameter), cornerRadius: diameter / 2,
+            contentSuppliesProjection: true
+        )
         .accessibilityLabel(Text("Emoji \(emoji)"))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
@@ -855,8 +861,10 @@ public struct ProfileEditorView: View {
                     }
                 }
         }
-        .buttonStyle(CircularSelectionButtonStyle(diameter: diameter))
-        .focusEffectDisabled()
+        .plozzCardFocusButtonStyle(
+            CircularSelectionButtonStyle(diameter: diameter), cornerRadius: diameter / 2,
+            contentSuppliesProjection: true
+        )
         .accessibilityLabel(Text("Neutral background"))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
@@ -889,8 +897,10 @@ public struct ProfileEditorView: View {
                     }
                 }
         }
-        .buttonStyle(CircularSelectionButtonStyle(diameter: diameter))
-        .focusEffectDisabled()
+        .plozzCardFocusButtonStyle(
+            CircularSelectionButtonStyle(diameter: diameter), cornerRadius: diameter / 2,
+            contentSuppliesProjection: true
+        )
         .accessibilityLabel(Text(ProfileTileColor.accessibilityName(forIndex: index)))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
@@ -958,8 +968,10 @@ public struct ProfileEditorView: View {
                 .overlay { Circle().strokeBorder(palette.cardBorder, lineWidth: 1) }
                 .overlay(alignment: .bottomTrailing) { selectionBadge(isSelected) }
             }
-            .buttonStyle(CircularSelectionButtonStyle(diameter: diameter))
-            .focusEffectDisabled()
+            .plozzCardFocusButtonStyle(
+                CircularSelectionButtonStyle(diameter: diameter), cornerRadius: diameter / 2,
+                contentSuppliesProjection: true
+            )
             .accessibilityLabel(Text("Photo from \(candidate.detailLabel)"))
             .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
 
@@ -2034,6 +2046,7 @@ private struct CircularSelectionButtonStyle: ButtonStyle {
         let configuration: ButtonStyle.Configuration
         let diameter: CGFloat
         @Environment(\.isFocused) private var isFocused
+        @Environment(\.plozzCardFocusStyle) private var focusStyle
 
         var body: some View {
             configuration.label
@@ -2042,8 +2055,8 @@ private struct CircularSelectionButtonStyle: ButtonStyle {
                     focusScale: PlozzTheme.Metrics.mediumFocusedCardScale,
                     isFocused: isFocused
                 )
-                .scaleEffect(configuration.isPressed ? 0.96 : 1)
-                .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+                .scaleEffect(configuration.isPressed && !focusStyle.usesSystemEffect ? 0.96 : 1)
+                .animation(focusStyle.usesSystemEffect ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
         }
     }
 }

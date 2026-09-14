@@ -37,6 +37,7 @@ public struct LiveTVPrototypePlayback {
     public let externalContinuationChanged: @MainActor (Bool) -> Void
     public let restorePlayer: @MainActor () async -> Bool
     public let stopPlayback: @MainActor () -> Void
+    public let openLibraryItem: ((LibraryChannelItem) -> Void)?
 }
 
 private struct PrototypeExternalPlayback: Equatable {
@@ -98,6 +99,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var multiviewFavoriteIssue: LocalizedStringResource?
     @State private var managesLibraryChannels = false
     @State private var libraryGuideIssue: LibraryChannelError?
+    @State private var libraryNavigationIssue: LibraryChannelError?
+    @State private var pendingLibraryNavigation: LibraryChannelItem?
     @State private var portableIdentityHold: LiveTVPlaybackIdentityHold
     @State private var pendingPortableReload = false
     @State private var scanBinding: LiveTVScanCatalogBinding
@@ -135,6 +138,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     private let isProfileAuthorized: @MainActor @Sendable () -> Bool
     private let connectServer: (() -> Void)?
     private let onExpandedChange: (Bool) -> Void
+    private let onOpenTitle: ((MediaItem) -> Void)?
     private let player: (LiveTVPrototypePlayback) -> PlayerContent
 
     public init(
@@ -167,6 +171,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         prepareLibraryChannels: (@MainActor () async throws -> Void)? = nil,
         libraryIsAuthorized: @escaping @MainActor @Sendable () -> Bool = { true },
         sourceApprovalContext: @escaping @MainActor @Sendable () -> LiveTVSourceApprovalContext? = { nil },
+        onOpenTitle: ((MediaItem) -> Void)? = nil,
         @ViewBuilder player: @escaping (LiveTVPrototypePlayback) -> PlayerContent
     ) {
         self.isActive = isActive
@@ -217,6 +222,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         )
         _imports = State(initialValue: imports)
         self.onExpandedChange = onExpandedChange
+        self.onOpenTitle = onOpenTitle
         self.player = player
         let arguments = ProcessInfo.processInfo.arguments
         let model = LiveTVPrototypeModel(
@@ -486,7 +492,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 updateExternalPlayback($0, paneID: pane.id, preparedID: prepared.id)
             },
             restorePlayer: { await restorePlayer(paneID: pane.id, preparedID: prepared.id) },
-            stopPlayback: { stopPlayer(paneID: pane.id, preparedID: prepared.id) }
+            stopPlayback: { stopPlayer(paneID: pane.id, preparedID: prepared.id) },
+            openLibraryItem: onOpenTitle == nil ? nil : openLibraryItem
         )
     }
 
@@ -504,6 +511,23 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             multiview.stop()
         }
         updatePlaybackAvailability()
+    }
+
+    private func openLibraryItem(_ item: LibraryChannelItem) {
+        guard let onOpenTitle else { return }
+        guard isActive, isProfileAuthorized(), libraryIsAuthorized(),
+              libraryService?.isAuthorized(item) == true else {
+            libraryNavigationIssue = .authorizationChanged
+            return
+        }
+        pendingTuneID = nil
+        externalPlayback = nil
+        multiviewSelection = nil
+        preview.stop()
+        multiview.stop()
+        playback.stop()
+        onExpandedChange(false)
+        onOpenTitle(item.navigationSubject)
     }
 
     private func countsAsWatching(paneID: UUID) -> Bool {
@@ -527,7 +551,10 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     private var presentedContent: some View {
         playerAndGuideSurface
         .sheet(item: $sheet, onDismiss: {
-            if let favorite = pendingMultiviewFavorite {
+            if let item = pendingLibraryNavigation {
+                pendingLibraryNavigation = nil
+                openLibraryItem(item)
+            } else if let favorite = pendingMultiviewFavorite {
                 pendingMultiviewFavorite = nil
                 restoreMultiviewFavorite(favorite)
             } else if pendingServerConnection {
@@ -554,10 +581,22 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 tune: { pendingTuneID = $0 },
                 openMultiview: { pendingMultiviewFavorite = $0; sheet = nil },
                 channelActionTitle: multiviewSelection?.title,
-                sourceManagement: sources == nil ? nil : { AnyView(sourceSetupDestination($0)) }
+                sourceManagement: sources == nil ? nil : { AnyView(sourceSetupDestination($0)) },
+                openLibraryItem: onOpenTitle == nil ? nil : {
+                    pendingLibraryNavigation = $0
+                    sheet = nil
+                }
             )
             .environment(\.themePalette, palette)
             .tint(palette.accent)
+        }
+        .alert("Couldn't open title", isPresented: Binding(
+            get: { libraryNavigationIssue != nil },
+            set: { if !$0 { libraryNavigationIssue = nil } }
+        ), presenting: libraryNavigationIssue) { _ in
+            Button("OK", role: .cancel) { libraryNavigationIssue = nil }
+        } message: { issue in
+            Text(issue.message)
         }
         .alert("Multiview", isPresented: Binding(
             get: { isActive && (multiviewFavoriteIssue != nil || (!multiview.isEnabled && multiview.issue != nil)) },
@@ -1268,7 +1307,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             selectionAction: multiviewSelection?.title,
             selectedChannelIDs: multiviewSelection == nil ? [] : Set(multiview.panes.compactMap { $0.channel?.id }),
             libraryCatalog: libraryCatalogRevision,
-            loadLibraryGuide: publishLibraryGuide
+            loadLibraryGuide: publishLibraryGuide,
+            openLibraryItem: onOpenTitle == nil ? nil : openLibraryItem
         )
     }
 

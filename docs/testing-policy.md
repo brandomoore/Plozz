@@ -157,6 +157,296 @@ changing the host or test target. Results are retained under
 `.build/focus-test-results/`; the runner requires an authoritative passing
 `xcresult` just like the package runner. Both runners execute in CI.
 
+`DetailTopNavigationHostedTests` pushes a full-height detail hero through native
+top tabs, the native sidebar, and a standalone navigation stack. It checks the
+physical top edge and horizontal gutter after navigation, late metadata, action
+focus changes, scrolling to Cast, and reopening. The shared
+`DetailTopSafeAreaBreakout` must remove the actual navigation inset rather than
+subtracting a fixed overscan margin. Its artwork-first reveal is checked with
+rendered pixels and live focus targets, including the Reduce Motion path.
+
+`CinematicDetailTransitionHostedTests` exercises the card-to-artwork compositor
+over a real navigation stack. It checks the actual expanding and shrinking
+frames, artwork-only pause, ordered foreground stages, early Back, direct-play
+bypass, missing/replaced source fallback, nested-page ownership, and removal of
+input guards and visual covers. Real framed and borderless poster tests also
+check that the source crop excludes the caption under Reduce Transparency.
+The entrance uses 400ms for the zoom, a 250ms visible-artwork pause, and overlapping
+240ms foreground reveals spaced 120ms apart. Shows reveal the episode browser
+after the controls, retaining the navigation guard through its final 240ms fade;
+movies do not acquire that extra stage. Back uses a 280ms return without
+the pause. Reduce Motion bypasses the custom sequence and its input wait.
+Source snapshots are per-activation, not per-frame; full-window covers are
+released at the artwork handoff, and the small return-card image is scoped to its page.
+The opening uses an asymmetric cubic curve with a quick pickup and gentle landing,
+without overshoot. The early artwork blend belongs to that same property animator,
+so pausing or canceling the zoom also pauses or cancels the blend. Foreground
+reveals use the matching curve with 10-point travel; timings and reveal order are
+unchanged. Hosted checks cover curve monotonicity and coordinated pause behavior.
+
+`DetailTransitionVisualRegressionTests` uses the production show page and real
+poster cards. It asserts that the outgoing thumbnail is transparent within the
+first third of the zoom and is never reused as a loading backdrop. The resolved
+detail image joins the expansion as soon as it is available. Reverse endpoints
+are compared against rendered focused-artwork pixels for framed/borderless and
+outlined/highlight cards; corner radii scale with the artwork and use continuous
+corners. The source's focused rectangle and radius are captured at activation;
+native UIImageView artwork uses its public `focusedFrameGuide`, since the painted
+focus expansion need not appear in the image layer's transform.
+Back starts toward that shape immediately while native focus restores underneath.
+A replaced source or changed window size uses a nonspatial fallback. A temporarily
+unrealized source still returns to its captured shape without waiting for focus.
+The episode browser keeps its layout while masked until its final reveal and
+cannot take entry focus during a whole-show entrance. Episode-context opens
+retain their existing initial-focus behavior; Reduce Motion reveals it directly.
+
+When its real backdrop is ready, opening motion starts in card/router activation,
+before creating the detail page. An empty destination must not animate: a cold
+request keeps the existing source image until the real preview is available,
+then starts the same zoom. There is no substitute image or added loading screen.
+A late destination adopts an in-flight entrance rather than replaying it.
+Render-server snapshots avoid a full-window bitmap draw on the main thread.
+The hosted tests also delay destination mounting and withhold return focus to
+verify that neither creates a new pre-animation wait.
+
+Prepared title routes use `withCinematicDetailNavigation` to commit the real
+stack change without a second native navigation animation. Unprepared routes
+retain their normal animation. A UIKit appearance observer keeps the opening
+cover until both the artwork has landed and the destination has appeared.
+Production detail pages also wait for a displayed backdrop preview before
+starting the 250ms pause and title/button reveals. Full-resolution upgrades do
+not restart that sequence. Exhausted artwork candidates release the cover and
+controls without a picture; Back remains available while artwork is pending,
+and a playing trailer satisfies backdrop readiness without waiting for a still.
+
+Known movie/show backdrops warm after 80ms of stable card/hero focus, with only
+one unclaimed focus warmup active and image work on the background lane. The
+warmup preserves provider priority rather than pinning a provisional fallback.
+The exact preferred preview is retained under its policy-qualified preview key
+and can paint the first frame at selection. If selection happens during lookup,
+navigation adopts that lookup and uses foreground image loading; it does not
+start another provider lookup or let focus loss cancel the selected request.
+Blur/disappearance cancels unclaimed work. A full-quality upgrade keeps the
+chosen reference, including when the upgrade fails.
+The row's older library-only backdrop warmer skips these movie/show cards,
+so it cannot compete with the policy-selected request for a different image.
+
+Selection starts any still-needed first-paint request, scoped to the navigation
+and joined by the destination. Its preview can feed the expansion before the
+page mounts. Poster-only discovery still waits for its authoritative
+enrichment. `ArtworkResolutionState` relays the displayed image itself (including
+cached and fallback previews) and terminal failure, rather than making the
+transition wait for a final-resolution URL callback and another cache lookup.
+Focused regressions check request adoption, preview delivery within 500ms,
+late-artwork ordering, failure, trailer readiness, and Back during the wait.
+
+`PlozzHomeFixtureTests` builds the real Home view with local provider/artwork data
+and drives native left/right/up/down movements without manual input. It is an
+isolated simulator workload, not an emulation of an older TV's processor.
+`ArtworkLatencyDiagnosticsTests` is separately opt-in: explicit environment
+paths identify a sanitized Home snapshot and a local configuration bundle; its
+attachment records provider lookup/image durations, never credentials.
+
+`LibraryChannelActionsRemoteTests` drives real guide menus and playback controls
+with local channel data and a test engine. It checks show/movie identity delivery,
+player teardown on navigation, and display-policy permission across preview,
+fullscreen and return-to-guide. These are policy/UI checks, not measurements of
+an HDMI handshake. Native menu actions are accessibility cells, while the channel
+menu's actual focus can belong to a descendant of its labeled button.
+`LiveChannelOutputGroupTests` covers independent audio/display ownership and
+prevents uncommitted previews from inheriting a departed display owner. Library
+schedule/session tests cover original-account navigation, paused program
+identity and immediate authorization revocation.
+They also reproduce a ready decoder with a provisional zero clock, readiness lost
+during a corrective seek, and exact three-second end-boundary tolerance.
+`ChannelPositionReadinessHostedTests` generates its own small local video and uses
+the real Plozzigen decoder in a visible window. It checks nonzero-start readiness
+and retained preview/display-policy reloads without mistaking them for movie
+completion. Its temporary media is removed after the test; it is not an HDMI
+hardware acceptance test.
+
+Back restores the captured source page behind the moving artwork immediately,
+not a snapshot of the outgoing detail page. The popped content stays hidden
+through teardown. The cover remains until both reverse motion and the real pop
+finish; source scroll offsets and focus are restored beneath it before removal.
+The return waits for UIKit's transition coordinator and crosses one render
+boundary before requesting focus: navigation's deferred after-commit focus reset
+must finish first, or it can overwrite an already-focused source card. This is a
+one-shot display callback, not a timed retry or navigation cooldown; forced
+teardown and app deactivation cancel it. Recreated cards are resolved by stable
+item identity within the surviving source scroll container, then by captured
+geometry. Non-card routes retain their captured focus target.
+Home and detail hero focus handlers ignore these restoration events rather than
+starting another scroll/recede animation. Ordinary user-driven timing is unchanged.
+Coverage deliberately delays the pop by 700ms (longer than the reverse animation),
+checks both spatial and nonspatial covers, restores a displaced scroll offset,
+and observes actual UIKit navigation animation flags. Window-scoped ownership
+keeps the return alive after the SwiftUI page is removed, then releases it at
+handoff. The source snapshot is also released on a memory warning.
+
+Pinned navigation's passive arrow/swipe observers must honor the cinematic
+input gate: a consumed Left is not an unresolved page boundary. Capture the
+window's input epoch at gesture start and recheck it before any deferred rail
+action, so work queued across a transition cannot open navigation afterward.
+The native Search boundary observer and explicit sidebar-open requests use the
+same gate. Visual completion does not release a held press or touch: suppression
+drains through its end/cancellation and the rest of that event's observers.
+Fresh input works without a cooldown; Back remains native, and app deactivation
+or forced teardown removes the guard immediately. `PinnedReturnInputHostedTests`
+covers blocked/queued Left, held and mixed input, swipe epochs, fresh navigation,
+and the real pinned-edge callback changing UIKit focus.
+
+Input filtering is not enough to exclude native Up/Down focus moves. The pinned
+shell registers its observable `NavigationChromeModel` with the window:
+opening hides the rail immediately; return can draw the rail but disables every
+row and page button through input release. Those visibility changes do
+not run a second chrome animation beneath the cinematic cover.
+Presented detail sessions also hold chrome ownership independently of delayed
+stack-depth reports, releasing it on dismissal/disappearance. A late appearance
+callback cannot let a closing page reclaim that ownership. Source layout is
+resolved before focus restoration. Native commands have distinct generations,
+wait for an attached, sized, enabled control, and announce the SwiftUI focus owner
+only when that control is eligible. Repeating a request does not depend on a
+Boolean changing from false to true. Ordinary native focus observations remain
+separate from commands, preventing navigation snapback.
+`PinnedChromeTransitionHostedTests` queries the real rail's native focus targets,
+checks hiding through zero-depth reports, and covers explicit source-focus
+requests and recreated-card lookup. `NativeFocusRequestHostedTests` covers repeat,
+pre-mount, and disabled-control commands with a competing native card.
+
+Fresh processes start on Home with the pinned rail's real rows unfocusable until
+explicit navigation entry. Scene selection remains available during same-process
+root reconstruction (including add-server/profile flows); explicit routes and
+standalone Live TV admission retain their priority. `DetailReturnFocusRemoteTests`
+starts on the production Home hero with navigation closed, then opens and closes
+real detail pages repeatedly, including moving to a neighboring source card.
+
+Pinned rail ends use non-focusable layout spacing, not invisible focus bumpers.
+Up at Profile and Down at the last destination retain the actual item's focus;
+there is no deferred bounce/recenter or artificial held-focus styling.
+`PinnedRailBoundaryTests` drives repeated and held native remote input against
+short and long production rails, checks both ends, and verifies Right still
+returns to page content. It also captures the profile name after top-boundary input.
+
+Card focus has three independent options: System (native tvOS projection),
+Highlight (custom sheen/lean) and Outline (custom glass). Absent per-profile
+preferences use System; saved `highlight` and `outlined` values are not migrated.
+The System path uses actual TVUIKit media controls: `TVPosterView` for media
+Posters and `TVCardView` for composed Cards and read-only information. Images are
+assigned to `TVPosterView.image`, never directly to its internal image view.
+The shared artwork loader remains responsible for caching, provider selection
+and spoiler-safe sources; a stable poster control stays mounted while it loads.
+Native titles/subtitles use the poster's footer. Badges and resume controls live
+in its documented image overlay. Series artwork extension and spoiler blur are
+content preparation only, not focus effects.
+Prepared poster images use the displayed content size in points and the device
+display scale in pixels. TVUIKit derives focus growth from the image, so raw
+high-resolution cache dimensions must not become the poster's logical size.
+For original artwork, adjust UIImage point-scale metadata without redrawing the
+pixels or changing their alpha channel. Only extended/blurred content is rendered.
+Pin decorations to the native overlay container with constraints; do not rewrite
+their frames during native focus layout.
+`TVCardView` hosts live content in its documented `contentView`. Neither control
+overrides `focusSizeIncrease`, adds transforms or manufactures lighting/outlines.
+The documented `cardBackgroundColor` uses the active theme's raised surface,
+and hosted text retains that same theme rather than being forced into Light.
+TVUIKit still owns the state-dependent alpha, projection and lighting. This keeps
+detail information and attribution surfaces from becoming pale platters in a dark
+app. Borderless information groups retain padding inside the native surface,
+without borrowing the custom focus style's extra column gutter.
+Card fitting
+honors finite width proposals; unspecified-width probes must not install the
+10,000-point expanded fitting size as the card's content width.
+Unspecified-height queries use compressed Auto Layout fitting, not an expanded
+height: flexible rating labels otherwise become 10,000 points tall and inflate
+the About column's text measurements. A non-focusable container reports the visible
+content size to SwiftUI and positions TVCardView's intrinsic focus outsets outside
+that slot. The resting plate therefore aligns with its section heading; native
+focus can still expand beyond it without changing layout.
+`NativeInformationCardHostedTests` covers
+the actual information grid with a long synopsis and four ratings, checking
+bounded, stable card dimensions. `NativeFocusRequestHostedTests` compares the
+actual resting `contentView` bounds against its SwiftUI layout container.
+Native monogram photos are prepared as square, circular-alpha image data, so a
+tall source portrait cannot protrude into its caption on focus.
+System bypasses app-defined focus surfaces, edge strokes, resting shadows and
+focused z-index changes. Custom Highlight/Outline retain their styling.
+Horizontal rails do not clip native focus overflow.
+Captions reserve clearance without an additional custom focus animation.
+In the season episode row, the System focus owner encloses only the thumbnail
+and its artwork badges, not the title or synopsis below it. Both the episode
+thumbnail and interactive loading/retry placeholder use TVPosterView, so the
+native outline and image use the same corner geometry. Cast/artist portraits use
+TVMonogramView, with their captions outside the native control rather than on a
+focused card platter. Regular media poster footer labels retain the existing
+density-aware title/subtitle font sizes. Native poster footers reserve at least
+18 density-scaled points of artwork clearance (more for larger type), using the
+documented negative bottom `contentViewInsets`. TVUIKit's own focus expansion
+moves the footer; no extra translation or focus-time layout change is added.
+The reserved inset includes native footer travel so clearance holds at rest too.
+Rows that reserve a subtitle line keep it even when the year/subtitle is absent,
+so folder and media cards retain equal heights. Captionless episode controls
+keep their existing geometry. Custom Highlight/Outline retain
+their existing whole-column focus routing and artwork-only visuals.
+
+`NativePosterComparisonTests` is an opt-in, simulator-only comparison, enabled by
+`TEST_RUNNER_PLOZZ_NATIVE_POSTER_COMPARISON=1` on `PlozzHomeRemoteTests`. It captures
+compositor screenshots of bare TVPosterView controls and the production adapter
+with the same source pixels/content size in Default and High Contrast modes.
+Red image landmarks and yellow overlay landmarks distinguish scaling from
+edge cropping. It also isolates initialization order, subclassing, SwiftUI
+hosting and overlay-hosting choices without changing production styling.
+
+On tvOS 27, accessing `TVPosterView.imageView` while `image` is nil reproduced a
+zero `focusSizeIncrease` that persisted after assigning an image. Image-first
+construction retained the native 20-point horizontal / 11-point vertical
+expansion defaults for the 400x225 fixture. Reading intrinsic size, subclassing,
+SwiftUI hosting and adding a SwiftUI overlay after the image did not cause that
+zero. Bare native controls also showed slight image-edge cropping under High
+Contrast, so that observation alone is not proof of an app-authored transform.
+The production adapter therefore initializes TVPosterView with its image before
+accessing imageView. While artwork loads, a cached opaque placeholder supplies
+the correct image geometry; it is content, not a replacement focus effect.
+Replacing that placeholder keeps the same native control and expansion defaults.
+
+The same opt-in comparison includes `TVMediaItemContentConfiguration.wideCell()`
+in stock collection-view cells, updated with the native cell configuration state.
+On the tested tvOS 27 runtime, image landmarks grew about 11% in Default mode;
+under High Contrast they became about 3% closer while a white outline appeared.
+Overlay landmarks stayed almost unchanged under High Contrast. This reproduced
+the contrast-specific behavior without Plozz's media adapter or custom focus
+styling. The focused frame guide alone is not evidence of actual image growth:
+use the captured image/overlay landmarks and screenshots.
+
+Media-card focus uses `PlozzCardFocus`: native focus notifications update ordinary
+observed state, while explicit focus requests remain separate. A TVUIKit focus
+notification must not write back into `FocusState` and reset the containing scope.
+Surfaces with independent focus chrome retain ordinary SwiftUI focus.
+`SystemDirectionalFocusTests` drives real remote arrows through production media
+rows with a preferred hero above, including horizontal scrolling, direction
+reversals and vertical row changes in both card layouts. Programmatically
+requesting the next focus target is not an adequate substitute for this test.
+
+`NativeFocusProjectionTests` covers the perspective/Z transform that ordinary
+2D layer conversion loses. Real card tests compare the projected artwork's
+rectangle and rounded corners against painted pixels through a native pop.
+The opt-in `FocusStyleSettingsCaptureTests` runs only on a disposable simulator,
+sets the real High Contrast Focus Style, checks the on-screen ring and circular
+shape, checks its accessibility label, verifies Select fires once and long press
+opens a context menu without selecting, then restores the original setting. Run it
+with `TEST_RUNNER_PLOZZ_SYSTEM_FOCUS_CAPTURE=1` on the `PlozzHomeRemoteTests`
+scheme after building/installing `PlozzFocusHost`.
+
+Hosted coverage includes actual projected circular artwork, framed/borderless
+return geometry and loading-row overflow. These are correctness checks, **not
+Apple TV performance evidence**. Before calling System an improvement, compare
+all three options on the same physical TV, profile, warm artwork and navigation
+sequence (horizontal/vertical moves and rapid reversals). Use the
+[performance playbook](performance-debugging.md) to compare hitch ratio, frame
+times, main-thread stalls and memory, while checking clipping, captions and
+Reduce Motion. Keep Home movement/backdrop timings and networking fixed in the
+comparison; do not remove either custom option based on simulator results.
+
 ## Guards that run before the compile
 
 Validate workflow edits with `actionlint .github/workflows/ci.yml` before

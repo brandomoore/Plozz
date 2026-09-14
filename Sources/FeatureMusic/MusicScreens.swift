@@ -145,7 +145,7 @@ private struct BrowseButton: View {
     let title: LocalizedStringResource
     let action: () -> Void
 
-    @FocusState private var isFocused: Bool
+    @PlozzCardFocus private var isFocused: Bool
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardFocusStyle) private var focusStyle
@@ -165,14 +165,14 @@ private struct BrowseButton: View {
             .padding(.horizontal, PlozzTheme.Spacing.xLarge)
             .frame(height: NowPlayingCard.nominalHeight)
             .plozzGlassCard(cornerRadius: metrics.landscapeCardCornerRadius, isFocused: surfaceFocused)
-            .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius, action: action)
             .plozzCardRasterize(reduceTransparency: reduceTransparency)
-            .shadow(color: .black.opacity(isFocused ? 0.36 : 0.15), radius: isFocused ? 20 : 8, y: isFocused ? 10 : 4)
+            .plozzRestingCardShadow(isFocused: isFocused)
             .plozzCardFocusLift(
                 isFocused: isFocused,
                 cornerRadius: metrics.landscapeCardCornerRadius,
                 outlineScale: PlozzTheme.Metrics.mediumFocusedCardScale
             )
+            .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius, action: action)
             .plozzCardFocusTransition(isFocused: isFocused)
     }
 }
@@ -343,7 +343,7 @@ private struct GenreCard: View {
     /// always differ in colour.
     let index: Int
     let action: () -> Void
-    @FocusState private var isFocused: Bool
+    @PlozzCardFocus private var isFocused: Bool
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.plozzCardFocusStyle) private var focusStyle
 
@@ -380,22 +380,28 @@ private struct GenreCard: View {
                 .padding(18)
         }
         .frame(width: 280, height: 160)
-        .clipShape(shape)
+        .plozzCardArtworkClip(shape)
         .overlay {
-            shape.strokeBorder(.white.opacity(showsFocusRim ? 0.95 : 0.10), lineWidth: showsFocusRim ? 4 : 1)
+            if !focusStyle.usesSystemEffect {
+                shape.strokeBorder(.white.opacity(showsFocusRim ? 0.95 : 0.10), lineWidth: showsFocusRim ? 4 : 1)
+            }
         }
         // Same proven modifier order as MusicCard (works in this exact grid):
         // visual → focusableCard → rasterize → shadow → scale. `plozzCardRasterize`
         // flattens the layer tree into one GPU pass; omitting it on a `.focusable`
         // card in this grid is what froze the render server.
-        .focusableCard(isFocused: $isFocused, cornerRadius: PlozzTheme.Metrics.Radius.card, action: action)
         .plozzCardRasterize(reduceTransparency: reduceTransparency)
-        .shadow(color: .black.opacity(isFocused ? 0.4 : 0.15), radius: isFocused ? 22 : 8, y: isFocused ? 12 : 4)
+        .shadow(
+            color: .black.opacity(focusStyle.usesSystemEffect ? 0 : (isFocused ? 0.4 : 0.15)),
+            radius: isFocused && !focusStyle.usesSystemEffect ? 22 : 8,
+            y: isFocused && !focusStyle.usesSystemEffect ? 12 : 4
+        )
         .plozzCardFocusLift(
             isFocused: isFocused,
             cornerRadius: PlozzTheme.Metrics.Radius.card,
             outlineScale: PlozzTheme.Metrics.mediumFocusedCardScale
         )
+        .focusableCard(isFocused: $isFocused, cornerRadius: PlozzTheme.Metrics.Radius.card, action: action)
         .plozzCardFocusTransition(isFocused: isFocused)
     }
 }

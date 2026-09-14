@@ -6,6 +6,87 @@ import XCTest
 
 @MainActor
 final class ChannelLogoArtworkTests: XCTestCase {
+    func testPlozzChannelIdentityIsStableAndIndependentOfDisplayName() {
+        XCTAssertEqual(PlozzChannelIdentity(channelID: "plozz-test-channel").paletteIndex, 1)
+        XCTAssertEqual(
+            PlozzChannelIdentity(channelID: "plozz-test-channel"),
+            PlozzChannelIdentity(channelID: "plozz-test-channel")
+        )
+        let indices = Set((0..<50).map { PlozzChannelIdentity(channelID: "channel-\($0)").paletteIndex })
+        XCTAssertEqual(indices, Set(0..<5))
+    }
+
+    func testPlozzWordmarksKeepTheirIdentityAcrossGuideAndPlayerSizes() throws {
+        var referencePixel: [UInt8]?
+        for size in [CGSize(width: 200, height: 128), CGSize(width: 112, height: 72)] {
+            for scheme in [ColorScheme.light, .dark] {
+                let renderer = ImageRenderer(content: ChannelLogoArtwork(
+                    name: "Movies", logoURL: nil, size: size, cornerRadius: 12,
+                    plozzChannelID: "plozz-test-channel"
+                ).environment(\.colorScheme, scheme))
+                renderer.scale = 1
+                let image = try XCTUnwrap(renderer.cgImage)
+                XCTAssertEqual(image.width, Int(size.width))
+                XCTAssertEqual(image.height, Int(size.height))
+                let pixels = try rgbaPixels(image)
+                let offset = ((image.height - 5) * image.width + image.width / 2) * 4
+                let pixel = Array(pixels[offset..<(offset + 4)])
+                XCTAssertEqual(pixel[3], 255)
+                if let referencePixel { XCTAssertEqual(pixel, referencePixel) }
+                else { referencePixel = pixel }
+                let titleInk = (Int(size.height * 0.35)..<Int(size.height * 0.9)).reduce(0) { count, y in
+                    count + (0..<image.width).filter { x in
+                        let offset = (y * image.width + x) * 4
+                        return pixels[offset] > 230 && pixels[offset + 1] > 230 && pixels[offset + 2] > 210
+                    }.count
+                }
+                XCTAssertGreaterThan(Double(titleInk) / Double(image.width * image.height), 0.07)
+                XCTAssertEqual(pixels[3], 0)
+            }
+        }
+    }
+
+    func testPlozzWordmarksFitLongAndNonLatinChannelNames() {
+        for name in ["Movies", "TV Shows", "Documentary & Nature", "Studio Ghibli", "日本のアニメ", "أفلام عربية"] {
+            for size in [CGSize(width: 200, height: 128), CGSize(width: 112, height: 72)] {
+                let mark = ChannelLogoArtwork(
+                    name: name, logoURL: nil, size: size, cornerRadius: 12, plozzChannelID: "channel"
+                )
+                let measured = UIHostingController(rootView: mark).sizeThatFits(in: CGSize(width: 600, height: 600))
+                XCTAssertEqual(measured.width, size.width, accuracy: 0.5)
+                XCTAssertEqual(measured.height, size.height, accuracy: 0.5)
+            }
+        }
+    }
+
+    func testPlozzChannelWordmarkContactSheet() throws {
+        let names = ["Movies", "TV Shows", "Animation", "Documentary & Nature", "Steven Spielberg"]
+        let sheet = VStack(spacing: 20) {
+            ForEach(Array(names.enumerated()), id: \.offset) { index, name in
+                HStack(spacing: 20) {
+                    ChannelLogoArtwork(name: name, logoURL: nil, size: CGSize(width: 200, height: 128), cornerRadius: 12)
+                    ChannelLogoArtwork(
+                        name: name, logoURL: nil, size: CGSize(width: 200, height: 128), cornerRadius: 12,
+                        plozzChannelID: "channel-\(index)"
+                    )
+                    ChannelLogoArtwork(
+                        name: name, logoURL: nil, size: CGSize(width: 112, height: 72), cornerRadius: 12,
+                        plozzChannelID: "channel-\(index)"
+                    )
+                }
+            }
+        }
+        .padding(24)
+        .background(Color.black)
+        let renderer = ImageRenderer(content: sheet)
+        renderer.scale = 2
+        let image = try XCTUnwrap(renderer.uiImage)
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "plozz-wordmarks-before-guide-player"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testDarkColouredInkGetsASubtleLightBrandTint() {
         for luminance in [0.08, 0.3, 0.55] {
             let plate = ChannelLogoPlate(tone: ResolvedLogoTone(
@@ -167,7 +248,8 @@ final class ChannelLogoArtworkTests: XCTestCase {
             for: HeroLogoMemo.key(for: [.remote(url)])
         )
         let renderer = ImageRenderer(content: ChannelLogoArtwork(
-            name: "", logoURL: url, size: CGSize(width: 112, height: 72), cornerRadius: 12
+            name: "", logoURL: url, size: CGSize(width: 112, height: 72), cornerRadius: 12,
+            plozzChannelID: "plozz-test-channel"
         ))
         renderer.scale = 1
         let rendered = try XCTUnwrap(renderer.cgImage)

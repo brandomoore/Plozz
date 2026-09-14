@@ -2,7 +2,27 @@
 import SwiftUI
 import CoreModels
 #if canImport(UIKit)
+import Observation
 import UIKit
+#endif
+
+#if os(tvOS)
+@MainActor @Observable
+final class ArtworkResolutionState {
+    var image: UIImage?
+    var isResolved = false
+}
+
+private struct ArtworkResolutionStateKey: EnvironmentKey {
+    static let defaultValue: ArtworkResolutionState? = nil
+}
+
+extension EnvironmentValues {
+    var artworkResolutionState: ArtworkResolutionState? {
+        get { self[ArtworkResolutionStateKey.self] }
+        set { self[ArtworkResolutionStateKey.self] = newValue }
+    }
+}
 #endif
 
 /// Loads the first artwork URL that succeeds from an ordered list of candidates,
@@ -365,6 +385,10 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
     let placeholder: () -> Placeholder
 
     @State private var image: UIImage?
+    #if os(tvOS)
+    @Environment(\.artworkResolutionState) private var artworkResolution
+    @Environment(\.detailEntranceSession) private var detailEntrance
+    #endif
     @State private var resolved: Bool
     /// Whether `image` is the cheap pass, and so still owes a full-quality swap.
     @State private var isPreviewQuality = false
@@ -426,6 +450,15 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             providerPolicyIdentity: providerPolicyIdentity
         )
         let prepared = ArtworkSeedMemo.prepared(for: memoKey, variant: variant)
+        let preparedPreview = previewVariant.flatMap { preview in
+            ArtworkSeedMemo.prepared(
+                for: ArtworkResolveKey.make(
+                    references: references, variant: preview, maxAspectRatio: maxAspectRatio,
+                    pinIdentity: pinIdentity, providerPolicyIdentity: providerPolicyIdentity
+                ),
+                variant: preview
+            )
+        }
         let seeded = prefersOnlineArtwork && asyncFallbackURL != nil
             ? nil
             : Self.cachedUsableImage(
@@ -448,9 +481,10 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                 variant: $0
             )
         } : nil
-        _image = State(initialValue: prepared?.image ?? (seeded ?? seededPreview)?.image)
-        _resolved = State(initialValue: prepared != nil || seeded != nil || seededPreview != nil)
-        _isPreviewQuality = State(initialValue: prepared == nil && seeded == nil && seededPreview != nil)
+        _image = State(initialValue: prepared?.image ?? seeded?.image ?? preparedPreview?.image ?? seededPreview?.image)
+        _resolved = State(initialValue: prepared != nil || seeded != nil || preparedPreview != nil || seededPreview != nil)
+        _isPreviewQuality = State(initialValue: prepared == nil && seeded == nil
+            && (preparedPreview != nil || seededPreview != nil))
         _loadedKey = State(initialValue: prepared != nil || seeded?.index == references.startIndex
             ? ArtworkResolveKey.make(
                 references: references,
@@ -460,11 +494,12 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                 providerPolicyIdentity: providerPolicyIdentity
             )
             : nil)
-        _pinnedIdentity = State(initialValue: prepared != nil || seeded != nil ? pinIdentity : nil)
+        _pinnedIdentity = State(initialValue: prepared != nil || seeded != nil
+            || preparedPreview != nil || seededPreview != nil ? pinIdentity : nil)
         _displayedReference = State(
             initialValue: prepared?.reference ?? seeded.flatMap {
                 references.indices.contains($0.index) ? references[$0.index] : nil
-            } ?? seededPreview.flatMap {
+            } ?? preparedPreview?.reference ?? seededPreview.flatMap {
                 references.indices.contains($0.index) ? references[$0.index] : nil
             }
         )
@@ -490,6 +525,14 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                 palette.fill
             }
         }
+        #if os(tvOS)
+        .onChange(of: image, initial: true) { _, value in
+            artworkResolution?.image = value
+        }
+        .onChange(of: resolved, initial: true) { _, value in
+            artworkResolution?.isResolved = value
+        }
+        #endif
         .task(id: taskKey) {
             await resolve()
         }
@@ -519,17 +562,15 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             return
         }
         if isSameSubject, image != nil, isPreviewQuality,
-           let displayedReference,
-           let loaded = await ArtworkImageCache.shared.image(
-               for: displayedReference,
-               variant: variant
-           ),
-           Self.usableSize(loaded, maxAspectRatio: maxAspectRatio) != nil {
+           let displayedReference {
+            let loaded = await ArtworkImageCache.shared.image(for: displayedReference, variant: variant)
             guard !Task.isCancelled else { return }
-            image = loaded
-            isPreviewQuality = false
+            if let loaded, Self.usableSize(loaded, maxAspectRatio: maxAspectRatio) != nil {
+                image = loaded
+                isPreviewQuality = false
+                ArtworkSeedMemo.store(loaded, reference: displayedReference, for: key)
+            }
             loadedKey = key
-            ArtworkSeedMemo.store(loaded, reference: displayedReference, for: key)
             return
         }
         // Same show, different candidates: a better picture has been found for
@@ -593,6 +634,15 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             image = nil
             resolved = false
         }
+        #if os(tvOS)
+        if image == nil, variant == .heroBackdrop,
+           let task = detailEntrance?.backdropTask(matching: key),
+           let firstPaint = await task.value {
+            await adoptFirstPaint(firstPaint, for: key)
+            return
+        }
+        #endif
+        guard !Task.isCancelled else { return }
         if image == nil, prefersOnlineArtwork, asyncFallbackURL != nil {
             let firstVariant = previewVariant ?? variant
             if let firstPaint = await ArtworkFirstPaintResolver.resolve(
@@ -604,29 +654,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                 prefersOnlineArtwork: true,
                 sharedKey: sharedResolutionIdentity
             ) {
-                guard !Task.isCancelled else { return }
-                image = firstPaint.image
-                resolved = true
-                isPreviewQuality = firstVariant != variant
-                pinnedIdentity = pinIdentity
-                displayedReference = firstPaint.reference
-                onResolveReference?(firstPaint.reference)
-
-                if firstVariant != variant,
-                   let loaded = await ArtworkImageCache.shared.image(
-                       for: firstPaint.reference,
-                       variant: variant
-                   ),
-                   Self.usableSize(loaded, maxAspectRatio: maxAspectRatio) != nil {
-                    guard !Task.isCancelled else { return }
-                    image = loaded
-                    isPreviewQuality = false
-                    ArtworkSeedMemo.store(loaded, reference: firstPaint.reference, for: key)
-                }
-                if !isPreviewQuality, let image {
-                    ArtworkSeedMemo.store(image, reference: firstPaint.reference, for: key)
-                }
-                loadedKey = key
+                await adoptFirstPaint(firstPaint, for: key)
                 return
             }
         }
@@ -713,6 +741,27 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         }
         // Genuinely nothing to show after retrying: record it so we stop asking.
         resolved = true
+        loadedKey = key
+    }
+
+    private func adoptFirstPaint(_ firstPaint: FirstPaintArtwork, for key: String) async {
+        guard !Task.isCancelled else { return }
+        image = firstPaint.image
+        resolved = true
+        isPreviewQuality = firstPaint.variant != variant
+        pinnedIdentity = pinIdentity
+        displayedReference = firstPaint.reference
+        onResolveReference?(firstPaint.reference)
+        if isPreviewQuality,
+           let loaded = await ArtworkImageCache.shared.image(for: firstPaint.reference, variant: variant),
+           Self.usableSize(loaded, maxAspectRatio: maxAspectRatio) != nil {
+            guard !Task.isCancelled else { return }
+            image = loaded
+            isPreviewQuality = false
+        }
+        if !isPreviewQuality, let image {
+            ArtworkSeedMemo.store(image, reference: firstPaint.reference, for: key)
+        }
         loadedKey = key
     }
 

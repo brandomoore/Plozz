@@ -122,7 +122,7 @@ public extension LoadingMessage {
         LoadingMessage(id: "untangling-marauder-s-map", text: "Untangling the Marauder's Map…"),
         LoadingMessage(id: "waiting-wardrobe-door-swing", text: "Waiting for the wardrobe door to swing open…"),
         LoadingMessage(id: "adjusting-rabbit-ears", text: "Adjusting the rabbit ears…"),
-        LoadingMessage(id: "please-stand-by-regularly", text: "Please stand by for the regularly scheduled programme…"),
+        LoadingMessage(id: "please-stand-by-regularly", text: "Please stand by for the regularly scheduled program…"),
         LoadingMessage(id: "warming-color-bars", text: "Warming up the color bars…"),
         LoadingMessage(id: "flipping-through-tv-guide", text: "Flipping through the TV Guide…"),
         LoadingMessage(id: "checking-if-norm-bar", text: "Checking if Norm is at the bar…"),

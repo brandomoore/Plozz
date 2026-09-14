@@ -81,6 +81,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private var liveSourceResetCancellable: AnyCancellable?
 
     public var currentTime: TimeInterval { engine.currentTime }
+    public var isPlaybackPositionReady: Bool {
+        status == .ready && engine.isSessionReady && engine.hasFirstFrameReadyForDisplay
+            && !engine.isSeeking && !outputLoadInProgress && outputPolicyReload == nil
+    }
     public var duration: TimeInterval { engine.duration }
 
     public var videoAspectRatio: Double? {
@@ -217,6 +221,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     deinit {
         progressTimer?.cancel()
         liveSourceResetCancellable?.cancel()
+        outputPolicyReload?.cancel()
     }
 
     // MARK: - Callbacks
@@ -245,6 +250,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private let networkFileResolver: (any MediaTransportNetworkFileResolving)?
     private let authenticatedHTTPResolver: (any AuthenticatedHTTPResourceResolving)?
     private var liveOutputPolicy = LiveChannelOutputPolicy()
+    private var outputPolicyReload: Task<Void, Never>?
+    private var outputLoadGeneration = UUID()
+    private var outputLoadInProgress = false
+    private var loadedDisplaySuppression: Bool?
+    private var failedDisplaySuppression: Bool?
     private var cancellables = Set<AnyCancellable>()
     private var progressTimer: Task<Void, Never>?
     /// A foreground reload reports its error directly to `PlayerViewModel`.
@@ -330,6 +340,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     // MARK: - VideoEngine Lifecycle
 
     public func load(request: PlaybackRequest, startPosition: TimeInterval) async {
+        guard let outputGeneration = await beginOutputLoad() else { return }
+        let outputPolicy = liveOutputPolicy
+        defer { finishOutputLoad(outputGeneration, policy: outputPolicy) }
         endLiveAttempt()
         let probeGeneration = probePublicationGate.beginLoad()
         sourceFormatCancellable?.cancel()
@@ -350,7 +363,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             matchContentEnabled: true,
             audioBridgeMode: channels > 6 ? .lossless : .surroundCompat
         )
-        Self.applyLiveOutputPolicy(liveOutputPolicy, to: &options)
+        Self.applyLiveOutputPolicy(outputPolicy, to: &options)
         // Build the native WebVTT renditions so subtitles can travel into a
         // Picture in Picture window, where our own overlay cannot follow: it is a
         // view in this app's hierarchy and the window only carries what is in the
@@ -461,6 +474,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public func loadLive(url: URL, httpHeaders: [String: String]) async {
+        guard let outputGeneration = await beginOutputLoad() else { return }
+        let outputPolicy = liveOutputPolicy
+        defer { finishOutputLoad(outputGeneration, policy: outputPolicy) }
         let liveGeneration = beginLiveAttempt()
         _ = probePublicationGate.beginLoad()
         sourceFormatCancellable?.cancel()
@@ -476,7 +492,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         var stage = "engine.load"
         do {
             var options = Self.liveLoadOptions(httpHeaders: httpHeaders)
-            Self.applyLiveOutputPolicy(liveOutputPolicy, to: &options)
+            Self.applyLiveOutputPolicy(outputPolicy, to: &options)
             try await engine.load(url: url, options: options)
             guard liveAttemptGate.accepts(liveGeneration) else { return }
             if case .error(let message) = engine.state {
@@ -527,9 +543,74 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     public var supportsConcurrentPlayback: Bool { true }
 
     public func configureLiveOutput(_ policy: LiveChannelOutputPolicy) {
+        if liveOutputPolicy.suppressesDisplayMatching != policy.suppressesDisplayMatching {
+            failedDisplaySuppression = nil
+        }
         liveOutputPolicy = policy
         engine.volume = policy.isAudible ? 1 : 0
         engine.deactivatesAudioSessionOnStop = !policy.sharesAudioSession
+        reconcileLiveDisplayPolicy()
+    }
+
+    private func beginOutputLoad() async -> UUID? {
+        outputLoadGeneration = UUID()
+        let generation = outputLoadGeneration
+        outputLoadInProgress = true
+        loadedDisplaySuppression = nil
+        failedDisplaySuppression = nil
+        let pending = outputPolicyReload
+        outputPolicyReload = nil
+        pending?.cancel()
+        await pending?.value
+        guard outputLoadGeneration == generation, !Task.isCancelled else {
+            if outputLoadGeneration == generation { outputLoadInProgress = false }
+            return nil
+        }
+        return generation
+    }
+
+    private func finishOutputLoad(_ generation: UUID, policy: LiveChannelOutputPolicy) {
+        guard outputLoadGeneration == generation else { return }
+        outputLoadInProgress = false
+        loadedDisplaySuppression = policy.suppressesDisplayMatching
+        reconcileLiveDisplayPolicy()
+    }
+
+    private func reconcileLiveDisplayPolicy() {
+        #if os(tvOS)
+        guard !outputLoadInProgress, outputPolicyReload == nil, status == .ready, engine.isSessionReady,
+              let loadedDisplaySuppression,
+              failedDisplaySuppression != liveOutputPolicy.suppressesDisplayMatching,
+              loadedDisplaySuppression != liveOutputPolicy.suppressesDisplayMatching else { return }
+        let generation = outputLoadGeneration
+        let policy = liveOutputPolicy
+        outputPolicyReload = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if outputLoadGeneration == generation {
+                    outputPolicyReload = nil
+                    reconcileLiveDisplayPolicy()
+                }
+            }
+            guard outputLoadGeneration == generation, !Task.isCancelled,
+                  liveOutputPolicy.suppressesDisplayMatching == policy.suppressesDisplayMatching else { return }
+            do {
+                // Changing load options through Aether's session-preserving reload
+                // keeps the broadcast cursor, pause state and selected tracks.
+                try await reloadSession(outputPolicy: policy)
+                guard outputLoadGeneration == generation, !Task.isCancelled else { return }
+                self.loadedDisplaySuppression = policy.suppressesDisplayMatching
+            } catch is CancellationError {
+                // A newer source, stop or foreground teardown owns playback.
+            } catch {
+                guard outputLoadGeneration == generation, !Task.isCancelled else { return }
+                let failure = (error as? AppError) ?? .unknown(String(describing: error))
+                failedDisplaySuppression = policy.suppressesDisplayMatching
+                PlozzLog.playback.error("Channel display policy could not be applied")
+                onFailure?(failure)
+            }
+        }
+        #endif
     }
 
     nonisolated static func liveLoadOptions(
@@ -670,6 +751,29 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public func reloadAfterForeground() async throws {
+        if let pending = outputPolicyReload {
+            await pending.value
+            try Task.checkCancellation()
+            if case .failed(let error) = status { throw error }
+            return
+        }
+        let generation = outputLoadGeneration
+        let policy = liveOutputPolicy
+        outputLoadInProgress = true
+        defer {
+            if outputLoadGeneration == generation {
+                outputLoadInProgress = false
+                reconcileLiveDisplayPolicy()
+            }
+        }
+        try await reloadSession(outputPolicy: policy)
+        if outputLoadGeneration == generation {
+            loadedDisplaySuppression = policy.suppressesDisplayMatching
+        }
+    }
+
+    private func reloadSession(outputPolicy: LiveChannelOutputPolicy) async throws {
+        try Task.checkCancellation()
         let probeGeneration = probePublicationGate.currentGeneration
         guard probePublicationGate.accepts(probeGeneration) else { return }
         // AetherEngine resets sourceVideoFormat to its provisional `.sdr` value
@@ -680,7 +784,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         defer { suppressFailureCallbackForForegroundReload = false }
         status = .loading
         do {
-            try await engine.reloadAtCurrentPosition()
+            try Task.checkCancellation()
+            try await engine.reloadAtCurrentPosition { options in
+                Self.applyLiveOutputPolicy(outputPolicy, to: &options)
+            }
+            try Task.checkCancellation()
             // Custom-source reloads report failure through `state = .error` and
             // return normally. Drain the adapter's queued Combine delivery, then
             // inspect engine truth before declaring recovery successful.
@@ -705,6 +813,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 isPaused = false
             }
             status = .ready
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             guard probePublicationGate.accepts(probeGeneration) else { return }
             let appError = (error as? AppError) ?? .unknown(String(describing: error))
@@ -736,6 +846,12 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func stopEngine(resetDisplayCriteria: Bool) {
+        outputLoadGeneration = UUID()
+        outputPolicyReload?.cancel()
+        outputPolicyReload = nil
+        outputLoadInProgress = false
+        loadedDisplaySuppression = nil
+        failedDisplaySuppression = nil
         endLiveAttempt()
         probePublicationGate.invalidate()
         sourceFormatCancellable?.cancel()
@@ -984,8 +1100,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 case .seeking:
                     break
                 case .ended:
-                    self.onEnded?()
+                    if !self.suppressFailureCallbackForForegroundReload { self.onEnded?() }
                 case .error(let msg):
+                    if self.suppressFailureCallbackForForegroundReload { return }
                     if let generation = self.liveAttemptGate.activeGeneration {
                         self.reportLiveFailure(
                             msg,
@@ -1008,6 +1125,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                         self.onFailure?(err)
                     }
                 }
+                self.reconcileLiveDisplayPolicy()
             }
             .store(in: &cancellables)
 

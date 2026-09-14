@@ -92,7 +92,7 @@ private extension LibraryChannelPreparationUpdate.Stage {
         case .checkingServers: "Checking your libraries"
         case .readingLibrary: "Reading library items"
         case .buildingChannels: "Building your channels"
-        case .savingGuides: "Saving programme guides"
+        case .savingGuides: "Saving program guides"
         }
     }
 }

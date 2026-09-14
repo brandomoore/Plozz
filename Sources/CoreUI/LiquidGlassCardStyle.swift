@@ -16,6 +16,7 @@ public struct PlozzGlassCardModifier: ViewModifier {
 
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzNativeFocusSurface) private var nativeSurface
 
     public init(cornerRadius: CGFloat, isFocused: Bool, glassAtRest: Bool = true) {
         self.cornerRadius = cornerRadius
@@ -53,7 +54,9 @@ public struct PlozzGlassCardModifier: ViewModifier {
     public func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
-        if reduceTransparency {
+        if nativeSurface {
+            content
+        } else if reduceTransparency {
             // Reduce Transparency on: never lean on translucency. At REST use the
             // shared elevation surface (identical to the glass branch below and to
             // every other card), so a card looks the same regardless of this
@@ -122,6 +125,7 @@ public struct PlozzMediaEdgeModifier: ViewModifier {
     private let cornerRadius: CGFloat
     private let isEnabled: Bool
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzNativeFocusSurface) private var nativeSurface
 
     public init(cornerRadius: CGFloat, isEnabled: Bool = true) {
         self.cornerRadius = cornerRadius
@@ -130,7 +134,7 @@ public struct PlozzMediaEdgeModifier: ViewModifier {
 
     public func body(content: Content) -> some View {
         content.overlay {
-            if isEnabled {
+            if isEnabled && !nativeSurface {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .inset(by: -0.5)
                     .stroke(palette.mediaEdgeColor, lineWidth: 1.5)
@@ -139,13 +143,13 @@ public struct PlozzMediaEdgeModifier: ViewModifier {
     }
 }
 
-/// tvOS button style for focusable browsing **cards** (Home's library
+/// Custom fallback style for focusable browsing **cards** (Home's library
 /// shortcuts, Music tiles, genre/category cards). Replaces the platform's
 /// default `.card` style — whose focus state paints a stark **white** plate —
 /// with Plozz's Twozz-ported liquid-glass focus surface: a subtle, theme-tinted
 /// lift that deepens on focus, draws a hairline border, and respects Reduce
 /// Transparency. Drive it through `.plozzCardButton(cornerRadius:)`, which also
-/// disables the system focus effect so no white halo bleeds through.
+/// chooses the UIKit control for System and this fallback for custom focus.
 public struct PlozzCardButtonStyle: ButtonStyle {
     private let cornerRadius: CGFloat
     private let focusedScale: CGFloat
@@ -164,14 +168,21 @@ public struct PlozzCardButtonStyle: ButtonStyle {
         let cornerRadius: CGFloat
         let focusedScale: CGFloat
         @Environment(\.isFocused) private var isFocused
+        @Environment(\.plozzCardFocusStyle) private var focusStyle
 
         var body: some View {
-            configuration.label
-                .plozzGlassCard(cornerRadius: cornerRadius, isFocused: isFocused)
-                .shadow(color: .black.opacity(isFocused ? 0.36 : 0), radius: 20, y: 10)
-                .scaleEffect(isFocused ? (configuration.isPressed ? focusedScale * 0.97 : focusedScale) : 1)
-                .animation(.easeOut(duration: 0.18), value: isFocused)
-                .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            if focusStyle.usesSystemEffect {
+                configuration.label
+                    .plozzGlassCard(cornerRadius: cornerRadius, isFocused: false)
+                    .plozzSystemCardProjection(cornerRadius: cornerRadius)
+            } else {
+                configuration.label
+                    .plozzGlassCard(cornerRadius: cornerRadius, isFocused: isFocused)
+                    .shadow(color: .black.opacity(isFocused ? 0.36 : 0), radius: 20, y: 10)
+                    .scaleEffect(isFocused ? (configuration.isPressed ? focusedScale * 0.97 : focusedScale) : 1)
+                    .animation(.easeOut(duration: 0.18), value: isFocused)
+                    .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            }
         }
     }
 }
@@ -212,11 +223,15 @@ public extension View {
         cornerRadius: CGFloat = PlozzTheme.Metrics.Radius.card,
         focusedScale: CGFloat = PlozzTheme.Metrics.mediumFocusedCardScale
     ) -> some View {
-        buttonStyle(PlozzCardButtonStyle(cornerRadius: cornerRadius, focusedScale: focusedScale))
-            .focusEffectDisabled()
+        plozzCardFocusButtonStyle(
+            PlozzCardButtonStyle(cornerRadius: cornerRadius, focusedScale: focusedScale),
+            cornerRadius: cornerRadius
+        )
     }
 
     /// Flattens a card's layer tree to reduce GPU offscreen render passes.
+    /// System cards keep their live UIKit-hosted content and artwork anchors
+    /// outside this rasterization path.
     /// When Reduce Transparency is ON (opaque cards, no live glass), uses
     /// `.drawingGroup()` to rasterize the entire card into one Metal texture —
     /// collapsing clips, overlays, and borders into a single pass.
@@ -229,11 +244,7 @@ public extension View {
     /// rasterize was added — when "glass on every card" worked.
     @ViewBuilder
     func plozzCardRasterize(reduceTransparency: Bool) -> some View {
-        if reduceTransparency {
-            self.drawingGroup()
-        } else {
-            self
-        }
+        modifier(CardRasterization(reduceTransparency: reduceTransparency))
     }
 
     /// Wraps the view in a non-interactive Liquid Glass *panel* surface (HUDs,
@@ -250,12 +261,26 @@ public enum PlozzFocusableCardVariant: Sendable {
     case borderless(focusPadding: CGFloat = 18)
 }
 
+private struct CardRasterization: ViewModifier {
+    let reduceTransparency: Bool
+    @Environment(\.plozzCardFocusStyle) private var style
+
+    func body(content: Content) -> some View {
+        if reduceTransparency && !style.usesSystemEffect {
+            content.drawingGroup()
+        } else {
+            content
+        }
+    }
+}
+
 public struct PlozzFocusableCardModifier: ViewModifier {
     private let cornerRadius: CGFloat
     private let variant: PlozzFocusableCardVariant
-    @FocusState private var focused: Bool
+    @PlozzCardFocus private var focused: Bool
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
 
     public init(
         cornerRadius: CGFloat,
@@ -265,19 +290,29 @@ public struct PlozzFocusableCardModifier: ViewModifier {
         self.variant = variant
     }
 
+    private var focusPadding: CGFloat {
+        switch variant {
+        case .filled: 0
+        case .borderless(let padding): padding
+        }
+    }
+
     public func body(content: Content) -> some View {
         #if os(tvOS)
-        content
-            .background { surface }
-            .focusable(true)
-            .focused($focused)
-            .focusEffectDisabled()
-            // Read-only cards lift too. Focus should always be legible as
-            // movement, not just a change of surface — otherwise the information
-            // sections read as inert while every other card on the page responds.
-            .scaleEffect(focused ? PlozzTheme.Metrics.readOnlyFocusedCardScale : 1)
-            .zIndex(focused ? 1 : 0)
-            .animation(.easeOut(duration: 0.18), value: focused)
+        if focusStyle.usesSystemEffect {
+            NativeTVCard(content: content.padding(focusPadding), focus: $focused, isEnabled: true, action: {})
+                .focused($focused.focusState)
+                .accessibilityRemoveTraits(.isButton)
+        } else {
+            content
+                .background { surface }
+                .focusable(true)
+                .focused($focused.focusState)
+                .focusEffectDisabled()
+                .scaleEffect(focused ? PlozzTheme.Metrics.readOnlyFocusedCardScale : 1)
+                .zIndex(focused ? 1 : 0)
+                .animation(.easeOut(duration: 0.18), value: focused)
+        }
         #else
         content.background { surface }
         #endif
@@ -285,14 +320,10 @@ public struct PlozzFocusableCardModifier: ViewModifier {
 
     @ViewBuilder
     private var surface: some View {
-        let focusPadding = switch variant {
-        case .filled: CGFloat.zero
-        case .borderless(let padding): padding
-        }
         let surfaceCorner = cornerRadius
         let shape = RoundedRectangle(cornerRadius: surfaceCorner, style: .continuous)
 
-        if focused {
+        if focused && !focusStyle.usesSystemEffect {
             if reduceTransparency {
                 // Reduce Transparency: the glass path falls back to a solid WHITE
                 // lift, which whites-out a text card (light content text becomes

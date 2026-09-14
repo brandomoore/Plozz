@@ -120,6 +120,7 @@ public struct LiveTVPrototypeProgram: Codable, Identifiable, Equatable, Sendable
     public let start: Date
     public let end: Date
     public let details: LiveTVProgramDetails?
+    public let libraryItem: LibraryChannelItem?
 
     public init(
         id: String,
@@ -128,7 +129,8 @@ public struct LiveTVPrototypeProgram: Codable, Identifiable, Equatable, Sendable
         subtitle: String,
         start: Date,
         end: Date,
-        details: LiveTVProgramDetails? = nil
+        details: LiveTVProgramDetails? = nil,
+        libraryItem: LibraryChannelItem? = nil
     ) {
         self.id = id
         self.channelID = channelID
@@ -137,6 +139,7 @@ public struct LiveTVPrototypeProgram: Codable, Identifiable, Equatable, Sendable
         self.start = start
         self.end = end
         self.details = details
+        self.libraryItem = libraryItem
     }
 
     public func progress(at date: Date) -> Double {

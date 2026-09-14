@@ -434,6 +434,7 @@ targets:
     platform: tvOS
     sources:
       - path: Tests/FocusHost
+      - path: Tests/FeatureLiveTVRemoteTests/NavigationRailFixture.swift
       - path: App/Resources/Assets.xcassets
     settings:
       base:
@@ -441,6 +442,17 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    dependencies:
+      - package: Plozz
+        product: CoreUI
+      - package: Plozz
+        product: CoreModels
+      - package: Plozz
+        product: FeatureHome
+      - package: Plozz
+        product: FeatureHomeCore
+      - package: Plozz
+        product: AppShell
 
   PlozzHomeRemoteTests:
     type: bundle.ui-testing
@@ -469,8 +481,23 @@ targets:
         product: CoreUI
       - package: Plozz
         product: CoreModels
+      - package: Plozz
+        product: FeatureHome
+      - package: Plozz
+        product: FeatureHomeCore
+      - package: Plozz
+        product: AppShell
 
 schemes:
+  PlozzHomeFixtureTests:
+    build:
+      targets:
+        PlozzFocusHost: all
+        PlozzHomeRemoteTests: [test]
+    test:
+      config: Debug
+      targets:
+        - PlozzHomeRemoteTests
   PlozzHomeRemoteTests:
     build:
       targets:

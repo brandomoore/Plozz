@@ -22,6 +22,7 @@ public struct CircularFocusHalo<Avatar: View>: View {
     private let focusPadding: CGFloat
     private let focusScale: CGFloat
     private let avatar: () -> Avatar
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
 
     public init(
         isFocused: Bool,
@@ -48,21 +49,28 @@ public struct CircularFocusHalo<Avatar: View>: View {
     }
 
     public var body: some View {
-        ZStack {
-            Color.clear
-                .frame(width: slot, height: slot)
-                .plozzGlassCard(cornerRadius: slot / 2, isFocused: true)
-                .shadow(color: .black.opacity(0.36), radius: 20, y: 10)
-                .opacity(isFocused ? 1 : 0)
-
+        if focusStyle.usesSystemEffect {
             avatar()
                 .frame(width: diameter, height: diameter)
-                .clipShape(Circle())
-                .scaleEffect(contentScale)
+                .plozzSystemCardProjection(cornerRadius: diameter / 2)
+                .frame(width: slot, height: slot)
+        } else {
+            ZStack {
+                Color.clear
+                    .frame(width: slot, height: slot)
+                    .plozzGlassCard(cornerRadius: slot / 2, isFocused: true)
+                    .shadow(color: .black.opacity(0.36), radius: 20, y: 10)
+                    .opacity(isFocused ? 1 : 0)
+
+                avatar()
+                    .frame(width: diameter, height: diameter)
+                    .plozzCardArtworkClip(Circle())
+                    .scaleEffect(contentScale)
+            }
+            .frame(width: slot, height: slot)
+            .animation(.easeOut(duration: 0.22), value: isFocused)
+            .animation(.easeOut(duration: 0.12), value: isPressed)
         }
-        .frame(width: slot, height: slot)
-        .animation(.easeOut(duration: 0.22), value: isFocused)
-        .animation(.easeOut(duration: 0.12), value: isPressed)
     }
 }
 
@@ -70,8 +78,7 @@ public struct CircularFocusHalo<Avatar: View>: View {
 /// `plozzFocusHalo` (the same theme-aware glass focus ring the borderless
 /// "Posters" cards use) with an optional caption beneath it. Owns its focus the
 /// same way the rectangular cards do — `.focusable` + `.onTapGesture` with the
-/// system focus effect disabled — so the only focus visual is our glass halo (a
-/// `Button` would paint tvOS's white focus platter behind it).
+/// system focus effect disabled only for the custom styles.
 ///
 /// The caption builder receives the live focus state so labels can emphasise on
 /// focus, and — like every other focused tile in the app — the caption **drops**
@@ -87,8 +94,12 @@ public struct CircularFocusTile<Avatar: View, Caption: View>: View {
     private let caption: (Bool) -> Caption
     private let action: () -> Void
     private let onFocusChange: ((Bool) -> Void)?
+    private let nativeName: String?
 
-    @FocusState private var isFocused: Bool
+    @PlozzCardFocus private var isFocused: Bool
+    #if os(tvOS)
+    @State private var nativeArtwork = ArtworkResolutionState()
+    #endif
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardFocusStyle) private var focusStyle
 
@@ -99,6 +110,7 @@ public struct CircularFocusTile<Avatar: View, Caption: View>: View {
         captionSpacing: CGFloat = 12,
         action: @escaping () -> Void,
         onFocusChange: ((Bool) -> Void)? = nil,
+        nativeName: String? = nil,
         @ViewBuilder avatar: @escaping () -> Avatar,
         @ViewBuilder caption: @escaping (Bool) -> Caption
     ) {
@@ -108,6 +120,7 @@ public struct CircularFocusTile<Avatar: View, Caption: View>: View {
         self.captionSpacing = captionSpacing
         self.action = action
         self.onFocusChange = onFocusChange
+        self.nativeName = nativeName
         self.avatar = avatar
         self.caption = caption
     }
@@ -122,25 +135,55 @@ public struct CircularFocusTile<Avatar: View, Caption: View>: View {
         // transform (see `.offset`), so the drop never changes the tile's footprint.
         let push = metrics.focusCaptionPush(for: focusStyle)
         VStack(spacing: captionSpacing + push) {
-            avatar()
-                .frame(width: diameter, height: diameter)
-                .clipShape(Circle())
-                .plozzFocusHalo(
-                    cornerRadius: diameter / 2,
-                    focusScale: focusScale,
-                    isFocused: isFocused
-                )
-                .frame(width: slot, height: slot)
+            avatarContent.frame(width: slot, height: slot)
             caption(isFocused)
-                .offset(y: isFocused ? 0 : -push)
+                .offset(y: focusStyle.usesSystemEffect || isFocused ? 0 : -push)
         }
+        #if os(tvOS)
+        .focusableCard(
+            isFocused: $isFocused, cornerRadius: diameter / 2,
+            nativeFocusInContent: true, action: action
+        )
+        #else
         .focusable(true)
-        .focused($isFocused)
-        .onChange(of: isFocused) { _, focused in onFocusChange?(focused) }
-        .focusEffectDisabled()
+        .focused($isFocused.focusState)
         .onTapGesture(perform: action)
+        #endif
+        .onChange(of: isFocused) { _, focused in onFocusChange?(focused) }
         .accessibilityAddTraits(.isButton)
         .plozzCardFocusTransition(isFocused: isFocused)
+        .environment(\.plozzCardStyle, .borderless)
+    }
+
+    @ViewBuilder
+    private var avatarContent: some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect {
+            NativeTVMonogram(
+                image: nativeArtwork.image, name: nativeName,
+                diameter: diameter, focus: $isFocused, action: action
+            )
+            .focused($isFocused.focusState)
+            .background {
+                avatar()
+                    .environment(\.artworkResolutionState, nativeArtwork)
+                    .frame(width: diameter, height: diameter)
+                    .hidden()
+                    .accessibilityHidden(true)
+            }
+        } else {
+            customAvatar
+        }
+        #else
+        customAvatar
+        #endif
+    }
+
+    private var customAvatar: some View {
+        avatar()
+            .frame(width: diameter, height: diameter)
+            .plozzCardArtworkClip(Circle())
+            .plozzFocusHalo(cornerRadius: diameter / 2, focusScale: focusScale, isFocused: isFocused)
     }
 }
 #endif

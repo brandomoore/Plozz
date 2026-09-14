@@ -19,7 +19,7 @@ struct SearchFixtureApp: App {
             } else if ProcessInfo.processInfo.arguments.contains("--source-fixture") {
                 SourceOnboardingFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--navigation-fixture") {
-                NavigationRailFixture()
+                NavigationRailFixture { SearchFixture() }
             } else if ProcessInfo.processInfo.arguments.contains("--multiview-fixture") {
                 MultiviewFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--live-root-fixture") {

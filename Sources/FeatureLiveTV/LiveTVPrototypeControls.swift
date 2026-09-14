@@ -1,5 +1,6 @@
 #if DEBUG
 import CoreUI
+import CoreModels
 import FeatureLiveTVCore
 import SwiftUI
 
@@ -99,6 +100,7 @@ struct PrototypeSheetContent: View {
     let openMultiview: (LiveTVMultiviewFavorite) -> Void
     var channelActionTitle: LocalizedStringResource?
     var sourceManagement: ((PrototypeSheet) -> AnyView)? = nil
+    var openLibraryItem: ((LibraryChannelItem) -> Void)?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.themePalette) private var palette
 
@@ -134,14 +136,18 @@ struct PrototypeSheetContent: View {
                             }?.source.name,
                             isFavorite: model.favoriteIDs.contains(program.channelID),
                             toggleFavorite: { model.toggleFavorite(program.channelID) },
-                            watchTitle: channelActionTitle ?? "Watch channel"
+                            watchTitle: channelActionTitle ?? "Watch channel",
+                            openLibraryItem: channel.source == .plozz ? openLibraryItem : nil
                         ) {
                             guard imports.isProgramSearchResultAvailable(program, catalog: model) else { return }
                             tune(program.channelID)
                             dismiss()
                         }
                     } else {
-                        ContentUnavailableView("Programme unavailable", systemImage: "calendar.badge.exclamationmark")
+                        ContentUnavailableView(
+                            "Program details unavailable", systemImage: "calendar.badge.exclamationmark",
+                            description: Text("This listing is no longer available in the guide.")
+                        )
                     }
                 }
             }

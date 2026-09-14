@@ -25,6 +25,9 @@ navigation. Apple TV supports the top tabs, native sidebar and custom
 navigation rail variations; iPhone/iPad expose the same destination in their
 tab shell. Device installation must be authorized; a build alone does not
 install anything.
+tvOS navigation marks the destination **Experimental**: the pinned rail uses a
+subtitle within the existing row height, and native tabs/sidebar qualify the
+title. The pinned row also announces that status to accessibility.
 
 For isolated physical-TV iteration, build a branded Debug app using the existing
 per-branch build configuration. It has its own bundle ID, preferences and data;
@@ -186,6 +189,14 @@ is no prior in-memory history to migrate on the first updated launch.
   logo and its backing together, so a warmed guide logo appears immediately in
   the player with the same appearance. Hero/search/player sizes remain
   independent of the full-row guide treatment.
+  Plozz library channels without supplied artwork use a locally rendered wordmark:
+  heavy compressed channel lettering, a small rounded Plozz signature and a
+  solid broadcast-style color field. FNV-1a over the stable channel identity picks
+  from a fixed palette, so names, schedules, view size and app restarts do not
+  randomly change the branding. Guide and player pass the same channel identity
+  to the shared renderer. Real source logos still take precedence; missing
+  external-channel logos keep their ordinary name fallback. No network service,
+  generated image asset or per-channel manual design is needed.
   Station tiles show only the logo, or a name fallback when artwork is missing,
   rather than repeating names, numbers and badges beside it. Names and numbers
   remain searchable and available to accessibility; the focused channel's name
@@ -283,6 +294,51 @@ is no prior in-memory history to migrate on the first updated launch.
   Next/Previous snapshots the filtered guide order, deduplicated by channel, when watching starts, so
   promoting a channel into Recents cannot make transport bounce between stations.
   This channel history never writes movie/episode progress or watched status.
+
+### Preview display mode and original titles
+
+On tvOS, ordinary guide previews do not request content-matched dynamic range or
+refresh rate. They leave the display in the Apple TV's configured menu format
+(SDR when that is the menu default), without changing system settings. Opening a
+channel full-screen enables matching; returning to the guide disables it even
+when Keep watching while browsing retains the player. Multiview still has one
+display owner, independent of which pane supplies audio.
+
+Plozzigen applies this policy before source loading. Changes on a retained tvOS
+player use AetherEngine's session-preserving option reload, keeping its playhead,
+pause intent and tracks rather than starting a new broadcast session. Queued
+superseded requests, source replacement and stop cannot revive an older policy.
+Failed changes surface through playback recovery instead of silently retrying.
+This can require one playback/output transition when entering or leaving watching,
+but not a new HDMI mode switch for every automatically previewed channel.
+
+Library-channel catch-up waits for a usable playback position, not merely an
+engine `ready` notification. Plozzigen requires its real first frame and settled
+seek/reload state before the schedule can issue corrective seeks. Losing that
+readiness during a seek defers reconciliation without spending the retry budget;
+unsettled positions do not earn watch coverage. The existing 45-second startup
+limit still bounds genuine failures. An end within
+the already-allowed three-second clock drift waits for the published schedule
+boundary instead of briefly reporting a missing file. Materially early endings
+still fail, and a failed join disarms its old startup watchdog.
+
+Playback errors name the movie or episode when known and say it could not play,
+rather than labeling every startup failure unavailable. User-facing English uses
+“program”; XMLTV's standardized `<programme>` element and existing protocol names
+are unchanged. Structured `LIBRARY_CHANNEL` diagnostics record readiness,
+positions and failure reasons without channel names, IDs or credentials.
+
+Plozz channel menus, program details and playback controls offer **Go to show**
+or **Go to movie**. These open ordinary title details; they do not start playback
+or rewrite watch history. The underlying library item carries the original
+account and native IDs, so no title-name matching is needed. An episode without a
+known parent offers **Go to episode** rather than guessing a show. Playback uses
+the actual scheduled item, including a paused/delayed program, not wall-clock
+guide selection. The active profile and library authority are checked again when
+invoked, then channel playback is stopped before navigation.
+tvOS uses Home's regular title stack, temporarily making that destination available
+if navigation customization hid it, without changing the saved layout. iOS pushes
+the title in the Live TV navigation stack.
 
 ### Connected-server Live TV and standalone setup
 
