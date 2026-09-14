@@ -81,6 +81,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private var liveSourceResetCancellable: AnyCancellable?
 
     public var currentTime: TimeInterval { engine.currentTime }
+    public var isPlaybackPositionReady: Bool {
+        status == .ready && engine.isSessionReady && engine.hasFirstFrameReadyForDisplay
+            && !engine.isSeeking && !outputLoadInProgress && outputPolicyReload == nil
+    }
     public var duration: TimeInterval { engine.duration }
 
     public var videoAspectRatio: Double? {
@@ -1096,7 +1100,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 case .seeking:
                     break
                 case .ended:
-                    self.onEnded?()
+                    if !self.suppressFailureCallbackForForegroundReload { self.onEnded?() }
                 case .error(let msg):
                     if self.suppressFailureCallbackForForegroundReload { return }
                     if let generation = self.liveAttemptGate.activeGeneration {

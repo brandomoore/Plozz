@@ -22,6 +22,7 @@ public final class LibraryLiveChannelEngine: LiveChannelEngine {
         librarySession?.recoverableProgrammeIssue
     }
     public var currentLibraryItem: LibraryChannelItem? { librarySession?.navigationItem }
+    public var isPlaybackPositionReady: Bool { status == .ready && underlyingEngine.isPlaybackPositionReady }
 
     private let librarySessionFactory: LibrarySessionFactory?
     private var generation = UUID()

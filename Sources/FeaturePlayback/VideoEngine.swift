@@ -205,6 +205,10 @@ public protocol VideoEngine: AnyObject {
     /// Current playback position in seconds (`0` when unknown).
     var currentTime: TimeInterval { get }
 
+    /// Whether position is settled enough for corrective seeks. A decoder can
+    /// report ready before its initial frame/seek or a retained reload settles.
+    var isPlaybackPositionReady: Bool { get }
+
     /// Total duration in seconds (`0`/non-finite when unknown or live).
     var duration: TimeInterval { get }
 
@@ -394,6 +398,7 @@ public extension VideoEngine {
     /// `timeControlStatus`, Plozzigen end-of-stream signals) override this so the screensaver
     /// is also allowed at end-of-stream / during a stall, not just on pause.
     var preventsDisplaySleep: Bool { !isPaused }
+    var isPlaybackPositionReady: Bool { status == .ready }
 
     /// Default kinded-seek forwards to the unkinded variant, so existing
     /// engines that only know one seek mode keep working unchanged.

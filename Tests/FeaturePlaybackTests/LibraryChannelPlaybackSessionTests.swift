@@ -9,6 +9,117 @@ import UIKit
 
 @MainActor
 final class LibraryChannelPlaybackSessionTests: XCTestCase {
+    func testReadyDecoderWithUnsettledClockWaitsInsteadOfFailingTheJoin() async throws {
+        let fixture = try fixture(offset: 20)
+        defer { fixture.player.stop() }
+        fixture.engine.isPlaybackPositionReady = false
+        fixture.engine.loadHook = { [weak fixture] in fixture?.engine.currentTime = 0 }
+        fixture.player.tune()
+        await settle { fixture.engine.loads.count == 1 }
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(fixture.player.state, .loading)
+        XCTAssertTrue(fixture.engine.seeks.isEmpty)
+        fixture.engine.isPlaybackPositionReady = true
+        fixture.player.tick()
+        await settle { fixture.player.state == .playing }
+        XCTAssertEqual(fixture.engine.loads.count, 1, "Readiness must resume the join without Retry.")
+        XCTAssertEqual(fixture.engine.seeks, [20])
+    }
+
+    func testDisplayReloadDoesNotSpendJoinAttemptsOnAProvisionalClock() async throws {
+        let fixture = try fixture(offset: 20)
+        defer { fixture.player.stop() }
+        fixture.player.tune()
+        try await fixture.player.waitUntilSettled()
+        fixture.engine.isPlaybackPositionReady = false
+        fixture.engine.currentTime = 0
+        fixture.state.advance(10)
+        fixture.player.tick()
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertTrue(fixture.engine.seeks.isEmpty)
+        XCTAssertEqual(fixture.player.state, .playing)
+        fixture.engine.currentTime = 20
+        fixture.engine.isPlaybackPositionReady = true
+        fixture.player.tick()
+        await settle { fixture.player.state == .playing && fixture.engine.seeks.count == 1 }
+        XCTAssertEqual(fixture.engine.seeks, [30])
+    }
+
+    func testUnsettledDecoderPositionDoesNotEarnWatchCoverage() async throws {
+        let fixture = try fixture(history: true)
+        defer { fixture.player.stop() }
+        fixture.player.tune()
+        try await fixture.player.waitUntilSettled()
+        fixture.player.tick()
+        for _ in 0..<5 { fixture.advancePlayback() }
+        let watched = fixture.player.secondsWatched
+        fixture.engine.isPlaybackPositionReady = false
+        for _ in 0..<5 { fixture.advancePlayback() }
+        XCTAssertEqual(fixture.player.secondsWatched, watched)
+    }
+
+    func testReadinessLostDuringASeekDefersTheJoinWithoutConsumingItsRetryBudget() async throws {
+        let fixture = try fixture(offset: 20)
+        defer { fixture.player.stop() }
+        fixture.engine.loadHook = { [weak fixture] in fixture?.engine.currentTime = 0 }
+        fixture.engine.seekHook = { [weak fixture] in fixture?.engine.isPlaybackPositionReady = false }
+        fixture.player.tune()
+        await settle { fixture.engine.seeks.count == 1 }
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(fixture.player.state, .loading)
+        fixture.engine.seekHook = nil
+        fixture.engine.isPlaybackPositionReady = true
+        fixture.player.tick()
+        await settle { fixture.player.state == .playing }
+        XCTAssertEqual(fixture.engine.seeks, [20, 20])
+        XCTAssertEqual(fixture.engine.loads.count, 1)
+    }
+
+    func testNaturalEndWithinAllowedDriftWaitsForThePublishedBoundary() async throws {
+        let fixture = try fixture(offset: 97)
+        defer { fixture.player.stop() }
+        fixture.player.tune()
+        try await fixture.player.waitUntilSettled()
+        fixture.engine.currentTime = 100
+        fixture.engine.onEnded?()
+        XCTAssertEqual(fixture.player.state, .loading)
+        XCTAssertEqual(fixture.engine.loads.count, 1)
+        fixture.state.advance(3)
+        fixture.player.tick()
+        await settle { fixture.player.state == .playing && fixture.engine.loads.count == 2 }
+        XCTAssertEqual(fixture.engine.loads.last?.item.id, "second")
+    }
+
+    func testEndOutsideAllowedDriftStillReportsAChangedFile() async throws {
+        let fixture = try fixture(offset: 96.9)
+        defer { fixture.player.stop() }
+        fixture.player.tune()
+        try await fixture.player.waitUntilSettled()
+        fixture.engine.currentTime = 100
+        fixture.engine.onEnded?()
+        XCTAssertEqual(fixture.player.state, .unavailable(.mediaChanged))
+    }
+
+    func testFailedJoinDoesNotLeaveASecondStartupWatchdogArmed() async throws {
+        let fixture = try fixture(offset: 20)
+        defer { fixture.player.stop() }
+        fixture.engine.acceptsSeeks = false
+        fixture.engine.loadHook = { [weak fixture] in fixture?.engine.currentTime = 0 }
+        fixture.player.tune()
+        await settle { fixture.player.state == .unavailable(.unableToJoinLive) }
+        let stops = fixture.engine.stopCount
+        fixture.state.advance(46)
+        fixture.player.tick()
+        XCTAssertEqual(fixture.engine.stopCount, stops)
+        XCTAssertEqual(fixture.player.state, .unavailable(.unableToJoinLive))
+    }
+
+    func testPlaybackErrorNamesTheKnownKindWithoutClaimingItIsUnavailable() {
+        XCTAssertEqual(String(localized: LibraryChannelPlaybackCopy.failureTitle(for: .movie)), "Couldn't play this movie")
+        XCTAssertEqual(String(localized: LibraryChannelPlaybackCopy.failureTitle(for: .episode)), "Couldn't play this episode")
+        XCTAssertEqual(String(localized: LibraryChannelPlaybackCopy.failureTitle(for: nil)), "Couldn't play this program")
+    }
+
     private func fixture(
         offset: Double = 0, history: Bool = false, externalHistory: Bool = false
     ) throws -> LibraryPlaybackFixture {
@@ -683,6 +794,8 @@ private final class LibraryPlaybackEngineFixture: VideoEngine {
     var status: VideoEngineStatus = .idle
     var isPaused = false
     var preventsDisplaySleep = true
+    var isPlaybackPositionReady = true
+    var acceptsSeeks = true
     var currentTime: TimeInterval = 0
     var duration: TimeInterval = 100
     var furthestObservedPosition: TimeInterval = 0
@@ -701,6 +814,7 @@ private final class LibraryPlaybackEngineFixture: VideoEngine {
     var drainCount = 0
     var stopCount = 0
     var loadHook: (@MainActor () -> Void)?
+    var seekHook: (@MainActor () -> Void)?
     var asyncLoadHook: (@MainActor () async -> Void)?
     func load(request: PlaybackRequest, startPosition: TimeInterval) async {
         loads.append(request)
@@ -713,7 +827,11 @@ private final class LibraryPlaybackEngineFixture: VideoEngine {
     func play() { isPaused = false }
     func pause() { isPaused = true }
     func reloadAfterForeground() async throws {}
-    func seek(to seconds: TimeInterval) async { seeks.append(seconds); currentTime = seconds }
+    func seek(to seconds: TimeInterval) async {
+        seeks.append(seconds)
+        seekHook?()
+        if isPlaybackPositionReady && acceptsSeeks { currentTime = seconds }
+    }
     func stop() { stopCount += 1; status = .idle; isPaused = true }
     func drainTransport() async { drainCount += 1 }
     func selectAudioTrack(_ track: MediaTrack?) {}

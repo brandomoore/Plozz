@@ -75,7 +75,7 @@ private struct LibraryChannelEditorContent: View {
                 .disabled(model.isWorking)
                 .accessibilityIdentifier("library-channel-preview-save")
             } footer: {
-                Text("Schedules are local to this device until shared with their catalog snapshot. Changes begin after already published programmes.")
+                Text("Schedules are local to this device until shared with their catalog snapshot. Changes begin after already published programs.")
             }
         }
         .task { await model.load(prepareLibraries: prepareLibraries) }
@@ -357,7 +357,7 @@ private struct LibraryChannelManagementContent: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } footer: {
-                Text("Off leaves library progress and trackers untouched. On records completion only after you watch 90% of a programme, not from where you joined. Channel playback uses original files; server transcoding is unavailable when it cannot preserve this policy.")
+                Text("Off leaves library progress and trackers untouched. On records completion only after you watch 90% of a program, not from where you joined. Channel playback uses original files; server transcoding is unavailable when it cannot preserve this policy.")
             }
             if let issue = issue ?? service.issue { Text(issue.message) }
         }

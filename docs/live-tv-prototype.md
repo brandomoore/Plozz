@@ -312,12 +312,28 @@ Failed changes surface through playback recovery instead of silently retrying.
 This can require one playback/output transition when entering or leaving watching,
 but not a new HDMI mode switch for every automatically previewed channel.
 
-Plozz channel menus, programme details and playback controls offer **Go to show**
+Library-channel catch-up waits for a usable playback position, not merely an
+engine `ready` notification. Plozzigen requires its real first frame and settled
+seek/reload state before the schedule can issue corrective seeks. Losing that
+readiness during a seek defers reconciliation without spending the retry budget;
+unsettled positions do not earn watch coverage. The existing 45-second startup
+limit still bounds genuine failures. An end within
+the already-allowed three-second clock drift waits for the published schedule
+boundary instead of briefly reporting a missing file. Materially early endings
+still fail, and a failed join disarms its old startup watchdog.
+
+Playback errors name the movie or episode when known and say it could not play,
+rather than labeling every startup failure unavailable. User-facing English uses
+“program”; XMLTV's standardized `<programme>` element and existing protocol names
+are unchanged. Structured `LIBRARY_CHANNEL` diagnostics record readiness,
+positions and failure reasons without channel names, IDs or credentials.
+
+Plozz channel menus, program details and playback controls offer **Go to show**
 or **Go to movie**. These open ordinary title details; they do not start playback
 or rewrite watch history. The underlying library item carries the original
 account and native IDs, so no title-name matching is needed. An episode without a
 known parent offers **Go to episode** rather than guessing a show. Playback uses
-the actual scheduled item, including a paused/delayed programme, not wall-clock
+the actual scheduled item, including a paused/delayed program, not wall-clock
 guide selection. The active profile and library authority are checked again when
 invoked, then channel playback is stopped before navigation.
 tvOS uses Home's regular title stack, temporarily making that destination available

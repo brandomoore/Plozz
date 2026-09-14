@@ -206,7 +206,7 @@ struct LiveTVAutomaticChannelsEmptyView: View {
                     .multilineTextAlignment(.leading)
                     .padding(.top, PlozzTheme.Spacing.medium)
             } else if state.status == .ready {
-                Text("Your Plozz channels are enabled. Their programmes will appear here when the guide is ready.")
+                Text("Your Plozz channels are enabled. Their programs will appear here when the guide is ready.")
             } else {
                 Text(state.status.detail)
             }

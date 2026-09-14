@@ -1699,7 +1699,10 @@ final class LiveChannelPlayerModel {
     fileprivate var interruption: LiveChannelInterruption? {
         switch phase {
         case .failed(let failure):
-            return .failure(failure, retryLimitReached: !canRetry)
+            return .failure(
+                failure, retryLimitReached: !canRetry,
+                libraryItemKind: engine.currentLibraryItem?.kind
+            )
         case .ended:
             return .ended(retryLimitReached: !canRetry)
         case .loading, .buffering, .seeking, .reconnecting, .playing, .paused:
@@ -2359,6 +2362,16 @@ enum LiveChannelPlaybackFailure: Equatable {
     }
 }
 
+enum LibraryChannelPlaybackCopy {
+    static func failureTitle(for kind: MediaItemKind?) -> LocalizedStringResource {
+        switch kind {
+        case .movie: "Couldn't play this movie"
+        case .episode: "Couldn't play this episode"
+        default: "Couldn't play this program"
+        }
+    }
+}
+
 private struct LiveChannelInterruption {
     let icon: String
     let title: LocalizedStringResource
@@ -2366,7 +2379,8 @@ private struct LiveChannelInterruption {
 
     static func failure(
         _ failure: LiveChannelPlaybackFailure,
-        retryLimitReached: Bool
+        retryLimitReached: Bool,
+        libraryItemKind: MediaItemKind? = nil
     ) -> LiveChannelInterruption {
         let base: LiveChannelInterruption
         switch failure {
@@ -2379,7 +2393,7 @@ private struct LiveChannelInterruption {
         case .library(let error):
             base = LiveChannelInterruption(
                 icon: "exclamationmark.triangle.fill",
-                title: "Programme Unavailable",
+                title: LibraryChannelPlaybackCopy.failureTitle(for: libraryItemKind),
                 message: error.message
             )
         case .startupTimedOut:

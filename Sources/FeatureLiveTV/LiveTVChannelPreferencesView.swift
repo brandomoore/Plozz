@@ -44,7 +44,7 @@ public struct LiveTVChannelPreferencesView: View {
                 }
                 .buttonStyle(SettingsFocusButtonStyle(size: .contained))
             } footer: {
-                Text("Blank fields use source metadata. These changes are personal labels, not programme information.")
+                Text("Blank fields use source metadata. These changes are personal labels, not program information.")
             }
             if model.favoriteIDs.contains(channelID) {
                 SettingsSectionGroup("Favorite order") {

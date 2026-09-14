@@ -255,8 +255,15 @@ an HDMI handshake. Native menu actions are accessibility cells, while the channe
 menu's actual focus can belong to a descendant of its labeled button.
 `LiveChannelOutputGroupTests` covers independent audio/display ownership and
 prevents uncommitted previews from inheriting a departed display owner. Library
-schedule/session tests cover original-account navigation, paused programme
+schedule/session tests cover original-account navigation, paused program
 identity and immediate authorization revocation.
+They also reproduce a ready decoder with a provisional zero clock, readiness lost
+during a corrective seek, and exact three-second end-boundary tolerance.
+`ChannelPositionReadinessHostedTests` generates its own small local video and uses
+the real Plozzigen decoder in a visible window. It checks nonzero-start readiness
+and retained preview/display-policy reloads without mistaking them for movie
+completion. Its temporary media is removed after the test; it is not an HDMI
+hardware acceptance test.
 
 Back restores the captured source page behind the moving artwork immediately,
 not a snapshot of the outgoing detail page. The popped content stays hidden

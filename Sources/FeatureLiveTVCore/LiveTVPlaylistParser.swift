@@ -63,7 +63,7 @@ public enum LiveTVSourceImportError: Error, Equatable, Sendable {
         case .unsafeGuideOrigin:
             "This playlist declares a guide on another origin. Add that guide address explicitly in Sources to allow it."
         case .guideWithoutPlaylist:
-            "This address contains a programme guide, not playable channels. Add it to an existing playlist's guide sources."
+            "This address contains a program guide, not playable channels. Add it to an existing playlist's guide sources."
         case .authenticationRequired:
             "This source rejected access. Check its address or credentials in Sources."
         case .temporarilyUnavailable:

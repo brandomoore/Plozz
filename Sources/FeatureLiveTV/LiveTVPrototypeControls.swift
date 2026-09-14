@@ -144,7 +144,10 @@ struct PrototypeSheetContent: View {
                             dismiss()
                         }
                     } else {
-                        ContentUnavailableView("Programme unavailable", systemImage: "calendar.badge.exclamationmark")
+                        ContentUnavailableView(
+                            "Program details unavailable", systemImage: "calendar.badge.exclamationmark",
+                            description: Text("This listing is no longer available in the guide.")
+                        )
                     }
                 }
             }
