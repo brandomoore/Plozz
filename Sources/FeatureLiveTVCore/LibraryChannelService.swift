@@ -613,7 +613,8 @@ public final class LibraryChannelService {
             result += slots.filter { isAuthorized($0.item) }.map {
                 LiveTVPrototypeProgram(
                     id: $0.id, channelID: definition.catalogID, title: $0.item.seriesTitle ?? $0.item.title,
-                    subtitle: $0.item.seriesTitle == nil ? "" : $0.item.title, start: $0.start, end: $0.end
+                    subtitle: $0.item.seriesTitle == nil ? "" : $0.item.title, start: $0.start, end: $0.end,
+                    libraryItem: $0.item
                 )
             }
         }

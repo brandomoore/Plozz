@@ -86,6 +86,21 @@ final class LibraryChannelServiceTests: XCTestCase {
         XCTAssertEqual(programmes, reloaded)
         XCTAssertEqual(fresh.channels.map(\.id), [created.catalogID])
         XCTAssertEqual(fresh.channels.first?.configuredSourceID, created.sourceID.uuidString)
+        let programme = try XCTUnwrap(programmes.first)
+        let scheduled = try XCTUnwrap(programme.libraryItem)
+        XCTAssertEqual(scheduled.navigationSubject.id, "show")
+        XCTAssertEqual(scheduled.navigationSubject.sourceAccountID, "account")
+        XCTAssertEqual(try JSONDecoder().decode(
+            LiveTVPrototypeProgram.self, from: JSONEncoder().encode(programme)
+        ), programme)
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(programme)
+        ) as? [String: Any])
+        legacy.removeValue(forKey: "libraryItem")
+        let decoded = try JSONDecoder().decode(
+            LiveTVPrototypeProgram.self, from: JSONSerialization.data(withJSONObject: legacy)
+        )
+        XCTAssertNil(decoded.libraryItem)
     }
 
     func testPublishEditAndDeleteNotifyOnlyAfterDurableAndVisibleStateAgree() async throws {

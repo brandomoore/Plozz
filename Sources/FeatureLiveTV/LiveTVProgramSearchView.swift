@@ -1,5 +1,6 @@
 #if DEBUG
 import CoreUI
+import CoreModels
 import FeatureLiveTVCore
 import SwiftUI
 
@@ -191,12 +192,15 @@ public struct LiveTVProgramDetailsView: View {
     private let isFavorite: Bool
     private let toggleFavorite: (() -> Void)?
     private let watchTitle: LocalizedStringResource
+    private let openLibraryItem: ((LibraryChannelItem) -> Void)?
 
     public init(
         program: LiveTVPrototypeProgram, channelName: String, now: Date,
         guideSourceName: String? = nil, isFavorite: Bool = false,
         toggleFavorite: (() -> Void)? = nil,
-        watchTitle: LocalizedStringResource = "Watch channel", watch: @escaping () -> Void
+        watchTitle: LocalizedStringResource = "Watch channel",
+        openLibraryItem: ((LibraryChannelItem) -> Void)? = nil,
+        watch: @escaping () -> Void
     ) {
         self.program = program
         self.channelName = channelName
@@ -206,6 +210,7 @@ public struct LiveTVProgramDetailsView: View {
         self.isFavorite = isFavorite
         self.toggleFavorite = toggleFavorite
         self.watchTitle = watchTitle
+        self.openLibraryItem = openLibraryItem
     }
 
     public var body: some View {
@@ -233,6 +238,10 @@ public struct LiveTVProgramDetailsView: View {
                 }
                 Button(action: watch) { Text(watchTitle) }
                     .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                if let item = program.libraryItem, let openLibraryItem {
+                    LibraryChannelNavigationButton(item: item, action: openLibraryItem)
+                        .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                }
                 if let toggleFavorite {
                     Button(isFavorite ? "Remove from Favorites" : "Add to Favorites", action: toggleFavorite)
                         .buttonStyle(SettingsFocusButtonStyle(size: .contained))

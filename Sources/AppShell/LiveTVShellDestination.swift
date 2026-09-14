@@ -32,6 +32,7 @@ struct LiveTVShellDestination: View {
     private let didConfigurePlaylist: () -> Void
     private let completeLibraryChannelPlayback: @MainActor @Sendable (MediaItem, UUID) throws -> Void
     private let isProfileAuthorized: @MainActor () -> Bool
+    private let onOpenTitle: ((MediaItem) -> Void)?
 
     init(
         isActive: Bool,
@@ -44,7 +45,8 @@ struct LiveTVShellDestination: View {
         completeLibraryChannelPlayback: @escaping @MainActor @Sendable (MediaItem, UUID) throws -> Void,
         isProfileAuthorized: @escaping @MainActor () -> Bool,
         usesNativeNavigation: Bool = false,
-        onExpandedChange: @escaping (Bool) -> Void = { _ in }
+        onExpandedChange: @escaping (Bool) -> Void = { _ in },
+        onOpenTitle: ((MediaItem) -> Void)? = nil
     ) {
         self.isActive = isActive
         self.profileID = profileID
@@ -62,6 +64,7 @@ struct LiveTVShellDestination: View {
         self.didConfigurePlaylist = didConfigurePlaylist
         self.completeLibraryChannelPlayback = completeLibraryChannelPlayback
         self.isProfileAuthorized = isProfileAuthorized
+        self.onOpenTitle = onOpenTitle
     }
 
     @ViewBuilder
@@ -113,7 +116,8 @@ struct LiveTVShellDestination: View {
             reloadLibrary: library.retry,
             prepareLibraryChannels: library.prepareForEditing,
             libraryIsAuthorized: { [weak library] in library?.authorizationID != nil },
-            sourceApprovalContext: { [profiles] in LiveTVSourceApprovalContext(profiles: profiles) }
+            sourceApprovalContext: { [profiles] in LiveTVSourceApprovalContext(profiles: profiles) },
+            onOpenTitle: onOpenTitle
         ) { playback in
             LiveChannelPlayerView(
                 channelID: playback.channel.id,
@@ -151,7 +155,8 @@ struct LiveTVShellDestination: View {
                 countsAsWatching: playback.countsAsWatching,
                 isMultiview: playback.isMultiview,
                 trackPreferences: library.trackPreferences,
-                isAuthorized: playback.isAuthorized
+                isAuthorized: playback.isAuthorized,
+                onOpenLibraryItem: playback.openLibraryItem
             )
         }
         .id(profileID)

@@ -15,6 +15,7 @@ struct PlozziOSLiveTVDestination: View {
     let profileID: String
 
     @Environment(ProfilesModel.self) private var profiles
+    @Environment(\.mediaItemNavigator) private var navigateToItem
     @State private var isExpanded = false
     @State private var liveOutputGroup = LiveChannelOutputGroup()
     @State private var network: LiveTVMobileNetworkController
@@ -100,7 +101,8 @@ struct PlozziOSLiveTVDestination: View {
             reloadLibrary: runtime.retry,
             prepareLibraryChannels: runtime.prepareForEditing,
             libraryIsAuthorized: { [weak runtime] in runtime?.authorizationID != nil },
-            sourceApprovalContext: { [profiles] in LiveTVSourceApprovalContext(profiles: profiles) }
+            sourceApprovalContext: { [profiles] in LiveTVSourceApprovalContext(profiles: profiles) },
+            onOpenTitle: navigateToItem
         ) { playback in
             LiveChannelPlayerView(
                 channelID: playback.channel.id,
@@ -167,7 +169,8 @@ struct PlozziOSLiveTVDestination: View {
                     let restored = await playback.restorePlayer()
                     return restored && isCurrentProfileScope
                 },
-                onStopPlayback: playback.stopPlayback
+                onStopPlayback: playback.stopPlayback,
+                onOpenLibraryItem: playback.openLibraryItem
             )
         }
     }

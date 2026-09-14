@@ -53,6 +53,7 @@ public struct LiveChannelPlayerView: View {
     private let onRestoreUI: @MainActor () async -> Bool
     private let isAuthorized: Bool
     private let onStopPlayback: @MainActor () -> Void
+    private let onOpenLibraryItem: ((LibraryChannelItem) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -74,6 +75,14 @@ public struct LiveChannelPlayerView: View {
     private var plozzChannelID: String? {
         if case .libraryChannel = input { return channelID }
         return nil
+    }
+
+    private var allowsDisplayMatching: Bool {
+        #if os(tvOS)
+        isExpanded || isMultiview
+        #else
+        true
+        #endif
     }
 
     public init(
@@ -110,7 +119,8 @@ public struct LiveChannelPlayerView: View {
         presentationControls: (@MainActor (LiveChannelPresentationContext) -> AnyView)? = nil,
         onExternalContinuationChanged: @escaping @MainActor (Bool) -> Void = { _ in },
         onRestoreUI: @escaping @MainActor () async -> Bool = { false },
-        onStopPlayback: @escaping @MainActor () -> Void = {}
+        onStopPlayback: @escaping @MainActor () -> Void = {},
+        onOpenLibraryItem: ((LibraryChannelItem) -> Void)? = nil
     ) {
         self.channelID = channelID
         self.title = title
@@ -146,6 +156,7 @@ public struct LiveChannelPlayerView: View {
         self.onExternalContinuationChanged = onExternalContinuationChanged
         self.onRestoreUI = onRestoreUI
         self.onStopPlayback = onStopPlayback
+        self.onOpenLibraryItem = onOpenLibraryItem
     }
 
     public init(
@@ -183,7 +194,8 @@ public struct LiveChannelPlayerView: View {
         presentationControls: (@MainActor (LiveChannelPresentationContext) -> AnyView)? = nil,
         onExternalContinuationChanged: @escaping @MainActor (Bool) -> Void = { _ in },
         onRestoreUI: @escaping @MainActor () async -> Bool = { false },
-        onStopPlayback: @escaping @MainActor () -> Void = {}
+        onStopPlayback: @escaping @MainActor () -> Void = {},
+        onOpenLibraryItem: ((LibraryChannelItem) -> Void)? = nil
     ) {
         self.init(
             channelID: channelID, title: title,
@@ -200,7 +212,8 @@ public struct LiveChannelPlayerView: View {
             countsAsWatching: countsAsWatching, isMultiview: isMultiview, trackPreferences: trackPreferences,
             networkBlock: networkBlock, isAuthorized: isAuthorized, presentationControls: presentationControls,
             onExternalContinuationChanged: onExternalContinuationChanged,
-            onRestoreUI: onRestoreUI, onStopPlayback: onStopPlayback
+            onRestoreUI: onRestoreUI, onStopPlayback: onStopPlayback,
+            onOpenLibraryItem: onOpenLibraryItem
         )
     }
 
@@ -248,6 +261,8 @@ public struct LiveChannelPlayerView: View {
                             title: title,
                             logoURL: logoURL,
                             plozzChannelID: plozzChannelID,
+                            libraryItem: sourceMatches ? model.engine.currentLibraryItem : nil,
+                            openLibraryItem: onOpenLibraryItem,
                             phase: sourceMatches ? model.phase : .loading,
                             isAtLiveEdge: sourceMatches ? model.isAtLiveEdge : true,
                             canPause: sourceMatches && model.canPause,
@@ -448,6 +463,7 @@ public struct LiveChannelPlayerView: View {
             onVideoAspectRatioChange(model?.engine.videoAspectRatio)
         }
         .onChange(of: isAudible) { _, audible in model?.setAudible(audible) }
+        .onChange(of: allowsDisplayMatching) { _, allowed in model?.setDisplayMatchingAllowed(allowed) }
         .onChange(of: countsAsWatching) { _, watching in
             model?.setWatching(watching)
             reportPlaybackStartedIfNeeded()
@@ -580,6 +596,7 @@ public struct LiveChannelPlayerView: View {
         let playerModel = LiveChannelPlayerModel(
             engine: engine, channelID: channelID, input: input,
             outputGroup: outputGroup, outputID: outputID ?? UUID(), isAudible: isAudible,
+            allowsDisplayMatching: allowsDisplayMatching,
             trackPreferences: trackPreferences
         )
         model = playerModel
@@ -637,7 +654,8 @@ public struct LiveChannelPlayerView: View {
             canPlayPause: sourceMatches && model.canPause,
             canGoLive: sourceMatches && model.canGoLive,
             canToggleFavorite: canToggleFavorite,
-            canMultiview: onMultiview != nil && model.engine.supportsConcurrentPlayback
+            canMultiview: onMultiview != nil && model.engine.supportsConcurrentPlayback,
+            canOpenLibraryTitle: sourceMatches && onOpenLibraryItem != nil && model.engine.currentLibraryItem != nil
         )
     }
 
@@ -826,6 +844,7 @@ enum LiveChannelControl: Hashable {
     case retry
     case multiview
     case tracks
+    case openLibraryTitle
 }
 
 struct LiveChannelFavoriteControlState: Equatable {
@@ -848,6 +867,7 @@ enum LiveChannelPlaybackFocusPolicy {
         let canGoLive: Bool
         let canToggleFavorite: Bool
         var canMultiview = false
+        var canOpenLibraryTitle = false
 
         static let hidden = Availability(
             isPresented: false,
@@ -873,6 +893,8 @@ enum LiveChannelPlaybackFocusPolicy {
                 return canToggleFavorite
             case .multiview:
                 return canMultiview
+            case .openLibraryTitle:
+                return canOpenLibraryTitle
             case .surface, .close, .retry:
                 return false
             }
@@ -906,6 +928,8 @@ private struct LiveChannelOverlay: View {
     let title: String // l10n:content — provider-supplied channel name
     let logoURL: URL?
     let plozzChannelID: String?
+    let libraryItem: LibraryChannelItem?
+    let openLibraryItem: ((LibraryChannelItem) -> Void)?
     let phase: LiveChannelPlaybackPhase
     let isAtLiveEdge: Bool
     let canPause: Bool
@@ -930,6 +954,8 @@ private struct LiveChannelOverlay: View {
                 title: title,
                 logoURL: logoURL,
                 plozzChannelID: plozzChannelID,
+                libraryItem: libraryItem,
+                openLibraryItem: openLibraryItem,
                 status: phase.statusLabel(isAtLiveEdge: isAtLiveEdge),
                 statusColor: phase.statusColor(isAtLiveEdge: isAtLiveEdge),
                 focus: $focus,
@@ -986,6 +1012,8 @@ private struct LiveChannelHeader: View {
     let title: String // l10n:content — provider-supplied channel name
     let logoURL: URL?
     let plozzChannelID: String?
+    let libraryItem: LibraryChannelItem?
+    let openLibraryItem: ((LibraryChannelItem) -> Void)?
     let status: LocalizedStringResource
     let statusColor: Color
     @FocusState.Binding var focus: LiveChannelControl?
@@ -1012,6 +1040,12 @@ private struct LiveChannelHeader: View {
 
             Spacer()
 
+            if let libraryItem, let openLibraryItem {
+                LibraryChannelNavigationButton(item: libraryItem, action: openLibraryItem)
+                    .focused($focus, equals: .openLibraryTitle)
+                    .buttonStyle(InfoActionButtonStyle(prominent: false))
+            }
+
             #if os(iOS)
             Button(action: onClose) {
                 Label("Close", systemImage: "xmark")
@@ -1023,6 +1057,9 @@ private struct LiveChannelHeader: View {
             #endif
         }
         .foregroundStyle(.white)
+        #if os(tvOS)
+        .focusSection()
+        #endif
     }
 
     private var logoSize: CGSize {
@@ -1365,6 +1402,7 @@ private final class LiveChannelPlayerTrackState {
 final class LiveChannelPlayerModel {
     let engine: any LiveChannelEngine
     private let outputGroup: LiveChannelOutputGroup?
+    private var outputPolicy: LiveChannelOutputPolicy
     private let outputID: UUID
     private let playbackState = LiveChannelPlayerPlaybackState()
     private let trackState: LiveChannelPlayerTrackState
@@ -1460,18 +1498,28 @@ final class LiveChannelPlayerModel {
         outputGroup: LiveChannelOutputGroup? = nil,
         outputID: UUID = UUID(),
         isAudible: Bool = true,
+        allowsDisplayMatching: Bool = true,
         trackPreferences: LiveChannelTrackPreferences? = nil
     ) {
         self.engine = engine
         self.outputGroup = outputGroup
         self.outputID = outputID
+        outputPolicy = LiveChannelOutputPolicy(
+            isAudible: isAudible, suppressesDisplayMatching: !allowsDisplayMatching
+        )
         self.trackState = LiveChannelPlayerTrackState(preferences: trackPreferences ?? LiveChannelTrackPreferences())
         source = Source(
             channelID: channelID,
             input: input
         )
         self.uptime = uptime
-        outputGroup?.register(engine, id: outputID, audible: isAudible)
+        if let outputGroup {
+            outputGroup.register(
+                engine, id: outputID, audible: isAudible, allowsDisplayMatching: allowsDisplayMatching
+            )
+        } else {
+            engine.configureLiveOutput(outputPolicy)
+        }
     }
 
     convenience init(
@@ -1483,11 +1531,13 @@ final class LiveChannelPlayerModel {
         outputGroup: LiveChannelOutputGroup? = nil,
         outputID: UUID = UUID(),
         isAudible: Bool = true,
+        allowsDisplayMatching: Bool = true,
         trackPreferences: LiveChannelTrackPreferences? = nil
     ) {
         self.init(
             engine: engine, channelID: channelID, input: .stream(url: streamURL, httpHeaders: httpHeaders),
             uptime: uptime, outputGroup: outputGroup, outputID: outputID, isAudible: isAudible,
+            allowsDisplayMatching: allowsDisplayMatching,
             trackPreferences: trackPreferences
         )
     }
@@ -1510,7 +1560,20 @@ final class LiveChannelPlayerModel {
     }
 
     func setAudible(_ audible: Bool) {
-        outputGroup?.setAudible(audible, id: outputID, engine: engine)
+        guard !stopped else { return }
+        outputPolicy.isAudible = audible
+        if let outputGroup { outputGroup.setAudible(audible, id: outputID, engine: engine) }
+        else { engine.configureLiveOutput(outputPolicy) }
+    }
+
+    func setDisplayMatchingAllowed(_ allowed: Bool) {
+        guard !stopped else { return }
+        outputPolicy.suppressesDisplayMatching = !allowed
+        if let outputGroup {
+            outputGroup.setDisplayMatchingAllowed(allowed, id: outputID, engine: engine)
+        } else {
+            engine.configureLiveOutput(outputPolicy)
+        }
     }
 
     func setWatching(_ watching: Bool) {

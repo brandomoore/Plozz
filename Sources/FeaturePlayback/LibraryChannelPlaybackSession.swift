@@ -130,6 +130,12 @@ public final class LibraryChannelPlaybackSession {
         return max(0, clock().timeIntervalSince(cursor))
     }
 
+    public var navigationItem: LibraryChannelItem? {
+        guard let activeAuthorization, authorization() == activeAuthorization,
+              schedule() != nil, let item = currentSlot?.item, provider(item) != nil else { return nil }
+        return item
+    }
+
     /// The source remains valid and its timer will advance at the next immutable
     /// boundary. A live-pane owner must not turn this into whole-source teardown.
     public var recoverableProgrammeIssue: LibraryChannelError? {

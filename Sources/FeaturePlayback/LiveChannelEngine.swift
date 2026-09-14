@@ -81,6 +81,7 @@ public protocol LiveChannelEngine: VideoEngine {
     var onProgrammeChanged: (@MainActor () -> Void)? { get set }
     var supportsConcurrentPlayback: Bool { get }
     var recoverableProgrammeIssue: LibraryChannelError? { get }
+    var currentLibraryItem: LibraryChannelItem? { get }
     func configureLiveOutput(_ policy: LiveChannelOutputPolicy)
     func setWatching(_ isWatching: Bool)
     func loadChannel(_ input: LiveChannelInput) async throws
@@ -91,6 +92,7 @@ public protocol LiveChannelEngine: VideoEngine {
 public extension LiveChannelEngine {
     var supportsConcurrentPlayback: Bool { false }
     var recoverableProgrammeIssue: LibraryChannelError? { nil }
+    var currentLibraryItem: LibraryChannelItem? { nil }
     var onProgrammeChanged: (@MainActor () -> Void)? {
         get { nil }
         set {}

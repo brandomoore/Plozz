@@ -852,39 +852,43 @@ private struct PlozziOSTabShell: View {
             .background { AppBackground(palette: palette) }
         #if DEBUG
         case .liveTV:
-            PlozziOSLiveTVDestination(
-                isActive: effectiveSelectedDestination == .liveTV,
-                profileID: appModel.profiles.activeProfileID,
-                preferencesNamespace: appModel.profiles.activeNamespace,
-                accountsProviders: appModel.accountsProviders,
-                authenticatedHTTPResolver: appModel.authenticatedHTTPResolver,
-                connectServer: onAddServer,
-                didConfigurePlaylist: {
-                    _ = appModel.recordSuccessfulIPTVSetup()
-                },
-                completeLibraryChannelPlayback: { [appModel,
-                    profileID = appModel.profiles.activeProfileID,
-                    namespace = appModel.profiles.activeNamespace] item, token in
-                    try Task.checkCancellation()
-                    guard appModel.profiles.activeProfileID == profileID,
-                          appModel.profiles.activeNamespace == namespace,
-                          LibraryChannelHistorySettings.shared(namespace: namespace).authorizationID == token,
-                          let accountID = item.sourceAccountID,
-                          appModel.accountsProviders.resolvedActiveAccounts.contains(where: {
-                              $0.account.id == accountID
-                          }) else { throw LibraryChannelError.authorizationChanged }
-                    try appModel.completeLibraryChannelPlayback(for: item, authorizationID: token)
-                },
-                isProfileAuthorized: { [appModel] in appModel.isLiveTVProfileAuthorized },
-                restoreDestination: { [profileID = appModel.profiles.activeProfileID] in
-                    guard appModel.isLiveTVProfileAuthorized,
-                          appModel.profiles.activeProfileID == profileID,
-                          tabDestinations.contains(.liveTV) else { return false }
-                    selectedDestination = .liveTV
-                    return effectiveSelectedDestination == .liveTV
-                }
-            )
-            .environment(appModel.profiles)
+            NavigationStack {
+                PlozziOSLiveTVDestination(
+                    isActive: effectiveSelectedDestination == .liveTV,
+                    profileID: appModel.profiles.activeProfileID,
+                    preferencesNamespace: appModel.profiles.activeNamespace,
+                    accountsProviders: appModel.accountsProviders,
+                    authenticatedHTTPResolver: appModel.authenticatedHTTPResolver,
+                    connectServer: onAddServer,
+                    didConfigurePlaylist: {
+                        _ = appModel.recordSuccessfulIPTVSetup()
+                    },
+                    completeLibraryChannelPlayback: { [appModel,
+                        profileID = appModel.profiles.activeProfileID,
+                        namespace = appModel.profiles.activeNamespace] item, token in
+                        try Task.checkCancellation()
+                        guard appModel.profiles.activeProfileID == profileID,
+                              appModel.profiles.activeNamespace == namespace,
+                              LibraryChannelHistorySettings.shared(namespace: namespace).authorizationID == token,
+                              let accountID = item.sourceAccountID,
+                              appModel.accountsProviders.resolvedActiveAccounts.contains(where: {
+                                  $0.account.id == accountID
+                              }) else { throw LibraryChannelError.authorizationChanged }
+                        try appModel.completeLibraryChannelPlayback(for: item, authorizationID: token)
+                    },
+                    isProfileAuthorized: { [appModel] in appModel.isLiveTVProfileAuthorized },
+                    restoreDestination: { [profileID = appModel.profiles.activeProfileID] in
+                        guard appModel.isLiveTVProfileAuthorized,
+                              appModel.profiles.activeProfileID == profileID,
+                              tabDestinations.contains(.liveTV) else { return false }
+                        selectedDestination = .liveTV
+                        return effectiveSelectedDestination == .liveTV
+                    }
+                )
+                .environment(appModel.profiles)
+                .toolbar(.hidden, for: .navigationBar)
+                .plozziOSItemNavigation(appModel: appModel)
+            }
         #endif
         case .downloads:
             NavigationStack {

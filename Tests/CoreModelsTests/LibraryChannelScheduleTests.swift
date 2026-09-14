@@ -6,6 +6,39 @@ final class LibraryChannelScheduleTests: XCTestCase {
     private let library = LibraryChannelLibrary(accountID: "account", libraryID: "library")
     private let epoch: Int64 = 1_700_000_000
 
+    func testLibraryNavigationUsesTheOriginalMovieOrParentShowAndAccount() throws {
+        for account in ["plex-account", "jellyfin-account"] {
+            let owner = LibraryChannelLibrary(accountID: account, libraryID: "library")
+            var episode = MediaItem(id: "episode", title: "Episode title", kind: .episode, runtime: 60)
+            episode.seriesID = "show"
+            episode.parentTitle = "Show title"
+            let show = try LibraryChannelItem(item: episode, library: owner, serverID: "server", userID: "user")
+            XCTAssertEqual(show.navigationSubject.id, "show")
+            XCTAssertEqual(show.navigationSubject.title, "Show title")
+            XCTAssertEqual(show.navigationSubject.kind, .series)
+            XCTAssertEqual(show.navigationSubject.sourceAccountID, account)
+            XCTAssertEqual(show.navigationSubject.libraryID, "library")
+            XCTAssertFalse(show.navigationSubject.allowsTitleBasedMetadataMatching)
+            let movie = try LibraryChannelItem(
+                item: MediaItem(id: "movie", title: "Movie title", kind: .movie, runtime: 120),
+                library: owner, serverID: "server", userID: "user"
+            )
+            XCTAssertEqual(movie.navigationSubject.id, "movie")
+            XCTAssertEqual(movie.navigationSubject.kind, .movie)
+            XCTAssertEqual(movie.navigationSubject.sourceAccountID, account)
+        }
+    }
+
+    func testEpisodeWithoutAParentNeverGuessesAShowByTitle() throws {
+        let episode = try LibraryChannelItem(
+            item: MediaItem(id: "episode", title: "Episode", kind: .episode, runtime: 60),
+            library: library, serverID: "server", userID: "user"
+        )
+        XCTAssertEqual(episode.navigationSubject.id, "episode")
+        XCTAssertEqual(episode.navigationSubject.kind, .episode)
+        XCTAssertFalse(episode.navigationSubject.allowsTitleBasedMetadataMatching)
+    }
+
     private func item(_ id: String, duration: Double = 60, series: String? = nil, episode: Int? = nil) throws -> LibraryChannelItem {
         var item = MediaItem(id: id, title: id, kind: series == nil ? .movie : .episode, runtime: duration)
         item.seriesID = series

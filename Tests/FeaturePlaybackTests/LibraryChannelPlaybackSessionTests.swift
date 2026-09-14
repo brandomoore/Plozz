@@ -36,6 +36,21 @@ final class LibraryChannelPlaybackSessionTests: XCTestCase {
         XCTAssertTrue(fixture.engine.loads.first?.suppressOrdinaryWatchReporting == true)
     }
 
+    func testTitleNavigationFollowsThePausedProgrammeAndRevokesImmediately() async throws {
+        let fixture = try fixture(offset: 20)
+        defer { fixture.player.stop() }
+        fixture.player.tune()
+        try await fixture.player.waitUntilSettled()
+        let original = try XCTUnwrap(fixture.player.navigationItem)
+        fixture.player.pause()
+        fixture.state.advance(150)
+        fixture.player.tick()
+        XCTAssertNotEqual(try fixture.schedule.slot(at: fixture.state.now).item.itemID, original.itemID)
+        XCTAssertEqual(fixture.player.navigationItem, original)
+        fixture.state.authorization = nil
+        XCTAssertNil(fixture.player.navigationItem)
+    }
+
     func testResolutionCrossingBoundaryResolvesTheActualCurrentProgramme() async throws {
         let fixture = try fixture(offset: 98)
         defer { fixture.player.stop() }

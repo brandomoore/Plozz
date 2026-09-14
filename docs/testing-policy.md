@@ -247,6 +247,17 @@ isolated simulator workload, not an emulation of an older TV's processor.
 paths identify a sanitized Home snapshot and a local configuration bundle; its
 attachment records provider lookup/image durations, never credentials.
 
+`LibraryChannelActionsRemoteTests` drives real guide menus and playback controls
+with local channel data and a test engine. It checks show/movie identity delivery,
+player teardown on navigation, and display-policy permission across preview,
+fullscreen and return-to-guide. These are policy/UI checks, not measurements of
+an HDMI handshake. Native menu actions are accessibility cells, while the channel
+menu's actual focus can belong to a descendant of its labeled button.
+`LiveChannelOutputGroupTests` covers independent audio/display ownership and
+prevents uncommitted previews from inheriting a departed display owner. Library
+schedule/session tests cover original-account navigation, paused programme
+identity and immediate authorization revocation.
+
 Back restores the captured source page behind the moving artwork immediately,
 not a snapshot of the outgoing detail page. The popped content stays hidden
 through teardown. The cover remains until both reverse motion and the real pop

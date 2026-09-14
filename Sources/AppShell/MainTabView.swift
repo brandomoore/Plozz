@@ -522,6 +522,7 @@ struct MainTabView: View {
     /// A title the in-player Cast card asked for, waiting to be pushed once the
     /// player has closed. Same hand-off as `pendingPersonRoute`.
     @State private var pendingTitleRoute: MediaItem?
+    @State private var retainsTitleHomeEntry = false
     /// Settings navigation identity owned above all three navigation shells.
     /// MainTabView passes the reference but never reads its path, so Settings
     /// pushes do not invalidate this large shell body.
@@ -637,6 +638,7 @@ struct MainTabView: View {
     }
 
     private func releaseExplicitLiveTVEntry(ifLeavingFor destination: NavigationRailDestination) {
+        if destination != .home { retainsTitleHomeEntry = false }
         #if DEBUG
         if destination != .liveTV { retainsExplicitLiveTVEntry = false }
         #endif
@@ -645,6 +647,9 @@ struct MainTabView: View {
     private func includingExplicitLiveTVEntry(
         _ destinations: [NavigationRailDestination]
     ) -> [NavigationRailDestination] {
+        let destinations = Self.includingTitleHome(
+            destinations, isRequested: retainsTitleHomeEntry
+        )
         #if DEBUG
         return AppAdmissionNavigation.destinations(
             destinations,
@@ -756,6 +761,19 @@ struct MainTabView: View {
                 destinations: activeNavigationDestinations
             )
         }
+    }
+
+    private func openTitleFromLiveTV(_ item: MediaItem) {
+        retainsTitleHomeEntry = true
+        pendingTitleRoute = item
+        requireHomeDestination()
+    }
+
+    static func includingTitleHome(
+        _ destinations: [NavigationRailDestination], isRequested: Bool
+    ) -> [NavigationRailDestination] {
+        guard isRequested, !destinations.contains(.home) else { return destinations }
+        return [.home] + destinations
     }
 
     /// The stored selection before pruning. Only used to notice divergence.
@@ -1233,7 +1251,8 @@ struct MainTabView: View {
                 didConfigurePlaylist: onConfiguredIPTVPlaylist,
                 completeLibraryChannelPlayback: completeLibraryChannelPlayback,
                 isProfileAuthorized: isLiveTVProfileAuthorized,
-                usesNativeNavigation: true
+                usesNativeNavigation: true,
+                onOpenTitle: openTitleFromLiveTV
             ))
         #endif
         case .search:
@@ -1271,7 +1290,8 @@ struct MainTabView: View {
                 didConfigurePlaylist: onConfiguredIPTVPlaylist,
                 completeLibraryChannelPlayback: completeLibraryChannelPlayback,
                 isProfileAuthorized: isLiveTVProfileAuthorized,
-                usesNativeNavigation: true
+                usesNativeNavigation: true,
+                onOpenTitle: openTitleFromLiveTV
             ))
         #endif
         case .search:
@@ -1402,7 +1422,8 @@ struct MainTabView: View {
                 didConfigurePlaylist: onConfiguredIPTVPlaylist,
                 completeLibraryChannelPlayback: completeLibraryChannelPlayback,
                 isProfileAuthorized: isLiveTVProfileAuthorized,
-                onExpandedChange: updateLiveTVChrome
+                onExpandedChange: updateLiveTVChrome,
+                onOpenTitle: openTitleFromLiveTV
             )
             .opacity(showsLiveTV ? 1 : 0)
             .allowsHitTesting(showsLiveTV)

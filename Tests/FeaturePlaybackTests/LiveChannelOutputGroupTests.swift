@@ -4,6 +4,66 @@ import XCTest
 
 @MainActor
 final class LiveChannelOutputGroupTests: XCTestCase {
+    func testPreviewKeepsAudioWithoutTakingDisplayOwnership() {
+        let group = LiveChannelOutputGroup()
+        let preview = LiveEngineSpy()
+        let id = UUID()
+        group.register(preview, id: id, audible: true, allowsDisplayMatching: false)
+        XCTAssertTrue(preview.outputPolicy.isAudible)
+        XCTAssertTrue(preview.outputPolicy.suppressesDisplayMatching)
+        group.unregister(id)
+    }
+
+    func testWatchingEnablesMatchingAndReturningToGuideDisablesIt() {
+        let group = LiveChannelOutputGroup()
+        let preview = LiveEngineSpy()
+        let second = LiveEngineSpy()
+        let id = UUID()
+        let secondID = UUID()
+        group.register(preview, id: id, audible: true, allowsDisplayMatching: false)
+        group.register(second, id: secondID, audible: false, allowsDisplayMatching: false)
+        group.setDisplayMatchingAllowed(true, id: id)
+        XCTAssertFalse(preview.outputPolicy.suppressesDisplayMatching)
+        XCTAssertTrue(second.outputPolicy.suppressesDisplayMatching)
+        group.setDisplayMatchingAllowed(false, id: id)
+        XCTAssertTrue(preview.outputPolicy.suppressesDisplayMatching)
+        XCTAssertTrue(second.outputPolicy.suppressesDisplayMatching)
+        XCTAssertTrue(preview.outputPolicy.isAudible)
+        group.unregister(secondID)
+        group.unregister(id)
+    }
+
+    func testDisplayOwnershipNeverFallsBackToAnUncommittedPreview() {
+        let group = LiveChannelOutputGroup()
+        let watching = LiveEngineSpy()
+        let preview = LiveEngineSpy()
+        let watchingID = UUID()
+        let previewID = UUID()
+        group.register(watching, id: watchingID, audible: true)
+        group.register(preview, id: previewID, audible: false, allowsDisplayMatching: false)
+        group.unregister(watchingID)
+        XCTAssertTrue(preview.outputPolicy.suppressesDisplayMatching)
+        group.unregister(previewID)
+    }
+
+    func testStandalonePreviewPolicyIsAppliedBeforeLoadingAndIgnoresWatchHistoryIntent() async {
+        let engine = LiveEngineSpy()
+        let model = LiveChannelPlayerModel(
+            engine: engine, streamURL: URL(string: "https://example.invalid/channel.m3u8")!,
+            allowsDisplayMatching: false
+        )
+        XCTAssertTrue(engine.outputPolicy.suppressesDisplayMatching)
+        await model.start()
+        model.setWatching(true)
+        XCTAssertTrue(engine.outputPolicy.suppressesDisplayMatching)
+        model.setDisplayMatchingAllowed(true)
+        XCTAssertFalse(engine.outputPolicy.suppressesDisplayMatching)
+        model.setDisplayMatchingAllowed(false)
+        XCTAssertTrue(engine.outputPolicy.suppressesDisplayMatching)
+        XCTAssertEqual(engine.liveLoads, 1)
+        model.stop()
+    }
+
     func testAddingSilentPanePreservesAudioAndSingleDisplayOwner() {
         let group = LiveChannelOutputGroup()
         let first = LiveEngineSpy()

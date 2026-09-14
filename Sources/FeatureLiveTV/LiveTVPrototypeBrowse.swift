@@ -39,6 +39,7 @@ struct PrototypeBrowser: View {
     var selectedChannelIDs: Set<String> = []
     var libraryCatalog: PrototypeLibraryCatalogRevision?
     var loadLibraryGuide: ((Set<String>, DateInterval) -> Void)?
+    var openLibraryItem: ((LibraryChannelItem) -> Void)?
     @State private var scrollID: LiveTVGuideRowID?
     @State private var pendingFocus: PrototypeBrowseFocus?
     @State private var restorationFallback: PrototypeBrowseFocus?
@@ -368,7 +369,8 @@ struct PrototypeBrowser: View {
                 selectionAction: selectionAction.map {
                     selectedChannelIDs.contains(channel.id) ? "Show in Multiview" : $0
                 },
-                selectionMarked: selectedChannelIDs.contains(channel.id)
+                selectionMarked: selectedChannelIDs.contains(channel.id),
+                openLibraryItem: openLibraryItem
             )
         }
         .id(entry.id)
@@ -712,8 +714,14 @@ struct PrototypeGuideRow: View {
     var guideGapState: LiveTVGuideGapState?
     var selectionAction: LocalizedStringResource?
     var selectionMarked = false
+    var openLibraryItem: ((LibraryChannelItem) -> Void)?
     @ScaledMetric(relativeTo: .subheadline) private var rowHeight: CGFloat = PrototypeLayout.rowHeight
     @State private var compactFade = PrototypeScrollFade()
+
+    private var currentLibraryItem: LibraryChannelItem? {
+        guard channel.source == .plozz else { return nil }
+        return programs.first { $0.start <= now && now < $0.end }?.libraryItem
+    }
 
     var body: some View {
         if width < 650 {
@@ -725,7 +733,8 @@ struct PrototypeGuideRow: View {
                         controls: controls, top: top, height: rowHeight,
                         focusChanged: { focusChanged(channelFocus, $0) },
                         sources: sources, guideTime: programs.isEmpty ? nil : guideTime, hide: hide,
-                        selectionAction: selectionAction, selectionMarked: selectionMarked
+                        selectionAction: selectionAction, selectionMarked: selectionMarked,
+                        libraryItem: currentLibraryItem, openLibraryItem: openLibraryItem
                     )
                     .focused(focus, equals: channelFocus)
                     .disabled(railActive && returnTarget != channelFocus)
@@ -753,6 +762,15 @@ struct PrototypeGuideRow: View {
                                     .focusEffectDisabled()
                                     .focused(focus, equals: programFocus(program.id))
                                     .disabled(railActive && returnTarget != programFocus(program.id))
+                                    .contextMenu {
+                                        Button("Program details", systemImage: "info.circle") { details(program) }
+                                        PrototypeChannelActions(
+                                            favorite: favorite, play: tune, toggleFavorite: toggleFavorite, hide: hide,
+                                            primaryTitle: selectionAction ?? "Play channel", isSelection: selectionAction != nil,
+                                            libraryItem: channel.source == .plozz ? program.libraryItem : nil,
+                                            openLibraryItem: openLibraryItem
+                                        )
+                                    }
                                 } else {
                                     channelContent(slotID: slot.id).frame(width: 230)
                                 }
@@ -786,7 +804,8 @@ struct PrototypeGuideRow: View {
                     controls: controls, top: top, height: rowHeight,
                     focusChanged: { focusChanged(channelFocus, $0) },
                     sources: sources, guideTime: programs.isEmpty ? nil : guideTime, hide: hide,
-                    selectionAction: selectionAction, selectionMarked: selectionMarked
+                    selectionAction: selectionAction, selectionMarked: selectionMarked,
+                    libraryItem: currentLibraryItem, openLibraryItem: openLibraryItem
                 )
                     .frame(width: PrototypeLayout.stationWidth(for: width))
                     .focused(focus, equals: channelFocus)
@@ -840,7 +859,9 @@ struct PrototypeGuideRow: View {
                                         Button("Program details", systemImage: "info.circle") { details(program) }
                                         PrototypeChannelActions(
                                             favorite: favorite, play: tune, toggleFavorite: toggleFavorite, hide: hide,
-                                            primaryTitle: selectionAction ?? "Play channel", isSelection: selectionAction != nil)
+                                            primaryTitle: selectionAction ?? "Play channel", isSelection: selectionAction != nil,
+                                            libraryItem: channel.source == .plozz ? program.libraryItem : nil,
+                                            openLibraryItem: openLibraryItem)
                                         Button("Search channels", systemImage: "magnifyingglass", action: controls)
                                         Button("Sources", systemImage: "antenna.radiowaves.left.and.right", action: sources)
                                         Button("Guide time", systemImage: "calendar", action: guideTime)
@@ -903,7 +924,8 @@ struct PrototypeGuideRow: View {
         .contextMenu {
             PrototypeChannelActions(
                 favorite: favorite, play: tune, toggleFavorite: toggleFavorite, hide: hide,
-                primaryTitle: selectionAction ?? "Play channel", isSelection: selectionAction != nil)
+                primaryTitle: selectionAction ?? "Play channel", isSelection: selectionAction != nil,
+                libraryItem: currentLibraryItem, openLibraryItem: openLibraryItem)
             Button("Search channels", systemImage: "magnifyingglass", action: controls)
             Button("Sources", systemImage: "antenna.radiowaves.left.and.right", action: sources)
             Button("Back to top", systemImage: "arrow.up.to.line", action: top)
@@ -945,6 +967,8 @@ struct PrototypeGuideStation: View {
     var hide: (() -> Void)?
     var selectionAction: LocalizedStringResource?
     var selectionMarked = false
+    var libraryItem: LibraryChannelItem?
+    var openLibraryItem: ((LibraryChannelItem) -> Void)?
 
     var body: some View {
         Group {
@@ -957,7 +981,10 @@ struct PrototypeGuideStation: View {
                     }
             } else {
                 Menu {
-                    PrototypeChannelActions(favorite: favorite, play: tune, toggleFavorite: toggleFavorite, hide: hide)
+                    PrototypeChannelActions(
+                        favorite: favorite, play: tune, toggleFavorite: toggleFavorite, hide: hide,
+                        libraryItem: libraryItem, openLibraryItem: openLibraryItem
+                    )
                     Divider()
                     Button("Search channels", systemImage: "magnifyingglass", action: controls)
                     Button("Sources", systemImage: "antenna.radiowaves.left.and.right", action: sources)
@@ -1006,6 +1033,8 @@ private struct PrototypeChannelActions: View {
     let hide: (() -> Void)?
     var primaryTitle: LocalizedStringResource = "Play channel"
     var isSelection = false
+    var libraryItem: LibraryChannelItem?
+    var openLibraryItem: ((LibraryChannelItem) -> Void)?
 
     var body: some View {
         Button(action: play) {
@@ -1019,6 +1048,9 @@ private struct PrototypeChannelActions: View {
             favorite ? "Remove from Favorites" : "Add to Favorites",
             systemImage: favorite ? "star.slash" : "star", action: toggleFavorite
         )
+        if !isSelection, let libraryItem, let openLibraryItem {
+            LibraryChannelNavigationButton(item: libraryItem, action: openLibraryItem)
+        }
         if let hide {
             Button("Hide channel", systemImage: "eye.slash", action: hide)
         }

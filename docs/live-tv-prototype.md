@@ -295,6 +295,35 @@ is no prior in-memory history to migrate on the first updated launch.
   promoting a channel into Recents cannot make transport bounce between stations.
   This channel history never writes movie/episode progress or watched status.
 
+### Preview display mode and original titles
+
+On tvOS, ordinary guide previews do not request content-matched dynamic range or
+refresh rate. They leave the display in the Apple TV's configured menu format
+(SDR when that is the menu default), without changing system settings. Opening a
+channel full-screen enables matching; returning to the guide disables it even
+when Keep watching while browsing retains the player. Multiview still has one
+display owner, independent of which pane supplies audio.
+
+Plozzigen applies this policy before source loading. Changes on a retained tvOS
+player use AetherEngine's session-preserving option reload, keeping its playhead,
+pause intent and tracks rather than starting a new broadcast session. Queued
+superseded requests, source replacement and stop cannot revive an older policy.
+Failed changes surface through playback recovery instead of silently retrying.
+This can require one playback/output transition when entering or leaving watching,
+but not a new HDMI mode switch for every automatically previewed channel.
+
+Plozz channel menus, programme details and playback controls offer **Go to show**
+or **Go to movie**. These open ordinary title details; they do not start playback
+or rewrite watch history. The underlying library item carries the original
+account and native IDs, so no title-name matching is needed. An episode without a
+known parent offers **Go to episode** rather than guessing a show. Playback uses
+the actual scheduled item, including a paused/delayed programme, not wall-clock
+guide selection. The active profile and library authority are checked again when
+invoked, then channel playback is stopped before navigation.
+tvOS uses Home's regular title stack, temporarily making that destination available
+if navigation customization hid it, without changing the saved layout. iOS pushes
+the title in the Live TV navigation stack.
+
 ### Connected-server Live TV and standalone setup
 
 IPTV playlists and XMLTV guides do not require a media server. With automatic

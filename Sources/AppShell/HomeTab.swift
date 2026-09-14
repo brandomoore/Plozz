@@ -433,11 +433,8 @@ struct HomeTab: View {
                 // defaults to the smart best version (no library origin).
                 itemDetail(for: item, libraryOrigin: nil)
             }
-            .onChange(of: pendingTitleRoute) { _, item in
-                guard isActiveTab, let item else { return }
-                pendingTitleRoute = nil
-                withCinematicDetailNavigation(for: item) { path.append(item) }
-            }
+            .onChange(of: pendingTitleRoute) { _, _ in consumePendingTitleRoute() }
+            .onChange(of: isActiveTab, initial: true) { _, _ in consumePendingTitleRoute() }
             .onChange(of: pendingPersonRoute) { _, route in
                 // Raised by the in-player Cast card and pushed once the player
                 // has gone. Cleared immediately so the same person can be
@@ -1025,6 +1022,12 @@ struct HomeTab: View {
                 path.append(item)
             }
         }
+    }
+
+    private func consumePendingTitleRoute() {
+        guard isActiveTab, let item = pendingTitleRoute else { return }
+        pendingTitleRoute = nil
+        withCinematicDetailNavigation(for: item) { path.append(item) }
     }
 
     /// Builds the item-detail page, threading the optional `libraryOrigin` into the

@@ -9,6 +9,16 @@ import XCTest
 
 @MainActor
 final class PinnedChromeTransitionHostedTests: XCTestCase {
+    func testExplicitTitleNavigationCanUseHomeWithoutChangingHiddenNavigationPreferences() {
+        let configured: [NavigationRailDestination] = [.liveTV, .settings]
+        XCTAssertEqual(MainTabView.includingTitleHome(configured, isRequested: false), configured)
+        XCTAssertEqual(MainTabView.includingTitleHome(configured, isRequested: true), [.home, .liveTV, .settings])
+        XCTAssertEqual(
+            MainTabView.includingTitleHome([.settings, .home], isRequested: true), [.settings, .home]
+        )
+        XCTAssertEqual(configured, [.liveTV, .settings])
+    }
+
     func testReturningRailHasNoNativeFocusTargetsUntilInputIsReleased() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

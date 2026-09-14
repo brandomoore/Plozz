@@ -156,6 +156,24 @@ public struct LibraryChannelItem: Codable, Hashable, Identifiable, Sendable {
     public let durationSeconds: Int64
     public var id: String { "\(library.id):\(itemID.utf8.count):\(itemID)" }
 
+    public var navigationSubject: MediaItem {
+        let subjectID = kind == .episode ? seriesID : nil
+        let opensSeries = subjectID != nil
+        return MediaItem(
+            id: subjectID ?? itemID,
+            title: opensSeries ? seriesTitle ?? title : title,
+            kind: opensSeries ? .series : kind,
+            allowsTitleBasedMetadataMatching: false,
+            sourceAccountID: library.accountID,
+            libraryID: library.libraryID
+        )
+    }
+
+    public var navigationTitle: LocalizedStringResource {
+        if kind == .movie { return "Go to movie" }
+        return seriesID == nil ? "Go to episode" : "Go to show"
+    }
+
     public init(item: MediaItem, library: LibraryChannelLibrary, serverID: String, userID: String) throws {
         guard (item.kind == .movie || item.kind == .episode),
               Self.isNativeIdentifier(item.id),
