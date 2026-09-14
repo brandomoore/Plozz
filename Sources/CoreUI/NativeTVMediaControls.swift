@@ -343,8 +343,16 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
             view.contentSize = CGSize(width: fallbackWidth, height: fallbackWidth / aspectRatio)
         }
         let resolvedTitle = title?.resolve(locale: context.environment.locale)
+        let captionChanged = view.title != resolvedTitle || view.subtitle != subtitle
         if view.title != resolvedTitle { view.title = resolvedTitle }
         if view.subtitle != subtitle { view.subtitle = subtitle }
+        if captionChanged {
+            // Newly created/replaced labels otherwise start in the bright style,
+            // even when the lockup has never been focused.
+            UIView.performWithoutAnimation {
+                view.footerView?.updateAppearance(forLockupViewState: view.state)
+            }
+        }
         if let titleFontSize {
             let font = UIFont.systemFont(ofSize: titleFontSize, weight: .semibold)
             if view.footerView?.titleLabel?.font != font { view.footerView?.titleLabel?.font = font }

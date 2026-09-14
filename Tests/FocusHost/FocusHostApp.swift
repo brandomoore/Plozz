@@ -7,7 +7,9 @@ import CoreModels
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--cast-focus-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--poster-caption-fixture") {
+                PosterCaptionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--cast-focus-fixture") {
                 CastFocusFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--guide-navigation-fixture") {
                 GuideNavigationFixture()

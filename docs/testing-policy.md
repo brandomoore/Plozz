@@ -345,6 +345,13 @@ and spoiler-safe sources; a stable poster control stays mounted while it loads.
 Native titles/subtitles use the poster's footer. Badges and resume controls live
 in its documented image overlay. Series artwork extension and spoiler blur are
 content preparation only, not focus effects.
+New or changed native footer labels explicitly receive the lockup's current
+appearance state before applying the app's font sizes. Otherwise untouched labels
+can start bright and only become correctly dim after their first focus/blur cycle.
+`PosterCaptionRemoteTests` compares rendered brightness, title/year positions and
+font heights before and after held/reversed navigation and metadata changes.
+It requires inactive captions to be dim and the focused caption to be bright;
+native artwork focus and caption motion remain system-owned.
 Prepared poster images use the displayed content size in points and the device
 display scale in pixels. TVUIKit derives focus growth from the image, so raw
 high-resolution cache dimensions must not become the poster's logical size.
