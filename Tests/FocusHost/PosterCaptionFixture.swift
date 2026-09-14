@@ -6,6 +6,14 @@ import UIKit
 struct PosterCaptionFixture: View {
     @State private var artwork: URL?
     @State private var revision = 0
+    private let usesLongTitle = ProcessInfo.processInfo.arguments.contains("--poster-caption-long-title")
+
+    private func title(at index: Int) -> String {
+        if usesLongTitle, index == 1 {
+            return "A long poster title with enough words to scroll across the artwork"
+        }
+        return revision == 0 ? "Poster \(index)" : "Poster \(index) v\(revision)"
+    }
 
     var body: some View {
         VStack(spacing: 28) {
@@ -18,7 +26,7 @@ struct PosterCaptionFixture: View {
                             PosterCardView(
                                 item: MediaItem(
                                     id: "poster-\(index)",
-                                    title: revision == 0 ? "Poster \(index)" : "Poster \(index) v\(revision)",
+                                    title: title(at: index),
                                     kind: .movie,
                                     productionYear: 2000 + index, posterURL: artwork, backdropURL: artwork,
                                     allowsTitleBasedMetadataMatching: false

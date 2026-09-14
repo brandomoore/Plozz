@@ -224,11 +224,9 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
     let treatment: NativePosterImageTreatment
     let aspectRatio: CGFloat
     let fallbackWidth: CGFloat
+    // Accessible metadata only. Visible captions must not inherit native image animation.
     let title: NativePosterText?
     let subtitle: String?
-    var titleFontSize: CGFloat? = nil
-    var subtitleFontSize: CGFloat? = nil
-    var captionSpacing: CGFloat? = nil
     let overlay: Overlay
     let focus: PlozzCardFocus.Binding
     var source: DetailTransitionSourceReference? = nil
@@ -316,6 +314,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         // Materializing imageView with a nil image freezes TVUIKit's native
         // focus expansion at zero, even after an image arrives.
         let view = Poster(image: initialImage)
+        view.defaultAccessibilityElement = view.isAccessibilityElement
         view.contentSize = size
         view.hostedOverlay = overlayConfiguration(in: context).makeContentView()
         if let overlay = view.hostedOverlay {
@@ -343,30 +342,15 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
             view.contentSize = CGSize(width: fallbackWidth, height: fallbackWidth / aspectRatio)
         }
         let resolvedTitle = title?.resolve(locale: context.environment.locale)
-        let captionChanged = view.title != resolvedTitle || view.subtitle != subtitle
-        if view.title != resolvedTitle { view.title = resolvedTitle }
-        if view.subtitle != subtitle { view.subtitle = subtitle }
-        if captionChanged {
-            // Newly created/replaced labels otherwise start in the bright style,
-            // even when the lockup has never been focused.
-            UIView.performWithoutAnimation {
-                view.footerView?.updateAppearance(forLockupViewState: view.state)
-            }
-        }
-        if let titleFontSize {
-            let font = UIFont.systemFont(ofSize: titleFontSize, weight: .semibold)
-            if view.footerView?.titleLabel?.font != font { view.footerView?.titleLabel?.font = font }
-        }
-        if let subtitleFontSize {
-            let font = UIFont.systemFont(ofSize: subtitleFontSize)
-            if view.footerView?.subtitleLabel?.font != font { view.footerView?.subtitleLabel?.font = font }
-        }
+        view.isAccessibilityElement = view.defaultAccessibilityElement || resolvedTitle != nil || subtitle != nil
+        view.accessibilityLabel = resolvedTitle
+        view.accessibilityValue = subtitle
+        view.accessibilityTraits.insert(.button)
         view.hostedOverlay?.configuration = overlayConfiguration(in: context)
         let prepared = context.coordinator.presentationImage(
             image, treatment: treatment, size: view.contentSize, scale: context.environment.displayScale
         )
         if view.image !== prepared { view.image = prepared }
-        updateCaptionSpacing(in: view)
         view.isEnabled = context.environment.isEnabled
         source?.nativeArtworkView = view.imageView
         context.coordinator.focus.update(focus: focus, action: action, view: view)
@@ -381,16 +365,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
             image, treatment: treatment, size: size, scale: context.environment.displayScale
         )
         if uiView.image !== prepared { uiView.image = prepared }
-        updateCaptionSpacing(in: uiView)
         return uiView.intrinsicContentSize
-    }
-
-    private func updateCaptionSpacing(in view: Poster) {
-        guard let captionSpacing else { return }
-        var insets = view.contentViewInsets
-        let nativeClearance = max(0, -view.focusSizeIncrease.bottom)
-        insets.bottom = view.title != nil || view.subtitle != nil ? -(captionSpacing + nativeClearance) : 0
-        if view.contentViewInsets != insets { view.contentViewInsets = insets }
     }
 
     private func overlayConfiguration(in context: Context) -> any UIContentConfiguration {
@@ -403,6 +378,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
     }
 
     final class Poster: TVPosterView {
+        var defaultAccessibilityElement = false
         var hostedOverlay: (UIView & UIContentView)?
         var onFocus: ((Bool) -> Void)?
         var onAvailable: (() -> Void)?

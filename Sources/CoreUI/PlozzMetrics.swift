@@ -264,8 +264,8 @@ public struct PlozzMetrics: Equatable, Sendable {
         PlozzTheme.Metrics.cardCaptionSpacing + landscapeCaptionInset * PlozzTheme.Metrics.captionTopClearanceFactor
     }
 
-    /// Native lockups reserve this below the artwork; TVUIKit moves the footer
-    /// with its own focus expansion, without changing the card's layout slot.
+    /// Fixed caption clearance below the native image control's reserved focus
+    /// frame. The artwork may move; the caption's layout slot must not.
     public var nativePosterCaptionSpacing: CGFloat {
         max(18 * scale, cardTitleFontSize * 0.55).rounded()
     }

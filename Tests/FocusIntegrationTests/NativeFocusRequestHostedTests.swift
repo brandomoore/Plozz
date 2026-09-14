@@ -26,24 +26,61 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         XCTAssertEqual(visible.height, expected.height, accuracy: 0.5)
     }
 
-    func testNativeCaptionSpacingSurvivesFocusWithoutChangingTheLayoutSlot() async throws {
+    func testNativeImageKeepsAccessibleMetadataWithoutAnAnimatedFooter() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
         let poster = try XCTUnwrap(nativePoster(in: fixture.window))
-        let title = try XCTUnwrap(poster.footerView?.titleLabel)
         let restingSize = poster.intrinsicContentSize
-        func gap() throws -> CGFloat {
-            let imageFrame = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.imageView, in: fixture.window))
-            let titleFrame = try XCTUnwrap(NativeFocusProjection.frame(of: title.layer, in: fixture.window.layer))
-            return titleFrame.minY - imageFrame.maxY
-        }
-        XCTAssertEqual(poster.contentViewInsets.bottom, -(18 + max(0, -poster.focusSizeIncrease.bottom)))
-        XCTAssertGreaterThanOrEqual(try gap(), 17)
+        XCTAssertNil(poster.footerView)
+        XCTAssertEqual(poster.accessibilityLabel, "Target poster")
+        XCTAssertTrue(poster.isAccessibilityElement)
         fixture.model.cardFocus?.requestFocus(animated: false)
         try await waitUntil { fixture.model.cardFocused }
         try await Task.sleep(for: .milliseconds(200))
-        XCTAssertGreaterThanOrEqual(try gap(), 17)
+        XCTAssertNil(poster.footerView)
         XCTAssertEqual(poster.intrinsicContentSize, restingSize)
+    }
+
+    func testCaptionMarqueeKeepsItsRestingModelAndStopsWithoutMotionOrAWindow() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let caption = SystemPosterCaption.CaptionView()
+        let text = "A long caption that needs to scroll beyond this narrow card"
+        let font = UIFont.systemFont(ofSize: 28, weight: .semibold)
+        caption.title.configure(text: text, font: font, color: .white, scrolls: true)
+        caption.subtitle.configure(text: " ", font: .systemFont(ofSize: 20), color: .gray, scrolls: false)
+        caption.frame = CGRect(x: 100, y: 100, width: 180, height: caption.intrinsicContentSize.height)
+        fixture.window.addSubview(caption)
+        caption.layoutIfNeeded()
+        let label = try XCTUnwrap(caption.title.subviews.compactMap { $0 as? UILabel }.first)
+        func animation() throws -> CAKeyframeAnimation {
+            let key = try XCTUnwrap(label.layer.animationKeys()?.first)
+            return try XCTUnwrap(label.layer.animation(forKey: key) as? CAKeyframeAnimation)
+        }
+        let forward = try animation()
+        XCTAssertLessThan(try XCTUnwrap(forward.values?[2] as? NSNumber).doubleValue, 0)
+        XCTAssertEqual(forward.repeatCount, .infinity)
+        XCTAssertEqual(label.frame.minX, 0)
+        XCTAssertTrue(CATransform3DIsIdentity(label.layer.transform))
+        let height = caption.intrinsicContentSize.height
+        caption.title.configure(text: text, font: font, color: .gray, scrolls: false)
+        caption.title.layoutIfNeeded()
+        XCTAssertNil(label.layer.animationKeys())
+        XCTAssertEqual(label.frame.minX, 0)
+        XCTAssertEqual(caption.intrinsicContentSize.height, height)
+        XCTAssertFalse(label.isAccessibilityElement)
+
+        caption.semanticContentAttribute = .forceRightToLeft
+        caption.title.configure(text: text, font: font, color: .white, scrolls: true)
+        caption.title.layoutIfNeeded()
+        XCTAssertGreaterThan(try XCTUnwrap(animation().values?[2] as? NSNumber).doubleValue, 0)
+        XCTAssertEqual(label.frame.maxX, caption.bounds.width, accuracy: 0.5)
+        caption.removeFromSuperview()
+        XCTAssertNil(label.layer.animationKeys())
+        fixture.window.addSubview(caption)
+        caption.title.layoutIfNeeded()
+        XCTAssertNotNil(label.layer.animationKeys())
+        caption.removeFromSuperview()
     }
 
     private func nativePoster(in view: UIView) -> TVPosterView? {
@@ -179,7 +216,6 @@ private struct NativeFocusRequestView: View {
                 NativeTVPoster(
                     image: nil, treatment: .original, aspectRatio: 2,
                     fallbackWidth: 400, title: .content("Target poster"), subtitle: nil,
-                    captionSpacing: 18,
                     overlay: Color.clear, focus: $cardFocused, action: {}
                 )
                     .frame(width: 400, height: 250)

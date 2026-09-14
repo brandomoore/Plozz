@@ -221,8 +221,7 @@ public struct PosterCardView: View {
     }
 
     #if os(tvOS)
-    private var nativePosterTitle: NativePosterText? {
-        guard !showsSeriesArtwork else { return nil }
+    private var nativePosterTitle: NativePosterText {
         if item.kind == .episode, let series = item.parentTitle, !series.isEmpty {
             return .content(series)
         }
@@ -250,22 +249,29 @@ public struct PosterCardView: View {
     }
 
     private var nativePosterCard: some View {
-        NativeTVPoster(
-            image: nativePosterArtwork.image,
-            treatment: nativePosterTreatment,
-            aspectRatio: borderlessAspectRatio,
-            fallbackWidth: size.width,
-            title: nativePosterTitle,
-            subtitle: showsSeriesArtwork ? nil : subtitleText ?? (reservesSubtitleSpace ? " " : nil),
-            titleFontSize: metrics.cardTitleFontSize,
-            subtitleFontSize: metrics.cardSubtitleFontSize,
-            captionSpacing: metrics.nativePosterCaptionSpacing,
-            overlay: nativePosterOverlay,
-            focus: $isFocused,
-            source: detailTransitionSource,
-            action: selectCard
-        )
-        .focused($isFocused.focusState)
+        VStack(spacing: metrics.nativePosterCaptionSpacing) {
+            NativeTVPoster(
+                image: nativePosterArtwork.image,
+                treatment: nativePosterTreatment,
+                aspectRatio: borderlessAspectRatio,
+                fallbackWidth: size.width,
+                title: showsSeriesArtwork ? nil : nativePosterTitle,
+                subtitle: showsSeriesArtwork ? nil : subtitleText,
+                overlay: nativePosterOverlay,
+                focus: $isFocused,
+                source: detailTransitionSource,
+                action: selectCard
+            )
+            .focused($isFocused.focusState)
+            .frame(maxWidth: .infinity)
+            if !showsSeriesArtwork {
+                SystemPosterCaption(
+                    title: nativePosterTitle, subtitle: subtitleText,
+                    reservesSubtitleSpace: reservesSubtitleSpace, isFocused: isFocused
+                )
+                .accessibilityHidden(true)
+            }
+        }
         .padding(.horizontal, metrics.borderlessCardSideMargin)
         .background {
             FallbackAsyncImage(

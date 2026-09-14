@@ -342,16 +342,24 @@ Posters and `TVCardView` for composed Cards and read-only information. Images ar
 assigned to `TVPosterView.image`, never directly to its internal image view.
 The shared artwork loader remains responsible for caching, provider selection
 and spoiler-safe sources; a stable poster control stays mounted while it loads.
-Native titles/subtitles use the poster's footer. Badges and resume controls live
-in its documented image overlay. Series artwork extension and spoiler blur are
-content preparation only, not focus effects.
-New or changed native footer labels explicitly receive the lockup's current
-appearance state before applying the app's font sizes. Otherwise untouched labels
-can start bright and only become correctly dim after their first focus/blur cycle.
-`PosterCaptionRemoteTests` compares rendered brightness, title/year positions and
-font heights before and after held/reversed navigation and metadata changes.
-It requires inactive captions to be dim and the focused caption to be bright;
-native artwork focus and caption motion remain system-owned.
+Native poster controls render artwork only, without a TVUIKit footer.
+`SystemPosterCaption` owns the fixed title/subtitle layout below the image;
+actual native focus observations select primary or secondary text brightness.
+Short captions are centered; overflowing captions reuse the existing marquee
+speeds and reading pauses. Plain labels own a removable Core Animation
+translation with a resting model position, so blur restores the text immediately
+without awaiting a task or retaining an interrupted SwiftUI scroll.
+The native image carries accessible title/subtitle metadata, while the visible
+caption is hidden from accessibility to avoid duplicate announcements.
+Badges and resume controls live in the documented image overlay. Series artwork
+extension and spoiler blur are content preparation only, not focus effects.
+`PosterCaptionRemoteTests` measures painted text bands in screenshots before
+and after held/reversed navigation and metadata changes. It requires inactive
+captions to be dim, the focused caption to be bright, and title/year baselines
+to stay fixed across focus changes. A long-title case verifies that the marquee
+still moves, resets on blur, and does not widen the artwork. Only the artwork's
+focus expansion, projection and lighting remain system-owned; captions no longer
+depend on interrupted native footer animations or appearance resets.
 Prepared poster images use the displayed content size in points and the device
 display scale in pixels. TVUIKit derives focus growth from the image, so raw
 high-resolution cache dimensions must not become the poster's logical size.
@@ -395,12 +403,11 @@ detail-page cast cards deliberately resolve System to the existing circular
 Outline treatment: the legacy monogram adapter's focused image shifts, expands
 into its caption, and gains a square platter. This exception is scoped to cast
 cards; poster/native information controls and saved Highlight/Outline choices
-are unchanged. Regular media poster footer labels retain the existing
-density-aware title/subtitle font sizes. Native poster footers reserve at least
-18 density-scaled points of artwork clearance (more for larger type), using the
-documented negative bottom `contentViewInsets`. TVUIKit's own focus expansion
-moves the footer; no extra translation or focus-time layout change is added.
-The reserved inset includes native footer travel so clearance holds at rest too.
+are unchanged. Regular media poster captions retain the existing density-aware
+title/subtitle font sizes. Captions reserve at least 18 density-scaled points
+below the native image's reserved focus frame (more for larger type).
+This spacing is constant; neither focus-time translation nor native footer
+insets participate in caption layout.
 Rows that reserve a subtitle line keep it even when the year/subtitle is absent,
 so folder and media cards retain equal heights. Captionless episode controls
 keep their existing geometry. Custom Highlight/Outline retain
