@@ -257,6 +257,12 @@ Key reading tips:
   the native Search controller, not screen coordinates alone: outgoing Home
   content can occupy the same rectangle. Keep the capsule gated until entry.
   Distinguish results-edge navigation from keyboard/cursor movement.
+- **Selecting a destination is not presentation completion.** Pinned navigation
+  retains its real focused row while `NavigationDestinationFocusHandoff` waits
+  for the requested page's appearance and a rendered frame. Supply the identity
+  the content actually depicts, not a requested identity that still shows old
+  content. Older/cancelled callbacks must not release a newer request. Do not
+  replace this with an immediate focus clear or a fixed loading delay.
 - **Avoid false diagnostics.** Unhosted package tests have no window scene/focus
   system; use them for policy/geometry, not end-to-end focus proof.
   **`UIFocusDebugger` is LLDB-only:** calling it from app code throws

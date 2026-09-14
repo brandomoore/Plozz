@@ -328,6 +328,13 @@ there is no deferred bounce/recenter or artificial held-focus styling.
 short and long production rails, checks both ends, and verifies Right still
 returns to page content. It also captures the profile name after top-boundary input.
 
+`NavigationDestinationHandoffTests` records native content-button focus while
+the production rail switches between delayed Home, Music, and Settings pages.
+It rejects any focus visit to the outgoing page, covers reselecting the current
+page, and holds readiness explicitly while replacing a pending destination or
+pressing Right. The rail remains usable until the latest matching page is
+presented; no invisible focus target or fixed navigation delay is introduced.
+
 Card focus has three independent options: System (native tvOS projection),
 Highlight (custom sheen/lean) and Outline (custom glass). Absent per-profile
 preferences use System; saved `highlight` and `outlined` values are not migrated.

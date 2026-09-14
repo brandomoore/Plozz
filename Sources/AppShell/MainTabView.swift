@@ -1393,6 +1393,7 @@ struct MainTabView: View {
             onOpenProfileSwitcher: openProfileSwitcher,
             chrome: navigationChrome,
             content: railContent,
+            contentDestination: activeLibraryNavigationDestination,
             preventsAccidentalExit: navigationStyleModel.preventsAccidentalExit
         )
         .environment(navigationChrome)
@@ -1409,6 +1410,7 @@ struct MainTabView: View {
         ZStack {
             railDestination
                 .opacity(showsLiveTV ? 0 : 1)
+                .disabled(showsLiveTV)
                 .allowsHitTesting(!showsLiveTV)
                 .accessibilityHidden(showsLiveTV)
 
@@ -1426,6 +1428,7 @@ struct MainTabView: View {
                 onOpenTitle: openTitleFromLiveTV
             )
             .opacity(showsLiveTV ? 1 : 0)
+            .disabled(!showsLiveTV)
             .allowsHitTesting(showsLiveTV)
             .accessibilityHidden(!showsLiveTV)
         }

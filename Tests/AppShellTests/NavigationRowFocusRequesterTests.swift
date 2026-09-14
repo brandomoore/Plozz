@@ -24,7 +24,8 @@ final class NavigationRowFocusRequesterTests: XCTestCase {
                 profile: profile, entries: entries,
                 destinations: [.home] + entries.map(\.destination) + [.settings],
                 selection: .constant(.settings), isExpandedOutward: .constant(false),
-                onOpenProfileSwitcher: {}, focusRequestToken: token,
+                onOpenProfileSwitcher: {}, onSelectDestination: { _ in },
+                focusRequestToken: token,
                 opensExpanded: opening
             )
         }

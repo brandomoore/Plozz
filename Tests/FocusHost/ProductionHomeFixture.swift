@@ -23,7 +23,8 @@ struct ProductionHomeFixture: View {
                             profile: profile, entries: [], destinations: [.home, .search, .settings],
                             selection: $selection, onOpenProfileSwitcher: {},
                             chrome: fixture.chrome,
-                            content: ProductionHomeContent(fixture: fixture, path: $path, isPinned: true)
+                            content: ProductionHomeContent(fixture: fixture, path: $path, isPinned: true),
+                            contentDestination: .home
                         )
                     } else {
                         ProductionHomeContent(fixture: fixture, path: $path, isPinned: false)

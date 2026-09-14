@@ -7,7 +7,9 @@ import CoreModels
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--library-channel-actions") {
+            if ProcessInfo.processInfo.arguments.contains("--navigation-handoff-fixture") {
+                NavigationDestinationHandoffFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--library-channel-actions") {
                 LibraryChannelActionsFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--navigation-fixture") {
                 NavigationRailFixture { Color.clear }

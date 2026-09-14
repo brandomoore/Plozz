@@ -142,6 +142,7 @@ struct NavigationRailView: View {
     /// preferred focus and directional fallback while the overlay is open.
     @Binding var isExpandedOutward: Bool
     let onOpenProfileSwitcher: () -> Void
+    let onSelectDestination: (NavigationRailDestination) -> Void
     var isFocusEnabled = true
     /// Bumped by the shell when its leading-edge catcher takes a Left press, so the
     /// rail pulls focus onto the current destination.
@@ -533,10 +534,7 @@ struct NavigationRailView: View {
         isExperimental: Bool = false
     ) -> some View {
         Button {
-            selection = destination
-            // Activating a destination is the same commitment as selecting it and
-            // pressing Right: close the menu and enter the page immediately.
-            releaseFocusToPage()
+            onSelectDestination(destination)
         } label: {
             HStack(spacing: 0) {
                 Image(systemName: symbol)

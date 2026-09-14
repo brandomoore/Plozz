@@ -243,7 +243,8 @@ final class PinnedChromeTransitionHostedTests: XCTestCase {
                 profile: model.profile, entries: [], destinations: [.home, .search, .settings],
                 selection: $model.selection, onOpenProfileSwitcher: {},
                 chrome: model.chrome,
-                content: PageContent(model: model)
+                content: PageContent(model: model),
+                contentDestination: model.selection
             )
         }
     }
