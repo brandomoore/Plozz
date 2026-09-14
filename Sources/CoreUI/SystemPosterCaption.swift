@@ -28,6 +28,8 @@ struct SystemPosterCaption: UIViewRepresentable {
             color: color, scrolls: scrolls
         )
         view.subtitle.isHidden = subtitle == nil && !reservesSubtitleSpace
+        view.setFocused(isFocused, travel: metrics.focusCaptionPush(for: .system),
+                        animated: !context.environment.accessibilityReduceMotion)
         view.invalidateIntrinsicContentSize()
         view.setNeedsLayout()
     }
@@ -38,8 +40,12 @@ struct SystemPosterCaption: UIViewRepresentable {
     }
 
     final class CaptionView: UIView {
+        private let content = UIView()
         let title = CaptionLine()
         let subtitle = CaptionLine()
+        private var focusTravel: CGFloat = 0
+        private var captionFocused = false
+        private static let focusAnimationKey = "captionFocus"
 
         override var semanticContentAttribute: UISemanticContentAttribute {
             didSet {
@@ -52,8 +58,9 @@ struct SystemPosterCaption: UIViewRepresentable {
 
         init() {
             super.init(frame: .zero)
-            addSubview(title)
-            addSubview(subtitle)
+            addSubview(content)
+            content.addSubview(title)
+            content.addSubview(subtitle)
             isAccessibilityElement = false
         }
 
@@ -61,14 +68,44 @@ struct SystemPosterCaption: UIViewRepresentable {
 
         override var intrinsicContentSize: CGSize {
             CGSize(width: UIView.noIntrinsicMetric,
-                   height: title.lineHeight + (subtitle.isHidden ? 0 : 2 + subtitle.lineHeight))
+                   height: title.lineHeight + (subtitle.isHidden ? 0 : 2 + subtitle.lineHeight) + focusTravel)
         }
 
         override func layoutSubviews() {
             super.layoutSubviews()
+            content.bounds = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - focusTravel)
+            content.center = CGPoint(x: bounds.midX, y: (bounds.height - focusTravel) / 2)
             title.frame = CGRect(x: 0, y: 0, width: bounds.width, height: title.lineHeight)
             subtitle.frame = CGRect(x: 0, y: title.lineHeight + 2,
                                     width: bounds.width, height: subtitle.lineHeight)
+        }
+
+        func setFocused(_ focused: Bool, travel: CGFloat, animated: Bool) {
+            guard captionFocused != focused || focusTravel != travel || !animated else { return }
+            let old = (content.layer.presentation() ?? content.layer).transform.m42
+            captionFocused = focused
+            focusTravel = travel
+            let destination = focused ? travel : 0
+            content.layer.removeAnimation(forKey: Self.focusAnimationKey)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            content.layer.transform = CATransform3DMakeTranslation(0, destination, 0)
+            CATransaction.commit()
+            if animated, window != nil, old != destination {
+                let animation = CABasicAnimation(keyPath: "transform.translation.y")
+                animation.fromValue = old
+                animation.toValue = destination
+                animation.duration = 0.18
+                animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                content.layer.add(animation, forKey: Self.focusAnimationKey)
+            }
+            invalidateIntrinsicContentSize()
+            setNeedsLayout()
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window == nil { content.layer.removeAnimation(forKey: Self.focusAnimationKey) }
         }
     }
 

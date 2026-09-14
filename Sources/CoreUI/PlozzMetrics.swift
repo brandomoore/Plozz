@@ -264,8 +264,8 @@ public struct PlozzMetrics: Equatable, Sendable {
         PlozzTheme.Metrics.cardCaptionSpacing + landscapeCaptionInset * PlozzTheme.Metrics.captionTopClearanceFactor
     }
 
-    /// Fixed caption clearance below the native image control's reserved focus
-    /// frame. The artwork may move; the caption's layout slot must not.
+    /// Resting caption clearance below the native image control's reserved focus
+    /// frame. Caption travel is reserved separately, without resizing its slot.
     public var nativePosterCaptionSpacing: CGFloat {
         max(18 * scale, cardTitleFontSize * 0.55).rounded()
     }

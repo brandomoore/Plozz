@@ -343,8 +343,13 @@ assigned to `TVPosterView.image`, never directly to its internal image view.
 The shared artwork loader remains responsible for caching, provider selection
 and spoiler-safe sources; a stable poster control stays mounted while it loads.
 Native poster controls render artwork only, without a TVUIKit footer.
-`SystemPosterCaption` owns the fixed title/subtitle layout below the image;
+`SystemPosterCaption` owns the title/subtitle layout below the image;
 actual native focus observations select primary or secondary text brightness.
+Its fixed-height slot reserves the density-scaled caption drop. A separate
+vertical animation moves the labels down on focus and returns them on blur,
+reversing from the current presentation position when interrupted. The model
+always contains the latest focus destination, not a deferred completion write.
+Reduce Motion applies the destination without animation.
 Short captions are centered; overflowing captions reuse the existing marquee
 speeds and reading pauses. Plain labels own a removable Core Animation
 translation with a resting model position, so blur restores the text immediately
@@ -356,7 +361,8 @@ extension and spoiler blur are content preparation only, not focus effects.
 `PosterCaptionRemoteTests` measures painted text bands in screenshots before
 and after held/reversed navigation and metadata changes. It requires inactive
 captions to be dim, the focused caption to be bright, and title/year baselines
-to stay fixed across focus changes. A long-title case verifies that the marquee
+to follow only their own focus, returning fully after rapid reversals.
+A long-title case verifies that the marquee
 still moves, resets on blur, and does not widen the artwork. Only the artwork's
 focus expansion, projection and lighting remain system-owned; captions no longer
 depend on interrupted native footer animations or appearance resets.
@@ -384,6 +390,14 @@ the About column's text measurements. A non-focusable container reports the visi
 content size to SwiftUI and positions TVCardView's intrinsic focus outsets outside
 that slot. The resting plate therefore aligns with its section heading; native
 focus can still expand beyond it without changing layout.
+The poster adapter likewise keeps native horizontal focus outsets outside its
+SwiftUI width. Its container lays out the native control at its intrinsic size
+but reports only the requested artwork width. Otherwise a surrounding stack
+feeds the outsets back as artwork width, enlarging posters and consuming row
+spacing. `NativeFocusRequestHostedTests` compares artwork sizes and gaps in
+production `MediaRowView` rows against the pre-caption-separation adapter for
+portrait, landscape, and Continue Watching layouts. It also checks caption
+animation interruption, unchanged layout height, and Reduce Motion.
 `NativeInformationCardHostedTests` covers
 the actual information grid with a long synopsis and four ratings, checking
 bounded, stable card dimensions. `NativeFocusRequestHostedTests` compares the
@@ -393,7 +407,7 @@ tall source portrait cannot protrude into its caption on focus.
 System bypasses app-defined focus surfaces, edge strokes, resting shadows and
 focused z-index changes. Custom Highlight/Outline retain their styling.
 Horizontal rails do not clip native focus overflow.
-Captions reserve clearance without an additional custom focus animation.
+Caption movement is independent of the genuine native artwork focus effect.
 In the season episode row, the System focus owner encloses only the thumbnail
 and its artwork badges, not the title or synopsis below it. Both the episode
 thumbnail and interactive loading/retry placeholder use TVPosterView, so the
@@ -406,8 +420,8 @@ cards; poster/native information controls and saved Highlight/Outline choices
 are unchanged. Regular media poster captions retain the existing density-aware
 title/subtitle font sizes. Captions reserve at least 18 density-scaled points
 below the native image's reserved focus frame (more for larger type).
-This spacing is constant; neither focus-time translation nor native footer
-insets participate in caption layout.
+This resting spacing is constant; focus travel has its own reserved space.
+Neither animation progress nor native footer insets resize the caption layout.
 Rows that reserve a subtitle line keep it even when the year/subtitle is absent,
 so folder and media cards retain equal heights. Captionless episode controls
 keep their existing geometry. Custom Highlight/Outline retain

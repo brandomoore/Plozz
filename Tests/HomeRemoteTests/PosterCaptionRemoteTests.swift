@@ -50,8 +50,9 @@ final class PosterCaptionRemoteTests: XCTestCase {
         XCTAssertGreaterThan(moved[1].titleBrightness, 0.85)
         XCTAssertLessThan(moved[0].titleBrightness, moved[1].titleBrightness - 0.15)
         for index in 0..<8 {
-            XCTAssertEqual(moved[index].titleY, baseline[index].titleY, accuracy: 1, "Focus must not move title \(index)")
-            XCTAssertEqual(moved[index].yearY, baseline[index].yearY, accuracy: 1, "Focus must not move year \(index)")
+            let travel: CGFloat = index == 0 ? -16 : index == 1 ? 16 : 0
+            XCTAssertEqual(moved[index].titleY, baseline[index].titleY + travel, accuracy: 1, "Title \(index) must follow only its own focus")
+            XCTAssertEqual(moved[index].yearY, baseline[index].yearY + travel, accuracy: 1, "Year \(index) must follow only its own focus")
         }
         XCUIRemote.shared.press(.left)
         for _ in 0..<4 {
