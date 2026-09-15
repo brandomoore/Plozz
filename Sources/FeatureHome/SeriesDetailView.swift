@@ -573,7 +573,7 @@ struct SeriesDetailView: View {
                             episodeRail { revealBrowser(using: proxy) }
                         }
                     )
-                    .detailEntranceStage(.episodes)
+                    .detailEntranceStage(episodeEntryPhase == .ready ? .episodes : .artwork)
 
                     DetailExtrasView(
                         item: series,
@@ -595,7 +595,8 @@ struct SeriesDetailView: View {
                         leadingInset: PlozzTheme.Metrics.heroLeadingPadding,
                         seriesRecedeModel: recedeModel,
                         revealsSeriesCastWithoutBrowser: revealsCastWithoutBrowser,
-                        suppressesFocus: hasChildOnTop || holdsHeroFocusDuringEntrance,
+                        suppressesFocus: hasChildOnTop || holdsHeroFocusDuringEntrance
+                            || (browserEntry == .hero && episodeEntryPhase != .ready),
                         onCastFocusEntered: {
                             seasonBarEngaged = false
                             // Cast/Related sit BELOW the browser, so the page
@@ -1169,7 +1170,7 @@ struct SeriesDetailView: View {
             episodeEntry: MediaRowEpisodeEntry(
                 phase: episodeEntryPhase,
                 isActive: browserEntry == .hero || seasonBarEngaged,
-                isEnabled: !holdsHeroFocusDuringEntrance,
+                isEnabled: episodeEntryPhase != .ready || !holdsHeroFocusDuringEntrance,
                 onPlaceholderFocus: {
                     // Entering a loading slot is not an explicit choice of a
                     // season. Let the arriving resume answer select the right one.
