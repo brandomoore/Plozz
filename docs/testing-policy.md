@@ -466,9 +466,12 @@ scroll view taking Down while the entrance gate was active. Page scrolling is
 disabled during that entrance, then restored on completion; hiding or disabling
 lower leaf content did not remove the scroll container's filler.
 The browser stays mounted for its staged episode reveal: a 48-point upward
-movement and 0.72-second fade at default timing, with a gentle start and stop
-rather than the other foreground stages' fast pickup. Other hero stages and reverse
-timing are unchanged, and entrance input stays gated until that reveal finishes.
+movement and 0.72-second fade at default timing, with a gentle start and stop.
+Logo, metadata, and controls use the same softer curve over 0.45 seconds,
+starting after a 0.10-second artwork pause with 0.09-second stage spacing.
+Episode duration is independent of those foreground timings. Artwork pickup,
+reverse motion, and episode travel remain unchanged, and entrance input stays
+gated until the episode reveal finishes.
 Lower detail content first mounts after the episode row has received focus and the browser's recede
 animation has completed, so rapid early Down presses cannot enter its blank
 scroll region. The page remains at least one viewport tall before that reveal.
