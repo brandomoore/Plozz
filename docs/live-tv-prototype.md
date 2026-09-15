@@ -771,6 +771,14 @@ cannot authorize an older preparation. Pending-source settings read descriptors
 without reconstructing library schedules, and revocations do not wait for that
 reconstruction.
 
+Portable journal reads and full record validation are prepared off the main
+actor, then reused for one bridge operation. Preparation does not hold the
+journal lock during decoding. Writes and resets invalidate other adapters'
+prepared views; UI-facing readers require preparation rather than falling back
+to synchronous decoding. Pending-source lists reload asynchronously, while
+saving a source checks only its own descriptor record. Prepared journal data is
+discarded when the operation ends.
+
 Channel checks use bounded probes and keep unsupported, blocked and uncertain
 results distinct. Only confidently missing streams can be automatically hidden;
 restoring a scan-hidden channel does not change a manual hide. Scanner network

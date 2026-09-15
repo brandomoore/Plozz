@@ -174,6 +174,28 @@ final class LiveTVPortableLibraryImportTests: XCTestCase {
         XCTAssertEqual(counts.releases, 1)
     }
 
+    func testNewerJournalDefinitionDuringStagingCannotBePublishedOrAcknowledgedAsOlderInput() async throws {
+        let fixture = try fixture()
+        let (snapshot, definition) = try library(profileID: fixture.profiles.activeProfileID)
+        let definitions = PortableImportDefinitions()
+        var changed = definition
+        changed.isEnabled = false
+        let newer = try records(snapshot: snapshot, definition: changed)
+        let writer = LiveTVPortableSyncAdapter(
+            directory: fixture.directory, profileID: definition.profileID, defaults: fixture.defaults,
+            namespace: fixture.profiles.activeNamespace
+        )
+        let snapshots = RetainingImportSnapshots(afterStage: {
+            _ = try writer.apply(newer, sourceStore: PortableImportSources())
+        })
+        let bridge = fixture.bridge(definitions: definitions, snapshots: snapshots)
+        await bridge.apply(try records(snapshot: snapshot, definition: definition))
+        XCTAssertTrue(try definitions.load().isEmpty)
+        XCTAssertEqual(try fixture.pending().libraryDefinitions, [changed])
+        let counts = await snapshots.counts()
+        XCTAssertEqual(counts.releases, 1)
+    }
+
     func testAccountChangeDuringStagingReleasesInputsWithoutCommitting() async throws {
         let fixture = try fixture()
         let (snapshot, definition) = try library(profileID: fixture.profiles.activeProfileID)
