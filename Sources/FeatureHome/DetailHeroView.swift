@@ -44,6 +44,8 @@ struct DetailHeroView: View, Equatable {
             && lhs.presentsEpisodeStill == rhs.presentsEpisodeStill
             && lhs.actionItem == rhs.actionItem
             && lhs.seriesRecedeModel === rhs.seriesRecedeModel
+            && lhs.localPlayFocusRequest == rhs.localPlayFocusRequest
+            && (lhs.onPlayFocusChanged == nil) == (rhs.onPlayFocusChanged == nil)
             && lhs.scheduleLine == rhs.scheduleLine
             && lhs.spoilerSettings == rhs.spoilerSettings
             && lhs.playTitle == rhs.playTitle
@@ -184,6 +186,9 @@ struct DetailHeroView: View, Equatable {
     /// opened targeting a specific episode so focus lands on Play at the top
     /// rather than down in the episode row.
     var playButtonFocus: FocusState<Bool>.Binding? = nil
+    /// Hosted series heroes keep their actual focus binding inside that host.
+    var localPlayFocusRequest: Int? = nil
+    var onPlayFocusChanged: ((Bool) -> Void)? = nil
     /// Invoked whenever focus lands on (or moves between) *any* button in the hero
     /// action row — Play, Trailer, watchlist, watched, Refresh, the "…" menu, or
     /// the discovery request pill. The parent uses this to re-pin the page to the
@@ -1230,7 +1235,7 @@ struct DetailHeroView: View, Equatable {
                     progress: playProgress,
                     remainingText: playRemainingText,
                     seasonEpisodeText: playSeasonEpisodeText,
-                    onLight: playButtonHasFocus || colorScheme == .light,
+                    onLight: playControlHasFocus || colorScheme == .light,
                     isPlaceholder: action == nil,
                     separatesEpisodeText: (actionItem ?? item).startsWatching
                 )
@@ -1238,8 +1243,6 @@ struct DetailHeroView: View, Equatable {
         }
         .modifier(HeroActionButtonStyle(prominent: true))
         .disabled(action == nil)
-        .focused($playButtonHasFocus)
-        .focused($heroActionRowFocus, equals: .play)
         .accessibilityIdentifier("detail-hero-play")
         .onChange(of: liveResumeText) { _, new in
             if let new { reservedResumeText = new }
@@ -1248,14 +1251,33 @@ struct DetailHeroView: View, Equatable {
             if let liveResumeText { reservedResumeText = liveResumeText }
         }
 
-        if let playButtonFocus {
+        if let localPlayFocusRequest {
             button
+                .focused($heroActionRowFocus, equals: .play)
+                .prefersDefaultFocus(action != nil, in: heroActionsScope)
+                .onChange(of: localPlayFocusRequest, initial: true) { _, request in
+                    if request > 0 { heroActionRowFocus = .play }
+                }
+                .onChange(of: heroActionRowFocus == .play) { _, focused in
+                    onPlayFocusChanged?(focused)
+                }
+                .onDisappear { onPlayFocusChanged?(false) }
+        } else if let playButtonFocus {
+            button
+                .focused($playButtonHasFocus)
+                .focused($heroActionRowFocus, equals: .play)
                 .focused(playButtonFocus, equals: true)
                 .prefersDefaultFocus(action != nil, in: heroActionsScope)
         } else {
             button
+                .focused($playButtonHasFocus)
+                .focused($heroActionRowFocus, equals: .play)
                 .prefersDefaultFocus(action != nil, in: heroActionsScope)
         }
+    }
+
+    private var playControlHasFocus: Bool {
+        localPlayFocusRequest == nil ? playButtonHasFocus : heroActionRowFocus == .play
     }
 
     /// The single request/status pill shown in place of the library action row for
@@ -1379,7 +1401,7 @@ struct DetailHeroView: View, Equatable {
     private func playResumeSizer(remaining: String) -> some View {
         HStack(spacing: 16) {
             Image(systemName: "play.fill")
-            ResumeProgressCapsule(progress: 1, onLight: playButtonHasFocus || colorScheme == .light, width: 75)
+            ResumeProgressCapsule(progress: 1, onLight: playControlHasFocus || colorScheme == .light, width: 75)
             Text(remaining)
                 .lineLimit(1)
         }

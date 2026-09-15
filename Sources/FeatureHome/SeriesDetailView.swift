@@ -117,7 +117,8 @@ struct SeriesDetailView: View {
 
     /// Drives initial focus onto Hero Play for whole-show/season opens. Individual
     /// episode opens assign initial focus through the episode rail instead.
-    @FocusState private var playFocused: Bool
+    @State private var playFocused = false
+    @State private var playFocusRequest = 0
     /// The user's in-session quality choice for the current play-target episode,
     /// chosen from the hero "…" menu's Version section. Cleared implicitly when it
     /// no longer matches the target episode's versions (a different episode's files
@@ -365,22 +366,17 @@ struct SeriesDetailView: View {
         // Whole-show/season entry lands on Hero Play. Individual episode entry
         // lands on its rail card through MediaRowView's initial focus.
         //
-        // Only on a genuine open. `defaultFocus` is declarative and re-fires on
-        // every appearance, so on a pop back from a pushed page it yanked focus
-        // off whatever the user was on — and because Play taking focus restores
-        // the hero, that also collapsed the episode browser and hid the cast.
-        // Designating `false` leaves no target (nothing binds `equals: false`),
-        // which keeps the modifier applied unconditionally so view identity is
-        // stable, rather than branching it in or out of the hierarchy.
+        // Only a genuine open requests Play. Its native focus state belongs
+        // inside the hero host; the page observes it without registering a
+        // competing cross-host FocusState on the same button.
         scroll
-            .defaultFocus(
-                $playFocused,
-                SeriesDetailEntryPolicy.claimsHeroPlay(
+            .onAppear {
+                if SeriesDetailEntryPolicy.claimsHeroPlay(
                     hasOpenedOnce: hasOpenedOnce,
                     hasInitialEpisode: initialEpisode != nil
-                )
-            )
-            .onAppear { hasOpenedOnce = true }
+                ) { playFocusRequest &+= 1 }
+                hasOpenedOnce = true
+            }
             // The Play button appears only once the play target resolves; until
             // then there is nothing for `defaultFocus` to land on. Claim it the
             // moment it exists — but only during the opening window, and never
@@ -393,7 +389,7 @@ struct SeriesDetailView: View {
                       !hasChildOnTop
                 else { return }
                 hasSettledOpeningFocus = true
-                playFocused = true
+                playFocusRequest &+= 1
             }
             .onChange(of: hasChildOnTop) { _, covered in
                 // Returning from a pushed page. tvOS hands focus to the hero
@@ -487,7 +483,8 @@ struct SeriesDetailView: View {
                         selectedSourceAccountID: series.sourceAccountID,
                         onSelectSource: serverPickerAction,
                         fallbackTechnicalBadges: playTargetTechnicalBadges,
-                        playButtonFocus: $playFocused,
+                        localPlayFocusRequest: playFocusRequest,
+                        onPlayFocusChanged: { playFocused = $0 },
                         // Keep the whole hero action row pinned to the top for every
                         // button, not just Play — moving right to Trailer / the "…"
                         // menu / Refresh otherwise lets tvOS's focus-reveal auto-
