@@ -74,6 +74,9 @@ struct SeriesDetailView: View {
     /// so left/right moves freely between seasons; it resets when focus leaves.
     @State private var seasonBarEngaged = false
     @State private var browserEntry = SeriesBrowserEntry.hero
+    @State private var browserPresentationSettled = false
+    @State private var browserPresentationGeneration = 0
+    @State private var hasPresentedEpisodeBrowser = false
     /// Whether focus is currently somewhere inside the episode browser.
     ///
     /// Gates the hero-blur backstop below. Focus leaving the hero does NOT imply
@@ -549,7 +552,6 @@ struct SeriesDetailView: View {
                     // to zero, so Cast/Related resumed the flow at the hero's
                     // bottom edge (1080) rather than at the rail's (880) — the
                     // ~200pt void the viewer read as "Related is miles away".
-                    if !holdsHeroFocusDuringEntrance {
                     VStack(alignment: .leading, spacing: 0) {
                     SeriesEpisodeBrowser(
                         series: series,
@@ -581,6 +583,7 @@ struct SeriesDetailView: View {
                     )
                     .detailEntranceStage(.episodes)
 
+                    if showsLowerDetailContent {
                     DetailExtrasView(
                         item: series,
                         selectedSource: distinctServerChoices.first { $0.accountID == series.sourceAccountID }
@@ -634,6 +637,7 @@ struct SeriesDetailView: View {
                         )
                         .id(Self.extrasAnchorID)
                     }
+                    }
                     // Static. The column's layout position never changes — it is
                     // permanently at its browsing position, which is what keeps
                     // the season bar and episode rail inside the viewport and the
@@ -649,9 +653,9 @@ struct SeriesDetailView: View {
                             ? 0
                             : SeriesEpisodeBrowserLayout.browserRestDrop
                     )
-                    }
                 }
-                .padding(.bottom, holdsHeroFocusDuringEntrance ? 0 : PlozzTheme.Metrics.screenVerticalPadding)
+                .frame(minHeight: SeriesEpisodeBrowserLayout.screenHeightReference, alignment: .topLeading)
+                .padding(.bottom, showsLowerDetailContent ? PlozzTheme.Metrics.screenVerticalPadding : 0)
                 // Cap the whole scroll column to the proposed (safe viewport)
                 // width. The hero backdrop still bleeds edge-to-edge via its own
                 // `.ignoresSafeArea`, but its layout footprint — and any over-wide
@@ -781,9 +785,27 @@ struct SeriesDetailView: View {
     /// and Season → Episode moves cost nothing either.
     private func revealBrowser(using proxy: ScrollViewProxy) {
         SeriesFocusTrace.record("revealBrowser")
-        withAnimation(.smooth(duration: Self.recedeAnimationDuration)) {
+        guard !recedeModel.isReceded else {
+            withAnimation(.smooth(duration: Self.recedeAnimationDuration)) {
+                proxy.scrollTo(Self.topAnchorID, anchor: .top)
+            }
+            return
+        }
+        browserPresentationSettled = false
+        browserPresentationGeneration &+= 1
+        let generation = browserPresentationGeneration
+        withAnimation(
+            reduceMotion ? nil : .smooth(duration: Self.recedeAnimationDuration),
+            completionCriteria: .logicallyComplete
+        ) {
             recedeModel.isReceded = true
             proxy.scrollTo(Self.topAnchorID, anchor: .top)
+        } completion: {
+            guard generation == browserPresentationGeneration, recedeModel.isReceded else { return }
+            browserPresentationSettled = true
+            if browserEntry == .browser, !seasonBarEngaged {
+                hasPresentedEpisodeBrowser = true
+            }
         }
     }
 
@@ -792,6 +814,8 @@ struct SeriesDetailView: View {
         guard !suppressesDuplicateHeroFocus else { return }
         SeriesFocusTrace.record("heroFocusAccepted")
         rearmEpisodeRailOnHeroFocusIfNeeded()
+        browserPresentationGeneration &+= 1
+        browserPresentationSettled = false
         browserEntry = .hero
         seasonBarEngaged = false
         browserHoldsFocus = false
@@ -1244,6 +1268,10 @@ struct SeriesDetailView: View {
         #endif
     }
 
+    private var showsLowerDetailContent: Bool {
+        hasPresentedEpisodeBrowser || entersBrowserOnOpen
+    }
+
     private func enterEpisodeBrowser(isPlaceholder: Bool, onFocusEntered: () -> Void) {
         guard !ignoresSystemFocusMoves else { return }
         let shouldReveal = !browserHoldsFocus || !recedeModel.isReceded
@@ -1252,6 +1280,9 @@ struct SeriesDetailView: View {
         browserHoldsFocus = true
         if !isPlaceholder { hasUserDirectedFocus = true }
         hasSettledOpeningFocus = true
+        if browserPresentationSettled && recedeModel.isReceded {
+            hasPresentedEpisodeBrowser = true
+        }
         if shouldReveal { onFocusEntered() }
     }
 

@@ -470,11 +470,14 @@ The user-driven trace captured a `UIKitFocusableFillerItem` owned by the page's
 scroll view taking Down while the entrance gate was active. Page scrolling is
 disabled during that entrance, then restored on completion; hiding or disabling
 lower leaf content did not remove the scroll container's filler.
-The browser and lower detail content mount after the whole-show entrance gate
-opens; until then the page contains only its viewport-height hero, without a
-scrollable blank lower region. Episode loading continues independently. Explicit
-episode entry and Reduce Motion keep their immediate browser behavior. No extra
-hosting controller divides native button focus from the original page tree.
+The browser stays mounted for its staged episode reveal. Lower detail content
+first mounts after the episode row has received focus and the browser's recede
+animation has completed, so rapid early Down presses cannot enter its blank
+scroll region. The page remains at least one viewport tall before that reveal.
+Explicit episode entry keeps its immediate browser behavior; Reduce Motion uses
+an immediate completion. Once revealed, lower content remains mounted so later
+navigation preserves its state. No extra hosting controller divides native
+button focus from the original page tree.
 
 `NativePosterComparisonTests` is an opt-in, simulator-only comparison, enabled by
 `TEST_RUNNER_PLOZZ_NATIVE_POSTER_COMPARISON=1` on `PlozzHomeRemoteTests`. It captures
