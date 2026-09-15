@@ -596,7 +596,7 @@ struct SeriesDetailView: View {
                         seriesRecedeModel: recedeModel,
                         revealsSeriesCastWithoutBrowser: revealsCastWithoutBrowser,
                         suppressesFocus: hasChildOnTop || holdsHeroFocusDuringEntrance
-                            || (browserEntry == .hero && episodeEntryPhase != .ready),
+                            || browserEntry != .browser || seasonBarEngaged,
                         onCastFocusEntered: {
                             seasonBarEngaged = false
                             // Cast/Related sit BELOW the browser, so the page

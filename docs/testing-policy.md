@@ -445,7 +445,9 @@ and its artwork badges, not the title or synopsis below it. The episode thumbnai
 and interactive loading/retry placeholder use TVPosterView under System.
 Loading, empty, and retry entry states bypass the episode reveal stage and
 remain focusable while the cinematic entrance gates loaded episodes.
-Lower detail sections cannot take initial entry while that placeholder is needed.
+Lower detail sections remain outside the focus order until the episode row
+actually receives focus, including after data arrives and while focus is still
+in the season bar. Data readiness alone must not open a path past the row.
 Cast/artist portraits and
 profile avatar controls use the existing circular Outline treatment when System
 is selected. `plozzCircularFocusStyle` scopes both the focus owner and its visuals;
