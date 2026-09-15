@@ -466,10 +466,10 @@ For user-driven diagnosis of mid-animation episode entry, Debug launches with
 playback journal. The trace reports animation/entry state, native focus types,
 ancestor frames and directional presses without labels, media IDs or credentials.
 The observer rejects every press and never requests or redirects focus.
-The user-driven trace captured a `UIKitFocusableFillerItem` below the episode
-browser taking Down while the entrance gate was active. Lower detail content
-uses zero opacity during that entrance, not only disabled buttons, to exclude
-its lazy filler targets while retaining layout.
+The user-driven trace captured a `UIKitFocusableFillerItem` owned by the page's
+scroll view taking Down while the entrance gate was active. Page scrolling is
+disabled during that entrance, then restored on completion; hiding or disabling
+lower leaf content did not remove the scroll container's filler.
 
 `NativePosterComparisonTests` is an opt-in, simulator-only comparison, enabled by
 `TEST_RUNNER_PLOZZ_NATIVE_POSTER_COMPARISON=1` on `PlozzHomeRemoteTests`. It captures

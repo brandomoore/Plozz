@@ -622,11 +622,6 @@ struct SeriesDetailView: View {
                         },
                         spoilerSettings: spoilerSettings
                     )
-                        // Disabled lazy content can still publish UIKit filler
-                        // focus items. Alpha-zero excludes those during entrance
-                        // without changing the page's layout or scroll geometry.
-                        .opacity(holdsHeroFocusDuringEntrance ? 0 : 1)
-                        .animation(nil, value: holdsHeroFocusDuringEntrance)
                         // A real layout gap, not a transform: it has to be
                         // truthful for the focus engine at both ends. Resting it
                         // parks the extras below the fold (a show with no cast
@@ -668,6 +663,9 @@ struct SeriesDetailView: View {
                 // sideways and shove focus off the left edge.
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            // The scroll view can focus a synthetic filler even while its real
+            // controls are gated. Do not let early Down scroll through that gap.
+            .scrollDisabled(holdsHeroFocusDuringEntrance)
             // Keep the page pinned to the top on first load. The Play button is
             // bottom-anchored in the full-screen hero, so when initial focus
             // lands on it tvOS auto-scrolls to frame it "comfortably", nudging
