@@ -54,13 +54,13 @@ final class PlozzMetricsTests: XCTestCase {
     }
 
     func testNativeCaptionRestingGapIsCompactWithoutChangingFocusTravel() {
-        XCTAssertEqual(PlozzMetrics.standard.nativePosterCaptionSpacing, 10)
+        XCTAssertEqual(PlozzMetrics.standard.nativePosterCaptionSpacing, 6)
         for density in UIDensity.allCases {
             let metrics = PlozzMetrics(density: density)
-            XCTAssertGreaterThanOrEqual(metrics.nativePosterCaptionSpacing, (10 * metrics.scale).rounded())
+            XCTAssertGreaterThanOrEqual(metrics.nativePosterCaptionSpacing, (6 * metrics.scale).rounded())
             XCTAssertLessThan(
                 metrics.nativePosterCaptionSpacing,
-                max(18 * metrics.scale, metrics.cardTitleFontSize * 0.55).rounded()
+                max(10 * metrics.scale, metrics.cardTitleFontSize * 0.30).rounded()
             )
             XCTAssertEqual(
                 metrics.focusCaptionPush(for: .system),
