@@ -470,8 +470,10 @@ The user-driven trace captured a `UIKitFocusableFillerItem` owned by the page's
 scroll view taking Down while the entrance gate was active. Page scrolling is
 disabled during that entrance, then restored on completion; hiding or disabling
 lower leaf content did not remove the scroll container's filler.
-The browser stays mounted for its staged episode reveal. Lower detail content
-first mounts after the episode row has received focus and the browser's recede
+The browser stays mounted for its staged episode reveal: a 48-point upward
+movement and 0.48-second fade at default timing. Other hero stages and reverse
+timing are unchanged, and entrance input stays gated until that reveal finishes.
+Lower detail content first mounts after the episode row has received focus and the browser's recede
 animation has completed, so rapid early Down presses cannot enter its blank
 scroll region. The page remains at least one viewport tall before that reveal.
 Explicit episode entry keeps its immediate browser behavior; Reduce Motion uses

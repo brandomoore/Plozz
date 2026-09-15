@@ -13,6 +13,7 @@ public struct DetailEntranceTiming: Equatable, Sendable {
     public var artworkPause: TimeInterval = 0.25
     public var stagger: TimeInterval = 0.12
     public var reveal: TimeInterval = 0.24
+    public var episodeReveal: TimeInterval { reveal * 2 }
     public var reverse: TimeInterval = 0.28
 
     public init() {}
@@ -22,6 +23,7 @@ enum DetailEntranceMotion {
     static let pickup = UnitPoint(x: 0.22, y: 0.64)
     static let landing = UnitPoint(x: 0.30, y: 1)
     static let foregroundTravel: CGFloat = 10
+    static let episodeTravel: CGFloat = 48
 
     static func reveal(duration: TimeInterval) -> Animation {
         .timingCurve(pickup.x, pickup.y, landing.x, landing.y, duration: duration)
@@ -874,7 +876,7 @@ public final class TVDetailEntranceSession {
                 try await Task.sleep(for: .seconds(timing.reveal))
                 if revealsEpisodesLast {
                     stage = .episodes
-                    try await Task.sleep(for: .seconds(timing.reveal))
+                    try await Task.sleep(for: .seconds(timing.episodeReveal))
                 }
                 stage = .complete
                 backdropRequest = nil
@@ -1182,9 +1184,12 @@ private struct TVDetailStageReveal: ViewModifier {
     func body(content: Content) -> some View {
         let visible = reduceMotion
             || (session.map { $0.stage >= stage && !$0.isClosing } ?? true)
-        let duration = session?.isClosing == true ? 0.12 : (session?.timing.reveal ?? 0)
+        let isEpisodeEntrance = stage == .episodes && session?.isClosing != true
+        let reveal = isEpisodeEntrance ? session?.timing.episodeReveal : session?.timing.reveal
+        let duration = session?.isClosing == true ? 0.12 : (reveal ?? 0)
+        let travel = isEpisodeEntrance ? DetailEntranceMotion.episodeTravel : DetailEntranceMotion.foregroundTravel
         content
-            .offset(y: visible ? 0 : DetailEntranceMotion.foregroundTravel)
+            .offset(y: visible ? 0 : travel)
             .mask { Rectangle().padding(-600).opacity(visible ? 1 : 0) }
             .animation(
                 reduceMotion ? nil : session?.isClosing == true
