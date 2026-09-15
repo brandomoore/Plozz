@@ -404,6 +404,15 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
 
         override var preferredFocusEnvironments: [any UIFocusEnvironment] { [poster] }
 
+        func posterDidLayout() {
+            let intrinsic = poster.intrinsicContentSize
+            let size = CGSize(width: ceil(intrinsic.width), height: ceil(intrinsic.height))
+            guard poster.bounds.size != size else { return }
+            // TVUIKit can settle its focus clearance during the first native layout.
+            invalidateIntrinsicContentSize()
+            setNeedsLayout()
+        }
+
         override func layoutSubviews() {
             super.layoutSubviews()
             // Native focus margins are drawing clearance, not more artwork width.
@@ -428,6 +437,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
 
         override func layoutSubviews() {
             super.layoutSubviews()
+            (superview as? Container)?.posterDidLayout()
             onAvailable?()
         }
 

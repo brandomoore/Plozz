@@ -131,6 +131,16 @@ No timer emits artificial progress while an operation is stuck.
 
 ### Simulator readiness and authoritative results
 
+The focus host and test bundle share one `AppShell` package product. Overlapping
+direct products can promote `CoreUI` into a separate framework on XCTest's
+`DYLD_FRAMEWORK_PATH`, shadowing Apple's private framework and crashing UIKit
+asset loading; different package roots can also duplicate runtime classes.
+The default hosted build directory is `focus-shared-root-derived-data`, keeping
+stale frameworks from the old graph out of the loader path without deleting them.
+Hosted runs preserve raw output, reuse an explicitly configured package checkout,
+and disable automatic system-diagnostic collection without skipping tests or
+result bundles. An unreadable result preserves the original command failure.
+
 Before starting XCTest, the runner waits for `simctl bootstatus -b` to finish,
 including BackBoard and the system app. A simulator marked Booted can still be
 initializing those services; starting SwiftUI image rendering too early can
@@ -440,6 +450,8 @@ bounded, stable card dimensions. `NativeFocusRequestHostedTests` compares the
 actual resting `contentView` bounds against its SwiftUI layout container.
 Native card measurement also supports unspecified-width proposals from horizontal
 music rails, using the content's intrinsic size rather than a zero-sized container.
+Poster containers remeasure when TVUIKit settles its intrinsic focus clearance
+during native layout, preserving artwork height as well as width.
 Fixed-width information cards retain their constrained measurement path.
 System-focus music artwork uses the same native poster and separate caption
 components as video cards, without a generic card platter behind the captions.
