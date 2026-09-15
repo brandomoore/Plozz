@@ -84,7 +84,9 @@ public struct LiveTVPortablePendingSources: View {
                 directory: directory, profileID: profileID,
                 namespace: profileID == profiles?.rootNamespaceOwnerID ? nil : profileID
             )
-            let report = adapter.isEnabled ? try adapter.pending(sourceStore: sourceStore) : LiveTVPortableImport()
+            let report = adapter.isEnabled
+                ? try adapter.pending(sourceStore: sourceStore, includeLibrarySnapshots: false)
+                : LiveTVPortableImport()
             pending = report.pendingPlaylists
             localFiles = report.localFileSources
             unavailable = false
@@ -132,7 +134,9 @@ private struct LiveTVPortablePlaylistSetup: View {
                     namespace: profileID == profiles.rootNamespaceOwnerID ? nil : profileID
                 )
                 guard adapter.isEnabled,
-                      try adapter.pending(sourceStore: sourceStore).pendingPlaylists[sourceID] == descriptor else {
+                      try adapter.pending(
+                          sourceStore: sourceStore, includeLibrarySnapshots: false
+                      ).pendingPlaylists[sourceID] == descriptor else {
                     throw LiveTVSourcesStoreError.saveFailed
                 }
                 var configuration = try sourceStore.load()

@@ -411,6 +411,17 @@ final class LiveTVPortableSyncTests: XCTestCase {
         let records = try sender.adapter.capture(
             sourceStore: sender.sources, libraryDefinitions: [definition], snapshots: [snapshot], fallback: [:]
         )
+        let prepared = try LiveTVPortableLibraryExport(definitions: [definition], snapshots: [snapshot])
+        XCTAssertEqual(try sender.adapter.capture(
+            sourceStore: sender.sources, libraryDefinitions: [definition], snapshots: [snapshot],
+            preparedLibrary: prepared, fallback: records
+        ), records)
+        var changedDefinition = definition
+        changedDefinition.isEnabled = false
+        XCTAssertThrowsError(try sender.adapter.capture(
+            sourceStore: sender.sources, libraryDefinitions: [changedDefinition], snapshots: [snapshot],
+            preparedLibrary: prepared, fallback: records
+        ))
         let definitionKey = recordKey(.library, definition.id.uuidString)
         let definitionBytes = try XCTUnwrap(records[definitionKey.recordName])
         let partial = try receiver.adapter.apply(
@@ -422,10 +433,17 @@ final class LiveTVPortableSyncTests: XCTestCase {
             sourceStore: receiver.sources, libraryDefinitions: [], fallback: [definitionKey.recordName: definitionBytes]
         )
         XCTAssertEqual(pendingCapture[definitionKey.recordName], definitionBytes)
-        let complete = try receiver.adapter.apply(records.mapValues(Optional.some), sourceStore: receiver.sources)
+        let unresolved = try receiver.adapter.apply(
+            records.mapValues(Optional.some), sourceStore: receiver.sources, includeLibrarySnapshots: false
+        )
+        XCTAssertTrue(unresolved.snapshots.isEmpty)
+        let complete = unresolved.resolvingLibrarySnapshots()
         XCTAssertEqual(complete.libraryDefinitions, [definition])
         XCTAssertEqual(complete.snapshots, [snapshot])
         XCTAssertTrue(complete.incompleteSnapshotIDs.isEmpty)
+        XCTAssertEqual(try receiver.adapter.pending(
+            sourceStore: receiver.sources, includeLibrarySnapshots: false
+        ).resolvingLibrarySnapshots().snapshots, complete.snapshots)
         try receiver.adapter.acknowledgeLibraries([definition.id])
         XCTAssertTrue(try receiver.adapter.pending(sourceStore: receiver.sources).libraryDefinitions.isEmpty)
         _ = try sender.adapter.apply(

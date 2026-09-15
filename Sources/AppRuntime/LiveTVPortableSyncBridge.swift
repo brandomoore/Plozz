@@ -29,6 +29,7 @@ public final class LiveTVPortableSyncBridge {
     @ObservationIgnored private let guideCache: @MainActor (String) -> LiveTVIndexedCache?
     @ObservationIgnored private let captureIdentityHints: @MainActor (String) async throws -> [String: LiveTVPortableChannelIdentityHint]?
     @ObservationIgnored private let applyIdentityHints: @MainActor (String, [String: LiveTVPortableChannelIdentityHint?]) async throws -> Bool
+    @ObservationIgnored private let libraryPreparation = LiveTVPortableLibraryPreparation()
     @ObservationIgnored private var operationInProgress = false
     @ObservationIgnored private var operationWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var operationAuthority: [String: ProfileAuthority] = [:]
@@ -94,15 +95,17 @@ public final class LiveTVPortableSyncBridge {
             guard mayApply(profile.id, epoch: epoch) else { continue }
             do {
                 var libraryIssue: Status?
-                let deferred = try adapter.pending(sourceStore: sourceStore(profile.id))
+                let deferred = try await pendingLibraryState(adapter, profileID: profile.id)
+                guard mayApply(profile.id, epoch: epoch) else { continue }
                 do { try await applyLibrary(deferred, profileID: profile.id, epoch: epoch) }
                 catch { libraryIssue = Self.libraryStatus(for: error) }
                 try await applyDeferredIdentities(adapter, profileID: profile.id, epoch: epoch)
                 try await applyDeferredMappings(adapter, profileID: profile.id, epoch: epoch)
                 guard mayApply(profile.id, epoch: epoch) else { continue }
-                var libraryState: LibraryChannelPortableState?
+                var libraryState: LiveTVPortableLibraryExport?
                 do { libraryState = try await captureLibraryState(profileID: profile.id, epoch: epoch) }
                 catch { libraryIssue = Self.libraryStatus(for: error) }
+                guard mayApply(profile.id, epoch: epoch) else { continue }
                 let cache = guideCache(profile.id)
                 let mappingAuthority = try cache.map { _ in try guideAuthority(profile.id) }
                 let mappings: LiveTVPortableGuideMappingExport?
@@ -117,13 +120,14 @@ public final class LiveTVPortableSyncBridge {
                     guard try guideAuthority(profile.id) == mappingAuthority else { continue }
                 }
                 if let state = libraryState,
-                   try definitions?(profile.id).load() != state.definitions {
+                   try definitions?(profile.id).load() != state.state.definitions {
                     libraryState = nil
                     libraryIssue = .pendingLibraryReview
                 }
                 let captured = try adapter.capture(
-                    sourceStore: sourceStore(profile.id), libraryDefinitions: libraryState?.definitions,
-                    snapshots: libraryState?.snapshots ?? [], guideMappings: mappings?.mappings,
+                    sourceStore: sourceStore(profile.id), libraryDefinitions: libraryState?.state.definitions,
+                    snapshots: libraryState?.state.snapshots ?? [], preparedLibrary: libraryState,
+                    guideMappings: mappings?.mappings,
                     unresolvedGuideMappingIDs: mappings?.unresolvedChannelIDs ?? [],
                     identityHints: identities?.filter {
                         mappingAuthority?.authorization.allowsPlaylist($0.value.sourceID) ?? true
@@ -132,7 +136,8 @@ public final class LiveTVPortableSyncBridge {
                 try await applyDeferredIdentities(adapter, profileID: profile.id, epoch: epoch)
                 try await applyDeferredMappings(adapter, profileID: profile.id, epoch: epoch)
                 guard mayApply(profile.id, epoch: epoch) else { continue }
-                let pending = try adapter.pending(sourceStore: sourceStore(profile.id))
+                let pending = try await pendingLibraryState(adapter, profileID: profile.id)
+                guard mayApply(profile.id, epoch: epoch) else { continue }
                 do { try await applyLibrary(pending, profileID: profile.id, epoch: epoch) }
                 catch { libraryIssue = Self.libraryStatus(for: error) }
                 guard mayApply(profile.id, epoch: epoch) else { continue }
@@ -140,7 +145,7 @@ public final class LiveTVPortableSyncBridge {
                 updateStatus(pending, profileID: profile.id)
                 if let libraryIssue { statuses[profile.id] = libraryIssue }
             } catch {
-                statuses[profile.id] = .unavailable
+                if mayApply(profile.id, epoch: epoch) { statuses[profile.id] = .unavailable }
             }
         }
         guard epoch == LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults) else { return [:] }
@@ -175,7 +180,14 @@ public final class LiveTVPortableSyncBridge {
             }
             guard mayApply(profileID, epoch: epoch) else { continue }
             do {
-                let report = try adapter.apply(changes, sourceStore: sourceStore(profileID))
+                let pending = try adapter.apply(
+                    changes, sourceStore: sourceStore(profileID), includeLibrarySnapshots: false
+                )
+                if let definitions {
+                    try applyLibraryRevocations(pending, profileID: profileID, store: definitions(profileID))
+                }
+                let report = await libraryPreparation.resolve(pending)
+                guard mayApply(profileID, epoch: epoch) else { continue }
                 try await applyDeferredIdentities(adapter, profileID: profileID, epoch: epoch)
                 try await applyDeferredMappings(adapter, profileID: profileID, epoch: epoch)
                 try await applyLibrary(report, profileID: profileID, epoch: epoch)
@@ -216,7 +228,19 @@ public final class LiveTVPortableSyncBridge {
 
     public var stateDirectory: URL { directory }
 
-    private func captureLibraryState(profileID: String, epoch: String) async throws -> LibraryChannelPortableState? {
+    private func pendingLibraryState(
+        _ adapter: LiveTVPortableSyncAdapter, profileID: String
+    ) async throws -> LiveTVPortableImport {
+        let pending = try adapter.pending(
+            sourceStore: sourceStore(profileID), includeLibrarySnapshots: false
+        )
+        if let definitions {
+            try applyLibraryRevocations(pending, profileID: profileID, store: definitions(profileID))
+        }
+        return await libraryPreparation.resolve(pending)
+    }
+
+    private func captureLibraryState(profileID: String, epoch: String) async throws -> LiveTVPortableLibraryExport? {
         guard let definitions else { return nil }
         let store = definitions(profileID)
         let original = try store.load()
@@ -238,7 +262,10 @@ public final class LiveTVPortableSyncBridge {
         }
         guard mayApply(profileID, epoch: epoch) else { throw CancellationError() }
         guard try store.load() == original else { throw LibraryChannelError.publicationConflict }
-        return try LibraryChannelPortableState(definitions: original, snapshots: values)
+        let prepared = try await libraryPreparation.prepare(definitions: original, snapshots: values)
+        guard mayApply(profileID, epoch: epoch) else { throw CancellationError() }
+        guard try store.load() == original else { throw LibraryChannelError.publicationConflict }
+        return prepared
     }
 
     private func applyLibrary(_ report: LiveTVPortableImport, profileID: String, epoch: String) async throws {
@@ -267,7 +294,8 @@ public final class LiveTVPortableSyncBridge {
         let original = try store.load()
         let incomingIDs = Set(report.libraryDefinitions.flatMap(\.revisions).map(\.snapshotID))
         let incoming = report.snapshots.filter { incomingIDs.contains($0.id) }
-        _ = try LibraryChannelPortableState(definitions: report.libraryDefinitions, snapshots: incoming)
+        try await libraryPreparation.validate(definitions: report.libraryDefinitions, snapshots: incoming)
+        guard mayApply(profileID, epoch: epoch) else { return }
         let required = Set(original.flatMap(\.revisions).map(\.snapshotID)).union(incomingIDs)
         guard required.count <= LibraryChannelPortableState.maximumDefinitions * 32 else {
             throw LibraryChannelError.catalogTooLarge
@@ -296,8 +324,9 @@ public final class LiveTVPortableSyncBridge {
         )
         do {
             if mayApply(profileID, epoch: epoch), !Task.isCancelled {
-                try commitLibrary(
-                    report, profileID: profileID, store: store, original: original, snapshots: indexed
+                try await commitLibrary(
+                    report, profileID: profileID, epoch: epoch,
+                    store: store, original: original, snapshots: indexed
                 )
             }
         } catch {
@@ -331,15 +360,18 @@ public final class LiveTVPortableSyncBridge {
     }
 
     private func commitLibrary(
-        _ report: LiveTVPortableImport, profileID: String, store: any LibraryChannelDefinitionStoring,
+        _ report: LiveTVPortableImport, profileID: String, epoch: String,
+        store: any LibraryChannelDefinitionStoring,
         original: [LibraryChannelDefinition], snapshots: [UUID: LibraryChannelSnapshot]
-    ) throws {
+    ) async throws {
         let latest = try store.load()
         guard latest == original else { throw LibraryChannelError.publicationConflict }
-        let current = try LibraryChannelImportMerger.merge(
+        let current = try await libraryPreparation.merge(
             profileID: profileID, current: latest, incoming: report.libraryDefinitions,
             deletedIDs: report.deletedLibraryIDs, snapshots: snapshots
         )
+        guard mayApply(profileID, epoch: epoch) else { return }
+        guard try store.load() == latest else { throw LibraryChannelError.publicationConflict }
         if current != latest {
             try saveLibrary(current, replacing: latest, store: store)
         }
@@ -409,7 +441,8 @@ public final class LiveTVPortableSyncBridge {
     }
 
     private func mayApply(_ profileID: String, epoch: String) -> Bool {
-        epoch == LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults)
+        !Task.isCancelled
+            && epoch == LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults)
             && profiles.profiles.contains { $0.id == profileID }
             && adapter(profileID).isEnabled
             && operationAuthority[profileID] != nil
@@ -513,6 +546,39 @@ public final class LiveTVPortableSyncBridge {
     private var metadataDirectory: URL {
         directory.appendingPathComponent(
             LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults), isDirectory: true
+        )
+    }
+}
+
+/// Only immutable inputs cross this boundary. Consent checks, source changes,
+/// acknowledgements and compare-and-swap publication stay on the main actor.
+private actor LiveTVPortableLibraryPreparation {
+    func prepare(
+        definitions: [LibraryChannelDefinition], snapshots: [LibraryChannelSnapshot]
+    ) throws -> LiveTVPortableLibraryExport {
+        try Task.checkCancellation()
+        return try LiveTVPortableLibraryExport(definitions: definitions, snapshots: snapshots)
+    }
+
+    func resolve(_ pending: LiveTVPortableImport) -> LiveTVPortableImport {
+        pending.resolvingLibrarySnapshots()
+    }
+
+    func validate(
+        definitions: [LibraryChannelDefinition], snapshots: [LibraryChannelSnapshot]
+    ) throws {
+        try Task.checkCancellation()
+        _ = try LibraryChannelPortableState(definitions: definitions, snapshots: snapshots)
+    }
+
+    func merge(
+        profileID: String, current: [LibraryChannelDefinition], incoming: [LibraryChannelDefinition],
+        deletedIDs: Set<UUID>, snapshots: [UUID: LibraryChannelSnapshot]
+    ) throws -> [LibraryChannelDefinition] {
+        try Task.checkCancellation()
+        return try LibraryChannelImportMerger.merge(
+            profileID: profileID, current: current, incoming: incoming,
+            deletedIDs: deletedIDs, snapshots: snapshots
         )
     }
 }

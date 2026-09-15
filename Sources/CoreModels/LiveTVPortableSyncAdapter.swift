@@ -1,6 +1,39 @@
 import CryptoKit
 import Foundation
 
+/// Immutable, validated schedule inputs and their encoded cloud records.
+/// Prepare this away from the main actor; capture only commits the result.
+public struct LiveTVPortableLibraryExport: Sendable {
+    public let state: LibraryChannelPortableState
+    fileprivate let snapshotRecords: [String: SnapshotRecord]
+
+    fileprivate struct SnapshotRecord: Sendable {
+        let value: LiveTVPortableRecord
+        let bytes: Data
+    }
+
+    public init(definitions: [LibraryChannelDefinition], snapshots: [LibraryChannelSnapshot]) throws {
+        state = try LibraryChannelPortableState(definitions: definitions, snapshots: snapshots)
+        var records: [String: SnapshotRecord] = [:]
+        var byteCount = 0
+        for snapshot in snapshots {
+            try Task.checkCancellation()
+            guard let profileID = definitions.first?.profileID else {
+                throw LibraryChannelError.invalidSnapshot
+            }
+            for part in try LiveTVPortableSnapshots.partition(snapshot) {
+                let record = LiveTVPortableRecord(snapshot: part)
+                try record.validate(key: .init(profileID: profileID, kind: .snapshot, entityID: part.entityID))
+                let bytes = try record.encoded()
+                byteCount += bytes.count
+                guard byteCount <= 64 * 1_024 * 1_024 else { throw LiveTVPortableStateError.tooLarge }
+                records[part.entityID] = SnapshotRecord(value: record, bytes: bytes)
+            }
+        }
+        snapshotRecords = records
+    }
+}
+
 public struct LiveTVPortableImport: Sendable {
     public var appliedCount = 0
     public var rejectedCount = 0
@@ -14,8 +47,32 @@ public struct LiveTVPortableImport: Sendable {
     public var incompleteSnapshotIDs: Set<UUID> = []
     public var guideMappings: [String: LiveTVPortableGuideMapping?] = [:]
     public var identityHints: [String: LiveTVPortableChannelIdentityHint?] = [:]
+    fileprivate var snapshotParts: [UUID: [LiveTVPortableSnapshotPart]]?
+    fileprivate var pendingDefinitions: [LibraryChannelDefinition] = []
 
     public init() {}
+
+    /// Reconstructs immutable inputs without reading or changing local stores.
+    public func resolvingLibrarySnapshots() -> Self {
+        guard let snapshotParts else { return self }
+        var result = self
+        var complete: [UUID: LibraryChannelSnapshot] = [:]
+        let requiredSnapshots = Set(pendingDefinitions.flatMap(\.revisions).map(\.snapshotID))
+        for (id, pieces) in snapshotParts where requiredSnapshots.contains(id) {
+            do { complete[id] = try LiveTVPortableSnapshots.assemble(pieces) }
+            catch { result.incompleteSnapshotIDs.insert(id) }
+        }
+        for definition in pendingDefinitions {
+            let required = Set(definition.revisions.map(\.snapshotID))
+            let missing = required.subtracting(complete.keys)
+            result.incompleteSnapshotIDs.formUnion(missing)
+            if missing.isEmpty { result.libraryDefinitions.append(definition) }
+        }
+        result.snapshots = complete.values.sorted { $0.id.uuidString < $1.id.uuidString }
+        result.snapshotParts = nil
+        result.pendingDefinitions = []
+        return result
+    }
 }
 
 /// Adapter for the existing SyncLedger/CloudConfigSyncService contract. The
@@ -82,6 +139,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         sourceStore: any LiveTVSourcesStoring,
         libraryDefinitions: [LibraryChannelDefinition]? = nil,
         snapshots: [LibraryChannelSnapshot] = [],
+        preparedLibrary: LiveTVPortableLibraryExport? = nil,
         guideMappings: [String: LiveTVPortableGuideMapping]? = nil,
         unresolvedGuideMappingIDs: Set<String> = [],
         identityHints: [String: LiveTVPortableChannelIdentityHint]? = nil,
@@ -89,10 +147,19 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
     ) throws -> [SyncRecordID: Data] {
         let baseline = scoped(fallback)
         guard isEnabled else { return baseline }
-        if let libraryDefinitions {
-            _ = try LibraryChannelPortableState(definitions: libraryDefinitions, snapshots: snapshots)
+        let libraryExport: LiveTVPortableLibraryExport?
+        if let preparedLibrary {
+            guard libraryDefinitions == preparedLibrary.state.definitions,
+                  snapshots == preparedLibrary.state.snapshots else {
+                throw LibraryChannelError.invalidSnapshot
+            }
+            libraryExport = preparedLibrary
+        } else if let libraryDefinitions {
+            libraryExport = try LiveTVPortableLibraryExport(definitions: libraryDefinitions, snapshots: snapshots)
         } else if !snapshots.isEmpty {
             throw LibraryChannelError.snapshotUnavailable
+        } else {
+            libraryExport = nil
         }
         let shareableMappings = guideMappings?.filter { $0.value.isSafe }
         Self.lock.lock()
@@ -142,7 +209,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         // Replay missed values once per opt-in, except records already applied
         // under this consent. An older queued capture cannot roll those back.
         if !hydration.isEmpty {
-            _ = try apply(hydration, sourceStore: sourceStore)
+            _ = try apply(hydration, sourceStore: sourceStore, includeLibrarySnapshots: false)
             records = try readRecords()
         }
         for (name, value) in baseline where records[name] == nil {
@@ -234,10 +301,11 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             }
             observed.libraryIDs = ids
         }
-        for snapshot in snapshots {
-            for part in try LiveTVPortableSnapshots.partition(snapshot) {
-                try put(.init(snapshot: part), key: key(.snapshot, part.entityID), into: &records)
-            }
+        for (entityID, prepared) in libraryExport?.snapshotRecords ?? [:] {
+            let key = key(.snapshot, entityID)
+            if let original = records[key.recordName],
+               try LiveTVPortableRecord.decode(original, key: key) == prepared.value { continue }
+            records[key.recordName] = prepared.bytes
         }
         observed.hydratedConsentRevision = consentRevision
         try write(records)
@@ -248,7 +316,8 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
     /// Applies only this profile's explicit records. Playlist descriptors without
     /// local secure setup remain pending; no URL or parent grant is synthesized.
     public func apply(
-        _ changes: SyncLocalChanges, sourceStore: any LiveTVSourcesStoring
+        _ changes: SyncLocalChanges, sourceStore: any LiveTVSourcesStoring,
+        includeLibrarySnapshots: Bool = true
     ) throws -> LiveTVPortableImport {
         guard isEnabled else { return LiveTVPortableImport() }
         Self.lock.lock()
@@ -396,7 +465,10 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         }
         try writeObserved(observed)
         report.appliedCount = accepted.count
-        try populatePending(records, configuration: configuration, report: &report)
+        try populatePending(
+            records, configuration: configuration, report: &report,
+            includeLibrarySnapshots: includeLibrarySnapshots
+        )
         if report.appliedCount > 0 {
             NotificationCenter.default.post(name: .plozzLiveTVPortableStateDidChange, object: profileID)
             if originalConfiguration != configuration || updatedPreferences != savedPreferences || suppressionDidChange {
@@ -406,11 +478,16 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         return report
     }
 
-    public func pending(sourceStore: any LiveTVSourcesStoring) throws -> LiveTVPortableImport {
+    public func pending(
+        sourceStore: any LiveTVSourcesStoring, includeLibrarySnapshots: Bool = true
+    ) throws -> LiveTVPortableImport {
         Self.lock.lock()
         defer { Self.lock.unlock() }
         var report = LiveTVPortableImport()
-        try populatePending(readRecords(), configuration: sourceStore.load(), report: &report)
+        try populatePending(
+            readRecords(), configuration: sourceStore.load(), report: &report,
+            includeLibrarySnapshots: includeLibrarySnapshots
+        )
         return report
     }
 
@@ -515,7 +592,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
 
     private func populatePending(
         _ records: [String: Data], configuration: LiveTVSourcesConfiguration,
-        report: inout LiveTVPortableImport
+        report: inout LiveTVPortableImport, includeLibrarySnapshots: Bool
     ) throws {
         var parts: [UUID: [LiveTVPortableSnapshotPart]] = [:]
         var definitions: [LibraryChannelDefinition] = []
@@ -544,19 +621,9 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             }
             if let part = record.snapshot { parts[part.snapshotID, default: []].append(part) }
         }
-        var complete: [UUID: LibraryChannelSnapshot] = [:]
-        let requiredSnapshots = Set(definitions.flatMap(\.revisions).map(\.snapshotID))
-        for (id, pieces) in parts where requiredSnapshots.contains(id) {
-            do { complete[id] = try LiveTVPortableSnapshots.assemble(pieces) }
-            catch { report.incompleteSnapshotIDs.insert(id) }
-        }
-        for definition in definitions {
-            let required = Set(definition.revisions.map(\.snapshotID))
-            let missing = required.subtracting(complete.keys)
-            report.incompleteSnapshotIDs.formUnion(missing)
-            if missing.isEmpty { report.libraryDefinitions.append(definition) }
-        }
-        report.snapshots = complete.values.sorted { $0.id.uuidString < $1.id.uuidString }
+        report.snapshotParts = parts
+        report.pendingDefinitions = definitions
+        if includeLibrarySnapshots { report = report.resolvingLibrarySnapshots() }
     }
 
     private func localValueIsUnchanged(

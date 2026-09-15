@@ -755,6 +755,17 @@ snapshot transfers remain pending. Identity changes are deferred while
 playback holds their identities, while authorization revocation takes effect
 immediately. Each device still configures and authorizes its own sources.
 
+Portable library schedule validation, snapshot assembly/encoding and merge
+planning run on a serial worker actor using immutable inputs. Prepared exports
+are reused during capture instead of rebuilding schedules on the main actor.
+Consent, source changes, acknowledgements and definition publication remain
+main-actor-owned. Every worker result is checked against the current profile,
+account epoch and consent revision; definition publication also rechecks the
+original definitions before compare-and-swap. Disabling sync or opting in again
+cannot authorize an older preparation. Pending-source settings read descriptors
+without reconstructing library schedules, and revocations do not wait for that
+reconstruction.
+
 Channel checks use bounded probes and keep unsupported, blocked and uncertain
 results distinct. Only confidently missing streams can be automatically hidden;
 restoring a scan-hidden channel does not change a manual hide. Scanner network
