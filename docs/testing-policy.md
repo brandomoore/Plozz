@@ -418,9 +418,9 @@ Outline treatment: the legacy monogram adapter's focused image shifts, expands
 into its caption, and gains a square platter. This exception is scoped to cast
 cards; poster/native information controls and saved Highlight/Outline choices
 are unchanged. Regular media poster captions retain the existing density-aware
-title/subtitle font sizes. Captions reserve at least 6 density-scaled points
-below the native image's reserved focus frame (more for larger type).
-This resting spacing is constant; focus travel has its own reserved space.
+title/subtitle font sizes. Captions add no resting gap below the native image's
+reserved focus frame. This zero-point gap is constant across display densities;
+focus travel has its own reserved space.
 Neither animation progress nor native footer insets resize the caption layout.
 Rows that reserve a subtitle line keep it even when the year/subtitle is absent,
 so folder and media cards retain equal heights. Captionless episode controls

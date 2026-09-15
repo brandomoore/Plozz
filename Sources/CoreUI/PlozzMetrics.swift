@@ -264,11 +264,9 @@ public struct PlozzMetrics: Equatable, Sendable {
         PlozzTheme.Metrics.cardCaptionSpacing + landscapeCaptionInset * PlozzTheme.Metrics.captionTopClearanceFactor
     }
 
-    /// Resting caption clearance below the native image control's reserved focus
-    /// frame. Caption travel is reserved separately, without resizing its slot.
-    public var nativePosterCaptionSpacing: CGFloat {
-        max(6 * scale, cardTitleFontSize * 0.18).rounded()
-    }
+    /// No extra resting gap beyond the native image's reserved focus frame.
+    /// Caption travel is reserved separately, without resizing its slot.
+    public var nativePosterCaptionSpacing: CGFloat { 0 }
 
     /// - Parameter dynamicTypeSize: the reader's current text size. Pass the
     ///   view's `\.dynamicTypeSize` so the metrics REBUILD when it changes —
