@@ -438,6 +438,8 @@ System bypasses app-defined focus surfaces, edge strokes, resting shadows and
 focused z-index changes. Custom Highlight/Outline retain their styling.
 Horizontal rails do not clip native focus overflow.
 Caption movement is independent of the genuine native artwork focus effect.
+The season bar's outer reveal mask preserves the same focus overflow as its
+scroll boundary, so a focused edge chip is not clipped during the reveal.
 In the season episode row, the System focus owner encloses only the thumbnail
 and its artwork badges, not the title or synopsis below it. Both the episode
 thumbnail and interactive loading/retry placeholder use TVPosterView, so the
