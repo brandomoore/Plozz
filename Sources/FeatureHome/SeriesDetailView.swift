@@ -622,6 +622,11 @@ struct SeriesDetailView: View {
                         },
                         spoilerSettings: spoilerSettings
                     )
+                        // Disabled lazy content can still publish UIKit filler
+                        // focus items. Alpha-zero excludes those during entrance
+                        // without changing the page's layout or scroll geometry.
+                        .opacity(holdsHeroFocusDuringEntrance ? 0 : 1)
+                        .animation(nil, value: holdsHeroFocusDuringEntrance)
                         // A real layout gap, not a transform: it has to be
                         // truthful for the focus engine at both ends. Resting it
                         // parks the extras below the fold (a show with no cast
