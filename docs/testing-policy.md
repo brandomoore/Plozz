@@ -545,6 +545,17 @@ times, main-thread stalls and memory, while checking clipping, captions and
 Reduce Motion. Keep Home movement/backdrop timings and networking fixed in the
 comparison; do not remove either custom option based on simulator results.
 
+## Managed Jellyfin stream authentication
+
+`ManagedAuthenticatedHTTPResolver` uses Jellyfin's supported `ApiKey` query
+parameter, not the legacy `api_key` spelling that newer servers reject when
+legacy authorization is disabled. This applies to Music, theme audio, video,
+and other managed resources. Emby's `api_key` and Plex's `X-Plex-Token` remain
+unchanged. `ServerToggleTests` asserts the canonical Jellyfin parameter alongside
+fresh-account resolution and stale-credential rejection. On a Jellyfin server
+with legacy authorization disabled, a selected Music track must start and advance
+past 0:00 rather than fail with `NSURLErrorDomain -1013`.
+
 ## Guards that run before the compile
 
 Validate workflow edits with `actionlint .github/workflows/ci.yml` before
