@@ -26,6 +26,10 @@ enum DetailEntranceMotion {
     static let episodeTravel: CGFloat = 48
 
     static func reveal(duration: TimeInterval) -> Animation {
+        .timingCurve(0.42, 0, 0.58, 1, duration: duration)
+    }
+
+    static func episodeReveal(duration: TimeInterval) -> Animation {
         .timingCurve(0.32, 0, 0.20, 1, duration: duration)
     }
 }
@@ -1190,6 +1194,7 @@ private struct TVDetailStageReveal: ViewModifier {
         let travel = isEpisodeEntrance ? DetailEntranceMotion.episodeTravel : DetailEntranceMotion.foregroundTravel
         let animation: Animation? = reduceMotion ? nil
             : session?.isClosing == true ? .easeOut(duration: duration)
+            : isEpisodeEntrance ? DetailEntranceMotion.episodeReveal(duration: duration)
             : DetailEntranceMotion.reveal(duration: duration)
         content
             .offset(y: visible ? 0 : travel)

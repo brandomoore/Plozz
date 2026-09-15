@@ -467,7 +467,7 @@ disabled during that entrance, then restored on completion; hiding or disabling
 lower leaf content did not remove the scroll container's filler.
 The browser stays mounted for its staged episode reveal: a 48-point upward
 movement and 0.72-second fade at default timing, with a gentle start and stop.
-Logo, metadata, and controls use the same softer curve over 0.45 seconds,
+Logo, metadata, and controls use a symmetric ease-in/ease-out curve over 0.45 seconds,
 starting after a 0.10-second artwork pause with 0.09-second stage spacing.
 Episode duration is independent of those foreground timings. Artwork pickup,
 reverse motion, and episode travel remain unchanged, and entrance input stays
