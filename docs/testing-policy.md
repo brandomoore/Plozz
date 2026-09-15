@@ -418,7 +418,7 @@ Outline treatment: the legacy monogram adapter's focused image shifts, expands
 into its caption, and gains a square platter. This exception is scoped to cast
 cards; poster/native information controls and saved Highlight/Outline choices
 are unchanged. Regular media poster captions retain the existing density-aware
-title/subtitle font sizes. Captions reserve at least 18 density-scaled points
+title/subtitle font sizes. Captions reserve at least 10 density-scaled points
 below the native image's reserved focus frame (more for larger type).
 This resting spacing is constant; focus travel has its own reserved space.
 Neither animation progress nor native footer insets resize the caption layout.

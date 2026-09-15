@@ -267,7 +267,7 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// Resting caption clearance below the native image control's reserved focus
     /// frame. Caption travel is reserved separately, without resizing its slot.
     public var nativePosterCaptionSpacing: CGFloat {
-        max(18 * scale, cardTitleFontSize * 0.55).rounded()
+        max(10 * scale, cardTitleFontSize * 0.30).rounded()
     }
 
     /// - Parameter dynamicTypeSize: the reader's current text size. Pass the

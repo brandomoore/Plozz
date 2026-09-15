@@ -53,6 +53,22 @@ final class PlozzMetricsTests: XCTestCase {
         }
     }
 
+    func testNativeCaptionRestingGapIsCompactWithoutChangingFocusTravel() {
+        XCTAssertEqual(PlozzMetrics.standard.nativePosterCaptionSpacing, 10)
+        for density in UIDensity.allCases {
+            let metrics = PlozzMetrics(density: density)
+            XCTAssertGreaterThanOrEqual(metrics.nativePosterCaptionSpacing, (10 * metrics.scale).rounded())
+            XCTAssertLessThan(
+                metrics.nativePosterCaptionSpacing,
+                max(18 * metrics.scale, metrics.cardTitleFontSize * 0.55).rounded()
+            )
+            XCTAssertEqual(
+                metrics.focusCaptionPush(for: .system),
+                (PlozzTheme.Metrics.focusCaptionPush * metrics.scale).rounded()
+            )
+        }
+    }
+
     func testLandscapeSlotIncludesBothInsets() {
         let m = PlozzMetrics(density: .standard)
         XCTAssertEqual(m.landscapeCardSlotWidth, m.landscapeWidth + m.cardInset * 2)
