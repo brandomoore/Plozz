@@ -470,9 +470,10 @@ The user-driven trace captured a `UIKitFocusableFillerItem` owned by the page's
 scroll view taking Down while the entrance gate was active. Page scrolling is
 disabled during that entrance, then restored on completion; hiding or disabling
 lower leaf content did not remove the scroll container's filler.
-`SeriesEntranceFocusGuard` supplies a native downward focus guide back to the
-current hero control while the entrance is gated. It is removed on completion
-or detachment and does not perform after-the-fact focus restoration.
+`SeriesEntranceFocusGuard` hosts the hero under a native focus environment that
+rejects Down through `shouldUpdateFocus` while entrance is gated. It preserves
+the inherited SwiftUI environment and stays mounted when the gate opens.
+There is no redirecting focus guide or after-the-fact focus restoration.
 
 `NativePosterComparisonTests` is an opt-in, simulator-only comparison, enabled by
 `TEST_RUNNER_PLOZZ_NATIVE_POSTER_COMPARISON=1` on `PlozzHomeRemoteTests`. It captures
