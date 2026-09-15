@@ -148,6 +148,24 @@ struct MusicCard: View {
     }
 
     var body: some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect {
+            NativeArtworkPoster(
+                width: scaledWidth, title: title, subtitle: subtitle,
+                placeholderSymbol: systemPlaceholder, focus: $isFocused, action: action
+            ) {
+                artwork
+            }
+        } else {
+            customCard
+        }
+        #else
+        customCard
+        #endif
+    }
+
+    @ViewBuilder
+    private var customCard: some View {
         switch cardStyle {
         case .framed:
             framedCard

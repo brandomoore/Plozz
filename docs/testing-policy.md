@@ -435,6 +435,10 @@ actual resting `contentView` bounds against its SwiftUI layout container.
 Native card measurement also supports unspecified-width proposals from horizontal
 music rails, using the content's intrinsic size rather than a zero-sized container.
 Fixed-width information cards retain their constrained measurement path.
+System-focus music artwork uses the same native poster and separate caption
+components as video cards, without a generic card platter behind the captions.
+Music browse actions are ordinary native buttons rather than cards wrapping
+another background. Music rails allow native focus overflow.
 The standalone native monogram adapter prepares square, circular-alpha image
 data; production avatar controls use the scoped custom treatment instead.
 System bypasses app-defined focus surfaces, edge strokes, resting shadows and
