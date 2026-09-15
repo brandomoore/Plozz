@@ -204,7 +204,6 @@ public struct ItemDetailView: View {
                 // mutations gated off and Request/Trailer left available.
                 container(detail)
             } else if detail.item.kind == .series {
-                SeriesEntranceFocusGuard(isEnabled: initialEpisode == nil && !hasChildOnTop) {
                 SeriesDetailView(
                     series: detail.item,
                     hasChildOnTop: hasChildOnTop,
@@ -240,7 +239,6 @@ public struct ItemDetailView: View {
                     capabilities: capabilities,
                     versionPreferences: versionPreferences
                 )
-                }
             } else if isEmptyContainer(detail) {
                 emptyFolderState(detail.item)
             } else if isLoadingContainer(detail) {

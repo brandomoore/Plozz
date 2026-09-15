@@ -549,6 +549,7 @@ struct SeriesDetailView: View {
                     // to zero, so Cast/Related resumed the flow at the hero's
                     // bottom edge (1080) rather than at the rail's (880) — the
                     // ~200pt void the viewer read as "Related is miles away".
+                    if !holdsHeroFocusDuringEntrance {
                     VStack(alignment: .leading, spacing: 0) {
                     SeriesEpisodeBrowser(
                         series: series,
@@ -648,8 +649,9 @@ struct SeriesDetailView: View {
                             ? 0
                             : SeriesEpisodeBrowserLayout.browserRestDrop
                     )
+                    }
                 }
-                .padding(.bottom, PlozzTheme.Metrics.screenVerticalPadding)
+                .padding(.bottom, holdsHeroFocusDuringEntrance ? 0 : PlozzTheme.Metrics.screenVerticalPadding)
                 // Cap the whole scroll column to the proposed (safe viewport)
                 // width. The hero backdrop still bleeds edge-to-edge via its own
                 // `.ignoresSafeArea`, but its layout footprint — and any over-wide

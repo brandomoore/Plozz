@@ -470,14 +470,11 @@ The user-driven trace captured a `UIKitFocusableFillerItem` owned by the page's
 scroll view taking Down while the entrance gate was active. Page scrolling is
 disabled during that entrance, then restored on completion; hiding or disabling
 lower leaf content did not remove the scroll container's filler.
-`SeriesEntranceFocusGuard` hosts the whole show page under a native focus environment that
-rejects Down through `shouldUpdateFocus` while entrance is gated. It preserves
-the inherited SwiftUI environment and stays mounted when the gate opens.
-There is no redirecting focus guide or after-the-fact focus restoration.
-The concrete series page, hero, and their focus bindings remain in one hosted
-SwiftUI tree instead of isolating the hero behind a second focus boundary.
-The hosting controller keeps one root view; observable content/environment
-updates do not replace that root during a native button's focus transition.
+The browser and lower detail content mount after the whole-show entrance gate
+opens; until then the page contains only its viewport-height hero, without a
+scrollable blank lower region. Episode loading continues independently. Explicit
+episode entry and Reduce Motion keep their immediate browser behavior. No extra
+hosting controller divides native button focus from the original page tree.
 
 `NativePosterComparisonTests` is an opt-in, simulator-only comparison, enabled by
 `TEST_RUNNER_PLOZZ_NATIVE_POSTER_COMPARISON=1` on `PlozzHomeRemoteTests`. It captures
