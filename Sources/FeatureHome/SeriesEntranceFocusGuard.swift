@@ -6,10 +6,16 @@ import UIKit
 #endif
 
 /// A real ancestor of the hero's focus items can veto escape before it occurs.
-struct SeriesEntranceFocusGuard: ViewModifier {
+struct SeriesEntranceFocusGuard<Content: View>: View {
     let isEnabled: Bool
+    let content: Content
 
-    func body(content: Content) -> some View {
+    init(isEnabled: Bool, @ViewBuilder content: () -> Content) {
+        self.isEnabled = isEnabled
+        self.content = content()
+    }
+
+    var body: some View {
         #if os(tvOS)
         SeriesEntranceHeroHost(content: content, blocksDown: isEnabled)
         #else

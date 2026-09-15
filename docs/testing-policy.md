@@ -474,6 +474,8 @@ lower leaf content did not remove the scroll container's filler.
 rejects Down through `shouldUpdateFocus` while entrance is gated. It preserves
 the inherited SwiftUI environment and stays mounted when the gate opens.
 There is no redirecting focus guide or after-the-fact focus restoration.
+The hosted root receives the concrete hero view rather than a ViewModifier
+content proxy, so button focus presentation belongs to the same hosted tree.
 
 `NativePosterComparisonTests` is an opt-in, simulator-only comparison, enabled by
 `TEST_RUNNER_PLOZZ_NATIVE_POSTER_COMPARISON=1` on `PlozzHomeRemoteTests`. It captures
