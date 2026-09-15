@@ -47,7 +47,9 @@ final class DetailReturnFocusRemoteTests: XCTestCase {
 
     private func assertFocused(_ title: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         let focused = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
-        let predicate = NSPredicate { _, _ in focused.exists && focused.staticTexts[title].exists }
+        let predicate = NSPredicate { _, _ in
+            focused.exists && (focused.label == title || focused.staticTexts[title].exists)
+        }
         let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 5)
         if result != .completed {
             let hierarchy = XCTAttachment(string: app.debugDescription)

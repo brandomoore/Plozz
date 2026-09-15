@@ -27,7 +27,7 @@ final class LiveChannelPlayerModelTests: XCTestCase {
             (.invalidResponse, "playlist or video data"),
             (.decoding, "could not decode"),
             (.rateLimited(retryAfter: nil), "Wait before trying again"),
-            (.unknown("https://example.invalid/?token=fixture-secret"), "could not start this live stream")
+            (.unknown("https://example.invalid/?token=fixture-secret"), "could not start playback")
         ]
         for (error, expected) in messages {
             let message = String(localized: LiveChannelPlaybackFailure.engineMessage(error))

@@ -93,6 +93,7 @@ private struct CastMemberCard: View {
             caption: { _ in
                 VStack(spacing: 2) {
                     Text(person.name)
+                        .accessibilityIdentifier("cast-name-\(person.id)")
                         .font(.system(size: 22 * Self.scale, weight: .semibold))
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)

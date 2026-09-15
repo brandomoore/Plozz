@@ -264,6 +264,12 @@ the real Plozzigen decoder in a visible window. It checks nonzero-start readines
 and retained preview/display-policy reloads without mistaking them for movie
 completion. Its temporary media is removed after the test; it is not an HDMI
 hardware acceptance test.
+`GuideVerticalNavigationRemoteTests` uses the production recycled guide with a
+wide movie above shorter programs. It checks current-program Up/Down entry,
+offscreen rows and no-guide content, deliberate horizontal handoff to native
+navigation, and the Now reset. Row focus eligibility participates in the cached
+row revision so only affected visible rows are rebuilt. The collection's optional
+focus delegate has no superclass implementation to call.
 
 Back restores the captured source page behind the moving artwork immediately,
 not a snapshot of the outgoing detail page. The popped content stays hidden
@@ -366,9 +372,30 @@ Posters and `TVCardView` for composed Cards and read-only information. Images ar
 assigned to `TVPosterView.image`, never directly to its internal image view.
 The shared artwork loader remains responsible for caching, provider selection
 and spoiler-safe sources; a stable poster control stays mounted while it loads.
-Native titles/subtitles use the poster's footer. Badges and resume controls live
-in its documented image overlay. Series artwork extension and spoiler blur are
-content preparation only, not focus effects.
+Native poster controls render artwork only, without a TVUIKit footer.
+`SystemPosterCaption` owns the title/subtitle layout below the image;
+actual native focus observations select primary or secondary text brightness.
+Its fixed-height slot reserves the density-scaled caption drop. A separate
+vertical animation moves the labels down on focus and returns them on blur,
+reversing from the current presentation position when interrupted. The model
+always contains the latest focus destination, not a deferred completion write.
+Reduce Motion applies the destination without animation.
+Short captions are centered; overflowing captions reuse the existing marquee
+speeds and reading pauses. Plain labels own a removable Core Animation
+translation with a resting model position, so blur restores the text immediately
+without awaiting a task or retaining an interrupted SwiftUI scroll.
+The native image carries accessible title/subtitle metadata, while the visible
+caption is hidden from accessibility to avoid duplicate announcements.
+Badges and resume controls live in the documented image overlay. Series artwork
+extension and spoiler blur are content preparation only, not focus effects.
+`PosterCaptionRemoteTests` measures painted text bands in screenshots before
+and after held/reversed navigation and metadata changes. It requires inactive
+captions to be dim, the focused caption to be bright, and title/year baselines
+to follow only their own focus, returning fully after rapid reversals.
+A long-title case verifies that the marquee
+still moves, resets on blur, and does not widen the artwork. Only the artwork's
+focus expansion, projection and lighting remain system-owned; captions no longer
+depend on interrupted native footer animations or appearance resets.
 Prepared poster images use the displayed content size in points and the device
 display scale in pixels. TVUIKit derives focus growth from the image, so raw
 high-resolution cache dimensions must not become the poster's logical size.
@@ -393,6 +420,14 @@ the About column's text measurements. A non-focusable container reports the visi
 content size to SwiftUI and positions TVCardView's intrinsic focus outsets outside
 that slot. The resting plate therefore aligns with its section heading; native
 focus can still expand beyond it without changing layout.
+The poster adapter likewise keeps native horizontal focus outsets outside its
+SwiftUI width. Its container lays out the native control at its intrinsic size
+but reports only the requested artwork width. Otherwise a surrounding stack
+feeds the outsets back as artwork width, enlarging posters and consuming row
+spacing. `NativeFocusRequestHostedTests` compares artwork sizes and gaps in
+production `MediaRowView` rows against the pre-caption-separation adapter for
+portrait, landscape, and Continue Watching layouts. It also checks caption
+animation interruption, unchanged layout height, and Reduce Motion.
 `NativeInformationCardHostedTests` covers
 the actual information grid with a long synopsis and four ratings, checking
 bounded, stable card dimensions. `NativeFocusRequestHostedTests` compares the
@@ -402,7 +437,7 @@ data; production avatar controls use the scoped custom treatment instead.
 System bypasses app-defined focus surfaces, edge strokes, resting shadows and
 focused z-index changes. Custom Highlight/Outline retain their styling.
 Horizontal rails do not clip native focus overflow.
-Captions reserve clearance without an additional custom focus animation.
+Caption movement is independent of the genuine native artwork focus effect.
 In the season episode row, the System focus owner encloses only the thumbnail
 and its artwork badges, not the title or synopsis below it. Both the episode
 thumbnail and interactive loading/retry placeholder use TVPosterView, so the
@@ -410,17 +445,19 @@ native outline and image use the same corner geometry. Cast/artist portraits and
 profile avatar controls use the existing circular Outline treatment when System
 is selected. `plozzCircularFocusStyle` scopes both the focus owner and its visuals;
 it does not change the saved preference or ordinary media-card focus. Existing
-Highlight/Outline selections remain unchanged. Regular media poster footer labels
-retain the existing
-density-aware title/subtitle font sizes. Native poster footers reserve at least
-18 density-scaled points of artwork clearance (more for larger type), using the
-documented negative bottom `contentViewInsets`. TVUIKit's own focus expansion
-moves the footer; no extra translation or focus-time layout change is added.
-The reserved inset includes native footer travel so clearance holds at rest too.
+Highlight/Outline selections remain unchanged. Regular media poster captions retain the existing density-aware
+title/subtitle font sizes. Captions add no resting gap below the native image's
+reserved focus frame. This zero-point gap is constant across display densities;
+focus travel has its own reserved space.
+Neither animation progress nor native footer insets resize the caption layout.
 Rows that reserve a subtitle line keep it even when the year/subtitle is absent,
 so folder and media cards retain equal heights. Captionless episode controls
 keep their existing geometry. Custom Highlight/Outline retain
 their existing whole-column focus routing and artwork-only visuals.
+`CastFocusRemoteTests` uses the real cast row with full names and portrait-shaped
+images, checks focused image/label bounds and circular corner pixels, and verifies
+Select still opens the person. A square image with no name is not sufficient
+coverage for this native-monogram regression.
 
 `NativePosterComparisonTests` is an opt-in, simulator-only comparison, enabled by
 `TEST_RUNNER_PLOZZ_NATIVE_POSTER_COMPARISON=1` on `PlozzHomeRemoteTests`. It captures

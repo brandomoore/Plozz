@@ -264,11 +264,9 @@ public struct PlozzMetrics: Equatable, Sendable {
         PlozzTheme.Metrics.cardCaptionSpacing + landscapeCaptionInset * PlozzTheme.Metrics.captionTopClearanceFactor
     }
 
-    /// Native lockups reserve this below the artwork; TVUIKit moves the footer
-    /// with its own focus expansion, without changing the card's layout slot.
-    public var nativePosterCaptionSpacing: CGFloat {
-        max(18 * scale, cardTitleFontSize * 0.55).rounded()
-    }
+    /// No extra resting gap beyond the native image's reserved focus frame.
+    /// Caption travel is reserved separately, without resizing its slot.
+    public var nativePosterCaptionSpacing: CGFloat { 0 }
 
     /// - Parameter dynamicTypeSize: the reader's current text size. Pass the
     ///   view's `\.dynamicTypeSize` so the metrics REBUILD when it changes —

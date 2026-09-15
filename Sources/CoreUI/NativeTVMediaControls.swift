@@ -224,11 +224,9 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
     let treatment: NativePosterImageTreatment
     let aspectRatio: CGFloat
     let fallbackWidth: CGFloat
+    // Accessible metadata only. Visible captions must not inherit native image animation.
     let title: NativePosterText?
     let subtitle: String?
-    var titleFontSize: CGFloat? = nil
-    var subtitleFontSize: CGFloat? = nil
-    var captionSpacing: CGFloat? = nil
     let overlay: Overlay
     let focus: PlozzCardFocus.Binding
     var source: DetailTransitionSourceReference? = nil
@@ -308,7 +306,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(focus: focus, action: action) }
 
-    func makeUIView(context: Context) -> Poster {
+    func makeUIView(context: Context) -> Container {
         let size = CGSize(width: fallbackWidth, height: fallbackWidth / aspectRatio)
         let initialImage = context.coordinator.presentationImage(
             image, treatment: treatment, size: size, scale: context.environment.displayScale
@@ -316,6 +314,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         // Materializing imageView with a nil image freezes TVUIKit's native
         // focus expansion at zero, even after an image arrives.
         let view = Poster(image: initialImage)
+        view.defaultAccessibilityElement = view.isAccessibilityElement
         view.contentSize = size
         view.hostedOverlay = overlayConfiguration(in: context).makeContentView()
         if let overlay = view.hostedOverlay {
@@ -335,54 +334,44 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         }
         view.addAction(UIAction { [weak coordinator = context.coordinator] _ in coordinator?.focus.activate() },
                        for: .primaryActionTriggered)
-        return view
+        return Container(poster: view)
     }
 
-    func updateUIView(_ view: Poster, context: Context) {
+    func updateUIView(_ container: Container, context: Context) {
+        let view = container.poster
         if view.contentSize.width <= 0 {
             view.contentSize = CGSize(width: fallbackWidth, height: fallbackWidth / aspectRatio)
         }
         let resolvedTitle = title?.resolve(locale: context.environment.locale)
-        if view.title != resolvedTitle { view.title = resolvedTitle }
-        if view.subtitle != subtitle { view.subtitle = subtitle }
-        if let titleFontSize {
-            let font = UIFont.systemFont(ofSize: titleFontSize, weight: .semibold)
-            if view.footerView?.titleLabel?.font != font { view.footerView?.titleLabel?.font = font }
-        }
-        if let subtitleFontSize {
-            let font = UIFont.systemFont(ofSize: subtitleFontSize)
-            if view.footerView?.subtitleLabel?.font != font { view.footerView?.subtitleLabel?.font = font }
-        }
+        view.isAccessibilityElement = view.defaultAccessibilityElement || resolvedTitle != nil || subtitle != nil
+        view.accessibilityLabel = resolvedTitle
+        view.accessibilityValue = subtitle
+        view.accessibilityTraits.insert(.button)
         view.hostedOverlay?.configuration = overlayConfiguration(in: context)
         let prepared = context.coordinator.presentationImage(
             image, treatment: treatment, size: view.contentSize, scale: context.environment.displayScale
         )
         if view.image !== prepared { view.image = prepared }
-        updateCaptionSpacing(in: view)
         view.isEnabled = context.environment.isEnabled
         source?.nativeArtworkView = view.imageView
         context.coordinator.focus.update(focus: focus, action: action, view: view)
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: Poster, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: Container, context: Context) -> CGSize? {
         let width = proposal.width ?? fallbackWidth
         guard width.isFinite, width > 0 else { return nil }
         let size = CGSize(width: width, height: width / aspectRatio)
-        if uiView.contentSize != size { uiView.contentSize = size }
+        let poster = uiView.poster
+        if poster.contentSize != size {
+            poster.contentSize = size
+            uiView.invalidateIntrinsicContentSize()
+            uiView.setNeedsLayout()
+        }
         let prepared = context.coordinator.presentationImage(
             image, treatment: treatment, size: size, scale: context.environment.displayScale
         )
-        if uiView.image !== prepared { uiView.image = prepared }
-        updateCaptionSpacing(in: uiView)
+        if poster.image !== prepared { poster.image = prepared }
         return uiView.intrinsicContentSize
-    }
-
-    private func updateCaptionSpacing(in view: Poster) {
-        guard let captionSpacing else { return }
-        var insets = view.contentViewInsets
-        let nativeClearance = max(0, -view.focusSizeIncrease.bottom)
-        insets.bottom = view.title != nil || view.subtitle != nil ? -(captionSpacing + nativeClearance) : 0
-        if view.contentViewInsets != insets { view.contentViewInsets = insets }
     }
 
     private func overlayConfiguration(in context: Context) -> any UIContentConfiguration {
@@ -394,7 +383,36 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         .margins(.all, 0)
     }
 
+    final class Container: UIView {
+        let poster: Poster
+
+        init(poster: Poster) {
+            self.poster = poster
+            super.init(frame: .zero)
+            addSubview(poster)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override var intrinsicContentSize: CGSize {
+            CGSize(width: poster.contentSize.width, height: poster.intrinsicContentSize.height)
+        }
+
+        override var preferredFocusEnvironments: [any UIFocusEnvironment] { [poster] }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            // Native focus margins are drawing clearance, not more artwork width.
+            // Feeding them back through a SwiftUI stack enlarges every card.
+            let intrinsic = poster.intrinsicContentSize
+            let size = CGSize(width: ceil(intrinsic.width), height: ceil(intrinsic.height))
+            poster.frame = CGRect(x: (bounds.width - size.width) / 2, y: 0,
+                                  width: size.width, height: size.height)
+        }
+    }
+
     final class Poster: TVPosterView {
+        var defaultAccessibilityElement = false
         var hostedOverlay: (UIView & UIContentView)?
         var onFocus: ((Bool) -> Void)?
         var onAvailable: (() -> Void)?

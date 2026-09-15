@@ -1,6 +1,23 @@
 #if DEBUG
 import Foundation
 
+public struct LiveTVGuideRowFocusPolicy: Equatable, Sendable {
+    public let entryTarget: LiveTVGuideFocusTarget
+    public let isActiveRow: Bool
+    public let usesNativeNavigation: Bool
+
+    public init(entryTarget: LiveTVGuideFocusTarget, isActiveRow: Bool, usesNativeNavigation: Bool) {
+        self.entryTarget = entryTarget
+        self.isActiveRow = isActiveRow
+        self.usesNativeNavigation = usesNativeNavigation
+    }
+
+    public func allows(_ target: LiveTVGuideFocusTarget) -> Bool {
+        guard target.rowID == entryTarget.rowID else { return false }
+        return isActiveRow || usesNativeNavigation || target == entryTarget
+    }
+}
+
 public enum LiveTVGuideFocusTarget: Hashable, Sendable {
     case channel(String, section: LiveTVGuideSection = .channels)
     case channelContent(String, slotID: String? = nil, section: LiveTVGuideSection = .channels)
