@@ -15,7 +15,7 @@ enum NativePosterText {
         case .content(let value): return value
         case .localized(var value):
             value.locale = locale
-            return String(localized: value)
+            return String(localized: value) // l10n:content — UIKit boundary; resolved with the current environment locale on every update
         }
     }
 }
@@ -230,7 +230,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
     let fallbackWidth: CGFloat
     // Accessible metadata only. Visible captions must not inherit native image animation.
     let title: NativePosterText?
-    let subtitle: String?
+    let subtitle: String? // l10n:content — provider metadata and preformatted runtime
     let overlay: Overlay
     let focus: PlozzCardFocus.Binding
     var source: DetailTransitionSourceReference? = nil

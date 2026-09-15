@@ -4,7 +4,7 @@ import UIKit
 
 struct SystemPosterCaption: UIViewRepresentable {
     let title: NativePosterText
-    let subtitle: String?
+    let subtitle: String? // l10n:content — provider metadata and preformatted runtime
     let reservesSubtitleSpace: Bool
     let isFocused: Bool
 

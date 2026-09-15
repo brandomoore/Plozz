@@ -592,7 +592,7 @@ struct NavigationRailView: View {
         .padding(.vertical, NavigationRailMetrics.itemVerticalPadding)
         .offset(x: animatedContentOffset)
         .accessibilityLabel(label)
-        .accessibilityValue(isExperimental ? Text("Experimental") : Text(""))
+        .accessibilityValue(isExperimental ? Text("Experimental") : Text(verbatim: ""))
         .accessibilityAddTraits(selection == destination ? [.isSelected] : [])
     }
 

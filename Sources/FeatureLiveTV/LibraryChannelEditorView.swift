@@ -357,7 +357,10 @@ private struct LibraryChannelManagementContent: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } footer: {
-                Text("Off leaves library progress and trackers untouched. On records completion only after you watch 90% of a program, not from where you joined. Channel playback uses original files; server transcoding is unavailable when it cannot preserve this policy.")
+                Text(
+                    "Off leaves library progress and trackers untouched. On records completion only after you watch \(0.9, format: .percent.precision(.fractionLength(0))) of a program, not from where you joined. Channel playback uses original files; server transcoding is unavailable when it cannot preserve this policy.",
+                    comment: "The placeholder is a localized percentage such as 90%. Do not add a percent sign."
+                )
             }
             if let issue = issue ?? service.issue { Text(issue.message) }
         }
