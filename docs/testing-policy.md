@@ -461,17 +461,13 @@ images, checks focused image/label bounds and circular corner pixels, and verifi
 Select still opens the person. A square image with no name is not sufficient
 coverage for this native-monogram regression.
 
-For user-driven diagnosis of mid-animation episode entry, Debug launches with
-`PLOZZ_SERIES_FOCUS_TRACE=1` record bounded `SERIES_FOCUS` entries in the existing
-playback journal. The trace reports animation/entry state, native focus types,
-ancestor frames and directional presses without labels, media IDs or credentials.
-The observer rejects every press and never requests or redirects focus.
-The user-driven trace captured a `UIKitFocusableFillerItem` owned by the page's
+The user-driven device trace captured a `UIKitFocusableFillerItem` owned by the page's
 scroll view taking Down while the entrance gate was active. Page scrolling is
 disabled during that entrance, then restored on completion; hiding or disabling
 lower leaf content did not remove the scroll container's filler.
 The browser stays mounted for its staged episode reveal: a 48-point upward
-movement and 0.48-second fade at default timing. Other hero stages and reverse
+movement and 0.72-second fade at default timing, with a gentle start and stop
+rather than the other foreground stages' fast pickup. Other hero stages and reverse
 timing are unchanged, and entrance input stays gated until that reveal finishes.
 Lower detail content first mounts after the episode row has received focus and the browser's recede
 animation has completed, so rapid early Down presses cannot enter its blank

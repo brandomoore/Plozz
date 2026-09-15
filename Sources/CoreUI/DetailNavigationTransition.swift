@@ -13,7 +13,7 @@ public struct DetailEntranceTiming: Equatable, Sendable {
     public var artworkPause: TimeInterval = 0.25
     public var stagger: TimeInterval = 0.12
     public var reveal: TimeInterval = 0.24
-    public var episodeReveal: TimeInterval { reveal * 2 }
+    public var episodeReveal: TimeInterval { reveal * 3 }
     public var reverse: TimeInterval = 0.28
 
     public init() {}
@@ -27,6 +27,10 @@ enum DetailEntranceMotion {
 
     static func reveal(duration: TimeInterval) -> Animation {
         .timingCurve(pickup.x, pickup.y, landing.x, landing.y, duration: duration)
+    }
+
+    static func episodeReveal(duration: TimeInterval) -> Animation {
+        .timingCurve(0.32, 0, 0.20, 1, duration: duration)
     }
 }
 
@@ -1188,14 +1192,14 @@ private struct TVDetailStageReveal: ViewModifier {
         let reveal = isEpisodeEntrance ? session?.timing.episodeReveal : session?.timing.reveal
         let duration = session?.isClosing == true ? 0.12 : (reveal ?? 0)
         let travel = isEpisodeEntrance ? DetailEntranceMotion.episodeTravel : DetailEntranceMotion.foregroundTravel
+        let animation: Animation? = reduceMotion ? nil
+            : session?.isClosing == true ? .easeOut(duration: duration)
+            : isEpisodeEntrance ? DetailEntranceMotion.episodeReveal(duration: duration)
+            : DetailEntranceMotion.reveal(duration: duration)
         content
             .offset(y: visible ? 0 : travel)
             .mask { Rectangle().padding(-600).opacity(visible ? 1 : 0) }
-            .animation(
-                reduceMotion ? nil : session?.isClosing == true
-                    ? .easeOut(duration: duration) : DetailEntranceMotion.reveal(duration: duration),
-                value: visible
-            )
+            .animation(animation, value: visible)
     }
 }
 
