@@ -479,6 +479,8 @@ content proxy, so button focus presentation belongs to the same hosted tree.
 The hosted series Play button has one local focus owner. The page sends explicit
 request generations and observes focus through an ordinary state callback,
 rather than attaching a second focus binding across the hosting boundary.
+The hosting controller keeps one root view; observable content/environment
+updates do not replace that root during a native button's focus transition.
 
 `NativePosterComparisonTests` is an opt-in, simulator-only comparison, enabled by
 `TEST_RUNNER_PLOZZ_NATIVE_POSTER_COMPARISON=1` on `PlozzHomeRemoteTests`. It captures

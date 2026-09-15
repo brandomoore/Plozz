@@ -2,6 +2,7 @@ import SwiftUI
 
 #if os(tvOS)
 import CoreModels
+import Observation
 import UIKit
 #endif
 
@@ -25,13 +26,32 @@ struct SeriesEntranceFocusGuard<Content: View>: View {
 }
 
 #if os(tvOS)
+@MainActor @Observable
+private final class SeriesHeroHostedModel<Content: View> {
+    var content: Content
+    var environment: EnvironmentValues
+
+    init(content: Content, environment: EnvironmentValues) {
+        self.content = content
+        self.environment = environment
+    }
+}
+
+private struct SeriesHeroHostedContent<Content: View>: View {
+    let model: SeriesHeroHostedModel<Content>
+
+    var body: some View {
+        model.content.environment(\.self, model.environment)
+    }
+}
+
 private struct SeriesEntranceHeroHost<Content: View>: UIViewControllerRepresentable {
     let content: Content
     let blocksDown: Bool
 
     func makeUIViewController(context: Context) -> Controller {
-        let controller = Controller(rootView: AnyView(
-            content.environment(\.self, context.environment)
+        let controller = Controller(model: SeriesHeroHostedModel(
+            content: content, environment: context.environment
         ))
         controller.blocksDown = blocksDown
         controller.safeAreaRegions = []
@@ -41,7 +61,8 @@ private struct SeriesEntranceHeroHost<Content: View>: UIViewControllerRepresenta
 
     func updateUIViewController(_ controller: Controller, context: Context) {
         controller.blocksDown = blocksDown
-        controller.rootView = AnyView(content.environment(\.self, context.environment))
+        controller.model.content = content
+        controller.model.environment = context.environment
     }
 
     func sizeThatFits(
@@ -58,7 +79,17 @@ private struct SeriesEntranceHeroHost<Content: View>: UIViewControllerRepresenta
     }
 
     final class Controller: UIHostingController<AnyView> {
+        let model: SeriesHeroHostedModel<Content>
         var blocksDown = false
+
+        init(model: SeriesHeroHostedModel<Content>) {
+            self.model = model
+            super.init(rootView: AnyView(SeriesHeroHostedContent(model: model)))
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
 
         override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
             if blocksDown, context.focusHeading.contains(.down),
