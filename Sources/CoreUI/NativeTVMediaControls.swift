@@ -131,24 +131,28 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: Container, context: Context) -> CGSize? {
         let card = uiView.card
-        guard let content = card.hostedContent,
-              let width = proposal.width, width.isFinite, width > 0 else { return nil }
+        guard let content = card.hostedContent else { return nil }
+        let width = proposal.width.flatMap { width in
+            width.isFinite && width > 0 ? width : nil
+        }
         let contentHeight = proposal.height.flatMap { height in
             height.isFinite ? max(0, height) : nil
         }
         // An unspecified height is an intrinsic-height query, not a 10,000pt
         // offer. Flexible rating labels otherwise stretch and inflate About's
         // cross-column text measurements.
+        // Horizontal music rails propose no width. Measure their fixed artwork
+        // and captions instead of returning the native container's initial zero size.
         let size = content.systemLayoutSizeFitting(
-            CGSize(width: width, height: contentHeight ?? 0),
-            withHorizontalFittingPriority: .required,
+            CGSize(width: width ?? 0, height: contentHeight ?? 0),
+            withHorizontalFittingPriority: width == nil ? .fittingSizeLevel : .required,
             verticalFittingPriority: (contentHeight ?? 0) > 0 ? .required : .fittingSizeLevel
         )
         guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height >= 0 else {
             PlozzLog.app.error("Native card content returned invalid fitting dimensions")
             return nil
         }
-        let contentSize = CGSize(width: width, height: size.height)
+        let contentSize = CGSize(width: width ?? size.width, height: size.height)
         if card.contentSize != contentSize {
             card.contentSize = contentSize
             uiView.invalidateIntrinsicContentSize()

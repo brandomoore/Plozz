@@ -432,6 +432,9 @@ animation interruption, unchanged layout height, and Reduce Motion.
 the actual information grid with a long synopsis and four ratings, checking
 bounded, stable card dimensions. `NativeFocusRequestHostedTests` compares the
 actual resting `contentView` bounds against its SwiftUI layout container.
+Native card measurement also supports unspecified-width proposals from horizontal
+music rails, using the content's intrinsic size rather than a zero-sized container.
+Fixed-width information cards retain their constrained measurement path.
 The standalone native monogram adapter prepares square, circular-alpha image
 data; production avatar controls use the scoped custom treatment instead.
 System bypasses app-defined focus surfaces, edge strokes, resting shadows and
