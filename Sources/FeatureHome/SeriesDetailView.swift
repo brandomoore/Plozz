@@ -523,6 +523,11 @@ struct SeriesDetailView: View {
                     // closures otherwise made it compare unequal every time — so
                     // it rebuilt while masked out behind the episode browser.
                     .equatable()
+                    .background {
+                        #if os(tvOS)
+                        SeriesEntranceFocusGuard(isEnabled: holdsHeroFocusDuringEntrance)
+                        #endif
+                    }
                     .id(Self.topAnchorID)
                     // Episodes are seeded from the season's `/children` listing,
                     // which on Plex can omit the per-stream DoVi/HDR facts and the
