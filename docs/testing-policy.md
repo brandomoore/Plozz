@@ -443,11 +443,6 @@ scroll boundary, so a focused edge chip is not clipped during the reveal.
 In the season episode row, the System focus owner encloses only the thumbnail
 and its artwork badges, not the title or synopsis below it. The episode thumbnail
 and interactive loading/retry placeholder use TVPosterView under System.
-Loading, empty, and retry entry states bypass the episode reveal stage and
-remain focusable while the cinematic entrance gates loaded episodes.
-Lower detail sections remain outside the focus order until the episode row
-actually receives focus, including after data arrives and while focus is still
-in the season bar. Data readiness alone must not open a path past the row.
 Cast/artist portraits and
 profile avatar controls use the existing circular Outline treatment when System
 is selected. `plozzCircularFocusStyle` scopes both the focus owner and its visuals;
@@ -465,6 +460,12 @@ their existing whole-column focus routing and artwork-only visuals.
 images, checks focused image/label bounds and circular corner pixels, and verifies
 Select still opens the person. A square image with no name is not sufficient
 coverage for this native-monogram regression.
+
+For user-driven diagnosis of mid-animation episode entry, Debug launches with
+`PLOZZ_SERIES_FOCUS_TRACE=1` record bounded `SERIES_FOCUS` entries in the existing
+playback journal. The trace reports animation/entry state, native focus types,
+ancestor frames and directional presses without labels, media IDs or credentials.
+The observer rejects every press and never requests or redirects focus.
 
 `NativePosterComparisonTests` is an opt-in, simulator-only comparison, enabled by
 `TEST_RUNNER_PLOZZ_NATIVE_POSTER_COMPARISON=1` on `PlozzHomeRemoteTests`. It captures

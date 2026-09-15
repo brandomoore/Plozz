@@ -265,6 +265,16 @@ struct SeriesDetailView: View {
         let _ = plozzPrintChanges { Self._printChanges() }
         let _ = PlozzBodyRate.tick("SeriesDetail")
         scrollContent
+            .background {
+                #if DEBUG && os(tvOS)
+                if ProcessInfo.processInfo.environment["PLOZZ_SERIES_FOCUS_TRACE"] == "1" {
+                    SeriesDetailFocusTrace(
+                        isEnabled: !hasChildOnTop,
+                        state: "stage=\(String(describing: detailEntrance?.stage)) blocked=\(holdsHeroFocusDuringEntrance) entry=\(browserEntry) phase=\(episodeEntryPhase) episodes=\(currentEpisodes.count) receded=\(recedeModel.isReceded) season=\(seasonBarEngaged) browser=\(browserHoldsFocus) play=\(playFocused)"
+                    )
+                }
+                #endif
+            }
             // Never clip a focused card's lift, shadow or border.
             .scrollClipDisabled()
             // Let the hero bleed into the top overscan inset instead of the
@@ -573,7 +583,7 @@ struct SeriesDetailView: View {
                             episodeRail { revealBrowser(using: proxy) }
                         }
                     )
-                    .detailEntranceStage(episodeEntryPhase == .ready ? .episodes : .artwork)
+                    .detailEntranceStage(.episodes)
 
                     DetailExtrasView(
                         item: series,
@@ -595,8 +605,7 @@ struct SeriesDetailView: View {
                         leadingInset: PlozzTheme.Metrics.heroLeadingPadding,
                         seriesRecedeModel: recedeModel,
                         revealsSeriesCastWithoutBrowser: revealsCastWithoutBrowser,
-                        suppressesFocus: hasChildOnTop || holdsHeroFocusDuringEntrance
-                            || browserEntry != .browser || seasonBarEngaged,
+                        suppressesFocus: hasChildOnTop || holdsHeroFocusDuringEntrance,
                         onCastFocusEntered: {
                             seasonBarEngaged = false
                             // Cast/Related sit BELOW the browser, so the page
@@ -1170,7 +1179,7 @@ struct SeriesDetailView: View {
             episodeEntry: MediaRowEpisodeEntry(
                 phase: episodeEntryPhase,
                 isActive: browserEntry == .hero || seasonBarEngaged,
-                isEnabled: episodeEntryPhase != .ready || !holdsHeroFocusDuringEntrance,
+                isEnabled: !holdsHeroFocusDuringEntrance,
                 onPlaceholderFocus: {
                     // Entering a loading slot is not an explicit choice of a
                     // season. Let the arriving resume answer select the right one.
