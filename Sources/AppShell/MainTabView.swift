@@ -22,7 +22,6 @@ import AniListService
 import MALService
 import LastFmService
 
-#if DEBUG
 /// Keep the typed environment dependency stable across Settings redraws.
 @MainActor
 private struct LiveTVSettingsSourcesScope<Content: View>: View {
@@ -57,7 +56,6 @@ private struct LiveTVSettingsSourcesScope<Content: View>: View {
         content.environment(sources)
     }
 }
-#endif
 
 /// The signed-in experience: Home, Search and Settings tabs, with item-detail
 /// navigation and full-screen playback.
@@ -120,15 +118,11 @@ struct MainTabView: View {
                 switch activeLibraryNavigationDestination {
                 case .home, .library, .allLibraries: return true
                 case .watchlist, .search, .music, .settings: return false
-                #if DEBUG
                 case .liveTV: return false
-                #endif
                 }
             case .watchlist: return activeLibraryNavigationDestination == .watchlist
             case .search: return activeLibraryNavigationDestination == .search
-            #if DEBUG
             case .liveTV: return activeLibraryNavigationDestination == .liveTV
-            #endif
             case .music: return activeLibraryNavigationDestination == .music
             case .settings: return activeLibraryNavigationDestination == .settings
             }
@@ -138,9 +132,7 @@ struct MainTabView: View {
 
     private enum MainTab: String {
         case home, watchlist, search
-        #if DEBUG
         case liveTV
-        #endif
         case music, settings
     }
 
@@ -176,7 +168,6 @@ struct MainTabView: View {
         )
     }
 
-    #if DEBUG
     private var liveTVTabLabel: some View {
         RootNavigationTabLabel(
             title: Text("Live TV (Experimental)"),
@@ -184,7 +175,6 @@ struct MainTabView: View {
             usesCompactSidebarText: navigationStyle == .sidebar
         )
     }
-    #endif
 
     private var settingsTabLabel: some View {
         RootNavigationTabLabel(
@@ -586,7 +576,6 @@ struct MainTabView: View {
         current: NavigationRailDestination,
         destinations: [NavigationRailDestination]
     ) -> NavigationRailDestination? {
-        #if DEBUG
         guard admissionContext.explicitStandaloneChoice,
               pendingStandaloneLiveTVEntry
                 || (!hasResolvedStandaloneStartup && !admissionContext.hasMediaAccounts) else {
@@ -600,9 +589,6 @@ struct MainTabView: View {
             admission: admissionContext,
             hasPendingLiveTVEntry: pendingStandaloneLiveTVEntry
         )
-        #else
-        return nil
-        #endif
     }
 
     /// Effective selections above already render the requested destination on
@@ -640,9 +626,7 @@ struct MainTabView: View {
 
     private func releaseExplicitLiveTVEntry(ifLeavingFor destination: NavigationRailDestination) {
         if destination != .home { retainsTitleHomeEntry = false }
-        #if DEBUG
         if destination != .liveTV { retainsExplicitLiveTVEntry = false }
-        #endif
     }
 
     private func includingExplicitLiveTVEntry(
@@ -651,16 +635,12 @@ struct MainTabView: View {
         let destinations = Self.includingTitleHome(
             destinations, isRequested: retainsTitleHomeEntry
         )
-        #if DEBUG
         return AppAdmissionNavigation.destinations(
             destinations,
             liveTV: .liveTV,
             includesExplicitEntry: admissionContext.explicitStandaloneChoice
                 && (pendingStandaloneLiveTVEntry || retainsExplicitLiveTVEntry)
         )
-        #else
-        return destinations
-        #endif
     }
 
     private var navigationStyle: NavigationStyle {
@@ -715,9 +695,7 @@ struct MainTabView: View {
         case .home, .library, .allLibraries: return .home
         case .watchlist: return .watchlist
         case .search: return .search
-        #if DEBUG
         case .liveTV: return .liveTV
-        #endif
         case .music: return .music
         case .settings: return .settings
         }
@@ -728,9 +706,7 @@ struct MainTabView: View {
         case .home: return .home
         case .watchlist: return .watchlist
         case .search: return .search
-        #if DEBUG
         case .liveTV: return .liveTV
-        #endif
         case .music: return .music
         case .settings: return .settings
         }
@@ -955,7 +931,6 @@ struct MainTabView: View {
     /// as anything else in the body grew. Naming it gives the checker a fixed
     /// point and keeps the tab list readable.
     private var settingsTabContent: some View {
-        #if DEBUG
         LiveTVSettingsSourcesScope(
             content: settingsViewContent,
             profileID: activeProfile.id,
@@ -966,9 +941,6 @@ struct MainTabView: View {
             connectServer: onAddAccount,
             didConfigurePlaylist: onConfiguredIPTVPlaylist
         )
-        #else
-        settingsViewContent
-        #endif
     }
 
     private var settingsViewContent: some View {
@@ -1211,18 +1183,13 @@ struct MainTabView: View {
     }
 
     /// Live playback blocks all shell-owned ambient audio for as long as the
-    /// development destination is visible.
+    /// Live TV destination is visible.
     private var isLiveTVDestinationActive: Bool {
-        #if DEBUG
         navigationStyle == .tabBar
             ? resolvedSelectedTab == .liveTV
             : activeLibraryNavigationDestination == .liveTV
-        #else
-        false
-        #endif
     }
 
-    #if DEBUG
     /// Custom-rail chrome is shared by destination stacks. An outgoing retained
     /// Live TV view can report disappearance after the next destination has
     /// already installed its own depth, so only the currently selected Live TV
@@ -1234,7 +1201,6 @@ struct MainTabView: View {
         }
         navigationChrome.setStackDepth(expanded ? 1 : 0)
     }
-    #endif
 
     private func topBarDestinationContent(
         _ destination: NavigationRailDestination
@@ -1244,7 +1210,6 @@ struct MainTabView: View {
             return AnyView(homeTabContent())
         case .watchlist:
             return AnyView(watchlistTabContent(isActive: isActiveTab(.watchlist)))
-        #if DEBUG
         case .liveTV:
             return AnyView(LiveTVShellDestination(
                 isActive: isActiveTab(.liveTV),
@@ -1259,7 +1224,6 @@ struct MainTabView: View {
                 usesNativeNavigation: true,
                 onOpenTitle: openTitleFromLiveTV
             ))
-        #endif
         case .search:
             return AnyView(searchTabContent)
         case .music:
@@ -1283,7 +1247,6 @@ struct MainTabView: View {
             return AnyView(watchlistTabContent(
                 isActive: activeLibraryNavigationDestination == .watchlist
             ))
-        #if DEBUG
         case .liveTV:
             return AnyView(LiveTVShellDestination(
                 isActive: activeLibraryNavigationDestination == .liveTV,
@@ -1298,7 +1261,6 @@ struct MainTabView: View {
                 usesNativeNavigation: true,
                 onOpenTitle: openTitleFromLiveTV
             ))
-        #endif
         case .search:
             return AnyView(searchTabContent)
         case .music:
@@ -1323,10 +1285,8 @@ struct MainTabView: View {
             return AnyView(searchTabLabel)
         case .watchlist:
             return AnyView(watchlistTabLabel)
-        #if DEBUG
         case .liveTV:
             return AnyView(liveTVTabLabel)
-        #endif
         case .music:
             return AnyView(musicTabLabel)
         case .settings:
@@ -1416,13 +1376,12 @@ struct MainTabView: View {
         .environment(navigationChrome)
     }
 
-    /// Keeps the development Live TV destination mounted while another custom-rail
+    /// Keeps the Live TV destination mounted while another custom-rail
     /// route is selected. Native TabView already retains visited tabs; matching that
     /// lifetime here preserves in-memory source, Favorites, and filter choices while
     /// `isActive = false` still tears down playback and pending tune work.
     @ViewBuilder
     private var railContent: some View {
-        #if DEBUG
         let showsLiveTV = activeLibraryNavigationDestination == .liveTV
         ZStack {
             railDestination
@@ -1449,9 +1408,6 @@ struct MainTabView: View {
             .allowsHitTesting(showsLiveTV)
             .accessibilityHidden(!showsLiveTV)
         }
-        #else
-        railDestination
-        #endif
     }
 
     /// The destination custom rail has selected.
@@ -1467,12 +1423,10 @@ struct MainTabView: View {
             return AnyView(homeBackedRailDestination)
         case .search:
             return AnyView(searchTabContent)
-        #if DEBUG
         case .liveTV:
             // The retained sibling in `railContent` renders Live TV. Keeping this
             // switch exhaustive avoids creating a second player tree.
             return AnyView(Color.clear)
-        #endif
         case .music:
             return AnyView(musicTabContent)
         case .settings:

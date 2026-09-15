@@ -1,4 +1,4 @@
-#if DEBUG && os(iOS)
+#if os(iOS)
 import CoreModels
 import CoreSecureStore
 import CoreUI
@@ -9,7 +9,7 @@ import FeatureLiveTVCore
 import FeaturePlayback
 import SwiftUI
 
-/// Development-only Live TV destination hosted by the real iPhone/iPad tab shell.
+/// Live TV destination hosted by the iPhone/iPad tab shell.
 struct PlozziOSLiveTVDestination: View {
     let isActive: Bool
     let profileID: String

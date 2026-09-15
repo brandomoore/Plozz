@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 import Observation
@@ -511,4 +510,3 @@ public final class LiveTVChannelScanCoordinator {
         )
     }
 }
-#endif

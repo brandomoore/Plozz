@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 
@@ -355,4 +354,3 @@ enum LibraryChannelAutomaticPlanner {
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
     }
 }
-#endif

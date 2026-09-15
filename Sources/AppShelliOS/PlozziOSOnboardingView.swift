@@ -70,7 +70,6 @@ struct PlozziOSOnboardingView: View {
             providerRow(.emby)
             divider
             providerRow(.mediaShare)
-            #if DEBUG
             if let onStandalonePlayback {
                 divider
                 Button(action: onStandalonePlayback) {
@@ -94,7 +93,6 @@ struct PlozziOSOnboardingView: View {
                 .buttonStyle(.plain)
                 .accessibilityHint("Use your own playlist without signing in to a media server.")
             }
-            #endif
         }
         .background(palette.cardSurface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(

@@ -78,9 +78,7 @@ final class NavigationDestinationLayoutTests: XCTestCase {
             NavigationLibraryLayout.homeKey,
             NavigationLibraryLayout.watchlistKey,
         ]
-        #if DEBUG
         expected.append(NavigationLibraryLayout.liveTVKey)
-        #endif
         expected += [
             NavigationLibraryLayout.searchKey,
             NavigationLibraryLayout.musicKey,

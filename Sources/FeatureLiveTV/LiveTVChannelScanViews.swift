@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreUI
 import FeatureLiveTVCore
@@ -292,4 +291,3 @@ private extension LiveTVChannelHealthReason {
         }
     }
 }
-#endif

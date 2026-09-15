@@ -1,4 +1,3 @@
-#if DEBUG
 import SwiftUI
 
 struct LiveTVSourceLoadState: View {
@@ -25,4 +24,3 @@ struct LiveTVSourceLoadState: View {
         }
     }
 }
-#endif

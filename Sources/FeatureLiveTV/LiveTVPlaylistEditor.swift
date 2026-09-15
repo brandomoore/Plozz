@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreUI
 import CoreModels
 import FeatureLiveTVCore
@@ -339,4 +338,3 @@ final class LiveTVPlaylistEditorModel {
     }
 
 }
-#endif

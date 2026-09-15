@@ -238,7 +238,6 @@ public struct RootView: View {
     private func makeLibraryChannelCompletionHandler(
         profileID: String
     ) -> @MainActor @Sendable (MediaItem, UUID) throws -> Void {
-        #if DEBUG
         let namespace = appState.profilesModel.activeNamespace
         return { [appState] item, authorizationID in
             try Task.checkCancellation()
@@ -271,9 +270,6 @@ public struct RootView: View {
                 accountID: nil, itemID: item.id, watchedPercent: 100, mutation: mutation, item: item
             )
         }
-        #else
-        return { _, _ in throw LibraryChannelError.authorizationChanged }
-        #endif
     }
 
     public var body: some View {

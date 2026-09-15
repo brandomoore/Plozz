@@ -90,7 +90,7 @@ suites and the reason each was selected.
 
 ### 3. Fail fast — you learn a result in seconds, not minutes
 
-Tests *execute* in well under half a minute, but `xcodebuild` on this Mac
+Most tests execute quickly, but `xcodebuild` on this Mac
 routinely stalls for minutes in teardown (result bundle + simulator shutdown)
 after the tests have already finished. Two things used to turn that into a
 ~7-minute wait for an answer that existed at second six:
@@ -122,6 +122,12 @@ Set `PLOZZ_VERDICT_GRACE=0` to check results as soon as the bundles report.
 last bundle reports, allowing Xcode's 600-second simulator diagnostic collection
 to finish. This is a ceiling, not a fixed wait. A readable result bundle is
 always required; reaching the grace period alone never interrupts its writer.
+
+Large scale fixtures emit unbuffered checkpoints from completed work. The
+million-programme XMLTV test reports preparation phases and every 10,000 indexed
+programmes, so a slow, progressing import is not mistaken for a stalled build.
+Its million-entry workload, assertions, and the no-output watchdog remain intact.
+No timer emits artificial progress while an operation is stuck.
 
 ### Simulator readiness and authoritative results
 

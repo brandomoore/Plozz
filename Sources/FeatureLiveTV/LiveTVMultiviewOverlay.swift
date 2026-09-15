@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreUI
 import FeatureLiveTVCore
@@ -884,5 +883,3 @@ private struct LiveTVMultiviewAction: View {
             .plozzActionButton(role: .secondary)
     }
 }
-
-#endif

@@ -1,4 +1,3 @@
-#if DEBUG
 import Foundation
 
 struct LiveChannelRetuneBudget {
@@ -17,4 +16,3 @@ struct LiveChannelRetuneBudget {
         lastAttempt = uptime
     }
 }
-#endif

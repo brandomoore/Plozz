@@ -1,4 +1,4 @@
-#if DEBUG && canImport(SwiftUI) && canImport(AVFoundation) && canImport(UIKit)
+#if canImport(SwiftUI) && canImport(AVFoundation) && canImport(UIKit)
 import AVFoundation
 import CoreModels
 import CoreUI
@@ -12,7 +12,7 @@ struct LiveChannelSessionReporting {
     let failed: @MainActor () -> Void
 }
 
-/// Debug-only playback host for live channels.
+/// Playback host for live channels.
 ///
 /// The host deliberately bypasses `PlayerViewModel`: live channels have no
 /// VOD watch history, resume point, duration, or scrobbling lifecycle. The

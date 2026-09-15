@@ -1,4 +1,3 @@
-#if DEBUG
 import Foundation
 
 struct LiveTVProgramSearchMatcher {
@@ -63,4 +62,3 @@ struct LiveTVProgramSearchResults {
         lhs.start == rhs.start ? lhs.id < rhs.id : lhs.start < rhs.start
     }
 }
-#endif

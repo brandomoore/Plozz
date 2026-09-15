@@ -1,4 +1,3 @@
-#if DEBUG
 import FeatureLiveTVCore
 import Foundation
 
@@ -46,4 +45,3 @@ struct PrototypeServerGuideRequest: Equatable {
         }
     }
 }
-#endif

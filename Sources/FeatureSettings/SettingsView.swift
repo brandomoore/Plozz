@@ -128,9 +128,7 @@ public struct SettingsView: View {
     private let profiles: [Profile]
     private let activeProfile: Profile
     private let liveTVPreferencesNamespace: String?
-    #if DEBUG
     @Environment(LiveTVSettingsSources.self) private var liveTVSources: LiveTVSettingsSources?
-    #endif
     private let askProfileOnStartup: Bool
     private let appVersion: String
     private let appBuild: String
@@ -644,11 +642,9 @@ public struct SettingsView: View {
             navRow("Customize Home", icon: "house",
                    value: nil,
                    route: .customizeHome)
-            #if DEBUG
             navRow("Live TV", icon: "antenna.radiowaves.left.and.right",
                    value: nil,
                    route: .liveTV)
-            #endif
             navRow("Detail Page", icon: "rectangle.portrait.on.rectangle.portrait",
                    value: nil,
                    route: .detailPage)
@@ -1037,7 +1033,6 @@ public struct SettingsView: View {
                 homeVisibility: homeVisibility,
                 seerConfigured: seer.isConfigured
             )
-        #if DEBUG
         case .liveTV:
             LiveTVSettingsView(
                 store: LiveTVViewSettingsStore(
@@ -1049,7 +1044,6 @@ public struct SettingsView: View {
                 sourceManagement: liveTVSources.map { destination in { destination.content() } }
             )
             .id(activeProfile.id)
-        #endif
         case .nightShift:
             NightShiftDetailView(model: nightShift)
         case .detailPage:
@@ -1257,12 +1251,10 @@ public struct SettingsView: View {
                     }
                 }
 
-                #if DEBUG
                 SettingsPanel(title: "Live TV") {
                     LiveTVPortableSyncSettings()
                     LiveTVPortableSyncPendingSettings()
                 }
-                #endif
 
                 if let onSetUpAnotherDevice {
                     SettingsPanel(contentPadding: .settingsPanelRowContent) {

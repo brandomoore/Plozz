@@ -1,12 +1,13 @@
-#if DEBUG
 import CoreUI
 import CoreModels
 import FeatureLiveTVCore
 import SwiftUI
 
+#if DEBUG
 public enum LiveTVPrototypeEntry {
     public static var isEnabled: Bool { LiveTVPrototypeLaunch.isEnabled() }
 }
+#endif
 
 public struct LiveTVPrototypePlayback {
     public let paneID: UUID
@@ -224,10 +225,14 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         self.onExpandedChange = onExpandedChange
         self.onOpenTitle = onOpenTitle
         self.player = player
-        let arguments = ProcessInfo.processInfo.arguments
+        #if DEBUG
+        let isLargeCatalog = ProcessInfo.processInfo.arguments.contains("--live-tv-5000")
+        #else
+        let isLargeCatalog = false
+        #endif
         let model = LiveTVPrototypeModel(
             now: Date(), scenario: .noGuide,
-            isLargeCatalog: arguments.contains("--live-tv-5000"),
+            isLargeCatalog: isLargeCatalog,
             channels: [], preferencesStore: preferencesStore
         )
         _model = State(initialValue: model)
@@ -1746,4 +1751,3 @@ struct PrototypeImportStatus: View {
         }
     }
 }
-#endif

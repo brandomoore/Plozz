@@ -1,4 +1,3 @@
-#if DEBUG
 import Foundation
 import XCTest
 @testable import FeatureLiveTVCore
@@ -158,11 +157,9 @@ final class LiveTVPlaylistParserTests: XCTestCase {
     }
 
     func testKnownTransparentWhiteLogosKeepTheirContrastHint() throws {
-        let sample = try XCTUnwrap(LiveTVPrototypeCatalog.channels.first { $0.logoNeedsDarkBackground })
-        let logo = try XCTUnwrap(sample.logoURL)
         let input = """
         #EXTM3U
-        #EXTINF:-1 tvg-logo="\(logo.absoluteString)",Station
+        #EXTINF:-1 tvg-logo="https://i.imgur.com/xP7Ehn8.png",Station
         https://example.com/live.m3u8
         """
         let imported = try XCTUnwrap(LiveTVPlaylistParser().parse(input).channels.first)
@@ -221,4 +218,3 @@ final class LiveTVPlaylistParserTests: XCTestCase {
         }
     }
 }
-#endif

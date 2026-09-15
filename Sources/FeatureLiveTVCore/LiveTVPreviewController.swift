@@ -1,4 +1,3 @@
-#if DEBUG
 import Foundation
 import Observation
 
@@ -172,4 +171,3 @@ public final class LiveTVPreviewController {
         pendingRequest = nil
     }
 }
-#endif

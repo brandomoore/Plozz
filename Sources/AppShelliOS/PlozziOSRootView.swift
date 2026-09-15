@@ -619,9 +619,7 @@ private enum ServerPromptFollowUp {
 private enum PlozziOSDestination: String, CaseIterable, Identifiable, Hashable {
     case home
     case watchlist
-    #if DEBUG
     case liveTV
-    #endif
     case downloads
     case search
     case settings
@@ -632,9 +630,7 @@ private enum PlozziOSDestination: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .home: "Home"
         case .watchlist: "Watchlist"
-        #if DEBUG
         case .liveTV: "Live TV"
-        #endif
         case .downloads: "Downloads"
         case .search: "Search"
         case .settings: "Settings"
@@ -645,9 +641,7 @@ private enum PlozziOSDestination: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .home: "house"
         case .watchlist: "bookmark"
-        #if DEBUG
         case .liveTV: "antenna.radiowaves.left.and.right"
-        #endif
         case .downloads: "arrow.down.circle"
         case .search: "magnifyingglass"
         case .settings: "gearshape"
@@ -728,7 +722,6 @@ private struct PlozziOSTabShell: View {
         self.systemColorScheme = systemColorScheme
         let visible = Self.configuredDestinations(appModel: appModel)
         let initial: PlozziOSDestination
-        #if DEBUG
         initial = AppAdmissionNavigation.initialSelection(
             current: .home,
             visible: visible,
@@ -737,9 +730,6 @@ private struct PlozziOSTabShell: View {
             admission: appModel.admissionContext,
             hasPendingLiveTVEntry: appModel.pendingStandaloneLiveTVEntry
         )
-        #else
-        initial = visible.contains(.home) ? .home : (visible.first ?? .settings)
-        #endif
         _selectedDestination = State(initialValue: initial)
         _lastContentDestination = State(initialValue: initial)
         _sharedHomeViewModel = State(
@@ -756,9 +746,7 @@ private struct PlozziOSTabShell: View {
                 switch key {
                 case NavigationLibraryLayout.homeKey: return .home
                 case NavigationLibraryLayout.watchlistKey: return .watchlist
-                #if DEBUG
                 case NavigationLibraryLayout.liveTVKey: return .liveTV
-                #endif
                 case NavigationLibraryLayout.searchKey: return .search
                 case NavigationLibraryLayout.downloadsKey: return .downloads
                 case NavigationLibraryLayout.settingsKey: return .settings
@@ -769,24 +757,18 @@ private struct PlozziOSTabShell: View {
 
     private var tabDestinations: [PlozziOSDestination] {
         let configured = Self.configuredDestinations(appModel: appModel)
-        #if DEBUG
         return AppAdmissionNavigation.destinations(
             configured,
             liveTV: .liveTV,
             includesExplicitEntry: appModel.allowsStandalonePlayback
                 && (appModel.pendingStandaloneLiveTVEntry || retainsExplicitLiveTVEntry)
         )
-        #else
-        return configured
-        #endif
     }
 
     private var effectiveSelectedDestination: PlozziOSDestination {
-        #if DEBUG
         if appModel.pendingStandaloneLiveTVEntry && appModel.allowsStandalonePlayback {
             return .liveTV
         }
-        #endif
         return resolvedDestination(selectedDestination)
     }
 
@@ -798,13 +780,11 @@ private struct PlozziOSTabShell: View {
     }
 
     private func consumeStandaloneEntryIfNeeded() {
-        #if DEBUG
         guard appModel.pendingStandaloneLiveTVEntry, appModel.allowsStandalonePlayback else { return }
         retainsExplicitLiveTVEntry = true
         selectedDestination = .liveTV
         lastContentDestination = .liveTV
         appModel.consumeStandaloneLiveTVEntryIntent()
-        #endif
     }
 
     private var tabDestinationKey: String {
@@ -850,7 +830,6 @@ private struct PlozziOSTabShell: View {
             }
             .toolbarBackground(.hidden, for: .navigationBar)
             .background { AppBackground(palette: palette) }
-        #if DEBUG
         case .liveTV:
             NavigationStack {
                 PlozziOSLiveTVDestination(
@@ -889,7 +868,6 @@ private struct PlozziOSTabShell: View {
                 .toolbar(.hidden, for: .navigationBar)
                 .plozziOSItemNavigation(appModel: appModel)
             }
-        #endif
         case .downloads:
             NavigationStack {
                 PlozziOSDestinationView(
@@ -994,13 +972,11 @@ private struct PlozziOSTabShell: View {
             } else {
                 lastContentDestination = destination
             }
-            #if DEBUG
             if destination == .liveTV {
                 heroTrailerController.stop()
             } else {
                 retainsExplicitLiveTVEntry = false
             }
-            #endif
         }
         .onChange(of: homeContentIdentity) {
             _, _ in
@@ -1285,10 +1261,8 @@ private struct PlozziOSDestinationView: View {
                 viewModel: sharedHomeViewModel,
                 onShowSettings: onShowSettings
             )
-        #if DEBUG
         case .liveTV:
             EmptyView()
-        #endif
         case .search:
             PlozziOSSearchView(
                 appModel: appModel,

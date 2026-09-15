@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreUI
 import CoreModels
 import FeatureLiveTVCore
@@ -364,6 +363,7 @@ private struct PrototypeSourcesForm: View {
                 Button("Reload sources", systemImage: "arrow.clockwise", action: reload)
                     .disabled(imports.isLoading)
             }
+            #if DEBUG
             Section {
                 Toggle("5,000 rows for scrolling", isOn: $model.isLargeCatalog)
             } header: {
@@ -374,6 +374,7 @@ private struct PrototypeSourcesForm: View {
             Section {
                 Text("Channel history is separate from movie and episode progress. Jellyfin and Emby can play channels from a configured Live TV server. Plex currently supports channels and guide listings, not playback.")
             }
+            #endif
         }
         .alert("Guide selection could not be applied", isPresented: $selectionFailed) {
             Button("OK", role: .cancel) {}
@@ -421,5 +422,3 @@ struct PrototypeGuideSourceStatus: View {
         }
     }
 }
-
-#endif

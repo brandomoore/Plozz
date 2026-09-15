@@ -1,4 +1,3 @@
-#if DEBUG
 import Foundation
 
 public enum LiveTVGuideSection: String, Hashable, Sendable {
@@ -41,4 +40,3 @@ public struct LiveTVChannelSequence {
         return available[(index + step + available.count) % available.count]
     }
 }
-#endif

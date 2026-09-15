@@ -1,4 +1,3 @@
-#if DEBUG
 import CryptoKit
 import Foundation
 
@@ -84,8 +83,9 @@ public struct LiveTVPlaylistParser: Sendable {
     public static let maximumBytes = 20 * 1_024 * 1_024
     public static let maximumEntries = 100_000
     public static let maximumLineBytes = 64 * 1_024
+    // Contrast hints must not pull the regression channel catalog into shipping builds.
     private static let darkLogoURLs = Set(
-        LiveTVPrototypeCatalog.channels.filter(\.logoNeedsDarkBackground).compactMap(\.logoURL)
+        ["https://i.imgur.com/xP7Ehn8.png"].compactMap { URL(string: $0) }
     )
 
     private let baseURL: URL?
@@ -445,4 +445,3 @@ public struct LiveTVPlaylistParser: Sendable {
         return "tv.fill"
     }
 }
-#endif

@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 import Observation
@@ -109,4 +108,3 @@ private final class ObservationLease: @unchecked Sendable {
     }
     deinit { center.removeObserver(token) }
 }
-#endif

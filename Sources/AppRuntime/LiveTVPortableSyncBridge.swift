@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreSecureStore
 import FeatureLiveTVCore
@@ -582,4 +581,3 @@ private actor LiveTVPortableLibraryPreparation {
         )
     }
 }
-#endif

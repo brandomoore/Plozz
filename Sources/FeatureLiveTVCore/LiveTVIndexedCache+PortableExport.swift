@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 
@@ -71,4 +70,3 @@ extension LiveTVIndexedCache {
         return result
     }
 }
-#endif

@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreNetworking
 import CoreSecureStore
@@ -371,4 +370,3 @@ public final class LiveTVLibraryRuntime {
         }
     }
 }
-#endif

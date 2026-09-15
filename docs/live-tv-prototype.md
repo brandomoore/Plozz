@@ -1,12 +1,15 @@
-# Live TV prototype
+# Live TV
 
-A native, Debug-only Live TV destination for iterating on a physical Apple TV,
-iPhone and iPad. It combines configured IPTV playlists, authorized server
+A native Live TV destination for Apple TV, iPhone and iPad, available in Debug
+and Release builds. It combines configured IPTV playlists, authorized server
 channels and scheduled library channels, using Plozz's existing AetherEngine
 (`PlozzigenVideoEngine`) integration.
 It lives
 inside Plozz's actual navigation instead of replacing the application root.
-Release navigation and onboarding remain unchanged.
+Release builds include the same navigation, standalone onboarding, source
+management, guide/search, Multiview, playback and opt-in portable sync. Existing
+profile authorization, parental approval, account, source and persistence gates
+remain in force.
 
 ## Run
 
@@ -17,7 +20,7 @@ export GIT_CONFIG_PARAMETERS="'safe.bareRepository=all'"
 tools/generate-project.sh
 ```
 
-Open `Plozz.xcodeproj` and run a Debug **Plozz** build on Apple TV or
+Open `Plozz.xcodeproj` and run a **Plozz** build on Apple TV or
 **PlozziOS** on iPhone/iPad. Choose a media server or **Live TV / IPTV** during
 first-run setup, then complete the ordinary profile and appearance steps.
 Standalone IPTV requires no media-server account. Select **Live TV** in
@@ -44,7 +47,7 @@ The old `--live-tv-prototype` and remembered prototype-entry preference no
 longer bypass Plozz's root or its background services. The older prototype
 schemes also open the normal app; enter Live TV through navigation.
 
-Additional launch arguments:
+Debug-only launch arguments:
 
 - `--live-tv-5000`: repeat the real catalog into 5,000 clearly labeled rows for
   scrolling tests. These are copies, not 5,000 distinct stations.
@@ -52,7 +55,9 @@ Additional launch arguments:
 The former `--live-tv-guide` flag is no longer needed: channels and their guide
 are one screen, including when no listings exist.
 
-The entry route, live host and UI are compiled out of Release builds.
+Release builds never honor prototype launch shortcuts or stress-catalog
+arguments. Synthetic channel/program fixtures and the public regression catalog
+remain Debug-only; neither is a production default or a source offered to users.
 
 ## Try
 
@@ -505,8 +510,8 @@ accounts, profiles and source count. Deleting the last source or signing out of
 the final server does not strand an opted-in installation at server login.
 Existing profile confirmation and PIN/Plex Home gates remain intact. An explicit
 first entry can temporarily expose a hidden Live TV destination; later launches
-respect navigation customization, including Settings-only layouts. Builds
-without the Debug-only destination do not honor standalone admission.
+respect navigation customization, including Settings-only layouts. This behavior
+is shared by Debug and Release builds on both platforms.
 
 ### Channel scanning
 
@@ -676,7 +681,7 @@ matched programs, supporting feeds that interleave channel declarations and
 listings without keeping all unmatched programs in memory. Plain XML and gzip
 are accepted. Normal external XMLTV DOCTYPE headers are accepted without
 retrieving the DTD; entity declarations remain rejected.
-Custom-source setup is available in Debug. The production importer uses an
+Custom-source setup is available in both build configurations. The importer uses an
 encrypted, indexed catalog and guide cache. Guide windows and program searches
 fetch only the requested channel IDs and time range; a large import does not
 publish its entire schedule into observable UI state. Cached data is bound to
@@ -687,7 +692,7 @@ source. Backend playback handles remain runtime-only.
 
 ## Boundaries
 
-The Debug integration includes manual guide mapping, durable channel identity,
+The integration includes manual guide mapping, durable channel identity,
 generated library channels, indexed program search, channel checks and four-channel
 Multiview. Multiview retains each player's decoder and prepared stream through
 side-by-side/corner layout changes, audio selection and returning to one player.
@@ -792,8 +797,9 @@ failures are visible; the prototype never silently substitutes direct AVPlayer.
 
 The paired `FeatureLiveTV` / `FeatureLiveTVCore` types are explicitly named
 `LiveTVPrototype*`; they are not a final provider API. The core's synthetic
-30-channel fixture catalog remains for deterministic guide/filter/state tests,
-separate from the real catalog used by the app.
+30-channel fixture catalog remains Debug-only for deterministic guide/filter/state
+tests, separate from the real catalog used by the app. Without supplied channels,
+the Release model is empty; imported listings never receive synthetic gap fillers.
 
 ## Live activity and diagnostics
 

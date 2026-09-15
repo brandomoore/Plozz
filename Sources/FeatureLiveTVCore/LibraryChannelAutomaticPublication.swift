@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 
@@ -134,4 +133,3 @@ enum LibraryChannelAutomaticPublication {
         return next
     }
 }
-#endif

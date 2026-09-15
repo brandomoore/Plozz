@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 import Observation
@@ -265,6 +264,7 @@ public final class LiveTVPrototypeImportModel {
         self.generatedProgramLoader = generatedProgramLoader
     }
 
+    #if DEBUG
     /// Legacy fixture/prototype initializer. Production must pass explicit profile configuration.
     public init(
         playlistURL: URL,
@@ -289,6 +289,7 @@ public final class LiveTVPrototypeImportModel {
         self.cache = nil
         self.catalogIsAuthorized = { true }
     }
+    #endif
 
     public func applyConfiguration(
         _ configuration: LiveTVSourcesConfiguration, into model: LiveTVPrototypeModel
@@ -1279,4 +1280,3 @@ public final class LiveTVPrototypeImportModel {
         }
     }
 }
-#endif

@@ -1,4 +1,4 @@
-#if DEBUG && os(tvOS)
+#if os(tvOS)
 import CoreModels
 import CoreSecureStore
 import AppRuntime
@@ -8,7 +8,7 @@ import FeatureLiveTVCore
 import FeaturePlayback
 import SwiftUI
 
-/// Development-only composition root for Live TV inside Plozz's real navigation.
+/// Composition root for Live TV inside Plozz's navigation.
 ///
 /// The prototype owns one player construction site and keeps this child at a
 /// stable identity while channels change. The shell only reports whether the

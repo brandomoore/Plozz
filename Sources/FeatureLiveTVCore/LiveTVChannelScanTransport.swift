@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 #if canImport(FoundationNetworking)
@@ -300,4 +299,3 @@ actor LiveTVScanRequestPermits {
         active.count < maximum && active.values.filter { $0 == host }.count < perHost
     }
 }
-#endif

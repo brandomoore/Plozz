@@ -187,9 +187,7 @@ private enum PlozziOSSettingsDestination: Hashable {
     case trackers
     case appearance
     case home
-    #if DEBUG
     case liveTV
-    #endif
     case detailPage
     case playback
     case downloads
@@ -340,9 +338,7 @@ private struct PlozziOSSettingsSplitView: View {
                         settingsRow(.trackers, title: "Trackers", systemImage: "link")
                         settingsRow(.appearance, title: "Appearance", systemImage: "paintpalette")
                         settingsRow(.home, title: "Customize Home", systemImage: "house")
-                        #if DEBUG
                         settingsRow(.liveTV, title: "Live TV", systemImage: "antenna.radiowaves.left.and.right")
-                        #endif
                         settingsRow(.detailPage, title: "Detail Page", systemImage: "rectangle.portrait.on.rectangle.portrait")
                         settingsRow(.playback, title: "Playback", systemImage: "play.rectangle")
                         settingsRow(.subtitles, title: "Subtitles", systemImage: "captions.bubble")
@@ -643,7 +639,6 @@ private struct PlozziOSSettingsSplitView: View {
                 accounts: appModel.accountsProviders.resolvedActiveAccounts,
                 seerConfigured: appModel.seerService.isConfigured
             )
-        #if DEBUG
         case .liveTV:
             LiveTVSettingsView(
                 store: LiveTVViewSettingsStore(
@@ -668,7 +663,6 @@ private struct PlozziOSSettingsSplitView: View {
                 }
             )
             .id(appModel.profiles.activeProfile.id)
-        #endif
         case .detailPage:
             PlozziOSDetailPageSettingsView(
                 heroBackground: appModel.settings.heroBackground,
@@ -944,7 +938,6 @@ private struct PlozziOSSettingsCompactMenu: View {
                 } label: {
                     Label("Customize Home", systemImage: "house")
                 }
-                #if DEBUG
                 NavigationLink {
                     LiveTVSettingsView(
                         store: LiveTVViewSettingsStore(
@@ -971,7 +964,6 @@ private struct PlozziOSSettingsCompactMenu: View {
                 } label: {
                     Label("Live TV", systemImage: "antenna.radiowaves.left.and.right")
                 }
-                #endif
                 NavigationLink {
                     PlozziOSDetailPageSettingsView(
                         heroBackground: appModel.settings.heroBackground,

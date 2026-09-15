@@ -1,4 +1,4 @@
-#if DEBUG && os(iOS)
+#if os(iOS)
 import AppRuntime
 import CoreModels
 import CoreNetworking

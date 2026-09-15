@@ -129,12 +129,10 @@ struct PlozziOSSyncSetupSettingsView: View {
                 Text("Syncs profiles, settings, and servers. Logins stay on each device.")
             }
 
-            #if DEBUG
             SettingsSectionGroup("Live TV") {
                 LiveTVPortableSyncSettings()
                 LiveTVPortableSyncPendingSettings()
             }
-            #endif
 
             SettingsSectionGroup("Set Up Another Device") {
                 if model.nearbyDevices.isEmpty {

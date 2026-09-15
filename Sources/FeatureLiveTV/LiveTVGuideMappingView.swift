@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreUI
 import FeatureLiveTVCore
@@ -154,4 +153,3 @@ private struct LiveTVGuideStationRequest: Hashable {
     let query: String
     let revision: Int
 }
-#endif

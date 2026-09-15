@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 
@@ -36,4 +35,3 @@ final class LiveTVMemoryAutomaticChannelsStore: LiveTVAutomaticChannelsStoring, 
     func isEnabled() throws -> Bool { lock.withLock { enabled } }
     func setEnabled(_ enabled: Bool) throws { lock.withLock { self.enabled = enabled } }
 }
-#endif

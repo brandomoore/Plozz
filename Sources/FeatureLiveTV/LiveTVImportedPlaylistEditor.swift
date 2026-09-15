@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreUI
 import FeatureLiveTVCore
@@ -155,4 +154,3 @@ struct LiveTVImportedPlaylistEditor: View {
         }
     }
 }
-#endif

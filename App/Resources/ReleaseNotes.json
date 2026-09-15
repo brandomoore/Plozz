@@ -10,6 +10,7 @@
         {
           "category": "New",
           "items": [
+            "Live TV",
             "Subtitle search shows a File match badge when Jellyfin or Emby confirms a match to your video file"
           ]
         },
@@ -17,18 +18,25 @@
           "category": "Updated",
           "items": [
             {
-              "text": "System is now the default focus style for posters, information cards, and Music browsing; saved Highlight or Outline choices are kept",
+              "text": "Default focus is now \"system\"",
               "platforms": ["tvOS"]
             },
             {
-              "text": "Opening movie or show details carries the selected artwork into the page, then reveals the title, information, and controls",
+              "text": "New animations when opening and closing detail pages",
               "platforms": ["tvOS"]
             },
             {
-              "text": "Moving between the Home hero and shelves is smoother",
+              "text": "Animation and performance optimizations on Home",
               "platforms": ["tvOS"]
             },
-            "Home stays responsive while matching titles across your connected libraries",
+            {
+              "text": "Navigation menu is no longer open by default on app launch",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Home stays responsive while matching titles across your connected libraries",
+              "platforms": ["iOS"]
+            },
             {
               "text": "Hide or reorder destinations in every navigation style, including library shortcuts in the sidebars; Settings stays available",
               "platforms": ["tvOS"]
@@ -48,56 +56,15 @@
           "category": "Fixed",
           "items": [
             {
-              "text": "Switching pages in the Native Sidebar no longer briefly focuses the previous page",
-              "platforms": ["tvOS"]
-            },
-            {
-              "text": "The Pinned Sidebar opens each selected page at its first visible control",
-              "platforms": ["tvOS"]
-            },
-            {
-              "text": "The Pinned Sidebar stops at its first and last items when you hold Up or Down",
-              "platforms": ["tvOS"]
-            },
-            {
-              "text": "Fresh launches start on Home when it is visible, rather than restoring the previous destination",
-              "platforms": ["tvOS"]
-            },
-            {
-              "text": "Returning from movie or show details restores the selected card and scroll position without another focus jump",
-              "platforms": ["tvOS"]
-            },
-            {
-              "text": "Rapid Down presses while a show opens no longer skip or scroll past the episode browser",
-              "platforms": ["tvOS"]
-            },
-            {
               "text": "Subtitle downloads remain available when a video has no installed subtitle tracks",
               "platforms": ["tvOS"]
             },
             "Jellyfin streaming works when the server has legacy API-key authentication disabled",
             "Completed titles stay out of Continue Watching while Plozz retries clearing their saved playback position",
             {
-              "text": "If Picture in Picture gets stuck starting, it resets so you can try again",
-              "platforms": ["iOS"]
-            },
-            {
-              "text": "Returning from Picture in Picture waits for video to be visible in the app",
-              "platforms": ["iOS"]
-            },
-            {
-              "text": "Season selectors no longer clip the focused season at the edge of the row",
-              "platforms": ["tvOS"]
-            },
-            {
-              "text": "Movie detail artwork reaches the top edge when using Top Bar navigation",
-              "platforms": ["tvOS"]
-            },
-            {
               "text": "Theme music no longer starts over regular music playback",
               "platforms": ["tvOS"]
-            },
-            "Returning to the app or switching video sources no longer lets outdated errors or end-of-video signals interrupt the current video"
+            }
           ]
         }
       ]

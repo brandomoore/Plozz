@@ -1,4 +1,3 @@
-#if DEBUG
 import Foundation
 
 public struct LiveTVServerChoice: Identifiable, Equatable, Sendable {
@@ -14,4 +13,3 @@ public struct LiveTVServerChoice: Identifiable, Equatable, Sendable {
         self.kind = kind
     }
 }
-#endif

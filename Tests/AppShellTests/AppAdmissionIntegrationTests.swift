@@ -69,7 +69,6 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         XCTAssertEqual(harness.state.state, .onboarding(.selectingServer, canReturnToApp: false))
     }
 
-    #if DEBUG
     func testSuccessfulIPTVSetupKeepsSessionAndProfileThenSurvivesFinalLogout() throws {
         let harness = try makeHarness(profileSetupComplete: true, withAccount: true)
         harness.state.bootstrap()
@@ -232,14 +231,4 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         XCTAssertFalse(harness.state.pendingStandaloneLiveTVEntry)
         XCTAssertEqual(harness.state.state, .onboarding(.selectingServer, canReturnToApp: false))
     }
-    #else
-    func testReleaseBuildDoesNotAdmitStoredStandaloneChoice() throws {
-        let harness = try makeHarness(standalone: true, profileSetupComplete: true)
-        harness.state.bootstrap()
-        XCTAssertFalse(harness.state.enterStandalonePlayback())
-        XCTAssertFalse(harness.state.recordSuccessfulIPTVSetup())
-        XCTAssertFalse(harness.state.canEnterApp)
-        XCTAssertEqual(harness.state.state, .onboarding(.selectingServer, canReturnToApp: false))
-    }
-    #endif
 }

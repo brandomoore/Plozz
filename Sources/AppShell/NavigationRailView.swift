@@ -465,13 +465,11 @@ struct NavigationRailView: View {
             item(.search, symbol: "magnifyingglass", label: Text(Self.searchTitle))
         case .watchlist:
             item(.watchlist, symbol: "bookmark.fill", label: Text(Self.watchlistTitle))
-        #if DEBUG
         case .liveTV:
             item(
                 .liveTV, symbol: "antenna.radiowaves.left.and.right",
                 label: Text(Self.liveTVTitle), isExperimental: true
             )
-        #endif
         case .music:
             item(.music, symbol: "music.note", label: Text(Self.musicTitle))
         case .settings:
@@ -661,13 +659,11 @@ struct NavigationRailView: View {
         defaultValue: "Watchlist",
         comment: "Navigation rail destination for the user's universal Watchlist."
     )
-    #if DEBUG
     private static let liveTVTitle = LocalizedStringResource(
         "navigationRail.liveTV",
         defaultValue: "Live TV",
-        comment: "Development-only Live TV prototype navigation destination."
+        comment: "Live TV navigation destination."
     )
-    #endif
     private static let musicTitle = LocalizedStringResource(
         "navigationRail.music",
         defaultValue: "Music",

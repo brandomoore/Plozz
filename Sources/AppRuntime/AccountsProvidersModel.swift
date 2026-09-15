@@ -3,10 +3,8 @@ import Observation
 import CoreModels
 import CoreNetworking
 import FeatureAuthCore
-#if DEBUG
 import CryptoKit
 import FeatureLiveTVCore
-#endif
 
 /// The accounts + providers hub, extracted from `AppState`.
 ///
@@ -94,7 +92,6 @@ public final class AccountsProvidersModel {
     /// This device's stable client identifier.
     public var deviceID: String { accountStore.deviceID() }
 
-    #if DEBUG
     public var liveTVServerChoices: [LiveTVServerChoice] {
         resolvedActiveAccounts.compactMap { resolved in
             guard resolved.provider is any ServerLiveTVProviding,
@@ -149,7 +146,6 @@ public final class AccountsProvidersModel {
         case .mediaShare: nil
         }
     }
-    #endif
 
     /// The provider for the primary active account — the single-provider Home in
     /// this branch. `nil` when not signed in.

@@ -21,9 +21,7 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
     public static let homeKey = "plozz.navigation.home"
     public static let searchKey = "plozz.navigation.search"
     public static let watchlistKey = "plozz.navigation.watchlist"
-    #if DEBUG
     public static let liveTVKey = "plozz.navigation.liveTV"
-    #endif
     public static let musicKey = "plozz.navigation.music"
     public static let downloadsKey = "plozz.navigation.downloads"
     public static let settingsKey = "plozz.navigation.settings"
@@ -180,9 +178,7 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
             downloadsKey,
             settingsKey,
         ]
-        #if DEBUG
         keys.insert(liveTVKey)
-        #endif
         return keys
     }
 

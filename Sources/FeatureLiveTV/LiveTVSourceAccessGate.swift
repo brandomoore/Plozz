@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreUI
 import Observation
@@ -122,4 +121,3 @@ final class LiveTVSourceManagementAccess {
         Scope(profileID: profiles.activeProfileID, parentalPIN: profiles.parentalPIN)
     }
 }
-#endif

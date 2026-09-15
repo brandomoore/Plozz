@@ -1,4 +1,3 @@
-#if DEBUG
 import Foundation
 import CryptoKit
 #if canImport(FoundationNetworking)
@@ -332,4 +331,3 @@ private final class LiveTVSourceRedirectPolicy: NSObject, URLSessionTaskDelegate
         lock.unlock()
     }
 }
-#endif

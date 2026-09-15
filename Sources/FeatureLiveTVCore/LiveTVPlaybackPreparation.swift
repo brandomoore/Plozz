@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 import Observation
@@ -701,4 +700,3 @@ private actor PreparedLiveTVLeaseOwner {
         await task.value
     }
 }
-#endif

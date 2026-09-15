@@ -111,9 +111,7 @@ public struct NavigationLibrariesDetailView: View {
                 symbolName: "square.stack.3d.up.fill"
             )
         ]
-        #if DEBUG
         rows[NavigationLibraryLayout.liveTVKey] = .init(title: Text("Live TV"), symbolName: "antenna.radiowaves.left.and.right")
-        #endif
         for aggregated in NavigationRailPlan.browsableLibraries(visible) {
             rows[aggregated.key] = LiftableReorderList<String>.Row(
                 title: aggregated.library.displayName,

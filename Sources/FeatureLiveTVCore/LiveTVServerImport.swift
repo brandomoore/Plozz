@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 
@@ -259,4 +258,3 @@ extension LiveTVPrototypeImportModel {
         update(&serverSources[index])
     }
 }
-#endif

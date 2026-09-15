@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 
@@ -45,4 +44,3 @@ public final class LiveTVPlaybackResolverContext: AuthenticatedHTTPResourceResol
         return url
     }
 }
-#endif

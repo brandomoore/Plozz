@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreUI
 import FeatureLiveTVCore
 import SwiftUI
@@ -106,4 +105,3 @@ struct PrototypeBrowseSidebar: View {
         .onChange(of: focusRequest) { _, _ in focused = .search }
     }
 }
-#endif

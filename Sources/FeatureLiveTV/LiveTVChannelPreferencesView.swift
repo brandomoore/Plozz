@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreUI
 import FeatureLiveTVCore
@@ -170,4 +169,3 @@ private struct LiveTVFavoriteRecoveryPicker: View {
         }
     }
 }
-#endif

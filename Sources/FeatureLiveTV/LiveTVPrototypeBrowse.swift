@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreUI
 import CoreModels
 import FeatureLiveTVCore
@@ -1226,4 +1225,3 @@ private struct PrototypeSynchronizedTimeline<Content: View>: View {
         )
     }
 }
-#endif

@@ -861,6 +861,13 @@ final class LiveTVIndexedCacheTests: XCTestCase {
     func testIndexedMillionProgrammeFixtureKeepsOnlyRequestedRowsInMemory() async throws {
         let fixture = try CacheFixture()
         defer { fixture.removeOwnedFiles() }
+        let started = ContinuousClock.now
+        let report: @Sendable (String) throws -> Void = { message in
+            try FileHandle.standardOutput.write(contentsOf: Data(
+                "Live TV scale fixture [\(started.duration(to: .now))]: \(message)\n".utf8
+            ))
+        }
+        try report("Preparing 10,000 channels")
         let guideURL = try XCTUnwrap(URL(string: "https://example.test/million.xml"))
         let source = LiveTVPlaylistSource(
             id: "source", name: "Scale fixture",
@@ -870,7 +877,9 @@ final class LiveTVIndexedCacheTests: XCTestCase {
             playlist((0..<10_000).map { channel($0) }), sourceID: source.id
         )
         let channels = resolved.playlist.channels
+        try report("Reconciled \(channels.count) channel identities")
         try await fixture.cache.storePlaylist(resolved.playlist, source: source, now: now)
+        try report("Stored the channel catalog")
         var xml = Data("<tv>".utf8)
         xml.reserveCapacity(170_000_000)
         for index in channels.indices {
@@ -890,10 +899,15 @@ final class LiveTVIndexedCacheTests: XCTestCase {
             }
         }
         xml.append(Data("</tv>".utf8))
+        try report("Prepared \(xml.count) XML bytes; starting indexed import")
+        await fixture.cache.setGuideImportProgressForTesting { count in
+            try report("Indexed \(count) of 1,000,000 programs")
+        }
         let result = try await fixture.cache.importGuide(
             data: xml, sourceID: "guide", channels: channels, provider: nil, now: now, sourceURL: guideURL
         )
         XCTAssertEqual(result.programCount, 1_000_000)
+        try report("Imported all \(result.programCount) programs; checking bounded queries")
         XCTAssertTrue(result.programs.isEmpty, "The indexed import must not return a million programmes to the UI.")
         let window = try await fixture.cache.programs(
             sourceID: "guide", channelIDs: [channels[0].id, channels[9_999].id],
@@ -907,6 +921,7 @@ final class LiveTVIndexedCacheTests: XCTestCase {
         XCTAssertEqual(found.count, 25)
         let restored = try await fixture.reopen().playlist(source: source)
         XCTAssertEqual(restored?.channels.count, 10_000)
+        try report("Verified window, search, and offline restore")
     }
 
     private var now: Date { Date(timeIntervalSince1970: 1_767_225_600) }

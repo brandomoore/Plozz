@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreUI
 import SwiftUI
@@ -172,4 +171,3 @@ private struct LiveTVPortablePlaylistSetup: View {
         }
     }
 }
-#endif

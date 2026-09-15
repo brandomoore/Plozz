@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreSecureStore
 import FeatureLiveTVCore
@@ -40,4 +39,3 @@ public enum LiveTVCatalogStorage {
         return cache
     }
 }
-#endif

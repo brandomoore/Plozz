@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 import Observation
@@ -465,4 +464,3 @@ public enum LiveTVPlaybackCatalogAuthorization {
         return source.playlistURL == imported.playlistURL
     }
 }
-#endif

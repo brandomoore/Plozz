@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreUI
 import FeatureLiveTVCore
@@ -225,4 +224,3 @@ struct LiveTVAutomaticChannelsEmptyView: View {
         }
     }
 }
-#endif

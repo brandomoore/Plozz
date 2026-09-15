@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreUI
 import FeatureLiveTVCore
 import SwiftUI
@@ -107,4 +106,3 @@ struct LiveTVMultiviewFavoritesView: View {
         }
     }
 }
-#endif

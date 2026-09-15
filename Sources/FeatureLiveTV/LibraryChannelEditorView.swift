@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreUI
 import FeatureLiveTVCore
@@ -454,4 +453,3 @@ private struct LibraryChannelCustomSection: View {
         }
     }
 }
-#endif

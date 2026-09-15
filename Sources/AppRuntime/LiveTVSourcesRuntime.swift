@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import FeatureLiveTVCore
 import Foundation
@@ -140,4 +139,3 @@ private final class LiveTVSourcesRuntimeAdmission {
         return LiveTVSourcesCatalogAuthority(configuration: configuration, authorization: authorization)
     }
 }
-#endif

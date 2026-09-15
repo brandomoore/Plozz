@@ -1,4 +1,3 @@
-#if DEBUG
 import Foundation
 
 public enum LiveTVGuideProvider: String, Codable, Sendable {
@@ -109,4 +108,3 @@ struct LiveTVStreamIdentity {
         return String(text[range])
     }
 }
-#endif

@@ -1,4 +1,3 @@
-#if DEBUG
 import Foundation
 
 public struct LiveTVGuideRowFocusPolicy: Equatable, Sendable {
@@ -96,4 +95,3 @@ public enum LiveTVGuideFocusTarget: Hashable, Sendable {
         return defaultContent(in: model, row: row, from: includesNow ? requestedStart : currentStart, hours: hours)
     }
 }
-#endif

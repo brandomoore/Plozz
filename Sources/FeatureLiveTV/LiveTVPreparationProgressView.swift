@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreUI
 import FeatureLiveTVCore
@@ -107,4 +106,3 @@ private extension Optional where Wrapped == MediaItemKind {
         }
     }
 }
-#endif

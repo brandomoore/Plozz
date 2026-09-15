@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreUI
 import SwiftUI
 
@@ -28,4 +27,3 @@ struct LiveTVSettingsPage<Content: View>: View {
         #endif
     }
 }
-#endif

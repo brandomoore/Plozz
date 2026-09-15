@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CryptoKit
 import Foundation
@@ -261,4 +260,3 @@ extension LiveTVPrototypeChannel {
         )
     }
 }
-#endif

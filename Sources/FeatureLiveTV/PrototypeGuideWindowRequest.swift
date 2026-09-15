@@ -1,4 +1,3 @@
-#if DEBUG
 import FeatureLiveTVCore
 import Foundation
 
@@ -35,4 +34,3 @@ struct PrototypeGuideWindowRequest: Equatable {
         self.mappings = mappings.filter { ids.contains($0.key) }
     }
 }
-#endif
