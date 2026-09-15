@@ -441,9 +441,11 @@ Caption movement is independent of the genuine native artwork focus effect.
 The season bar's outer reveal mask preserves the same focus overflow as its
 scroll boundary, so a focused edge chip is not clipped during the reveal.
 In the season episode row, the System focus owner encloses only the thumbnail
-and its artwork badges, not the title or synopsis below it. Both the episode
-thumbnail and interactive loading/retry placeholder use TVPosterView, so the
-native outline and image use the same corner geometry. Cast/artist portraits and
+and its artwork badges, not the title or synopsis below it. The episode thumbnail
+uses TVPosterView. The interactive loading/retry placeholder retains a separate
+SwiftUI focus target and uses the custom Outline treatment under System, so
+entry does not depend on native poster realization while episodes load.
+Real episode cards retain the chosen focus style. Cast/artist portraits and
 profile avatar controls use the existing circular Outline treatment when System
 is selected. `plozzCircularFocusStyle` scopes both the focus owner and its visuals;
 it does not change the saved preference or ordinary media-card focus. Existing

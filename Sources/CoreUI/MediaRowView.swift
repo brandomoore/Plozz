@@ -189,7 +189,8 @@ public struct MediaRowView: View {
     /// The card focus was on when this row's page was covered — see `isCovered`.
     @State private var coveredFocusID: String?
     @Namespace private var episodeEntrySpace
-    @PlozzCardFocus private var entryPlaceholderFocused: Bool
+    @FocusState private var entryPlaceholderFocused: Bool
+    @Environment(\.plozzCardFocusStyle) private var entryPlaceholderFocusStyle
     @State private var entryLayout = MediaRowEntryLayout()
     @State private var pendingEntryHandoff = false
     @State private var alignedEntryTarget: String?
@@ -841,21 +842,25 @@ public struct MediaRowView: View {
                 EpisodeRowEntryPlaceholder(
                     phase: episodeEntry?.phase ?? .loading,
                     showsStatus: true, isFocused: entryPlaceholderFocused,
-                    nativeFocus: $entryPlaceholderFocused,
                     onSelect: selectEpisodeEntryPlaceholder
+                )
+                // The temporary entry target must not depend on a native
+                // poster being realized while the episode row is still loading.
+                .environment(
+                    \.plozzCardFocusStyle,
+                    entryPlaceholderFocusStyle.usesSystemEffect ? .outlined : entryPlaceholderFocusStyle
                 )
                 #if os(tvOS)
                 .focusableCard(
                     isFocused: $entryPlaceholderFocused,
                     cornerRadius: layoutMetrics.landscapeCardCornerRadius,
                     isEnabled: episodeEntry?.isEnabled != false,
-                    nativeFocusInContent: true,
                     action: selectEpisodeEntryPlaceholder
                 )
                 #else
                 .focusable(episodeEntry?.isEnabled != false)
                 .plozzCardFocusEffect()
-                .focused($entryPlaceholderFocused.focusState)
+                .focused($entryPlaceholderFocused)
                 .onTapGesture(perform: selectEpisodeEntryPlaceholder)
                 #endif
                 .accessibilityIdentifier("episode-entry-placeholder")
