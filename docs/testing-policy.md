@@ -470,15 +470,12 @@ The user-driven trace captured a `UIKitFocusableFillerItem` owned by the page's
 scroll view taking Down while the entrance gate was active. Page scrolling is
 disabled during that entrance, then restored on completion; hiding or disabling
 lower leaf content did not remove the scroll container's filler.
-`SeriesEntranceFocusGuard` hosts the hero under a native focus environment that
+`SeriesEntranceFocusGuard` hosts the whole show page under a native focus environment that
 rejects Down through `shouldUpdateFocus` while entrance is gated. It preserves
 the inherited SwiftUI environment and stays mounted when the gate opens.
 There is no redirecting focus guide or after-the-fact focus restoration.
-The hosted root receives the concrete hero view rather than a ViewModifier
-content proxy, so button focus presentation belongs to the same hosted tree.
-The hosted series Play button has one local focus owner. The page sends explicit
-request generations and observes focus through an ordinary state callback,
-rather than attaching a second focus binding across the hosting boundary.
+The concrete series page, hero, and their focus bindings remain in one hosted
+SwiftUI tree instead of isolating the hero behind a second focus boundary.
 The hosting controller keeps one root view; observable content/environment
 updates do not replace that root during a native button's focus transition.
 

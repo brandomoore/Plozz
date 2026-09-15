@@ -117,8 +117,7 @@ struct SeriesDetailView: View {
 
     /// Drives initial focus onto Hero Play for whole-show/season opens. Individual
     /// episode opens assign initial focus through the episode rail instead.
-    @State private var playFocused = false
-    @State private var playFocusRequest = 0
+    @FocusState private var playFocused: Bool
     /// The user's in-session quality choice for the current play-target episode,
     /// chosen from the hero "…" menu's Version section. Cleared implicitly when it
     /// no longer matches the target episode's versions (a different episode's files
@@ -366,17 +365,17 @@ struct SeriesDetailView: View {
         // Whole-show/season entry lands on Hero Play. Individual episode entry
         // lands on its rail card through MediaRowView's initial focus.
         //
-        // Only a genuine open requests Play. Its native focus state belongs
-        // inside the hero host; the page observes it without registering a
-        // competing cross-host FocusState on the same button.
+        // Only a genuine open claims Play. Reappearing after a child page must
+        // preserve the episode browser's own focus restoration.
         scroll
-            .onAppear {
-                if SeriesDetailEntryPolicy.claimsHeroPlay(
+            .defaultFocus(
+                $playFocused,
+                SeriesDetailEntryPolicy.claimsHeroPlay(
                     hasOpenedOnce: hasOpenedOnce,
                     hasInitialEpisode: initialEpisode != nil
-                ) { playFocusRequest &+= 1 }
-                hasOpenedOnce = true
-            }
+                )
+            )
+            .onAppear { hasOpenedOnce = true }
             // The Play button appears only once the play target resolves; until
             // then there is nothing for `defaultFocus` to land on. Claim it the
             // moment it exists — but only during the opening window, and never
@@ -389,7 +388,7 @@ struct SeriesDetailView: View {
                       !hasChildOnTop
                 else { return }
                 hasSettledOpeningFocus = true
-                playFocusRequest &+= 1
+                playFocused = true
             }
             .onChange(of: hasChildOnTop) { _, covered in
                 // Returning from a pushed page. tvOS hands focus to the hero
@@ -450,7 +449,6 @@ struct SeriesDetailView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    SeriesEntranceFocusGuard(isEnabled: holdsHeroFocusDuringEntrance) {
                     DetailHeroView(
                         item: displayHeroItem,
                         backdropItem: series,
@@ -483,8 +481,7 @@ struct SeriesDetailView: View {
                         selectedSourceAccountID: series.sourceAccountID,
                         onSelectSource: serverPickerAction,
                         fallbackTechnicalBadges: playTargetTechnicalBadges,
-                        localPlayFocusRequest: playFocusRequest,
-                        onPlayFocusChanged: { playFocused = $0 },
+                        playButtonFocus: $playFocused,
                         // Keep the whole hero action row pinned to the top for every
                         // button, not just Play — moving right to Trailer / the "…"
                         // menu / Refresh otherwise lets tvOS's focus-reveal auto-
@@ -521,7 +518,6 @@ struct SeriesDetailView: View {
                     // closures otherwise made it compare unequal every time — so
                     // it rebuilt while masked out behind the episode browser.
                     .equatable()
-                    }
                     .id(Self.topAnchorID)
                     // Episodes are seeded from the season's `/children` listing,
                     // which on Plex can omit the per-stream DoVi/HDR facts and the

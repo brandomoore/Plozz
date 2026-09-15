@@ -2,11 +2,12 @@ import SwiftUI
 
 #if os(tvOS)
 import CoreModels
+import CoreUI
 import Observation
 import UIKit
 #endif
 
-/// A real ancestor of the hero's focus items can veto escape before it occurs.
+/// Keep the whole page in one focus tree beneath the entrance veto.
 struct SeriesEntranceFocusGuard<Content: View>: View {
     let isEnabled: Bool
     let content: Content
@@ -18,7 +19,8 @@ struct SeriesEntranceFocusGuard<Content: View>: View {
 
     var body: some View {
         #if os(tvOS)
-        SeriesEntranceHeroHost(content: content, blocksDown: isEnabled)
+        SeriesEntrancePageHost(content: content, blocksDown: isEnabled)
+            .ignoresSafeArea(.container, edges: .top)
         #else
         content
         #endif
@@ -27,7 +29,7 @@ struct SeriesEntranceFocusGuard<Content: View>: View {
 
 #if os(tvOS)
 @MainActor @Observable
-private final class SeriesHeroHostedModel<Content: View> {
+private final class SeriesPageHostedModel<Content: View> {
     var content: Content
     var environment: EnvironmentValues
 
@@ -37,23 +39,24 @@ private final class SeriesHeroHostedModel<Content: View> {
     }
 }
 
-private struct SeriesHeroHostedContent<Content: View>: View {
-    let model: SeriesHeroHostedModel<Content>
+private struct SeriesPageHostedContent<Content: View>: View {
+    let model: SeriesPageHostedModel<Content>
 
     var body: some View {
         model.content.environment(\.self, model.environment)
     }
 }
 
-private struct SeriesEntranceHeroHost<Content: View>: UIViewControllerRepresentable {
+private struct SeriesEntrancePageHost<Content: View>: UIViewControllerRepresentable {
     let content: Content
     let blocksDown: Bool
 
     func makeUIViewController(context: Context) -> Controller {
-        let controller = Controller(model: SeriesHeroHostedModel(
+        let controller = Controller(model: SeriesPageHostedModel(
             content: content, environment: context.environment
         ))
         controller.blocksDown = blocksDown
+        controller.entrance = context.environment.detailEntranceSession
         controller.safeAreaRegions = []
         controller.view.backgroundColor = .clear
         return controller
@@ -61,6 +64,7 @@ private struct SeriesEntranceHeroHost<Content: View>: UIViewControllerRepresenta
 
     func updateUIViewController(_ controller: Controller, context: Context) {
         controller.blocksDown = blocksDown
+        controller.entrance = context.environment.detailEntranceSession
         controller.model.content = content
         controller.model.environment = context.environment
     }
@@ -68,23 +72,25 @@ private struct SeriesEntranceHeroHost<Content: View>: UIViewControllerRepresenta
     func sizeThatFits(
         _ proposal: ProposedViewSize, uiViewController: Controller, context: Context
     ) -> CGSize? {
-        uiViewController.sizeThatFits(in: CGSize(
+        CGSize(
             width: proposal.width ?? UIScreen.main.bounds.width,
-            height: proposal.height ?? CGFloat.greatestFiniteMagnitude
-        ))
+            height: proposal.height ?? UIScreen.main.bounds.height
+        )
     }
 
     static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
         controller.blocksDown = false
+        controller.entrance = nil
     }
 
     final class Controller: UIHostingController<AnyView> {
-        let model: SeriesHeroHostedModel<Content>
+        let model: SeriesPageHostedModel<Content>
         var blocksDown = false
+        weak var entrance: TVDetailEntranceSession?
 
-        init(model: SeriesHeroHostedModel<Content>) {
+        init(model: SeriesPageHostedModel<Content>) {
             self.model = model
-            super.init(rootView: AnyView(SeriesHeroHostedContent(model: model)))
+            super.init(rootView: AnyView(SeriesPageHostedContent(model: model)))
         }
 
         required init?(coder: NSCoder) {
@@ -92,11 +98,12 @@ private struct SeriesEntranceHeroHost<Content: View>: UIViewControllerRepresenta
         }
 
         override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
-            if blocksDown, context.focusHeading.contains(.down),
+            if blocksDown, entrance?.blocksNavigation == true, entrance?.isClosing != true,
+               context.focusHeading.contains(.down),
                context.previouslyFocusedItem != nil {
                 #if DEBUG
                 if ProcessInfo.processInfo.environment["PLOZZ_SERIES_FOCUS_TRACE"] == "1" {
-                    HandoffDiagnostics.emit("SERIES_FOCUS event=blockedDownByHeroAncestor")
+                    HandoffDiagnostics.emit("SERIES_FOCUS event=blockedDownByPageAncestor")
                 }
                 #endif
                 return false
