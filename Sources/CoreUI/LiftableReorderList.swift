@@ -235,6 +235,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
             ForEach(items, id: \.self) { item in
                 listRow(item)
                     .moveDisabled(item == .divider)
+                    .listRowBackground(Color.clear)
             }
             .onMove { offsets, destination in
                 onChange(
@@ -248,6 +249,8 @@ public struct LiftableReorderList<Element: Hashable>: View {
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.vertical, 0, for: .scrollContent)
         .scrollDisabled(true)
         .environment(\.editMode, .constant(.active))
         .frame(height: CGFloat(items.count) * 54)

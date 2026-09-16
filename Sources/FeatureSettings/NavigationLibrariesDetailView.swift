@@ -25,7 +25,7 @@ public struct NavigationLibrariesDetailView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
+        VStack(alignment: .leading, spacing: sectionSpacing) {
             content(for: discoveredLibraries)
             switch scope.discoveredLibraries {
             case .idle, .loading:
@@ -51,6 +51,14 @@ public struct NavigationLibrariesDetailView: View {
         return libraries
     }
 
+    private var sectionSpacing: CGFloat {
+        #if os(iOS)
+        PlozzTheme.Spacing.medium
+        #else
+        SettingsMetrics.sectionSpacing
+        #endif
+    }
+
     @ViewBuilder
     private func content(for all: [AggregatedLibrary]) -> some View {
         let visible = all.filter { scope.homeVisibility.isEnabled($0.key) }
@@ -64,7 +72,7 @@ public struct NavigationLibrariesDetailView: View {
         let available = keys.filter { !excludedKeys.contains($0) }
         let titles = Self.rowsByKey(visible: visible)
 
-        VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
+        VStack(alignment: .leading, spacing: sectionSpacing) {
             LiftableReorderList(
                 sections: navigation.librarySections(available: available),
                 disabledSectionTitle: Self.hiddenDivider,
@@ -91,7 +99,11 @@ public struct NavigationLibrariesDetailView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
+            #if os(iOS)
+            .buttonStyle(.borderless)
+            #else
             .buttonStyle(SettingsFocusButtonStyle())
+            #endif
             .disabled(isReordering)
         }
     }
