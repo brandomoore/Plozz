@@ -86,6 +86,44 @@ private struct PrototypeToolbarLabelStyle: LabelStyle {
     }
 }
 
+struct PrototypeSheetPresentation<SheetContent: View>: ViewModifier {
+    @Binding var selection: PrototypeSheet?
+    let onDismiss: () -> Void
+    @ViewBuilder let sheetContent: (PrototypeSheet) -> SheetContent
+
+    func body(content: Content) -> some View {
+        #if os(tvOS)
+        content
+            .fullScreenCover(item: binding(forManagement: true), onDismiss: onDismiss, content: sheetContent)
+            .sheet(item: binding(forManagement: false), onDismiss: onDismiss, content: sheetContent)
+        #else
+        content.sheet(item: $selection, onDismiss: onDismiss, content: sheetContent)
+        #endif
+    }
+
+    private func binding(forManagement management: Bool) -> Binding<PrototypeSheet?> {
+        Binding(
+            get: {
+                guard let selection, selection.usesManagementPage == management else { return nil }
+                return selection
+            },
+            set: { value in
+                guard value != nil || selection?.usesManagementPage == management else { return }
+                selection = value
+            }
+        )
+    }
+}
+
+extension PrototypeSheet {
+    var usesManagementPage: Bool {
+        switch self {
+        case .sources, .addPlaylist, .serverSetup: true
+        default: false
+        }
+    }
+}
+
 struct PrototypeSheetContent: View {
     @Bindable var model: LiveTVPrototypeModel
     let imports: LiveTVPrototypeImportModel

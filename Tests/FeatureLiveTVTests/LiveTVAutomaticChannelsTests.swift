@@ -5,6 +5,15 @@ import XCTest
 
 @MainActor
 final class LiveTVAutomaticChannelsTests: XCTestCase {
+    func testSourceManagementUsesAPageButQuickGuideControlsRemainSheets() {
+        XCTAssertTrue(PrototypeSheet.sources.usesManagementPage)
+        XCTAssertTrue(PrototypeSheet.addPlaylist.usesManagementPage)
+        XCTAssertTrue(PrototypeSheet.serverSetup.usesManagementPage)
+        XCTAssertFalse(PrototypeSheet.filters.usesManagementPage)
+        XCTAssertFalse(PrototypeSheet.guideTime.usesManagementPage)
+        XCTAssertFalse(PrototypeSheet.multiviewFavorites.usesManagementPage)
+    }
+
     func testDisabledDoesNotClaimAnEnabledEmptyLineup() {
         let value = state()
         XCTAssertEqual(value.status, .disabled)

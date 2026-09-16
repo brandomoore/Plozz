@@ -8,6 +8,40 @@ import XCTest
 
 final class LiveTVLibraryRuntimeTests: XCTestCase {
     @MainActor
+    func testAuthorizationDigestReuseStillTracksLiveCredentialsProfileAndAccountSelection() throws {
+        let suite = "LiveTVAuthorizationCacheTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let profiles = ProfilesModel(store: ProfileStore(defaults: defaults))
+        let store = AccountStore(secureStore: InMemorySecureStore())
+        let provider = RuntimeLibraryDiscoveryProvider()
+        try store.add(Account(
+            id: "account", server: provider.session.server, userID: "user",
+            userName: "User", deviceID: store.deviceID()
+        ), token: "fixture-token")
+        store.setActiveAccountIDs(["account"])
+        let accounts = AccountsProvidersModel(
+            accountStore: store, registry: ProviderRegistry(), profilesModel: profiles
+        )
+        accounts.reloadAccounts()
+        let original = accounts.liveTVAuthorizationID
+        XCTAssertEqual(accounts.liveTVAuthorizationID, original)
+        let revision = CredentialRevision()
+        accounts.credentialRevision = { _ in revision }
+        let rotated = accounts.liveTVAuthorizationID
+        XCTAssertNotEqual(rotated, original)
+        XCTAssertEqual(accounts.liveTVAuthorizationID, rotated)
+        let other = profiles.add(name: "Other")
+        profiles.select(other.id)
+        XCTAssertNotEqual(accounts.liveTVAuthorizationID, rotated)
+        accounts.reloadAccounts()
+        let selected = accounts.liveTVAuthorizationID
+        store.setActiveAccountIDs([])
+        accounts.reloadAccounts()
+        XCTAssertNotEqual(accounts.liveTVAuthorizationID, selected)
+    }
+
+    @MainActor
     func testIPTVRefreshMakesZeroLibraryRequestsEvenWithAnUnreachableConnectedServer() async throws {
         let suite = "LiveTVLibraryRuntimeTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

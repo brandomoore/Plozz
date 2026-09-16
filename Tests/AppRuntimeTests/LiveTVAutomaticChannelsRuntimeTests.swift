@@ -127,6 +127,8 @@ final class LiveTVAutomaticChannelsRuntimeTests: XCTestCase {
         await runtime.setAutomaticChannelsEnabled(true)
         await runtime.refresh(accounts: fixture.accounts)
         XCTAssertEqual(runtime.automaticChannelsIssue, .sourceUnavailable)
+        XCTAssertEqual(runtime.automaticUnavailableSources.map(\.serverName), ["Library"])
+        XCTAssertEqual(runtime.automaticUnavailableSources.first?.reason, .unreachable)
         XCTAssertNil(runtime.issue, "Automatic lineup errors must not present IPTV as a broken library channel")
         XCTAssertNotNil(runtime.authorizationID)
         XCTAssertTrue(runtime.automaticChannelsEnabled, "A failed preparation must remain retryable")
@@ -135,7 +137,32 @@ final class LiveTVAutomaticChannelsRuntimeTests: XCTestCase {
         runtime.retry()
         await runtime.refresh(accounts: fixture.accounts)
         XCTAssertNil(runtime.automaticChannelsIssue)
+        XCTAssertTrue(runtime.automaticUnavailableSources.isEmpty)
         XCTAssertGreaterThan(runtime.automaticChannelCount, 0)
+    }
+
+    func testTransientDiscoveryFailureRecoversAutomaticallyWithoutAnImmediateRetryLoop() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let runtime = fixture.runtime()
+        await runtime.refresh(accounts: fixture.accounts)
+        await fixture.provider.requests.setUnavailable(true)
+        await runtime.setAutomaticChannelsEnabled(true)
+        await runtime.refresh(accounts: fixture.accounts)
+        XCTAssertTrue(runtime.needsAutomaticRecovery)
+        XCTAssertEqual(runtime.automaticRefreshInterval, 60)
+        let request = runtime.refreshRequest
+        runtime.requestAutomaticRefresh()
+        XCTAssertEqual(runtime.refreshRequest, request)
+
+        await fixture.provider.requests.setUnavailable(false)
+        runtime.requestAutomaticRefresh(at: Date().addingTimeInterval(61))
+        XCTAssertEqual(runtime.refreshRequest, request + 1)
+        await runtime.refresh(accounts: fixture.accounts)
+        XCTAssertNil(runtime.automaticChannelsIssue)
+        XCTAssertGreaterThan(runtime.automaticChannelCount, 0)
+        XCTAssertFalse(runtime.needsAutomaticRecovery)
+        XCTAssertEqual(runtime.automaticRefreshInterval, 900)
     }
 
     func testOneUnreachableSavedJellyfinDoesNotBlockTheWorkingJellyfinLineup() async throws {
@@ -154,6 +181,7 @@ final class LiveTVAutomaticChannelsRuntimeTests: XCTestCase {
         XCTAssertEqual(runtime.automaticUnavailableSources.map(\.accountID), ["offline"])
         XCTAssertEqual(runtime.automaticUnavailableSources.first?.reason, .unreachable)
         let state = try runtime.service.portableState()
+        XCTAssertFalse(runtime.needsAutomaticRecovery, "A working partial lineup must not rescan every minute")
         XCTAssertTrue(state.snapshots.flatMap(\.items).allSatisfy { $0.library.accountID == "catalog" })
         let ids = runtime.service.definitions.map(\.id)
 

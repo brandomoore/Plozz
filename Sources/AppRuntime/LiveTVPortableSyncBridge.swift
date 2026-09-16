@@ -120,7 +120,10 @@ public final class LiveTVPortableSyncBridge {
                 }
                 let identities = try await captureIdentityHints(profile.id)
                 guard mayApply(profile.id, epoch: epoch) else { continue }
-                try await prepare(adapter, profileID: profile.id, epoch: epoch, records: incomingRecords)
+                try await prepare(
+                    adapter, profileID: profile.id, epoch: epoch,
+                    records: incomingRecords, preparedLibrary: libraryState
+                )
                 if let mappingAuthority {
                     guard try guideAuthority(profile.id) == mappingAuthority else { continue }
                 }
@@ -221,6 +224,7 @@ public final class LiveTVPortableSyncBridge {
 
     public func accountDidChange() {
         LiveTVPortableSyncPreferenceStore.accountDidChange(defaults: defaults)
+        Task { await libraryPreparation.discardExport() }
         statuses = [:]
         for profile in profiles.profiles {
             statuses[profile.id] = .localOnly
@@ -524,10 +528,11 @@ public final class LiveTVPortableSyncBridge {
 
     private func prepare(
         _ adapter: LiveTVPortableSyncAdapter, profileID: String, epoch: String,
-        records: [SyncRecordID: Data?] = [:]
+        records: [SyncRecordID: Data?] = [:],
+        preparedLibrary: LiveTVPortableLibraryExport? = nil
     ) async throws {
         guard mayApply(profileID, epoch: epoch) else { throw CancellationError() }
-        try await adapter.prepareForOperation(records: records)
+        try await adapter.prepareForOperation(records: records, preparedLibrary: preparedLibrary)
         guard mayApply(profileID, epoch: epoch) else { throw CancellationError() }
     }
 
@@ -616,12 +621,37 @@ public final class LiveTVPortableSyncBridge {
 
 /// Only immutable inputs cross this boundary. Consent checks, source changes,
 /// acknowledgements and compare-and-swap publication stay on the main actor.
-private actor LiveTVPortableLibraryPreparation {
+actor LiveTVPortableLibraryPreparation {
+    private var cachedExport: LiveTVPortableLibraryExport?
+    private let makeExport: @Sendable (
+        [LibraryChannelDefinition], [LibraryChannelSnapshot]
+    ) throws -> LiveTVPortableLibraryExport
+
+    init(
+        makeExport: @escaping @Sendable (
+            [LibraryChannelDefinition], [LibraryChannelSnapshot]
+        ) throws -> LiveTVPortableLibraryExport = {
+            try LiveTVPortableLibraryExport(definitions: $0, snapshots: $1)
+        }
+    ) {
+        self.makeExport = makeExport
+    }
+
     func prepare(
         definitions: [LibraryChannelDefinition], snapshots: [LibraryChannelSnapshot]
     ) throws -> LiveTVPortableLibraryExport {
         try Task.checkCancellation()
-        return try LiveTVPortableLibraryExport(definitions: definitions, snapshots: snapshots)
+        if let cachedExport, cachedExport.state.definitions == definitions,
+           cachedExport.state.snapshots == snapshots {
+            return cachedExport
+        }
+        let export = try makeExport(definitions, snapshots)
+        cachedExport = export
+        return export
+    }
+
+    func discardExport() {
+        cachedExport = nil
     }
 
     func resolve(_ pending: LiveTVPortableImport) -> LiveTVPortableImport {

@@ -71,6 +71,7 @@ public final class LiveTVLibraryRuntime {
     @ObservationIgnored private let definitionsStore: any LibraryChannelDefinitionStoring
     @ObservationIgnored private let automaticSettingsStore: any LiveTVAutomaticChannelsStoring
     @ObservationIgnored private var lastAutomaticRefresh: Date?
+    @ObservationIgnored private var lastAutomaticAttempt: Date?
     @ObservationIgnored private var refreshID = UUID()
     @ObservationIgnored private var loadedRefreshRequest: Int?
     private var acceptedAuthorization: String?
@@ -121,10 +122,18 @@ public final class LiveTVLibraryRuntime {
         refreshRequest &+= 1
     }
 
-    public func requestAutomaticRefresh(force: Bool = false) {
+    var needsAutomaticRecovery: Bool {
+        automaticChannelsIssue == .sourceUnavailable
+            && automaticUnavailableSources.contains { $0.reason == .unreachable }
+    }
+
+    var automaticRefreshInterval: TimeInterval { needsAutomaticRecovery ? 60 : 900 }
+
+    public func requestAutomaticRefresh(force: Bool = false, at now: Date = Date()) {
+        let previous = needsAutomaticRecovery ? lastAutomaticAttempt : lastAutomaticRefresh
         guard automaticChannelsEnabled, !isLoading, !isPreparingAutomaticChannels,
               loadedRefreshRequest == refreshRequest,
-              force || (lastAutomaticRefresh.map({ Date().timeIntervalSince($0) >= 900 }) ?? true) else { return }
+              force || (previous.map({ now.timeIntervalSince($0) >= automaticRefreshInterval }) ?? true) else { return }
         retry()
     }
 
@@ -208,6 +217,7 @@ public final class LiveTVLibraryRuntime {
         }
         defer {
             if refreshID == stamp {
+                if automaticChannelsEnabled { lastAutomaticAttempt = Date() }
                 isLoading = false
                 isPreparingAutomaticChannels = false
             }

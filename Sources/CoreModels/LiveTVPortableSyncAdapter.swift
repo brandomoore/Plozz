@@ -164,6 +164,24 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         var incomingBytes = 0
         var local: [String: ValidatedRecord] = [:]
         var localBytes = 0
+        var snapshotComparisons: [String: PreparedSnapshotComparison] = [:]
+    }
+
+    private struct PreparedSnapshotComparison: Sendable {
+        struct Original: Sendable {
+            let bytes: Data
+            let isEquivalent: Bool
+        }
+
+        let key: LiveTVPortableRecordKey
+        let recordName: String
+        let candidateBytes: Data
+        let originals: [Original]
+
+        func equivalence(to bytes: Data) -> Bool? {
+            if bytes == candidateBytes { return true }
+            return originals.first { $0.bytes == bytes }?.isEquivalent
+        }
     }
 
     /// Only adapters for the same physical journal serialize mutations. The
@@ -278,11 +296,16 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
     /// retains its 128 MiB limit; validated extras and newly encoded local values
     /// each have a separate 64 MiB limit. Rejections retain only fingerprints.
     /// A concurrent write retries the snapshot, bounded to three attempts.
-    public func prepareForOperation(records: [SyncRecordID: Data?] = [:]) async throws {
+    /// Pass the capture's library export to compare snapshot candidates with all
+    /// validated journal/fallback variants off-main, preserving original wire bytes.
+    /// Prepared-only capture requires these exact candidate/record byte bindings.
+    public func prepareForOperation(
+        records: [SyncRecordID: Data?] = [:], preparedLibrary: LiveTVPortableLibraryExport? = nil
+    ) async throws {
         try Task.checkCancellation()
         let request = beginPreparation()
         let worker = Task.detached(priority: .userInitiated) { [self] in
-            try prepareJournal(records: records, request: request)
+            try prepareJournal(records: records, preparedLibrary: preparedLibrary, request: request)
         }
         do {
             try await withTaskCancellationHandler {
@@ -369,6 +392,9 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         let journal = try readJournal()
         _ = try readObserved()
         try requirePreparedInputs(baseline.mapValues(Optional.some))
+        let snapshotComparisons = try captureSnapshotComparisons(
+            libraryExport, records: journal.records, fallback: baseline
+        )
         var completed = false
         defer { if !completed { invalidateAfterFailedOperation() } }
         var records = journal.records
@@ -508,11 +534,20 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             observed.libraryIDs = ids
         }
         for (entityID, prepared) in libraryExport?.snapshotRecords ?? [:] {
-            let key = key(.snapshot, entityID)
-            if let original = records[key.recordName],
-               try decodedRecord(original, key: key) == prepared.value { continue }
+            let comparison = snapshotComparisons[entityID]
+            let key = comparison?.key ?? key(.snapshot, entityID)
+            let name = comparison?.recordName ?? key.recordName
+            if let original = records[name] {
+                if original == prepared.bytes { continue }
+                if let equivalent = comparison?.equivalence(to: original) {
+                    if equivalent { continue }
+                } else {
+                    guard !requiresPreparedJournal else { throw PreparationError.preparationRequired }
+                    if try decodedRecord(original, key: key) == prepared.value { continue }
+                }
+            }
             try cacheLocal(prepared.value, bytes: prepared.bytes, key: key)
-            records[key.recordName] = prepared.bytes
+            records[name] = prepared.bytes
         }
         observed.hydratedConsentRevision = consentRevision
         try write(records)
@@ -1042,31 +1077,33 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         _ record: LiveTVPortableRecord, bytes: Data, key: LiveTVPortableRecordKey
     ) throws {
         try ensureCurrentPreparation()
+        let name = key.recordName
         let count = (preparedJournal?.localBytes ?? 0)
-            - (preparedJournal?.local[key.recordName]?.bytes.count ?? 0) + bytes.count
+            - (preparedJournal?.local[name]?.bytes.count ?? 0) + bytes.count
         guard count <= Self.maximumInputBytes,
-              preparedJournal?.local[key.recordName] != nil
+              preparedJournal?.local[name] != nil
                 || (preparedJournal?.local.count ?? 0) < Self.maximumRecords else {
             // Legacy synchronous callers can still decode on demand; a cache
             // capacity limit must not turn their otherwise valid record into a rejection.
             guard requiresPreparedJournal else { return }
             throw LiveTVPortableStateError.tooLarge
         }
-        preparedJournal?.local[key.recordName] = ValidatedRecord(bytes: bytes, value: record)
+        preparedJournal?.local[name] = ValidatedRecord(bytes: bytes, value: record)
         preparedJournal?.localBytes = count
     }
 
     private func cacheIncoming(
         _ record: LiveTVPortableRecord?, bytes: Data, key: LiveTVPortableRecordKey
     ) {
+        let name = key.recordName
         let cached = ValidatedRecord(bytes: bytes, value: record)
         let count = (preparedJournal?.incomingBytes ?? 0)
-            - (preparedJournal?.incoming[key.recordName]?.bytes.count ?? 0) + cached.bytes.count
+            - (preparedJournal?.incoming[name]?.bytes.count ?? 0) + cached.bytes.count
         guard count <= Self.maximumInputBytes,
-              preparedJournal?.incoming[key.recordName] != nil
+              preparedJournal?.incoming[name] != nil
                 || (preparedJournal?.incoming.count ?? 0)
                     + (preparedJournal?.retainedIncoming.count ?? 0) < Self.maximumRecords else { return }
-        preparedJournal?.incoming[key.recordName] = cached
+        preparedJournal?.incoming[name] = cached
         preparedJournal?.incomingBytes = count
     }
 
@@ -1142,7 +1179,9 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         }
     }
 
-    private func prepareJournal(records inputs: [String: Data?], request: UUID) throws {
+    private func prepareJournal(
+        records inputs: [String: Data?], preparedLibrary: LiveTVPortableLibraryExport?, request: UUID
+    ) throws {
         try Task.checkCancellation()
         for _ in 0..<3 {
             try Task.checkCancellation()
@@ -1201,6 +1240,9 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
                 prepared.incoming = incoming
                 prepared.retainedIncoming = retained
                 prepared.incomingBytes = total
+                if let preparedLibrary {
+                    prepared.snapshotComparisons = try prepareSnapshotComparisons(preparedLibrary, using: prepared)
+                }
                 if try installPreparation(prepared, request: request) { return }
             } catch {
                 try Task.checkCancellation()
@@ -1211,6 +1253,80 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             }
         }
         throw PreparationError.journalChanged
+    }
+
+    private func prepareSnapshotComparisons(
+        _ library: LiveTVPortableLibraryExport, using prepared: PreparedJournal
+    ) throws -> [String: PreparedSnapshotComparison] {
+        guard library.snapshotRecords.count <= Self.maximumRecords else { throw LiveTVPortableStateError.tooLarge }
+        guard library.state.definitions.allSatisfy({ $0.profileID == profileID }) else {
+            throw LiveTVPortableStateError.wrongProfile
+        }
+        var comparisons: [String: PreparedSnapshotComparison] = [:]
+        for (entityID, candidate) in library.snapshotRecords {
+            try Task.checkCancellation()
+            let key = key(.snapshot, entityID)
+            let name = key.recordName
+            var variants: [ValidatedRecord] = []
+            if let bytes = prepared.journal?.records[name], let value = prepared.journal?.decoded[name] {
+                variants.append(ValidatedRecord(bytes: bytes, value: value))
+            }
+            variants.append(contentsOf: [
+                prepared.incoming[name], prepared.retainedIncoming[name], prepared.local[name]
+            ].compactMap { $0 })
+            let previous = prepared.snapshotComparisons[entityID]
+            var originals: [PreparedSnapshotComparison.Original] = []
+            for variant in variants {
+                try Task.checkCancellation()
+                guard let value = variant.value, variant.bytes != candidate.bytes,
+                      !originals.contains(where: { $0.bytes == variant.bytes }) else { continue }
+                let equivalent: Bool
+                if previous?.key == key, previous?.candidateBytes == candidate.bytes,
+                   let cached = previous?.equivalence(to: variant.bytes) {
+                    equivalent = cached
+                } else {
+                    equivalent = value == candidate.value
+                }
+                originals.append(.init(bytes: variant.bytes, isEquivalent: equivalent))
+            }
+            comparisons[entityID] = PreparedSnapshotComparison(
+                key: key, recordName: name, candidateBytes: candidate.bytes, originals: originals
+            )
+        }
+        return comparisons
+    }
+
+    /// Validate the entire comparison plan before capture touches authoritative
+    /// stores. Hydration can select either journal bytes or a valid fallback.
+    private func captureSnapshotComparisons(
+        _ library: LiveTVPortableLibraryExport?, records: [String: Data], fallback: [String: Data]
+    ) throws -> [String: PreparedSnapshotComparison] {
+        guard let library else { return [:] }
+        guard library.state.definitions.allSatisfy({ $0.profileID == profileID }) else {
+            throw LiveTVPortableStateError.wrongProfile
+        }
+        let cachedComparisons = preparedJournal?.snapshotComparisons ?? [:]
+        var comparisons = requiresPreparedJournal ? cachedComparisons : [:]
+        for (entityID, candidate) in library.snapshotRecords {
+            guard let comparison = cachedComparisons[entityID],
+                  comparison.key.profileID == profileID, comparison.key.kind == .snapshot,
+                  comparison.key.entityID == entityID, comparison.candidateBytes == candidate.bytes else {
+                guard !requiresPreparedJournal else { throw PreparationError.preparationRequired }
+                continue
+            }
+            if requiresPreparedJournal {
+                if let original = records[comparison.recordName], comparison.equivalence(to: original) == nil {
+                    throw PreparationError.preparationRequired
+                }
+                if let incoming = fallback[comparison.recordName],
+                   cachedRecord(incoming, key: comparison.key)?.value != nil,
+                   comparison.equivalence(to: incoming) == nil {
+                    throw PreparationError.preparationRequired
+                }
+            }
+            if !requiresPreparedJournal { comparisons[entityID] = comparison }
+        }
+        return comparisons
     }
 
     private func beginPreparation() -> UUID {

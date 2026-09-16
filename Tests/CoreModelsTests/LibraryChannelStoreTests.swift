@@ -40,6 +40,31 @@ final class LibraryChannelStoreTests: XCTestCase {
         XCTAssertTrue(try store.load().isEmpty)
     }
 
+    func testCachedDefinitionReadStillChecksDurableChangesCorruptionAndRemoval() throws {
+        let secure = LibraryChannelSecureFixture()
+        let reader = LibraryChannelDefinitionStore(secureStore: secure, namespace: "profile")
+        let writer = LibraryChannelDefinitionStore(secureStore: secure, namespace: "profile")
+        let channel = definition()
+        try writer.save([channel])
+        XCTAssertEqual(try reader.load(), [channel])
+        XCTAssertEqual(try reader.load(), [channel])
+        var paused = channel
+        paused.isEnabled = false
+        try writer.save([paused])
+        XCTAssertEqual(try reader.load(), [paused])
+
+        let key = "com.plozz.liveTV.libraryChannels.profile"
+        let valid = try XCTUnwrap(secure.readString(for: key))
+        try secure.setString("invalid-json", for: key)
+        XCTAssertThrowsError(try reader.load())
+        try secure.removeValue(for: key)
+        XCTAssertTrue(try reader.load().isEmpty)
+        try secure.setString(valid, for: key)
+        XCTAssertEqual(try reader.load(), [paused])
+        secure.failReads()
+        XCTAssertThrowsError(try reader.load())
+    }
+
     func testAuthoritativeReferenceReadUsesAReentrantStoreLock() throws {
         let store = LibraryChannelDefinitionStore(secureStore: LibraryChannelSecureFixture(), namespace: "profile")
         let channel = definition()
@@ -113,8 +138,15 @@ final class LibraryChannelStoreTests: XCTestCase {
 private final class LibraryChannelSecureFixture: SecureStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var values: [String: String] = [:]
+    private var readsFail = false
+    func failReads() { lock.withLock { readsFail = true } }
     func setString(_ value: String, for key: String) throws { lock.withLock { values[key] = value } }
     func string(for key: String) -> String? { lock.withLock { values[key] } }
-    func readString(for key: String) throws -> String? { string(for: key) }
+    func readString(for key: String) throws -> String? {
+        try lock.withLock {
+            guard !readsFail else { throw LibraryChannelError.storageFailed }
+            return values[key]
+        }
+    }
     func removeValue(for key: String) throws { lock.withLock { _ = values.removeValue(forKey: key) } }
 }

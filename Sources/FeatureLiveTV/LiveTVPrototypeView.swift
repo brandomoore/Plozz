@@ -555,7 +555,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     private var presentedContent: some View {
         playerAndGuideSurface
-        .sheet(item: $sheet, onDismiss: {
+        .modifier(PrototypeSheetPresentation(selection: $sheet, onDismiss: {
             if let item = pendingLibraryNavigation {
                 pendingLibraryNavigation = nil
                 openLibraryItem(item)
@@ -594,7 +594,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             )
             .environment(\.themePalette, palette)
             .tint(palette.accent)
-        }
+        })
         .alert("Couldn't open title", isPresented: Binding(
             get: { libraryNavigationIssue != nil },
             set: { if !$0 { libraryNavigationIssue = nil } }

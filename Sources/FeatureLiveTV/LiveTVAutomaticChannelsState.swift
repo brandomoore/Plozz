@@ -166,12 +166,25 @@ struct LiveTVAutomaticChannelsStatusView: View {
                 Text("\(state.skippedItemCount) library items couldn't be scheduled because their duration or metadata is unavailable.")
                     .settingsRowSecondary()
             }
-            if !state.unavailableSources.isEmpty {
-                Text(state.channelCount > 0
+            LiveTVAutomaticSourceFailures(
+                sources: state.unavailableSources, hasChannels: state.channelCount > 0
+            )
+        }
+    }
+}
+
+private struct LiveTVAutomaticSourceFailures: View {
+    let sources: [LibraryChannelSourceFailure]
+    let hasChannels: Bool
+
+    var body: some View {
+        if !sources.isEmpty {
+            VStack(alignment: .leading, spacing: PlozzTheme.Spacing.small) {
+                Text(hasChannels
                     ? "Channels from available libraries are ready. Some servers still need attention."
                     : "These saved connections couldn't load their libraries.")
                     .settingsRowSecondary()
-                ForEach(state.unavailableSources) { source in
+                ForEach(sources) { source in
                     VStack(alignment: .leading, spacing: PlozzTheme.Spacing.xSmall) {
                         Text(source.serverName).font(.headline)
                         Text(source.reason.message).settingsRowSecondary()
@@ -207,7 +220,13 @@ struct LiveTVAutomaticChannelsEmptyView: View {
             } else if state.status == .ready {
                 Text("Your Plozz channels are enabled. Their programs will appear here when the guide is ready.")
             } else {
-                Text(state.status.detail)
+                VStack(spacing: PlozzTheme.Spacing.medium) {
+                    Text(state.status.detail)
+                    LiveTVAutomaticSourceFailures(
+                        sources: state.unavailableSources, hasChannels: state.channelCount > 0
+                    )
+                    .frame(maxWidth: 680, alignment: .leading)
+                }
             }
         } actions: {
             if state.isWorking, state.preparation == nil {

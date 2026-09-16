@@ -779,6 +779,19 @@ to synchronous decoding. Pending-source lists reload asynchronously, while
 saving a source checks only its own descriptor record. Prepared journal data is
 discarded when the operation ends.
 
+Unchanged schedule exports are reused by the worker after comparing the complete
+definitions and snapshots, not snapshot IDs alone. Authorization reads still
+check current credentials and durable definitions each time; only their
+unchanged hashes and validated JSON are reused. External edits, storage errors,
+profile changes and credential rotation retain their existing revocation checks.
+
+Transient server-discovery failures that leave no lineup retry one minute after
+the attempt finishes while the library host is active, instead of waiting for
+the normal 15-minute refresh. A working partial lineup keeps the normal cadence. Playback identity
+holds still defer refreshes. The empty guide exposes the same per-server errors
+as source settings; tvOS source management opens as a full page rather than a
+compact quick-action sheet.
+
 Channel checks use bounded probes and keep unsupported, blocked and uncertain
 results distinct. Only confidently missing streams can be automatically hidden;
 restoring a scan-hidden channel does not change a manual hide. Scanner network

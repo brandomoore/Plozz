@@ -70,11 +70,14 @@ private struct LiveTVLibraryRuntimeHost<Content: View>: View {
                 catch { return }
                 requestAutomaticRefresh(force: true)
             }
-            .task(id: runtime.automaticChannelsEnabled && scenePhase == .active) {
+            .task(id: AutomaticRefreshRequest(
+                enabled: runtime.automaticChannelsEnabled && scenePhase == .active,
+                recovering: runtime.needsAutomaticRecovery
+            )) {
                 guard runtime.automaticChannelsEnabled, scenePhase == .active else { return }
                 requestAutomaticRefresh(force: false)
                 while !Task.isCancelled {
-                    do { try await Task.sleep(for: .seconds(900)) }
+                    do { try await Task.sleep(for: .seconds(runtime.automaticRefreshInterval)) }
                     catch { return }
                     requestAutomaticRefresh(force: false)
                 }
@@ -117,6 +120,11 @@ private struct LiveTVLibraryRuntimeHost<Content: View>: View {
     private struct Request: Hashable {
         let authorization: String
         let reload: Int
+    }
+
+    private struct AutomaticRefreshRequest: Hashable {
+        let enabled: Bool
+        let recovering: Bool
     }
 }
 #endif

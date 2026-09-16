@@ -58,6 +58,8 @@ public final class AccountsProvidersModel {
     /// media-share local-media context.
     @ObservationIgnored
     private let profilesModel: ProfilesModel
+    @ObservationIgnored
+    private var liveTVAuthorizationCache: [String: (fingerprint: String, digest: String)] = [:]
 
     /// The auth token to use for an account id, preferring an in-memory Plex
     /// Home-user override over the account's stored (admin) token. Injected so the
@@ -135,7 +137,13 @@ public final class AccountsProvidersModel {
             account.userID, account.deviceID, credentialRevision(account).rawValue.uuidString
         ] + (account.server.connectionURLs ?? []).map(\.absoluteString)
         let fingerprint = fields.map { "\($0.utf8.count):\($0)" }.joined()
-        return SHA256.hash(data: Data(fingerprint.utf8)).map { String(format: "%02x", $0) }.joined()
+        if let cached = liveTVAuthorizationCache[account.id],
+           cached.fingerprint.utf8.elementsEqual(fingerprint.utf8) {
+            return cached.digest
+        }
+        let digest = SHA256.hash(data: Data(fingerprint.utf8)).map { String(format: "%02x", $0) }.joined()
+        liveTVAuthorizationCache[account.id] = (fingerprint, digest)
+        return digest
     }
 
     private static func liveTVKind(_ kind: ProviderKind) -> LiveTVPrototypeSource? {
@@ -275,6 +283,7 @@ public final class AccountsProvidersModel {
     /// `onActiveAccountsChanged` so the media-share runtime can update its
     /// preferred-account keys.
     public func reloadAccounts() {
+        liveTVAuthorizationCache = [:]
         registry.invalidateCache()
         onAccountsInvalidated()
         accounts = accountStore.loadAccounts()

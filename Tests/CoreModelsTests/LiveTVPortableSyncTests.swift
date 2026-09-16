@@ -695,7 +695,7 @@ final class LiveTVPortableSyncTests: XCTestCase {
             .init(snapshotID: snapshot.id, recipe: .init(name: "Movies", libraries: [library]), epochSeconds: 1_700_000_000)
         ])
         let export = try LiveTVPortableLibraryExport(definitions: [definition], snapshots: [snapshot])
-        try await sender.adapter.prepareForOperation()
+        try await sender.adapter.prepareForOperation(preparedLibrary: export)
         let records = try sender.adapter.capture(
             sourceStore: sender.sources, libraryDefinitions: [definition], snapshots: [snapshot],
             preparedLibrary: export, fallback: [:]
@@ -721,6 +721,110 @@ final class LiveTVPortableSyncTests: XCTestCase {
         XCTAssertTrue(try receiver.adapter.acknowledgeLibraries([definition.id], ifCurrent: revision))
         XCTAssertFalse(receiver.adapter.isCurrentJournalRevision(revision))
         XCTAssertTrue(try receiver.adapter.pending(sourceStore: receiver.sources).snapshots.isEmpty)
+    }
+
+    func testPreparedSnapshotEquivalencePreservesOriginalOptionalFieldsAndFormatting() async throws {
+        let inputs = try makeSnapshotExport()
+        var wire = [recordKey(.library, inputs.definition.id.uuidString).recordName:
+            try LiveTVPortableRecord(library: inputs.definition).encoded()]
+        for part in try LiveTVPortableSnapshots.partition(inputs.snapshot) {
+            let canonical = try LiveTVPortableRecord(snapshot: part).encoded()
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: canonical) as? [String: Any])
+            object["channel"] = NSNull()
+            object["library"] = NSNull()
+            let original = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+            XCTAssertNotEqual(original, canonical)
+            wire[recordKey(.snapshot, part.entityID).recordName] = original
+        }
+        for persisted in [false, true] {
+            let fixture = try makeFixture(requiresPreparedJournal: true)
+            if persisted {
+                try await fixture.adapter.prepareForOperation(records: wire.mapValues(Optional.some))
+                _ = try fixture.adapter.apply(
+                    wire.mapValues(Optional.some), sourceStore: fixture.sources, includeLibrarySnapshots: false
+                )
+                fixture.adapter.discardPreparedJournal()
+            }
+            try await fixture.adapter.prepareForOperation(
+                records: wire.mapValues(Optional.some), preparedLibrary: inputs.export
+            )
+            for _ in 0..<2 {
+                XCTAssertEqual(try fixture.adapter.capture(
+                    sourceStore: fixture.sources, libraryDefinitions: [inputs.definition], snapshots: [inputs.snapshot],
+                    preparedLibrary: inputs.export, fallback: wire
+                ), wire)
+                try await fixture.adapter.prepareForOperation()
+            }
+        }
+    }
+
+    func testSnapshotCandidateMustBePreparedAndIsBoundToExactCandidateBytes() async throws {
+        let fixture = try makeFixture(requiresPreparedJournal: true)
+        let inputs = try makeSnapshotExport()
+        try await fixture.adapter.prepareForOperation()
+        XCTAssertThrowsError(try fixture.adapter.capture(
+            sourceStore: UnavailablePortableSources(), libraryDefinitions: [inputs.definition],
+            snapshots: [inputs.snapshot], preparedLibrary: inputs.export, fallback: [:]
+        )) {
+            XCTAssertEqual($0 as? LiveTVPortableSyncAdapter.PreparationError, .preparationRequired)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.path))
+        try await fixture.adapter.prepareForOperation(preparedLibrary: inputs.export)
+        let initial = try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [inputs.definition], snapshots: [inputs.snapshot],
+            preparedLibrary: inputs.export, fallback: [:]
+        )
+        let changed = try LibraryChannelSnapshot(
+            id: inputs.snapshot.id, items: inputs.snapshot.items,
+            createdAt: inputs.snapshot.createdAt.addingTimeInterval(1)
+        )
+        let changedExport = try LiveTVPortableLibraryExport(definitions: [inputs.definition], snapshots: [changed])
+        XCTAssertThrowsError(try fixture.adapter.capture(
+            sourceStore: UnavailablePortableSources(), libraryDefinitions: [inputs.definition], snapshots: [changed],
+            preparedLibrary: changedExport, fallback: initial
+        )) {
+            XCTAssertEqual($0 as? LiveTVPortableSyncAdapter.PreparationError, .preparationRequired)
+        }
+        try await fixture.adapter.prepareForOperation(preparedLibrary: changedExport)
+        let captured = try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [inputs.definition], snapshots: [changed],
+            preparedLibrary: changedExport, fallback: initial
+        )
+        for part in try LiveTVPortableSnapshots.partition(changed) {
+            let name = recordKey(.snapshot, part.entityID).recordName
+            XCTAssertNotEqual(captured[name], initial[name])
+            XCTAssertEqual(captured[name], try LiveTVPortableRecord(snapshot: part).encoded())
+        }
+        try await fixture.adapter.prepareForOperation()
+        XCTAssertEqual(try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [inputs.definition], snapshots: [changed],
+            preparedLibrary: changedExport, fallback: captured
+        ), captured)
+    }
+
+    func testPreparedSnapshotComparisonRejectsAnUncomparedExistingByteVariant() async throws {
+        let fixture = try makeFixture(requiresPreparedJournal: true)
+        let inputs = try makeSnapshotExport()
+        try await fixture.adapter.prepareForOperation(preparedLibrary: inputs.export)
+        let initial = try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [inputs.definition], snapshots: [inputs.snapshot],
+            preparedLibrary: inputs.export, fallback: [:]
+        )
+        let part = try XCTUnwrap(LiveTVPortableSnapshots.partition(inputs.snapshot).first)
+        let name = recordKey(.snapshot, part.entityID).recordName
+        let alternate = Data(" \n".utf8) + (try XCTUnwrap(initial[name]))
+        try await fixture.adapter.prepareForOperation(records: [name: alternate])
+        XCTAssertThrowsError(try fixture.adapter.capture(
+            sourceStore: UnavailablePortableSources(), libraryDefinitions: [inputs.definition],
+            snapshots: [inputs.snapshot], preparedLibrary: inputs.export, fallback: [name: alternate]
+        )) {
+            XCTAssertEqual($0 as? LiveTVPortableSyncAdapter.PreparationError, .preparationRequired)
+        }
+        try await fixture.adapter.prepareForOperation(records: [name: alternate], preparedLibrary: inputs.export)
+        XCTAssertEqual(try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [inputs.definition], snapshots: [inputs.snapshot],
+            preparedLibrary: inputs.export, fallback: [name: alternate]
+        ), initial)
     }
 
     func testObsoleteLibraryReportCannotAcknowledgeOrMarkNewerDeferredLibraryWork() async throws {
@@ -1159,6 +1263,26 @@ final class LiveTVPortableSyncTests: XCTestCase {
         XCTAssertThrowsError(try adapter.pending(sourceStore: fixture.sources))
         try await adapter.prepareForOperation()
         XCTAssertTrue(try adapter.pending(sourceStore: fixture.sources).pendingPlaylists.isEmpty)
+    }
+
+    private func makeSnapshotExport() throws -> (
+        definition: LibraryChannelDefinition, snapshot: LibraryChannelSnapshot, export: LiveTVPortableLibraryExport
+    ) {
+        let library = LibraryChannelLibrary(accountID: "account", libraryID: "library")
+        let snapshot = try LibraryChannelSnapshot(
+            items: (0..<300).map {
+                try LibraryChannelItem(
+                    item: .init(id: "item-\($0)", title: "Item \($0)", kind: .movie, runtime: 60),
+                    library: library, serverID: "server", userID: "user"
+                )
+            }, createdAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let definition = LibraryChannelDefinition(profileID: profileID, revisions: [
+            .init(snapshotID: snapshot.id, recipe: .init(name: "Movies", libraries: [library]), epochSeconds: 1_700_000_000)
+        ])
+        return (
+            definition, snapshot, try LiveTVPortableLibraryExport(definitions: [definition], snapshots: [snapshot])
+        )
     }
 
     private func journalRecordURL(in fixture: Fixture, named name: String? = nil) throws -> URL {
