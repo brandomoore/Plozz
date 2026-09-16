@@ -792,6 +792,11 @@ holds still defer refreshes. The empty guide exposes the same per-server errors
 as source settings; tvOS source management opens as a full page rather than a
 compact quick-action sheet.
 
+Preparation shows the current stage, library/server, count and elapsed time.
+Connection failures remain source-specific and wrap instead of truncating.
+The compact history copy retains the watched-coverage threshold, no-resume rule
+and original-file requirement.
+
 Channel checks use bounded probes and keep unsupported, blocked and uncertain
 results distinct. Only confidently missing streams can be automatically hidden;
 restoring a scan-hidden channel does not change a manual hide. Scanner network

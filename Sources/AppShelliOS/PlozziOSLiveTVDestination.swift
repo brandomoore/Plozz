@@ -29,6 +29,7 @@ struct PlozziOSLiveTVDestination: View {
     private let accountsProviders: AccountsProvidersModel?
     private let authenticatedHTTPResolver: (any AuthenticatedHTTPResourceResolving)?
     private let connectServer: (() -> Void)?
+    private let onShowSettings: () -> Void
     private let didConfigurePlaylist: () -> Void
     private let completeLibraryChannelPlayback: @MainActor @Sendable (MediaItem, UUID) throws -> Void
     private let isProfileAuthorized: @MainActor () -> Bool
@@ -42,6 +43,7 @@ struct PlozziOSLiveTVDestination: View {
         accountsProviders: AccountsProvidersModel? = nil,
         authenticatedHTTPResolver: (any AuthenticatedHTTPResourceResolving)? = nil,
         connectServer: (() -> Void)? = nil,
+        onShowSettings: @escaping () -> Void,
         didConfigurePlaylist: @escaping () -> Void = {},
         completeLibraryChannelPlayback: @escaping @MainActor @Sendable (MediaItem, UUID) throws -> Void,
         isProfileAuthorized: @escaping @MainActor () -> Bool,
@@ -63,6 +65,7 @@ struct PlozziOSLiveTVDestination: View {
         self.accountsProviders = accountsProviders
         self.authenticatedHTTPResolver = authenticatedHTTPResolver
         self.connectServer = connectServer
+        self.onShowSettings = onShowSettings
         self.didConfigurePlaylist = didConfigurePlaylist
         self.completeLibraryChannelPlayback = completeLibraryChannelPlayback
         self.isProfileAuthorized = isProfileAuthorized
@@ -183,6 +186,15 @@ struct PlozziOSLiveTVDestination: View {
         }
         .id(profileScope)
         .toolbar(isExpanded ? .hidden : .visible, for: .tabBar)
+        .toolbar(isExpanded ? .hidden : .visible, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            if !isExpanded {
+                ToolbarItem(placement: .topBarTrailing) {
+                    PlozziOSSettingsAvatarButton(size: 36, action: onShowSettings)
+                }
+            }
+        }
         .onAppear {
             network.start()
         }

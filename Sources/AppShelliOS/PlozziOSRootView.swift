@@ -740,8 +740,8 @@ private struct PlozziOSTabShell: View {
     private static func configuredDestinations(
         appModel: PlozziOSAppModel
     ) -> [PlozziOSDestination] {
-        appModel.settings.navigation.libraryLayout
-            .visibleKeys(available: NavigationDestinationDefaults.iOS)
+        appModel.settings.navigation
+            .librarySections(available: NavigationDestinationDefaults.iOS).enabled
             .compactMap { key -> PlozziOSDestination? in
                 switch key {
                 case NavigationLibraryLayout.homeKey: return .home
@@ -839,6 +839,7 @@ private struct PlozziOSTabShell: View {
                     accountsProviders: appModel.accountsProviders,
                     authenticatedHTTPResolver: appModel.authenticatedHTTPResolver,
                     connectServer: onAddServer,
+                    onShowSettings: showSettings,
                     didConfigurePlaylist: {
                         _ = appModel.recordSuccessfulIPTVSetup()
                     },
@@ -865,7 +866,6 @@ private struct PlozziOSTabShell: View {
                     }
                 )
                 .environment(appModel.profiles)
-                .toolbar(.hidden, for: .navigationBar)
                 .plozziOSItemNavigation(appModel: appModel)
             }
         case .downloads:

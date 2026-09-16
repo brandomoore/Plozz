@@ -76,6 +76,10 @@ public struct NavigationRailLibraryEntry: Hashable, Sendable, Identifiable {
 /// profile's saved arrangement. SwiftUI-free so the ordering/visibility rules are
 /// unit-testable without a running view hierarchy.
 public enum NavigationDestinationDefaults {
+    public static func iPhoneOverflowKeys(visible: [String]) -> Set<String> {
+        visible.count > 5 ? Set(visible.dropFirst(4)) : []
+    }
+
     public static func compact(hasMusic: Bool) -> [String] {
         var keys = [NavigationLibraryLayout.homeKey, NavigationLibraryLayout.watchlistKey]
         keys.append(NavigationLibraryLayout.liveTVKey)

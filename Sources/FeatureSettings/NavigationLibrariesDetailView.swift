@@ -2,6 +2,9 @@
 import SwiftUI
 import CoreModels
 import CoreUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// Shared navigation arrangement. Hiding a shortcut never disables its content.
 public struct NavigationLibrariesDetailView: View {
@@ -71,16 +74,27 @@ public struct NavigationLibrariesDetailView: View {
         #endif
         let available = keys.filter { !excludedKeys.contains($0) }
         let titles = Self.rowsByKey(visible: visible)
+        let sections = navigation.librarySections(available: available)
+        #if os(iOS)
+        let overflow = UIDevice.current.userInterfaceIdiom == .phone
+            ? NavigationDestinationDefaults.iPhoneOverflowKeys(visible: sections.enabled) : []
+        let requiredEnabled = sections.enabled.count == 1 ? Set(sections.enabled) : navigation.requiredNavigationKeys
+        #else
+        let overflow: Set<String> = []
+        let requiredEnabled = navigation.requiredNavigationKeys
+        #endif
 
         VStack(alignment: .leading, spacing: sectionSpacing) {
             LiftableReorderList(
-                sections: navigation.librarySections(available: available),
+                sections: sections,
                 disabledSectionTitle: Self.hiddenDivider,
                 disabledPlaceholder: Self.hiddenPlaceholder,
                 isLifting: $isReordering,
-                requiredEnabled: [NavigationLibraryLayout.settingsKey],
+                requiredEnabled: requiredEnabled,
                 row: { key in
-                    titles[key] ?? LiftableReorderList.Row(title: Text(verbatim: key))
+                    var row = titles[key] ?? LiftableReorderList.Row(title: Text(verbatim: key))
+                    if overflow.contains(key) { row.detail = Text("In More") }
+                    return row
                 },
                 onChange: { navigation.applyLibrarySections($0, available: available) }
             )
@@ -149,11 +163,19 @@ public struct NavigationLibrariesDetailView: View {
         defaultValue: "Hidden items appear here. Move them back up or choose Show to restore them.",
         comment: "Empty-state drop target under the Hidden divider."
     )
+    #if os(iOS)
+    private static let footnote = LocalizedStringResource(
+        "navigationArrangement.footnote.iOS",
+        defaultValue: "Drag to reorder. Hold to hide or show.",
+        comment: "Instructions for arranging iPhone and iPad navigation tabs."
+    )
+    #else
     private static let footnote = LocalizedStringResource(
         "navigationArrangement.footnote",
         defaultValue: "Press and hold an item to hide, show, or move it. Hiding a shortcut doesn't remove its content. Settings always stays visible.",
         comment: "Instructions and the always-visible Settings safety rule for navigation customization."
     )
+    #endif
     private static let resetTitle = LocalizedStringResource(
         "navigationArrangement.reset",
         defaultValue: "Reset Navigation",

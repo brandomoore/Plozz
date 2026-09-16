@@ -351,13 +351,13 @@ private struct LibraryChannelManagementContent: View {
                         history.setEnabled($0)
                     }
                 )) {
-                    Text("Update library watch history from Plozz channels")
+                    Text("Update watch history")
                         .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } footer: {
                 Text(
-                    "Off leaves library progress and trackers untouched. On records completion only after you watch \(0.9, format: .percent.precision(.fractionLength(0))) of a program, not from where you joined. Channel playback uses original files; server transcoding is unavailable when it cannot preserve this policy.",
+                    "Mark watched after you view \(0.9, format: .percent.precision(.fractionLength(0))) of a program. No resume progress. Original files only.",
                     comment: "The placeholder is a localized percentage such as 90%. Do not add a percent sign."
                 )
             }
@@ -400,8 +400,6 @@ private struct LibraryChannelAutomaticLineupView: View {
                     }
                     .accessibilityIdentifier("live-tv-generated-channel-\(channel.id.uuidString)")
                 }
-            } footer: {
-                Text("Plozz creates and updates these schedules automatically. Use the guide to watch, search or favorite a channel.")
             }
         }
     }
@@ -448,8 +446,6 @@ private struct LibraryChannelCustomSection: View {
                     }
                 }
             }
-        } footer: {
-            Text("Optional: choose your own libraries and rules for an additional channel.")
         }
     }
 }

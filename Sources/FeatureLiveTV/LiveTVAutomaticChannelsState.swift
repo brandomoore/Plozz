@@ -60,17 +60,17 @@ enum LiveTVAutomaticChannelsStatus: Equatable {
     var detail: LocalizedStringResource {
         switch self {
         case .disabled:
-            "Turn this profile's authorized Plex, Jellyfin or Emby library into themed channels with automatic guides. No channel setup needed."
+            "Create channels from your libraries."
         case .preparing:
-            "Finding movies and episodes in this profile's authorized libraries and building their guides."
+            "Building channels from your movies and shows."
         case .ready:
-            "Your lineup updates automatically as your authorized library changes. Find these channels in the guide, search and favorites."
+            "Your lineup updates automatically."
         case .empty, .failed(.emptyCatalog):
-            "No eligible movies or episodes are available yet. Plozz channels need an authorized Plex, Jellyfin or Emby library with playable titles and known durations."
+            "No playable movies or episodes with known durations."
         case .failed(.sourceUnavailable):
-            "Your saved server libraries couldn't be loaded. Check the connection details below and retry. You don't need to add the same account again."
+            "Couldn't load your libraries."
         case .failed(.catalogChanged):
-            "Your library changed while the lineup was being prepared. Retry to use the latest movies and episodes."
+            "Your library changed. Retry to update the lineup."
         case .failed(let issue):
             issue.message
         }
@@ -136,8 +136,6 @@ struct LiveTVAutomaticChannelsSection: View {
                 .disabled(action.isUpdating)
                 .accessibilityIdentifier("live-tv-automatic-retry")
             }
-        } footer: {
-            Text("Uses all libraries this profile is allowed to access. No public channels are added. IPTV playlists do not need a media server. Custom channels below are optional and keep their own schedules.")
         }
         .onDisappear { update?.cancel(); update = nil }
     }
@@ -157,37 +155,35 @@ struct LiveTVAutomaticChannelsStatusView: View {
                 }
             } else {
                 Text(state.status.title).font(.headline)
-                Text(state.status.detail).settingsRowSecondary()
+                if state.status != .ready {
+                    Text(state.status.detail).settingsRowSecondary()
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if state.enabled, state.channelCount > 0 {
                 Text("\(state.channelCount) automatic channels")
             }
             if state.skippedItemCount > 0 {
-                Text("\(state.skippedItemCount) library items couldn't be scheduled because their duration or metadata is unavailable.")
+                Text("\(state.skippedItemCount) items skipped: missing duration or metadata.")
                     .settingsRowSecondary()
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            LiveTVAutomaticSourceFailures(
-                sources: state.unavailableSources, hasChannels: state.channelCount > 0
-            )
+            LiveTVAutomaticSourceFailures(sources: state.unavailableSources)
         }
     }
 }
 
 private struct LiveTVAutomaticSourceFailures: View {
     let sources: [LibraryChannelSourceFailure]
-    let hasChannels: Bool
 
     var body: some View {
         if !sources.isEmpty {
             VStack(alignment: .leading, spacing: PlozzTheme.Spacing.small) {
-                Text(hasChannels
-                    ? "Channels from available libraries are ready. Some servers still need attention."
-                    : "These saved connections couldn't load their libraries.")
-                    .settingsRowSecondary()
                 ForEach(sources) { source in
                     VStack(alignment: .leading, spacing: PlozzTheme.Spacing.xSmall) {
                         Text(source.serverName).font(.headline)
-                        Text(source.reason.message).settingsRowSecondary()
+                        Text(source.reason.compactMessage).settingsRowSecondary()
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .accessibilityElement(children: .combine)
                 }
@@ -222,11 +218,10 @@ struct LiveTVAutomaticChannelsEmptyView: View {
             } else {
                 VStack(spacing: PlozzTheme.Spacing.medium) {
                     Text(state.status.detail)
-                    LiveTVAutomaticSourceFailures(
-                        sources: state.unavailableSources, hasChannels: state.channelCount > 0
-                    )
+                    LiveTVAutomaticSourceFailures(sources: state.unavailableSources)
                     .frame(maxWidth: 680, alignment: .leading)
                 }
+
             }
         } actions: {
             if state.isWorking, state.preparation == nil {
@@ -240,6 +235,17 @@ struct LiveTVAutomaticChannelsEmptyView: View {
             }
             .buttonStyle(SettingsFocusButtonStyle(size: .contained))
             .accessibilityIdentifier("live-tv-automatic-manage")
+        }
+    }
+}
+
+private extension LibraryChannelSourceFailure.Reason {
+    var compactMessage: LocalizedStringResource {
+        switch self {
+        case .unreachable: "Couldn't connect. Check the server address."
+        case .authorization: "Library access denied. Check your sign-in."
+        case .invalidResponse: "Couldn't read the library response."
+        case .unknown: "Couldn't load libraries."
         }
     }
 }

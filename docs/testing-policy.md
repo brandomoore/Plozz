@@ -135,6 +135,10 @@ No timer emits artificial progress while an operation is stuck.
 inside a `List` without a navigation environment object. Both shells must pass
 their current profile's `NavigationStyleSettingsModel` explicitly. The test also
 checks that an unrelated ancestor model cannot redirect edits to another profile.
+On iOS, Settings can be hidden from the tab bar because page-header controls
+remain available. The default tvOS policy still keeps Settings visible.
+`NavigationStyleSettingsStoreTests` covers cross-platform persistence, the
+last-destination safeguard, and iPhone overflow labels when six tabs are enabled.
 
 The focus host and test bundle share one `AppShell` package product. Overlapping
 direct products can promote `CoreUI` into a separate framework on XCTest's

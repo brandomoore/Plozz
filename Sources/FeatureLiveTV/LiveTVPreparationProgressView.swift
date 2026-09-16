@@ -9,13 +9,12 @@ struct LiveTVPreparationProgressView: View {
 
     var body: some View {
         let update = progress.update
-        VStack(alignment: .leading, spacing: PlozzTheme.Spacing.medium) {
+        VStack(alignment: .leading, spacing: PlozzTheme.Spacing.small) {
             HStack(alignment: .firstTextBaseline) {
                 Text(update.stage.title).font(.headline)
                     .accessibilityIdentifier("live-tv-preparation-stage")
                 Spacer(minLength: PlozzTheme.Spacing.small)
-                Text("Step \(update.stage.step) of 3")
-                    .font(.caption).foregroundStyle(palette.secondaryText)
+                LiveTVPreparationActivityView(progress: progress)
             }
             if let library = update.libraryName {
                 Text(library).font(.callout.weight(.semibold))
@@ -44,17 +43,9 @@ struct LiveTVPreparationProgressView: View {
                 ProgressView().accessibilityLabel(update.stage.title)
                     .accessibilityIdentifier("live-tv-automatic-progress")
             }
-            Text("\(update.scannedItemCount, format: .number) library items checked")
-                .font(.callout).monospacedDigit()
+            Text("\(update.scannedItemCount, format: .number) items checked")
+                .font(.caption).monospacedDigit()
                 .accessibilityIdentifier("live-tv-preparation-total")
-            if update.channelCount > 0 {
-                Text("\(update.channelCount, format: .number) channels in your lineup")
-                    .font(.callout).monospacedDigit()
-            }
-            LiveTVPreparationActivityView(progress: progress)
-            Text("Reading library details, not downloading videos. Turn off Plozz channels to cancel preparation.")
-                .font(.caption).foregroundStyle(palette.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(palette.primaryText)
     }
@@ -68,14 +59,12 @@ private struct LiveTVPreparationActivityView: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: PlozzTheme.Spacing.xSmall) {
                 if let startedAt = progress.startedAt {
-                    HStack(spacing: PlozzTheme.Spacing.xSmall) {
-                        Text("Elapsed")
-                        Text(startedAt, style: .timer).monospacedDigit()
-                    }
+                    Text(startedAt, style: .timer).monospacedDigit()
+                    .fixedSize()
                     .font(.caption).foregroundStyle(palette.secondaryText)
                 }
                 if progress.isWaiting(at: context.date) {
-                    Text("Waiting for the server to respond. No new items have arrived recently.")
+                    Text("Waiting for server")
                         .font(.caption).foregroundStyle(palette.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("live-tv-preparation-waiting")
@@ -88,10 +77,10 @@ private struct LiveTVPreparationActivityView: View {
 private extension LibraryChannelPreparationUpdate.Stage {
     var title: LocalizedStringResource {
         switch self {
-        case .checkingServers: "Checking your libraries"
-        case .readingLibrary: "Reading library items"
-        case .buildingChannels: "Building your channels"
-        case .savingGuides: "Saving program guides"
+        case .checkingServers: "Checking libraries"
+        case .readingLibrary: "Reading items"
+        case .buildingChannels: "Building channels"
+        case .savingGuides: "Saving guides"
         }
     }
 }
