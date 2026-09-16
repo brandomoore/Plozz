@@ -236,6 +236,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
                 listRow(item)
                     .moveDisabled(item == .divider)
                     .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
             }
             .onMove { offsets, destination in
                 onChange(
@@ -251,6 +252,7 @@ public struct LiftableReorderList<Element: Hashable>: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .contentMargins(.vertical, 0, for: .scrollContent)
+        .contentMargins(.horizontal, 0, for: .scrollContent)
         .scrollDisabled(true)
         .environment(\.editMode, .constant(.active))
         .frame(height: CGFloat(items.count) * 54)
@@ -265,7 +267,8 @@ public struct LiftableReorderList<Element: Hashable>: View {
             HStack {
                 ReorderRank(
                     rank: sections.enabled.firstIndex(of: element).map { $0 + 1 },
-                    maximumRank: sections.enabled.count
+                    maximumRank: sections.enabled.count,
+                    minimumWidth: 0
                 )
                 .font(.caption)
                 .plozzForeground(.secondary)
@@ -426,6 +429,7 @@ private struct LiftableRow: View {
 private struct ReorderRank: View {
     let rank: Int?
     let maximumRank: Int
+    var minimumWidth: CGFloat = 26
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -436,7 +440,7 @@ private struct ReorderRank: View {
             }
         }
         .monospacedDigit()
-        .frame(minWidth: 26, alignment: .trailing)
+        .frame(minWidth: minimumWidth, alignment: .trailing)
     }
 }
 
