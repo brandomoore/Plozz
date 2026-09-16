@@ -1769,6 +1769,7 @@ private struct PlozziOSAppearanceSettingsView: View {
             SettingsSectionGroup("Hide or Reorder Navigation") {
                 NavigationLibrariesDetailView(
                     scope: navigationLibrariesScope,
+                    navigation: navigation,
                     includesIndividualLibraries: false,
                     excludedKeys: [
                         NavigationLibraryLayout.musicKey,

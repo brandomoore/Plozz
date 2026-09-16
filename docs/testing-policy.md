@@ -131,6 +131,11 @@ No timer emits artificial progress while an operation is stuck.
 
 ### Simulator readiness and authoritative results
 
+`NavigationLibrariesDetailViewTests` hosts the navigation arrangement editor
+inside a `List` without a navigation environment object. Both shells must pass
+their current profile's `NavigationStyleSettingsModel` explicitly. The test also
+checks that an unrelated ancestor model cannot redirect edits to another profile.
+
 The focus host and test bundle share one `AppShell` package product. Overlapping
 direct products can promote `CoreUI` into a separate framework on XCTest's
 `DYLD_FRAMEWORK_PATH`, shadowing Apple's private framework and crashing UIKit

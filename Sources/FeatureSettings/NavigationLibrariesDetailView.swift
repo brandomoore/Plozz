@@ -6,18 +6,20 @@ import CoreUI
 /// Shared navigation arrangement. Hiding a shortcut never disables its content.
 public struct NavigationLibrariesDetailView: View {
     let scope: ProfileLibrariesScope
+    let navigation: NavigationStyleSettingsModel
     let includesIndividualLibraries: Bool
     let excludedKeys: Set<String>
-    @Environment(NavigationStyleSettingsModel.self) private var navigation
 
     @State private var isReordering = false
 
     public init(
         scope: ProfileLibrariesScope,
+        navigation: NavigationStyleSettingsModel,
         includesIndividualLibraries: Bool = true,
         excludedKeys: Set<String> = []
     ) {
         self.scope = scope
+        self.navigation = navigation
         self.includesIndividualLibraries = includesIndividualLibraries
         self.excludedKeys = excludedKeys
     }
