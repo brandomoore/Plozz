@@ -14,6 +14,9 @@ public struct NavigationLibrariesDetailView: View {
     let excludedKeys: Set<String>
 
     @State private var isReordering = false
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     public init(
         scope: ProfileLibrariesScope,
@@ -76,7 +79,7 @@ public struct NavigationLibrariesDetailView: View {
         let titles = Self.rowsByKey(visible: visible)
         let sections = navigation.librarySections(available: available)
         #if os(iOS)
-        let overflow = UIDevice.current.userInterfaceIdiom == .phone
+        let overflow = UIDevice.current.userInterfaceIdiom == .phone || horizontalSizeClass == .compact
             ? NavigationDestinationDefaults.iPhoneOverflowKeys(visible: sections.enabled) : []
         let requiredEnabled = sections.enabled.count == 1 ? Set(sections.enabled) : navigation.requiredNavigationKeys
         #else
