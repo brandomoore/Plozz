@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreUI
 import CoreModels
 import FeatureLiveTVCore
@@ -83,6 +82,44 @@ private struct PrototypeToolbarLabelStyle: LabelStyle {
         HStack(spacing: 8) {
             configuration.icon
             if !compact { configuration.title }
+        }
+    }
+}
+
+struct PrototypeSheetPresentation<SheetContent: View>: ViewModifier {
+    @Binding var selection: PrototypeSheet?
+    let onDismiss: () -> Void
+    @ViewBuilder let sheetContent: (PrototypeSheet) -> SheetContent
+
+    func body(content: Content) -> some View {
+        #if os(tvOS)
+        content
+            .fullScreenCover(item: binding(forManagement: true), onDismiss: onDismiss, content: sheetContent)
+            .sheet(item: binding(forManagement: false), onDismiss: onDismiss, content: sheetContent)
+        #else
+        content.sheet(item: $selection, onDismiss: onDismiss, content: sheetContent)
+        #endif
+    }
+
+    private func binding(forManagement management: Bool) -> Binding<PrototypeSheet?> {
+        Binding(
+            get: {
+                guard let selection, selection.usesManagementPage == management else { return nil }
+                return selection
+            },
+            set: { value in
+                guard value != nil || selection?.usesManagementPage == management else { return }
+                selection = value
+            }
+        )
+    }
+}
+
+extension PrototypeSheet {
+    var usesManagementPage: Bool {
+        switch self {
+        case .sources, .addPlaylist, .serverSetup: true
+        default: false
         }
     }
 }
@@ -364,6 +401,7 @@ private struct PrototypeSourcesForm: View {
                 Button("Reload sources", systemImage: "arrow.clockwise", action: reload)
                     .disabled(imports.isLoading)
             }
+            #if DEBUG
             Section {
                 Toggle("5,000 rows for scrolling", isOn: $model.isLargeCatalog)
             } header: {
@@ -374,6 +412,7 @@ private struct PrototypeSourcesForm: View {
             Section {
                 Text("Channel history is separate from movie and episode progress. Jellyfin and Emby can play channels from a configured Live TV server. Plex currently supports channels and guide listings, not playback.")
             }
+            #endif
         }
         .alert("Guide selection could not be applied", isPresented: $selectionFailed) {
             Button("OK", role: .cancel) {}
@@ -421,5 +460,3 @@ struct PrototypeGuideSourceStatus: View {
         }
     }
 }
-
-#endif

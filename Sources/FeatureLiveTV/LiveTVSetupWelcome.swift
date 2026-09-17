@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreUI
 import FeatureLiveTVCore
 import SwiftUI
@@ -186,5 +185,3 @@ private struct LiveTVSetupChoice: View {
         .accessibilityHint(detail)
     }
 }
-
-#endif

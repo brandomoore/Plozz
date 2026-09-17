@@ -2,28 +2,36 @@
 import SwiftUI
 import CoreModels
 import CoreUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// Shared navigation arrangement. Hiding a shortcut never disables its content.
 public struct NavigationLibrariesDetailView: View {
     let scope: ProfileLibrariesScope
+    let navigation: NavigationStyleSettingsModel
     let includesIndividualLibraries: Bool
     let excludedKeys: Set<String>
-    @Environment(NavigationStyleSettingsModel.self) private var navigation
 
     @State private var isReordering = false
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     public init(
         scope: ProfileLibrariesScope,
+        navigation: NavigationStyleSettingsModel,
         includesIndividualLibraries: Bool = true,
         excludedKeys: Set<String> = []
     ) {
         self.scope = scope
+        self.navigation = navigation
         self.includesIndividualLibraries = includesIndividualLibraries
         self.excludedKeys = excludedKeys
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
+        VStack(alignment: .leading, spacing: sectionSpacing) {
             content(for: discoveredLibraries)
             switch scope.discoveredLibraries {
             case .idle, .loading:
@@ -49,6 +57,14 @@ public struct NavigationLibrariesDetailView: View {
         return libraries
     }
 
+    private var sectionSpacing: CGFloat {
+        #if os(iOS)
+        PlozzTheme.Spacing.medium
+        #else
+        SettingsMetrics.sectionSpacing
+        #endif
+    }
+
     @ViewBuilder
     private func content(for all: [AggregatedLibrary]) -> some View {
         let visible = all.filter { scope.homeVisibility.isEnabled($0.key) }
@@ -61,16 +77,27 @@ public struct NavigationLibrariesDetailView: View {
         #endif
         let available = keys.filter { !excludedKeys.contains($0) }
         let titles = Self.rowsByKey(visible: visible)
+        let sections = navigation.librarySections(available: available)
+        #if os(iOS)
+        let overflow = UIDevice.current.userInterfaceIdiom == .phone || horizontalSizeClass == .compact
+            ? NavigationDestinationDefaults.iPhoneOverflowKeys(visible: sections.enabled) : []
+        let requiredEnabled = sections.enabled.count == 1 ? Set(sections.enabled) : navigation.requiredNavigationKeys
+        #else
+        let overflow: Set<String> = []
+        let requiredEnabled = navigation.requiredNavigationKeys
+        #endif
 
-        VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
+        VStack(alignment: .leading, spacing: sectionSpacing) {
             LiftableReorderList(
-                sections: navigation.librarySections(available: available),
+                sections: sections,
                 disabledSectionTitle: Self.hiddenDivider,
                 disabledPlaceholder: Self.hiddenPlaceholder,
                 isLifting: $isReordering,
-                requiredEnabled: [NavigationLibraryLayout.settingsKey],
+                requiredEnabled: requiredEnabled,
                 row: { key in
-                    titles[key] ?? LiftableReorderList.Row(title: Text(verbatim: key))
+                    var row = titles[key] ?? LiftableReorderList.Row(title: Text(verbatim: key))
+                    if overflow.contains(key) { row.detail = Text("In More") }
+                    return row
                 },
                 onChange: { navigation.applyLibrarySections($0, available: available) }
             )
@@ -89,7 +116,11 @@ public struct NavigationLibrariesDetailView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
+            #if os(iOS)
+            .buttonStyle(.borderless)
+            #else
             .buttonStyle(SettingsFocusButtonStyle())
+            #endif
             .disabled(isReordering)
         }
     }
@@ -111,9 +142,7 @@ public struct NavigationLibrariesDetailView: View {
                 symbolName: "square.stack.3d.up.fill"
             )
         ]
-        #if DEBUG
         rows[NavigationLibraryLayout.liveTVKey] = .init(title: Text("Live TV"), symbolName: "antenna.radiowaves.left.and.right")
-        #endif
         for aggregated in NavigationRailPlan.browsableLibraries(visible) {
             rows[aggregated.key] = LiftableReorderList<String>.Row(
                 title: aggregated.library.displayName,
@@ -137,11 +166,19 @@ public struct NavigationLibrariesDetailView: View {
         defaultValue: "Hidden items appear here. Move them back up or choose Show to restore them.",
         comment: "Empty-state drop target under the Hidden divider."
     )
+    #if os(iOS)
+    private static let footnote = LocalizedStringResource(
+        "navigationArrangement.footnote.iOS",
+        defaultValue: "Drag to reorder. Hold to hide or show.",
+        comment: "Instructions for arranging iPhone and iPad navigation tabs."
+    )
+    #else
     private static let footnote = LocalizedStringResource(
         "navigationArrangement.footnote",
         defaultValue: "Press and hold an item to hide, show, or move it. Hiding a shortcut doesn't remove its content. Settings always stays visible.",
         comment: "Instructions and the always-visible Settings safety rule for navigation customization."
     )
+    #endif
     private static let resetTitle = LocalizedStringResource(
         "navigationArrangement.reset",
         defaultValue: "Reset Navigation",

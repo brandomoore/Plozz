@@ -1,4 +1,3 @@
-#if DEBUG
 import CryptoKit
 import Foundation
 #if canImport(FoundationXML)
@@ -1002,4 +1001,3 @@ private final class EntityRejectingXMLInputStream: InputStream {
         false
     }
 }
-#endif

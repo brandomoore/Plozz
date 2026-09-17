@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 #if canImport(FoundationNetworking)
@@ -344,4 +343,3 @@ private struct LiveTVScanManifest {
         }
     }
 }
-#endif

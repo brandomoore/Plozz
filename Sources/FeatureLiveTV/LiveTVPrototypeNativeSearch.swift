@@ -1,4 +1,4 @@
-#if DEBUG && os(tvOS)
+#if os(tvOS)
 import SwiftUI
 import UIKit
 

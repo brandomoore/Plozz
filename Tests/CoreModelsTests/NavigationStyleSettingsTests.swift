@@ -101,7 +101,7 @@ final class NavigationStyleSettingsStoreTests: XCTestCase {
         )
     }
 
-    func testSettingsCannotBeHiddenByMutationOrPersistedLegacyData() {
+    func testDefaultPolicyKeepsSettingsReachableWithoutErasingMobilePreference() {
         let defaults = makeDefaults()
         let key = "com.plozz.navigationLibraryLayout"
         defaults.set(
@@ -116,14 +116,58 @@ final class NavigationStyleSettingsStoreTests: XCTestCase {
         let store = NavigationLibraryLayoutStore(defaults: defaults)
         var layout = store.load()
         XCTAssertTrue(layout.isVisible(NavigationLibraryLayout.settingsKey))
-        XCTAssertFalse(layout.hiddenKeys.contains(NavigationLibraryLayout.settingsKey))
+        XCTAssertTrue(layout.hiddenKeys.contains(NavigationLibraryLayout.settingsKey))
 
         layout.hiddenKeys.insert(NavigationLibraryLayout.settingsKey)
         store.save(layout)
-        XCTAssertFalse(store.load().hiddenKeys.contains(NavigationLibraryLayout.settingsKey))
+        XCTAssertTrue(store.load().hiddenKeys.contains(NavigationLibraryLayout.settingsKey))
+        let available = [NavigationLibraryLayout.homeKey, NavigationLibraryLayout.settingsKey]
+        XCTAssertEqual(layout.sections(available: available).enabled, available)
+        XCTAssertEqual(layout.sections(available: available, requiredEnabled: []).disabled,
+                       [NavigationLibraryLayout.settingsKey])
 
         layout.setVisible(false, for: NavigationLibraryLayout.settingsKey)
         XCTAssertTrue(layout.isVisible(NavigationLibraryLayout.settingsKey))
+    }
+
+    func testMobileSettingsHidingSurvivesPersistenceAndTVReordering() {
+        let available = NavigationDestinationDefaults.iOS
+        var layout = NavigationLibraryLayout()
+        layout.apply(.init(
+            enabled: available.filter { $0 != NavigationLibraryLayout.settingsKey },
+            disabled: [NavigationLibraryLayout.settingsKey]
+        ), available: available, requiredEnabled: [])
+        let store = NavigationLibraryLayoutStore(defaults: makeDefaults())
+        store.save(layout)
+        var restored = store.load()
+        XCTAssertFalse(restored.sections(available: available, requiredEnabled: [])
+            .enabled.contains(NavigationLibraryLayout.settingsKey))
+        let tv = restored.sections(available: available)
+        XCTAssertTrue(tv.enabled.contains(NavigationLibraryLayout.settingsKey))
+        restored.apply(tv, available: available)
+        XCTAssertTrue(restored.hiddenKeys.contains(NavigationLibraryLayout.settingsKey))
+    }
+
+    func testEmptyMobileNavigationRetainsAReachableDestination() {
+        let available = NavigationDestinationDefaults.iOS
+        var layout = NavigationLibraryLayout(hiddenKeys: Set(available))
+        XCTAssertEqual(layout.sections(available: available, requiredEnabled: []).enabled,
+                       [NavigationLibraryLayout.settingsKey])
+        layout.apply(.init(enabled: [], disabled: available), available: available, requiredEnabled: [])
+        XCTAssertEqual(layout.sections(available: available, requiredEnabled: []).enabled,
+                       [NavigationLibraryLayout.settingsKey])
+    }
+
+    func testMoreLabelsFollowTheEnabledOrderOnlyWhenThereAreMoreThanFiveTabs() {
+        let available = NavigationDestinationDefaults.iOS
+        XCTAssertTrue(NavigationDestinationDefaults.iPhoneOverflowKeys(
+            visible: Array(available.prefix(5))
+        ).isEmpty)
+        XCTAssertEqual(NavigationDestinationDefaults.iPhoneOverflowKeys(visible: available),
+                       Set(available.suffix(2)))
+        let reordered = Array(available.reversed())
+        XCTAssertEqual(NavigationDestinationDefaults.iPhoneOverflowKeys(visible: reordered),
+                       Set(reordered.suffix(2)))
     }
 
     @MainActor

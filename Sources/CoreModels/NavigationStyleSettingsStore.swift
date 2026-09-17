@@ -99,18 +99,20 @@ public final class NavigationStyleSettingsModel {
         self.layoutStore = layoutStore
         self.style = store.load()
         self.preventsAccidentalExit = store.loadPreventsAccidentalExit()
-        let loadedLayout = layoutStore.load()
-        var layout = loadedLayout
-        layout.enforceRequiredVisibility()
-        self.libraryLayout = layout
-        if layout != loadedLayout {
-            layoutStore.save(layout)
-        }
+        self.libraryLayout = layoutStore.load()
+    }
+
+    public var requiredNavigationKeys: Set<String> {
+        #if os(iOS)
+        []
+        #else
+        [NavigationLibraryLayout.settingsKey]
+        #endif
     }
 
     /// The editable enabled/hidden split for the Settings reorder control.
     public func librarySections(available: [String]) -> OrderedVisibilityList.Sections<String> {
-        libraryLayout.sections(available: available)
+        libraryLayout.sections(available: available, requiredEnabled: requiredNavigationKeys)
     }
 
     /// Applies an edit from the reorder control and persists it.
@@ -119,7 +121,7 @@ public final class NavigationStyleSettingsModel {
         available: [String]
     ) {
         var next = libraryLayout
-        next.apply(sections, available: available)
+        next.apply(sections, available: available, requiredEnabled: requiredNavigationKeys)
         guard next != libraryLayout else { return }
         libraryLayout = next
         layoutStore.save(next)

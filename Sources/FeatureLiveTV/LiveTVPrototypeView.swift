@@ -1,12 +1,13 @@
-#if DEBUG
 import CoreUI
 import CoreModels
 import FeatureLiveTVCore
 import SwiftUI
 
+#if DEBUG
 public enum LiveTVPrototypeEntry {
     public static var isEnabled: Bool { LiveTVPrototypeLaunch.isEnabled() }
 }
+#endif
 
 public struct LiveTVPrototypePlayback {
     public let paneID: UUID
@@ -224,10 +225,14 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         self.onExpandedChange = onExpandedChange
         self.onOpenTitle = onOpenTitle
         self.player = player
-        let arguments = ProcessInfo.processInfo.arguments
+        #if DEBUG
+        let isLargeCatalog = ProcessInfo.processInfo.arguments.contains("--live-tv-5000")
+        #else
+        let isLargeCatalog = false
+        #endif
         let model = LiveTVPrototypeModel(
             now: Date(), scenario: .noGuide,
-            isLargeCatalog: arguments.contains("--live-tv-5000"),
+            isLargeCatalog: isLargeCatalog,
             channels: [], preferencesStore: preferencesStore
         )
         _model = State(initialValue: model)
@@ -550,7 +555,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     private var presentedContent: some View {
         playerAndGuideSurface
-        .sheet(item: $sheet, onDismiss: {
+        .modifier(PrototypeSheetPresentation(selection: $sheet, onDismiss: {
             if let item = pendingLibraryNavigation {
                 pendingLibraryNavigation = nil
                 openLibraryItem(item)
@@ -589,7 +594,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             )
             .environment(\.themePalette, palette)
             .tint(palette.accent)
-        }
+        })
         .alert("Couldn't open title", isPresented: Binding(
             get: { libraryNavigationIssue != nil },
             set: { if !$0 { libraryNavigationIssue = nil } }
@@ -1746,4 +1751,3 @@ struct PrototypeImportStatus: View {
         }
     }
 }
-#endif

@@ -96,9 +96,7 @@ struct SettingsContext {
 /// future per-account flow can do the same without re-plumbing closures.
 public enum SettingsRoute: Hashable {
     case profile
-    #if DEBUG
     case liveTV
-    #endif
     /// Per-profile settings page (Everyone › Profiles › <name>).
     case profileSettings(profileID: String)
     /// The Parental PIN prompt that unseals a Kids Profile's restricted

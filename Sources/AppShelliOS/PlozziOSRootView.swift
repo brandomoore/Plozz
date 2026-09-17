@@ -619,9 +619,7 @@ private enum ServerPromptFollowUp {
 private enum PlozziOSDestination: String, CaseIterable, Identifiable, Hashable {
     case home
     case watchlist
-    #if DEBUG
     case liveTV
-    #endif
     case downloads
     case search
     case settings
@@ -632,9 +630,7 @@ private enum PlozziOSDestination: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .home: "Home"
         case .watchlist: "Watchlist"
-        #if DEBUG
         case .liveTV: "Live TV"
-        #endif
         case .downloads: "Downloads"
         case .search: "Search"
         case .settings: "Settings"
@@ -645,12 +641,57 @@ private enum PlozziOSDestination: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .home: "house"
         case .watchlist: "bookmark"
-        #if DEBUG
         case .liveTV: "antenna.radiowaves.left.and.right"
-        #endif
         case .downloads: "arrow.down.circle"
         case .search: "magnifyingglass"
         case .settings: "gearshape"
+        }
+    }
+}
+
+private enum PlozziOSTabSelection: Hashable {
+    case destination(PlozziOSDestination)
+    case more
+}
+
+private struct PlozziOSMorePage: View {
+    let destinations: [PlozziOSDestination]
+    let onSelect: (PlozziOSDestination) -> Void
+    let onShowSettings: () -> Void
+
+    var body: some View {
+        SettingsPageList {
+            SettingsSectionGroup {
+                ForEach(destinations) { destination in
+                    Button {
+                        onSelect(destination)
+                    } label: {
+                        HStack(spacing: 16) {
+                            Image(systemName: destination.systemImage)
+                                .font(.title3)
+                                .foregroundStyle(.tint)
+                                .frame(width: 28)
+                                .accessibilityHidden(true)
+                            Text(destination.title)
+                                .font(.body.weight(.semibold))
+                            Spacer(minLength: 12)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .plozzForeground(.secondary)
+                                .accessibilityHidden(true)
+                        }
+                        .frame(minHeight: 32)
+                    }
+                    .accessibilityIdentifier("more-destination-\(destination.rawValue)")
+                }
+            }
+        }
+        .navigationTitle("More")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                PlozziOSSettingsAvatarButton(size: 36, action: onShowSettings)
+            }
         }
     }
 }
@@ -675,12 +716,15 @@ private struct PlozziOSScreenshotTabRouter: View {
 
 private struct PlozziOSTabShell: View {
     @Environment(\.themePalette) private var palette
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(PlozziOSSidebarGeometryModel.self)
     private var sidebarGeometry
     @Environment(HeroTrailerController.self)
     private var heroTrailerController
     @State private var settingsPresentationColorScheme: ColorScheme = .dark
     @State private var selectedDestination: PlozziOSDestination = .home
+    @State private var isMoreSelected = false
+    @State private var moreDestination: PlozziOSDestination?
     @State private var lastContentDestination: PlozziOSDestination = .home
     @State private var retainsExplicitLiveTVEntry = false
     @State private var sharedHomeViewModel: HomeViewModel
@@ -728,7 +772,6 @@ private struct PlozziOSTabShell: View {
         self.systemColorScheme = systemColorScheme
         let visible = Self.configuredDestinations(appModel: appModel)
         let initial: PlozziOSDestination
-        #if DEBUG
         initial = AppAdmissionNavigation.initialSelection(
             current: .home,
             visible: visible,
@@ -737,9 +780,6 @@ private struct PlozziOSTabShell: View {
             admission: appModel.admissionContext,
             hasPendingLiveTVEntry: appModel.pendingStandaloneLiveTVEntry
         )
-        #else
-        initial = visible.contains(.home) ? .home : (visible.first ?? .settings)
-        #endif
         _selectedDestination = State(initialValue: initial)
         _lastContentDestination = State(initialValue: initial)
         _sharedHomeViewModel = State(
@@ -750,15 +790,13 @@ private struct PlozziOSTabShell: View {
     private static func configuredDestinations(
         appModel: PlozziOSAppModel
     ) -> [PlozziOSDestination] {
-        appModel.settings.navigation.libraryLayout
-            .visibleKeys(available: NavigationDestinationDefaults.iOS)
+        appModel.settings.navigation
+            .librarySections(available: NavigationDestinationDefaults.iOS).enabled
             .compactMap { key -> PlozziOSDestination? in
                 switch key {
                 case NavigationLibraryLayout.homeKey: return .home
                 case NavigationLibraryLayout.watchlistKey: return .watchlist
-                #if DEBUG
                 case NavigationLibraryLayout.liveTVKey: return .liveTV
-                #endif
                 case NavigationLibraryLayout.searchKey: return .search
                 case NavigationLibraryLayout.downloadsKey: return .downloads
                 case NavigationLibraryLayout.settingsKey: return .settings
@@ -769,46 +807,76 @@ private struct PlozziOSTabShell: View {
 
     private var tabDestinations: [PlozziOSDestination] {
         let configured = Self.configuredDestinations(appModel: appModel)
-        #if DEBUG
         return AppAdmissionNavigation.destinations(
             configured,
             liveTV: .liveTV,
             includesExplicitEntry: appModel.allowsStandalonePlayback
                 && (appModel.pendingStandaloneLiveTVEntry || retainsExplicitLiveTVEntry)
         )
-        #else
-        return configured
-        #endif
     }
 
     private var effectiveSelectedDestination: PlozziOSDestination {
-        #if DEBUG
         if appModel.pendingStandaloneLiveTVEntry && appModel.allowsStandalonePlayback {
             return .liveTV
         }
-        #endif
         return resolvedDestination(selectedDestination)
     }
 
-    private var destinationSelection: Binding<PlozziOSDestination> {
+    private var overflowDestinations: [PlozziOSDestination] {
+        guard UIDevice.current.userInterfaceIdiom == .phone || horizontalSizeClass == .compact else { return [] }
+        let keys = NavigationDestinationDefaults.iPhoneOverflowKeys(visible: tabDestinations.map(\.rawValue))
+        return tabDestinations.filter { keys.contains($0.rawValue) }
+    }
+
+    private var directTabDestinations: [PlozziOSDestination] {
+        tabDestinations.filter { !overflowDestinations.contains($0) }
+    }
+
+    private var isShowingMorePage: Bool {
+        isMoreSelected && moreDestination == nil
+    }
+
+    private var destinationSelection: Binding<PlozziOSTabSelection> {
         Binding(
-            get: { effectiveSelectedDestination },
-            set: { selectedDestination = resolvedDestination($0) }
+            get: {
+                isMoreSelected || overflowDestinations.contains(effectiveSelectedDestination)
+                    ? .more : .destination(effectiveSelectedDestination)
+            },
+            set: { selection in
+                switch selection {
+                case .destination(let destination):
+                    selectDestination(destination)
+                case .more:
+                    if isMoreSelected {
+                        moreDestination = nil
+                    } else if let moreDestination {
+                        selectedDestination = resolvedDestination(moreDestination)
+                    }
+                    isMoreSelected = true
+                    heroTrailerController.stop()
+                }
+            }
         )
     }
 
+    private func selectDestination(_ destination: PlozziOSDestination) {
+        let resolved = resolvedDestination(destination)
+        isMoreSelected = overflowDestinations.contains(resolved)
+        if isMoreSelected && resolved != .settings { moreDestination = resolved }
+        selectedDestination = resolved
+    }
+
     private func consumeStandaloneEntryIfNeeded() {
-        #if DEBUG
         guard appModel.pendingStandaloneLiveTVEntry, appModel.allowsStandalonePlayback else { return }
         retainsExplicitLiveTVEntry = true
-        selectedDestination = .liveTV
+        selectDestination(.liveTV)
         lastContentDestination = .liveTV
         appModel.consumeStandaloneLiveTVEntryIntent()
-        #endif
     }
 
     private var tabDestinationKey: String {
         tabDestinations.map(\.rawValue).joined(separator: "|")
+            + "#more=" + overflowDestinations.map(\.rawValue).joined(separator: "|")
     }
 
     private func resolvedDestination(
@@ -819,100 +887,97 @@ private struct PlozziOSTabShell: View {
             : (tabDestinations.first ?? .settings)
     }
 
-    @ViewBuilder
     private func tabContent(for destination: PlozziOSDestination) -> some View {
+        NavigationStack {
+            destinationContent(for: destination)
+        }
+    }
+
+    @ViewBuilder
+    private func destinationContent(
+        for destination: PlozziOSDestination, keepsNavigationBar: Bool = false
+    ) -> some View {
         switch destination {
         case .home:
-            NavigationStack {
-                PlozziOSDestinationView(
-                    destination: .home,
-                    appModel: appModel,
-                    sharedHomeViewModel: sharedHomeViewModel,
-                    onAddServer: onAddServer,
-                    onShowSettings: showSettings
-                )
-                .plozziOSLibraryDestination(appModel: appModel)
-                .plozziOSItemNavigation(appModel: appModel, registersScreenshotRouting: true)
-            }
+            PlozziOSDestinationView(
+                destination: .home,
+                appModel: appModel,
+                sharedHomeViewModel: sharedHomeViewModel,
+                onAddServer: onAddServer,
+                onShowSettings: showSettings
+            )
+            .plozziOSLibraryDestination(appModel: appModel)
+            .plozziOSItemNavigation(appModel: appModel, registersScreenshotRouting: true)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarBackground(.hidden, for: .tabBar)
             .background { AppBackground(palette: palette) }
         case .watchlist:
-            NavigationStack {
-                PlozziOSDestinationView(
-                    destination: .watchlist,
-                    appModel: appModel,
-                    sharedHomeViewModel: sharedHomeViewModel,
-                    onAddServer: onAddServer,
-                    onShowSettings: showSettings
-                )
-                .plozziOSItemNavigation(appModel: appModel)
-            }
+            PlozziOSDestinationView(
+                destination: .watchlist,
+                appModel: appModel,
+                sharedHomeViewModel: sharedHomeViewModel,
+                onAddServer: onAddServer,
+                onShowSettings: showSettings
+            )
+            .plozziOSItemNavigation(appModel: appModel)
             .toolbarBackground(.hidden, for: .navigationBar)
             .background { AppBackground(palette: palette) }
-        #if DEBUG
         case .liveTV:
-            NavigationStack {
-                PlozziOSLiveTVDestination(
-                    isActive: effectiveSelectedDestination == .liveTV,
-                    profileID: appModel.profiles.activeProfileID,
-                    preferencesNamespace: appModel.profiles.activeNamespace,
-                    accountsProviders: appModel.accountsProviders,
-                    authenticatedHTTPResolver: appModel.authenticatedHTTPResolver,
-                    connectServer: onAddServer,
-                    didConfigurePlaylist: {
-                        _ = appModel.recordSuccessfulIPTVSetup()
-                    },
-                    completeLibraryChannelPlayback: { [appModel,
-                        profileID = appModel.profiles.activeProfileID,
-                        namespace = appModel.profiles.activeNamespace] item, token in
-                        try Task.checkCancellation()
-                        guard appModel.profiles.activeProfileID == profileID,
-                              appModel.profiles.activeNamespace == namespace,
-                              LibraryChannelHistorySettings.shared(namespace: namespace).authorizationID == token,
-                              let accountID = item.sourceAccountID,
-                              appModel.accountsProviders.resolvedActiveAccounts.contains(where: {
-                                  $0.account.id == accountID
-                              }) else { throw LibraryChannelError.authorizationChanged }
-                        try appModel.completeLibraryChannelPlayback(for: item, authorizationID: token)
-                    },
-                    isProfileAuthorized: { [appModel] in appModel.isLiveTVProfileAuthorized },
-                    restoreDestination: { [profileID = appModel.profiles.activeProfileID] in
-                        guard appModel.isLiveTVProfileAuthorized,
-                              appModel.profiles.activeProfileID == profileID,
-                              tabDestinations.contains(.liveTV) else { return false }
-                        selectedDestination = .liveTV
-                        return effectiveSelectedDestination == .liveTV
-                    }
-                )
-                .environment(appModel.profiles)
-                .toolbar(.hidden, for: .navigationBar)
-                .plozziOSItemNavigation(appModel: appModel)
-            }
-        #endif
+            PlozziOSLiveTVDestination(
+                isActive: effectiveSelectedDestination == .liveTV && !isShowingMorePage,
+                profileID: appModel.profiles.activeProfileID,
+                preferencesNamespace: appModel.profiles.activeNamespace,
+                accountsProviders: appModel.accountsProviders,
+                authenticatedHTTPResolver: appModel.authenticatedHTTPResolver,
+                connectServer: onAddServer,
+                onShowSettings: showSettings,
+                didConfigurePlaylist: {
+                    _ = appModel.recordSuccessfulIPTVSetup()
+                },
+                completeLibraryChannelPlayback: { [appModel,
+                    profileID = appModel.profiles.activeProfileID,
+                    namespace = appModel.profiles.activeNamespace] item, token in
+                    try Task.checkCancellation()
+                    guard appModel.profiles.activeProfileID == profileID,
+                          appModel.profiles.activeNamespace == namespace,
+                          LibraryChannelHistorySettings.shared(namespace: namespace).authorizationID == token,
+                          let accountID = item.sourceAccountID,
+                          appModel.accountsProviders.resolvedActiveAccounts.contains(where: {
+                              $0.account.id == accountID
+                          }) else { throw LibraryChannelError.authorizationChanged }
+                    try appModel.completeLibraryChannelPlayback(for: item, authorizationID: token)
+                },
+                isProfileAuthorized: { [appModel] in appModel.isLiveTVProfileAuthorized },
+                restoreDestination: { [profileID = appModel.profiles.activeProfileID] in
+                    guard appModel.isLiveTVProfileAuthorized,
+                          appModel.profiles.activeProfileID == profileID,
+                          tabDestinations.contains(.liveTV) else { return false }
+                    selectDestination(.liveTV)
+                    return effectiveSelectedDestination == .liveTV && !isShowingMorePage
+                }
+            )
+            .environment(appModel.profiles)
+            .plozziOSItemNavigation(appModel: appModel)
         case .downloads:
-            NavigationStack {
-                PlozziOSDestinationView(
-                    destination: .downloads,
-                    appModel: appModel,
-                    sharedHomeViewModel: sharedHomeViewModel,
-                    onAddServer: onAddServer,
-                    onShowSettings: showSettings
-                )
-            }
+            PlozziOSDestinationView(
+                destination: .downloads,
+                appModel: appModel,
+                sharedHomeViewModel: sharedHomeViewModel,
+                onAddServer: onAddServer,
+                onShowSettings: showSettings
+            )
             .toolbarBackground(.hidden, for: .navigationBar)
             .background { AppBackground(palette: palette) }
         case .search:
-            NavigationStack {
-                PlozziOSDestinationView(
-                    destination: .search,
-                    appModel: appModel,
-                    sharedHomeViewModel: sharedHomeViewModel,
-                    onAddServer: onAddServer,
-                    onShowSettings: showSettings
-                )
-                .plozziOSItemNavigation(appModel: appModel)
-            }
+            PlozziOSDestinationView(
+                destination: .search,
+                appModel: appModel,
+                sharedHomeViewModel: sharedHomeViewModel,
+                onAddServer: onAddServer,
+                onShowSettings: showSettings,
+                keepsNavigationBar: keepsNavigationBar
+            )
+            .plozziOSItemNavigation(appModel: appModel)
             .toolbarBackground(.hidden, for: .navigationBar)
             .background { AppBackground(palette: palette) }
         case .settings:
@@ -951,19 +1016,19 @@ private struct PlozziOSTabShell: View {
 
     var body: some View {
         TabView(selection: destinationSelection) {
-            ForEach(tabDestinations) { destination in
+            ForEach(directTabDestinations) { destination in
                 if destination == .search && tabDestinations.last == .search {
                     // Preserve native trailing Search until the viewer moves it.
                     Tab(
                         "Search",
                         systemImage: "magnifyingglass",
-                        value: PlozziOSDestination.search,
+                        value: PlozziOSTabSelection.destination(.search),
                         role: .search
                     ) {
                         tabContent(for: destination)
                     }
                 } else {
-                    Tab(value: destination) {
+                    Tab(value: PlozziOSTabSelection.destination(destination)) {
                         tabContent(for: destination)
                     } label: {
                         Label {
@@ -978,6 +1043,23 @@ private struct PlozziOSTabShell: View {
                     }
                 }
             }
+            if !overflowDestinations.isEmpty {
+                Tab("More", systemImage: "ellipsis", value: PlozziOSTabSelection.more) {
+                    NavigationStack {
+                        PlozziOSMorePage(
+                            destinations: overflowDestinations,
+                            onSelect: { destination in
+                                if destination == .settings { showSettings() }
+                                else { selectDestination(destination) }
+                            },
+                            onShowSettings: showSettings
+                        )
+                        .navigationDestination(item: $moreDestination) { destination in
+                            destinationContent(for: destination, keepsNavigationBar: true)
+                        }
+                    }
+                }
+            }
         }
 
         .tabViewStyle(.tabBarOnly)
@@ -986,7 +1068,18 @@ private struct PlozziOSTabShell: View {
             consumeStandaloneEntryIfNeeded()
         }
         .onChange(of: tabDestinationKey, initial: true) { _, _ in
-            selectedDestination = resolvedDestination(selectedDestination)
+            let wasShowingMorePage = isShowingMorePage
+            if let moreDestination, !overflowDestinations.contains(moreDestination) {
+                self.moreDestination = nil
+            }
+            if !wasShowingMorePage || overflowDestinations.isEmpty {
+                selectDestination(selectedDestination)
+            } else {
+                selectedDestination = resolvedDestination(selectedDestination)
+            }
+        }
+        .onChange(of: isShowingMorePage) { _, showingMore in
+            if showingMore { heroTrailerController.stop() }
         }
         .onChange(of: selectedDestination, initial: true) { _, destination in
             if destination == .settings {
@@ -994,13 +1087,11 @@ private struct PlozziOSTabShell: View {
             } else {
                 lastContentDestination = destination
             }
-            #if DEBUG
             if destination == .liveTV {
                 heroTrailerController.stop()
             } else {
                 retainsExplicitLiveTVEntry = false
             }
-            #endif
         }
         .onChange(of: homeContentIdentity) {
             _, _ in
@@ -1009,7 +1100,7 @@ private struct PlozziOSTabShell: View {
         .background { AppBackground(palette: palette) }
         .background(alignment: .topLeading) {
             PlozziOSHomeSidebarOverlapProbe(
-                enabled: effectiveSelectedDestination == .home,
+                enabled: effectiveSelectedDestination == .home && !isShowingMorePage,
                 geometryModel: sidebarGeometry
             )
             .frame(width: 0, height: 0)
@@ -1022,7 +1113,7 @@ private struct PlozziOSTabShell: View {
                 director: appModel.screenshotDirector,
                 onSelect: { name in
                     guard let destination = PlozziOSDestination(rawValue: name) else { return }
-                    selectedDestination = resolvedDestination(destination)
+                    selectDestination(destination)
                 }
             )
             #if DEBUG
@@ -1031,7 +1122,7 @@ private struct PlozziOSTabShell: View {
             // owns the tab selection.
             .onAppear {
                 appModel.screenshotDirector.selectHomeTab = {
-                    selectedDestination = resolvedDestination(.home)
+                    selectDestination(.home)
                 }
             }
             #endif
@@ -1096,10 +1187,10 @@ private struct PlozziOSTabShell: View {
                 let fallback = tabDestinations.first {
                     $0 != .settings
                 } ?? .settings
-                selectedDestination = tabDestinations.contains(lastContentDestination)
+                selectDestination(tabDestinations.contains(lastContentDestination)
                     && lastContentDestination != .settings
                     ? lastContentDestination
-                    : fallback
+                    : fallback)
             }
             consumeDeferredPairingURL()
         }) {
@@ -1259,6 +1350,7 @@ private struct PlozziOSDestinationView: View {
     let sharedHomeViewModel: HomeViewModel
     let onAddServer: () -> Void
     let onShowSettings: () -> Void
+    var keepsNavigationBar = false
 
     var body: some View {
         ZStack {
@@ -1285,14 +1377,13 @@ private struct PlozziOSDestinationView: View {
                 viewModel: sharedHomeViewModel,
                 onShowSettings: onShowSettings
             )
-        #if DEBUG
         case .liveTV:
             EmptyView()
-        #endif
         case .search:
             PlozziOSSearchView(
                 appModel: appModel,
-                onShowSettings: onShowSettings
+                onShowSettings: onShowSettings,
+                keepsNavigationBar: keepsNavigationBar
             )
                 .id(activeAccountsIdentity)
         case .downloads:

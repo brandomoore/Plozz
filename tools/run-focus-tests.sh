@@ -8,7 +8,7 @@ source tools/lib/apple-build-lease.sh
 acquire_apple_build_shared_lease "plozz/focus-tests"
 install_apple_build_lease_traps
 source tools/lib/swift-package-storage.sh
-configure_plozz_package_resolution "${PLOZZ_FOCUS_PACKAGES:-$PWD/.build/package-workspaces/focus-tests}"
+configure_plozz_package_resolution "${PLOZZ_FOCUS_PACKAGES:-${PLOZZ_CLONED_SOURCE_PACKAGES:-$PWD/.build/package-workspaces/focus-tests}}"
 
 if [[ ! -f Plozz.xcodeproj/project.pbxproj ]]; then
   tools/generate-project.sh
@@ -31,16 +31,24 @@ mkdir -p "$RESULTS"
 RUN_DIR="$(mktemp -d "$RESULTS/Run-XXXXXXXX")"
 set +e
 python3 tools/run-bounded.py "${PLOZZ_FOCUS_TEST_TIMEOUT:-1200}" "hosted focus tests" -- \
-  xcodebuild test -quiet -project Plozz.xcodeproj -scheme PlozzFocusTests \
+  xcodebuild test -project Plozz.xcodeproj -scheme PlozzFocusTests \
   -destination "platform=tvOS Simulator,id=$PLOZZ_SIM_ID" \
-  -parallel-testing-enabled NO \
-  -derivedDataPath "${PLOZZ_FOCUS_DERIVED_DATA:-$PWD/.build/focus-test-derived-data}" \
+  -parallel-testing-enabled NO -collect-test-diagnostics never \
+  -derivedDataPath "${PLOZZ_FOCUS_DERIVED_DATA:-$PWD/.build/focus-shared-root-derived-data}" \
   -resultBundlePath "$RUN_DIR/Test.xcresult" \
-  "${PACKAGE_RESOLUTION_ARGS[@]}" CODE_SIGNING_ALLOWED=NO
-STATUS=$?
+  "${PACKAGE_RESOLUTION_ARGS[@]}" "$@" CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUN_DIR/xcodebuild.log"
+PIPE_STATUSES=("${PIPESTATUS[@]}")
+STATUS=${PIPE_STATUSES[0]}
+if [[ "$STATUS" -eq 0 && "${PIPE_STATUSES[1]}" -ne 0 ]]; then
+  STATUS=${PIPE_STATUSES[1]}
+fi
 set -e
 echo "Focus result bundle: $RUN_DIR/Test.xcresult"
-python3 tools/run-bounded.py 30 "focus result summary" -- \
-  xcrun xcresulttool get test-results summary --path "$RUN_DIR/Test.xcresult" > "$RUN_DIR/summary.json"
+if ! python3 tools/run-bounded.py 30 "focus result summary" -- \
+  xcrun xcresulttool get test-results summary --path "$RUN_DIR/Test.xcresult" > "$RUN_DIR/summary.json"; then
+  echo "No readable hosted-test result; preserving the original failure and raw log." >&2
+  if [[ "$STATUS" -ne 0 ]]; then exit "$STATUS"; fi
+  exit 1
+fi
 python3 tools/xcresult-summary.py verdict "$RUN_DIR/summary.json"
 exit "$STATUS"

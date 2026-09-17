@@ -1,3 +1,4 @@
+#if DEBUG
 import XCTest
 @testable import FeatureLiveTVCore
 
@@ -900,3 +901,4 @@ final class LiveTVGuideFocusTargetTests: XCTestCase {
         return model
     }
 }
+#endif

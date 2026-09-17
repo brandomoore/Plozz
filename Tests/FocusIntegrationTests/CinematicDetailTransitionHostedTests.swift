@@ -60,11 +60,15 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(cover.cardContainer.layer.presentation()).frame.width, frame.width, accuracy: 1)
     }
 
-    func testDetailTimingUsesTheFasterSequence() {
+    func testDetailTimingUsesSoftForegroundAndIndependentEpisodeReveal() {
         let timing = DetailEntranceTiming()
         let movie = timing.zoom + timing.artworkPause + timing.stagger * 2 + timing.reveal
-        XCTAssertLessThanOrEqual(movie, 1.15)
-        XCTAssertLessThanOrEqual(movie + timing.reveal, 1.4)
+        XCTAssertEqual(timing.artworkPause, 0.10, accuracy: 0.001)
+        XCTAssertEqual(timing.stagger, 0.09, accuracy: 0.001)
+        XCTAssertEqual(timing.reveal, 0.45, accuracy: 0.001)
+        XCTAssertEqual(timing.episodeReveal, 0.72, accuracy: 0.001)
+        XCTAssertEqual(movie, 1.13, accuracy: 0.001)
+        XCTAssertEqual(movie + timing.episodeReveal, 1.85, accuracy: 0.001)
         XCTAssertLessThanOrEqual(timing.reverse, 0.3)
     }
 
@@ -100,9 +104,11 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         XCTAssertLessThan(try pixel(fixture.window, at: frame)[0], 30)
         try await waitUntil { session.stage == .episodes }
         XCTAssertTrue(session.blocksNavigation)
-        try await Task.sleep(for: .milliseconds(150))
+        try await Task.sleep(for: .seconds(session.timing.episodeReveal / 2))
         let fading = try pixel(fixture.window, at: frame)[0]
         XCTAssertGreaterThan(fading, 20)
+        XCTAssertLessThan(fading, 250)
+        XCTAssertTrue(session.blocksNavigation)
         try await waitUntil { session.stage == .complete && fixture.model.stages.last == .complete }
         XCTAssertGreaterThan(try pixel(fixture.window, at: frame)[0], 240)
         XCTAssertFalse(session.blocksNavigation)
@@ -126,7 +132,7 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         XCTAssertEqual(initial.card.contentMode, .scaleAspectFill)
         XCTAssertTrue(session.blocksNavigation)
         try await waitUntil { self.overlays(in: fixture.window).isEmpty }
-        XCTAssertEqual(session.stage, .artwork)
+        XCTAssertEqual(session.stage, .logo, "The shorter artwork pause overlaps the cover's fade-out.")
         XCTAssertTrue(session.blocksNavigation)
         XCTAssertNotNil(session.returnArtwork)
         let hidden = try pixel(fixture.window, at: try XCTUnwrap(fixture.model.frames[.logo]))
@@ -173,7 +179,7 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         let session = try XCTUnwrap(fixture.model.session)
         XCTAssertNil(session.returnArtwork)
         try await waitUntil { self.overlays(in: fixture.window).isEmpty }
-        XCTAssertEqual(session.stage, .artwork)
+        XCTAssertEqual(session.stage, .logo)
         try await waitUntil { session.stage == .complete && fixture.model.stages.last == .complete }
         XCTAssertEqual(fixture.model.stages, [.artwork, .logo, .metadata, .controls, .complete])
         XCTAssertTrue(inputGuards(in: fixture.window).isEmpty)
@@ -324,7 +330,7 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         XCTAssertEqual(cover.cardContainer.frame, fixture.window.bounds)
         session.pageAppeared()
         try await waitUntil { cover.superview == nil }
-        XCTAssertEqual(session.stage, .artwork, "Appearance must not restart the zoom or its reveal clock.")
+        XCTAssertEqual(session.stage, .logo, "Appearance must not restart the zoom or its reveal clock.")
     }
 
     func testForegroundPauseStartsWhenTheLateBackdropBecomesVisible() async throws {
@@ -353,7 +359,7 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         XCTAssertEqual(session.stage, .artwork)
         try await waitUntil { session.stage >= .logo }
         XCTAssertGreaterThanOrEqual(appeared.duration(to: .now), .milliseconds(450))
-        XCTAssertNil(cover.superview)
+        try await waitUntil { cover.superview == nil }
         try await waitUntil { session.stage == .complete }
         session.resolvedDestinationArtwork(image)
         XCTAssertEqual(session.stage, .complete, "A quality upgrade must not restart the entrance.")

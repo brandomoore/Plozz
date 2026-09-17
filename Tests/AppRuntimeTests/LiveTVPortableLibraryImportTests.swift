@@ -7,6 +7,32 @@ import XCTest
 
 @MainActor
 final class LiveTVPortableLibraryImportTests: XCTestCase {
+    func testExportPreparationReusesOnlyAnExactlyMatchingValidatedInput() async throws {
+        let builds = PortableExportBuilds()
+        let worker = LiveTVPortableLibraryPreparation(makeExport: builds.make)
+        let (snapshot, definition) = try library(profileID: "profile")
+        let first = try await worker.prepare(definitions: [definition], snapshots: [snapshot])
+        let repeated = try await worker.prepare(definitions: [definition], snapshots: [snapshot])
+        XCTAssertEqual(first.state, repeated.state)
+        XCTAssertEqual(builds.count, 1)
+
+        let changed = try LibraryChannelSnapshot(
+            id: snapshot.id, items: snapshot.items,
+            createdAt: snapshot.createdAt.addingTimeInterval(1)
+        )
+        let updated = try await worker.prepare(definitions: [definition], snapshots: [changed])
+        XCTAssertEqual(updated.state.snapshots, [changed])
+        XCTAssertEqual(builds.count, 2, "Snapshot ID alone must not authorize cache reuse")
+        var paused = definition
+        paused.isEnabled = false
+        let edited = try await worker.prepare(definitions: [paused], snapshots: [changed])
+        XCTAssertEqual(edited.state.definitions, [paused])
+        XCTAssertEqual(builds.count, 3)
+        await worker.discardExport()
+        _ = try await worker.prepare(definitions: [paused], snapshots: [changed])
+        XCTAssertEqual(builds.count, 4)
+    }
+
     func testImmutableInputsStayPinnedDuringConcurrentRetentionUntilDefinitionCommit() async throws {
         let fixture = try fixture()
         let (snapshot, definition) = try library(profileID: fixture.profiles.activeProfileID)
@@ -174,6 +200,28 @@ final class LiveTVPortableLibraryImportTests: XCTestCase {
         XCTAssertEqual(counts.releases, 1)
     }
 
+    func testNewerJournalDefinitionDuringStagingCannotBePublishedOrAcknowledgedAsOlderInput() async throws {
+        let fixture = try fixture()
+        let (snapshot, definition) = try library(profileID: fixture.profiles.activeProfileID)
+        let definitions = PortableImportDefinitions()
+        var changed = definition
+        changed.isEnabled = false
+        let newer = try records(snapshot: snapshot, definition: changed)
+        let writer = LiveTVPortableSyncAdapter(
+            directory: fixture.directory, profileID: definition.profileID, defaults: fixture.defaults,
+            namespace: fixture.profiles.activeNamespace
+        )
+        let snapshots = RetainingImportSnapshots(afterStage: {
+            _ = try writer.apply(newer, sourceStore: PortableImportSources())
+        })
+        let bridge = fixture.bridge(definitions: definitions, snapshots: snapshots)
+        await bridge.apply(try records(snapshot: snapshot, definition: definition))
+        XCTAssertTrue(try definitions.load().isEmpty)
+        XCTAssertEqual(try fixture.pending().libraryDefinitions, [changed])
+        let counts = await snapshots.counts()
+        XCTAssertEqual(counts.releases, 1)
+    }
+
     func testAccountChangeDuringStagingReleasesInputsWithoutCommitting() async throws {
         let fixture = try fixture()
         let (snapshot, definition) = try library(profileID: fixture.profiles.activeProfileID)
@@ -277,6 +325,18 @@ private struct PortableLibraryImportFixture {
             profiles: profiles, directory: directory, defaults: defaults,
             sourceStore: { _ in PortableImportSources() }, definitions: { _ in definitions }, snapshots: snapshots
         )
+    }
+}
+
+private final class PortableExportBuilds: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    var count: Int { lock.withLock { value } }
+    func make(
+        _ definitions: [LibraryChannelDefinition], _ snapshots: [LibraryChannelSnapshot]
+    ) throws -> LiveTVPortableLibraryExport {
+        lock.withLock { value += 1 }
+        return try LiveTVPortableLibraryExport(definitions: definitions, snapshots: snapshots)
     }
 }
 

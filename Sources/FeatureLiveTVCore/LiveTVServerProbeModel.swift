@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 import Observation
@@ -95,4 +94,3 @@ public final class LiveTVServerProbeModel {
         authorizationID = nil
     }
 }
-#endif

@@ -176,8 +176,10 @@ final class LiveTVPrototypePersistenceTests: XCTestCase {
         preview.focus("0")
         XCTAssertTrue(preview.commitPreview(try XCTUnwrap(preview.pendingRequest)))
         XCTAssertEqual(store.saves, 0)
+        #if DEBUG
         model.simulateTunerBusy = true
         preview.watch("1")
+        #endif
         XCTAssertFalse(model.recordWatched("1"))
         model.stop()
         XCTAssertFalse(model.recordWatched("0"))

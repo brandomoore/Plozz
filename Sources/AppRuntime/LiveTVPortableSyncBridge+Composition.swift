@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreSecureStore
 import FeatureLiveTVCore
@@ -63,4 +62,3 @@ extension LiveTVPortableSyncBridge {
         )
     }
 }
-#endif

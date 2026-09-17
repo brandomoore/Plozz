@@ -21,9 +21,7 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
     public static let homeKey = "plozz.navigation.home"
     public static let searchKey = "plozz.navigation.search"
     public static let watchlistKey = "plozz.navigation.watchlist"
-    #if DEBUG
     public static let liveTVKey = "plozz.navigation.liveTV"
-    #endif
     public static let musicKey = "plozz.navigation.music"
     public static let downloadsKey = "plozz.navigation.downloads"
     public static let settingsKey = "plozz.navigation.settings"
@@ -39,13 +37,13 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
     /// longer present are ignored, and live keys missing from it are appended.
     public var order: [String]
 
-    /// Entry keys the viewer has removed from navigation. Library content remains
-    /// browsable from Home — this only hides the top-level shortcut.
+    /// Stored layout intent. Each shell applies its required destinations while
+    /// resolving, without erasing another platform's hidden-tab preferences.
     public var hiddenKeys: Set<String>
 
     public init(order: [String] = [], hiddenKeys: Set<String> = []) {
         self.order = order
-        self.hiddenKeys = hiddenKeys.subtracting([Self.settingsKey])
+        self.hiddenKeys = hiddenKeys
     }
 
     /// Every supported destination is on by default. Each shell supplies its
@@ -75,9 +73,11 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
     /// `available` must already be filtered to entries that exist right now (the
     /// All Libraries key plus every visible library key). The result's `enabled`
     /// section is exactly what the rail renders, top to bottom.
-    public func sections(available: [String]) -> OrderedVisibilityList.Sections<String> {
+    public func sections(
+        available: [String], requiredEnabled: Set<String> = [Self.settingsKey]
+    ) -> OrderedVisibilityList.Sections<String> {
         let available = deduplicated(available)
-        let hidden = hiddenKeys.subtracting([Self.settingsKey])
+        let hidden = hiddenKeys.subtracting(requiredEnabled)
         let sections: OrderedVisibilityList.Sections<String>
 
         if hasExplicitDestinationOrder {
@@ -109,6 +109,7 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
         }
 
         guard available.contains(Self.settingsKey),
+              requiredEnabled.contains(Self.settingsKey) || sections.enabled.isEmpty,
               !sections.enabled.contains(Self.settingsKey) else {
             return sections
         }
@@ -118,7 +119,7 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
         )
     }
 
-    /// The visible entries, in order.
+    /// The visible entries under the default TV-safe policy, in order.
     public func visibleKeys(available: [String]) -> [String] {
         sections(available: available).enabled
     }
@@ -128,13 +129,15 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
     /// state so a temporarily-offline server doesn't lose the viewer's arrangement.
     public mutating func apply(
         _ sections: OrderedVisibilityList.Sections<String>,
-        available: [String]
+        available: [String],
+        requiredEnabled: Set<String> = [Self.settingsKey]
     ) {
         let available = deduplicated(available)
         let availableSet = Set(available)
         var enabled = sections.enabled
         var disabled = sections.disabled
-        if availableSet.contains(Self.settingsKey) {
+        if availableSet.contains(Self.settingsKey),
+           requiredEnabled.contains(Self.settingsKey) || enabled.isEmpty {
             disabled.removeAll { $0 == Self.settingsKey }
             if !enabled.contains(Self.settingsKey) {
                 enabled.append(Self.settingsKey)
@@ -157,9 +160,8 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
         var seen: Set<String> = []
         order = result.filter { seen.insert($0).inserted }
         hiddenKeys = hiddenKeys
-            .subtracting(availableSet)
+            .subtracting(availableSet.subtracting(requiredEnabled))
             .union(disabled)
-            .subtracting([Self.settingsKey])
     }
 
     /// Removes impossible persisted state while preserving every unknown key for
@@ -180,9 +182,7 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
             downloadsKey,
             settingsKey,
         ]
-        #if DEBUG
         keys.insert(liveTVKey)
-        #endif
         return keys
     }
 
@@ -222,18 +222,13 @@ public final class NavigationLibraryLayoutStore: NavigationLibraryLayoutStoring,
 
     public func load() -> NavigationLibraryLayout {
         guard let data = defaults.data(forKey: key),
-              var layout = try? JSONDecoder().decode(NavigationLibraryLayout.self, from: data) else {
-            var layout = defaultLayout
-            layout.enforceRequiredVisibility()
-            return layout
+              let layout = try? JSONDecoder().decode(NavigationLibraryLayout.self, from: data) else {
+            return defaultLayout
         }
-        layout.enforceRequiredVisibility()
         return layout
     }
 
     public func save(_ layout: NavigationLibraryLayout) {
-        var layout = layout
-        layout.enforceRequiredVisibility()
         if let data = try? JSONEncoder().encode(layout) {
             defaults.set(data, forKey: key)
         }

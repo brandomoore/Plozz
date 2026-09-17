@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 import Observation
@@ -87,4 +86,3 @@ final class LibraryChannelPreparationReporter {
         report(combined)
     }
 }
-#endif

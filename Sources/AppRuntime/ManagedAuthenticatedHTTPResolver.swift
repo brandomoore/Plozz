@@ -75,7 +75,10 @@ public final class ManagedAuthenticatedHTTPResolver: AuthenticatedHTTPResourceRe
         }
         switch locator.provider {
         case .jellyfin, .emby:
-            queryItems.append(URLQueryItem(name: "api_key", value: context.token))
+            // Jellyfin disables legacy api_key authentication by default.
+            // Emby retains its existing query-token contract.
+            let tokenParameter = locator.provider == .jellyfin ? "ApiKey" : "api_key"
+            queryItems.append(URLQueryItem(name: tokenParameter, value: context.token))
             if let playSessionID = locator.playSessionID {
                 queryItems.append(
                     URLQueryItem(name: "playSessionId", value: playSessionID)

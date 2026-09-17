@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 import Observation
@@ -397,7 +396,9 @@ public final class LiveTVPrototypeModel {
     public private(set) var previousChannelID: String?
     public private(set) var isPaused = false
     public private(set) var behindLiveSeconds: TimeInterval = 0
+    #if DEBUG
     public var simulateTunerBusy = false
+    #endif
     public private(set) var tuneFailed = false
 
     @ObservationIgnored private var channelsByID: [String: LiveTVPrototypeChannel] = [:]
@@ -432,8 +433,12 @@ public final class LiveTVPrototypeModel {
         self.scenario = scenario
         self.isLargeCatalog = isLargeCatalog
         self.preferencesStore = preferencesStore
+        #if DEBUG
         suppliedChannels = channels
         favoriteIDs = channels == nil && preferencesStore == nil ? Set((1...5).map(Self.channelID)) : []
+        #else
+        suppliedChannels = channels ?? []
+        #endif
         if preferencesStore != nil { loadPreferences() }
         rebuildCatalog()
     }
@@ -786,6 +791,7 @@ public final class LiveTVPrototypeModel {
                 $0.start < requestedEnd && $0.end > date
             }
         }
+        #if DEBUG
         let duration = programDuration(for: channelID)
         var slotStartSeconds = floor(date.timeIntervalSince1970 / duration) * duration
         var result: [LiveTVPrototypeProgram] = []
@@ -800,8 +806,12 @@ public final class LiveTVPrototypeModel {
             slotStartSeconds += duration
         }
         return result
+        #else
+        return []
+        #endif
     }
 
+    #if DEBUG
     public func advanceClock(by interval: TimeInterval) {
         precondition(interval.isFinite && interval >= 0, "Live TV prototype clock only advances forward.")
         now = now.addingTimeInterval(interval)
@@ -809,9 +819,9 @@ public final class LiveTVPrototypeModel {
             behindLiveSeconds += interval
         }
     }
+    #endif
 
-    /// Invalid fixture IDs and simulated tuner contention report through
-    /// `tuneFailed`; neither condition changes the current stream.
+    /// Invalid channel IDs report through `tuneFailed` without changing the stream.
     public func tune(_ id: String) {
         guard channelsByID[id] != nil else {
             tuneFailed = true
@@ -821,10 +831,12 @@ public final class LiveTVPrototypeModel {
             tuneFailed = false
             return
         }
+        #if DEBUG
         guard !simulateTunerBusy else {
             tuneFailed = true
             return
         }
+        #endif
 
         previousChannelID = playingChannelID
         playingChannelID = id
@@ -863,6 +875,7 @@ public final class LiveTVPrototypeModel {
 
     private func rebuildCatalog() {
         catalogRevision &+= 1
+        #if DEBUG
         if let suppliedChannels {
             let count = suppliedChannels.isEmpty ? 0 : (isLargeCatalog ? 5_000 : suppliedChannels.count)
             channels = (0..<count).map { index in
@@ -885,6 +898,9 @@ public final class LiveTVPrototypeModel {
             let count = isLargeCatalog ? 5_000 : Self.baseStations.count
             channels = (1...count).map(Self.makeChannel)
         }
+        #else
+        channels = suppliedChannels ?? []
+        #endif
         channels = channels.map { channel in
             guard let value = channelOverrides[channel.id] else { return channel }
             return LiveTVPrototypeChannel(
@@ -1015,6 +1031,7 @@ public final class LiveTVPrototypeModel {
         if usesPublicStreams {
             return knownGuideChannelIDs.contains(channel.id) || importedPrograms[channel.id]?.isEmpty == false
         }
+        #if DEBUG
         switch scenario {
         case .noGuide, .failedGuide:
             return false
@@ -1024,8 +1041,12 @@ public final class LiveTVPrototypeModel {
             let ordinal = channelOrdinalsByID[channel.id] ?? 0
             return channel.source == .plozz || ordinal.isMultiple(of: 3)
         }
+        #else
+        return false
+        #endif
     }
 
+    #if DEBUG
     private func programDuration(for channelID: String) -> TimeInterval {
         let ordinal = channelOrdinalsByID[channelID] ?? 1
         return ordinal.isMultiple(of: 4) ? 3_600 : 1_800
@@ -1074,6 +1095,7 @@ public final class LiveTVPrototypeModel {
     private static func channelID(_ ordinal: Int) -> String {
         String(format: "live-tv-%04d", ordinal)
     }
+    #endif
 
     private static func normalized(_ value: String) -> String {
         value
@@ -1084,6 +1106,7 @@ public final class LiveTVPrototypeModel {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    #if DEBUG
     private static func positiveModulo(_ value: Int, _ modulus: Int) -> Int {
         let remainder = value % modulus
         return remainder >= 0 ? remainder : remainder + modulus
@@ -1145,5 +1168,5 @@ public final class LiveTVPrototypeModel {
         ("Second Look", "Another angle on the day's fixture topics."),
         ("Next Stop", "A compact journey to a newly imagined destination.")
     ]
+    #endif
 }
-#endif

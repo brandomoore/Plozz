@@ -372,7 +372,6 @@ private struct ProviderChoiceGroup: View {
                 onSelect(.mediaShare)
             }
 
-            #if DEBUG
             if let onStandalonePlayback {
                 Divider().padding(.horizontal, 1)
                 Button(action: onStandalonePlayback) {
@@ -398,7 +397,6 @@ private struct ProviderChoiceGroup: View {
                 .accessibilityHint("Use your own playlist without signing in to a media server.")
                 .padding(12)
             }
-            #endif
         }
         .frame(width: 720)
         .background(

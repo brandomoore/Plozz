@@ -1,4 +1,3 @@
-#if DEBUG
 @_exported import CoreModels
 import Foundation
 import Observation
@@ -364,4 +363,3 @@ public final class LiveTVMultiviewCoordinator {
         }
     }
 }
-#endif

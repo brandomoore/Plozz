@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CryptoKit
 import Foundation
@@ -141,4 +140,3 @@ public final class LiveTVServerEnrollmentCoordinator {
         change(&statuses[index])
     }
 }
-#endif

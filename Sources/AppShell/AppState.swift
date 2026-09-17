@@ -48,11 +48,7 @@ public final class AppState {
     private let appAdmission: AppAdmissionModel
 
     public static var isStandalonePlaybackAvailable: Bool {
-        #if DEBUG
         true
-        #else
-        false
-        #endif
     }
 
     public var admissionContext: AppAdmissionContext {
@@ -657,13 +653,11 @@ public final class AppState {
     @ObservationIgnored
     public private(set) lazy var cloudSync: CloudConfigSyncService? = Self.makeCloudSync(for: self)
 
-    #if DEBUG
     @ObservationIgnored
     public private(set) lazy var liveTVPortableSync: LiveTVPortableSyncBridge? =
         Self.makeLiveTVPortableSync(profiles: profilesModel)
     @ObservationIgnored
     var liveTVPortableSyncLifecycle: LiveTVPortableSyncLifecycle?
-    #endif
 
     /// Debounces bursts of local config edits into a single cloud publish.
     @ObservationIgnored
@@ -2405,9 +2399,7 @@ public final class AppState {
         }
         plexHomeUsers.resetAllForDebug()
         profilesModel.resetToPristineDefaultForDebugging()
-        #if DEBUG
         resetLiveTVPortableSync()
-        #endif
         appAdmission.resetForDebugging()
         var recents = lastServerStore
         recents.recentServers = []

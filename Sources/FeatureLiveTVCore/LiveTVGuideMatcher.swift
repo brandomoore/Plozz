@@ -1,4 +1,3 @@
-#if DEBUG
 import Foundation
 
 public struct LiveTVGuideMatcher: Sendable {
@@ -293,4 +292,3 @@ public struct LiveTVGuideMatcher: Sendable {
 public enum LiveTVGuideAliasSet: Equatable, Sendable {
     case iptvOrgToEPGShareUS2Version1
 }
-#endif

@@ -90,7 +90,7 @@ suites and the reason each was selected.
 
 ### 3. Fail fast — you learn a result in seconds, not minutes
 
-Tests *execute* in well under half a minute, but `xcodebuild` on this Mac
+Most tests execute quickly, but `xcodebuild` on this Mac
 routinely stalls for minutes in teardown (result bundle + simulator shutdown)
 after the tests have already finished. Two things used to turn that into a
 ~7-minute wait for an answer that existed at second six:
@@ -123,7 +123,37 @@ last bundle reports, allowing Xcode's 600-second simulator diagnostic collection
 to finish. This is a ceiling, not a fixed wait. A readable result bundle is
 always required; reaching the grace period alone never interrupts its writer.
 
+Large scale fixtures emit unbuffered checkpoints from completed work. The
+million-programme XMLTV test reports preparation phases and every 10,000 indexed
+programmes, so a slow, progressing import is not mistaken for a stalled build.
+Its million-entry workload, assertions, and the no-output watchdog remain intact.
+No timer emits artificial progress while an operation is stuck.
+
 ### Simulator readiness and authoritative results
+
+`NavigationLibrariesDetailViewTests` hosts the navigation arrangement editor
+inside a `List` without a navigation environment object. Both shells must pass
+their current profile's `NavigationStyleSettingsModel` explicitly. The test also
+checks that an unrelated ancestor model cannot redirect edits to another profile.
+On iOS, Settings can be hidden from the tab bar because page-header controls
+remain available. The default tvOS policy still keeps Settings visible.
+`NavigationStyleSettingsStoreTests` covers cross-platform persistence, the
+last-destination safeguard, and iPhone overflow labels when six tabs are enabled.
+On iPhone and compact iPad layouts, overflow uses four direct native tabs plus a
+Plozz More destination with themed shortcut rows. Overflow destinations share
+that tab's navigation stack; Settings opens its existing sheet directly.
+Returning to More stops the hidden Live TV preview, and changing the enabled
+order re-resolves the current destination. Regular-width iPad tabs remain native.
+
+The focus host and test bundle share one `AppShell` package product. Overlapping
+direct products can promote `CoreUI` into a separate framework on XCTest's
+`DYLD_FRAMEWORK_PATH`, shadowing Apple's private framework and crashing UIKit
+asset loading; different package roots can also duplicate runtime classes.
+The default hosted build directory is `focus-shared-root-derived-data`, keeping
+stale frameworks from the old graph out of the loader path without deleting them.
+Hosted runs preserve raw output, reuse an explicitly configured package checkout,
+and disable automatic system-diagnostic collection without skipping tests or
+result bundles. An unreadable result preserves the original command failure.
 
 Before starting XCTest, the runner waits for `simctl bootstatus -b` to finish,
 including BackBoard and the system app. A simulator marked Booted can still be
@@ -334,6 +364,36 @@ there is no deferred bounce/recenter or artificial held-focus styling.
 short and long production rails, checks both ends, and verifies Right still
 returns to page content. It also captures the profile name after top-boundary input.
 
+`NavigationDestinationHandoffTests` records native content-button focus while
+the production rail switches between delayed Home, Music, and Settings pages.
+It rejects any focus visit to the outgoing page, covers reselecting the current
+page, and holds readiness explicitly while replacing a pending destination or
+pressing Right. The rail remains usable until the latest matching page is
+presented; no invisible focus target or fixed navigation delay is introduced.
+New-page completion requests the first visible content control while retaining
+the focused navigation row until that request runs, instead of dropping focus
+into the expanded rail's nearest neighbor. A multi-card fixture checks that the first card,
+not the second card beside the expanded menu, receives entry focus. Right-return
+to the already-selected page retains its existing behavior.
+
+`NativeSidebarHandoffTests` distinguishes Select from Right using stock native
+tabs and the production Home hero. Select must enter the chosen destination
+without visiting Home's measured focus region. Right closes native navigation
+and returns to the current page without selecting a different highlighted tab;
+that return also acts as a positive control for the recorder. The incoming test
+control deliberately occupies a disjoint region, because retained tab content
+can share a hosting ancestor. These focus checks do not rule out a transient
+visual highlight or establish physical Apple TV behavior.
+
+Native Sidebar wraps every content destination in `NativeSidebarFocusDestination`.
+Selection begins a generation-checked handoff before the binding changes; inactive
+and not-yet-presented pages cannot accept focus. The shared presentation anchor
+waits for `viewDidAppear` and a render boundary before enabling the selected page.
+Native tab transitions and sidebar controls remain system-owned. Revisited tabs
+use the same gate; reselecting the current tab does not wait for another appearance.
+Hosted tests hold destination mounting while checking outgoing focus eligibility,
+and remote tests reject focus arriving before the handoff completes.
+
 Card focus has three independent options: System (native tvOS projection),
 Highlight (custom sheen/lean) and Outline (custom glass). Absent per-profile
 preferences use System; saved `highlight` and `outlined` values are not migrated.
@@ -402,22 +462,31 @@ animation interruption, unchanged layout height, and Reduce Motion.
 the actual information grid with a long synopsis and four ratings, checking
 bounded, stable card dimensions. `NativeFocusRequestHostedTests` compares the
 actual resting `contentView` bounds against its SwiftUI layout container.
-Native monogram photos are prepared as square, circular-alpha image data, so a
-tall source portrait cannot protrude into its caption on focus.
+Native card measurement also supports unspecified-width proposals from horizontal
+music rails, using the content's intrinsic size rather than a zero-sized container.
+Poster containers remeasure when TVUIKit settles its intrinsic focus clearance
+during native layout, preserving artwork height as well as width.
+Fixed-width information cards retain their constrained measurement path.
+System-focus music artwork uses the same native poster and separate caption
+components as video cards, without a generic card platter behind the captions.
+Music browse actions are ordinary native buttons rather than cards wrapping
+another background. Music rails allow native focus overflow.
+The standalone native monogram adapter prepares square, circular-alpha image
+data; production avatar controls use the scoped custom treatment instead.
 System bypasses app-defined focus surfaces, edge strokes, resting shadows and
 focused z-index changes. Custom Highlight/Outline retain their styling.
 Horizontal rails do not clip native focus overflow.
 Caption movement is independent of the genuine native artwork focus effect.
+The season bar's outer reveal mask preserves the same focus overflow as its
+scroll boundary, so a focused edge chip is not clipped during the reveal.
 In the season episode row, the System focus owner encloses only the thumbnail
-and its artwork badges, not the title or synopsis below it. Both the episode
-thumbnail and interactive loading/retry placeholder use TVPosterView, so the
-native outline and image use the same corner geometry. Cast/artist portraits use
-the circular tile component. Its generic System path uses TVMonogramView, but
-detail-page cast cards deliberately resolve System to the existing circular
-Outline treatment: the legacy monogram adapter's focused image shifts, expands
-into its caption, and gains a square platter. This exception is scoped to cast
-cards; poster/native information controls and saved Highlight/Outline choices
-are unchanged. Regular media poster captions retain the existing density-aware
+and its artwork badges, not the title or synopsis below it. The episode thumbnail
+and interactive loading/retry placeholder use TVPosterView under System.
+Cast/artist portraits and
+profile avatar controls use the existing circular Outline treatment when System
+is selected. `plozzCircularFocusStyle` scopes both the focus owner and its visuals;
+it does not change the saved preference or ordinary media-card focus. Existing
+Highlight/Outline selections remain unchanged. Regular media poster captions retain the existing density-aware
 title/subtitle font sizes. Captions add no resting gap below the native image's
 reserved focus frame. This zero-point gap is constant across display densities;
 focus travel has its own reserved space.
@@ -430,6 +499,25 @@ their existing whole-column focus routing and artwork-only visuals.
 images, checks focused image/label bounds and circular corner pixels, and verifies
 Select still opens the person. A square image with no name is not sufficient
 coverage for this native-monogram regression.
+
+The user-driven device trace captured a `UIKitFocusableFillerItem` owned by the page's
+scroll view taking Down while the entrance gate was active. Page scrolling is
+disabled during that entrance, then restored on completion; hiding or disabling
+lower leaf content did not remove the scroll container's filler.
+The browser stays mounted for its staged episode reveal: a 48-point upward
+movement and 0.72-second fade at default timing, with a gentle start and stop.
+Logo, metadata, and controls use a symmetric ease-in/ease-out curve over 0.45 seconds,
+starting after a 0.10-second artwork pause with 0.09-second stage spacing.
+Episode duration is independent of those foreground timings. Artwork pickup,
+reverse motion, and episode travel remain unchanged, and entrance input stays
+gated until the episode reveal finishes.
+Lower detail content first mounts after the episode row has received focus and the browser's recede
+animation has completed, so rapid early Down presses cannot enter its blank
+scroll region. The page remains at least one viewport tall before that reveal.
+Explicit episode entry keeps its immediate browser behavior; Reduce Motion uses
+an immediate completion. Once revealed, lower content remains mounted so later
+navigation preserves its state. No extra hosting controller divides native
+button focus from the original page tree.
 
 `NativePosterComparisonTests` is an opt-in, simulator-only comparison, enabled by
 `TEST_RUNNER_PLOZZ_NATIVE_POSTER_COMPARISON=1` on `PlozzHomeRemoteTests`. It captures
@@ -488,6 +576,17 @@ sequence (horizontal/vertical moves and rapid reversals). Use the
 times, main-thread stalls and memory, while checking clipping, captions and
 Reduce Motion. Keep Home movement/backdrop timings and networking fixed in the
 comparison; do not remove either custom option based on simulator results.
+
+## Managed Jellyfin stream authentication
+
+`ManagedAuthenticatedHTTPResolver` uses Jellyfin's supported `ApiKey` query
+parameter, not the legacy `api_key` spelling that newer servers reject when
+legacy authorization is disabled. This applies to Music, theme audio, video,
+and other managed resources. Emby's `api_key` and Plex's `X-Plex-Token` remain
+unchanged. `ServerToggleTests` asserts the canonical Jellyfin parameter alongside
+fresh-account resolution and stale-credential rejection. On a Jellyfin server
+with legacy authorization disabled, a selected Music track must start and advance
+past 0:00 rather than fail with `NSURLErrorDomain -1013`.
 
 ## Guards that run before the compile
 

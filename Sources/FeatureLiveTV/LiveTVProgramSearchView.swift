@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreUI
 import CoreModels
 import FeatureLiveTVCore
@@ -252,4 +251,3 @@ public struct LiveTVProgramDetailsView: View {
         }
     }
 }
-#endif

@@ -1,4 +1,4 @@
-#if DEBUG && canImport(AVFoundation)
+#if canImport(AVFoundation)
 import CoreModels
 import FeatureLiveTVCore
 import FeaturePlayback

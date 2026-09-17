@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 import SQLite3
@@ -242,4 +241,3 @@ private final class LibrarySnapshotPins: @unchecked Sendable {
         return try body(Set(leases[key]?.values.flatMap { $0 } ?? []))
     }
 }
-#endif

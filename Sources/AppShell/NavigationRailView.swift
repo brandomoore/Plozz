@@ -142,6 +142,7 @@ struct NavigationRailView: View {
     /// preferred focus and directional fallback while the overlay is open.
     @Binding var isExpandedOutward: Bool
     let onOpenProfileSwitcher: () -> Void
+    let onSelectDestination: (NavigationRailDestination) -> Void
     var isFocusEnabled = true
     /// Bumped by the shell when its leading-edge catcher takes a Left press, so the
     /// rail pulls focus onto the current destination.
@@ -464,13 +465,11 @@ struct NavigationRailView: View {
             item(.search, symbol: "magnifyingglass", label: Text(Self.searchTitle))
         case .watchlist:
             item(.watchlist, symbol: "bookmark.fill", label: Text(Self.watchlistTitle))
-        #if DEBUG
         case .liveTV:
             item(
                 .liveTV, symbol: "antenna.radiowaves.left.and.right",
                 label: Text(Self.liveTVTitle), isExperimental: true
             )
-        #endif
         case .music:
             item(.music, symbol: "music.note", label: Text(Self.musicTitle))
         case .settings:
@@ -533,10 +532,7 @@ struct NavigationRailView: View {
         isExperimental: Bool = false
     ) -> some View {
         Button {
-            selection = destination
-            // Activating a destination is the same commitment as selecting it and
-            // pressing Right: close the menu and enter the page immediately.
-            releaseFocusToPage()
+            onSelectDestination(destination)
         } label: {
             HStack(spacing: 0) {
                 Image(systemName: symbol)
@@ -594,7 +590,7 @@ struct NavigationRailView: View {
         .padding(.vertical, NavigationRailMetrics.itemVerticalPadding)
         .offset(x: animatedContentOffset)
         .accessibilityLabel(label)
-        .accessibilityValue(isExperimental ? Text("Experimental") : Text(""))
+        .accessibilityValue(isExperimental ? Text("Experimental") : Text(verbatim: ""))
         .accessibilityAddTraits(selection == destination ? [.isSelected] : [])
     }
 
@@ -663,13 +659,11 @@ struct NavigationRailView: View {
         defaultValue: "Watchlist",
         comment: "Navigation rail destination for the user's universal Watchlist."
     )
-    #if DEBUG
     private static let liveTVTitle = LocalizedStringResource(
         "navigationRail.liveTV",
         defaultValue: "Live TV",
-        comment: "Development-only Live TV prototype navigation destination."
+        comment: "Live TV navigation destination."
     )
-    #endif
     private static let musicTitle = LocalizedStringResource(
         "navigationRail.music",
         defaultValue: "Music",

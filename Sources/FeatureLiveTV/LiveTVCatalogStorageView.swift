@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreUI
 import FeatureLiveTVCore
@@ -49,4 +48,3 @@ public struct LiveTVCatalogStorageView<Content: View>: View {
         }
     }
 }
-#endif

@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreUI
 import FeatureLiveTVCore
@@ -177,4 +176,3 @@ struct LiveTVServerAvailabilitySummary: View {
         }
     }
 }
-#endif

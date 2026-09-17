@@ -1,4 +1,4 @@
-#if DEBUG && os(iOS)
+#if os(iOS)
 import CoreUI
 import FeatureLiveTVCore
 import SwiftUI
@@ -69,7 +69,6 @@ struct PrototypeSearchHeader: View {
 }
 #endif
 
-#if DEBUG
 import SwiftUI
 
 private struct PrototypeSearchResultsKey: EnvironmentKey {
@@ -137,5 +136,4 @@ struct PrototypeSearchRowHost<Content: View>: UIViewControllerRepresentable {
         return uiViewController.sizeThatFits(in: CGSize(width: width, height: UIView.layoutFittingExpandedSize.height))
     }
 }
-#endif
 #endif

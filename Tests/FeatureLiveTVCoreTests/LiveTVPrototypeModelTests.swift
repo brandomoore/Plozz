@@ -5,6 +5,60 @@ import XCTest
 
 @MainActor
 final class LiveTVPrototypeModelTests: XCTestCase {
+    func testConfiguredCatalogUsesOnlySuppliedChannelsAndListings() throws {
+        let channel = LiveTVPrototypeChannel(
+            id: "configured-channel", number: 1, name: "Configured channel", category: "News",
+            symbol: "tv", accent: 0, source: .iptv, tagline: ""
+        )
+        let model = LiveTVPrototypeModel(channels: [channel])
+        XCTAssertEqual(model.channels, [channel])
+        XCTAssertTrue(model.favoriteIDs.isEmpty)
+        XCTAssertTrue(model.recentChannelIDs.isEmpty)
+        for scenario in LiveTVPrototypeScenario.allCases {
+            model.scenario = scenario
+            XCTAssertTrue(model.programs(for: channel.id, from: model.now).isEmpty)
+        }
+        let program = LiveTVPrototypeProgram(
+            id: "configured-program", channelID: channel.id, title: "Provided listing", subtitle: "",
+            start: model.now, end: model.now.addingTimeInterval(1_800)
+        )
+        try model.replacePrograms([program])
+        XCTAssertEqual(model.currentProgram(for: channel.id), program)
+
+        let preview = LiveTVPreviewController(model: model, followsFocus: false)
+        preview.focus(channel.id)
+        XCTAssertNil(model.playingChannelID)
+        XCTAssertNil(preview.pendingRequest)
+        preview.watch(channel.id)
+        XCTAssertEqual(model.playingChannelID, channel.id)
+        XCTAssertTrue(preview.isExpanded)
+        preview.stop()
+        XCTAssertNil(model.playingChannelID)
+    }
+
+    #if !DEBUG
+    func testReleaseDefaultCatalogNeverSeedsSyntheticChannelsOrFavorites() {
+        let model = LiveTVPrototypeModel(isLargeCatalog: true)
+        XCTAssertTrue(model.channels.isEmpty)
+        XCTAssertTrue(model.favoriteIDs.isEmpty)
+        XCTAssertTrue(model.recentChannelIDs.isEmpty)
+        XCTAssertTrue(model.guideChannels.isEmpty)
+    }
+
+    func testReleaseCatalogNeverCreatesStressCopies() {
+        let channel = LiveTVPrototypeChannel(
+            id: "configured-channel", number: 1, name: "Configured channel", category: "News",
+            symbol: "tv", accent: 0, source: .iptv, tagline: ""
+        )
+        let model = LiveTVPrototypeModel(isLargeCatalog: true, channels: [channel])
+        XCTAssertEqual(model.channels, [channel])
+        model.isLargeCatalog = false
+        model.isLargeCatalog = true
+        XCTAssertEqual(model.channels, [channel])
+    }
+    #endif
+
+    #if DEBUG
     func testNoGuideCatalogRemainsSearchableAndFavoritable() throws {
         let model = LiveTVPrototypeModel(scenario: .noGuide)
 
@@ -357,6 +411,8 @@ final class LiveTVPrototypeModelTests: XCTestCase {
         XCTAssertEqual(model.behindLiveSeconds, 0)
         XCTAssertFalse(model.tuneFailed)
     }
+
+    #endif
 
     func testHidingChannelFiltersEverySectionWithoutErasingStateOrPlayback() throws {
         let store = HiddenChannelsFixtureStore()

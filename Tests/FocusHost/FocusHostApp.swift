@@ -7,7 +7,11 @@ import CoreModels
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--poster-caption-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--native-sidebar-handoff-fixture") {
+                NativeSidebarHandoffFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--navigation-handoff-fixture") {
+                NavigationDestinationHandoffFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--poster-caption-fixture") {
                 PosterCaptionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--cast-focus-fixture") {
                 CastFocusFixture()

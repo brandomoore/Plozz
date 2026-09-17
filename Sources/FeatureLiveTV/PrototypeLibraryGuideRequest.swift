@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import FeatureLiveTVCore
 import Foundation
@@ -48,4 +47,3 @@ struct PrototypeLibraryGuideRequest: Equatable {
         range = DateInterval(start: from, end: to)
     }
 }
-#endif

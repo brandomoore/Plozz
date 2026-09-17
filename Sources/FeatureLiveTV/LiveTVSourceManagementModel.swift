@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import FeatureLiveTVCore
 import Foundation
@@ -215,4 +214,3 @@ final class LiveTVSourceManagementModel {
         }
     }
 }
-#endif

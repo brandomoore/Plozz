@@ -159,6 +159,18 @@ private struct BrowseButton: View {
     }
 
     var body: some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect {
+            NativeMusicBrowseButton(title: title, action: action)
+        } else {
+            customButton
+        }
+        #else
+        customButton
+        #endif
+    }
+
+    private var customButton: some View {
         Text(title)
             .font(.system(size: metrics.cardTitleFontSize, weight: .semibold))
             .foregroundStyle(titleColor)
@@ -177,6 +189,35 @@ private struct BrowseButton: View {
     }
 }
 
+#if os(tvOS)
+private struct NativeMusicBrowseButton: View {
+    let title: LocalizedStringResource
+    let action: () -> Void
+    @Environment(\.plozzMetrics) private var metrics
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: metrics.cardTitleFontSize, weight: .semibold))
+        }
+        .modifier(NativeMusicBrowseStyle())
+        .buttonBorderShape(.roundedRectangle(radius: metrics.landscapeCardCornerRadius))
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+private struct NativeMusicBrowseStyle: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(tvOS 26.0, *) {
+            content.buttonStyle(.glass)
+        } else {
+            content.buttonStyle(.bordered)
+        }
+    }
+}
+#endif
+
 /// A horizontal rail with a title.
 private struct MusicRow<Content: View>: View {
     let title: LocalizedStringResource
@@ -188,6 +229,7 @@ private struct MusicRow<Content: View>: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
 
     var body: some View {
         VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
@@ -216,13 +258,12 @@ private struct MusicRow<Content: View>: View {
                         content()
                     }
                     .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
-                    // Keep the rail clipping (no `scrollClipDisabled`) so the focus
-                    // engine holds the first/last card at its inset, and reserve room
-                    // *inside* the clip for the focused card's lift + shadow. The
-                    // negative outer padding restores the original vertical inset, so
-                    // the row's height is unchanged — only the clip grows.
+                    // Reserve space for focus growth without changing row spacing.
                     .padding(.vertical, metrics.railShadowClearance)
                 }
+                #if os(tvOS)
+                .scrollClipDisabled(focusStyle.usesSystemEffect)
+                #endif
                 // Match the shared rails: a tight `railTopPadding`-based gap above the
                 // cards (not the wide `railVerticalPadding` used below the row), so the
                 // section header hugs the cards instead of floating far above them.

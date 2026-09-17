@@ -20,10 +20,12 @@ final class LiveTVGuideSectionTests: XCTestCase {
         XCTAssertTrue(model.recordWatched("0"))
         model.tune("1")
         XCTAssertFalse(model.recordWatched("0"))
+        #if DEBUG
         model.simulateTunerBusy = true
         model.tune("2")
         XCTAssertTrue(model.tuneFailed)
         XCTAssertFalse(model.recordWatched("2"))
+        #endif
         model.stop()
         XCTAssertFalse(model.recordWatched("1"))
         XCTAssertEqual(model.recentChannelIDs, ["0"])
@@ -125,6 +127,7 @@ final class LiveTVGuideSectionTests: XCTestCase {
         XCTAssertNil(sequence.neighbor(of: "0", offset: 1, visibleChannels: []))
     }
 
+    #if DEBUG
     func testLargeCatalogKeepsMainRowsStableWhenShortcutsAreAdded() {
         let model = LiveTVPrototypeModel(scenario: .noGuide, isLargeCatalog: true)
         let id = model.channels[4_999].id
@@ -137,6 +140,7 @@ final class LiveTVGuideSectionTests: XCTestCase {
         model.stop()
         XCTAssertEqual(LiveTVGuideFocusTarget.returningToPlayback(in: model, selectedChannelID: nil), .channelContent(id))
     }
+    #endif
 
     func testTransportSnapshotSkipsDuplicateShortcutOccurrences() {
         let model = makeModel()

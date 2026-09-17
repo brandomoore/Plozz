@@ -36,6 +36,7 @@ final class LiveTVConfiguredImportTests: XCTestCase {
         XCTAssertTrue(calls.guides.isEmpty)
     }
 
+    #if DEBUG
     func testExplicitPlaylistDoesNotImplicitlyAddPublicGuides() async {
         let playlist = source()
         let loader = ConfiguredImportLoader(playlists: [playlist.playlistURL: m3u])
@@ -46,22 +47,23 @@ final class LiveTVConfiguredImportTests: XCTestCase {
         XCTAssertEqual(calls.playlists, [playlist.playlistURL])
         XCTAssertTrue(calls.guides.isEmpty)
     }
+    #endif
 
     func testApplyingAnAlreadyEmptyConfigurationClearsAnExistingCatalogImmediately() throws {
-        let model = LiveTVPrototypeModel()
+        let model = LiveTVPrototypeModel(channels: try LiveTVPlaylistParser().parse(m3u).channels)
         let imports = LiveTVPrototypeImportModel(configuration: .empty, loader: ConfiguredImportLoader())
         try imports.applyConfiguration(.empty, into: model)
         XCTAssertTrue(model.channels.isEmpty)
         XCTAssertNil(imports.playlistURL)
     }
 
-    func testEmptyAndDisabledConfigurationsClearChannelsWithoutAnyNetworkRequests() async {
+    func testEmptyAndDisabledConfigurationsClearChannelsWithoutAnyNetworkRequests() async throws {
         for configuration in [
             LiveTVSourcesConfiguration.empty,
             LiveTVSourcesConfiguration(playlists: [source(isEnabled: false)])
         ] {
             let loader = ConfiguredImportLoader()
-            let model = LiveTVPrototypeModel()
+            let model = LiveTVPrototypeModel(channels: try LiveTVPlaylistParser().parse(m3u).channels)
             model.tune(model.channels[0].id)
             let imports = LiveTVPrototypeImportModel(configuration: configuration, loader: loader)
             await imports.reload(into: model)

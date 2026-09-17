@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreUI
 import Observation
@@ -198,4 +197,3 @@ final class LiveTVSourceApprovalModel {
         )
     }
 }
-#endif

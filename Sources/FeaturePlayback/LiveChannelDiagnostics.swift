@@ -1,10 +1,13 @@
-#if DEBUG
 import CoreModels
+#if DEBUG
 import CoreNetworking
+#endif
 import Foundation
 
 struct LiveChannelDiagnostics {
+    #if DEBUG
     static let maximumElapsedMilliseconds = 86_400_000
+    #endif
 
     enum Event: String {
         case load, retry, pause, resume, seek, seekCompleted, suspend, foreground
@@ -13,6 +16,7 @@ struct LiveChannelDiagnostics {
         case tuneToFirstFrame
     }
 
+    #if DEBUG
     struct Cadence {
         private var lastEmission: TimeInterval?
         private var lastSignature: String?
@@ -32,17 +36,22 @@ struct LiveChannelDiagnostics {
     // Correlate an attempt without recording channel IDs, names, URLs or tokens.
     private let session = UUID().uuidString
     private var cadence = Cadence()
+    #endif
 
     mutating func sample(_ snapshot: LiveChannelEngineSnapshot, uptime: TimeInterval, attempt: Int) {
+        #if DEBUG
         guard HandoffDiagnostics.isEnabled,
               cadence.shouldEmit(signature: snapshot.diagnosticSignature, uptime: uptime) else { return }
         emit("attempt=\(attempt) event=sample \(snapshot.diagnosticDetail)")
+        #endif
     }
 
     func event(_ event: Event, attempt: Int, error: AppError? = nil) {
+        #if DEBUG
         guard HandoffDiagnostics.isEnabled else { return }
         let code = error.map(HandoffDiagnostics.errorCode) ?? "none"
         emit("attempt=\(attempt) event=\(event.rawValue) error=\(code)")
+        #endif
     }
 
     func tuneToFirstFrame(
@@ -50,14 +59,17 @@ struct LiveChannelDiagnostics {
         startedAt: TimeInterval,
         firstFrameAt: TimeInterval
     ) {
+        #if DEBUG
         guard HandoffDiagnostics.isEnabled else { return }
         let elapsed = Self.elapsedMilliseconds(
             startedAt: startedAt,
             firstFrameAt: firstFrameAt
         )
         emit("attempt=\(attempt) event=\(Event.tuneToFirstFrame.rawValue) elapsedMs=\(elapsed)")
+        #endif
     }
 
+    #if DEBUG
     static func elapsedMilliseconds(
         startedAt: TimeInterval,
         firstFrameAt: TimeInterval
@@ -72,8 +84,10 @@ struct LiveChannelDiagnostics {
         PlozzLog.playback.info(line)
         HandoffDiagnostics.emit(line)
     }
+    #endif
 }
 
+#if DEBUG
 private extension LiveChannelEngineSnapshot {
     var diagnosticSignature: String {
         "\(phase.diagnosticCode)/\(route.rawValue)/\(firstFrameReady)"

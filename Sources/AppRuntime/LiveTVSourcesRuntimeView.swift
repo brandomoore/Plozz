@@ -1,4 +1,4 @@
-#if DEBUG && canImport(SwiftUI) && canImport(UIKit)
+#if canImport(SwiftUI) && canImport(UIKit)
 import CoreModels
 import CoreSecureStore
 import FeatureLiveTVCore

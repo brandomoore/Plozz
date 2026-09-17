@@ -57,9 +57,7 @@ final class NavigationRailPresentationTests: XCTestCase {
         var destinations: [NavigationRailDestination] = [
             .home, .watchlist, .settings, .music, .allLibraries
         ]
-        #if DEBUG
         destinations.append(.liveTV)
-        #endif
         for destination in destinations {
             let presentation = make(destination)
             XCTAssertFalse(presentation.usesPageButton)
@@ -115,7 +113,6 @@ final class NavigationRailPresentationTests: XCTestCase {
         XCTAssertFalse(presentation.opensExpanded)
     }
 
-    #if DEBUG
     func testLiveTVSearchSuppressionBlocksEvenAnAlreadyRequestedMenu() {
         for expanded in [false, true] {
             for opening in [false, true] {
@@ -131,8 +128,6 @@ final class NavigationRailPresentationTests: XCTestCase {
             }
         }
     }
-    #endif
-
     private func make(
         _ destination: NavigationRailDestination,
         expanded: Bool = false,

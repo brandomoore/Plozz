@@ -348,8 +348,13 @@ struct SeriesRecedeReveal<Content: View>: View {
         let revealed = recedeModel.isReceded || forceVisible
         content()
             // Alpha-zero controls leave tvOS's focus tree. Mask the drawing,
-            // like the hero, so DOWN can reach the resting season bar.
-            .mask { Rectangle().opacity(revealed ? 1 : 0) }
+            // like the hero, so DOWN can reach the resting season bar. Preserve
+            // the focused pill's overflow through this outer reveal mask too.
+            .mask {
+                Rectangle()
+                    .padding(-SeriesEpisodeBrowserLayout.seasonBarFocusOverflow)
+                    .opacity(revealed ? 1 : 0)
+            }
             .animation(
                 reduceMotion
                     ? nil

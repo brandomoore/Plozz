@@ -449,7 +449,12 @@ final class ServerToggleTests: XCTestCase {
             )?.percentEncodedPath,
             "/Videos/My%20Movie/stream.mkv"
         )
-        XCTAssertTrue(firstURL.absoluteString.contains("api_key=token-a"))
+        let queryItems = URLComponents(
+            url: firstURL,
+            resolvingAgainstBaseURL: false
+        )?.queryItems ?? []
+        XCTAssertEqual(queryItems.first { $0.name == "ApiKey" }?.value, "token-a")
+        XCTAssertFalse(queryItems.contains { $0.name == "api_key" })
 
         try store.add(account(id: "a", host: "new.example.com"), token: "token-a")
         let movedURL = try await state.authenticatedHTTPResolver.resolve(locator)

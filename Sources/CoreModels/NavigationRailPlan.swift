@@ -10,11 +10,7 @@ public enum NavigationRailDestination: Hashable, Sendable {
     case home
     case search
     case watchlist
-    #if DEBUG
-    /// Development-only Live TV prototype. Release builds deliberately cannot
-    /// restore this destination from persisted scene storage.
     case liveTV
-    #endif
     case music
     case settings
     /// A single library, addressed by its ``AggregatedLibrary/key``.
@@ -28,9 +24,7 @@ public enum NavigationRailDestination: Hashable, Sendable {
         case .home: return "home"
         case .search: return "search"
         case .watchlist: return "watchlist"
-        #if DEBUG
         case .liveTV: return "liveTV"
-        #endif
         case .music: return "music"
         case .settings: return "settings"
         case .allLibraries: return "allLibraries"
@@ -43,9 +37,7 @@ public enum NavigationRailDestination: Hashable, Sendable {
         case "home": self = .home
         case "search": self = .search
         case "watchlist": self = .watchlist
-        #if DEBUG
         case "liveTV": self = .liveTV
-        #endif
         case "music": self = .music
         case "settings": self = .settings
         case "allLibraries": self = .allLibraries
@@ -84,11 +76,13 @@ public struct NavigationRailLibraryEntry: Hashable, Sendable, Identifiable {
 /// profile's saved arrangement. SwiftUI-free so the ordering/visibility rules are
 /// unit-testable without a running view hierarchy.
 public enum NavigationDestinationDefaults {
+    public static func iPhoneOverflowKeys(visible: [String]) -> Set<String> {
+        visible.count > 5 ? Set(visible.dropFirst(4)) : []
+    }
+
     public static func compact(hasMusic: Bool) -> [String] {
         var keys = [NavigationLibraryLayout.homeKey, NavigationLibraryLayout.watchlistKey]
-        #if DEBUG
         keys.append(NavigationLibraryLayout.liveTVKey)
-        #endif
         keys.append(NavigationLibraryLayout.searchKey)
         if hasMusic { keys.append(NavigationLibraryLayout.musicKey) }
         keys.append(NavigationLibraryLayout.settingsKey)
@@ -113,9 +107,7 @@ public enum NavigationDestinationDefaults {
 
     public static var iOS: [String] {
         var keys = [NavigationLibraryLayout.homeKey, NavigationLibraryLayout.watchlistKey]
-        #if DEBUG
         keys.append(NavigationLibraryLayout.liveTVKey)
-        #endif
         return keys + [
             NavigationLibraryLayout.downloadsKey,
             NavigationLibraryLayout.settingsKey,
@@ -222,9 +214,7 @@ public enum NavigationRailPlan {
         case NavigationLibraryLayout.homeKey: return .home
         case NavigationLibraryLayout.searchKey: return .search
         case NavigationLibraryLayout.watchlistKey: return .watchlist
-        #if DEBUG
         case NavigationLibraryLayout.liveTVKey: return .liveTV
-        #endif
         case NavigationLibraryLayout.musicKey: return .music
         case NavigationLibraryLayout.settingsKey: return .settings
         case NavigationLibraryLayout.allLibrariesKey: return .allLibraries
@@ -238,9 +228,7 @@ public enum NavigationRailPlan {
         case .home: return NavigationLibraryLayout.homeKey
         case .search: return NavigationLibraryLayout.searchKey
         case .watchlist: return NavigationLibraryLayout.watchlistKey
-        #if DEBUG
         case .liveTV: return NavigationLibraryLayout.liveTVKey
-        #endif
         case .music: return NavigationLibraryLayout.musicKey
         case .settings: return NavigationLibraryLayout.settingsKey
         case .allLibraries: return NavigationLibraryLayout.allLibrariesKey

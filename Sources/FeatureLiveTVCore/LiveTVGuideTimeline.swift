@@ -1,4 +1,3 @@
-#if DEBUG
 import Foundation
 
 public struct LiveTVGuideSlot: Identifiable, Equatable, Sendable {
@@ -40,4 +39,3 @@ public enum LiveTVGuideTimeline {
         return result
     }
 }
-#endif

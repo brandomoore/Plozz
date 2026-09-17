@@ -2,6 +2,107 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/038",
+      "version": "2026.9.16",
+      "build": 38,
+      "releasedAt": "2026-09-16",
+      "sections": [
+        {
+          "category": "Updated",
+          "items": [
+            "Live TV content refinements",
+            {
+              "text": "Redesigned More page and clearer navigation arrangement",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Settings tab can be hidden; Settings stays available top-right",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Reduced freezes with Sync Live TV enabled",
+            "Live TV retries failed library connections sooner",
+            {
+              "text": "Crash when opening Appearance settings",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release/037",
+      "version": "2026.9.15",
+      "build": 37,
+      "releasedAt": "2026-09-15",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Live TV",
+            "Subtitle search shows a File match badge when Jellyfin or Emby confirms a match to your video file"
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Default focus is now \"system\"",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "New animations when opening and closing detail pages",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Animation and performance optimizations on Home",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Navigation menu is no longer open by default on app launch",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Home stays responsive while matching titles across your connected libraries",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Hide or reorder destinations in every navigation style, including library shortcuts in the sidebars; Settings stays available",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Reorder your tabs or hide Home, Watchlist, Downloads, and Search; the new Settings tab cannot be hidden",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Picture in Picture can keep its window open when playback reloads",
+              "platforms": ["iOS"]
+            },
+            "In the custom metadata-provider order, press and hold a provider to hide, show, or move it"
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Subtitle downloads remain available when a video has no installed subtitle tracks",
+              "platforms": ["tvOS"]
+            },
+            "Jellyfin streaming works when the server has legacy API-key authentication disabled",
+            "Completed titles stay out of Continue Watching while Plozz retries clearing their saved playback position",
+            {
+              "text": "Theme music no longer starts over regular music playback",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/036",
       "version": "2026.9.10",
       "build": 36,

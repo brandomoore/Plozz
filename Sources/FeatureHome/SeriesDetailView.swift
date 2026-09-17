@@ -74,6 +74,9 @@ struct SeriesDetailView: View {
     /// so left/right moves freely between seasons; it resets when focus leaves.
     @State private var seasonBarEngaged = false
     @State private var browserEntry = SeriesBrowserEntry.hero
+    @State private var browserPresentationSettled = false
+    @State private var browserPresentationGeneration = 0
+    @State private var hasPresentedEpisodeBrowser = false
     /// Whether focus is currently somewhere inside the episode browser.
     ///
     /// Gates the hero-blur backstop below. Focus leaving the hero does NOT imply
@@ -355,13 +358,8 @@ struct SeriesDetailView: View {
         // Whole-show/season entry lands on Hero Play. Individual episode entry
         // lands on its rail card through MediaRowView's initial focus.
         //
-        // Only on a genuine open. `defaultFocus` is declarative and re-fires on
-        // every appearance, so on a pop back from a pushed page it yanked focus
-        // off whatever the user was on — and because Play taking focus restores
-        // the hero, that also collapsed the episode browser and hid the cast.
-        // Designating `false` leaves no target (nothing binds `equals: false`),
-        // which keeps the modifier applied unconditionally so view identity is
-        // stable, rather than branching it in or out of the hierarchy.
+        // Only a genuine open claims Play. Reappearing after a child page must
+        // preserve the episode browser's own focus restoration.
         scroll
             .defaultFocus(
                 $playFocused,
@@ -575,6 +573,7 @@ struct SeriesDetailView: View {
                     )
                     .detailEntranceStage(.episodes)
 
+                    if showsLowerDetailContent {
                     DetailExtrasView(
                         item: series,
                         selectedSource: distinctServerChoices.first { $0.accountID == series.sourceAccountID }
@@ -628,6 +627,7 @@ struct SeriesDetailView: View {
                         )
                         .id(Self.extrasAnchorID)
                     }
+                    }
                     // Static. The column's layout position never changes — it is
                     // permanently at its browsing position, which is what keeps
                     // the season bar and episode rail inside the viewport and the
@@ -644,7 +644,8 @@ struct SeriesDetailView: View {
                             : SeriesEpisodeBrowserLayout.browserRestDrop
                     )
                 }
-                .padding(.bottom, PlozzTheme.Metrics.screenVerticalPadding)
+                .frame(minHeight: SeriesEpisodeBrowserLayout.screenHeightReference, alignment: .topLeading)
+                .padding(.bottom, showsLowerDetailContent ? PlozzTheme.Metrics.screenVerticalPadding : 0)
                 // Cap the whole scroll column to the proposed (safe viewport)
                 // width. The hero backdrop still bleeds edge-to-edge via its own
                 // `.ignoresSafeArea`, but its layout footprint — and any over-wide
@@ -653,6 +654,9 @@ struct SeriesDetailView: View {
                 // sideways and shove focus off the left edge.
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            // The scroll view can focus a synthetic filler even while its real
+            // controls are gated. Do not let early Down scroll through that gap.
+            .scrollDisabled(holdsHeroFocusDuringEntrance)
             // Keep the page pinned to the top on first load. The Play button is
             // bottom-anchored in the full-screen hero, so when initial focus
             // lands on it tvOS auto-scrolls to frame it "comfortably", nudging
@@ -771,9 +775,27 @@ struct SeriesDetailView: View {
     /// and Season → Episode moves cost nothing either.
     private func revealBrowser(using proxy: ScrollViewProxy) {
         SeriesFocusTrace.record("revealBrowser")
-        withAnimation(.smooth(duration: Self.recedeAnimationDuration)) {
+        guard !recedeModel.isReceded else {
+            withAnimation(.smooth(duration: Self.recedeAnimationDuration)) {
+                proxy.scrollTo(Self.topAnchorID, anchor: .top)
+            }
+            return
+        }
+        browserPresentationSettled = false
+        browserPresentationGeneration &+= 1
+        let generation = browserPresentationGeneration
+        withAnimation(
+            reduceMotion ? nil : .smooth(duration: Self.recedeAnimationDuration),
+            completionCriteria: .logicallyComplete
+        ) {
             recedeModel.isReceded = true
             proxy.scrollTo(Self.topAnchorID, anchor: .top)
+        } completion: {
+            guard generation == browserPresentationGeneration, recedeModel.isReceded else { return }
+            browserPresentationSettled = true
+            if browserEntry == .browser, !seasonBarEngaged {
+                hasPresentedEpisodeBrowser = true
+            }
         }
     }
 
@@ -782,6 +804,8 @@ struct SeriesDetailView: View {
         guard !suppressesDuplicateHeroFocus else { return }
         SeriesFocusTrace.record("heroFocusAccepted")
         rearmEpisodeRailOnHeroFocusIfNeeded()
+        browserPresentationGeneration &+= 1
+        browserPresentationSettled = false
         browserEntry = .hero
         seasonBarEngaged = false
         browserHoldsFocus = false
@@ -1234,6 +1258,10 @@ struct SeriesDetailView: View {
         #endif
     }
 
+    private var showsLowerDetailContent: Bool {
+        hasPresentedEpisodeBrowser || entersBrowserOnOpen
+    }
+
     private func enterEpisodeBrowser(isPlaceholder: Bool, onFocusEntered: () -> Void) {
         guard !ignoresSystemFocusMoves else { return }
         let shouldReveal = !browserHoldsFocus || !recedeModel.isReceded
@@ -1242,6 +1270,9 @@ struct SeriesDetailView: View {
         browserHoldsFocus = true
         if !isPlaceholder { hasUserDirectedFocus = true }
         hasSettledOpeningFocus = true
+        if browserPresentationSettled && recedeModel.isReceded {
+            hasPresentedEpisodeBrowser = true
+        }
         if shouldReveal { onFocusEntered() }
     }
 

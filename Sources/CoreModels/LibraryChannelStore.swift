@@ -19,6 +19,7 @@ public final class LibraryChannelDefinitionStore: LibraryChannelDefinitionCompar
     private let secureStore: any SecureStoring
     private let key: String
     private static let lock = NSRecursiveLock()
+    private var cachedDocument: (bytes: String, definitions: [LibraryChannelDefinition])?
 
     public init(secureStore: any SecureStoring, namespace: String? = nil) {
         self.secureStore = secureStore
@@ -71,11 +72,18 @@ public final class LibraryChannelDefinitionStore: LibraryChannelDefinitionCompar
             throw LibraryChannelError.storageFailed
         }
         try secureStore.setString(value, for: key)
+        cachedDocument = (value, definitions)
     }
 
     private func read() throws -> [LibraryChannelDefinition] {
-        guard let value = try secureStore.readString(for: key) else { return [] }
+        guard let value = try secureStore.readString(for: key) else {
+            cachedDocument = nil
+            return []
+        }
         guard value.utf8.count <= 2_000_000 else { throw LibraryChannelError.storageFailed }
+        if let cachedDocument, cachedDocument.bytes.utf8.elementsEqual(value.utf8) {
+            return cachedDocument.definitions
+        }
         let document = try JSONDecoder().decode(Document.self, from: Data(value.utf8))
         guard document.version == 1 else { throw LibraryChannelError.unsupportedVersion }
         guard document.definitions.count <= 100,
@@ -85,6 +93,7 @@ public final class LibraryChannelDefinitionStore: LibraryChannelDefinitionCompar
             throw LibraryChannelError.invalidRecipe
         }
         for definition in document.definitions { try definition.validate() }
+        cachedDocument = (value, document.definitions)
         return document.definitions
     }
 }

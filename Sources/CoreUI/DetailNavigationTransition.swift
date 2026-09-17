@@ -10,9 +10,10 @@ public enum DetailEntranceStage: Int, Comparable, Sendable {
 
 public struct DetailEntranceTiming: Equatable, Sendable {
     public var zoom: TimeInterval = 0.4
-    public var artworkPause: TimeInterval = 0.25
-    public var stagger: TimeInterval = 0.12
-    public var reveal: TimeInterval = 0.24
+    public var artworkPause: TimeInterval = 0.10
+    public var stagger: TimeInterval = 0.09
+    public var reveal: TimeInterval = 0.45
+    public var episodeReveal: TimeInterval = 0.72
     public var reverse: TimeInterval = 0.28
 
     public init() {}
@@ -22,9 +23,14 @@ enum DetailEntranceMotion {
     static let pickup = UnitPoint(x: 0.22, y: 0.64)
     static let landing = UnitPoint(x: 0.30, y: 1)
     static let foregroundTravel: CGFloat = 10
+    static let episodeTravel: CGFloat = 48
 
     static func reveal(duration: TimeInterval) -> Animation {
-        .timingCurve(pickup.x, pickup.y, landing.x, landing.y, duration: duration)
+        .timingCurve(0.42, 0, 0.58, 1, duration: duration)
+    }
+
+    static func episodeReveal(duration: TimeInterval) -> Animation {
+        .timingCurve(0.32, 0, 0.20, 1, duration: duration)
     }
 }
 
@@ -874,7 +880,7 @@ public final class TVDetailEntranceSession {
                 try await Task.sleep(for: .seconds(timing.reveal))
                 if revealsEpisodesLast {
                     stage = .episodes
-                    try await Task.sleep(for: .seconds(timing.reveal))
+                    try await Task.sleep(for: .seconds(timing.episodeReveal))
                 }
                 stage = .complete
                 backdropRequest = nil
@@ -1182,15 +1188,18 @@ private struct TVDetailStageReveal: ViewModifier {
     func body(content: Content) -> some View {
         let visible = reduceMotion
             || (session.map { $0.stage >= stage && !$0.isClosing } ?? true)
-        let duration = session?.isClosing == true ? 0.12 : (session?.timing.reveal ?? 0)
+        let isEpisodeEntrance = stage == .episodes && session?.isClosing != true
+        let reveal = isEpisodeEntrance ? session?.timing.episodeReveal : session?.timing.reveal
+        let duration = session?.isClosing == true ? 0.12 : (reveal ?? 0)
+        let travel = isEpisodeEntrance ? DetailEntranceMotion.episodeTravel : DetailEntranceMotion.foregroundTravel
+        let animation: Animation? = reduceMotion ? nil
+            : session?.isClosing == true ? .easeOut(duration: duration)
+            : isEpisodeEntrance ? DetailEntranceMotion.episodeReveal(duration: duration)
+            : DetailEntranceMotion.reveal(duration: duration)
         content
-            .offset(y: visible ? 0 : DetailEntranceMotion.foregroundTravel)
+            .offset(y: visible ? 0 : travel)
             .mask { Rectangle().padding(-600).opacity(visible ? 1 : 0) }
-            .animation(
-                reduceMotion ? nil : session?.isClosing == true
-                    ? .easeOut(duration: duration) : DetailEntranceMotion.reveal(duration: duration),
-                value: visible
-            )
+            .animation(animation, value: visible)
     }
 }
 

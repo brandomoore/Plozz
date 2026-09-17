@@ -1,4 +1,4 @@
-#if DEBUG && canImport(SwiftUI)
+#if canImport(SwiftUI)
 import Observation
 import SwiftUI
 

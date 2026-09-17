@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CryptoKit
 import Foundation
@@ -52,6 +51,13 @@ public actor LiveTVIndexedCache {
     private var pendingPortableGuideChannelIDs: Set<String> = []
     private let catalogEncoder = JSONEncoder()
     private let catalogDecoder = JSONDecoder()
+    #if DEBUG
+    private var guideImportProgressForTesting: (@Sendable (Int) throws -> Void)?
+
+    func setGuideImportProgressForTesting(_ observer: (@Sendable (Int) throws -> Void)?) {
+        guideImportProgressForTesting = observer
+    }
+    #endif
 
     private struct GuideSettings: Codable, Equatable {
         let version: Int
@@ -582,6 +588,11 @@ public actor LiveTVIndexedCache {
                         "INSERT INTO program_search(source,id,title) VALUES(?,?,?)",
                         [.text(sourceID), .text(program.id), .text(program.title)]
                     )
+                    #if DEBUG
+                    if insertedProgramCount.isMultiple(of: 10_000) {
+                        try self.guideImportProgressForTesting?(insertedProgramCount)
+                    }
+                    #endif
                 }
             }
             guard let parsed = result else { throw LiveTVCacheError.invalidRecord }
@@ -1083,4 +1094,3 @@ private final class LiveTVCacheConnection {
         }
     }
 }
-#endif

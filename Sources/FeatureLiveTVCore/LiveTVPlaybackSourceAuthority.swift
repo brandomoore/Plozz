@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import Foundation
 
@@ -65,4 +64,3 @@ public final class LiveTVPlaybackSourceAuthority {
         }
     }
 }
-#endif

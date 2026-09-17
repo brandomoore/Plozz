@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreModels
 import CoreSecureStore
 import FeatureLiveTVCore
@@ -54,4 +53,3 @@ public enum LiveTVLibraryStorage {
         init(_ value: LiveTVLibraryRuntime) { self.value = value }
     }
 }
-#endif

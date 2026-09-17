@@ -259,6 +259,90 @@ final class LiveTVPortableSyncBridgeTests: XCTestCase {
         XCTAssertEqual(applied, ["first", "second"])
     }
 
+    func testJournalChangedByAnotherAdapterDuringIdentityApplicationRemainsPending() async throws {
+        let fixture = try makeFixture()
+        let profileID = fixture.profiles.activeProfileID
+        fixture.consent(profileID).isEnabled = true
+        let key = record(profileID, "channel")
+        let first = try LiveTVPortableRecord(channel: .init(
+            isFavorite: true, identityHint: .init(sourceID: "source", nativeID: "first")
+        )).encoded()
+        let second = try LiveTVPortableRecord(channel: .init(
+            isFavorite: true, identityHint: .init(sourceID: "source", nativeID: "second")
+        )).encoded()
+        let writer = LiveTVPortableSyncAdapter(
+            directory: fixture.directory, profileID: profileID, defaults: fixture.defaults,
+            namespace: fixture.profiles.activeNamespace
+        )
+        var applied: [String] = []
+        let bridge = fixture.makeBridge { _, hints in
+            applied += hints.values.compactMap { $0?.nativeID }
+            if applied.count == 1 {
+                _ = try writer.apply([key: second], sourceStore: fixture.sources)
+            }
+            return true
+        }
+        await bridge.apply([key: first])
+        XCTAssertEqual(applied, ["first"])
+        XCTAssertEqual(bridge.statuses[profileID], .pendingChannelMatches(1))
+        XCTAssertEqual(try writer.deferredIdentityHints()["channel"]??.nativeID, "second")
+        _ = await bridge.capture(fallback: [:])
+        XCTAssertEqual(applied, ["first", "second"])
+        XCTAssertEqual(bridge.statuses[profileID], .ready)
+        XCTAssertTrue(try writer.deferredIdentityHints().isEmpty)
+    }
+
+    func testPlaybackHoldStartingDuringIdentityApplicationPreventsAcknowledgement() async throws {
+        let fixture = try makeFixture()
+        let profileID = fixture.profiles.activeProfileID
+        fixture.consent(profileID).isEnabled = true
+        let hold = LiveTVPlaybackIdentityHold(profileID: profileID)
+        defer { hold.update(false) }
+        var applied = 0
+        let bridge = fixture.makeBridge { _, _ in
+            applied += 1
+            if applied == 1 { hold.update(true) }
+            return true
+        }
+        await bridge.apply([record(profileID, "channel"): try LiveTVPortableRecord(channel: .init(
+            isFavorite: true, identityHint: .init(sourceID: "source", nativeID: "native")
+        )).encoded()])
+        XCTAssertEqual(applied, 1)
+        XCTAssertEqual(bridge.statuses[profileID], .pendingChannelMatches(1))
+        hold.update(false)
+        _ = await bridge.capture(fallback: [:])
+        XCTAssertEqual(applied, 2)
+        XCTAssertEqual(bridge.statuses[profileID], .ready)
+    }
+
+    func testCancelledIdentityApplicationLeavesJournalPendingForNextOperation() async throws {
+        let fixture = try makeFixture()
+        let profileID = fixture.profiles.activeProfileID
+        fixture.consent(profileID).isEnabled = true
+        let gate = PortableTestGate()
+        let entered = expectation(description: "Identity application suspended")
+        var applied = 0
+        let bridge = fixture.makeBridge { _, _ in
+            applied += 1
+            if applied == 1 {
+                entered.fulfill()
+                await gate.wait()
+            }
+            return true
+        }
+        let changes: SyncLocalChanges = [record(profileID, "channel"): try LiveTVPortableRecord(channel: .init(
+            isFavorite: true, identityHint: .init(sourceID: "source", nativeID: "native")
+        )).encoded()]
+        let operation = Task { await bridge.apply(changes) }
+        await fulfillment(of: [entered], timeout: 2)
+        operation.cancel()
+        await gate.open()
+        await operation.value
+        _ = await bridge.capture(fallback: [:])
+        XCTAssertEqual(applied, 2)
+        XCTAssertEqual(bridge.statuses[profileID], .ready)
+    }
+
     func testCaptureOnlyNotifiesAppliedWhenItHydratesRemotePreferences() async throws {
         let fixture = try makeFixture()
         let profileID = fixture.profiles.activeProfileID

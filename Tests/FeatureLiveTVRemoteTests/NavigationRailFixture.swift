@@ -26,7 +26,8 @@ struct NavigationRailFixture<SearchContent: View>: View {
                 } else {
                     NavigationRailFixturePage(model: model)
                 }
-            }
+            },
+            contentDestination: model.selection
         )
     }
 }

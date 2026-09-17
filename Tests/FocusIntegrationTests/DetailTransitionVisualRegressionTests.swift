@@ -33,7 +33,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         XCTAssertGreaterThan(overlay.destination.layer.presentation()?.opacity ?? 0, 0.8)
         XCTAssertTrue(overlay.destination.image === backdrop)
         try await waitUntil { overlay.superview == nil }
-        XCTAssertEqual(session.stage, .artwork)
+        XCTAssertEqual(session.stage, .logo)
     }
 
     func testReturnMatchesFocusedArtworkFrameAndContinuousScaledCorners() async throws {
@@ -452,7 +452,7 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
 
     private func verticalScroll(in view: UIView) -> UIScrollView? {
         if let scroll = view as? UIScrollView,
-           scroll.bounds.height > 700, scroll.contentSize.height > scroll.bounds.height {
+           scroll.bounds.height > 700 {
             return scroll
         }
         return view.subviews.lazy.compactMap { self.verticalScroll(in: $0) }.first

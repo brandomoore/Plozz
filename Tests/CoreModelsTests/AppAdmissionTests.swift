@@ -94,7 +94,6 @@ final class AppAdmissionNavigationTests: XCTestCase {
         ), configured)
     }
 
-    #if DEBUG
     func testEveryTVNavigationVariantKeepsSettingsOnlyLayoutsOnRelaunch() {
         let variants = [
             NavigationDestinationDefaults.compact(hasMusic: false),
@@ -134,7 +133,6 @@ final class AppAdmissionNavigationTests: XCTestCase {
             hasPendingLiveTVEntry: false
         ), NavigationLibraryLayout.settingsKey)
     }
-    #endif
 }
 
 @MainActor

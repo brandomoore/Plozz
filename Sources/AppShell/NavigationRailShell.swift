@@ -26,6 +26,8 @@ struct NavigationRailShell<Content: View>: View {
     let onOpenProfileSwitcher: () -> Void
     let chrome: NavigationChromeModel
     let content: Content
+    /// The destination the supplied content actually depicts, which may lag selection.
+    let contentDestination: NavigationRailDestination
     var preventsAccidentalExit: Bool = false
 
     /// Scopes appearance-time default focus so the CONTENT is focused first. Without
@@ -44,6 +46,8 @@ struct NavigationRailShell<Content: View>: View {
     @State private var railReturnToken = 0
     @State private var isOpeningNavigation = false
     @State private var hasEnteredSearchContent = false
+    @State private var destinationFocus = NavigationDestinationFocusHandoff()
+    @State private var contentFocusRequest: UInt64?
 
     var body: some View {
         let hidden = chrome.isChromeHidden
@@ -56,6 +60,19 @@ struct NavigationRailShell<Content: View>: View {
         )
         return ZStack(alignment: .leading) {
             content
+                .background {
+                    NavigationContentFocusRequester(
+                        request: contentFocusRequest, onCompleted: contentFocusCompleted
+                    )
+                }
+                .background {
+                    NavigationDestinationPresentationAnchor(
+                        destination: contentDestination,
+                        request: destinationFocus.request,
+                        onPresented: destinationPresented
+                    )
+                    .id(contentDestination)
+                }
                 .background {
                     SearchPageFocusObserver(
                         isEnabled: presentation.shouldEnterSearchContent && !hasEnteredSearchContent,
@@ -85,12 +102,15 @@ struct NavigationRailShell<Content: View>: View {
                 // Reordering puts even Home and Settings inside the scroll view.
                 // During explicit entry, only its revealed selected row may win
                 // focus; restore directional access to the page once it arrives.
-                .disabled(isOpeningNavigation)
+                .disabled(isOpeningNavigation || destinationFocus.isWaiting)
                 // Content is the scope's preferred focus ONLY while the rail does
                 // not hold focus. Opening the rail changes its focusable subtree;
                 // leaving this unconditional can re-assert content focus in the
                 // same transaction and immediately close the rail again.
-                .prefersDefaultFocus(!railExpanded && !isOpeningNavigation, in: focusScopeID)
+                .prefersDefaultFocus(
+                    !railExpanded && !isOpeningNavigation && !destinationFocus.isWaiting,
+                    in: focusScopeID
+                )
 
             ZStack(alignment: .leading) {
                 if presentation.showsPageButton {
@@ -114,7 +134,7 @@ struct NavigationRailShell<Content: View>: View {
                 if !hidden {
                     NavigationRailEdgeCatcher(
                         onOpenNavigation: requestNavigationFocus,
-                        onLeaveNavigation: { railReturnToken &+= 1 },
+                        onLeaveNavigation: returnFocusToPage,
                         railHasFocus: railExpanded,
                         isEnabled: presentation.isEdgeNavigationEnabled(
                             searchResultsHaveFocus: pinnedSidebarInteraction.searchResultsHaveFocus
@@ -142,7 +162,12 @@ struct NavigationRailShell<Content: View>: View {
                         destinations: destinations,
                         selection: $selection,
                         isExpandedOutward: $railExpanded,
-                        onOpenProfileSwitcher: onOpenProfileSwitcher,
+                        onOpenProfileSwitcher: {
+                            destinationFocus.cancel()
+                            contentFocusRequest = nil
+                            onOpenProfileSwitcher()
+                        },
+                        onSelectDestination: selectDestination,
                         isFocusEnabled: !chrome.transitionSuppressesFocus,
                         focusRequestToken: focusRequestToken,
                         focusReleaseToken: railReturnToken,
@@ -193,23 +218,37 @@ struct NavigationRailShell<Content: View>: View {
             // without this the rail would stay hidden after leaving a detail page
             // by switching destinations rather than by pressing Back.
             if previous != destination {
+                contentFocusRequest = nil
+                if let request = destinationFocus.request, request.destination != destination {
+                    destinationFocus.cancel()
+                }
                 chrome.resetForDestinationChange()
                 isOpeningNavigation = false
                 hasEnteredSearchContent = false
                 pinnedSidebarInteraction.setSearchResultsFocused(false)
             }
         }
-        .onChange(of: railExpanded) { _, _ in
+        .onChange(of: railExpanded) { _, expanded in
             isOpeningNavigation = false
+            if !expanded { contentFocusRequest = nil }
+        }
+        .onChange(of: destinationFocus.request) { _, request in
+            if let request, request.destination != selection {
+                destinationFocus.cancel()
+            }
         }
         .onChange(of: chrome.transitionSuppressesFocus) { _, suppressed in
             if suppressed {
+                contentFocusRequest = nil
+                destinationFocus.cancel()
                 isOpeningNavigation = false
                 railExpanded = false
             }
         }
         .onChange(of: hidden) { _, hidden in
             if hidden {
+                contentFocusRequest = nil
+                destinationFocus.cancel()
                 isOpeningNavigation = false
                 railExpanded = false
             }
@@ -217,11 +256,45 @@ struct NavigationRailShell<Content: View>: View {
         .onChange(of: pinnedSidebarInteraction.openRequest) { _, _ in
             requestNavigationFocus()
         }
+        .onDisappear {
+            destinationFocus.cancel()
+            contentFocusRequest = nil
+        }
+    }
+
+    private func selectDestination(_ destination: NavigationRailDestination) {
+        guard destination != selection || destinationFocus.isWaiting else {
+            returnFocusToPage()
+            return
+        }
+        destinationFocus.begin(destination)
+        selection = destination
+    }
+
+    private func destinationPresented(_ request: NavigationDestinationFocusHandoff.Request) {
+        guard destinationFocus.complete(request) else { return }
+        guard selection == request.destination,
+              !chrome.transitionSuppressesFocus, !chrome.isChromeHidden else { return }
+        contentFocusRequest = request.generation
+    }
+
+    private func contentFocusCompleted(_ request: UInt64, didFocus: Bool) {
+        guard contentFocusRequest == request else { return }
+        contentFocusRequest = nil
+        // Keep the real rail row eligible until the content request has run.
+        // Removing it first lets spatial focus flash on a later card.
+        railReturnToken &+= 1
+    }
+
+    private func returnFocusToPage() {
+        guard !destinationFocus.isWaiting, contentFocusRequest == nil else { return }
+        railReturnToken &+= 1
     }
 
     private func requestNavigationFocus() {
         guard !DetailTransitionNavigation.isNavigationInputSuppressed,
               !chrome.isChromeHidden, !isOpeningNavigation, !railExpanded else { return }
+        contentFocusRequest = nil
         hasEnteredSearchContent = false
         isOpeningNavigation = true
         focusRequestToken &+= 1

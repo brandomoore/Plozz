@@ -145,7 +145,6 @@ final class AccountsProvidersModelTests: XCTestCase {
         XCTAssertEqual(model.activeAccountIDs, ["a"])
     }
 
-    #if DEBUG
     func testLiveTVNeverFallsBackToAnExcludedAccount() throws {
         let (model, store, profiles) = try makeModel(accountIDs: [("a", "a.example.com"), ("b", "b.example.com")])
         model.registry.register(.jellyfin) { LiveTVAccountsTestProvider(session: $0.session) }
@@ -200,10 +199,8 @@ final class AccountsProvidersModelTests: XCTestCase {
         let replacement = try XCTUnwrap(model.liveTVProviderResolver()("a"))
         XCTAssertNotEqual(original.authorizationID, replacement.authorizationID)
     }
-    #endif
 }
 
-#if DEBUG
 private final class LiveTVAccountsTestProvider: MediaProvider, ServerLiveTVProviding, Sendable {
     let kind: ProviderKind = .jellyfin
     let session: UserSession
@@ -238,4 +235,3 @@ private final class LiveTVAccountsTestProvider: MediaProvider, ServerLiveTVProvi
         throw ServerLiveTVError.unsupportedPlaybackMode
     }
 }
-#endif

@@ -72,7 +72,6 @@ private struct CastMemberCard: View {
     /// Installed per navigation stack. When absent the tile stays inert, which is
     /// the right behaviour on surfaces that have nowhere to push a person to.
     @Environment(\.mediaPersonNavigator) private var navigateToPerson
-    @Environment(\.plozzCardFocusStyle) private var focusStyle
 
     /// Cast cards read a touch small on the detail page, so scale the whole tile
     /// (avatar + caption type) up 25%. `CastRowView` is detail-page-only, so this
@@ -109,11 +108,7 @@ private struct CastMemberCard: View {
                 .multilineTextAlignment(.center)
             }
         )
-        #if os(tvOS)
-        // The legacy native monogram expands onto a square platter and into the
-        // caption. Keep cast on the existing circular outline; other cards stay native.
-        .environment(\.plozzCardFocusStyle, focusStyle.usesSystemEffect ? .outlined : focusStyle)
-        #endif
+        .plozzCircularFocusStyle()
     }
 
     @ViewBuilder

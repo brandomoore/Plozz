@@ -1,4 +1,3 @@
-#if DEBUG
 import CoreUI
 import FeatureLiveTVCore
 import SwiftUI
@@ -206,5 +205,3 @@ struct PrototypeSearchSummary: View {
         .lineLimit(1)
     }
 }
-
-#endif
