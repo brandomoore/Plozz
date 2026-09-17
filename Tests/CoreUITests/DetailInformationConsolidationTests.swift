@@ -77,5 +77,22 @@ final class DetailInformationConsolidationTests: XCTestCase {
             XCTAssertFalse(sections.hasAbout)
         }
     }
+
+    func testFamilyGuidanceKeepsRatingsSectionVisibleWithoutOtherScores() {
+        let summary = FamilyGuidanceSummary(recommendedAge: 14, qualityRating: 3)
+        let title = MediaItem(id: "film", title: "Fixture", kind: .movie, familyGuidance: summary)
+        let sections = DetailInformationSections(item: title, horizontalInset: 22)
+        XCTAssertTrue(sections.hasRatings)
+        XCTAssertTrue(sections.sortedRatings.isEmpty)
+        XCTAssertEqual(sections.familyGuidanceSummary, summary)
+    }
+
+    func testFamilyGuidanceIsNotPresentedAsAnEpisodeSpecificRating() {
+        let title = MediaItem(id: "episode", title: "Fixture", kind: .episode,
+                              familyGuidance: .init(recommendedAge: 14, qualityRating: 3))
+        let sections = DetailInformationSections(item: title, horizontalInset: 22)
+        XCTAssertFalse(sections.hasRatings)
+        XCTAssertNil(sections.familyGuidanceSummary)
+    }
 }
 #endif

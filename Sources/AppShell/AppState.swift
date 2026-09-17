@@ -145,6 +145,10 @@ public final class AppState {
     /// The household's profiles + active selection. Owned at the app level and
     /// layered on top of the multi-account core.
     public let profilesModel: ProfilesModel
+    @ObservationIgnored
+    public private(set) lazy var familyGuidance = FamilyGuidanceService(
+        accounts: accountsProviders, profiles: profilesModel, plexHome: plexHomeUsers
+    )
     /// Generic durable title identity for Plozz-owned profile state.
     public let mediaAliasLedger: MediaAliasLedgerModel
     public let transientStatusPresenter = TransientStatusPresenter()

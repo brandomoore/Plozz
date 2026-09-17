@@ -588,6 +588,29 @@ fresh-account resolution and stale-credential rejection. On a Jellyfin server
 with legacy authorization disabled, a selected Music track must start and advance
 past 0:00 rather than fail with `NSURLErrorDomain -1013`.
 
+## Common Sense Media guidance
+
+The Ratings section keeps Common Sense Media age recommendations separate from
+certification labels such as PG-13. Basic `CommonSenseMedia` data comes from the
+Plex item-detail response; the full review is requested only when its tile opens,
+through the fixed Discover host and global Plex GUID. It is not fetched for
+every poster or copied into the external critic-score list.
+
+`PlexCommonSenseMediaTests` covers movie/show summaries, absent and episode data,
+full category mapping, zero versus missing scores, invalid values, global-ID
+validation, and restricted versus unavailable versus failed requests.
+`FamilyGuidanceServiceTests` verifies Plex Home uses the active person's cloud
+credential, never the owner's fallback, and discards responses after profile,
+credential, or source-access changes. Full reviews are sheet-local rather than
+shared or persisted across profiles.
+
+`FamilyGuidanceRemoteTests` exercises the real Ratings section with native tvOS
+focus: Select opens the review, Menu restores the tile, failed requests can be
+retried, and restricted access never renders invented category scores.
+The same tile and sheet content are used by iOS; unsupported providers simply
+have no guidance tile. New interface copy is localized through the app catalog;
+review text and category labels are provider content.
+
 ## Guards that run before the compile
 
 Validate workflow edits with `actionlint .github/workflows/ci.yml` before

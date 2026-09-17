@@ -1581,6 +1581,8 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             productionYear: dto.year,
             releaseDate: Self.releaseDate(from: dto.originallyAvailableAt),
             officialRating: dto.contentRating,
+            familyGuidance: (kind == .movie || kind == .series)
+                ? dto.CommonSenseMedia?.first?.summary : nil,
             genres: dto.Genre?.compactMap(\.tag) ?? [],
             people: people(from: dto),
             studios: dto.studio.flatMap { $0.isEmpty ? nil : [$0] } ?? [],

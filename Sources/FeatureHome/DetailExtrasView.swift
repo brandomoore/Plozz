@@ -88,6 +88,7 @@ struct DetailExtrasView: View {
             || !item.cast.isEmpty
             || item.overview != nil
             || !item.ratings.isEmpty
+            || item.familyGuidance?.hasContent == true
             || item.productionYear != nil
             || item.releaseDate != nil
             || item.runtime != nil

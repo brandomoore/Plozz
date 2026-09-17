@@ -1103,6 +1103,37 @@ public struct PlexClient: Sendable {
 
     private static let watchlistBase = URL(string: "https://discover.provider.plex.tv")!
 
+    func commonSenseMedia(metadataID: String) async throws -> FamilyGuidanceAvailability {
+        guard metadataID.count == 24, metadataID.allSatisfy(\.isHexDigit) else {
+            PlozzLog.networking.error("Invalid Plex global identifier for family guidance")
+            throw AppError.invalidResponse
+        }
+        let endpoint = Endpoint(
+            path: "/library/metadata/\(metadataID)/commonsensemedia",
+            headers: plexTVHeaders
+        )
+        let (data, response) = try await http.sendRaw(endpoint, baseURL: Self.watchlistBase)
+        switch response.statusCode {
+        case 200:
+            do {
+                let value = try JSONDecoder.plozz.decode(PlexCommonSenseMediaResponse.self, from: data)
+                guard let record = value.MediaContainer.CommonSenseMedia?.first else { return .unavailable }
+                return .available(record.guidance)
+            } catch {
+                PlozzLog.networking.error("Decoding Plex family guidance failed")
+                throw AppError.decoding
+            }
+        case 401: throw AppError.unauthorized
+        case 403: return .restricted
+        case 404: return .unavailable
+        case 429:
+            throw AppError.rateLimited(retryAfter: response.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init))
+        default:
+            PlozzLog.networking.error("Plex family guidance request failed: HTTP \(response.statusCode)")
+            throw AppError.invalidResponse
+        }
+    }
+
     /// An absolute artwork URL on the plex.tv Discover host.
     ///
     /// Watchlist entries are Discover rows: their `thumb`/`art` are paths on

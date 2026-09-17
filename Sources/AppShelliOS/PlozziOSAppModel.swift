@@ -101,6 +101,10 @@ final class PlozziOSAppModel {
 
     let accountsProviders: AccountsProvidersModel
     let profiles: ProfilesModel
+    @ObservationIgnored
+    private(set) lazy var familyGuidance = FamilyGuidanceService(
+        accounts: accountsProviders, profiles: profiles, plexHome: plexHomeUsers
+    )
     /// Generic durable title identity for Plozz-owned profile state.
     let mediaAliasLedger: MediaAliasLedgerModel
     let transientStatusPresenter = TransientStatusPresenter()
