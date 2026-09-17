@@ -588,19 +588,120 @@ fresh-account resolution and stale-credential rejection. On a Jellyfin server
 with legacy authorization disabled, a selected Music track must start and advance
 past 0:00 rather than fail with `NSURLErrorDomain -1013`.
 
-## Guards that run before the compile
+## CI pipeline
 
 Validate workflow edits with `actionlint .github/workflows/ci.yml` before
 pushing. GitHub rejects invalid context references before creating a runner or
-job log. Runner-local package storage is initialized in a step via
-`RUNNER_TEMP` and `GITHUB_ENV`; the `runner` expression context is not available
-in job-level `env`.
+job log. CI configuration regressions run without simulator builds:
+`python3 -m unittest discover -s tools/tests -p 'test_ci_pipeline.py'`.
 
-CI selects a tvOS simulator matching the selected Xcode SDK and shares its
-`PLOZZ_SIM_ID` across package and app-hosted tests. It fails if that runtime is
-missing rather than silently choosing the first installed (possibly much older)
-runtime. The full matrix has a 40-minute wall-clock deadline; raw logs and
-result bundles are retained as workflow artifacts for seven days.
+### CI lanes and required check
+
+CI first runs every deterministic preflight guard and host-side regression
+suite. Successful preflight unlocks **three independent `macos-15` runners**:
+the tvOS simulator app build, the complete package test matrix, and app-hosted
+focus integration. A failed preflight stops expensive work; a failure in one
+build/test lane does not suppress either sibling. There is no change-scoped CI
+selection, cache-hit test skipping, or parallel XCTest worker cloning.
+
+The final **`Build and test tvOS app`** check keeps the existing required-check
+name. Its `always()` job requires success from preflight and all three lanes.
+Failed, cancelled, skipped, missing, or unexpected dependencies fail closed.
+Push-to-main, pull-request, manual triggers, and per-ref cancellation remain
+unchanged.
+
+Each test runner selects its own tvOS simulator matching Xcode 26.2's SDK; no
+simulator or mutable build directory crosses runners. A missing runtime fails
+instead of choosing an older installed runtime. The full matrix retains its
+40-minute wall-clock deadline, and hosted tests retain their existing
+20-minute deadline and authoritative `xcresult` checks. Each lane uploads
+uniquely named diagnostics on success or failure, retained for seven days.
+The simulator app build also retains its raw log without replacing a build
+failure's exit status with the log writer's status.
+
+Baseline CI run `35167378428` / job `105031390432` took 45m7s: approximately
+6.3m app compilation, 22m package tests, and 14.7m hosted tests. Only about 2.8m
+of the hosted stage was test execution. Parallel lanes remove the sum of those
+stages from the critical path; this is not a measured new end-to-end time.
+Separate runners cost more concurrent macOS capacity and still repeat some
+compilation on a cold cache.
+
+### CI cache ownership and compatibility
+
+`.github/actions/ci-prepare` initializes storage through `tools/ci-cache.py`,
+using `GITHUB_WORKSPACE` and `GITHUB_ENV` after checkout, not a job-level
+`runner` expression or the machine's shared developer caches:
+
+- `.build/ci/<lane>/DerivedData`: a separate app, package, or hosted build root.
+  The cache allowlist contains only `Build`, `ModuleCache.noindex`,
+  `SDKStatCaches.noindex`, and `CompilationCache.noindex`.
+- `.build/ci/<lane>/SourcePackages`: that lane's private mutable checkouts and
+  binary artifact extractions. It travels **only with that lane's compiled
+  snapshot**, preserving dependency timestamps for incremental compilation.
+- `.build/ci/<lane>/source-timestamps.json`: SHA-256, file mode, size, and
+  nanosecond timestamps for that successful build's tracked source inputs.
+  It travels with the same lane's compiled snapshot, never a separate cache.
+- `.build/ci/swiftpm-cache/{repositories,artifacts}`: compressed SwiftPM
+  repository/download caches. Every job restores its own copy. Only a
+  successful app-build job seeds the remote compressed cache.
+
+No live directory has concurrent writers across lanes; immutable Actions
+snapshots are not a shared writable filesystem. Hosted host/test products
+remain owned by the single `AppShell` umbrella product. App and package
+products must never be copied into the hosted build root: an old independent
+`CoreUI.framework` can shadow Apple's private framework and crash UIKit.
+The new cache namespace deliberately starts cold rather than importing any
+old DerivedData graph.
+
+Keys include the Xcode build, selected developer/SDK paths, SDK version/build,
+runner architecture and macOS build, workspace path, XcodeGen version,
+`Package.swift`, and canonical `Package.resolved`. Compiled compatibility
+additionally hashes `project.yml`, generated project/schemes, configuration
+files, CI actions/workflow, and build runner/generator inputs. Metadata
+enumeration and reads use no-follow workspace-relative descriptors; linked
+configuration or generated-project inputs fail key computation. Only generated
+marketing/build **version values** are normalized for the cache fingerprint;
+the actual freshly generated project is never rewritten for caching, so Xcode
+still rebuilds anything affected by those values. Each compiled snapshot has
+an exact commit key and can fall back only within the same lane and complete
+compatibility prefix. There is no broader Xcode/SDK/manifest fallback.
+Source files are freshly checked out, and every build/test command executes
+after restore. A checkout gives unchanged
+files fresh timestamps, which can otherwise defeat restored DerivedData.
+After restore, `ci-cache.py` reinstates a saved timestamp **only** when a file
+is still tracked, its bytes have the same SHA-256, and its size/mode match.
+Scope is limited to `Sources`, `Tests`, `App`, `TopShelf`, `Config`, and the
+root package/project manifests. Changed, new, deleted, untracked, or
+out-of-scope files are not assigned an old timestamp. Directory/file symlinks,
+hard links, absolute paths, and traversal are rejected; descriptor-relative
+file operations prevent following a swapped symlink outside the workspace.
+Missing or corrupt timestamp snapshots leave fresh source timestamps intact.
+Only successful trusted-main cache publication records a new snapshot.
+Xcode remains responsible for incremental dependency checking.
+
+Restoring a cache is **not proof of avoiding compilation**. Retained package
+checkout timestamps and content-verified source timestamps make unchanged
+compiled work eligible for reuse, but Xcode may invalidate it for other
+reasons. The helper reports how many tracked timestamps it restored; compare
+actual compiler tasks and lane durations on real CI runs before claiming a
+measured compile-time improvement. No build-free effectiveness claim is made.
+
+Only successful `main` push/manual jobs explicitly save snapshots. Pull
+requests and non-main manual runs are restore-only; they can read compatible
+default-branch snapshots but do not publish them. This also relies on GitHub's
+cache ref scoping: an untrusted pull-request workflow cannot write a cache
+visible to trusted main. Checkout credentials are not persisted. There are no
+secret inputs, signing identities, profiles, keychains, simulator state,
+result bundles, or broad home-directory caches in the allowlist.
+
+Cache misses and eviction must remain ordinary cold builds, never reasons to
+skip checks or relax timeouts. Lane-private checkouts/extractions trade storage
+and transfer time for reuse of compiled dependencies; three compiled snapshots
+can pressure the repository's Actions cache quota. Measure cache hit rates,
+restore/save time, and lane duration on real runs before expanding the
+allowlist. No cleanup of local/shared caches is part of CI acceleration.
+
+## Guards that run before the compile
 
 Native typography tests compare against the runtime's `UIFontMetrics` behavior:
 older tvOS versions keep those metrics fixed, while newer runtimes scale them.

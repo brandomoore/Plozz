@@ -6,17 +6,18 @@ what makes a string translatable in the first place — see
 
 ## Current production system
 
-Translations are produced and reviewed by independent high-capability language
-models, then treated as untrusted batch input. They never edit
+Translations are produced and independently reviewed using the selected
+high-capability language model, then treated as untrusted batch input. Agents never edit
 `Localizable.xcstrings` directly:
 
 1. A source packet contains every key, English value, translator comment, and
    Apple plural/substitution structure.
-2. One translator agent owns one language file outside Git. Agents work in
-   parallel without sharing the catalog.
-3. A different model reviews every entry against the source and comments,
-   fixes terminology/grammar/context, and adds the three system permission
-   prompts.
+2. A translator owns one bounded, multilingual delta batch outside Git. Small
+   changes group up to six languages; larger changes split by key budget.
+   Every language/key pair has exactly one owner.
+3. A separate reviewer checks every entry against the source and comments,
+   fixes terminology/grammar/context, and reviews any changed system permission
+   prompts. The coordinator records the actual author and reviewer identities.
 4. `tools/l10n-import.py` requires exact key coverage, nonempty values,
    `needs_review` provenance, canonical BCP-47 tags, unchanged placeholder types,
    valid plural leaves, and all permission prompts. It merges into temporary
@@ -48,7 +49,8 @@ That policy is viable because this catalog has unusually strong context:
 - Runtime content and product/codec brands are separated from copy.
 - Counts use real Apple plural variations, including independent substitutions
   for strings with two counts.
-- An independent reviewer uses a different model from the first translator.
+- An independent reviewer is a separate agent, using the selected model and
+  reasoning effort unless an explicit permitted override applies.
 - Structural gates reject output that would crash, drop a number, corrupt a
   placeholder, or make a language silently fall back to English.
 
@@ -77,7 +79,7 @@ right-to-left layout and logical navigation symbols.
 A model-generated language can ship when:
 
 1. It has all catalog keys and all three permission prompts.
-2. A second model completed a full independent review.
+2. A separate reviewer completed a full independent review.
 3. The importer passes placeholder, plural, locale-tag, state, and key-set
    validation.
 4. `xcstringstool` compiles the merged app and permission catalogs.
@@ -93,6 +95,20 @@ lacks native review without hiding a usable language from users.
 # Rebuild disposable full-language artifacts from the committed catalogs. This
 # makes incremental translation self-contained; no prior agent session is needed.
 tools/l10n-export-artifacts.py /tmp/plozz-translations
+
+# Plan only missing/stale work, including changed permission prompts.
+# Use a fresh output path: planning never overwrites in-flight work.
+python3 tools/l10n-batches.py plan /tmp/plozz-batches
+
+# After every batch has been authored and independently reviewed, assemble
+# new full artifacts. This does not modify the original artifacts or catalogs.
+python3 tools/l10n-batches.py merge \
+  /tmp/plozz-batches/manifest.json /tmp/plozz-translations \
+  /tmp/plozz-reviewed-translations
+
+# Import the complete reviewed result; snapshot update remains after final gates.
+python3 tools/l10n-import.py /tmp/plozz-reviewed-translations \
+  --allow-translated-state --require-info-plist --apply
 
 # Build a full packet, or only keys missing/stale for a language after a merge
 tools/l10n-export-source.py /tmp/source.json
@@ -123,6 +139,46 @@ tools/l10n-export-source.py /tmp/delta.json --missing-for nl --check-snapshot
 tools/l10n-guard.sh
 ```
 
+## Batch ownership and review
+
+The planner groups languages with identical missing/stale keys and preserves
+each locale's distinct gaps. Defaults are six languages, 200 language/key pairs,
+and 64 KB of source-unit data multiplied by language count per batch. Both app
+strings and permission prompts count toward the limits. An oversized single
+entry fails explicitly; increase its budget rather than splitting a plural or
+silently dropping work. English plural errors also fail before dispatch, so
+translations are not commissioned against an unusable source structure.
+
+For a 19-key change across 36 languages, this produces **six author tasks and
+six independent review tasks**, not 36 authors plus reviewers. All 684
+translations still get reviewed. Read the bounded source packet and targeted
+terminology references, not the entire catalog in every task. Reconstruct full
+artifacts once, then merge them once through the coordinator.
+
+`manifest.json` assigns each batch its source packet, output/review templates,
+draft, reviewed output, and review-evidence path. Authors write only their draft.
+Reviewers write a separate reviewed output; they must not review their own
+authored batch. Different batches may cover different keys in the same language,
+but no agents write the full-language artifacts or repository catalogs.
+
+Use the main session's selected model and effort explicitly for every task,
+subject to the operator's provider policy and any explicit override. A different
+provider is not required for independent review. The planner does not launch
+models, choose fallbacks, or change those selections.
+
+The coordinator verifies completed reviewer results, then completes the generated
+review template with the actual author/reviewer task IDs, models and efforts,
+SHA-256 hashes of both output files, and `verdict: "approved"`. The template
+already declares the exact source hash, languages, ordered keys, permission
+prompts and unit count. It starts pending and cannot be accepted unchanged.
+
+Assembly rejects stale/tampered plans, missing reviews or units, self-review,
+changed reviewed files, incorrect placeholders, and dishonest `translated`
+provenance. It runs the existing delta merger in isolation, then the full
+importer and Apple's catalog compiler before publishing the output directory.
+Any failure leaves the input artifacts and repository catalogs unchanged.
+Only the final explicit `l10n-import.py --apply` writes repository catalogs.
+
 ## Automatic pre-main pass
 
 Before exporting translation packets, validate the English catalog with
@@ -147,10 +203,10 @@ in the private Plozz agent instructions requires it to:
    committed catalogs;
 2. exports the exact missing-or-source-changed delta, including permission
    prompts, using the committed source fingerprint snapshot;
-3. has one high-capability model translate every delta entry into all 36
-   languages and a different model review every result;
-4. merges through `l10n-merge-delta.py` and imports only through
-   `l10n-import.py`;
+3. plans bounded multilingual batches, assigns each to an author and a separate
+   reviewer, and checks complete coverage using actual task identities;
+4. assembles reviewed batches through `l10n-batches.py merge` (which reuses
+   `l10n-merge-delta.py`) and imports only through `l10n-import.py`;
 5. runs catalog/source guards, pipeline tests, platform builds, and the full test
    suite;
 6. updates the source snapshot and fast-forwards `main` only when every gate
