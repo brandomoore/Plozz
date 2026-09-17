@@ -224,9 +224,9 @@ extension JellyfinCapabilityProfile {
 
         if allowed.contains(.hevc) {
             // VideoRangeType comes straight from the shared HDR policy: SDR plus
-            // any supported HLG/HDR10, and (only when DoVi is supported) the
-            // Profile 5 / Profile 8 cross-compatible tokens. This deliberately
-            // omits HDR10Plus and Profile 7, which Apple TV cannot present.
+            // any supported HLG/HDR10 (including HDR10+'s compatible base), and
+            // (only when DoVi is supported) the Profile 5 / Profile 8 tokens.
+            // Preserve HDR10+ in direct play instead of forcing a video transcode.
             let ranges = caps.allowedHDRRanges.map(\.rawValue).joined(separator: "|")
             var conditions: [ProfileCondition] = [
                 ProfileCondition(condition: "NotEquals", property: "IsAnamorphic", value: "true", isRequired: false),

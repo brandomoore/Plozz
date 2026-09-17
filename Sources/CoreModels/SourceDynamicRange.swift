@@ -37,7 +37,8 @@ public enum SourceDynamicRange: String, Codable, Equatable, Sendable {
         if dolbyVisionProfile != nil || rangeType.hasPrefix("DOVI") {
             return .dolbyVision
         }
-        if rangeType.hasPrefix("HDR10PLUS") || rangeType.hasPrefix("HDR10+") {
+        if rangeType.hasPrefix("HDR10PLUS") || rangeType.hasPrefix("HDR10+")
+            || transfer == "smpte2094-40" {
             return .hdr10Plus
         }
         if rangeType == "HLG" || transfer == "arib-std-b67" {

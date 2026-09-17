@@ -17,6 +17,9 @@ final class SourceDynamicRangeTests: XCTestCase {
         XCTAssertEqual(hint(rangeType: "HLG"), .hlg)
         XCTAssertEqual(hint(rangeType: "SDR"), .sdr)
         XCTAssertEqual(hint(rangeType: nil, transfer: "smpte2084"), .hdr10)
+        XCTAssertEqual(hint(rangeType: nil, transfer: "smpte2094-40"), .hdr10Plus)
+        XCTAssertEqual(hint(rangeType: "SDR", transfer: "smpte2094-40"), .hdr10Plus)
+        XCTAssertEqual(hint(rangeType: "DOVIWithHDR10", transfer: "smpte2094-40"), .dolbyVision)
         XCTAssertEqual(hint(rangeType: nil, transfer: "arib-std-b67"), .hlg)
     }
 

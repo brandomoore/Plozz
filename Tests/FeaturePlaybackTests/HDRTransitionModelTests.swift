@@ -1,5 +1,6 @@
 #if canImport(AVFoundation)
 import XCTest
+import AVFoundation
 import CoreModels
 @testable import FeaturePlayback
 
@@ -109,6 +110,26 @@ final class HDRTransitionModelTests: XCTestCase {
             video: .init(videoRangeType: "HDR10Plus")
         )
         XCTAssertEqual(HDRDisplayMode(metadata), .hdr10)
+    }
+
+    func testNativePlayerKeepsPerFrameMetadataWhenProviderHintsAreMissingOrWrong() async throws {
+        let engine = NativeVideoEngine()
+        defer { engine.stop() }
+        let hints: [MediaSourceMetadata?] = [
+            nil, .init(video: .init(videoRangeType: "SDR")),
+            .init(video: .init(videoRangeType: "HDR10")),
+            .init(video: .init(videoRangeType: "HDR10Plus")),
+            .init(video: .init(videoRangeType: "DOVIWithHDR10"))
+        ]
+        for metadata in hints {
+            await engine.load(request: PlaybackRequest(
+                item: MediaItem(id: "hdr-metadata", title: "HDR metadata", kind: .movie),
+                streamURL: URL(fileURLWithPath: "/nonexistent/hdr-metadata.mp4"),
+                sourceMetadata: metadata
+            ), startPosition: 0)
+            let item = try XCTUnwrap(engine.underlyingPlayer?.currentItem)
+            XCTAssertTrue(item.appliesPerFrameHDRDisplayMetadata)
+        }
     }
 
     func testProbePendingPreemptivelyRaisesVeil() {

@@ -343,12 +343,12 @@ public final class NativeVideoEngine: VideoEngine {
 
     /// Classifies the source's dynamic range and, on tvOS, requests the matching
     /// display mode so the Apple TV negotiates true Dolby Vision / HDR10 / HLG
-    /// (or returns to SDR) with the panel. `appliesPerFrameHDRDisplayMetadata`
-    /// is enabled for HDR/DoVi so per-frame RPU/HDR metadata is forwarded to the
-    /// display. All best-effort and crash-safe: failures never block playback.
+    /// (or returns to SDR) with the panel. Per-frame metadata stays enabled even
+    /// when the provider omitted or misclassified HDR; AVFoundation applies only
+    /// metadata actually present in the stream.
     private func configureDynamicRange(for request: PlaybackRequest, item: AVPlayerItem) {
         let mode = HDRDisplayMode(request.sourceMetadata)
-        item.appliesPerFrameHDRDisplayMetadata = mode.isHDR
+        item.appliesPerFrameHDRDisplayMetadata = true
         #if os(tvOS)
         pendingDisplayCriteria = makeDisplayCriteria(mode: mode, metadata: request.sourceMetadata)
         applyDisplayCriteria()

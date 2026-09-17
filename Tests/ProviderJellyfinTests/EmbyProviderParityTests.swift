@@ -261,6 +261,51 @@ final class EmbyProviderParityTests: XCTestCase {
         XCTAssertFalse(item.technicalBadges.map(\.label).contains("SDR"))
     }
 
+    func testHDR10PlusSurvivesEmbyAndJellyfinItemAndPlaybackMapping() async throws {
+        for kind in [ProviderKind.emby, .jellyfin] {
+            for container in ["mkv", "mp4"] {
+                let hdrField = kind == .emby
+                    ? "\"ExtendedVideoType\":\"Hdr10Plus\""
+                    : "\"VideoRangeType\":\"HDR10Plus\""
+                let streams = """
+                [{"Index":0,"Type":"Video","Codec":"hevc","CodecTag":"hvc1",
+                  "Width":3840,"Height":2160,"VideoRange":"HDR",\(hdrField)},
+                 {"Index":1,"Type":"Audio","Codec":"aac","Channels":2,"IsDefault":true}]
+                """
+                let stub = StubHTTPClient()
+                stub.stub(pathSuffix: "/Users/u1/Items/hdr", json: """
+                {"Id":"hdr","Name":"HDR fixture","Type":"Movie","RunTimeTicks":1200000000,
+                 "MediaStreams":\(streams),
+                 "MediaSources":[{"Id":"hdr-source","Container":"\(container)","MediaStreams":\(streams)}]}
+                """)
+                stub.stub(pathSuffix: "/Items/hdr/PlaybackInfo", json: """
+                {"MediaSources":[{"Id":"hdr-source","Container":"\(container)",
+                  "SupportsDirectPlay":true,"MediaStreams":\(streams)}],"PlaySessionId":"session"}
+                """)
+                let provider = JellyfinProvider(session: makeSession(provider: kind), http: stub,
+                                                hybridEngineEnabled: true)
+                let request = try await provider.playbackInfo(for: "hdr")
+                XCTAssertFalse(request.isTranscoding)
+                XCTAssertEqual(request.item.mediaInfo?.dynamicRangeBadges.map(\.label), ["HDR10+"])
+                XCTAssertEqual(request.sourceMetadata?.video?.videoRangeType, "HDR10Plus")
+                XCTAssertEqual(request.localRemuxSource?.sourceMetadata.video?.videoRangeType, "HDR10Plus")
+                XCTAssertEqual(SourceDynamicRange.providerHint(from: request.sourceMetadata), .hdr10Plus)
+            }
+        }
+    }
+
+    func testEmbyWithoutHDR10PlusEvidenceKeepsGenericHDR10Badge() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/Users/u1/Items/hdr", json: """
+        {"Id":"hdr","Name":"HDR fixture","Type":"Movie","MediaStreams":[
+          {"Index":0,"Type":"Video","Codec":"hevc","VideoRange":"HDR","ExtendedVideoType":"Hdr10"}
+        ]}
+        """)
+        let provider = JellyfinProvider(session: makeSession(), http: stub)
+        let item = try await provider.item(id: "hdr")
+        XCTAssertEqual(item.mediaInfo?.dynamicRangeBadges.map(\.label), ["HDR10"])
+    }
+
     func testEmbyBuildsSecretFreeDirectLocatorForAtmosProbe() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/Users/u1/Items/atmos", json: """

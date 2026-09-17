@@ -93,8 +93,8 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
     /// case). Carried verbatim so this version's badges and quality are derived
     /// through the rich, authoritative `MediaSourceMetadata` path — the SAME one
     /// a single item's hero uses — rather than re-derived from the lossy
-    /// flattened fields above. That flattening can't represent HDR10+ (there is
-    /// no `HDRRange` case for it) or per-channel-layout audio, so without this a
+    /// flattened fields above. That flattening loses richer source combinations
+    /// and per-channel-layout audio, so without this a
     /// 4K Dolby Vision / HDR10+ / Atmos file regressed to "720p · SDR" in the
     /// hero. `nil` for provider-intrinsic versions, whose flattened fields are
     /// already authoritative.
@@ -205,8 +205,7 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
     }
 
     /// Whether this version carries any HDR (non-SDR) video range. Prefers the
-    /// authoritative `sourceMetadata` range classification when present so
-    /// HDR10+ (which has no `HDRRange` case) still counts as HDR.
+    /// authoritative `sourceMetadata` range classification when present.
     public var isHDR: Bool {
         if let sourceMetadata {
             return sourceMetadata.dynamicRangeBadges.contains { $0.style == .hdr || $0.style == .dolby }
@@ -232,6 +231,7 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
         case .sdr: return nil
         case .hlg: return "HLG"
         case .hdr10: return "HDR10"
+        case .hdr10Plus: return "HDR10+"
         case .dolbyVision, .dolbyVisionWithHDR10, .dolbyVisionWithHLG, .dolbyVisionWithSDR:
             return "Dolby Vision"
         }

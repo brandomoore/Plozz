@@ -109,17 +109,17 @@ public struct MediaCapabilities: Sendable, Equatable {
 
 // MARK: - Supporting value types
 
-/// A display HDR signal range. `rawValue`s are deliberately the exact Jellyfin
+/// An accepted source HDR range. `rawValue`s are deliberately the exact Jellyfin
 /// `VideoRangeType` tokens so a provider can map them with zero translation.
 ///
-/// Note the deliberate omissions: there is **no** `hdr10Plus` case (Apple TV
-/// cannot display HDR10+; it is played as its HDR10 base layer), and the only
-/// Dolby Vision cases are Profile 5 (``dolbyVision``) and the Profile 8
-/// cross-compatible variants — Profile 7 is unsupported.
+/// Accepting HDR10+ preserves the original bitstream: supported Apple TV/display
+/// combinations present its dynamic metadata, while HDR10-only outputs use its
+/// compatible base layer. It is not an assertion about the current HDMI mode.
 public enum HDRRange: String, Sendable, Equatable, CaseIterable {
     case sdr = "SDR"
     case hlg = "HLG"
     case hdr10 = "HDR10"
+    case hdr10Plus = "HDR10Plus"
     /// Dolby Vision **Profile 5** (IPT-PQ-C2, no cross-compatible base layer).
     case dolbyVision = "DOVI"
     /// Dolby Vision **Profile 8.1** (HDR10-compatible base layer).
@@ -154,13 +154,13 @@ public enum DirectPlayVideoCodec: String, Sendable, Equatable, CaseIterable {
 extension MediaCapabilities {
     /// The HDR ranges this device/display combination may receive directly.
     ///
-    /// Always includes ``HDRRange/sdr``. HLG and HDR10 are added when the display
-    /// supports them. Dolby Vision contributes **only** Profile 5 + the Profile 8
-    /// cross-compatible variants — never HDR10+ and never Profile 7.
+    /// HDR10+ sources share HDR10's decode requirement and backwards-compatible
+    /// base layer. Do not request a server transcode just because the output
+    /// cannot use the additional dynamic metadata.
     public var allowedHDRRanges: [HDRRange] {
         var ranges: [HDRRange] = [.sdr]
         if supportsHLG { ranges.append(.hlg) }
-        if supportsHDR10 { ranges.append(.hdr10) }
+        if supportsHDR10 { ranges.append(contentsOf: [.hdr10, .hdr10Plus]) }
         if supportsDolbyVision {
             ranges.append(contentsOf: [
                 .dolbyVision,            // Profile 5

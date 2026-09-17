@@ -372,6 +372,7 @@ public extension MediaVersion {
             case .sdr: return [MediaBadge("SDR", style: .sdr)]
             case .hlg: return [MediaBadge("HLG", style: .hdr)]
             case .hdr10: return [MediaBadge("HDR10", style: .hdr)]
+            case .hdr10Plus: return [MediaBadge("HDR10+", style: .hdr)]
             case .dolbyVision, .dolbyVisionWithSDR:
                 return [MediaBadge("Dolby Vision", style: .dolby)]
             case .dolbyVisionWithHDR10:

@@ -37,6 +37,12 @@ final class MediaVersionTests: XCTestCase {
         XCTAssertEqual(hdr10Plus.technicalBadges.map(\.label), ["4K", "HDR10+"])
     }
 
+    func testHDR10PlusVersionRetainsItsHDR10CompatibleDirectPlay() {
+        let version = MediaVersion(id: "hdr", videoCodec: "hevc", videoRange: "HDR10Plus", audioCodec: "aac")
+        XCTAssertEqual(version.compatibility(with: .init(supportsHDR10: true)), .directPlay)
+        XCTAssertEqual(version.compatibility(with: .init(supportsHDR10: false)), .transcode)
+    }
+
     func testTechnicalBadgesUseDolbyGroupedOrder() {
         // A 4K DoVi+HDR10 Atmos version should emit
         // 4K · Dolby Vision · Dolby Atmos · HDR10 — Dolby logos grouped.

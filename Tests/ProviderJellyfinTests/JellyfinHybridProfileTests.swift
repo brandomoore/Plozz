@@ -141,7 +141,7 @@ final class JellyfinHybridProfileTests: XCTestCase {
 
     func testGlobalHEVCDoViRangesDoNotRegress() throws {
         // The global hevc codec profile must still advertise DoVi P5/P8 tokens and
-        // never HDR10+ / Profile 7 — regardless of the hybrid flag.
+        // preserve HDR10+ without advertising unsupported Profile 7.
         let json = try encoded(.appleTV(
             capabilities: MediaCapabilities(supportsHEVC: true, supportsDolbyVision: true),
             hybridEngineEnabled: true
@@ -154,7 +154,7 @@ final class JellyfinHybridProfileTests: XCTestCase {
         let range = try XCTUnwrap(conditions.first { ($0["Property"] as? String) == "VideoRangeType" })
         let value = try XCTUnwrap(range["Value"] as? String)
         XCTAssertTrue(value.contains("DOVI"))
-        XCTAssertFalse(value.contains("HDR10Plus"))
+        XCTAssertTrue(value.contains("HDR10Plus"))
     }
 
     // MARK: Subtitle delivery — hybrid embeds image/styled subs (no burn-in transcode)

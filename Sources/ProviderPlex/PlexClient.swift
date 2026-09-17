@@ -1810,8 +1810,8 @@ public struct PlexClient: Sendable {
     ///     unknown DoVi profile is treated conservatively (transcode) rather than
     ///     assumed to be P5/P8; Profile 7 (dual-layer) always transcodes.
     ///   * Plain HDR10 (PQ) / HLG are direct-played only when the display
-    ///     advertises that range. We never special-case HDR10+ (it plays as its
-    ///     HDR10 base, already covered by `.hdr10`).
+    ///     advertises that range. HDR10+ is received intact on HDR10-capable
+    ///     outputs; AVFoundation preserves dynamic metadata where supported.
     ///   * SDR or absent range info is always allowed (the codec gate already ran).
     private func canDirectPlayVideoRange(part: PlexPart) -> Bool {
         guard let video = part.Stream?.first(where: { $0.streamType == 1 }) else { return true }
@@ -1825,6 +1825,8 @@ public struct PlexClient: Sendable {
         }
 
         switch video.colorTrc?.lowercased() {
+        case "smpte2094-40":
+            return allowed.contains(.hdr10Plus)
         case "smpte2084", "pq":
             return allowed.contains(.hdr10)
         case "arib-std-b67", "hlg":
@@ -1850,6 +1852,8 @@ public struct PlexClient: Sendable {
             return !allowed.isDisjoint(with: doviRanges)
         }
         switch video.colorTrc?.lowercased() {
+        case "smpte2094-40":
+            return allowed.contains(.hdr10Plus)
         case "smpte2084", "pq":
             return allowed.contains(.hdr10)
         case "arib-std-b67", "hlg":
