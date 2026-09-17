@@ -9,13 +9,16 @@ struct PlozziOSSearchView: View {
     @State private var viewModel: SearchViewModel
     private let appModel: PlozziOSAppModel
     private let onShowSettings: () -> Void
+    private let keepsNavigationBar: Bool
 
     init(
         appModel: PlozziOSAppModel,
-        onShowSettings: @escaping () -> Void
+        onShowSettings: @escaping () -> Void,
+        keepsNavigationBar: Bool = false
     ) {
         self.appModel = appModel
         self.onShowSettings = onShowSettings
+        self.keepsNavigationBar = keepsNavigationBar
         _viewModel = State(
             initialValue: SearchViewModel(
                 accounts: appModel.accountsProviders.homeAccounts,
@@ -47,7 +50,7 @@ struct PlozziOSSearchView: View {
         // Regular-width iPad keeps the bar so the system sidebar toggle remains
         // reachable when the adaptable tab sidebar is collapsed.
         .toolbar(
-            horizontalSizeClass == .compact ? .hidden : .visible,
+            horizontalSizeClass == .compact && !keepsNavigationBar ? .hidden : .visible,
             for: .navigationBar
         )
         .navigationTitle(horizontalSizeClass == .compact ? Text(verbatim: "") : Text("Search"))

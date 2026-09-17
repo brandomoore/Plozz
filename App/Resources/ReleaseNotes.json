@@ -2,6 +2,39 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/038",
+      "version": "2026.9.16",
+      "build": 38,
+      "releasedAt": "2026-09-16",
+      "sections": [
+        {
+          "category": "Updated",
+          "items": [
+            "Live TV content refinements",
+            {
+              "text": "Redesigned More page and clearer navigation arrangement",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Settings tab can be hidden; Settings stays available top-right",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Reduced freezes with Sync Live TV enabled",
+            "Live TV retries failed library connections sooner",
+            {
+              "text": "Crash when opening Appearance settings",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/037",
       "version": "2026.9.15",
       "build": 37,

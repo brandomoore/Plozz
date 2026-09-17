@@ -894,7 +894,9 @@ private struct PlozziOSTabShell: View {
     }
 
     @ViewBuilder
-    private func destinationContent(for destination: PlozziOSDestination) -> some View {
+    private func destinationContent(
+        for destination: PlozziOSDestination, keepsNavigationBar: Bool = false
+    ) -> some View {
         switch destination {
         case .home:
             PlozziOSDestinationView(
@@ -972,7 +974,8 @@ private struct PlozziOSTabShell: View {
                 appModel: appModel,
                 sharedHomeViewModel: sharedHomeViewModel,
                 onAddServer: onAddServer,
-                onShowSettings: showSettings
+                onShowSettings: showSettings,
+                keepsNavigationBar: keepsNavigationBar
             )
             .plozziOSItemNavigation(appModel: appModel)
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -1052,7 +1055,7 @@ private struct PlozziOSTabShell: View {
                             onShowSettings: showSettings
                         )
                         .navigationDestination(item: $moreDestination) { destination in
-                            destinationContent(for: destination)
+                            destinationContent(for: destination, keepsNavigationBar: true)
                         }
                     }
                 }
@@ -1347,6 +1350,7 @@ private struct PlozziOSDestinationView: View {
     let sharedHomeViewModel: HomeViewModel
     let onAddServer: () -> Void
     let onShowSettings: () -> Void
+    var keepsNavigationBar = false
 
     var body: some View {
         ZStack {
@@ -1378,7 +1382,8 @@ private struct PlozziOSDestinationView: View {
         case .search:
             PlozziOSSearchView(
                 appModel: appModel,
-                onShowSettings: onShowSettings
+                onShowSettings: onShowSettings,
+                keepsNavigationBar: keepsNavigationBar
             )
                 .id(activeAccountsIdentity)
         case .downloads:
