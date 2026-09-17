@@ -4,6 +4,17 @@ Plozz uses two playback engines, automatically selected per-item based on
 container, codecs, and subtitle requirements. The goal is maximum format coverage
 with the best possible quality (Dolby Vision, Atmos, full-timeline seek).
 
+## Dependency version
+
+Plozz pins upstream AetherEngine **7.1.1** to commit
+`755cc21ccaf5d1fc165a570f524163e12923872e`. Its iOS/tvOS 18 minimum matches
+Plozz's existing deployment targets. The engine owns the FFmpegBuild 3.3.x and
+LibDovi 2.1.x dependencies; Plozz does not link a second FFmpeg build.
+
+This dependency update retains Plozz's playback routing and optional-feature
+settings. It does not connect container chapters to Up Next; marker-less content
+continues using the configured lead-time fallback.
+
 ## Engine Overview
 
 | Engine | Internal name | Underlying tech | Primary use case |
