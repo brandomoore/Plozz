@@ -2,6 +2,60 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/039",
+      "version": "2026.9.18",
+      "build": 39,
+      "releasedAt": "2026-09-18",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Plex only: Common Sense Media age recommendations and family guidance for movies and shows. Age badges can appear in Home and detail headers; detailed guidance requires Plex Pass access."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Updated the playback engine for more reliable seeking, playback recovery, and HDR/Dolby Vision handling.",
+            "Improved HDR10+ direct-play compatibility and format labels.",
+            {
+              "text": "Extended review-score limits to Home and tvOS detail headers.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Extended review-score limits to Home headers.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Stronger background dimming and consistent borders for dialogs in Dark and Black appearance.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Subtler dialog borders in Black appearance.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Fixed focus style for library cards with system focus on.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Prevented native information cards from shrinking or clipping text during layout updates.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Stopped repeated fades and partial rating labels on movie detail pages.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/038",
       "version": "2026.9.16",
       "build": 38,
