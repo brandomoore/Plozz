@@ -52,7 +52,6 @@ public struct PosterCardView: View {
     @PlozzCardFocus private var isFocused: Bool
     #if os(tvOS)
     @State private var detailTransitionSource = DetailTransitionSourceReference()
-    @State private var nativePosterArtwork = ArtworkResolutionState()
     #endif
     /// This card's resolved logo tone, and the tone of the artwork it sits on.
     /// Together they decide how far the artwork is dimmed behind it — see
@@ -250,30 +249,6 @@ public struct PosterCardView: View {
 
     private var nativePosterCard: some View {
         VStack(spacing: metrics.nativePosterCaptionSpacing) {
-            NativeTVPoster(
-                image: nativePosterArtwork.image,
-                treatment: nativePosterTreatment,
-                aspectRatio: borderlessAspectRatio,
-                fallbackWidth: size.width,
-                title: nativePosterTitle,
-                subtitle: showsSeriesArtwork ? nil : subtitleText,
-                overlay: nativePosterOverlay,
-                focus: $isFocused,
-                source: detailTransitionSource,
-                action: selectCard
-            )
-            .focused($isFocused.focusState)
-            .frame(maxWidth: .infinity)
-            if !showsSeriesArtwork {
-                SystemPosterCaption(
-                    title: nativePosterTitle, subtitle: subtitleText,
-                    reservesSubtitleSpace: reservesSubtitleSpace, isFocused: isFocused
-                )
-                .accessibilityHidden(true)
-            }
-        }
-        .padding(.horizontal, metrics.borderlessCardSideMargin)
-        .background {
             FallbackAsyncImage(
                 references: nativePosterReferences,
                 maxAspectRatio: posterAspectGuard,
@@ -287,15 +262,36 @@ public struct PosterCardView: View {
                 content: { _ in Color.clear },
                 placeholder: { Color.clear }
             )
-            .environment(\.artworkResolutionState, nativePosterArtwork)
-            .frame(width: 0, height: 0)
-            .accessibilityHidden(true)
+            .resolvedBitmap { image in
+                NativeTVPoster(
+                    image: image,
+                    treatment: nativePosterTreatment,
+                    aspectRatio: borderlessAspectRatio,
+                    fallbackWidth: size.width,
+                    title: nativePosterTitle,
+                    subtitle: showsSeriesArtwork ? nil : subtitleText,
+                    overlay: nativePosterOverlay(hasArtwork: image != nil),
+                    focus: $isFocused,
+                    source: detailTransitionSource,
+                    action: selectCard
+                )
+                .focused($isFocused.focusState)
+                .frame(maxWidth: .infinity)
+            }
+            if !showsSeriesArtwork {
+                SystemPosterCaption(
+                    title: nativePosterTitle, subtitle: subtitleText,
+                    reservesSubtitleSpace: reservesSubtitleSpace, isFocused: isFocused
+                )
+                .accessibilityHidden(true)
+            }
         }
+        .padding(.horizontal, metrics.borderlessCardSideMargin)
     }
 
-    private var nativePosterOverlay: some View {
+    private func nativePosterOverlay(hasArtwork: Bool) -> some View {
         ZStack {
-            if nativePosterArtwork.image == nil { neutralPlaceholder }
+            if !hasArtwork { neutralPlaceholder }
             if showsSeriesArtwork && !suppressesSeriesLogo { seriesLogo }
             MediaCardPlaybackIndicators(
                 item: item,

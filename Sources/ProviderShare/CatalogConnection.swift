@@ -56,8 +56,9 @@ final class CatalogConnection {
     /// sidecar schema); returning `false` aborts and rolls back. Returns `true`
     /// **only** on the single call where the schema was just committed ready, so the
     /// owning store can run its one-time post-open projection repairs exactly once.
+    /// Already-cancelled callers leave unopened catalogs and existing handles untouched.
     func ensureOpen(legacyMetadataMigration: (CatalogConnection) -> Bool) -> Bool {
-        guard !accessSuspended, handle == nil else { return false }
+        guard !Task.isCancelled, !accessSuspended, handle == nil else { return false }
         guard open(flags: SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX) else {
             return false
         }
@@ -436,7 +437,7 @@ final class CatalogConnection {
             schemaReadyForLifetime = true
             return true
         }
-        PlozzLog.boot("share.catalog MIGRATION FAILED file=\(url.lastPathComponent)")
+        PlozzLog.boot("share.catalog MIGRATION FAILED result=\(String(describing: transactionResult))")
         if transactionResult == .couldNotBegin
             || transactionResult == .cancelled
             || transactionResult == .commitFailed {
@@ -526,7 +527,7 @@ final class CatalogConnection {
         let result = immediateTransaction(body)
         if result != .committed {
             PlozzLog.boot(
-                "share.catalog TRANSACTION FAILED file=\(url.lastPathComponent) result=\(String(describing: result))"
+                "share.catalog TRANSACTION FAILED result=\(String(describing: result))"
             )
         }
         return result == .committed
@@ -549,8 +550,13 @@ final class CatalogConnection {
             if let db {
                 sqlite3_progress_handler(db, 0, nil, nil)
             }
-            if !committed {
-                _ = exec("ROLLBACK;")
+            if !committed, !exec("ROLLBACK;") {
+                let code = db.map { sqlite3_errcode($0) } ?? SQLITE_MISUSE
+                // An interrupted transaction may already have auto-rolled back.
+                let activeTransaction = isInTransaction ? 1 : 0
+                PlozzLog.boot(
+                    "share.catalog ROLLBACK FAILED code=\(code) activeTransaction=\(activeTransaction)"
+                )
             }
         }
         guard body() else {

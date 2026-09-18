@@ -186,6 +186,7 @@ public struct MediaRowView: View {
     @State private var artworkPrefetchTasks = ArtworkPrefetchTasks()
     /// Cards whose detail-hero backdrop has been warmed — see `prefetchHeroPreview`.
     @State private var prefetchedHeroIDs: Set<String> = []
+    @State private var logoPrefetchHistory = MediaRowLogoPrefetchHistory()
     /// The card focus was on when this row's page was covered — see `isCovered`.
     @State private var coveredFocusID: String?
     @Namespace private var episodeEntrySpace
@@ -657,6 +658,7 @@ public struct MediaRowView: View {
                     prefetchedIDs.removeAll(keepingCapacity: true)
                     prefetchedPreviewIDs.removeAll(keepingCapacity: true)
                     lastArtworkPrefetchIndex = nil
+                    logoPrefetchHistory = MediaRowLogoPrefetchHistory()
                     pendingEntryHandoff = false
                 }
             }
@@ -927,6 +929,7 @@ public struct MediaRowView: View {
             artworkPrefetchTasks.cancelAll()
             prefetchedIDs.removeAll(keepingCapacity: true)
             prefetchedPreviewIDs.removeAll(keepingCapacity: true)
+            logoPrefetchHistory = MediaRowLogoPrefetchHistory()
         }
         artworkPrefetchDirection = direction
         lastArtworkPrefetchIndex = index
@@ -988,9 +991,12 @@ public struct MediaRowView: View {
             // under the viewer, which is the one thing a rail must not do. Warm
             // both, so the card is finished before it is reached.
             if showsSeriesArtwork {
+                let includeLogo = logoPrefetchHistory.shouldPrefetch(
+                    id: candidate.stablePresentationID,
+                    references: candidate.artworkReferences(for: .logo)
+                )
                 MediaArtworkPrefetchPolicy.warmSeriesPresentation(
-                    for: candidate,
-                    variant: variant
+                    for: candidate, variant: variant, includeLogo: includeLogo
                 )
             }
         }
@@ -1299,6 +1305,16 @@ enum MediaRowFocusPolicy {
     }
 }
 
+struct MediaRowLogoPrefetchHistory {
+    private var referencesByID: [String: [ArtworkReference]] = [:]
+
+    mutating func shouldPrefetch(id: String, references: [ArtworkReference]) -> Bool {
+        guard referencesByID[id] != references else { return false }
+        referencesByID[id] = references
+        return true
+    }
+}
+
 public enum MediaArtworkPrefetchPolicy {
     /// Warms both pieces of a Continue Watching card: its clean series backdrop
     /// and the logo drawn over it. Shared by tvOS and iOS rails so one platform
@@ -1306,11 +1322,14 @@ public enum MediaArtworkPrefetchPolicy {
     @MainActor
     public static func warmSeriesPresentation(
         for item: MediaItem,
-        variant: ArtworkImageVariant
+        variant: ArtworkImageVariant,
+        includeLogo: Bool = true
     ) {
-        HeroLogoPipeline.shared.prefetch(
-            references: item.artworkReferences(for: .logo)
-        )
+        if includeLogo {
+            HeroLogoPipeline.shared.prefetch(
+                references: item.artworkReferences(for: .logo)
+            )
+        }
         TextlessBackdropStore.shared.warm(for: item, variant: variant)
     }
 

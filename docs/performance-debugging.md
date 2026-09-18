@@ -264,6 +264,20 @@ geometry. Native focus presentation and artwork clipping are separate:
 `TVPosterView` owns its image clipping. The hosted framed/landscape return
 regression checks the actual painted artwork bounds.
 
+Native poster controls receive their initial cached `UIImage` directly from
+the existing ordered artwork resolver. The former zero-sized background loader
+published through a second observable state after construction, so even warmed
+cards first created placeholder artwork and then updated the native view.
+The direct bitmap path keeps one native view identity across loading and loaded
+states, using the same source ordering, provider policy, and progressive loading.
+
+Continue Watching logo prefetch also deduplicates overlapping lookahead windows
+within a traversal. Five neighboring cards appearing together previously
+scheduled 45 logo-prefetch tasks for only 13 unique items. Changed logo references
+still qualify, and reversing direction or leaving the row resets the history.
+Textless-backdrop warmup remains independently responsible for its own identity
+and retry rules.
+
 These changes preserve layout and rendering behavior. Their combined real-Home
 performance still requires repeated device measurements; successful builds or
 functional focus checks are not a claim that all navigation hitches are gone.

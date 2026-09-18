@@ -9,6 +9,109 @@ import CoreModels
 
 @MainActor
 final class NativeFocusRequestHostedTests: XCTestCase {
+    private final class BitmapProbe {
+        var createdImages: [UIImage?] = []
+    }
+
+    private struct BitmapCreationProbe: UIViewRepresentable {
+        let image: UIImage?
+        let probe: BitmapProbe
+
+        func makeUIView(context: Context) -> UIView {
+            probe.createdImages.append(image)
+            return UIView()
+        }
+
+        func updateUIView(_ view: UIView, context: Context) {}
+    }
+
+    @Observable
+    fileprivate final class BitmapFixtureModel {
+        var references: [ArtworkReference] = []
+        var focus: PlozzCardFocus.Binding?
+    }
+
+    private struct BitmapFixture: View {
+        let model: BitmapFixtureModel
+        @PlozzCardFocus private var focused
+
+        var body: some View {
+            FallbackAsyncImage(
+                references: model.references, variant: .posterCard,
+                pinIdentity: "native-bitmap-fixture",
+                content: { _ in EmptyView() }, placeholder: { EmptyView() }
+            )
+            .resolvedBitmap { image in
+                NativeTVPoster(
+                    image: image, treatment: .original, aspectRatio: 2.0 / 3,
+                    fallbackWidth: 280, title: .content("Native artwork"), subtitle: nil,
+                    overlay: EmptyView(), focus: $focused, action: {}
+                )
+                .focused($focused.focusState)
+            }
+            .frame(width: 280)
+            .onAppear { model.focus = $focused }
+        }
+    }
+
+    func testCachedBitmapReachesNativeContentBeforeAppearanceCallbacks() throws {
+        let reference = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://example.test/native-warm.png")))
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 300)).image {
+            UIColor.red.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 200, height: 300))
+        }
+        let identity = UUID().uuidString
+        let key = ArtworkResolveKey.make(
+            references: [reference], variant: .posterCard, maxAspectRatio: nil,
+            pinIdentity: identity,
+            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(MetadataProviderSettingsStore().load())
+        )
+        ArtworkSeedMemo.store(image, reference: reference, for: key)
+        let probe = BitmapProbe()
+        let host = UIHostingController(rootView: FallbackAsyncImage(
+            references: [reference], variant: .posterCard, pinIdentity: identity,
+            content: { _ in EmptyView() }, placeholder: { EmptyView() }
+        ).resolvedBitmap { value in
+            BitmapCreationProbe(image: value, probe: probe)
+        })
+        _ = host.sizeThatFits(in: CGSize(width: 280, height: 420))
+        XCTAssertEqual(probe.createdImages.count, 1)
+        XCTAssertTrue(probe.createdImages.first.flatMap { $0 } === image)
+    }
+
+    func testBitmapArrivalPreservesTheNativeFocusOwner() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let model = BitmapFixtureModel()
+        let outerResolution = ArtworkResolutionState()
+        let host = UIHostingController(rootView: BitmapFixture(model: model)
+            .environment(\.plozzCardFocusStyle, .system)
+            .environment(\.artworkResolutionState, outerResolution))
+        fixture.window.rootViewController = host
+        fixture.window.layoutIfNeeded()
+        try await waitUntil { model.focus != nil && self.nativePoster(in: host.view) != nil }
+        let original = try XCTUnwrap(nativePoster(in: host.view))
+        model.focus?.requestFocus(animated: false)
+        try await waitUntil { original.isFocused }
+        let reference = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://example.test/native-arrival.png")))
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 300)).image {
+            UIColor.blue.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 200, height: 300))
+        }
+        let key = ArtworkResolveKey.make(
+            references: [reference], variant: .posterCard, maxAspectRatio: nil,
+            pinIdentity: "native-bitmap-fixture",
+            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(MetadataProviderSettingsStore().load())
+        )
+        ArtworkSeedMemo.store(image, reference: reference, for: key)
+        model.references = [reference]
+        try await waitUntil { original.image?.cgImage === image.cgImage }
+        XCTAssertTrue(nativePoster(in: host.view) === original)
+        XCTAssertTrue(original.isFocused)
+        XCTAssertNil(outerResolution.image, "Native cards must not publish into an ancestor artwork bridge.")
+        XCTAssertFalse(outerResolution.isResolved)
+    }
+
     private struct SurfaceProbe: View {
         @Environment(\.plozzNativeFocusSurface) private var nativeSurface
         @Environment(\.plozzNativeArtworkSurface) private var nativeArtworkSurface
