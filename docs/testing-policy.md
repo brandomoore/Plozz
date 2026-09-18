@@ -601,7 +601,10 @@ Sense mark retains its original colors, with a dark backing on light surfaces.
 The tvOS dialog pins its age/title/summary above separate topic and reading
 viewports. Only the selected topic's explanation is visible. Review scores have
 their own page and star treatment; content levels use ticks and retain real zero
-versus missing values. iOS navigates from the overview into individual sections.
+versus missing values. On tvOS a clear full-screen presentation hosts one themed
+panel over a dim backdrop; do not nest that panel inside a second glass sheet. Common Sense
+branding lives in the header, not a duplicate footer. iOS navigates from the
+overview into individual sections.
 
 Hero/header previews default to the Common Sense age plus two available review
 scores. The age never consumes a review slot or replaces the official
@@ -629,8 +632,10 @@ for Left return, and the rest reopen when menu focus returns. Arrow presses
 scroll the native text reader, alongside its standard swipe handling; regressions
 measure paragraph movement in both directions, not just focus retention. Vertical
 focus cannot escape the reader before it handles scrolling; Left and Menu retain
-their normal exit behavior.
-Menu content must remain inside its viewport rather than overlap attribution.
+their normal exit behavior. The full-width header is also a focus section so Up
+from Overview reaches Done. Menu content stays inside its viewport, and the reader
+extends into the space freed by removing the footer. Black, Dark, and Light
+fixtures cover the sheet edge and readable viewport.
 Header regressions cover age-only data, quality-without-age, two-score defaults,
 per-profile persistence, hydrated hero-cache invalidation, and touch wrapping at
 large Dynamic Type sizes.

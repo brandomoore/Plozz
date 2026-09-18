@@ -9,6 +9,9 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         XCTAssertTrue(age.isHittable)
         XCTAssertTrue(age.label.contains("recommended age 14"))
         XCTAssertFalse(age.label.contains("5"))
+        let icon = age.images["CommonSenseMedia"].firstMatch
+        XCTAssertEqual(icon.frame.width, 32, accuracy: 0.5)
+        XCTAssertEqual(icon.frame.height, 32, accuracy: 0.5)
         XCTAssertTrue(app.staticTexts["94%"].exists)
         XCTAssertTrue(app.staticTexts["88%"].exists)
         XCTAssertFalse(app.staticTexts["8.0"].exists)
@@ -32,6 +35,45 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         XCTAssertTrue(app.staticTexts[
             "A sci-fi mystery with tense scenes, strong language, and unsettling images."
         ].firstMatch.isHittable, "Opening must not scroll past the summary.")
+    }
+
+    func testOverviewMovesUpToDoneAndCloses() {
+        let app = launch()
+        defer { app.terminate() }
+        XCUIRemote.shared.press(.select)
+        let overview = app.buttons["family-guidance-overview"].firstMatch
+        XCTAssertTrue(overview.waitForExistence(timeout: 5))
+        XCTAssertTrue(isFocused(overview))
+        XCUIRemote.shared.press(.up)
+        let done = app.buttons["Done"].firstMatch
+        XCTAssertTrue(isFocused(done), "Up from Overview must reach Done across the header.")
+        XCUIRemote.shared.press(.select)
+        let closed = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                !app.buttons["family-guidance-overview"].exists
+                    && self.isFocused(app.descendants(matching: .any)["family-guidance-tile"].firstMatch)
+            },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed,
+                       "Done must dismiss the dialog and restore its tile after the transition.")
+    }
+
+    func testBlackDialogUsesTheAvailableReadingHeightWithoutAFooter() {
+        let app = launch(extra: "--family-guidance-black")
+        defer { app.terminate() }
+        XCUIRemote.shared.press(.select)
+        let reader = app.descendants(matching: .any)["family-guidance-reader"].firstMatch
+        XCTAssertTrue(reader.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(reader.frame.maxY, app.frame.maxY - 140,
+                                   "The reading viewport should extend into the space formerly reserved for the footer.")
+        XCTAssertFalse(app.staticTexts["Guidance from Common Sense Media through Plex"].exists)
+        XCTAssertFalse(app.otherElements["PopoverDismissRegion"].exists,
+                       "The custom panel must not be nested inside the system's glass sheet.")
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "family-guidance-black-panel"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     func testLightThemeKeepsAgeAndBrandVisible() {

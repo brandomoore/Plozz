@@ -54,9 +54,15 @@ struct FamilyGuidanceTile: View {
         .plozzCardButton(cornerRadius: 18, focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale)
         .accessibilityIdentifier("family-guidance-tile")
         .accessibilityHint("Open family guidance")
+        #if os(tvOS)
+        .fullScreenCover(isPresented: $isPresented) {
+            FamilyGuidanceSheet(item: item, summary: summary, authorizationID: provider?.contextID)
+        }
+        #else
         .sheet(isPresented: $isPresented) {
             FamilyGuidanceSheet(item: item, summary: summary, authorizationID: provider?.contextID)
         }
+        #endif
     }
 
     private var ageSize: CGFloat {
@@ -96,10 +102,17 @@ struct FamilyGuidanceSheet: View {
         Group {
             if provider?.contextID == authorizationID {
                 #if os(tvOS)
-                TVFamilyGuidanceDialog(
-                    title: item.title, summary: displayedSummary, state: state,
-                    retry: { attempt += 1 }, close: { dismiss() }
-                )
+                ZStack {
+                    Color.black.opacity(0.4).ignoresSafeArea()
+                    TVFamilyGuidanceDialog(
+                        title: item.title, summary: displayedSummary, state: state,
+                        retry: { attempt += 1 }, close: { dismiss() }
+                    )
+                    .background(palette.settingsBackground, in: RoundedRectangle(cornerRadius: 28))
+                    .shadow(color: .black.opacity(0.4), radius: 32, y: 16)
+                }
+                .presentationBackground(.clear)
+                .onExitCommand { dismiss() }
                 #else
                 NavigationStack {
                     FamilyGuidanceMobileOverview(
@@ -213,6 +226,7 @@ struct TVFamilyGuidanceDialog: View {
                 Spacer()
                 Button("Done", action: close)
             }
+            .focusSection()
             FamilyGuidanceHeader(title: title, summary: summary)
             Divider()
             HStack(alignment: .top, spacing: 28) {
@@ -246,7 +260,9 @@ struct TVFamilyGuidanceDialog: View {
                 )
                 .id(selection)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(28)
+                .padding(.horizontal, 28)
+                .padding(.top, 28)
+                .padding(.bottom, 20)
                 .background(palette.raised.fill, in: RoundedRectangle(cornerRadius: 20))
                 .overlay {
                     RoundedRectangle(cornerRadius: 20)
@@ -255,13 +271,11 @@ struct TVFamilyGuidanceDialog: View {
                 }
                 .focusSection()
             }
-            Text("Guidance from Common Sense Media through Plex")
-                .font(.system(size: 17))
-                .foregroundStyle(palette.secondaryText)
         }
-        .padding(40)
+        .padding(.horizontal, 40)
+        .padding(.top, 40)
+        .padding(.bottom, 24)
         .frame(width: 1480, height: 920)
-        .background(palette.settingsBackground, in: RoundedRectangle(cornerRadius: 28))
         .defaultFocus($focusedPage, .overview, priority: .userInitiated)
         .onChange(of: focusedPage) { _, page in
             if let page {
@@ -300,9 +314,6 @@ private struct FamilyGuidanceMobileOverview: View {
                 if state.guidance == nil {
                     FamilyGuidanceStatus(state: state, retry: retry)
                 }
-                Text("Guidance from Common Sense Media through Plex")
-                    .font(.caption)
-                    .foregroundStyle(palette.secondaryText)
             }
             .padding(24)
         }
@@ -628,7 +639,7 @@ struct TVFamilyGuidanceReader: UIViewRepresentable {
         view.isSelectable = true
         view.isScrollEnabled = true
         view.isUserInteractionEnabled = context.environment.isEnabled
-        view.textContainerInset = UIEdgeInsets(top: 0, left: 0, bottom: 20, right: 8)
+        view.textContainerInset = UIEdgeInsets(top: 0, left: 0, bottom: 8, right: 8)
         view.textContainer.lineFragmentPadding = 0
         view.accessibilityIdentifier = "family-guidance-reader"
         return view

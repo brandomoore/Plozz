@@ -5,7 +5,9 @@ import SwiftUI
 struct FamilyGuidanceFixture: View {
     @State private var loader = FixtureGuidanceLoader()
     private var palette: ThemePalette {
-        ProcessInfo.processInfo.arguments.contains("--family-guidance-light") ? .light : .dark
+        if ProcessInfo.processInfo.arguments.contains("--family-guidance-light") { return .light }
+        if ProcessInfo.processInfo.arguments.contains("--family-guidance-black") { return .pureBlack }
+        return .dark
     }
 
     var body: some View {
