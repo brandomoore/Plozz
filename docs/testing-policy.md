@@ -596,13 +596,16 @@ Plex item-detail response; the full review is requested only when its tile opens
 through the fixed Discover host and global Plex GUID. It is not fetched for
 every poster or copied into the external critic-score list.
 
-The tile emphasizes age, with no adjacent quality fraction. The supplied Common
+The tile emphasizes age using the app's standard non-rounded typography, with no
+adjacent quality fraction. The supplied Common
 Sense mark retains its original colors, with a dark backing on light surfaces.
 The tvOS dialog pins its age/title/summary above separate topic and reading
 viewports. Only the selected topic's explanation is visible. Review scores have
 their own page and star treatment; content levels use ticks and retain real zero
 versus missing values. On tvOS a clear full-screen presentation hosts one themed
-panel over a dim backdrop; do not nest that panel inside a second glass sheet. Common Sense
+panel over a dim backdrop; do not nest that panel inside a second glass sheet.
+Use the shared overlay surface, including its subtle Black-appearance border,
+and the theme-aware panel-header button style for Done's focused contrast. Common Sense
 branding lives in the header, not a duplicate footer. iOS navigates from the
 overview into individual sections.
 
@@ -630,8 +633,9 @@ long content must keep the large age and summary visible. Both pane viewports
 are focus sections; while reading, only the selected menu row remains eligible
 for Left return, and the rest reopen when menu focus returns. Arrow presses
 scroll the native text reader, alongside its standard swipe handling; regressions
-measure paragraph movement in both directions, not just focus retention. Vertical
-focus cannot escape the reader before it handles scrolling; Left and Menu retain
+measure paragraph movement in both directions, not just focus retention. Up scrolls
+while the reader is below its top edge; once at the top (including short text),
+Up can move natively to Done. Down remains in the reader, while Left and Menu retain
 their normal exit behavior. The full-width header is also a focus section so Up
 from Overview reaches Done. Menu content stays inside its viewport, and the reader
 extends into the space freed by removing the footer. Black, Dark, and Light

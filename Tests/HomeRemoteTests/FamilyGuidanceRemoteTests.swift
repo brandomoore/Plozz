@@ -47,6 +47,7 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.up)
         let done = app.buttons["Done"].firstMatch
         XCTAssertTrue(isFocused(done), "Up from Overview must reach Done across the header.")
+        recordScreenshot(app, name: "family-guidance-done-dark")
         XCUIRemote.shared.press(.select)
         let closed = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
@@ -57,6 +58,59 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         )
         XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed,
                        "Done must dismiss the dialog and restore its tile after the transition.")
+    }
+
+    func testLongReaderMovesUpToDoneOnlyAfterScrollingBackToTheTop() {
+        let app = launch()
+        defer { app.terminate() }
+        XCUIRemote.shared.press(.select)
+        let reader = app.descendants(matching: .any)["family-guidance-reader"].firstMatch
+        XCTAssertTrue(reader.waitForExistence(timeout: 5))
+        XCUIRemote.shared.press(.right)
+        XCTAssertTrue(isFocused(reader))
+        let paragraph = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Review paragraph 1.")
+        ).firstMatch
+        let top = paragraph.frame.minY
+        XCUIRemote.shared.press(.down)
+        let scrolled = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in paragraph.frame.minY < top - 20 }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [scrolled], timeout: 3), .completed)
+        XCUIRemote.shared.press(.up)
+        let atTop = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                paragraph.frame.minY >= top - 1 && self.isFocused(reader)
+            }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [atTop], timeout: 3), .completed,
+                       "The first Up scrolls to the top without leaving the reader.")
+        XCUIRemote.shared.press(.up)
+        XCTAssertTrue(isFocused(app.buttons["Done"].firstMatch),
+                      "Once at the top, Up must reach Done rather than trapping focus.")
+    }
+
+    func testShortTopicReaderCanReachDoneAndReturnToItsTopic() {
+        let app = launch()
+        defer { app.terminate() }
+        XCUIRemote.shared.press(.select)
+        let topic = app.buttons["family-guidance-topic-language"].firstMatch
+        XCTAssertTrue(topic.waitForExistence(timeout: 5))
+        for _ in 0..<9 where !isFocused(topic) { XCUIRemote.shared.press(.down) }
+        XCTAssertTrue(isFocused(topic))
+        XCUIRemote.shared.press(.right)
+        let reader = app.descendants(matching: .any)["family-guidance-reader"].firstMatch
+        XCTAssertTrue(isFocused(reader))
+        XCUIRemote.shared.press(.up)
+        XCTAssertTrue(isFocused(app.buttons["Done"].firstMatch),
+                      "A short right-hand section must allow Up to Done immediately.")
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(isFocused(reader))
+        XCUIRemote.shared.press(.left)
+        XCTAssertTrue(isFocused(topic))
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(isFocused(app.buttons["family-guidance-topic-sex"].firstMatch),
+                      "Returning from Done must not leave the other menu topics disabled.")
     }
 
     func testBlackDialogUsesTheAvailableReadingHeightWithoutAFooter() {
@@ -74,6 +128,9 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         screenshot.name = "family-guidance-black-panel"
         screenshot.lifetime = .keepAlways
         add(screenshot)
+        XCUIRemote.shared.press(.up)
+        XCTAssertTrue(isFocused(app.buttons["Done"].firstMatch))
+        recordScreenshot(app, name: "family-guidance-done-black")
     }
 
     func testLightThemeKeepsAgeAndBrandVisible() {
@@ -87,6 +144,9 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         screenshot.name = "family-guidance-light-theme"
         screenshot.lifetime = .keepAlways
         add(screenshot)
+        XCUIRemote.shared.press(.up)
+        XCTAssertTrue(isFocused(app.buttons["Done"].firstMatch))
+        recordScreenshot(app, name: "family-guidance-done-light")
     }
 
     func testRatingTileOpensGuidanceAndReturnsFocus() throws {
@@ -207,6 +267,17 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
     private func isFocused(_ element: XCUIElement) -> Bool {
         element.exists && (element.hasFocus || element.descendants(matching: .any)
             .matching(NSPredicate(format: "hasFocus == true")).firstMatch.exists)
+    }
+
+    private func recordScreenshot(_ app: XCUIApplication, name: String) {
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        let doneFrame = XCTAttachment(string: app.buttons["Done"].firstMatch.frame.debugDescription)
+        doneFrame.name = "\(name)-button-frame"
+        doneFrame.lifetime = .keepAlways
+        add(doneFrame)
     }
 
     private func launch(extra: String? = nil) -> XCUIApplication {

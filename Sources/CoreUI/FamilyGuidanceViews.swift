@@ -108,9 +108,9 @@ struct FamilyGuidanceSheet: View {
                         title: item.title, summary: displayedSummary, state: state,
                         retry: { attempt += 1 }, close: { dismiss() }
                     )
-                    .background(palette.settingsBackground, in: RoundedRectangle(cornerRadius: 28))
-                    .shadow(color: .black.opacity(0.4), radius: 32, y: 16)
+                    .plozzSurface(.overlay, cornerRadius: 28)
                 }
+                .environment(\.colorScheme, palette.isLight ? .light : .dark)
                 .presentationBackground(.clear)
                 .onExitCommand { dismiss() }
                 #else
@@ -225,6 +225,8 @@ struct TVFamilyGuidanceDialog: View {
                     .foregroundStyle(palette.secondaryText)
                 Spacer()
                 Button("Done", action: close)
+                    .buttonStyle(PlozzPanelHeaderButtonStyle())
+                    .focusEffectDisabled()
             }
             .focusSection()
             FamilyGuidanceHeader(title: title, summary: summary)
@@ -340,7 +342,7 @@ private struct FamilyGuidanceAge: View {
     var body: some View {
         if let age {
             Text(verbatim: age.formatted(.number.precision(.fractionLength(0...1))) + "+")
-                .font(.system(size: size, weight: .bold, design: .rounded))
+                .font(.system(size: size, weight: .bold))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -669,10 +671,15 @@ struct TVFamilyGuidanceReader: UIViewRepresentable {
         private var ownsFocus = false
         override var canBecomeFocused: Bool { true }
 
+        private var isAtTop: Bool {
+            contentOffset.y <= -adjustedContentInset.top + 1 / traitCollection.displayScale
+        }
+
         override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
             let leavingReader = context.previouslyFocusedItem.map { $0 === self || self.contains($0) } == true
                 && context.nextFocusedItem.map { $0 === self || self.contains($0) } != true
-            if leavingReader && (context.focusHeading.contains(.up) || context.focusHeading.contains(.down)) {
+            let scrollsUp = context.focusHeading.contains(.up) && !isAtTop
+            if leavingReader && (scrollsUp || context.focusHeading.contains(.down)) {
                 return false
             }
             return super.shouldUpdateFocus(in: context)
@@ -680,7 +687,9 @@ struct TVFamilyGuidanceReader: UIViewRepresentable {
 
         // UITextView handles remote swipes; physical arrows need bounded page scrolling.
         override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-            let vertical = presses.filter { $0.type == .upArrow || $0.type == .downArrow }
+            let vertical = presses.filter {
+                $0.type == .downArrow || ($0.type == .upArrow && !isAtTop)
+            }
             guard ownsFocus, let press = vertical.first else {
                 super.pressesBegan(presses, with: event)
                 return
