@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -21,11 +22,15 @@ REQUIRED_FLAGS = (
 
 
 class PackageStorageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        (ROOT / ".build").mkdir(exist_ok=True)
+
     def source(self, path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
 
     def test_shell_helper_emits_locked_writer_local_arguments(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="plozz-package-storage-") as temp:
+        with tempfile.TemporaryDirectory(prefix="plozz-package-storage-", dir=ROOT / ".build") as temp:
             home = Path(temp) / "home"
             writer = Path(temp) / "writer"
             cache = Path(temp) / "cache"
@@ -92,33 +97,56 @@ class PackageStorageTests(unittest.TestCase):
 
         fastfile = self.source("fastlane/Fastfile")
         self.assertIn(".build\", \"package-workspaces\", \"fastlane", fastfile)
+        for option in (
+            "cloned_source_packages_path:",
+            "package_cache_path:",
+            "disable_package_automatic_updates: true",
+            "skip_package_repository_fetches: true",
+            "skip_package_dependencies_resolution: false",
+            "**swift_package_build_options(target)",
+        ):
+            self.assertIn(option, fastfile)
+        self.assertNotIn("swift_package_xcargs", fastfile)
         for flag in REQUIRED_FLAGS:
-            self.assertIn(flag, fastfile)
+            self.assertNotIn(flag, fastfile)
 
     def test_ci_package_storage_is_initialized_on_the_runner(self) -> None:
         workflow = self.source(".github/workflows/ci.yml")
+        self.assertIn("uses: ./.github/actions/ci-prepare", workflow)
+        action = self.source(".github/actions/ci-prepare/action.yml")
         step = re.search(
-            r"      - name: Configure package storage\n        run: \|\n((?:          .*\n)+)",
-            workflow,
+            r"    - name: Configure package storage\n(?:      .*\n)*?"
+            r"      run: \|\n((?:        .*\n)+)",
+            action,
         )
         self.assertIsNotNone(step)
-        script = "\n".join(line[10:] for line in step.group(1).splitlines())
-        with tempfile.TemporaryDirectory(prefix="plozz ci storage ") as temp:
-            runner_temp = Path(temp) / "runner temp"
-            github_env = Path(temp) / "github env"
+        script = "\n".join(line[8:] for line in step.group(1).splitlines())
+        with tempfile.TemporaryDirectory(prefix="plozz ci storage ", dir=ROOT / ".build") as temp:
+            workspace = Path(temp)
+            (workspace / "tools").mkdir()
+            shutil.copyfile(ROOT / "tools/ci-cache.py", workspace / "tools/ci-cache.py")
+            github_env = workspace / "github env"
             result = subprocess.run(
                 ["/bin/bash", "-e", "-c", script],
-                cwd=ROOT,
-                env=dict(os.environ, RUNNER_TEMP=str(runner_temp), GITHUB_ENV=str(github_env)),
+                cwd=workspace,
+                env=dict(
+                    os.environ,
+                    GITHUB_ACTIONS="true",
+                    GITHUB_WORKSPACE=str(workspace),
+                    GITHUB_ENV=str(github_env),
+                    CI_LANE="app-build",
+                ),
                 text=True,
                 capture_output=True,
                 check=True,
             )
             self.assertEqual(result.stdout, "")
+            values = dict(line.split("=", 1) for line in github_env.read_text().splitlines())
             self.assertEqual(
-                github_env.read_text(),
-                f"PLOZZ_CLONED_SOURCE_PACKAGES={runner_temp}/plozz-source-packages\n",
+                values["PLOZZ_CLONED_SOURCE_PACKAGES"],
+                str(workspace / ".build/ci/app-build/SourcePackages"),
             )
+            self.assertTrue(Path(values["PLOZZ_CLONED_SOURCE_PACKAGES"]).is_dir())
 
 
 if __name__ == "__main__":

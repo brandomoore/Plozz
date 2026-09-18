@@ -1,0 +1,83 @@
+name: Prepare isolated tvOS CI lane
+description: Generate the project and restore compatible, lane-private cache snapshots.
+inputs:
+  lane:
+    description: app-build, package-tests, or hosted-focus
+    required: true
+outputs:
+  build-key:
+    description: Exact compiled snapshot key
+    value: ${{ steps.keys.outputs.build-key }}
+  build-hit:
+    description: Whether that exact snapshot was restored
+    value: ${{ steps.build.outputs.cache-hit }}
+  build-paths:
+    description: Lane-private cache allowlist
+    value: ${{ steps.keys.outputs.build-paths }}
+  package-key:
+    description: Exact compressed package snapshot key
+    value: ${{ steps.keys.outputs.package-key }}
+  package-hit:
+    description: Whether the compressed package snapshot was restored
+    value: ${{ steps.packages.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - name: Configure package storage
+      shell: bash
+      env:
+        CI_LANE: ${{ inputs.lane }}
+      run: |
+        python3 tools/ci-cache.py configure "$CI_LANE" >> "$GITHUB_ENV"
+
+    - name: Select Xcode
+      shell: bash
+      run: sudo xcode-select -s /Applications/Xcode_26.2.app
+
+    - name: Select matching tvOS simulator
+      if: ${{ inputs.lane != 'app-build' }}
+      shell: bash
+      run: |
+        sdk_version="$(xcrun --sdk appletvsimulator --show-sdk-version)"
+        simulator="$(python3 tools/select-ci-tvos-simulator.py --sdk-version "$sdk_version")"
+        printf 'PLOZZ_SIM_ID=%s\n' "$simulator" >> "$GITHUB_ENV"
+
+    - name: Install XcodeGen
+      shell: bash
+      run: brew install xcodegen
+
+    - name: Generate Xcode project
+      shell: bash
+      run: tools/generate-project.sh
+
+    - name: Compute cache compatibility
+      id: keys
+      shell: bash
+      env:
+        CI_LANE: ${{ inputs.lane }}
+      run: python3 tools/ci-cache.py keys "$CI_LANE" >> "$GITHUB_OUTPUT"
+
+    # These are immutable remote snapshots, extracted into this runner's own
+    # workspace. No live directory is shared with another lane or workflow.
+    - name: Restore compressed SwiftPM repositories and artifacts
+      id: packages
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          .build/ci/swiftpm-cache/repositories
+          .build/ci/swiftpm-cache/artifacts
+        key: ${{ steps.keys.outputs.package-key }}
+
+    - name: Restore lane-private compilation and package workspace
+      id: build
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.keys.outputs.build-paths }}
+        key: ${{ steps.keys.outputs.build-key }}
+        restore-keys: ${{ steps.keys.outputs.build-prefix }}
+
+    - name: Restore content-verified tracked source timestamps
+      shell: bash
+      env:
+        CI_LANE: ${{ inputs.lane }}
+      run: python3 tools/ci-cache.py restore "$CI_LANE"

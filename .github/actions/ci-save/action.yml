@@ -1,0 +1,49 @@
+name: Save successful trusted CI snapshots
+description: Only main can seed caches; pull requests and other refs are restore-only.
+inputs:
+  lane:
+    description: Isolated lane owning the source timestamp snapshot
+    required: true
+  build-key:
+    description: Exact lane-specific compiled cache key
+    required: true
+  build-hit:
+    description: Whether that exact key was restored
+    required: true
+  build-paths:
+    description: Lane-private cache allowlist from ci-prepare
+    required: true
+  package-key:
+    description: Shared compressed package cache key
+    default: ''
+  package-hit:
+    description: Whether that exact package key was restored
+    default: ''
+  seed-packages:
+    description: Only app-build seeds the compressed package cache
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Record content-verified tracked source timestamps
+      if: ${{ success() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && inputs.build-hit != 'true' }}
+      shell: bash
+      env:
+        CI_LANE: ${{ inputs.lane }}
+      run: python3 tools/ci-cache.py record "$CI_LANE"
+
+    - name: Save compressed SwiftPM repositories and artifacts
+      if: ${{ success() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && inputs.seed-packages == 'true' && inputs.package-hit != 'true' }}
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          .build/ci/swiftpm-cache/repositories
+          .build/ci/swiftpm-cache/artifacts
+        key: ${{ inputs.package-key }}
+
+    - name: Save lane-private compilation and package workspace
+      if: ${{ success() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && inputs.build-hit != 'true' }}
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ inputs.build-paths }}
+        key: ${{ inputs.build-key }}

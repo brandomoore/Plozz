@@ -21,7 +21,9 @@
 
 require "json"
 require "shellwords"
+require "securerandom"
 require File.expand_path("../tools/lib/apple_build_lease", __dir__)
+require_relative "testflight_pipeline"
 
 APP_IDENTIFIER = "com.thatcube.Plozz"
 APP_NAME       = "Plozz"
@@ -62,6 +64,8 @@ EXTERNAL_GROUP = "Plozz External"
 if ENV["GIT_CONFIG_KEY_0"] == "safe.bareRepository"
   ENV["GIT_CONFIG_VALUE_0"] = "all"
 end
+ENV["GIT_CONFIG_PARAMETERS"] =
+  [ENV["GIT_CONFIG_PARAMETERS"], "'safe.bareRepository=all'"].compact.reject(&:empty?).join(" ")
 
 def asc_api_key
   app_store_connect_api_key(
@@ -72,8 +76,8 @@ def asc_api_key
   )
 end
 
-def swift_package_xcargs
-  cloned_source_packages = ENV.fetch(
+def swift_package_build_options(target)
+  package_root = ENV.fetch(
     "PLOZZ_FASTLANE_CLONED_SOURCE_PACKAGES",
     File.join(REPO_ROOT, ".build", "package-workspaces", "fastlane")
   )
@@ -81,12 +85,19 @@ def swift_package_xcargs
     "PLOZZ_PACKAGE_CACHE_PATH",
     File.join(Dir.home, "Library", "Caches", "org.swift.swiftpm")
   )
-  [
-    "-clonedSourcePackagesDirPath #{cloned_source_packages.shellescape}",
-    "-packageCachePath #{package_cache.shellescape}",
-    "-onlyUsePackageVersionsFromResolvedFile",
-    "-skipPackageUpdates"
-  ].join(" ")
+  @package_writer_id ||= "#{Process.pid}-#{SecureRandom.hex(8)}"
+  # Gym passes these options to pre-resolution, build settings, and archive.
+  # xcargs reaches only the archive/export commands; duplicating paths there
+  # also makes Xcode 27 reject the archive command.
+  {
+    cloned_source_packages_path: File.expand_path(
+      File.join(package_root, @package_writer_id, target.fetch(:scheme)), REPO_ROOT
+    ),
+    package_cache_path: File.expand_path(package_cache, REPO_ROOT),
+    disable_package_automatic_updates: true,
+    skip_package_repository_fetches: true,
+    skip_package_dependencies_resolution: false
+  }
 end
 
 # App Store Connect rejects any build made with a BETA Xcode / SDK (altool error
@@ -540,7 +551,7 @@ lane :build do |options|
 
   # Let Xcode create/download the distribution certificate and provisioning
   # profile on first run, authenticating with the same App Store Connect API key.
-  prov_args = "-allowProvisioningUpdates #{swift_package_xcargs}"
+  prov_args = "-allowProvisioningUpdates"
   if ENV["ASC_KEY_ID"] && ENV["ASC_ISSUER_ID"] && ENV["ASC_KEY_PATH"]
     prov_args += " -authenticationKeyPath #{ENV['ASC_KEY_PATH'].shellescape}" \
                  " -authenticationKeyID #{ENV['ASC_KEY_ID'].shellescape}" \
@@ -558,7 +569,8 @@ lane :build do |options|
       output_name: target[:output_name],
       archive_path: target[:archive_path],
       clean: index.zero?,
-      xcargs: prov_args
+      xcargs: prov_args,
+      **swift_package_build_options(target)
     )
   end
   end
@@ -588,21 +600,29 @@ lane :beta do
     ]
   end
   build
-  RELEASE_TARGETS.each do |target|
-    notes = notes_by_target.fetch(target[:name])
-    UI.header("Uploading #{target[:name]} to TestFlight")
-    upload_to_testflight(
-      api_key: api_key,
+  jobs = RELEASE_TARGETS.map do |target|
+    PlozzTestflightPipeline.job(
+      name: target[:name],
       app_identifier: APP_IDENTIFIER,
-      app_platform: target[:platform],
-      ipa: File.join(OUTPUT_DIR, target[:output_name]),
-      distribute_external: true,
-      groups: [EXTERNAL_GROUP],
-      notify_external_testers: true,
-      changelog: notes,
-      submit_beta_review: true,
-      skip_waiting_for_build_processing: false
+      platform: target[:platform],
+      ipa: File.join(REPO_ROOT, OUTPUT_DIR, target[:output_name]),
+      version: marketing_version,
+      build_number: ENV.fetch("PLOZZ_BUILD_NUMBER"),
+      notes: notes_by_target.fetch(target[:name]),
+      group: EXTERNAL_GROUP
     )
+  end
+  # Check BOTH exported binaries before starting either irreversible upload.
+  PlozzTestflightPipeline.validate_jobs!(jobs)
+  begin
+    outcomes = PlozzTestflightPipeline.upload_all(
+      jobs: jobs,
+      api_key: api_key,
+      output_root: File.join(REPO_ROOT, ".build", "testflight-uploads")
+    )
+    outcomes.each { |outcome| UI.success(PlozzTestflightPipeline.describe(outcome)) }
+  rescue PlozzTestflightPipeline::Failure => e
+    UI.user_error!(e.message)
   end
 
   # Tag the shipped commit and open a GitHub PRE-release (TestFlight beta) with the

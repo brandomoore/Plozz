@@ -109,14 +109,52 @@ gitignored `.env.fastlane` with `ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_KEY_PATH`
 (see `.env.fastlane.example`), then:
 
 ```bash
-fastlane beta --env fastlane    # build + upload to TestFlight
+PLOZZ_RELEASE_ID=release/NNN fastlane beta --env fastlane
 fastlane build --env fastlane   # archive a signed .ipa locally, no upload
-fastlane release --env fastlane # build + upload to the App Store
+PLOZZ_RELEASE_ID=release/NNN fastlane release --env fastlane
 ```
 
-**Versioning** (`project.yml`): bump the **marketing version**
-(`CFBundleShortVersionString`) by hand; the **build number** is auto-incremented
-from the latest TestFlight build at archive time — never edit it manually.
+**Versioning:** the marketing version is CalVer (`YYYY.M.D`), or an explicit
+`PLOZZ_MARKETING_VERSION`. The build number is one greater than the highest
+TestFlight build across both platforms. Both are fixed before archiving.
+Distribution requires the selected `App/Resources/ReleaseNotes.json` entry to
+match that version and build. Obtain approval for the exact rendered notes and
+candidate before running a distribution lane.
+
+**Package resolution:** Fastlane's supported `build_app` options carry the same
+package paths and locked-version policy through dependency resolution, build
+settings, and archive. Do not duplicate package flags in `xcargs` or bypass
+resolution. `PLOZZ_FASTLANE_CLONED_SOURCE_PACKAGES` overrides the package workspace
+**root**; each invocation and platform gets a private child directory. The
+download cache remains shared (`PLOZZ_PACKAGE_CACHE_PATH`, defaulting to the
+standard SwiftPM cache). The lane preserves the host's git configuration and
+appends `safe.bareRepository=all`.
+
+**TestFlight concurrency:** both signed archives finish and both exported IPAs
+pass version/build/platform checks before either upload starts. Two isolated Ruby
+processes then upload, wait for Apple processing, set their platform-specific
+notes, and submit to **Plozz External**, with notifications enabled. No previous
+builds are expired or rejected. Successful submission is not approval: the final
+report includes Apple's observed internal/external state, which may still be
+`WAITING_FOR_BETA_REVIEW`. The App Store `release` uploads remain serial.
+
+The enclosing shared release lease stays held through both workers, descendant
+cleanup, and tagging. Workers inherit its descriptors and receive the current
+API key only through anonymous pipes. Each worker uses Fastlane's normal
+altool/Java transporter rather than the shell transporter's shared key directory.
+Results and separate platform logs remain under `.build/testflight-uploads/`.
+
+**Partial failure or cancellation:** both workers are reaped; a platform failure
+does not stop the other platform's processing. Cancellation terminates both owned
+process groups, with a bounded grace period before forced termination. No tag or
+GitHub release is created unless both workers succeed. Preserve the signed IPAs,
+logs, and `summary.json`; inspect the exact platform/version/build in App Store
+Connect before recovery. An interrupted upload may already have reached Apple.
+Do not blindly rerun `beta`, increment the build, rebuild, or retry an upload.
+There is no automatic retry or distribution-only lane.
+Known validation failures report fixed safe codes (`external_group_missing`,
+`uploaded_build_mismatch`); invalid worker output reports `invalid_worker_result`.
+Arbitrary exception messages and credentials are not copied into the summary.
 
 App icons, in-app logos, and tvOS **Brand Assets** are generated from
 `App/Resources/Assets.xcassets/PlozzLogo.imageset/plozz_logo.svg` with
