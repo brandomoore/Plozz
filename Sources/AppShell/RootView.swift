@@ -1511,12 +1511,12 @@ private struct PlexPINFallbackGlyph: View {
 /// Brief splash while we check for a stored session.
 private struct LaunchView: View {
     var body: some View {
-        VStack(spacing: 24) {
-            Text(verbatim: "Plozz")
-                .font(.system(size: 96, weight: .heavy, design: .rounded))
-            ProgressView()
+        VStack {
+            PlozzStartupLogo()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Loading"))
     }
 }
 
