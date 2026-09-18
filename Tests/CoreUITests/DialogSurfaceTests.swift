@@ -41,7 +41,7 @@ final class DialogSurfaceTests: XCTestCase {
 
     func testBlackDialogHasASubtleSharedBorderWithoutChangingItsLayout() throws {
         let surface = ThemePalette.pureBlack.surface(.overlay)
-        XCTAssertEqual(surface.border, ThemePalette.darkHairline.opacity(0.20))
+        XCTAssertEqual(surface.border, ThemePalette.darkHairline.opacity(0.08))
         XCTAssertEqual(surface.borderWidth, 1)
         let pixels = try render(
             Color.clear
@@ -54,7 +54,7 @@ final class DialogSurfaceTests: XCTestCase {
         let border = pixel(pixels, x: 100, y: 40)
         let fill = pixel(pixels, x: 100, y: 44)
         XCTAssertGreaterThan(Int(border[0]), Int(fill[0]) + 10)
-        XCTAssertLessThan(border[0], 45, "The softened outline should remain below its previous brightness.")
+        XCTAssertLessThan(border[0], 25, "The softened outline should remain below its previous brightness.")
     }
 
     private func render(_ content: some View) throws -> [UInt8] {
