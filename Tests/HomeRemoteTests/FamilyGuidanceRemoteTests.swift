@@ -37,6 +37,53 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         ].firstMatch.isHittable, "Opening must not scroll past the summary.")
     }
 
+    func testHeaderCaptionAndSynopsisShareAnAlignedRow() {
+        let app = launch()
+        defer { app.terminate() }
+        XCUIRemote.shared.press(.select)
+        let age = app.staticTexts["Recommended age: 16+"].firstMatch
+        XCTAssertTrue(age.waitForExistence(timeout: 5))
+        let caption = app.staticTexts["Recommended age"].firstMatch
+        let synopsis = app.staticTexts[
+            "A sci-fi mystery with tense scenes, strong language, and unsettling images."
+        ].firstMatch
+        let title = app.staticTexts["Family guidance fixture"].firstMatch
+        XCTAssertEqual(caption.frame.maxY, synopsis.frame.maxY, accuracy: 2)
+        XCTAssertEqual(age.frame.minX, caption.frame.minX, accuracy: 1)
+        XCTAssertEqual(title.frame.minX, synopsis.frame.minX, accuracy: 1)
+        XCTAssertGreaterThanOrEqual(title.frame.minY, age.frame.minY)
+        XCTAssertLessThanOrEqual(app.staticTexts["Common Sense Media"].firstMatch.frame.maxY, age.frame.maxY)
+        recordScreenshot(app, name: "family-guidance-header-grid")
+    }
+
+    func testWrappedHeaderKeepsSynopsisAlignedWithoutOverlappingTheReader() {
+        let app = launch(extra: "--family-guidance-wrapped-header")
+        defer { app.terminate() }
+        XCUIRemote.shared.press(.select)
+        let age = app.staticTexts["Recommended age: 16+"].firstMatch
+        XCTAssertTrue(age.waitForExistence(timeout: 5))
+        let caption = app.staticTexts["Recommended age"].firstMatch
+        let synopsis = app.staticTexts.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "A sci-fi mystery with tense scenes"
+        )).firstMatch
+        XCTAssertGreaterThan(synopsis.frame.height, caption.frame.height * 2)
+        XCTAssertEqual(caption.frame.minY, synopsis.frame.minY, accuracy: 2,
+                       "A wrapped synopsis starts on the caption row, rather than moving the whole identity block.")
+        XCTAssertTrue(age.isHittable)
+        XCTAssertGreaterThan(app.staticTexts["What parents need to know"].frame.minY, synopsis.frame.maxY)
+        recordScreenshot(app, name: "family-guidance-header-grid-wrapped")
+    }
+
+    func testHeaderWithoutSynopsisKeepsAgeBrandAndReaderVisible() {
+        let app = launch(extra: "--family-guidance-no-summary")
+        defer { app.terminate() }
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.staticTexts["Recommended age: 16+"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Recommended age"].isHittable)
+        XCTAssertTrue(app.staticTexts["Common Sense Media"].isHittable)
+        XCTAssertTrue(app.descendants(matching: .any)["family-guidance-reader"].firstMatch.isHittable)
+    }
+
     func testOverviewMovesUpToDoneAndCloses() {
         let app = launch()
         defer { app.terminate() }

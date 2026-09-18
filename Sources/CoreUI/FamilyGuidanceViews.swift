@@ -362,35 +362,48 @@ struct FamilyGuidanceHeader: View {
     #endif
 
     var body: some View {
-        layout {
+        #if os(tvOS)
+        Grid(alignment: .leading, horizontalSpacing: 28, verticalSpacing: 4) {
+            GridRow(alignment: .center) {
+                FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize)
+                FamilyGuidanceHeaderIdentity(title: title)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            GridRow(alignment: .firstTextBaseline) {
+                ageCaption
+                synopsis
+            }
+        }
+        .accessibilityIdentifier("family-guidance-header")
+        #else
+        VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 4) {
                 FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize)
-                Text("Recommended age").font(.caption)
-                    .foregroundStyle(palette.secondaryText)
+                ageCaption
             }
             VStack(alignment: .leading, spacing: 10) {
-                Text(title).font(titleFont).lineLimit(2)
-                FamilyGuidanceBrand(compact: false)
-                    .font(brandFont)
-                    .foregroundStyle(palette.secondaryText)
-                if let overview = summary.overview {
-                    Text(overview)
-                        .font(summaryFont)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                FamilyGuidanceHeaderIdentity(title: title)
+                synopsis
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityIdentifier("family-guidance-header")
+        #endif
     }
 
-    private var layout: AnyLayout {
-        #if os(tvOS)
-        AnyLayout(HStackLayout(alignment: .center, spacing: 28))
-        #else
-        AnyLayout(VStackLayout(alignment: .leading, spacing: 20))
-        #endif
+    private var ageCaption: some View {
+        Text("Recommended age").font(.caption)
+            .foregroundStyle(palette.secondaryText)
+    }
+
+    @ViewBuilder
+    private var synopsis: some View {
+        if let overview = summary.overview {
+            Text(overview)
+                .font(summaryFont)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var ageSize: CGFloat {
@@ -400,6 +413,28 @@ struct FamilyGuidanceHeader: View {
         scaledAgeSize
         #endif
     }
+    private var summaryFont: Font {
+        #if os(tvOS)
+        .system(size: 24)
+        #else
+        .body
+        #endif
+    }
+}
+
+private struct FamilyGuidanceHeaderIdentity: View {
+    let title: String // l10n:content — media title supplied by the provider
+    @Environment(\.themePalette) private var palette
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(titleFont).lineLimit(2)
+            FamilyGuidanceBrand(compact: false)
+                .font(brandFont)
+                .foregroundStyle(palette.secondaryText)
+        }
+    }
+
     private var titleFont: Font {
         #if os(tvOS)
         .system(size: 30, weight: .semibold)
@@ -407,18 +442,12 @@ struct FamilyGuidanceHeader: View {
         .headline
         #endif
     }
+
     private var brandFont: Font {
         #if os(tvOS)
         .system(size: 18, weight: .semibold)
         #else
         .subheadline.weight(.semibold)
-        #endif
-    }
-    private var summaryFont: Font {
-        #if os(tvOS)
-        .system(size: 24)
-        #else
-        .body
         #endif
     }
 }

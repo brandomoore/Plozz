@@ -10,6 +10,22 @@ struct FamilyGuidanceFixture: View {
         return .dark
     }
 
+    private var wrapsHeader: Bool {
+        ProcessInfo.processInfo.arguments.contains("--family-guidance-wrapped-header")
+    }
+
+    private var title: String {
+        wrapsHeader
+            ? "A fictional movie with a deliberately long title that continues onto a second line in the guidance header"
+            : "Family guidance fixture"
+    }
+
+    private var overview: String? {
+        if ProcessInfo.processInfo.arguments.contains("--family-guidance-no-summary") { return nil }
+        let summary = "A sci-fi mystery with tense scenes, strong language, and unsettling images."
+        return wrapsHeader ? Array(repeating: summary, count: 4).joined(separator: " ") : summary
+    }
+
     var body: some View {
         VStack {
             Text("Family guidance fixture ready").accessibilityIdentifier("family-guidance-fixture-ready")
@@ -23,9 +39,9 @@ struct FamilyGuidanceFixture: View {
             )
             DetailInformationSections(
                 item: MediaItem(
-                    id: "fixture", title: "Family guidance fixture", kind: .movie,
+                    id: "fixture", title: title, kind: .movie,
                     familyGuidance: .init(recommendedAge: 14, qualityRating: 5,
-                                          overview: "A sci-fi mystery with tense scenes, strong language, and unsettling images.")
+                                          overview: overview)
                 ),
                 horizontalInset: 90
             )

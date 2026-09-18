@@ -615,7 +615,11 @@ The tile emphasizes age using the app's standard non-rounded typography, with no
 adjacent quality fraction. The supplied Common
 Sense mark retains its original colors, with a dark backing on light surfaces.
 The tvOS dialog pins its age/title/summary above separate topic and reading
-viewports. Only the selected topic's explanation is visible. Review scores have
+viewports. Its two-column grid places age beside title/branding, then aligns the
+recommended-age caption with the synopsis's first baseline. Wrapped and missing
+synopses must preserve that structure without overlapping the reader; touch
+layouts retain their vertical stack. Only the selected topic's explanation is
+visible. Review scores have
 their own page and star treatment; content levels use ticks and retain real zero
 versus missing values. On tvOS a clear full-screen presentation hosts one themed
 panel over a dim backdrop; do not nest that panel inside a second glass sheet.
