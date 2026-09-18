@@ -338,10 +338,11 @@ private extension FamilyGuidancePage {
 private struct FamilyGuidanceAge: View {
     let age: Double?
     let size: CGFloat
+    @Environment(\.locale) private var locale
 
     var body: some View {
         if let age {
-            Text(verbatim: age.formatted(.number.precision(.fractionLength(0...1))) + "+")
+            Text(verbatim: age.formatted(.number.locale(locale).precision(.fractionLength(0...1))) + "+")
                 .font(.system(size: size, weight: .bold))
                 .monospacedDigit()
                 .lineLimit(1)

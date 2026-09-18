@@ -54,6 +54,7 @@ public struct RatingsBadgeRow: View {
 /// An age recommendation, deliberately separate from a review score or certification.
 public struct FamilyGuidanceAgeBadge: View {
     private let age: Double
+    @Environment(\.locale) private var locale
 
     public init(age: Double) {
         self.age = age
@@ -62,7 +63,7 @@ public struct FamilyGuidanceAgeBadge: View {
     public var body: some View {
         HStack(spacing: 7) {
             FamilyGuidanceIcon(size: iconSize)
-            Text("\(age, format: .number.precision(.fractionLength(0...1)))+")
+            Text(verbatim: age.formatted(.number.locale(locale).precision(.fractionLength(0...1))) + "+")
                 .font(valueFont)
                 .monospacedDigit()
                 .plozzForeground(.primary)
