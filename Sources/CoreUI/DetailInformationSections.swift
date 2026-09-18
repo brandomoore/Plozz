@@ -575,8 +575,7 @@ public struct DetailInformationSections: View {
     /// card hugging its content.
     private var tvOverviewCard: some View {
         ZStack {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
+            PlozzDialogBackdrop()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -626,12 +625,8 @@ public struct DetailInformationSections: View {
                 height: min(max(overviewCardHeight, 220), 760)
             )
             .onPreferenceChange(OverviewCardHeightKey.self) { overviewCardHeight = $0 }
-            .background {
-                RoundedRectangle(cornerRadius: 32, style: .continuous)
-                    .fill(palette.settingsBackground)
-            }
             .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-            .shadow(color: .black.opacity(0.5), radius: 40, y: 20)
+            .plozzSurface(.overlay, cornerRadius: 32)
         }
         .background(ClearSheetBackground())
     }

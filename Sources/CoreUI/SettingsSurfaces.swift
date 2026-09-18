@@ -12,6 +12,22 @@ public struct SettingsPageBackground: View {
     }
 }
 
+public struct PlozzDialogBackdrop: View {
+    @Environment(\.themePalette) private var palette
+    private let minimumOpacity: Double
+
+    /// Preserve a dialog's existing stronger backdrop when adopting the shared theme.
+    public init(minimumOpacity: Double = 0) {
+        self.minimumOpacity = minimumOpacity
+    }
+
+    public var body: some View {
+        Color.black.opacity(max(palette.dialogBackdropOpacity, minimumOpacity))
+            .ignoresSafeArea()
+            .accessibilityHidden(true)
+    }
+}
+
 /// A hairline separator that uses the palette's shared ``ThemePalette/separator``
 /// token instead of SwiftUI's default `Divider()` (whose OS separator colour is
 /// brighter than the app's surface hairlines, so it clashes with card edges —
@@ -35,9 +51,8 @@ public struct PlozzDivider: View {
 
 /// Renders a surface at a given elevation rung using the palette's shared
 /// ``SurfaceStyle`` table — a fill, an optional hairline border (OLED), and an
-/// optional drop shadow (light / dark overlays). Every elevated surface in the
-/// app (settings groups, detail cards, modals) goes through this, so tvOS and
-/// iOS resolve identical values and new themes stay in lockstep.
+/// optional drop shadow (light / dark overlays). Shared by app-owned settings
+/// groups, detail cards and dialogs so both platforms resolve the same theme.
 private struct PlozzSurfaceModifier: ViewModifier {
     @Environment(\.themePalette) private var palette
     let level: SurfaceLevel

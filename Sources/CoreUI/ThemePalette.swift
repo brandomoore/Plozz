@@ -166,6 +166,9 @@ public struct ThemePalette: Equatable, Sendable {
     /// opaque backing that stops the drop shadow bleeding through the glass.
     public let isLight: Bool
 
+    /// Standard dimming behind app-owned dialogs; system presentations own theirs.
+    public var dialogBackdropOpacity: Double { isLight ? 0.4 : 0.72 }
+
     /// Only the module's own `dark`/`pureBlack`/`light` literals construct palettes;
     /// external callers use the static factories (`palette(for:)`) or the ready
     /// palettes. Kept `internal` (not `public`) so adding tokens here is never a

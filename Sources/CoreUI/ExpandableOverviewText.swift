@@ -277,8 +277,7 @@ public struct ExpandableOverviewText: View {
     private var expandedCard: some View {
         #if os(tvOS)
         ZStack {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
+            PlozzDialogBackdrop()
 
             ScrollView {
                 cardBody
@@ -316,12 +315,8 @@ public struct ExpandableOverviewText: View {
                     }
             }
             .onPreferenceChange(ExpandableCardHeightKey.self) { cardHeight = $0 }
-            .background {
-                RoundedRectangle(cornerRadius: 32, style: .continuous)
-                    .fill(palette.settingsBackground)
-            }
             .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-            .shadow(color: .black.opacity(0.5), radius: 40, y: 20)
+            .plozzSurface(.overlay, cornerRadius: 32)
         }
         // Menu closes the card. Without it the only way out was the system's own
         // sheet dismissal, which cannot fire while the focus engine is stuck.

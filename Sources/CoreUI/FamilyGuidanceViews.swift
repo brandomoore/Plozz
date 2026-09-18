@@ -103,7 +103,7 @@ struct FamilyGuidanceSheet: View {
             if provider?.contextID == authorizationID {
                 #if os(tvOS)
                 ZStack {
-                    Color.black.opacity(0.4).ignoresSafeArea()
+                    PlozzDialogBackdrop()
                     TVFamilyGuidanceDialog(
                         title: item.title, summary: displayedSummary, state: state,
                         retry: { attempt += 1 }, close: { dismiss() }

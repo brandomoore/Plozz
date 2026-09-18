@@ -588,6 +588,21 @@ fresh-account resolution and stale-credential rejection. On a Jellyfin server
 with legacy authorization disabled, a selected Music track must start and advance
 past 0:00 rather than fail with `NSURLErrorDomain -1013`.
 
+## Shared custom-dialog appearance
+
+App-owned tvOS guidance, expanded-overview, title-overview, and startup-release-note
+dialogs use `PlozzDialogBackdrop` and the shared `.overlay` surface. Dark and Black
+dim the underlying page by 72%; Light retains 40%. A dialog with an already stronger
+backdrop (startup release notes) preserves it with the minimum-opacity parameter.
+Border, fill, and shadow come from `ThemePalette.overlay`, including the subtle
+Black-appearance hairline, rather than individual dialog implementations.
+Native alerts/sheets retain system-managed dimming; anchored playback menus are
+not blocking dialogs and do not gain a screen-wide dimmer.
+
+`DialogSurfaceTests` verifies rendered backdrop pixel values, preserves the
+stronger minimum, and checks that the Black border is visible but subtle without
+changing layout. Remote guidance tests keep focus, scrolling, and dismissal covered.
+
 ## Common Sense Media guidance
 
 The Ratings section keeps Common Sense Media age recommendations separate from

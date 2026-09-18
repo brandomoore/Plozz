@@ -48,7 +48,6 @@ public struct ReleaseNotesStartupView: View {
     }
 
     private let model: ReleaseNotesModel
-    @Environment(\.themePalette) private var palette
     @State private var confirmsDisable = false
     @FocusState private var focusedAction: FocusedAction?
 
@@ -59,8 +58,7 @@ public struct ReleaseNotesStartupView: View {
     public var body: some View {
         #if os(tvOS)
         ZStack {
-            Color.black.opacity(0.72)
-                .ignoresSafeArea()
+            PlozzDialogBackdrop(minimumOpacity: 0.72)
 
             VStack(alignment: .leading, spacing: 22) {
                 HStack(alignment: .center, spacing: 24) {
@@ -93,21 +91,13 @@ public struct ReleaseNotesStartupView: View {
             }
             .padding(40)
             .frame(maxWidth: 1120)
-            .background(palette.settingsBackground)
             .clipShape(
                 RoundedRectangle(
                     cornerRadius: PlozzTheme.Metrics.mediumCardCornerRadius,
                     style: .continuous
                 )
             )
-            .overlay {
-                RoundedRectangle(
-                    cornerRadius: PlozzTheme.Metrics.mediumCardCornerRadius,
-                    style: .continuous
-                )
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.45), radius: 42, y: 18)
+            .plozzSurface(.overlay, cornerRadius: PlozzTheme.Metrics.mediumCardCornerRadius)
             .padding(96)
         }
         .defaultFocus($focusedAction, .done)
