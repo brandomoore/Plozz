@@ -61,7 +61,7 @@ public struct FamilyGuidanceAgeBadge: View {
 
     public var body: some View {
         HStack(spacing: 7) {
-            FamilyGuidanceIcon(size: iconSize)
+            FamilyGuidanceIcon(size: iconSize * 1.2)
             Text("\(age, format: .number.precision(.fractionLength(0...1)))+")
                 .font(valueFont)
                 .monospacedDigit()
