@@ -596,6 +596,22 @@ Plex item-detail response; the full review is requested only when its tile opens
 through the fixed Discover host and global Plex GUID. It is not fetched for
 every poster or copied into the external critic-score list.
 
+The tile emphasizes age, with no adjacent quality fraction. The supplied Common
+Sense mark retains its original colors, with a dark backing on light surfaces.
+The tvOS dialog pins its age/title/summary above separate topic and reading
+viewports. Only the selected topic's explanation is visible. Review scores have
+their own page and star treatment; content levels use ticks and retain real zero
+versus missing values. iOS navigates from the overview into individual sections.
+
+Hero/header previews default to the Common Sense age plus two available review
+scores. The age never consumes a review slot or replaces the official
+certification. Home and detail preferences persist independently per profile,
+including age visibility and review count; saved source order/selections survive
+upgrades, and global hiding/spoiler rules still apply. Full title information
+retains all ratings. Existing hero detail enrichment carries basic guidance
+without fetching cloud reviews. Episode Home slides use their represented
+show's guidance, while the episode play target remains unchanged.
+
 `PlexCommonSenseMediaTests` covers movie/show summaries, absent and episode data,
 full category mapping, zero versus missing scores, invalid values, global-ID
 validation, and restricted versus unavailable versus failed requests.
@@ -606,7 +622,18 @@ shared or persisted across profiles.
 
 `FamilyGuidanceRemoteTests` exercises the real Ratings section with native tvOS
 focus: Select opens the review, Menu restores the tile, failed requests can be
-retried, and restricted access never renders invented category scores.
+retried, and restricted access never renders invented category scores. Opening
+long content must keep the large age and summary visible. Both pane viewports
+are focus sections; while reading, only the selected menu row remains eligible
+for Left return, and the rest reopen when menu focus returns. Arrow presses
+scroll the native text reader, alongside its standard swipe handling; regressions
+measure paragraph movement in both directions, not just focus retention. Vertical
+focus cannot escape the reader before it handles scrolling; Left and Menu retain
+their normal exit behavior.
+Menu content must remain inside its viewport rather than overlap attribution.
+Header regressions cover age-only data, quality-without-age, two-score defaults,
+per-profile persistence, hydrated hero-cache invalidation, and touch wrapping at
+large Dynamic Type sizes.
 The same tile and sheet content are used by iOS; unsupported providers simply
 have no guidance tile. New interface copy is localized through the app catalog;
 review text and category labels are provider content.

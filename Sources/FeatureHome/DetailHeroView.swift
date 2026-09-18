@@ -80,6 +80,7 @@ struct DetailHeroView: View, Equatable {
     let item: MediaItem
     @Environment(HeroTrailerController.self) private var heroTrailerController
     @Environment(HeroBackgroundSettingsModel.self) private var heroBackground
+    @Environment(\.detailHeaderSettings) private var detailHeaderSettings
     #if os(tvOS)
     @Environment(\.detailEntranceSession) private var detailEntrance
     #endif
@@ -685,9 +686,21 @@ struct DetailHeroView: View, Equatable {
     /// when the focused item (an episode) carries none of its own, so a show's
     /// rating stays visible while scrubbing episodes.
     private var heroRatings: [ExternalRating] {
-        HeroContentPolicy.ratings(
-            focused: focusedPresentation,
-            root: rootPresentation
+        headerRatingPreferences.headerRatings(
+            from: HeroContentPolicy.ratings(focused: focusedPresentation, root: rootPresentation),
+            isAnime: rootPresentation.isAnime,
+            hidesRatings: spoilerSettings.shouldHideRatings(for: item)
+        )
+    }
+
+    private var headerRatingPreferences: DetailPageSettings {
+        detailHeaderSettings?.settings ?? .default
+    }
+
+    private var heroFamilyGuidanceAge: Double? {
+        headerRatingPreferences.headerFamilyGuidanceAge(
+            from: HeroContentPolicy.familyGuidanceAge(focused: focusedPresentation, root: rootPresentation),
+            hidesRatings: spoilerSettings.shouldHideRatings(for: item)
         )
     }
 
@@ -853,7 +866,7 @@ struct DetailHeroView: View, Equatable {
             // Split the facts line: genres ride the certificate line up top; the
             // year/runtime facts drop to the bottom row beside the ratings.
             let factParts = comps
-            let showRatings = !heroRatings.isEmpty && !spoilerSettings.shouldHideRatings(for: item)
+            let showRatings = !heroRatings.isEmpty || heroFamilyGuidanceAge != nil
 
             // Line 1: content-rating certificate + genres. Same hoisting as the
             // subtitle above — an always-present container costs a spacing gap even
@@ -906,6 +919,7 @@ struct DetailHeroView: View, Equatable {
                     DetailHeroFactsRow(
                         facts: factParts,
                         ratings: showRatings ? heroRatings : [],
+                        familyGuidanceAge: heroFamilyGuidanceAge,
                         featureBadges: featureBadges
                     )
                 }
@@ -1896,6 +1910,7 @@ private struct DetailHeroCreditLine: View {
 private struct DetailHeroFactsRow: View {
     let facts: [String]
     let ratings: [ExternalRating]
+    let familyGuidanceAge: Double?
     let featureBadges: [MediaBadge]
 
     var body: some View {
@@ -1914,6 +1929,9 @@ private struct DetailHeroFactsRow: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     .contentTransition(.opacity)
+            }
+            if let familyGuidanceAge {
+                FamilyGuidanceAgeBadge(age: familyGuidanceAge)
             }
             ForEach(ratings) { rating in
                 RatingBadge(rating: rating)
@@ -1944,13 +1962,15 @@ private struct DetailHeroFactsRow: View {
 ///
 /// Keyed on more than the id: the same item is mutated in place as watched state
 /// and enriched badges arrive, and the hero must reflect that immediately.
-private final class HeroPresentationCache {
+final class HeroPresentationCache {
     private struct Key: Hashable {
         let id: String
         let isPlayed: Bool
         let playedPercentage: Double?
         let badgeCount: Int
         let artworkCount: Int
+        let familyGuidanceAge: Double?
+        let ratings: [ExternalRating]
     }
 
     private var entries: [Key: HeroPresentation] = [:]
@@ -1961,7 +1981,9 @@ private final class HeroPresentationCache {
             isPlayed: item.isPlayed,
             playedPercentage: item.playedPercentage,
             badgeCount: item.technicalBadges.count,
-            artworkCount: item.artworkReferences(for: .logo).count
+            artworkCount: item.artworkReferences(for: .logo).count,
+            familyGuidanceAge: item.familyGuidance?.recommendedAge,
+            ratings: item.ratings
         )
         if let cached = entries[key] { return cached }
         let built = HeroPresentation(

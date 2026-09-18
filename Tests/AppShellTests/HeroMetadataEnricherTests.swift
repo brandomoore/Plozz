@@ -4,6 +4,23 @@ import RatingsService
 @testable import AppShell
 
 final class HeroMetadataEnricherTests: XCTestCase {
+    func testBasicGuidanceEnrichesAnOtherwiseCompleteHeroWithoutFetchingACloudReview() async {
+        let sparse = MediaItem(
+            id: "movie", title: "Movie", kind: .movie, overview: "Overview",
+            productionYear: 2026, officialRating: "PG", taglines: ["Tagline"],
+            sourceAccountID: "account"
+        )
+        var detail = sparse
+        detail.familyGuidance = .init(recommendedAge: 10, qualityRating: 4)
+        let account = resolved("account", detail: detail)
+        let provider = GuidanceHeroMetadataProvider(session: account.provider.session, details: [detail.id: detail])
+        let enriched = await makeHeroMetadataEnricher(
+            accounts: [.init(account: account.account, provider: provider)],
+            identitySources: { _ in [] }
+        )([sparse])
+        XCTAssertEqual(enriched.first?.familyGuidance, detail.familyGuidance)
+    }
+
     func testFillsOverviewAndTaglinesWhenOtherHeroMetadataIsAlreadyPresent() async throws {
         let accountID = "jellyfin-account"
         let sparse = MediaItem(
@@ -18,6 +35,7 @@ final class HeroMetadataEnricherTests: XCTestCase {
         var detail = sparse
         detail.overview = "A complete Jellyfin overview."
         detail.taglines = ["For some, 13 feels like it was just yesterday."]
+        detail.familyGuidance = .init(recommendedAge: 13, qualityRating: nil)
         let account = resolved(accountID, detail: detail)
 
         let enrich = makeHeroMetadataEnricher(
@@ -29,6 +47,7 @@ final class HeroMetadataEnricherTests: XCTestCase {
         XCTAssertEqual(result.count, 1)
         XCTAssertEqual(result[0].overview, detail.overview)
         XCTAssertEqual(result[0].taglines, detail.taglines)
+        XCTAssertEqual(result[0].familyGuidance, detail.familyGuidance)
         XCTAssertEqual(result[0].id, sparse.id)
         XCTAssertEqual(result[0].sourceAccountID, sparse.sourceAccountID)
     }
@@ -95,6 +114,7 @@ final class HeroMetadataEnricherTests: XCTestCase {
             id: "jellyfin-series",
             title: "Silo",
             kind: .series,
+            familyGuidance: .init(recommendedAge: 14, qualityRating: nil),
             genres: ["Science Fiction"],
             providerIDs: ["Tmdb": "125988", "Tvdb": "403245"]
         )
@@ -119,6 +139,8 @@ final class HeroMetadataEnricherTests: XCTestCase {
         XCTAssertEqual(result[0].providerID(.tmdb), "episode-4")
         XCTAssertEqual(result[0].providerID(.seriesTmdb), "125988")
         XCTAssertEqual(result[0].providerID(.seriesTvdb), "403245")
+        XCTAssertEqual(result[0].familyGuidance, series.familyGuidance,
+                       "The Home slide represents the series while retaining the episode play target.")
     }
 
     func testMergesSharedCachedRatingsWithoutStartingProviderWork() async {
@@ -230,7 +252,7 @@ private final class CachedHeroRatingsProvider:
     }
 }
 
-private final class HeroMetadataProvider: MediaProvider, @unchecked Sendable {
+private class HeroMetadataProvider: MediaProvider, @unchecked Sendable {
     let kind: ProviderKind = .jellyfin
     let session: UserSession
     private let details: [String: MediaItem]
@@ -255,4 +277,11 @@ private final class HeroMetadataProvider: MediaProvider, @unchecked Sendable {
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
     func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
+private final class GuidanceHeroMetadataProvider: HeroMetadataProvider, FamilyGuidanceProviding, @unchecked Sendable {
+    func familyGuidance(for item: MediaItem, accountToken: String?) async throws -> FamilyGuidanceAvailability {
+        XCTFail("Hero enrichment must not request the cloud review.")
+        return .unavailable
+    }
 }

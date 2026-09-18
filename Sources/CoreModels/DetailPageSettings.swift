@@ -4,6 +4,7 @@ import Observation
 /// The compact detail header is a preview; complete ratings remain in title information.
 public struct DetailPageSettings: Codable, Equatable, Sendable {
     public var showsHeaderRatings: Bool
+    public var showsHeaderFamilyGuidance: Bool
     public var maxHeaderRatings: Int {
         didSet { maxHeaderRatings = Self.boundedRatingCount(maxHeaderRatings) }
     }
@@ -19,24 +20,27 @@ public struct DetailPageSettings: Codable, Equatable, Sendable {
 
     public init(
         showsHeaderRatings: Bool = true,
+        showsHeaderFamilyGuidance: Bool = true,
         maxHeaderRatings: Int = 2,
         ratingSourceOrder: [RatingSource] = defaultRatingOrder,
         enabledRatingSources: Set<RatingSource> = Set(RatingSource.allCases)
     ) {
         self.showsHeaderRatings = showsHeaderRatings
+        self.showsHeaderFamilyGuidance = showsHeaderFamilyGuidance
         self.maxHeaderRatings = Self.boundedRatingCount(maxHeaderRatings)
         self.ratingSourceOrder = ratingSourceOrder
         self.enabledRatingSources = enabledRatingSources
     }
 
     private enum CodingKeys: String, CodingKey {
-        case showsHeaderRatings, maxHeaderRatings, ratingSourceOrder, enabledRatingSources
+        case showsHeaderRatings, showsHeaderFamilyGuidance, maxHeaderRatings, ratingSourceOrder, enabledRatingSources
     }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             showsHeaderRatings: try values.decodeIfPresent(Bool.self, forKey: .showsHeaderRatings) ?? true,
+            showsHeaderFamilyGuidance: try values.decodeIfPresent(Bool.self, forKey: .showsHeaderFamilyGuidance) ?? true,
             maxHeaderRatings: try values.decodeIfPresent(Int.self, forKey: .maxHeaderRatings) ?? 2,
             ratingSourceOrder: try values.decodeIfPresent([RatingSource].self, forKey: .ratingSourceOrder)
                 ?? Self.defaultRatingOrder,
@@ -66,6 +70,11 @@ public struct DetailPageSettings: Codable, Equatable, Sendable {
             return available.first { $0.source == source }
         }.prefix(maxHeaderRatings))
     }
+
+    public func headerFamilyGuidanceAge(from age: Double?, hidesRatings: Bool) -> Double? {
+        guard showsHeaderRatings, showsHeaderFamilyGuidance, !hidesRatings else { return nil }
+        return age
+    }
 }
 
 public protocol DetailPageSettingsStoring: Sendable {
@@ -88,6 +97,7 @@ public final class DetailPageSettingsStore: DetailPageSettingsStoring, @unchecke
         guard let values = defaults.dictionary(forKey: key) else { return .default }
         return DetailPageSettings(
             showsHeaderRatings: values["showsHeaderRatings"] as? Bool ?? true,
+            showsHeaderFamilyGuidance: values["showsHeaderFamilyGuidance"] as? Bool ?? true,
             maxHeaderRatings: values["maxHeaderRatings"] as? Int ?? 2,
             ratingSourceOrder: (values["ratingSourceOrder"] as? [String])?
                 .compactMap(RatingSource.init(rawValue:)) ?? DetailPageSettings.defaultRatingOrder,
@@ -100,6 +110,7 @@ public final class DetailPageSettingsStore: DetailPageSettingsStoring, @unchecke
     public func save(_ settings: DetailPageSettings) {
         defaults.set([
             "showsHeaderRatings": settings.showsHeaderRatings,
+            "showsHeaderFamilyGuidance": settings.showsHeaderFamilyGuidance,
             "maxHeaderRatings": settings.maxHeaderRatings,
             "ratingSourceOrder": settings.orderedSources.map(\.rawValue),
             "enabledRatingSources": settings.enabledRatingSources.map(\.rawValue).sorted()

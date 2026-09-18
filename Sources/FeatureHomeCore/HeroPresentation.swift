@@ -28,6 +28,7 @@ public struct HeroPresentation: Sendable, Equatable {
     public let ratingBadge: MediaBadge?
     public let technicalBadges: [MediaBadge]
     public let ratings: [ExternalRating]
+    public let familyGuidanceAge: Double?
     public let starringNames: [String]
     public let directorNames: [String]
     public let studios: [String]
@@ -62,6 +63,7 @@ public struct HeroPresentation: Sendable, Equatable {
         ratingBadge = item.ratingBadge
         technicalBadges = item.technicalBadges
         ratings = item.ratings
+        familyGuidanceAge = item.familyGuidance?.recommendedAge
         starringNames = item.cast.prefix(3).map(\.name)
         directorNames = item.people
             .filter { $0.kind?.lowercased() == "director" }

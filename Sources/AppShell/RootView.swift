@@ -548,6 +548,7 @@ public struct RootView: View {
         .background { AppBackground(palette: resolvedPalette) }
         .environment(\.themePalette, resolvedPalette)
         .environment(\.familyGuidanceProvider, appState.familyGuidance)
+        .environment(\.detailHeaderSettings, appState.profileSettings.detailPageModel)
         // `dynamicTypeSize` is read here on purpose: PlozzMetrics samples its
         // typography once at construction, so this dependency is what makes the
         // whole table rebuild when the reader changes their text size. Without it

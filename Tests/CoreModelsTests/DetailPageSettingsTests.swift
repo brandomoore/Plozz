@@ -8,6 +8,55 @@ final class DetailPageSettingsTests: XCTestCase {
     private let tmdb = ExternalRating(source: .tmdb, value: 8.3, scale: .outOfTen)
     private let anilist = ExternalRating(source: .anilist, value: 90, scale: .percent)
 
+    func testDefaultAddsAnAgeRecommendationWithoutConsumingEitherReviewSlot() {
+        let settings = DetailPageSettings.default
+        XCTAssertEqual(settings.headerFamilyGuidanceAge(from: 14, hidesRatings: false), 14)
+        XCTAssertNil(settings.headerFamilyGuidanceAge(from: nil, hidesRatings: false))
+        XCTAssertEqual(settings.headerRatings(
+            from: [imdb, audience, critics], isAnime: false, hidesRatings: false
+        ), [audience, critics])
+    }
+
+    func testAgeVisibilityHonorsItsOwnPreferenceGlobalHidingAndSpoilers() {
+        var settings = DetailPageSettings.default
+        XCTAssertNil(settings.headerFamilyGuidanceAge(from: 14, hidesRatings: true))
+        settings.showsHeaderFamilyGuidance = false
+        XCTAssertNil(settings.headerFamilyGuidanceAge(from: 14, hidesRatings: false))
+        XCTAssertEqual(settings.headerRatings(
+            from: [imdb], isAnime: false, hidesRatings: false
+        ), [imdb])
+        settings.showsHeaderFamilyGuidance = true
+        settings.showsHeaderRatings = false
+        XCTAssertNil(settings.headerFamilyGuidanceAge(from: 14, hidesRatings: false))
+    }
+
+    func testLegacyAgePreferenceDoesNotResetExistingReviewChoices() throws {
+        let data = Data("""
+        {"showsHeaderRatings":true,"maxHeaderRatings":4,"ratingSourceOrder":["imdb"],"enabledRatingSources":["imdb"]}
+        """.utf8)
+        let settings = try JSONDecoder().decode(DetailPageSettings.self, from: data)
+        XCTAssertTrue(settings.showsHeaderFamilyGuidance)
+        XCTAssertEqual(settings.maxHeaderRatings, 4)
+        XCTAssertEqual(settings.ratingSourceOrder, [.imdb])
+        XCTAssertEqual(settings.enabledRatingSources, [.imdb])
+    }
+
+    func testHomeHasIndependentPersistedPreviewPreferences() throws {
+        var home = HeroSettings.default
+        XCTAssertEqual(home.ratingPreferences, .default)
+        home.ratingPreferences.showsHeaderFamilyGuidance = false
+        home.ratingPreferences.maxHeaderRatings = 4
+        let data = try JSONEncoder().encode(home)
+        XCTAssertEqual(try JSONDecoder().decode(HeroSettings.self, from: data), home)
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        legacy.removeValue(forKey: "ratingPreferences")
+        let restored = try JSONDecoder().decode(
+            HeroSettings.self, from: JSONSerialization.data(withJSONObject: legacy)
+        )
+        XCTAssertEqual(restored.ratingPreferences, .default)
+        XCTAssertEqual(restored.showsRatings, home.showsRatings)
+    }
+
     func testDefaultPrefersAudienceAndCriticsRatherThanServerOrder() {
         XCTAssertEqual(DetailPageSettings.default.maxHeaderRatings, 2)
         XCTAssertEqual(DetailPageSettings.default.headerRatings(
@@ -137,6 +186,7 @@ final class DetailPageSettingsTests: XCTestCase {
         let second = DetailPageSettingsStore(defaults: defaults, namespace: "second")
         let selected = DetailPageSettings(
             showsHeaderRatings: false,
+            showsHeaderFamilyGuidance: false,
             maxHeaderRatings: 4,
             ratingSourceOrder: [.imdb, .community] + DetailPageSettings.defaultRatingOrder.filter {
                 $0 != .imdb && $0 != .community

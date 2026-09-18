@@ -43,10 +43,12 @@ public final class ProfileSettingsModel {
     public private(set) var appLanguageModel: AppLanguageSettingsModel
     public private(set) var themeModel: ThemeSettingsModel
     /// Opt-in background theme music for movie and series detail pages.
-    public private(set) var themeMusicModel: ThemeMusicSettingsModel
+    public var themeMusicModel: ThemeMusicSettingsModel { heroModels.themeMusic }
     /// Mutually-exclusive hero background mode (off / trailer / theme music)
     /// plus the trailer mute preference.
-    public private(set) var heroBackgroundModel: HeroBackgroundSettingsModel
+    public var heroBackgroundModel: HeroBackgroundSettingsModel { heroModels.background }
+    public var detailPageModel: DetailPageSettingsModel { heroModels.detailPage }
+    private var heroModels: HeroModels
     public private(set) var diagnosticsModel: DiagnosticsSettingsModel
     /// The full-screen music player's per-profile look + "show extra info"
     /// preference. Scoped per profile (rebuilt on profile switch) like the theme.
@@ -84,7 +86,7 @@ public final class ProfileSettingsModel {
     /// The active profile's Home hero (featured carousel) settings: which sources
     /// feed it, how many items, Random library scope, trailers, and auto-advance.
     /// Scoped per profile (rebuilt on profile switch) like `cardStyleModel`.
-    public private(set) var heroSettingsModel: HeroSettingsModel
+    public var heroSettingsModel: HeroSettingsModel { heroModels.home }
     /// The active profile's Night Shift (warm/dim screen tint) settings + live
     /// schedule. Scoped per profile (rebuilt on profile switch) like the theme;
     /// its overlay is installed at the app root in `RootView`.
@@ -113,6 +115,7 @@ public final class ProfileSettingsModel {
         themeModel: ThemeSettingsModel? = nil,
         themeMusicModel: ThemeMusicSettingsModel? = nil,
         heroBackgroundModel: HeroBackgroundSettingsModel? = nil,
+        detailPageModel: DetailPageSettingsModel? = nil,
         diagnosticsModel: DiagnosticsSettingsModel? = nil,
         musicPlayerModel: MusicPlayerSettingsModel? = nil,
         homeLibraryVisibilityModel: HomeLibraryVisibilityModel? = nil,
@@ -132,6 +135,7 @@ public final class ProfileSettingsModel {
             || subtitlePolicyModel != nil || audioPolicyModel != nil
             || appLanguageModel != nil
             || themeModel != nil || themeMusicModel != nil || heroBackgroundModel != nil
+            || detailPageModel != nil
             || diagnosticsModel != nil
             || musicPlayerModel != nil || homeLibraryVisibilityModel != nil
             || uiDensityModel != nil || cardStyleModel != nil
@@ -155,6 +159,7 @@ public final class ProfileSettingsModel {
             themeModel: themeModel,
             themeMusicModel: themeMusicModel,
             heroBackgroundModel: heroBackgroundModel,
+            detailPageModel: detailPageModel,
             diagnosticsModel: diagnosticsModel,
             musicPlayerModel: musicPlayerModel,
             homeLibraryVisibilityModel: homeLibraryVisibilityModel,
@@ -174,8 +179,7 @@ public final class ProfileSettingsModel {
         self.audioPolicyModel = models.audioPolicyModel
         self.appLanguageModel = models.appLanguageModel
         self.themeModel = models.themeModel
-        self.themeMusicModel = models.themeMusicModel
-        self.heroBackgroundModel = models.heroBackgroundModel
+        self.heroModels = models.heroModels
         self.diagnosticsModel = models.diagnosticsModel
         self.musicPlayerModel = models.musicPlayerModel
         self.homeLibraryVisibilityModel = models.homeLibraryVisibilityModel
@@ -184,7 +188,6 @@ public final class ProfileSettingsModel {
         self.watchStatusIndicatorModel = models.watchStatusIndicatorModel
         self.navigationStyleModel = models.navigationStyleModel
         self.transparencyModel = models.transparencyModel
-        self.heroSettingsModel = models.heroSettingsModel
         self.nightShiftModel = models.nightShiftModel
     }
 
@@ -203,8 +206,7 @@ public final class ProfileSettingsModel {
         audioPolicyModel = models.audioPolicyModel
         appLanguageModel = models.appLanguageModel
         themeModel = models.themeModel
-        themeMusicModel = models.themeMusicModel
-        heroBackgroundModel = models.heroBackgroundModel
+        heroModels = models.heroModels
         diagnosticsModel = models.diagnosticsModel
         musicPlayerModel = models.musicPlayerModel
         homeLibraryVisibilityModel = models.homeLibraryVisibilityModel
@@ -213,7 +215,6 @@ public final class ProfileSettingsModel {
         watchStatusIndicatorModel = models.watchStatusIndicatorModel
         navigationStyleModel = models.navigationStyleModel
         transparencyModel = models.transparencyModel
-        heroSettingsModel = models.heroSettingsModel
         nightShiftModel = models.nightShiftModel
     }
 
@@ -228,8 +229,7 @@ public final class ProfileSettingsModel {
         var subtitlePolicyModel: SubtitlePolicyModel
         var audioPolicyModel: AudioPolicyModel
         var themeModel: ThemeSettingsModel
-        var themeMusicModel: ThemeMusicSettingsModel
-        var heroBackgroundModel: HeroBackgroundSettingsModel
+        var heroModels: HeroModels
         var diagnosticsModel: DiagnosticsSettingsModel
         var musicPlayerModel: MusicPlayerSettingsModel
         var homeLibraryVisibilityModel: HomeLibraryVisibilityModel
@@ -238,8 +238,14 @@ public final class ProfileSettingsModel {
         var watchStatusIndicatorModel: WatchStatusIndicatorSettingsModel
         var navigationStyleModel: NavigationStyleSettingsModel
         var transparencyModel: TransparencyPreferenceModel
-        var heroSettingsModel: HeroSettingsModel
         var nightShiftModel: NightShiftSettingsModel
+    }
+
+    private struct HeroModels {
+        let home: HeroSettingsModel
+        let background: HeroBackgroundSettingsModel
+        let themeMusic: ThemeMusicSettingsModel
+        let detailPage: DetailPageSettingsModel
     }
 
     /// The single source of truth for constructing the per-profile sub-models: each
@@ -257,6 +263,7 @@ public final class ProfileSettingsModel {
         themeModel: ThemeSettingsModel? = nil,
         themeMusicModel: ThemeMusicSettingsModel? = nil,
         heroBackgroundModel: HeroBackgroundSettingsModel? = nil,
+        detailPageModel: DetailPageSettingsModel? = nil,
         diagnosticsModel: DiagnosticsSettingsModel? = nil,
         musicPlayerModel: MusicPlayerSettingsModel? = nil,
         homeLibraryVisibilityModel: HomeLibraryVisibilityModel? = nil,
@@ -277,9 +284,13 @@ public final class ProfileSettingsModel {
             subtitlePolicyModel: subtitlePolicyModel ?? SubtitlePolicyModel(store: SubtitlePolicyStore(namespace: ns)),
             audioPolicyModel: audioPolicyModel ?? AudioPolicyModel(store: AudioPolicyStore(namespace: ns)),
             themeModel: themeModel ?? ThemeSettingsModel(store: ThemeSettingsStore(namespace: ns)),
-            themeMusicModel: themeMusicModel ?? ThemeMusicSettingsModel(store: ThemeMusicSettingsStore(namespace: ns)),
-            heroBackgroundModel: heroBackgroundModel ?? HeroBackgroundSettingsModel(
-                store: HeroBackgroundSettingsStore(namespace: ns)
+            heroModels: HeroModels(
+                home: heroSettingsModel ?? HeroSettingsModel(store: HeroSettingsStore(namespace: ns)),
+                background: heroBackgroundModel ?? HeroBackgroundSettingsModel(
+                    store: HeroBackgroundSettingsStore(namespace: ns)
+                ),
+                themeMusic: themeMusicModel ?? ThemeMusicSettingsModel(store: ThemeMusicSettingsStore(namespace: ns)),
+                detailPage: detailPageModel ?? DetailPageSettingsModel(store: DetailPageSettingsStore(namespace: ns))
             ),
             diagnosticsModel: diagnosticsModel ?? DiagnosticsSettingsModel(store: DiagnosticsSettingsStore(namespace: ns)),
             musicPlayerModel: musicPlayerModel ?? MusicPlayerSettingsModel(store: MusicPlayerSettingsStore(namespace: ns)),
@@ -295,7 +306,6 @@ public final class ProfileSettingsModel {
                 layoutStore: NavigationLibraryLayoutStore(namespace: ns)
             ),
             transparencyModel: transparencyModel ?? TransparencyPreferenceModel(store: TransparencyPreferenceStore(namespace: ns)),
-            heroSettingsModel: heroSettingsModel ?? HeroSettingsModel(store: HeroSettingsStore(namespace: ns)),
             nightShiftModel: nightShiftModel ?? NightShiftSettingsModel(store: NightShiftSettingsStore(namespace: ns))
         )
     }

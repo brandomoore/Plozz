@@ -6,6 +6,31 @@ import XCTest
 
 @MainActor
 final class HeroForegroundRatingsStateTests: XCTestCase {
+    func testAgeOnlyUpdatesPublishAndClearWithoutAReviewScoreChange() async {
+        let state = HeroForegroundRatingsState()
+        let update = expectation(description: "Age metadata publishes")
+        withObservationTracking {
+            _ = state.familyGuidanceAge
+        } onChange: {
+            update.fulfill()
+        }
+        state.update([], familyGuidanceAge: 14)
+        await fulfillment(of: [update], timeout: 0.1)
+        XCTAssertEqual(state.familyGuidanceAge, 14)
+        state.update([])
+        XCTAssertNil(state.familyGuidanceAge, "A different slide or hidden ratings clears the age.")
+        state.update([], familyGuidanceAge: 14)
+        let unchanged = expectation(description: "Unchanged age does not publish")
+        unchanged.isInverted = true
+        withObservationTracking {
+            _ = state.familyGuidanceAge
+        } onChange: {
+            unchanged.fulfill()
+        }
+        for _ in 0..<100 { state.update([], familyGuidanceAge: 14) }
+        await fulfillment(of: [unchanged], timeout: 0.05)
+    }
+
     func testFocusAndDwellReapplicationsDoNotInvalidateRatings() async {
         let state = HeroForegroundRatingsState()
         let ratings = [ExternalRating(source: .imdb, value: 8, scale: .outOfTen)]

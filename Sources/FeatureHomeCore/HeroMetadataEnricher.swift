@@ -35,8 +35,16 @@ public struct HeroMetadataEnricher: Sendable {
         let targets = Dictionary(
             uniqueKeysWithValues: items.indices.compactMap { index -> (Int, MediaItem)? in
                 let item = items[index]
+                let target = targetSelector(item)
+                guard let accountID = target.sourceAccountID,
+                      let provider = providersByAccount[accountID] else {
+                    return nil
+                }
+                let needsFamilyGuidance = item.kind == .movie && item.familyGuidance == nil
+                    && provider is any FamilyGuidanceProviding
                 guard item.kind == .series
                         || item.kind == .episode
+                        || needsFamilyGuidance
                         || item.officialRating?
                             .trimmingCharacters(in: .whitespacesAndNewlines)
                             .isEmpty != false
@@ -45,11 +53,6 @@ public struct HeroMetadataEnricher: Sendable {
                             .trimmingCharacters(in: .whitespacesAndNewlines)
                             .isEmpty != false
                         || item.taglines.isEmpty else {
-                    return nil
-                }
-                let target = targetSelector(item)
-                guard let accountID = target.sourceAccountID,
-                      providersByAccount[accountID] != nil else {
                     return nil
                 }
                 return (index, target)
@@ -144,6 +147,7 @@ public struct HeroMetadataEnricher: Sendable {
                 enriched[index].overview = root.overview
                 enriched[index].taglines = root.taglines
                 enriched[index].ratings = root.ratings
+                enriched[index].familyGuidance = root.familyGuidance
                 enriched[index].people = root.people
                 enriched[index].studios = root.studios
                 enriched[index].logoURL = root.logoURL
@@ -177,6 +181,9 @@ public struct HeroMetadataEnricher: Sendable {
             }
             if enriched[index].ratings.isEmpty {
                 enriched[index].ratings = root.ratings
+            }
+            if enriched[index].familyGuidance == nil {
+                enriched[index].familyGuidance = root.familyGuidance
             }
             if enriched[index].people.isEmpty {
                 enriched[index].people = root.people

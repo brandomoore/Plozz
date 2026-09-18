@@ -10,6 +10,22 @@ final class DetailInformationConsolidationTests: XCTestCase {
     private let imdb = ExternalRating(source: .imdb, value: 7.9, scale: .outOfTen)
     private let tmdb = ExternalRating(source: .tmdb, value: 8.1, scale: .outOfTen)
 
+    func testGuidancePagesKeepQualitySeparateFromContentTopics() {
+        let summary = FamilyGuidanceSummary(recommendedAge: 14, qualityRating: 5)
+        let guidance = FamilyGuidance(
+            summary: summary,
+            topics: [.init(id: "language", label: "Language", rating: 0,
+                           explanation: "No strong language.", isPositive: false)],
+            talkingPoints: ["A family discussion."]
+        )
+        XCTAssertEqual(FamilyGuidancePage.pages(summary: summary, guidance: guidance),
+                       [.overview, .topic("language"), .reviews, .discussion])
+        XCTAssertEqual(FamilyGuidancePage.topic("language").topic(in: guidance)?.rating, 0)
+        let ageOnly = FamilyGuidanceSummary(recommendedAge: 14, qualityRating: nil)
+        XCTAssertEqual(FamilyGuidancePage.pages(summary: ageOnly, guidance: nil), [.overview])
+        XCTAssertNil(FamilyGuidancePage.topic("missing").topic(in: guidance))
+    }
+
     private func item(overview: String? = "The series synopsis.") -> MediaItem {
         var item = MediaItem(id: "show", title: "The show", kind: .series)
         item.overview = overview
