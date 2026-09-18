@@ -6,9 +6,9 @@ import XCTest
 
 @MainActor
 final class DialogSurfaceTests: XCTestCase {
-    func testDarkAndBlackBackdropDimsSeventyTwoPercentWhileLightStaysUnchanged() throws {
+    func testDarkAndBlackBackdropDimsEightyFivePercentWhileLightStaysUnchanged() throws {
         for (palette, opacity) in [
-            (ThemePalette.dark, 0.72), (.pureBlack, 0.72), (.light, 0.4)
+            (ThemePalette.dark, 0.85), (.pureBlack, 0.85), (.light, 0.4)
         ] {
             XCTAssertEqual(palette.dialogBackdropOpacity, opacity)
             let pixels = try render(
@@ -26,18 +26,22 @@ final class DialogSurfaceTests: XCTestCase {
     }
 
     func testAlreadyStrongerBackdropDoesNotBecomeLighter() throws {
-        let pixels = try render(
-            PlozzDialogBackdrop(minimumOpacity: 0.72)
-                .frame(width: 200, height: 160)
-                .background(.white)
-                .environment(\.themePalette, .light)
-        )
-        XCTAssertEqual(Double(pixel(pixels, x: 100, y: 80)[0]), 255 * 0.28, accuracy: 2)
+        for (palette, opacity) in [
+            (ThemePalette.dark, 0.85), (.pureBlack, 0.85), (.light, 0.72)
+        ] {
+            let pixels = try render(
+                PlozzDialogBackdrop(minimumOpacity: 0.72)
+                    .frame(width: 200, height: 160)
+                    .background(.white)
+                    .environment(\.themePalette, palette)
+            )
+            XCTAssertEqual(Double(pixel(pixels, x: 100, y: 80)[0]), 255 * (1 - opacity), accuracy: 2)
+        }
     }
 
     func testBlackDialogHasASubtleSharedBorderWithoutChangingItsLayout() throws {
         let surface = ThemePalette.pureBlack.surface(.overlay)
-        XCTAssertNotNil(surface.border)
+        XCTAssertEqual(surface.border, ThemePalette.darkHairline.opacity(0.20))
         XCTAssertEqual(surface.borderWidth, 1)
         let pixels = try render(
             Color.clear
@@ -50,7 +54,7 @@ final class DialogSurfaceTests: XCTestCase {
         let border = pixel(pixels, x: 100, y: 40)
         let fill = pixel(pixels, x: 100, y: 44)
         XCTAssertGreaterThan(Int(border[0]), Int(fill[0]) + 10)
-        XCTAssertLessThan(border[0], 100, "The outline should remain a subtle hairline.")
+        XCTAssertLessThan(border[0], 45, "The softened outline should remain below its previous brightness.")
     }
 
     private func render(_ content: some View) throws -> [UInt8] {
