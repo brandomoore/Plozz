@@ -595,7 +595,7 @@ dialogs use `PlozzDialogBackdrop` and the shared `.overlay` surface. Dark and Bl
 dim the underlying page by 85%; Light retains 40%. Startup release notes retain
 their 72% minimum in Light and follow the stronger shared dimming in Dark/Black.
 Border, fill, and shadow come from `ThemePalette.overlay`, including the subtle
-Black-appearance hairline (8% opacity), rather than individual dialog implementations.
+Black-appearance hairline (13% opacity), rather than individual dialog implementations.
 Native alerts/sheets retain system-managed dimming; anchored playback menus are
 not blocking dialogs and do not gain a screen-wide dimmer.
 

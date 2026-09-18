@@ -390,7 +390,7 @@ public extension ThemePalette {
         ),
         overlay: SurfaceStyle(
             fill: Color(red: 0.025, green: 0.025, blue: 0.03),
-            border: ThemePalette.darkHairline.opacity(0.08),
+            border: ThemePalette.darkHairline.opacity(0.13),
             borderWidth: 1,
             shadow: SurfaceShadow(color: .black.opacity(0.6), radius: 28, y: 16)
         ),
