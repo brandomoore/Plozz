@@ -435,6 +435,14 @@ Pin decorations to the native overlay container with constraints; do not rewrite
 their frames during native focus layout.
 `TVCardView` hosts live content in its documented `contentView`. Neither control
 overrides `focusSizeIncrease`, adds transforms or manufactures lighting/outlines.
+Home Library cards retain their own artwork clip inside that native content.
+The generic native-surface bypass is appropriate for focus chrome, not an inset
+fill-scaled image: without its inner clip, portrait/wide library art paints over
+the card padding and caption gap, and even 16:9 artwork loses its rounded corners.
+`NativeLibraryCardHostedTests` loads controlled loopback artwork into the real
+lazy Libraries-card layout and checks painted insets/corners in framed and
+borderless modes, standard/compact density, and System/Highlight/Outline focus.
+Native focus is exercised through the actual TVCardView rather than a custom scale.
 The documented `cardBackgroundColor` uses the active theme's raised surface,
 and hosted text retains that same theme rather than being forced into Light.
 TVUIKit still owns the state-dependent alpha, projection and lighting. This keeps

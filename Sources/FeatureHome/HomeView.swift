@@ -1554,7 +1554,7 @@ private struct HomeShareScanRefreshObserver: View {
     }
 }
 
-private struct LibraryCardView: View {
+struct LibraryCardView: View {
     let aggregated: AggregatedLibrary
     let subtitle: String   // l10n:content — library card subtitle from the server
     /// When `true`, the card wears a subtle corner spinner — this library belongs
@@ -1605,7 +1605,8 @@ private struct LibraryCardView: View {
         VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
             artwork
                 .frame(width: metrics.landscapeWidth, height: metrics.landscapeHeight)
-                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
+                // TVCardView clips its outer surface, not this inset fill-scaled image.
+                .clipShape(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
                 .plozzMediaEdge(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -1654,7 +1655,7 @@ private struct LibraryCardView: View {
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
                 .frame(width: width)
                 .overlay { artwork }
-                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: metrics.landscapeCardCornerRadius, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: metrics.landscapeCardCornerRadius, style: .continuous))
                 .plozzMediaEdge(cornerRadius: metrics.landscapeCardCornerRadius)
                 .plozzFocusHalo(
                     cornerRadius: metrics.landscapeCardCornerRadius,
