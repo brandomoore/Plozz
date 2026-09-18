@@ -38,6 +38,22 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
         XCTAssertGreaterThan(accessible.height, standard.height)
     }
 
+    func testGuidanceTileWithInlineDisclosureFitsNarrowTouchColumns() {
+        let summary = FamilyGuidanceSummary(recommendedAge: 8, qualityRating: 4,
+                                            overview: "Strong heroine and positive messages.")
+        let tile = FamilyGuidanceTile(
+            item: MediaItem(id: "fixture", title: "Fixture", kind: .series, familyGuidance: summary),
+            summary: summary
+        )
+        for width in [CGFloat(130), 150, 248] {
+            for textSize in [DynamicTypeSize.large, .accessibility3] {
+                let result = size(of: tile, width: width, textSize: textSize)
+                XCTAssertLessThanOrEqual(result.width, width + 0.5)
+                XCTAssertGreaterThan(result.height, 0)
+            }
+        }
+    }
+
     func testAgeAndReviewsFitOrWrapWithoutClippingAtLargeTextSizes() {
         for width in [CGFloat(180), 280, 393] {
             for textSize in [DynamicTypeSize.large, .xxxLarge, .accessibility3] {

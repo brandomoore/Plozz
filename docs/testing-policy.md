@@ -614,6 +614,8 @@ every poster or copied into the external critic-score list.
 The tile emphasizes age using the app's standard non-rounded typography, with no
 adjacent quality fraction. The supplied Common
 Sense mark retains its original colors, with a dark backing on light surfaces.
+The disclosure chevron sits inline at the trailing edge of the Common Sense row,
+vertically centered with its label, rather than floating in the tile's corner.
 The tvOS dialog pins its age/title/summary above separate topic and reading
 viewports. Its two-column grid places age beside title/branding, then aligns the
 recommended-age caption with the synopsis's first baseline. Wrapped and missing
@@ -659,6 +661,12 @@ their normal exit behavior. The full-width header is also a focus section so Up
 from Overview reaches Done. Menu content stays inside its viewport, and the reader
 extends into the space freed by removing the footer. Black, Dark, and Light
 fixtures cover the sheet edge and readable viewport.
+The native text reader must have a rectangular clipped viewport: tvOS gives
+`UITextView` a 20pt corner radius by default, which cuts glyphs beneath the heading
+when text uses the card's existing padding. `FamilyGuidanceReaderHostedTests`
+checks pixels at both top corners, focused and unfocused across scroll offsets,
+while ensuring below-viewport content remains clipped. Only the outer card keeps
+rounded corners; do not fix this by changing text padding or disabling clipping.
 Header regressions cover age-only data, quality-without-age, two-score defaults,
 per-profile persistence, hydrated hero-cache invalidation, and touch wrapping at
 large Dynamic Type sizes.

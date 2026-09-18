@@ -30,8 +30,15 @@ struct FamilyGuidanceTile: View {
         Button { isPresented = true } label: {
             VStack(alignment: .leading, spacing: 12) {
                 FamilyGuidanceAge(age: summary.recommendedAge, size: ageSize)
-                FamilyGuidanceBrand(compact: true)
-                    .font(sourceFont)
+                HStack(spacing: 8) {
+                    FamilyGuidanceBrand(compact: true)
+                        .font(sourceFont)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.forward")
+                        .font(sourceFont)
+                        .foregroundStyle(palette.secondaryText)
+                        .accessibilityHidden(true)
+                }
                 if let overview = summary.overview {
                     Text(overview)
                         .font(summaryFont)
@@ -43,13 +50,6 @@ struct FamilyGuidanceTile: View {
             .foregroundStyle(palette.primaryText)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(24)
-            .overlay(alignment: .topTrailing) {
-                Image(systemName: "chevron.right")
-                    .font(sourceFont)
-                    .foregroundStyle(palette.secondaryText)
-                    .padding(20)
-                    .accessibilityHidden(true)
-            }
         }
         .plozzCardButton(cornerRadius: 18, focusedScale: PlozzTheme.Metrics.readOnlyFocusedCardScale)
         .accessibilityIdentifier("family-guidance-tile")
@@ -667,6 +667,8 @@ struct TVFamilyGuidanceReader: UIViewRepresentable {
         let view = Reader()
         view.onFocus = { [weak coordinator = context.coordinator] in coordinator?.onFocus($0) }
         view.backgroundColor = .clear
+        // The enclosing card owns rounding; keep the scrolling text viewport rectangular.
+        view.layer.cornerRadius = 0
         view.isSelectable = true
         view.isScrollEnabled = true
         view.isUserInteractionEnabled = context.environment.isEnabled

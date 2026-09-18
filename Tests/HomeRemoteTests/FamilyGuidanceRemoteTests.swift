@@ -263,6 +263,25 @@ final class FamilyGuidanceRemoteTests: XCTestCase {
         XCTAssertFalse((reader.value as? String ?? "").contains("A fictional description of language."))
     }
 
+    func testDiscussionReaderKeepsHeadingAndRemoteReturnBehavior() {
+        let app = launch()
+        defer { app.terminate() }
+        XCUIRemote.shared.press(.select)
+        let discussion = app.buttons["family-guidance-discussion"].firstMatch
+        XCTAssertTrue(discussion.waitForExistence(timeout: 5))
+        for _ in 0..<12 where !isFocused(discussion) { XCUIRemote.shared.press(.down) }
+        XCTAssertTrue(isFocused(discussion))
+        let reader = app.descendants(matching: .any)["family-guidance-reader"].firstMatch
+        XCTAssertTrue((reader.value as? String ?? "").hasPrefix("What helped"))
+        XCUIRemote.shared.press(.right)
+        XCTAssertTrue(isFocused(reader))
+        recordScreenshot(app, name: "family-guidance-discussion-reader")
+        XCUIRemote.shared.press(.left)
+        XCTAssertTrue(isFocused(discussion))
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.descendants(matching: .any)["family-guidance-tile"].firstMatch.waitForExistence(timeout: 5))
+    }
+
     func testLongReaderReturnsToTheSelectedTopic() {
         let app = launch()
         defer { app.terminate() }
