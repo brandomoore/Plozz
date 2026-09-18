@@ -3,8 +3,26 @@ import CoreModels
 @testable import FeatureHome
 @testable import FeatureHomeCore
 
+private final class HomeContentThreadProbe: HomeContentStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var observations: [Bool] = []
+
+    var mainThreadObservations: [Bool] { lock.withLock { observations } }
+    func recordThread() { lock.withLock { observations.append(Thread.isMainThread) } }
+    func load() -> HomeViewModel.Content? {
+        recordThread()
+        return nil
+    }
+    func save(_ content: HomeViewModel.Content) {}
+    func loadHero(for key: HeroConfigurationKey) -> [MediaItem]? { nil }
+    func saveHero(_ items: [MediaItem], for key: HeroConfigurationKey) {}
+    func clearHero() {}
+    func clear() {}
+    func clearRows() {}
+}
+
 /// Locks down `HomeContentStore` — the per-profile snapshot that lets Home paint
-/// the hero + Continue Watching instantly on the next launch. Covers round-trip,
+/// stable rows immediately while volatile rows refresh. Covers round-trip,
 /// bounding, per-profile (namespace) isolation, stale (`maxAge`) + empty misses,
 /// and the in-memory / no-op variants.
 final class HomeContentStoreTests: XCTestCase {
@@ -33,6 +51,49 @@ final class HomeContentStoreTests: XCTestCase {
     func testMissWhenNothingPersisted() {
         let store = HomeContentStore(namespace: nil, directory: tempDir)
         XCTAssertNil(store.load())
+    }
+
+    func testPrewarmerRunsFactoryAndLoadOffMainThread() async {
+        let probe = HomeContentThreadProbe()
+        await HomeContentPrewarmer().prepare {
+            probe.recordThread()
+            return probe
+        }
+        XCTAssertEqual(probe.mainThreadObservations, [false, false])
+    }
+
+    func testReadCannotRepublishContentAfterRowsAreCleared() {
+        let store = HomeContentStore(namespace: "read-clear", directory: tempDir)
+        let old = content(latest: 2)
+        let result = store.load { _ in
+            store.clearRows()
+            return old
+        }
+        XCTAssertNil(result)
+        XCTAssertNil(store.load())
+    }
+
+    func testReadCannotRepublishContentAfterWholeCacheIsCleared() {
+        let store = HomeContentStore(namespace: "read-clear-all", directory: tempDir)
+        let old = content(latest: 2)
+        let result = store.load { _ in
+            store.clear()
+            return old
+        }
+        XCTAssertNil(result)
+        XCTAssertNil(store.load())
+    }
+
+    func testReadCannotMemoizeContentSupersededBySave() {
+        let store = HomeContentStore(namespace: "read-save", directory: tempDir)
+        let old = content(latest: 2)
+        let newest = content(latest: 5)
+        let result = store.load { _ in
+            store.save(newest)
+            return old
+        }
+        XCTAssertNil(result)
+        XCTAssertEqual(store.load()?.latest.count, 5)
     }
 
     func testSaveLoadRoundTrip() {
@@ -302,13 +363,13 @@ final class HomeContentStoreTests: XCTestCase {
         XCTAssertFalse(store.hasPendingLegacyWatchlistSeed)
     }
 
-    func testStaleSnapshotIsDroppedAndDeleted() {
+    func testStaleSnapshotIsMemoizedAsMissWithoutDeletingAReplacement() {
         // Persist with a normal store, then read through one with maxAge == 0 so the
         // (freshly-written) file is considered stale. Same namespace/dir ⇒ same file.
         HomeContentStore(namespace: nil, directory: tempDir).save(content(cw: 2))
         let expiring = HomeContentStore(namespace: nil, directory: tempDir, maxAge: 0)
         XCTAssertNil(expiring.load(), "A snapshot older than maxAge is a miss")
-        // And a subsequent normal read finds nothing (the stale file was removed).
+        // The miss remains memoized; a reader must not delete a concurrent write.
         XCTAssertNil(HomeContentStore(namespace: nil, directory: tempDir).load())
     }
 

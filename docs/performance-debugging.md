@@ -93,6 +93,270 @@ What such a logger should provide:
 - A crash/signal handler so a jetsam/crash leaves a trail.
 - A watchdog + vitals sampler (see below) — the heavy hitter.
 
+### Keep physical UI automation out of the measurement
+
+`xcodebuild -collect-test-diagnostics never` does **not** disable XCTest's
+automatic screen recording. The physical Home rows scheme uses
+`captureScreenshotsAutomatically: false` and
+`preferredScreenCaptureFormat: screenshots`; its driver verifies generated
+`SystemAttachmentLifetime=keepNever` and `PreferredScreenCaptureFormat=screenshots`
+before running. Leave ordinary UI-test evidence settings unchanged.
+
+Attach to the existing app rather than reinstalling or terminating it. Verify
+the same process ID before and after runner setup, which may temporarily
+foreground the system launcher. Restore that existing app after runner teardown.
+Require actual focused media cards before directional input; repeated library
+headings alone do not identify a unique row.
+
+Bracket accessibility snapshots separately from input. Remote-call duration
+includes XCTest overhead: a three-second hold can take roughly eight seconds
+to return. The idle tail must not be presented as sustained paging performance.
+Passing focus assertions proves navigation coverage, not smooth frame pacing.
+
+The opt-in `PlozzPhysicalHomeRowsTests` scheme builds only an unbound remote
+runner. It must not install or restart the app under measurement:
+
+```sh
+export PLOZZ_HOME_DEVICE_ID='<physical Apple TV UDID>'
+bash tools/run-physical-home-rows-first.sh --build-runner
+PLOZZ_HOME_ROWS_FIRST="$PLOZZ_HOME_DEVICE_ID" \
+PLOZZ_HOME_RELEASE_APP_INSTALLED=1 \
+PLOZZ_HOME_START_ROW='Continue Watching' \
+PLOZZ_HOME_REPEATS=3 \
+bash tools/run-physical-home-rows-first.sh --run-horizontal-only
+```
+
+The already-installed Release app must have diagnostics enabled. Confirm the
+current app process and populated Home content, then post the unique
+`warm-ready` notification printed by the runner within 30 seconds. Each repeat
+prints its own notification; do not relaunch or reactivate between repeats.
+`--run-vertical-only` checks two vertical moves in each direction across available
+neighboring rows. `--run-hero-off` combines horizontal and vertical work. The
+runner never changes the hero setting; enable hero-off mode in the app first.
+Omit `PLOZZ_HOME_START_ROW` to measure the current populated row. Section titles
+must match the app's effective language.
+
+Artifacts include the original app log, test result, actual focus/input timeline,
+and `frame-window-summary.json`. Missing contemporaneous display frames fail
+the driver even if old samples exist. An unavailable row, changed app process,
+or disconnected test runner is incomplete coverage, not a passing performance
+result. Installing a different build during a run invalidates the comparison.
+
+### Presented-frame hitch measurements
+
+On tvOS 26 or newer, the physical runner can collect `XCTHitchMetric(application:)`:
+`--measure-right` / `--measure-left` measure a three-second directional hold;
+`--measure-down` / `--measure-up` measure one transition to an already observed,
+unambiguous neighboring row. Each workload returns three samples after XCTest's
+warm-up iteration. Manual measurement boundaries exclude accessibility snapshots
+and the reverse input used to reset the starting position.
+
+The driver exports `native-metrics.json` from the result bundle and requires
+finite native hitch measurements, not just successful focus assertions. Keep the
+reported duration, count, and time-ratio units. A passing XCTest run means the
+measurements were collected; it does not establish acceptable performance.
+Display-link callback gaps are a separate diagnostic, not presented-frame hitches.
+
+`PLOZZ_HOME_METRIC_IDLE_CONTROL=1` with a horizontal metric mode measures three
+seconds of idle time, then performs the directional input after measurement stops.
+This checks that input/reset overhead is not leaking into the measured interval.
+One physical control returned hitch counts `[0, 0, 1]`, versus more than twenty
+per sample during the actual paging workload. Do not compare that idle control
+with a scrolling result as if it were an optimization.
+
+The isolated `PlozzFocusHost` supports `--production-home-fixture`,
+`--hero-disabled-home`, and `--home-performance-fixture` (long rows).
+Optional `--pinned-home`, `--distinct-home-artwork`, `--complex-home-artwork`,
+and `--home-menu-control` add one workload dimension at a time without touching
+the real app's accounts or settings. Select it explicitly with
+`PLOZZ_HOME_APP_BUNDLE_ID=com.thatcube.Plozz.FocusHost`; the default remains Plozz.
+Synthetic assets and a small number of rows are not a substitute for real Home.
+
+**Calibrate a new metric target before trusting zero hitches.** The fixture's
+`--home-hitch-positive-control` injects bounded 120 ms main-thread stalls. Run
+that case with `PLOZZ_HOME_EXPECT_HITCHES=1` so the driver rejects all-zero results.
+On the tested Xcode 27/tvOS 27 setup, hitch collection returned zero despite
+confirmed stalls when the executable was named `PlozzFocusHost` but the bundle
+suffix was `FocusHost`. The target now uses executable `FocusHost`, with the
+hosted-test loader path updated to match. The positive control then detected
+the stalls. Results from the earlier mismatched target are invalid.
+
+`--sweep-down` / `--sweep-up` visit up to four populated rows per repetition,
+paging both ways and checking each vertical transition. Up to three repetitions
+continue from the reached position without relaunching. Use
+`PLOZZ_HOME_SWEEP_STOP_ROW` for an explicit endpoint; identical library headings
+are distinguished by their actual cards. Record partial coverage when a later
+row is unavailable, even if all preceding rows passed.
+
+A native horizontal collection experiment reduced a same-build Continue Watching
+comparison's mean hitch-time ratio from 36.062 to 23.778 ms/s, but still showed
+hitches. A later physical startup exposed reentrant collection-cell recycling
+during a focus update. The experiment and its focus bridge were removed; a
+performance improvement does not excuse a failed lifecycle gate. An additional
+observable-hosting-state experiment also failed to improve the measurements and
+was removed.
+
+### Opt-in Home cache and native artwork timings
+
+For the Home stall investigation, launch the actual **Release** app with both
+`PLZIO=1` and `PLZXMEM=1` (with `devicectl`, pass
+`DEVICECTL_CHILD_PLZIO=1 DEVICECTL_CHILD_PLZXMEM=1`). No debugger, overlay, or
+view-tree change is required. These flags are read once; enabling them requires
+an authorized relaunch. Records join the existing per-launch
+`Library/Caches/plzxmem.log` as `PLZXMEM PLZIO ...`. `PLZPERF_STDOUT=1` can be
+enabled alongside them for the existing Home frame/main-hop measurements.
+
+Labels:
+
+- `identity.model.load`, `identity.model.save`: the store executor's synchronous
+  work at restore and after the warm wave. Save excludes the awaited index export.
+  `items` counts persisted membership entries, not unique titles.
+- `identity.store.load`, `identity.store.save`: entire file-store calls,
+  including lock acquisition. `identity.store.read`, `identity.store.decode`,
+  `identity.store.encode`, `identity.store.write`: individual file/JSON phases.
+- `home.model.load`: constructor's content-store load.
+  `home.store.load`: full load, including memo lookup; a memoized result has no
+  nested `home.store.read` / `home.store.decode` record.
+- `native.poster.prepare`, `native.poster.update`, `native.poster.layout`:
+  synchronous native poster preparation, SwiftUI-to-UIKit updates, and UIKit
+  layout. These hot-path spans emit only at or above 1 ms.
+- `cloud.ledger.load`, `cloud.ledger.encode`, `cloud.ledger.write`: local
+  CloudKit-channel persistence. `cloud.ledger.unchanged` records an avoided
+  write; no record values or identities are logged.
+- `home.model.saveHero`: the persistence executor's synchronous curated-hero save.
+  `home.hero.save`: full store call. Both report input item counts.
+  `home.hero.sanitize`: bounded credential sanitization and stored-value
+  construction, reporting retained items.
+  `home.hero.encode`, `home.hero.mkdir`, `home.hero.write`: JSON encoding,
+  directory creation, and atomic write. Read/encode/write phases report bytes;
+  the hero write also reports retained items.
+
+Each record carries start epoch seconds (`startUnix`), monotonic start
+milliseconds (`startUptimeMs`), elapsed `ms`, and `main=1` if the synchronous
+operation ran on the main thread. `success=0` means the measured closure threw;
+`success=1` means it returned, **not** that a wrapper which swallows errors
+persisted successfully. Consult the nested read/decode/write records.
+Unknown/unreported counts use `-1`. No titles, identifiers, paths, URLs, tokens,
+or error descriptions are emitted.
+
+The timing helper itself never changes execution or return/error behavior.
+Disabled instrumentation skips clocks,
+counts, formatting, and queue creation. Enabled output formats and writes only
+on a utility queue, bounded to 64 pending records; a full queue drops new
+records rather than blocking for the sink. `dropped` reports cumulative drops
+before that record was admitted. Output can lag the measured work, so correlate
+using recorded start/duration, not line order. Parent/child intervals overlap;
+do not add them together. Timings identify work to investigate, not proof that
+I/O caused a particular frame gap or that an accessibility query was harmless.
+
+#### Native bitmap and caption work
+
+Continue Watching retains the original SwiftUI reflection/crop rendering.
+`ExtendedArtworkBitmap` reuses its renderer and caches completed bitmaps by
+source-image identity, target size, and scale. The evictable cache has targets
+of 32 entries and 24 MB; weak source references avoid pinning decoded artwork,
+and an identity check rejects recycled object identifiers. Recreated lazy cards
+can reuse completed pixels instead of rendering the reflection again.
+
+Focus-only caption movement changes transforms and colors, not intrinsic row
+geometry. Native focus presentation and artwork clipping are separate:
+`TVCardView` still needs clips around artwork nested above captions, while
+`TVPosterView` owns its image clipping. The hosted framed/landscape return
+regression checks the actual painted artwork bounds.
+
+These changes preserve layout and rendering behavior. Their combined real-Home
+performance still requires repeated device measurements; successful builds or
+functional focus checks are not a claim that all navigation hitches are gone.
+
+#### Library-channel identifier validation during Home paging
+
+A physical Time Profiler capture of six seconds of requested Continue Watching
+holds attributed 2,393 ms of background CPU to `CharacterSet.contains` within
+library-channel snapshot validation. A byte-wise ASCII fast path now retains the
+same 512-byte limit, account-only pipe allowance, and original Unicode
+`CharacterSet` fallback. Validation is not skipped, and persisted formats and
+accepted identifiers do not change.
+
+The follow-up capture attributed 10 ms to `CharacterSet.contains`, with total
+item-validation CPU falling from 3,434 to 558 ms. These are sampled CPU totals,
+not wall-clock startup timings. Main-thread rendering remained expensive and
+paging still hitched; reducing background work alone did not resolve the UI
+bottleneck.
+
+#### Measured persistence follow-up and completion barriers
+
+The Release capture identified main-thread identity load (180.2 ms, including
+164.5 ms JSON decode), Home content load (59.3 ms), and hero save (113.8 ms,
+including 110.1 ms atomic write). These exceed a frame budget; they do not
+explain the entire multi-second navigation gap.
+
+Identity load/save now run on `IdentityIndexPersistence`, with lazy file-store
+construction there too. Replacement warm waves share a pending restore; reset
+cancels/discards that task. Applying a restore, publishing, verification flags,
+and saving recheck cancellation, generation, and the captured profile namespace.
+An ordered per-namespace writer rejects stale save generations. No file-store
+lock is acquired on the main actor.
+
+Hero saves and clears now use `HomeSnapshotPersistence`, sharing its serial
+executor but tracking independent row/hero generations by persistence scope.
+Whole-Home clears advance both streams; `HomeContentStoring.clearRows()` lets
+an older row clear retain a newer hero. A queued clear invalidates the current
+model's cached hero immediately. Accepted durable requests survive model
+teardown without retaining it. Hero memo publication is revision-fenced against
+concurrent writes; expired hero reads become misses without deleting a file
+that a newer atomic write may have replaced. The tvOS root now prepares the Home store on `HomeContentPrewarmer` before
+bootstrap exposes Home. Store construction, schema maintenance, and the first
+JSON decode run on that actor; the existing synchronous model initializer then
+reads the prepared memo and preserves its cached first paint. The root rechecks
+cancellation and the active profile namespace before bootstrap. iOS retains its
+existing startup path.
+
+Row memo publication also checks a per-file revision. A decode superseded by a
+save or clear cannot return or memoize its old content. Expired reads are cache
+misses and do not unlink a file that a writer may have just replaced.
+
+For an in-process test, await `HomeViewModel.waitForHeroPersistence()` after
+curation/save/clear, or `IdentityIndexModel.waitForIdentityWarm()` after starting
+a warm wave. The latter includes provider scans and can take much longer than
+the I/O itself. Both follow replacement requests made while waiting. They wait
+for attempts, not guaranteed durable success: the stores retain their existing
+best-effort error semantics. Verify the loaded file/content or successful
+`home.hero.write` / `identity.store.write` record before claiming persistence.
+With `PLZIO=1 PLZXMEM=1`, moved work should report `main=0`. The synchronous
+`home.model.load` memo lookup still reports `main=1`, but tvOS startup should no
+longer decode the snapshot there. Output is asynchronous, so
+completion barriers do not also flush the diagnostic output queue.
+
+#### Background sync and catalog work during paging
+
+A physical Time Profiler capture showed substantial JSON encoding in
+`CloudConfigSyncService.persist` while Home was idle. Each channel now checkpoints
+only successful writes; unchanged durable ledger fields skip encoding and disk
+I/O. Real changes, clock changes, acknowledgements, tombstones, and primary-channel
+engine-state changes still persist synchronously on the service actor. Failed
+writes do not advance the checkpoint and remain eligible for retry. File formats,
+merge rules, and authorization gates are unchanged.
+
+The actor initializer previously decoded the persisted channels on its caller,
+including a measured roughly one-second main-thread decode. Restoration now runs
+once on the actor before engine creation or operations that need the ledger.
+Physical follow-up confirmed all channel loads off-main. This removes startup
+blocking; it does not establish flawless navigation.
+
+An actual six-second paging capture also attributed substantial background CPU
+to artwork association queries. The previous `substr(rel_path, ...)` predicate
+materialized few rows but still **scanned** unrelated assets. A binary path range
+and an index on `metadata_root` let both branches use indexes. The regression
+fixture verifies identical literal/case/Unicode matching, zero full-scan steps
+with 10,000 unrelated assets, and over 100-fold fewer SQLite VM steps. This is
+query-work reduction, not a claimed 100-fold improvement in frame rate.
+
+Native poster captions must not invalidate intrinsic size when focus changes
+only their transform and color. Their geometry remains constant; font, subtitle
+visibility, and configured focus clearance still invalidate layout when needed.
+Hosted coverage checks zero intrinsic invalidations across repeated focus flips,
+while retaining the existing focus-reversal and sizing checks.
+
 ### The watchdog + vitals are the single most useful tool
 
 A classic main-thread "is it hung?" timer is useless here because the thing you

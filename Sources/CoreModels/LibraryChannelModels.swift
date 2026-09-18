@@ -43,9 +43,30 @@ public enum LibraryChannelOrdering: String, Codable, CaseIterable, Sendable {
     }
 }
 
+private enum LibraryChannelIdentifierValidation {
+    private static let nativeCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+    private static let accountCharacters = nativeCharacters.union(CharacterSet(charactersIn: "|"))
+
+    static func isValid(_ value: String, allowingPipe: Bool = false) -> Bool {
+        guard !value.isEmpty, value.utf8.count <= 512 else { return false }
+        var needsUnicodeValidation = false
+        // Most server identifiers are ASCII; avoid Foundation lookups per byte.
+        for byte in value.utf8 {
+            switch byte {
+            case 48...57, 65...90, 97...122, 45, 46, 95: continue
+            case 124 where allowingPipe: continue
+            case 128...255: needsUnicodeValidation = true
+            default: return false
+            }
+        }
+        guard needsUnicodeValidation else { return true }
+        let allowed = allowingPipe ? accountCharacters : nativeCharacters
+        return value.unicodeScalars.allSatisfy(allowed.contains)
+    }
+}
+
 /// Only provider-native identifiers; never URLs, access tokens or resume state.
 public struct LibraryChannelLibrary: Codable, Hashable, Identifiable, Sendable {
-    private static let accountIdentifierCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_.|"))
     public let accountID: String
     public let libraryID: String
     public var id: String { "\(accountID.utf8.count):\(accountID)\(libraryID)" }
@@ -56,7 +77,7 @@ public struct LibraryChannelLibrary: Codable, Hashable, Identifiable, Sendable {
     }
 
     static func isSafeAccountIdentifier(_ value: String) -> Bool {
-        !value.isEmpty && value.utf8.count <= 512 && value.unicodeScalars.allSatisfy(accountIdentifierCharacters.contains)
+        LibraryChannelIdentifierValidation.isValid(value, allowingPipe: true)
     }
 }
 
@@ -137,7 +158,6 @@ public struct LibraryChannelRecipe: Codable, Equatable, Sendable {
 }
 
 public struct LibraryChannelItem: Codable, Hashable, Identifiable, Sendable {
-    private static let nativeIdentifierCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
     public let library: LibraryChannelLibrary
     public let serverID: String
     public let userID: String
@@ -224,7 +244,7 @@ public struct LibraryChannelItem: Codable, Hashable, Identifiable, Sendable {
     }
 
     static func isNativeIdentifier(_ value: String) -> Bool {
-        !value.isEmpty && value.utf8.count <= 512 && value.unicodeScalars.allSatisfy(nativeIdentifierCharacters.contains)
+        LibraryChannelIdentifierValidation.isValid(value)
     }
 }
 

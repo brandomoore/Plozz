@@ -539,6 +539,7 @@ private final class UniversalWatchlistHomeStore:
     func loadHero(for key: HeroConfigurationKey) -> [MediaItem]? { nil }
     func saveHero(_ items: [MediaItem], for key: HeroConfigurationKey) {}
     func clearHero() {}
+    func clearRows() { clear() }
 }
 
 private final class ThreadRecordingHomeStore:
@@ -573,4 +574,5 @@ private final class ThreadRecordingHomeStore:
     func loadHero(for key: HeroConfigurationKey) -> [MediaItem]? { nil }
     func saveHero(_ items: [MediaItem], for key: HeroConfigurationKey) {}
     func clearHero() {}
+    func clearRows() { clear() }
 }

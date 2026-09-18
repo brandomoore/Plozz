@@ -299,6 +299,7 @@ final class CatalogConnection {
         if !hasColumn(table: "assets", column: "metadata_root") {
             apply("ALTER TABLE assets ADD COLUMN metadata_root TEXT;")
         }
+        apply("CREATE INDEX IF NOT EXISTS idx_assets_metadata_root ON assets(metadata_root);")
         if !hasColumn(table: "assets", column: "explicit_ids_json") {
             apply("ALTER TABLE assets ADD COLUMN explicit_ids_json TEXT;")
         }

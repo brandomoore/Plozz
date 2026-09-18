@@ -32,24 +32,57 @@ public final class HomePerfSampler {
 
     public let deviceModel: String = HomePerfSampler.machineIdentifier()
 
-    private var link: CADisplayLink?
-    private var proxy: DisplayLinkProxy?
+    @ObservationIgnored private var link: CADisplayLink?
+    @ObservationIgnored private var proxy: DisplayLinkProxy?
+    @ObservationIgnored private var lifecycleObservers: [NSObjectProtocol] = []
 
-    private var lastTimestamp: CFTimeInterval = 0
-    private var fpsEMA: Double = 0
-    private var windowHitches: Int = 0
-    private var windowWorstMs: Double = 0
-    private var windowStart: CFTimeInterval = 0
+    @ObservationIgnored private var lastTimestamp: CFTimeInterval = 0
+    @ObservationIgnored private var fpsEMA: Double = 0
+    @ObservationIgnored private var windowHitches: Int = 0
+    @ObservationIgnored private var windowWorstMs: Double = 0
+    @ObservationIgnored private var windowStart: CFTimeInterval = 0
     // Separate ~1s window for the stdout stream so remote `--console` capture stays
     // readable (one line/sec) with accurate per-second hitch counts.
-    private var emitHitches: Int = 0
-    private var emitWorstMs: Double = 0
-    private var emitStart: CFTimeInterval = 0
+    @ObservationIgnored private var emitHitches: Int = 0
+    @ObservationIgnored private var emitWorstMs: Double = 0
+    @ObservationIgnored private var emitStart: CFTimeInterval = 0
+    @ObservationIgnored private var emitWorstStart: CFTimeInterval = 0
+    @ObservationIgnored private var emitWorstEnd: CFTimeInterval = 0
 
     public nonisolated init() {}
 
     public func start() {
         guard link == nil else { return }
+        resetTiming()
+        let proxy = DisplayLinkProxy { [weak self] link in
+            self?.tick(link)
+        }
+        let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.step(_:)))
+        link.add(to: .main, forMode: .common)
+        link.isPaused = UIApplication.shared.applicationState != .active
+        self.proxy = proxy
+        self.link = link
+        lifecycleObservers = [
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.link?.isPaused = true
+                    self?.resetTiming()
+                }
+            },
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.resetTiming()
+                    self?.link?.isPaused = false
+                }
+            },
+        ]
+    }
+
+    private func resetTiming() {
         lastTimestamp = 0
         fpsEMA = 0
         windowHitches = 0
@@ -58,19 +91,16 @@ public final class HomePerfSampler {
         emitHitches = 0
         emitWorstMs = 0
         emitStart = 0
-        let proxy = DisplayLinkProxy { [weak self] link in
-            self?.tick(link)
-        }
-        let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.step(_:)))
-        link.add(to: .main, forMode: .common)
-        self.proxy = proxy
-        self.link = link
+        emitWorstStart = 0
+        emitWorstEnd = 0
     }
 
     public func stop() {
         link?.invalidate()
         link = nil
         proxy = nil
+        for observer in lifecycleObservers { NotificationCenter.default.removeObserver(observer) }
+        lifecycleObservers = []
     }
 
     private func tick(_ link: CADisplayLink) {
@@ -91,7 +121,11 @@ public final class HomePerfSampler {
                 }
                 let frameMs = delta * 1_000
                 windowWorstMs = max(windowWorstMs, frameMs)
-                emitWorstMs = max(emitWorstMs, frameMs)
+                if frameMs > emitWorstMs {
+                    emitWorstMs = frameMs
+                    emitWorstStart = lastTimestamp
+                    emitWorstEnd = now
+                }
             }
         }
         lastTimestamp = now
@@ -135,7 +169,7 @@ public final class HomePerfSampler {
         let art = HomePerfDiagnostics.lastArtworkMs.map { String(format: "%.0f", $0) } ?? "-"
         HomePerfDiagnostics.emitLine(
             String(
-                format: "fps=%.0f hitch/s=%.1f total=%d worst=%.0fms thermal=%@ mem=%.0fMB curate=%@ms art=%@ms dev=%@",
+                format: "fps=%.0f hitch/s=%.1f total=%d worst=%.0fms thermal=%@ mem=%.0fMB curate=%@ms art=%@ms dev=%@ gapStartUptimeMs=%.3f gapEndUptimeMs=%.3f",
                 fpsEMA,
                 perSecond,
                 hitchesTotal,
@@ -144,7 +178,9 @@ public final class HomePerfSampler {
                 Self.memoryFootprintMB() ?? 0,
                 curate,
                 art,
-                deviceModel
+                deviceModel,
+                emitWorstStart * 1_000,
+                emitWorstEnd * 1_000
             )
         )
     }

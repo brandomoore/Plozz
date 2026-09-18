@@ -1,5 +1,9 @@
 #if canImport(SwiftUI)
 import SwiftUI
+#if canImport(UIKit)
+import CoreNetworking
+import UIKit
+#endif
 
 /// How a wide picture is laid into a slot that is **taller** than the picture.
 ///
@@ -177,6 +181,105 @@ extension ExtendedArtworkFill where Picture == ArtworkFillImage {
         )
     }
 }
+
+#if canImport(UIKit)
+@MainActor
+enum ExtendedArtworkBitmap {
+    private final class CacheKey: NSObject {
+        let source: ObjectIdentifier
+        let size: CGSize
+        let scale: CGFloat
+
+        init(image: UIImage, size: CGSize, scale: CGFloat) {
+            source = ObjectIdentifier(image)
+            self.size = size
+            self.scale = scale
+        }
+
+        override var hash: Int {
+            var hasher = Hasher()
+            hasher.combine(source)
+            hasher.combine(size.width)
+            hasher.combine(size.height)
+            hasher.combine(scale)
+            return hasher.finalize()
+        }
+
+        override func isEqual(_ object: Any?) -> Bool {
+            guard let other = object as? CacheKey else { return false }
+            return source == other.source && size == other.size && scale == other.scale
+        }
+    }
+
+    private final class CacheEntry {
+        weak var source: UIImage?
+        let bitmap: UIImage
+
+        init(source: UIImage, bitmap: UIImage) {
+            self.source = source
+            self.bitmap = bitmap
+        }
+    }
+
+    private static let cache: NSCache<CacheKey, CacheEntry> = {
+        let cache = NSCache<CacheKey, CacheEntry>()
+        cache.countLimit = 32
+        cache.totalCostLimit = 24 * 1024 * 1024
+        return cache
+    }()
+
+    private struct Content: View {
+        let image: UIImage
+        let size: CGSize
+
+        var body: some View {
+            ExtendedArtworkFill(image: Image(uiImage: image))
+                .frame(width: size.width, height: size.height)
+                .clipped()
+        }
+    }
+
+    // Reuse one view graph; callers retain their immutable bitmap, not the renderer.
+    private static var renderer: ImageRenderer<Content>?
+
+    static func render(image: UIImage, size: CGSize, scale: CGFloat) -> UIImage? {
+        guard size.width.isFinite, size.height.isFinite, scale.isFinite,
+              size.width > 0, size.height > 0, scale > 0,
+              image.size.width > 0, image.size.height > 0 else {
+            PlozzLog.app.error("Unable to prepare extended artwork with invalid rendering dimensions")
+            return nil
+        }
+        let key = CacheKey(image: image, size: size, scale: scale)
+        // Lazy rows recreate coordinators. Share the finished pixels without
+        // retaining source images or accepting a recycled object identifier.
+        if let cached = cache.object(forKey: key), cached.source === image {
+            return cached.bitmap
+        }
+        let content = Content(image: image, size: size)
+        let active: ImageRenderer<Content>
+        if let renderer {
+            renderer.content = content
+            active = renderer
+        } else {
+            active = ImageRenderer(content: content)
+            renderer = active
+        }
+        active.scale = scale
+        active.isOpaque = true
+        guard let result = active.uiImage else {
+            PlozzLog.app.error("Unable to render extended artwork")
+            return nil
+        }
+        if let pixels = result.cgImage {
+            let (cost, overflow) = pixels.bytesPerRow.multipliedReportingOverflow(by: pixels.height)
+            if !overflow, cost <= cache.totalCostLimit {
+                cache.setObject(CacheEntry(source: image, bitmap: result), forKey: key, cost: cost)
+            }
+        }
+        return result
+    }
+}
+#endif
 
 /// The one description of a Continue Watching card's shape, so the card, the
 /// logo laid over it, the scrim under its chrome and the Settings preview can't

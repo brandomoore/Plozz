@@ -1,5 +1,5 @@
 import XCTest
-import AppRuntime
+@testable import AppRuntime
 import CoreModels
 @testable import AppShell
 
@@ -72,7 +72,7 @@ final class IdentityIndexModelTests: XCTestCase {
     // snapshot — is exercised against observable outcomes (`identitySnapshot` /
     // `identitySnapshotStore`), not private state. Persistence uses the model's real
     // `FileIdentityIndexStore` under a unique per-test namespace (cleaned up in
-    // tearDown) since the store isn't an injectable seam.
+    // tearDown). The gated-store cases below additionally exercise pending I/O.
 
     /// Namespaces whose persisted index file this test wrote, removed after each test
     /// so a real cache file never leaks between runs.
@@ -207,6 +207,7 @@ final class IdentityIndexModelTests: XCTestCase {
         // Release the superseded wave; it must not clobber the newer snapshot.
         await gate.release()
         await settle()
+        await model.waitForIdentityWarm()
         XCTAssertEqual(
             model.identitySnapshot.indexedAccountIDs, ["b"],
             "a stale/superseded wave must not overwrite the newer wave's snapshot"
@@ -257,6 +258,7 @@ final class IdentityIndexModelTests: XCTestCase {
         modelA.warmIdentityIndex()
         let warmedBoth = await waitUntil { modelA.identitySnapshot.indexedAccountIDs == ["a", "b"] }
         XCTAssertTrue(warmedBoth, "model A should warm both accounts")
+        await modelA.waitForIdentityWarm()
         let fileURL = Self.cacheFile(namespace)
         let persisted = await waitUntil { FileManager.default.fileExists(atPath: fileURL.path) }
         XCTAssertTrue(persisted, "the warm wave should persist membership to disk")
@@ -269,6 +271,7 @@ final class IdentityIndexModelTests: XCTestCase {
         modelB.warmIdentityIndex()
         let restored = await waitUntil { modelB.identitySnapshot.indexedAccountIDs == ["a"] }
         XCTAssertTrue(restored, "first warm should restore the persisted membership for the still-active account")
+        await modelB.waitForIdentityWarm()
         XCTAssertFalse(
             modelB.identitySnapshot.indexedAccountIDs.contains("b"),
             "restore must prune the no-longer-active account (never resurrected)"
@@ -290,6 +293,7 @@ final class IdentityIndexModelTests: XCTestCase {
         model.warmIdentityIndex()
         let grewToBoth = await waitUntil { model.identitySnapshot.indexedAccountIDs == ["a", "b"] }
         XCTAssertTrue(grewToBoth, "the index should grow to include both concurrently-warmed accounts")
+        await model.waitForIdentityWarm()
     }
 
     /// Repeated `warmIdentityIndex` calls cancel and replace the prior in-flight task
@@ -310,11 +314,216 @@ final class IdentityIndexModelTests: XCTestCase {
 
         let converged = await waitUntil { model.identitySnapshot.indexedAccountIDs == ["a"] }
         XCTAssertTrue(converged, "rapid re-warms should converge on the active account without crashing")
+        await model.waitForIdentityWarm()
         XCTAssertGreaterThanOrEqual(publishes, 1, "a successful publish should re-drain the watch outbox")
+    }
+
+    private func persisted(_ accounts: [String]) -> PersistedIdentityIndex {
+        PersistedIdentityIndex(
+            entriesByAccount: Dictionary(uniqueKeysWithValues: accounts.map { account in
+                (account, [PersistedIdentityIndex.Entry(
+                    identity: .external(source: "tmdb", value: account),
+                    source: IndexedSource(accountID: account, itemID: account, kind: .movie)
+                )])
+            }),
+            builtAtByAccount: [:]
+        )
+    }
+
+    func testPersistenceRunsOffMainAndRejectsOutOfOrderSaves() async throws {
+        let store = GatedIdentityStore()
+        let persistence = IdentityIndexPersistence(makeStore: { _ in store })
+        _ = try await persistence.load(namespace: nil)
+        try await persistence.save(persisted(["new"]), namespace: nil, generation: 2)
+        try await persistence.save(persisted(["old"]), namespace: nil, generation: 1)
+        XCTAssertEqual(Set(store.snapshot.entriesByAccount.keys), ["new"])
+        XCTAssertEqual(store.saveCount, 1)
+        XCTAssertFalse(store.usedMainThread)
+    }
+
+    func testPersistenceKeepsNamespacesIndependentAndPropagatesWriteErrors() async throws {
+        let defaultStore = GatedIdentityStore()
+        let profileStore = GatedIdentityStore()
+        let persistence = IdentityIndexPersistence(makeStore: {
+            $0 == nil ? defaultStore : profileStore
+        })
+        try await persistence.save(persisted(["default"]), namespace: nil, generation: 10)
+        try await persistence.save(persisted(["profile"]), namespace: "", generation: 1)
+        XCTAssertEqual(Set(defaultStore.snapshot.entriesByAccount.keys), ["default"])
+        XCTAssertEqual(Set(profileStore.snapshot.entriesByAccount.keys), ["profile"])
+
+        let failing = IdentityIndexPersistence(makeStore: { _ in
+            GatedIdentityStore(failsSave: true)
+        })
+        do {
+            try await failing.save(persisted(["a"]), namespace: nil, generation: 1)
+            XCTFail("The executor must not turn a failed write into success.")
+        } catch {
+            XCTAssertTrue(error is GatedIdentityStore.WriteFailure)
+        }
+    }
+
+    func testCancelledQueuedIdentitySaveNeverReachesStore() async throws {
+        let store = GatedIdentityStore(blockLoad: true)
+        defer { store.releaseLoad() }
+        let persistence = IdentityIndexPersistence(makeStore: { _ in store })
+        let load = Task { try await persistence.load(namespace: nil) }
+        let entered = await waitUntil { store.loadCount == 1 }
+        XCTAssertTrue(entered)
+        let snapshot = persisted(["cancelled"])
+        let save = Task {
+            try await persistence.save(snapshot, namespace: nil, generation: 1)
+        }
+        save.cancel()
+        store.releaseLoad()
+        _ = try await load.value
+        do {
+            try await save.value
+            XCTFail("A cancelled pending write must not run.")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(store.saveCount, 0)
+        XCTAssertFalse(store.gateTimedOut)
+    }
+
+    func testReplacementWarmSharesPendingRestoreAndPrunesToNewAccounts() async {
+        let store = GatedIdentityStore(snapshot: persisted(["a", "b"]), blockLoad: true)
+        defer { store.releaseLoad() }
+        var active = [resolved("a", movies: [])]
+        let model = IdentityIndexModel(
+            activeAccounts: { active }, namespace: { "profile" }, onPublish: {},
+            persistenceStore: store
+        )
+        model.warmIdentityIndex()
+        let entered = await waitUntil { store.loadCount == 1 }
+        XCTAssertTrue(entered)
+        active = [resolved("b", kind: .plex, movies: [])]
+        model.warmIdentityIndex()
+        store.releaseLoad()
+        await model.waitForIdentityWarm()
+        XCTAssertEqual(model.identitySnapshot.indexedAccountIDs, ["b"])
+        XCTAssertEqual(store.loadCount, 1, "The cancelled wave must not consume the only restore.")
+        XCTAssertFalse(store.usedMainThread)
+        XCTAssertFalse(store.gateTimedOut)
+    }
+
+    func testResetDuringDiskLoadCannotPublishOldProfile() async {
+        let store = GatedIdentityStore(snapshot: persisted(["a", "b"]), blockLoad: true)
+        defer { store.releaseLoad() }
+        var active = [resolved("a", movies: [])]
+        var namespace = "a"
+        weak var observedModel: IdentityIndexModel?
+        var published: [Set<String>] = []
+        let model = IdentityIndexModel(
+            activeAccounts: { active }, namespace: { namespace },
+            onPublish: {
+                if let model = observedModel {
+                    published.append(model.identitySnapshot.indexedAccountIDs)
+                }
+            },
+            persistenceStore: store
+        )
+        observedModel = model
+        model.warmIdentityIndex()
+        let entered = await waitUntil { store.loadCount == 1 }
+        XCTAssertTrue(entered)
+        model.reset()
+        namespace = "b"
+        active = [resolved("b", kind: .plex, movies: [])]
+        model.warmIdentityIndex()
+        store.releaseLoad()
+        await model.waitForIdentityWarm()
+        XCTAssertEqual(model.identitySnapshot.indexedAccountIDs, ["b"])
+        XCTAssertFalse(published.contains(where: { $0.contains("a") }))
+        XCTAssertEqual(store.loadCount, 2, "A profile reset needs its own restore.")
+        XCTAssertFalse(store.gateTimedOut)
+    }
+
+    func testNewWarmCanPublishWhileOldWriteIsBlockedAndWinsOnDisk() async {
+        let store = GatedIdentityStore(blockSave: true)
+        defer { store.releaseSave() }
+        var active = [resolved("a", movies: [movie("a1", account: "a", tmdb: "100")])]
+        let model = IdentityIndexModel(
+            activeAccounts: { active }, namespace: { "profile" }, onPublish: {},
+            persistenceStore: store
+        )
+        model.warmIdentityIndex()
+        let entered = await waitUntil { store.saveCount == 1 }
+        XCTAssertTrue(entered)
+        active = [resolved("b", kind: .plex, movies: [movie("b1", account: "b", tmdb: "200")])]
+        model.warmIdentityIndex()
+        let published = await waitUntil { model.identitySnapshot.indexedAccountIDs == ["b"] }
+        XCTAssertTrue(published, "A background store lock must not stop main-actor publication.")
+        store.releaseSave()
+        await model.waitForIdentityWarm()
+        XCTAssertEqual(Set(store.snapshot.entriesByAccount.keys), ["b"])
+        XCTAssertFalse(store.usedMainThread)
+        XCTAssertFalse(store.gateTimedOut)
     }
 }
 
 // MARK: - Test doubles
+
+private final class GatedIdentityStore: IdentityIndexStoring, @unchecked Sendable {
+    enum WriteFailure: Error { case failed }
+    private let lock = NSLock()
+    private let loadGate = DispatchSemaphore(value: 0)
+    private let saveGate = DispatchSemaphore(value: 0)
+    private let blockLoad: Bool
+    private let blockSave: Bool
+    private let failsSave: Bool
+    private var stored: PersistedIdentityIndex
+    private var loads = 0
+    private var saves = 0
+    private var mainThread = false
+    private var timedOut = false
+
+    init(
+        snapshot: PersistedIdentityIndex = .empty,
+        blockLoad: Bool = false,
+        blockSave: Bool = false,
+        failsSave: Bool = false
+    ) {
+        self.stored = snapshot
+        self.blockLoad = blockLoad
+        self.blockSave = blockSave
+        self.failsSave = failsSave
+    }
+
+    var snapshot: PersistedIdentityIndex { lock.withLock { stored } }
+    var loadCount: Int { lock.withLock { loads } }
+    var saveCount: Int { lock.withLock { saves } }
+    var usedMainThread: Bool { lock.withLock { mainThread } }
+    var gateTimedOut: Bool { lock.withLock { timedOut } }
+    func releaseLoad() { loadGate.signal() }
+    func releaseSave() { saveGate.signal() }
+
+    func load() -> PersistedIdentityIndex {
+        let first = lock.withLock {
+            loads += 1
+            mainThread = mainThread || Thread.isMainThread
+            return loads == 1
+        }
+        if first && blockLoad, loadGate.wait(timeout: .now() + 8) == .timedOut {
+            lock.withLock { timedOut = true }
+        }
+        return snapshot
+    }
+
+    func save(_ snapshot: PersistedIdentityIndex) throws {
+        let first = lock.withLock {
+            saves += 1
+            mainThread = mainThread || Thread.isMainThread
+            return saves == 1
+        }
+        if first && blockSave, saveGate.wait(timeout: .now() + 8) == .timedOut {
+            lock.withLock { timedOut = true }
+        }
+        if failsSave { throw WriteFailure.failed }
+        lock.withLock { stored = snapshot }
+    }
+}
 
 /// A one-shot suspension gate an actor-isolated warm can await, so a test can hold a
 /// scan mid-flight, mutate the model (supersede / reset), then release it and assert

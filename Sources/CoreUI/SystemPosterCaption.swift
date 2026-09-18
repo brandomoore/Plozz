@@ -11,12 +11,14 @@ struct SystemPosterCaption: UIViewRepresentable {
     func makeUIView(context: Context) -> CaptionView { CaptionView() }
 
     func updateUIView(_ view: CaptionView, context: Context) {
+        let previousHeight = view.intrinsicContentSize.height
         let metrics = context.environment.plozzMetrics
         let palette = context.environment.themePalette
         let color = UIColor(isFocused ? palette.primaryText : palette.secondaryText)
         let scrolls = isFocused && !context.environment.accessibilityReduceMotion
-        view.semanticContentAttribute = context.environment.layoutDirection == .rightToLeft
+        let direction: UISemanticContentAttribute = context.environment.layoutDirection == .rightToLeft
             ? .forceRightToLeft : .forceLeftToRight
+        if view.semanticContentAttribute != direction { view.semanticContentAttribute = direction }
         view.title.configure(
             text: title.resolve(locale: context.environment.locale),
             font: .systemFont(ofSize: metrics.cardTitleFontSize, weight: .semibold),
@@ -27,11 +29,14 @@ struct SystemPosterCaption: UIViewRepresentable {
             font: .systemFont(ofSize: metrics.cardSubtitleFontSize),
             color: color, scrolls: scrolls
         )
-        view.subtitle.isHidden = subtitle == nil && !reservesSubtitleSpace
+        let hidesSubtitle = subtitle == nil && !reservesSubtitleSpace
+        if view.subtitle.isHidden != hidesSubtitle { view.subtitle.isHidden = hidesSubtitle }
+        if previousHeight != view.intrinsicContentSize.height {
+            view.invalidateIntrinsicContentSize()
+            view.setNeedsLayout()
+        }
         view.setFocused(isFocused, travel: metrics.focusCaptionPush(for: .system),
                         animated: !context.environment.accessibilityReduceMotion)
-        view.invalidateIntrinsicContentSize()
-        view.setNeedsLayout()
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: CaptionView, context: Context) -> CGSize? {
@@ -39,7 +44,7 @@ struct SystemPosterCaption: UIViewRepresentable {
         return CGSize(width: max(0, width), height: uiView.intrinsicContentSize.height)
     }
 
-    final class CaptionView: UIView {
+    class CaptionView: UIView {
         private let content = UIView()
         let title = CaptionLine()
         let subtitle = CaptionLine()
@@ -49,6 +54,7 @@ struct SystemPosterCaption: UIViewRepresentable {
 
         override var semanticContentAttribute: UISemanticContentAttribute {
             didSet {
+                guard oldValue != semanticContentAttribute else { return }
                 title.semanticContentAttribute = semanticContentAttribute
                 subtitle.semanticContentAttribute = semanticContentAttribute
                 title.setNeedsLayout()
@@ -82,6 +88,7 @@ struct SystemPosterCaption: UIViewRepresentable {
 
         func setFocused(_ focused: Bool, travel: CGFloat, animated: Bool) {
             guard captionFocused != focused || focusTravel != travel || !animated else { return }
+            let changesLayout = focusTravel != travel
             let old = (content.layer.presentation() ?? content.layer).transform.m42
             captionFocused = focused
             focusTravel = travel
@@ -99,8 +106,10 @@ struct SystemPosterCaption: UIViewRepresentable {
                 animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 content.layer.add(animation, forKey: Self.focusAnimationKey)
             }
-            invalidateIntrinsicContentSize()
-            setNeedsLayout()
+            if changesLayout {
+                invalidateIntrinsicContentSize()
+                setNeedsLayout()
+            }
         }
 
         override func didMoveToWindow() {
@@ -139,11 +148,12 @@ struct SystemPosterCaption: UIViewRepresentable {
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
         func configure(text: String, font: UIFont, color: UIColor, scrolls: Bool) {
-            label.text = text
-            label.font = font
-            label.textColor = color
+            let changesLayout = label.text != text || label.font != font || self.scrolls != scrolls
+            if label.text != text { label.text = text }
+            if label.font != font { label.font = font }
+            if label.textColor != color { label.textColor = color }
             self.scrolls = scrolls
-            setNeedsLayout()
+            if changesLayout { setNeedsLayout() }
         }
 
         override func didMoveToWindow() {

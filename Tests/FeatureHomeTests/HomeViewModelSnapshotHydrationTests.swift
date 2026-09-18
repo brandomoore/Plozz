@@ -285,11 +285,12 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
     /// snapshot was hydrated at init regardless of whether the profile still had
     /// anything to aggregate, and it survived relaunches because `save` refuses
     /// to overwrite good content with an empty one.
-    func testAProfileWithNoServersDoesNotPaintTheCachedSnapshot() {
+    func testAProfileWithNoServersDoesNotPaintTheCachedSnapshot() async {
         let store = InMemoryHomeContentStore(snapshot(cwIDs: ["cachedA"]))
         let vm = makeSourcelessViewModel(contentStore: store)
 
         XCTAssertNil(loadedContent(vm), "A profile watching nothing must not repaint an old library")
+        await vm.waitForHeroPersistence()
         XCTAssertNil(store.load(), "and the stale snapshot must not survive to the next launch")
     }
 

@@ -255,7 +255,7 @@ public struct PosterCardView: View {
                 treatment: nativePosterTreatment,
                 aspectRatio: borderlessAspectRatio,
                 fallbackWidth: size.width,
-                title: showsSeriesArtwork ? nil : nativePosterTitle,
+                title: nativePosterTitle,
                 subtitle: showsSeriesArtwork ? nil : subtitleText,
                 overlay: nativePosterOverlay,
                 focus: $isFocused,
@@ -1552,12 +1552,16 @@ public extension View {
         cornerRadius: CGFloat,
         isEnabled: Bool = true,
         nativeFocusInContent: Bool = false,
+        accessibilityLabel: String? = nil,
+        accessibilityValue: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         #if os(tvOS)
         modifier(CardFocusOwner(
             isFocused: isFocused, cornerRadius: cornerRadius, isEnabled: isEnabled,
-            nativeFocusInContent: nativeFocusInContent, action: action
+            nativeFocusInContent: nativeFocusInContent,
+            accessibilityLabel: accessibilityLabel, accessibilityValue: accessibilityValue,
+            action: action
         ))
         #else
         contentShape(
@@ -1573,6 +1577,8 @@ private struct CardFocusOwner: ViewModifier {
     let cornerRadius: CGFloat
     let isEnabled: Bool
     let nativeFocusInContent: Bool
+    let accessibilityLabel: String?
+    let accessibilityValue: String?
     let action: () -> Void
     @Environment(\.plozzCardFocusStyle) private var style
     @Environment(\.isEnabled) private var parentEnabled
@@ -1584,7 +1590,8 @@ private struct CardFocusOwner: ViewModifier {
             } else {
                 NativeTVCard(
                     content: content, focus: isFocused,
-                    isEnabled: isEnabled && parentEnabled, action: action
+                    isEnabled: isEnabled && parentEnabled, action: action,
+                    accessibilityLabel: accessibilityLabel, accessibilityValue: accessibilityValue
                 )
                     .focused(isFocused.focusState)
             }
@@ -1597,6 +1604,22 @@ private struct CardFocusOwner: ViewModifier {
                 .onTapGesture(perform: action)
                 .disabled(!isEnabled)
                 .accessibilityAddTraits(.isButton)
+                .modifier(CardAccessibilityMetadata(label: accessibilityLabel, value: accessibilityValue))
+        }
+    }
+}
+
+private struct CardAccessibilityMetadata: ViewModifier {
+    let label: String?
+    let value: String?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let label {
+            content.accessibilityLabel(Text(verbatim: label))
+                .accessibilityValue(Text(verbatim: value ?? ""))
+        } else {
+            content
         }
     }
 }

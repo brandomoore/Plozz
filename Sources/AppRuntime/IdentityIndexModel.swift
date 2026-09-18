@@ -2,6 +2,51 @@ import Foundation
 import Observation
 import CoreModels
 
+/// Synchronous store work stays on this executor, including lazy directory
+/// creation. No main-actor caller ever acquires a file-store lock.
+actor IdentityIndexPersistence {
+    static let shared = IdentityIndexPersistence()
+
+    private let makeStore: @Sendable (String?) -> any IdentityIndexStoring
+    private var stores: [String?: any IdentityIndexStoring] = [:]
+    private var newestSaveGeneration: [String?: UInt64] = [:]
+
+    init(makeStore: @escaping @Sendable (String?) -> any IdentityIndexStoring = {
+        FileIdentityIndexStore(namespace: $0)
+    }) {
+        self.makeStore = makeStore
+    }
+
+    private func store(for namespace: String?) -> any IdentityIndexStoring {
+        if let store = stores[namespace] { return store }
+        let store = makeStore(namespace)
+        stores[namespace] = store
+        return store
+    }
+
+    func load(namespace: String?) throws -> PersistedIdentityIndex {
+        try Task.checkCancellation()
+        return IOTimingDiagnostics.measure(
+            .identityModelLoad,
+            metrics: { .init(items: $0.entriesByAccount.values.reduce(0) { $0 + $1.count }) }
+        ) {
+            store(for: namespace).load()
+        }
+    }
+
+    func save(_ snapshot: PersistedIdentityIndex, namespace: String?, generation: UInt64) throws {
+        try Task.checkCancellation()
+        guard generation > newestSaveGeneration[namespace, default: 0] else { return }
+        newestSaveGeneration[namespace] = generation
+        try IOTimingDiagnostics.measure(
+            .identityModelSave,
+            metrics: { _ in .init(items: snapshot.entriesByAccount.values.reduce(0) { $0 + $1.count }) }
+        ) {
+            try store(for: namespace).save(snapshot)
+        }
+    }
+}
+
 /// The eager cross-server identity index shared by both app composition roots.
 ///
 /// Owns the `identity → sources` index built at sign-in / sync — the single
@@ -40,11 +85,17 @@ public final class IdentityIndexModel {
     public init(
         activeAccounts: @escaping @MainActor () -> [ResolvedAccount],
         namespace: @escaping @MainActor () -> String?,
-        onPublish: @escaping @MainActor () -> Void
+        onPublish: @escaping @MainActor () -> Void,
+        persistenceStore: (any IdentityIndexStoring)? = nil
     ) {
         self.activeAccounts = activeAccounts
         self.namespace = namespace
         self.onPublish = onPublish
+        if let persistenceStore {
+            self.persistence = IdentityIndexPersistence(makeStore: { _ in persistenceStore })
+        } else {
+            self.persistence = .shared
+        }
     }
 
 
@@ -56,17 +107,13 @@ public final class IdentityIndexModel {
     @ObservationIgnored
     private var _identityIndex = IdentityIndex()
 
-    /// Profile-scoped disk store for the index membership, so cross-server unions
-    /// survive relaunch and are known at t=0 (the cold-boot convergence fix). Built
-    /// lazily for the active namespace; dropped on profile switch.
     @ObservationIgnored
-    private var _identityIndexStore: (any IdentityIndexStoring)?
-    private var identityIndexStore: any IdentityIndexStoring {
-        if let store = _identityIndexStore { return store }
-        let store = FileIdentityIndexStore(namespace: namespace())
-        _identityIndexStore = store
-        return store
-    }
+    private let persistence: IdentityIndexPersistence
+    /// Replacement warm waves share the pending load, but a profile reset drops
+    /// it. A cancelled wave must not consume the next wave's only disk restore.
+    @ObservationIgnored
+    private var persistedIndexLoadTask: Task<PersistedIdentityIndex, Error>?
+    private static var globalPersistenceGeneration: UInt64 = 0
 
     /// Whether the persisted membership has been reloaded yet this launch / profile.
     /// Restore runs exactly once so a later warm never re-seeds stale disk data over
@@ -184,7 +231,8 @@ public final class IdentityIndexModel {
         let ttl = identityIndexTTL
         let chunkSize = identityChunkSize
         let maxPerLibrary = identityMaxItemsPerLibrary
-        let store = identityIndexStore
+        let storeNamespace = namespace()
+        let persistence = persistence
         let fanoutLimit = identityWarmFanoutLimit
 
         // A scan of a real library takes minutes, and the triggers that ask for
@@ -214,7 +262,10 @@ public final class IdentityIndexModel {
         identityWarmGeneration &+= 1
         publishedIndexAccountCount = 0
         let warmGeneration = identityWarmGeneration
+        Self.globalPersistenceGeneration &+= 1
+        let persistenceGeneration = Self.globalPersistenceGeneration
         identityWarmTask = Task { [weak self] in
+            guard self?.isCurrentWarm(warmGeneration, namespace: storeNamespace) == true else { return }
             // B2: On the first warm this launch, seed the index from the persisted
             // membership and publish immediately, so cross-server unions are known
             // at t=0 — the first post-boot stop fans out to every server instead of
@@ -231,14 +282,24 @@ public final class IdentityIndexModel {
             // owned copy and rendered as one to go and request, and no amount of
             // relaunching fixed it because each launch restored the same stale
             // membership and then declared itself warm.
-            if let self, await self.consumePendingRestore() {
-                let persisted = store.load()
-                if !persisted.isEmpty, await index.restore(from: persisted, retaining: activeIDs) {
+            if let self, !self.didRestorePersistedIndex {
+                let load = self.pendingPersistedIndexLoad(namespace: storeNamespace)
+                guard let persisted = try? await load.value,
+                      self.isCurrentWarm(warmGeneration, namespace: storeNamespace) else { return }
+                let restored = !persisted.isEmpty
+                    ? await index.restore(from: persisted, retaining: activeIDs)
+                    : false
+                guard self.isCurrentWarm(warmGeneration, namespace: storeNamespace) else { return }
+                self.didRestorePersistedIndex = true
+                self.persistedIndexLoadTask = nil
+                if restored {
                     await MainActor.run {
+                        guard self.isCurrentWarm(warmGeneration, namespace: storeNamespace) else { return }
                         self.accountsAwaitingLaunchVerification.formUnion(activeIDs)
                     }
                     let snapshot = await index.snapshot()
                     publishedInRestore = await MainActor.run { () -> Bool in
+                        guard self.isCurrentWarm(warmGeneration, namespace: storeNamespace) else { return false }
                         guard self.publishWarmedSnapshot(snapshot, generation: warmGeneration) else { return false }
                         // Tell already-loaded surfaces (Home) that cross-server
                         // membership is now known so they re-fold the fuller source
@@ -254,6 +315,7 @@ public final class IdentityIndexModel {
                     FanoutDiagnostics.emit(FanoutDiagnostics.indexStateLine(snapshot, phase: "restore"))
                 }
             }
+            guard self?.isCurrentWarm(warmGeneration, namespace: storeNamespace) == true else { return }
             await index.retainAccounts(activeIDs)
             // r6-retain-publish: if the restore path didn't publish this wave,
             // publish the just-pruned snapshot now so a removed server's sources stop
@@ -263,6 +325,7 @@ public final class IdentityIndexModel {
             if !publishedInRestore, let self {
                 let snapshot = await index.snapshot()
                 await MainActor.run {
+                    guard self.isCurrentWarm(warmGeneration, namespace: storeNamespace) else { return }
                     guard self.publishWarmedSnapshot(snapshot, generation: warmGeneration) else { return }
                     NotificationCenter.default.post(name: .identityIndexDidUpdate, object: nil)
                     self.onPublish()
@@ -329,7 +392,9 @@ public final class IdentityIndexModel {
                     // Publish progressively so surfaces see each warmed account.
                     let snapshot = await index.snapshot()
                     await MainActor.run {
-                        guard let self, self.publishWarmedSnapshot(snapshot, generation: warmGeneration) else { return }
+                        guard let self,
+                              self.isCurrentWarm(warmGeneration, namespace: storeNamespace),
+                              self.publishWarmedSnapshot(snapshot, generation: warmGeneration) else { return }
                         // Tell already-loaded surfaces (Home) that the shared
                         // cross-server membership just grew, so they can re-fold
                         // the fuller source set into their in-place cards without
@@ -351,7 +416,9 @@ public final class IdentityIndexModel {
                     // Verified against the live library — stop forcing a rescan
                     // for this account until the next launch.
                     await MainActor.run {
-                        self?.accountsAwaitingLaunchVerification
+                        guard let self,
+                              self.isCurrentWarm(warmGeneration, namespace: storeNamespace) else { return }
+                        self.accountsAwaitingLaunchVerification
                             .remove(resolvedAccount.account.id)
                     }
                 }
@@ -380,20 +447,36 @@ public final class IdentityIndexModel {
                 // (a superseding wave will persist its own result).
                 if !Task.isCancelled {
                     let persisted = await index.export()
-                    try? store.save(persisted)
+                    guard self?.isCurrentWarm(warmGeneration, namespace: storeNamespace) == true else { return }
+                    try? await persistence.save(
+                        persisted, namespace: storeNamespace, generation: persistenceGeneration
+                    )
                 }
             }
         }
     }
 
-    /// Returns `true` exactly once per launch / profile so the persisted-index
-    /// restore runs a single time even though `warmIdentityIndex` is invoked on
-    /// every account-set change.
-    @MainActor
-    private func consumePendingRestore() -> Bool {
-        guard !didRestorePersistedIndex else { return false }
-        didRestorePersistedIndex = true
-        return true
+    private func pendingPersistedIndexLoad(namespace: String?) -> Task<PersistedIdentityIndex, Error> {
+        if let task = persistedIndexLoadTask { return task }
+        let persistence = persistence
+        let task = Task { try await persistence.load(namespace: namespace) }
+        persistedIndexLoadTask = task
+        return task
+    }
+
+    private func isCurrentWarm(_ generation: Int, namespace: String?) -> Bool {
+        !Task.isCancelled && generation == identityWarmGeneration && self.namespace() == namespace
+    }
+
+    /// Includes restore, provider scans, and the final persistence attempt. Waits
+    /// for a replacement wave too if the active generation changes while waiting.
+    /// Store writes remain best-effort; completion is not a durability assertion.
+    public func waitForIdentityWarm() async {
+        while let task = identityWarmTask {
+            let generation = identityWarmGeneration
+            await task.value
+            if generation == identityWarmGeneration { return }
+        }
     }
 
     /// Scans one account's movie + series libraries in bounded pages and ingests
@@ -566,8 +649,10 @@ public final class IdentityIndexModel {
         identityWarmGeneration &+= 1
         publishedIndexAccountCount = 0
         _identityIndex = IdentityIndex()
-        _identityIndexStore = nil
+        persistedIndexLoadTask?.cancel()
+        persistedIndexLoadTask = nil
         didRestorePersistedIndex = false
+        accountsAwaitingLaunchVerification = []
         identitySnapshot = .empty
         identitySnapshotStore.update(.empty)
         UniversalWatchlistMembershipCache.shared.invalidate()

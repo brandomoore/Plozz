@@ -778,8 +778,16 @@ public struct RootView: View {
                  ? "Sign this device in to “\(syncSetupOfferServerName!)”."
                  : "Send your servers and sign-in so it’s ready to watch.")
         }
-        .onAppear {
-            if case .launching = appState.state { appState.bootstrap() }
+        .task {
+            while case .launching = appState.state {
+                let namespace = appState.profilesModel.activeNamespace
+                await HomeContentPrewarmer.shared.prepare {
+                    HomeContentStore(namespace: namespace)
+                }
+                guard !Task.isCancelled else { return }
+                guard namespace == appState.profilesModel.activeNamespace else { continue }
+                if case .launching = appState.state { appState.bootstrap() }
+            }
             ScreenshotSeed.applyIfRequested(to: appState)
             appState.drainWatchOutbox()
             reconcileCrashReporting()

@@ -337,6 +337,26 @@ public enum HeroBackdropArtworkPolicy {
         return size.width / size.height <= maxAspectRatio
     }
 
+    @MainActor
+    static func firstPaint(
+        references: [ArtworkReference],
+        allowsCachedLibraryArtwork: Bool,
+        cachedImage: (ArtworkReference, ArtworkImageVariant) -> UIImage? = {
+            ArtworkImageCache.shared.cachedImage(for: $0, variant: $1)
+        },
+        resolve: () async -> FirstPaintArtwork?
+    ) async -> FirstPaintArtwork? {
+        guard !Task.isCancelled else { return nil }
+        if allowsCachedLibraryArtwork, let reference = references.first {
+            for variant in [ArtworkImageVariant.heroBackdrop, .landscapeCard, .heroPreview] {
+                if let image = cachedImage(reference, variant), isUsable(image) {
+                    return FirstPaintArtwork(image: image, reference: reference, variant: variant)
+                }
+            }
+        }
+        return await resolve()
+    }
+
     public static func hasUsableCachedArtwork(
         for references: [ArtworkReference]
     ) -> Bool {
@@ -568,15 +588,23 @@ private struct WipeImageView: UIViewRepresentable {
 
             loadTask = Task { [weak self] in
                 guard let self else { return }
-                guard let firstPaint = await ArtworkFirstPaintResolver.resolve(
+                let firstPaint = await HeroBackdropArtworkPolicy.firstPaint(
                     references: references,
-                    variant: .heroPreview,
-                    maxAspectRatio: HeroBackdropArtworkPolicy.maxAspectRatio,
-                    asyncOnlineURL: asyncFallbackURL,
-                    maximumOnlineWait: ArtworkFirstPaintResolver.focalArtworkWait,
-                    prefersOnlineArtwork: prefersOnlineArtwork,
-                    sharedKey: sharedResolutionIdentity
-                ) else {
+                    // Shared consumers must retain their identical pinned first paint.
+                    allowsCachedLibraryArtwork: sharedResolutionIdentity == nil
+                        && (!prefersOnlineArtwork || asyncFallbackURL == nil)
+                ) {
+                    await ArtworkFirstPaintResolver.resolve(
+                        references: references,
+                        variant: .heroPreview,
+                        maxAspectRatio: HeroBackdropArtworkPolicy.maxAspectRatio,
+                        asyncOnlineURL: asyncFallbackURL,
+                        maximumOnlineWait: ArtworkFirstPaintResolver.focalArtworkWait,
+                        prefersOnlineArtwork: prefersOnlineArtwork,
+                        sharedKey: sharedResolutionIdentity
+                    )
+                }
+                guard let firstPaint else {
                     guard !Task.isCancelled, token == self.loadToken else { return }
                     self.loadTask = nil
                     self.noArtResolved(for: slideID)
@@ -586,10 +614,14 @@ private struct WipeImageView: UIViewRepresentable {
                 self.applyResolved(
                     firstPaint.image,
                     reference: firstPaint.reference,
-                    quality: .preview,
+                    quality: firstPaint.variant == .heroBackdrop ? .full : .preview,
                     id: slideID,
                     forward: forward
                 )
+                if firstPaint.variant == .heroBackdrop {
+                    self.loadTask = nil
+                    return
+                }
 
                 let full = await ArtworkImageCache.shared.image(
                     for: firstPaint.reference,

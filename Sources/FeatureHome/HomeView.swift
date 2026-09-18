@@ -1564,6 +1564,7 @@ private struct LibraryCardView: View {
     let action: () -> Void
 
     @PlozzCardFocus private var isFocused: Bool
+    @Environment(\.locale) private var locale
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.plozzMetrics) private var metrics
@@ -1637,7 +1638,9 @@ private struct LibraryCardView: View {
             cornerRadius: metrics.landscapeCardCornerRadius,
             outlineScale: PlozzTheme.Metrics.mediumFocusedCardScale
         )
-        .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius, action: action)
+        .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius,
+                       accessibilityLabel: aggregated.library.displayName(in: locale), accessibilityValue: subtitle,
+                       action: action)
         .plozzCardFocusTransition(isFocused: isFocused)
     }
 
@@ -1672,7 +1675,9 @@ private struct LibraryCardView: View {
             .offset(y: focusStyle.usesSystemEffect || isFocused ? 0 : -push)
         }
         .padding(.horizontal, metrics.borderlessCardSideMargin)
-        .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius, action: action)
+        .focusableCard(isFocused: $isFocused, cornerRadius: metrics.landscapeCardCornerRadius,
+                       accessibilityLabel: aggregated.library.displayName(in: locale), accessibilityValue: subtitle,
+                       action: action)
         .compositingGroup()
         .plozzCardFocusTransition(isFocused: isFocused)
     }

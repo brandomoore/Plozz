@@ -9,6 +9,93 @@ import CoreModels
 
 @MainActor
 final class NativeFocusRequestHostedTests: XCTestCase {
+    private struct SurfaceProbe: View {
+        @Environment(\.plozzNativeFocusSurface) private var nativeSurface
+        @Environment(\.plozzNativeArtworkSurface) private var nativeArtworkSurface
+        let record: (Bool, Bool) -> Void
+
+        var body: some View {
+            Color.clear.onAppear { record(nativeSurface, nativeArtworkSurface) }
+        }
+    }
+
+    private struct SurfaceFixture: View {
+        @PlozzCardFocus private var cardFocused
+        @PlozzCardFocus private var posterFocused
+        let card: (Bool, Bool) -> Void
+        let poster: (Bool, Bool) -> Void
+
+        var body: some View {
+            VStack {
+                SurfaceProbe(record: card)
+                    .frame(width: 300, height: 140)
+                    .focusableCard(
+                        isFocused: $cardFocused, cornerRadius: 12,
+                        accessibilityLabel: "Library", accessibilityValue: "Server", action: {}
+                    )
+                NativeTVPoster(
+                    image: nil, treatment: .original, aspectRatio: 1.5,
+                    fallbackWidth: 300, title: nil, subtitle: nil,
+                    overlay: SurfaceProbe(record: poster), focus: $posterFocused, action: {}
+                )
+                .frame(width: 300)
+            }
+        }
+    }
+
+    func testNativeHostedContentReceivesTheNativeSurfaceEnvironment() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        var card: Bool?
+        var poster: Bool?
+        var cardArtwork: Bool?
+        var posterArtwork: Bool?
+        let host = UIHostingController(rootView: SurfaceFixture(
+            card: { card = $0; cardArtwork = $1 },
+            poster: { poster = $0; posterArtwork = $1 }
+        ).environment(\.plozzCardFocusStyle, .system))
+        fixture.window.rootViewController = host
+        fixture.window.layoutIfNeeded()
+        try await waitUntil { card != nil && poster != nil }
+        XCTAssertEqual(card, true)
+        XCTAssertEqual(poster, true)
+        XCTAssertEqual(cardArtwork, false, "A generic native card still needs clipping within its artwork region.")
+        XCTAssertEqual(posterArtwork, true)
+        func nativeCard(in view: UIView) -> TVCardView? {
+            if let card = view as? TVCardView { return card }
+            return view.subviews.lazy.compactMap { nativeCard(in: $0) }.first
+        }
+        let native = try XCTUnwrap(nativeCard(in: host.view))
+        XCTAssertTrue(native.isAccessibilityElement)
+        XCTAssertEqual(native.accessibilityLabel, "Library")
+        XCTAssertEqual(native.accessibilityValue, "Server")
+        XCTAssertTrue(native.accessibilityTraits.contains(.button))
+    }
+
+    private final class CountingCaption: SystemPosterCaption.CaptionView {
+        var invalidations = 0
+
+        override func invalidateIntrinsicContentSize() {
+            invalidations += 1
+            super.invalidateIntrinsicContentSize()
+        }
+    }
+
+    func testCaptionFocusDoesNotInvalidateUnchangedRowGeometry() {
+        let caption = CountingCaption()
+        caption.setFocused(false, travel: 16, animated: false)
+        let initialSize = caption.intrinsicContentSize
+        caption.invalidations = 0
+        for index in 0..<30 {
+            caption.setFocused(index.isMultiple(of: 2), travel: 16, animated: true)
+            XCTAssertEqual(caption.intrinsicContentSize, initialSize)
+        }
+        XCTAssertEqual(caption.invalidations, 0, "Focus translates the caption; it must not remeasure its containing lazy rows.")
+        caption.setFocused(true, travel: 20, animated: false)
+        XCTAssertEqual(caption.invalidations, 1)
+        XCTAssertEqual(caption.intrinsicContentSize.height, initialSize.height + 4)
+    }
+
     func testNativePosterArtworkKeepsPreCaptionSeparationSizing() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -162,6 +249,39 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(200))
         XCTAssertNil(poster.footerView)
         XCTAssertEqual(poster.intrinsicContentSize, restingSize)
+    }
+
+    func testContinueWatchingCardsExposeTheirTitleWithoutAddingACaption() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let movie = MediaItem(
+            id: "accessible-movie", title: "Movie title", kind: .movie,
+            allowsTitleBasedMetadataMatching: false
+        )
+        var episode = MediaItem(
+            id: "accessible-episode", title: "Episode title", kind: .episode,
+            allowsTitleBasedMetadataMatching: false
+        )
+        episode.parentTitle = "Series title"
+        for (item, title) in [(movie, "Movie title"), (episode, "Series title")] {
+            let host = UIHostingController(rootView:
+                PosterCardView(
+                    item: item, style: .landscape, showsSeriesArtwork: true,
+                    enablesAsyncArtworkFallback: false
+                ) {}
+                .frame(width: 400)
+                .environment(\.plozzCardStyle, .borderless)
+                .environment(\.plozzCardFocusStyle, .system)
+            )
+            fixture.window.rootViewController = host
+            fixture.window.layoutIfNeeded()
+            try await waitUntil { self.nativePoster(in: host.view) != nil }
+            let poster = try XCTUnwrap(nativePoster(in: host.view))
+            XCTAssertTrue(poster.isAccessibilityElement)
+            XCTAssertEqual(poster.accessibilityLabel, title)
+            XCTAssertTrue(poster.accessibilityTraits.contains(.button))
+            XCTAssertNil(poster.footerView)
+        }
     }
 
     func testCaptionMarqueeKeepsItsRestingModelAndStopsWithoutMotionOrAWindow() async throws {

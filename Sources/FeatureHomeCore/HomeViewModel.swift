@@ -6,10 +6,11 @@ import CoreNetworking
 public typealias HomeContentPublishing =
     @Sendable (_ continueWatching: [MediaItem], _ latest: [MediaItem]) async -> Void
 
-private actor HomeSnapshotPersistence {
+actor HomeSnapshotPersistence {
     static let shared = HomeSnapshotPersistence()
 
     private var newestGenerationByScope: [String: UInt64] = [:]
+    private var newestHeroGenerationByScope: [String: UInt64] = [:]
 
     func save(
         _ content: HomeViewModel.Content,
@@ -43,11 +44,40 @@ private actor HomeSnapshotPersistence {
         store: any HomeContentStoring
     ) {
         let scope = store.persistenceScope
-        guard generation > newestGenerationByScope[scope, default: 0] else {
-            return
+        let clearRows = generation > newestGenerationByScope[scope, default: 0]
+        let clearHero = generation > newestHeroGenerationByScope[scope, default: 0]
+        if clearRows { newestGenerationByScope[scope] = generation }
+        if clearHero { newestHeroGenerationByScope[scope] = generation }
+        if clearRows && clearHero {
+            store.clear()
+        } else if clearRows {
+            store.clearRows()
+        } else if clearHero {
+            store.clearHero()
         }
-        newestGenerationByScope[scope] = generation
-        store.clear()
+    }
+
+    func saveHero(
+        _ items: [MediaItem],
+        for key: HeroConfigurationKey,
+        generation: UInt64,
+        to store: any HomeContentStoring
+    ) {
+        let scope = store.persistenceScope
+        guard generation > newestHeroGenerationByScope[scope, default: 0] else { return }
+        newestHeroGenerationByScope[scope] = generation
+        IOTimingDiagnostics.measure(
+            .homeModelSaveHero, metrics: { _ in .init(items: items.count) }
+        ) {
+            store.saveHero(items, for: key)
+        }
+    }
+
+    func clearHero(generation: UInt64, store: any HomeContentStoring) {
+        let scope = store.persistenceScope
+        guard generation > newestHeroGenerationByScope[scope, default: 0] else { return }
+        newestHeroGenerationByScope[scope] = generation
+        store.clearHero()
     }
 
     private func overlay(
@@ -279,6 +309,11 @@ public final class HomeViewModel {
     /// has turned off "Merge libraries on Home"). Tracked so `deinit` can cancel it.
     private nonisolated(unsafe) var unmergedTask: Task<HomeAggregator.UnmergedContent, Never>?
     private nonisolated(unsafe) var topShelfPublishTask: Task<Void, Never>?
+    // Accepted durable writes outlive the view model, but never retain it. The
+    // scope/generation fence also covers replacement models for the same profile.
+    @ObservationIgnored private var heroPersistenceTask: Task<Void, Never>?
+    @ObservationIgnored private var heroPersistenceGeneration: UInt64 = 0
+    @ObservationIgnored private var cachedHeroIsInvalidated = false
     /// View subscriptions disappear while detail/playback covers Home, but the
     /// retained model must still receive completion and server-confirmation events.
     @ObservationIgnored private nonisolated(unsafe) var watchMutationObserver: NSObjectProtocol?
@@ -355,7 +390,9 @@ public final class HomeViewModel {
         // mixed/local heroes likewise wait for complete curation. Only a non-empty
         // snapshot is used; anything else leaves
         // `state == .idle` so a genuine first launch shows the normal loading state.
-        if var cached = contentStore.load() {
+        if var cached = IOTimingDiagnostics.measure(.homeModelLoad, {
+            contentStore.load()
+        }) {
             cached.libraries = Self.rehydratedLibraries(
                 cached.libraries,
                 accounts: accounts
@@ -411,14 +448,7 @@ public final class HomeViewModel {
                 cached.latest = []
                 cached.libraries = []
                 cached.librarySections = []
-                contentStore.clear()
-                let generation = Self.nextSnapshotPersistenceGeneration()
-                Task {
-                    await HomeSnapshotPersistence.shared.clear(
-                        generation: generation,
-                        store: contentStore
-                    )
-                }
+                scheduleSnapshotClear()
             }
             if !cached.isEmpty {
                 self.state = .loaded(cached)
@@ -553,7 +583,7 @@ public final class HomeViewModel {
                 isRefreshing = false
             }
         }
-        PlozzLog.boot("HomeVM.load START vm=\(UInt(bitPattern: ObjectIdentifier(self).hashValue)) accounts=\(accounts.count) state=\(String(describing: state)) silent=\(!showLoadingState)")
+        PlozzLog.boot("HomeVM.load START vm=\(UInt(bitPattern: ObjectIdentifier(self).hashValue)) accounts=\(accounts.count) state=\(state.diagnosticName) silent=\(!showLoadingState)")
         let onScreenWatchlist = state.value?.watchlist ?? []
         if showLoadingState { state = .loading }
 
@@ -706,10 +736,7 @@ public final class HomeViewModel {
         // the emptiness IS the answer, so fall through and let it stand (which
         // also republishes the Top Shelf, rather than leaving it on the old rows).
         if content.isEmpty, accounts.isEmpty {
-            await HomeSnapshotPersistence.shared.clear(
-                generation: Self.nextSnapshotPersistenceGeneration(),
-                store: contentStore
-            )
+            await scheduleSnapshotClear().value
         } else if content.isEmpty, !showLoadingState, case .loaded = state {
             PlozzLog.boot("HomeVM.load KEEP-CACHED silent-empty vm=\(UInt(bitPattern: ObjectIdentifier(self).hashValue))")
             lastLoadedVisibility = visibility
@@ -819,7 +846,7 @@ public final class HomeViewModel {
                 resumePosition: mutation.resumePosition,
                 onRow: false,
                 reloadScheduled: completedEpisode,
-                state: String(describing: state)
+                state: state.diagnosticName
             ))
             return
         }
@@ -1217,7 +1244,7 @@ public final class HomeViewModel {
     /// (or by one whose enrichment added a resumable source ref afterwards) cannot
     /// repaint a stale playback position either.
     public func cachedHeroItems(for settings: HeroSettings) -> [MediaItem]? {
-        guard settings.isActive else { return nil }
+        guard settings.isActive, !cachedHeroIsInvalidated else { return nil }
         guard let stored = contentStore.loadHero(
             for: HeroConfigurationKey(settings: settings)
         ) else { return nil }
@@ -1229,7 +1256,18 @@ public final class HomeViewModel {
 
     public func cacheHeroItems(_ items: [MediaItem], for settings: HeroSettings) {
         guard settings.isActive, !items.isEmpty else { return }
-        contentStore.saveHero(items, for: HeroConfigurationKey(settings: settings))
+        let generation = Self.nextSnapshotPersistenceGeneration()
+        heroPersistenceGeneration = generation
+        let store = contentStore
+        let key = HeroConfigurationKey(settings: settings)
+        heroPersistenceTask = Task { [weak self] in
+            await HomeSnapshotPersistence.shared.saveHero(
+                items, for: key, generation: generation, to: store
+            )
+            if self?.heroPersistenceGeneration == generation {
+                self?.cachedHeroIsInvalidated = false
+            }
+        }
     }
 
     /// Discards the launch snapshot, for a curation that authoritatively found
@@ -1237,7 +1275,43 @@ public final class HomeViewModel {
     /// set — otherwise a failed refresh would erase a good snapshot — so running
     /// out of content needs to say so explicitly rather than by omission.
     public func clearCachedHeroItems() {
-        contentStore.clearHero()
+        let generation = Self.nextSnapshotPersistenceGeneration()
+        heroPersistenceGeneration = generation
+        cachedHeroIsInvalidated = true
+        let store = contentStore
+        heroPersistenceTask = Task { [weak self] in
+            await HomeSnapshotPersistence.shared.clearHero(generation: generation, store: store)
+            if self?.heroPersistenceGeneration == generation {
+                self?.cachedHeroIsInvalidated = false
+            }
+        }
+    }
+
+    /// Waits for this model's latest accepted hero save/clear attempt, including a
+    /// replacement requested while waiting. Completion is not proof of durability:
+    /// the store retains its existing best-effort write semantics.
+    public func waitForHeroPersistence() async {
+        while let task = heroPersistenceTask {
+            let generation = heroPersistenceGeneration
+            await task.value
+            if generation == heroPersistenceGeneration { return }
+        }
+    }
+
+    @discardableResult
+    private func scheduleSnapshotClear() -> Task<Void, Never> {
+        let generation = Self.nextSnapshotPersistenceGeneration()
+        heroPersistenceGeneration = generation
+        cachedHeroIsInvalidated = true
+        let store = contentStore
+        let task = Task { [weak self] in
+            await HomeSnapshotPersistence.shared.clear(generation: generation, store: store)
+            if self?.heroPersistenceGeneration == generation {
+                self?.cachedHeroIsInvalidated = false
+            }
+        }
+        heroPersistenceTask = task
+        return task
     }
 
     /// Targets a server has shown us since we last wrote to them, keyed like
