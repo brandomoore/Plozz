@@ -435,14 +435,19 @@ Pin decorations to the native overlay container with constraints; do not rewrite
 their frames during native focus layout.
 `TVCardView` hosts live content in its documented `contentView`. Neither control
 overrides `focusSizeIncrease`, adds transforms or manufactures lighting/outlines.
-Home Library cards retain their own artwork clip inside that native content.
-The generic native-surface bypass is appropriate for focus chrome, not an inset
-fill-scaled image: without its inner clip, portrait/wide library art paints over
-the card padding and caption gap, and even 16:9 artwork loses its rounded corners.
-`NativeLibraryCardHostedTests` loads controlled loopback artwork into the real
-lazy Libraries-card layout and checks painted insets/corners in framed and
-borderless modes, standard/compact density, and System/Highlight/Outline focus.
-Native focus is exercised through the actual TVCardView rather than a custom scale.
+Home Libraries use the shared `NativeArtworkPoster` in System focus, with 16:9
+artwork owned by `TVPosterView` and `SystemPosterCaption` outside the native
+surface. Neither library nor server text may become part of a `TVCardView`.
+The native artwork carries accessible names (including localized synthesized
+library names) and the original selection action; the caption reserves its own
+focus travel without scaling or changing the row footprint. Existing music
+callers retain the shared poster's square default.
+Custom Highlight/Outline Library cards keep their inner artwork clip so
+fill-scaled images cannot cover card padding or caption spacing.
+`NativeLibraryCardHostedTests` loads controlled loopback artwork into real Library
+cards inside lazy rails, checking aspect ratios, unchanged slot widths, caption
+separation, native activation, missing artwork, and custom card geometry across
+framed/borderless modes and standard/compact density.
 The documented `cardBackgroundColor` uses the active theme's raised surface,
 and hosted text retains that same theme rather than being forced into Light.
 TVUIKit still owns the state-dependent alpha, projection and lighting. This keeps
@@ -452,6 +457,14 @@ without borrowing the custom focus style's extra column gutter.
 Card fitting
 honors finite width proposals; unspecified-width probes must not install the
 10,000-point expanded fitting size as the card's content width.
+Sizing queries are read-only: SwiftUI can ask for a zero/minimum width after it
+has already measured the eventual placement. Changing `TVCardView.contentSize`
+inside that query shrinks live content to the probe (for example 135pt inside a
+300pt slot), cropping labels and replaying apparent reveals on later layout passes.
+Only `NativeTVCard.Container.layoutSubviews` commits the actual placed bounds.
+Hosted information-card regressions repeat those probes under animated parent
+updates, require stable pixels and dimensions, and verify real score changes still
+render. Do not suppress all child animations or discard metadata updates to mask it.
 Unspecified-height queries use compressed Auto Layout fitting, not an expanded
 height: flexible rating labels otherwise become 10,000 points tall and inflate
 the About column's text measurements. A non-focusable container reports the visible

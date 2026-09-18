@@ -4,7 +4,8 @@ import SwiftUI
 /// Native artwork focus with captions outside the surface, matching media posters.
 public struct NativeArtworkPoster<Artwork: View>: View {
     private let width: CGFloat
-    private let title: String // l10n:content — library title
+    private let aspectRatio: CGFloat
+    private let title: NativePosterText
     private let subtitle: String? // l10n:content — library metadata
     private let placeholderSymbol: String
     private let focus: PlozzCardFocus.Binding
@@ -15,15 +16,18 @@ public struct NativeArtworkPoster<Artwork: View>: View {
 
     public init(
         width: CGFloat,
+        aspectRatio: CGFloat = 1,
         title: String, // l10n:content — library title
         subtitle: String?, // l10n:content — library metadata
+        localizedTitle: LocalizedStringResource? = nil,
         placeholderSymbol: String,
         focus: PlozzCardFocus.Binding,
         action: @escaping () -> Void,
         @ViewBuilder artwork: () -> Artwork
     ) {
         self.width = width
-        self.title = title
+        self.aspectRatio = aspectRatio
+        self.title = localizedTitle.map(NativePosterText.localized) ?? .content(title)
         self.subtitle = subtitle
         self.placeholderSymbol = placeholderSymbol
         self.focus = focus
@@ -34,8 +38,8 @@ public struct NativeArtworkPoster<Artwork: View>: View {
     public var body: some View {
         VStack(spacing: metrics.nativePosterCaptionSpacing) {
             NativeTVPoster(
-                image: resolution.image, treatment: .original, aspectRatio: 1,
-                fallbackWidth: width, title: .content(title), subtitle: subtitle,
+                image: resolution.image, treatment: .original, aspectRatio: aspectRatio,
+                fallbackWidth: width, title: title, subtitle: subtitle,
                 overlay: Group {
                     if resolution.image == nil {
                         Image(systemName: placeholderSymbol)
@@ -48,7 +52,7 @@ public struct NativeArtworkPoster<Artwork: View>: View {
             .focused(focus.focusState)
             .frame(width: width)
             SystemPosterCaption(
-                title: .content(title), subtitle: subtitle,
+                title: title, subtitle: subtitle,
                 reservesSubtitleSpace: true, isFocused: focus.observed.wrappedValue
             )
             .frame(width: width)
@@ -58,7 +62,7 @@ public struct NativeArtworkPoster<Artwork: View>: View {
         .background {
             artwork
                 .environment(\.artworkResolutionState, resolution)
-                .frame(width: width, height: width)
+                .frame(width: width, height: width / aspectRatio)
                 .hidden()
                 .accessibilityHidden(true)
         }

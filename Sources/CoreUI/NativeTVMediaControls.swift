@@ -152,13 +152,8 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
             PlozzLog.app.error("Native card content returned invalid fitting dimensions")
             return nil
         }
-        let contentSize = CGSize(width: width ?? size.width, height: size.height)
-        if card.contentSize != contentSize {
-            card.contentSize = contentSize
-            uiView.invalidateIntrinsicContentSize()
-            uiView.setNeedsLayout()
-        }
-        return contentSize
+        // SwiftUI probes several candidate sizes; none is necessarily the placed size.
+        return CGSize(width: width ?? size.width, height: size.height)
     }
 
     private func configuration(in context: Context) -> any UIContentConfiguration {
@@ -186,6 +181,10 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
 
         override func layoutSubviews() {
             super.layoutSubviews()
+            guard !bounds.isEmpty else { return }
+            if card.contentSize != bounds.size {
+                card.contentSize = bounds.size
+            }
             // TVCardView reserves symmetric space for its focus expansion.
             // Keep that invisible space outside the visible surface's layout slot.
             let intrinsic = card.intrinsicContentSize

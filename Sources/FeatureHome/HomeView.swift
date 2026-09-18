@@ -1593,6 +1593,36 @@ struct LibraryCardView: View {
     }
 
     var body: some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect {
+            NativeArtworkPoster(
+                width: metrics.landscapeCardSlotWidth - metrics.borderlessCardSideMargin * 2,
+                aspectRatio: 16.0 / 9.0,
+                title: aggregated.library.title,
+                subtitle: subtitle.isEmpty ? nil : subtitle,
+                localizedTitle: aggregated.library.synthesizedName?.title,
+                placeholderSymbol: librarySymbol,
+                focus: $isFocused,
+                action: action
+            ) {
+                FallbackAsyncImage(
+                    urls: [aggregated.library.imageURL].compactMap { $0 },
+                    variant: .landscapeCard,
+                    pinIdentity: aggregated.key
+                ) {
+                    placeholder
+                }
+            }
+        } else {
+            customCard
+        }
+        #else
+        customCard
+        #endif
+    }
+
+    @ViewBuilder
+    private var customCard: some View {
         switch cardStyle {
         case .framed:
             framedCard
@@ -1605,7 +1635,7 @@ struct LibraryCardView: View {
         VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
             artwork
                 .frame(width: metrics.landscapeWidth, height: metrics.landscapeHeight)
-                // TVCardView clips its outer surface, not this inset fill-scaled image.
+                // Keep fill-scaled artwork inside its inset rounded bounds.
                 .clipShape(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
                 .plozzMediaEdge(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius)
 
