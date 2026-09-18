@@ -465,6 +465,17 @@ Only `NativeTVCard.Container.layoutSubviews` commits the actual placed bounds.
 Hosted information-card regressions repeat those probes under animated parent
 updates, require stable pixels and dimensions, and verify real score changes still
 render. Do not suppress all child animations or discard metadata updates to mask it.
+Loading shimmer's repeat must be scoped to its gradient stripe with
+`.animation(_:value:)`, not started by a broad repeating `withAnimation` in
+`onAppear`. A device reproduction showed native Details/Playback text opacity
+and rating-label bounds cycling every 2.3 seconds with **zero** card updates,
+fitting calls, or layouts. That was a separate fault from sizing probes: the
+loading repeat had escaped into native-hosted content. Isolating the stripe
+stopped both the observed symptom and the recorded layer changes.
+Hosted tests also keep the shimmer itself animated, exercise deactivate/reactivate,
+and require sibling information pixels to remain stable. The existing Reduce Motion
+branch remains a static dim without an animated stripe.
+Simulator refresh tests alone did not reproduce that device-only leakage.
 Unspecified-height queries use compressed Auto Layout fitting, not an expanded
 height: flexible rating labels otherwise become 10,000 points tall and inflate
 the About column's text measurements. A non-focusable container reports the visible

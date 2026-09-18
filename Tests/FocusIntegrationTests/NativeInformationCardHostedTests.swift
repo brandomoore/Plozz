@@ -135,6 +135,99 @@ final class NativeInformationCardHostedTests: XCTestCase {
                       "Real rating updates must remain visible rather than being frozen to suppress animation: \(recognized)")
     }
 
+    func testLoadingShimmerDoesNotAnimateSiblingNativeInformationText() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let model = NativeInformationRefreshModel()
+        window.rootViewController = UIHostingController(rootView: NativeInformationShimmerFixture(model: model))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        model.showsInformation = true
+        try await Task.sleep(for: .seconds(3))
+        let cards = nativeCards(in: window).filter { !$0.isFocused }
+        XCTAssertGreaterThanOrEqual(cards.count, 4)
+        let frames = cards.map { $0.contentView.convert($0.contentView.bounds, to: window).insetBy(dx: 12, dy: 12) }
+        let baseline = try informationPixels(window)
+        var counts: [Int] = []
+        var shimmerCounts: [Int] = []
+        let shimmerRegion = model.shimmerFrame.intersection(window.bounds).integral
+        XCTAssertFalse(shimmerRegion.isEmpty)
+        for sample in 0..<8 {
+            try await Task.sleep(for: .milliseconds(300))
+            let current = try informationPixels(window)
+            var count = 0
+            for frame in frames {
+                let region = frame.intersection(window.bounds).integral
+                for y in Int(region.minY)..<Int(region.maxY) {
+                    for x in Int(region.minX)..<Int(region.maxX) {
+                        let offset = (y * 1920 + x) * 4
+                        if (0..<3).contains(where: { abs(Int(baseline[offset + $0]) - Int(current[offset + $0])) > 3 }) {
+                            count += 1
+                        }
+                    }
+                }
+            }
+            counts.append(count)
+            var shimmerChanged = 0
+            for y in Int(shimmerRegion.minY)..<Int(shimmerRegion.maxY) {
+                for x in Int(shimmerRegion.minX)..<Int(shimmerRegion.maxX) {
+                    let offset = (y * 1920 + x) * 4
+                    if (0..<3).contains(where: { abs(Int(baseline[offset + $0]) - Int(current[offset + $0])) > 3 }) {
+                        shimmerChanged += 1
+                    }
+                }
+            }
+            shimmerCounts.append(shimmerChanged)
+            if sample == 1 || sample == 5 {
+                let attachment = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
+                attachment.name = "native-repeating-entry-\(sample)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+        let evidence = XCTAttachment(string: "Changed information pixels: \(counts); shimmer pixels: \(shimmerCounts)")
+        evidence.name = "native-repeating-entry-counts"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        XCTAssertLessThanOrEqual(counts.max() ?? 0, 20)
+        XCTAssertGreaterThan(shimmerCounts.max() ?? 0, 20, "Loading shimmer itself must keep animating.")
+
+        func shimmerChanges(after pause: Duration) async throws -> Int {
+            let before = try informationPixels(window)
+            try await Task.sleep(for: pause)
+            let after = try informationPixels(window)
+            var changed = 0
+            for y in Int(shimmerRegion.minY)..<Int(shimmerRegion.maxY) {
+                for x in Int(shimmerRegion.minX)..<Int(shimmerRegion.maxX) {
+                    let offset = (y * 1920 + x) * 4
+                    if (0..<3).contains(where: { abs(Int(before[offset + $0]) - Int(after[offset + $0])) > 3 }) {
+                        changed += 1
+                    }
+                }
+            }
+            return changed
+        }
+
+        model.shimmerActive = false
+        try await Task.sleep(for: .milliseconds(400))
+        let inactiveChanges = try await shimmerChanges(after: .milliseconds(400))
+        XCTAssertEqual(inactiveChanges, 0)
+        model.shimmerActive = true
+        var resumedChanges = 0
+        for _ in 0..<8 {
+            resumedChanges = max(resumedChanges, try await shimmerChanges(after: .milliseconds(300)))
+        }
+        XCTAssertGreaterThan(resumedChanges, 20, "Loading shimmer must restart after becoming active again.")
+    }
+
     private func informationPixels(_ window: UIWindow) throws -> [UInt8] {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -273,6 +366,9 @@ final class NativeInformationCardHostedTests: XCTestCase {
 @MainActor @Observable
 private final class NativeInformationRefreshModel {
     var generation = 0
+    var showsInformation = false
+    var shimmerActive = true
+    @ObservationIgnored var shimmerFrame = CGRect.zero
     var item: MediaItem = {
         var item = MediaItem(id: "information-refresh", title: "A summer story", kind: .movie)
         item.overview = "Two people meet while working together. Their friendship grows through shared stories, unexpected choices, and an eventful summer in the city."
@@ -345,5 +441,27 @@ private struct NativeInformationSizingProbe: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         subviews[0].place(at: bounds.origin, proposal: proposal)
+    }
+}
+
+private struct NativeInformationShimmerFixture: View {
+    let model: NativeInformationRefreshModel
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if model.showsInformation {
+                NativeInformationRefreshView(model: model)
+                    .transition(.identity)
+            }
+            Color.gray
+                .frame(width: 200, height: 24)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                    model.shimmerFrame = $0
+                }
+                .shimmering(active: model.shimmerActive)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(12)
+        }
     }
 }
