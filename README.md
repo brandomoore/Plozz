@@ -84,6 +84,10 @@ presents them as a single library rather than a set of tabs you switch between.
   (Shares are supported, but still the newest and roughest part.)
 - **One merged library** — connect several servers and see one set of rows
   instead of picking a server first.
+- **Common Sense Media in Ratings** — Plex movie and show details can display
+  a prominent recommended age, separate from review scores. When header ratings
+  are shown, they default to the age badge plus two available review scores. Open the tile for
+  topic-by-topic guidance when the viewing account has eligible Plex Pass access.
 - **Sync watch history across servers** — optional, and off until you ask for it.
 - **Found automatically** — Plozz detects Jellyfin, Emby, and Seerr servers on
   your network so you don't type an address.

@@ -7,26 +7,26 @@ import CoreModels
 /// Renders nothing when there are no ratings.
 public struct RatingsBadgeRow: View {
     private let ratings: [ExternalRating]
+    private let familyGuidanceAge: Double?
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
 
-    public init(ratings: [ExternalRating]) {
-        // Order here, not at each call site. The detail page sorted by
-        // `sortRank` and the three hero views did not, so a title's badges could
-        // appear in one order on Home and another on its detail page depending
-        // on which backend happened to supply them. Sorting where they are
-        // rendered makes the order a property of the row itself.
-        self.ratings = ratings.sorted { $0.source.sortRank < $1.source.sortRank }
+    public init(ratings: [ExternalRating], familyGuidanceAge: Double? = nil) {
+        self.ratings = ratings
+        self.familyGuidanceAge = familyGuidanceAge
     }
 
     public var body: some View {
-        if !ratings.isEmpty {
+        if !ratings.isEmpty || familyGuidanceAge != nil {
             WrappingHStackLayout(
                 alignment: alignment,
                 spacing: spacing,
                 lineSpacing: 8
             ) {
+                if let familyGuidanceAge {
+                    FamilyGuidanceAgeBadge(age: familyGuidanceAge)
+                }
                 ForEach(ratings) { rating in
                     RatingBadge(rating: rating)
                 }
@@ -47,6 +47,46 @@ public struct RatingsBadgeRow: View {
         return horizontalSizeClass == .compact ? 12 : 14
         #else
         return 18
+        #endif
+    }
+}
+
+/// An age recommendation, deliberately separate from a review score or certification.
+public struct FamilyGuidanceAgeBadge: View {
+    private let age: Double
+    @Environment(\.locale) private var locale
+
+    public init(age: Double) {
+        self.age = age
+    }
+
+    public var body: some View {
+        HStack(spacing: 7) {
+            FamilyGuidanceIcon(size: iconSize)
+            Text(verbatim: age.formatted(.number.locale(locale).precision(.fractionLength(0...1))) + "+")
+                .font(valueFont)
+                .monospacedDigit()
+                .plozzForeground(.primary)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Common Sense Media, recommended age \(age, format: .number.precision(.fractionLength(0...1))) and older")
+        .accessibilityIdentifier("family-guidance-age-badge")
+    }
+
+    private var iconSize: CGFloat {
+        #if os(iOS)
+        24
+        #else
+        32
+        #endif
+    }
+
+    private var valueFont: Font {
+        #if os(iOS)
+        .subheadline.weight(.semibold)
+        #else
+        .system(size: 23, weight: .semibold)
         #endif
     }
 }

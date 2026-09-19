@@ -166,8 +166,8 @@ final class SameAccountVersionGroupingTests: XCTestCase {
         )
     }
 
-    /// HDR10+ has no `HDRRange` enum case, so the OLD flattened path silently
-    /// dropped it to SDR. Through `sourceMetadata` it survives as `HDR10+`.
+    /// The old flattened path dropped HDR10+ to SDR. Rich source metadata must
+    /// preserve the original signal when grouping duplicate versions.
     func testSynthesizedVersionPreservesHDR10PlusThatFlatteningWouldDrop() {
         let item = MediaItem(
             id: "jf-HDR10Plus", title: "Fallout", kind: .movie, productionYear: 2024,

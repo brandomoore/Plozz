@@ -1103,6 +1103,37 @@ public struct PlexClient: Sendable {
 
     private static let watchlistBase = URL(string: "https://discover.provider.plex.tv")!
 
+    func commonSenseMedia(metadataID: String) async throws -> FamilyGuidanceAvailability {
+        guard metadataID.count == 24, metadataID.allSatisfy(\.isHexDigit) else {
+            PlozzLog.networking.error("Invalid Plex global identifier for family guidance")
+            throw AppError.invalidResponse
+        }
+        let endpoint = Endpoint(
+            path: "/library/metadata/\(metadataID)/commonsensemedia",
+            headers: plexTVHeaders
+        )
+        let (data, response) = try await http.sendRaw(endpoint, baseURL: Self.watchlistBase)
+        switch response.statusCode {
+        case 200:
+            do {
+                let value = try JSONDecoder.plozz.decode(PlexCommonSenseMediaResponse.self, from: data)
+                guard let record = value.MediaContainer.CommonSenseMedia?.first else { return .unavailable }
+                return .available(record.guidance)
+            } catch {
+                PlozzLog.networking.error("Decoding Plex family guidance failed")
+                throw AppError.decoding
+            }
+        case 401: throw AppError.unauthorized
+        case 403: return .restricted
+        case 404: return .unavailable
+        case 429:
+            throw AppError.rateLimited(retryAfter: response.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init))
+        default:
+            PlozzLog.networking.error("Plex family guidance request failed: HTTP \(response.statusCode)")
+            throw AppError.invalidResponse
+        }
+    }
+
     /// An absolute artwork URL on the plex.tv Discover host.
     ///
     /// Watchlist entries are Discover rows: their `thumb`/`art` are paths on
@@ -1810,8 +1841,8 @@ public struct PlexClient: Sendable {
     ///     unknown DoVi profile is treated conservatively (transcode) rather than
     ///     assumed to be P5/P8; Profile 7 (dual-layer) always transcodes.
     ///   * Plain HDR10 (PQ) / HLG are direct-played only when the display
-    ///     advertises that range. We never special-case HDR10+ (it plays as its
-    ///     HDR10 base, already covered by `.hdr10`).
+    ///     advertises that range. HDR10+ is received intact on HDR10-capable
+    ///     outputs; AVFoundation preserves dynamic metadata where supported.
     ///   * SDR or absent range info is always allowed (the codec gate already ran).
     private func canDirectPlayVideoRange(part: PlexPart) -> Bool {
         guard let video = part.Stream?.first(where: { $0.streamType == 1 }) else { return true }
@@ -1825,6 +1856,8 @@ public struct PlexClient: Sendable {
         }
 
         switch video.colorTrc?.lowercased() {
+        case "smpte2094-40":
+            return allowed.contains(.hdr10Plus)
         case "smpte2084", "pq":
             return allowed.contains(.hdr10)
         case "arib-std-b67", "hlg":
@@ -1850,6 +1883,8 @@ public struct PlexClient: Sendable {
             return !allowed.isDisjoint(with: doviRanges)
         }
         switch video.colorTrc?.lowercased() {
+        case "smpte2094-40":
+            return allowed.contains(.hdr10Plus)
         case "smpte2084", "pq":
             return allowed.contains(.hdr10)
         case "arib-std-b67", "hlg":

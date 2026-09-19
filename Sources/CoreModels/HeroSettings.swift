@@ -37,6 +37,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
 
     /// Scores are optional Home chrome, independent of detail-page rating preferences.
     public var showsRatings: Bool
+    public var ratingPreferences: DetailPageSettings
 
     /// The `AggregatedLibrary.key`s the Random source may draw from. **Empty
     /// means "all currently-visible libraries"** (the sensible default), so a
@@ -75,6 +76,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         trailersEnabled: Bool,
         hideWatched: Bool = true,
         showsRatings: Bool = false,
+        ratingPreferences: DetailPageSettings = .default,
         randomLibraryKeys: Set<String>,
         autoAdvance: Bool,
         autoAdvanceSeconds: Int
@@ -88,6 +90,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         self.trailersEnabled = trailersEnabled
         self.hideWatched = hideWatched
         self.showsRatings = showsRatings
+        self.ratingPreferences = ratingPreferences
         self.randomLibraryKeys = randomLibraryKeys
         self.autoAdvance = autoAdvance
         self.autoAdvanceSeconds = autoAdvanceSeconds.clamped(to: HeroSettings.autoAdvanceRange)
@@ -95,6 +98,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case isEnabled, sources, maxItems, trailersEnabled, hideWatched, showsRatings
+        case ratingPreferences
         case randomLibraryKeys, autoAdvance, autoAdvanceSeconds
         case offeredSourcesVersion
     }
@@ -119,6 +123,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
             trailersEnabled: value(Bool.self, .trailersEnabled, d.trailersEnabled),
             hideWatched: value(Bool.self, .hideWatched, d.hideWatched),
             showsRatings: value(Bool.self, .showsRatings, d.showsRatings),
+            ratingPreferences: value(DetailPageSettings.self, .ratingPreferences, d.ratingPreferences),
             randomLibraryKeys: value(Set<String>.self, .randomLibraryKeys, d.randomLibraryKeys),
             autoAdvance: value(Bool.self, .autoAdvance, d.autoAdvance),
             autoAdvanceSeconds: value(Int.self, .autoAdvanceSeconds, d.autoAdvanceSeconds)
@@ -171,6 +176,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         try c.encode(trailersEnabled, forKey: .trailersEnabled)
         try c.encode(hideWatched, forKey: .hideWatched)
         try c.encode(showsRatings, forKey: .showsRatings)
+        try c.encode(ratingPreferences, forKey: .ratingPreferences)
         try c.encode(randomLibraryKeys, forKey: .randomLibraryKeys)
         try c.encode(autoAdvance, forKey: .autoAdvance)
         try c.encode(autoAdvanceSeconds, forKey: .autoAdvanceSeconds)

@@ -163,7 +163,7 @@ public struct DetailInformationSections: View {
                     comment: "Header of the synopsis section on a movie or series detail page. A noun meaning 'about this title', not the Settings > About page."
                 )) { aboutContent }
             }
-            if !sortedRatings.isEmpty {
+            if hasRatings {
                 detailSection(title: "Ratings") { ratingsTiles }
             }
             if !informationGroups.isEmpty {
@@ -190,7 +190,7 @@ public struct DetailInformationSections: View {
                 }
             }
 
-            if hasAbout || !sortedRatings.isEmpty {
+            if hasAbout || hasRatings {
                 GridRow(alignment: .top) {
                     if hasAbout {
                         headedSection(title: LocalizedStringResource(
@@ -202,7 +202,7 @@ public struct DetailInformationSections: View {
                     } else {
                         Color.clear.gridCellColumns(4)
                     }
-                    if !sortedRatings.isEmpty {
+                    if hasRatings {
                         headedSection(title: "Ratings") { ratingsTiles }
                             .gridCellColumns(8)
                     } else {
@@ -283,6 +283,10 @@ public struct DetailInformationSections: View {
                 ForEach(sortedRatings) { rating in
                     RatingTile(rating: rating)
                 }
+                if let summary = familyGuidanceSummary {
+                    FamilyGuidanceTile(item: item, summary: summary)
+                        .id(item.stablePresentationID)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
             // Report the height back so About can grow to meet it when the tiles wrap.
@@ -311,7 +315,7 @@ public struct DetailInformationSections: View {
     /// Whether About and Ratings sit side-by-side and should be the same height
     /// (tvOS and regular-width iPad). iPhone stacks them, so no matching.
     private var matchesRatingsHeight: Bool {
-        guard hasAbout, !sortedRatings.isEmpty else { return false }
+        guard hasAbout, hasRatings else { return false }
         #if os(tvOS)
         return true
         #else
@@ -336,7 +340,7 @@ public struct DetailInformationSections: View {
     }
 
     private var hasContent: Bool {
-        hasAbout || !sortedRatings.isEmpty || !informationGroups.isEmpty
+        hasAbout || hasRatings || !informationGroups.isEmpty
     }
 
     var hasAbout: Bool {
@@ -571,8 +575,7 @@ public struct DetailInformationSections: View {
     /// card hugging its content.
     private var tvOverviewCard: some View {
         ZStack {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
+            PlozzDialogBackdrop()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -622,12 +625,8 @@ public struct DetailInformationSections: View {
                 height: min(max(overviewCardHeight, 220), 760)
             )
             .onPreferenceChange(OverviewCardHeightKey.self) { overviewCardHeight = $0 }
-            .background {
-                RoundedRectangle(cornerRadius: 32, style: .continuous)
-                    .fill(palette.settingsBackground)
-            }
             .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-            .shadow(color: .black.opacity(0.5), radius: 40, y: 20)
+            .plozzSurface(.overlay, cornerRadius: 32)
         }
         .background(ClearSheetBackground())
     }
@@ -819,6 +818,14 @@ public struct DetailInformationSections: View {
         // Header preferences select a preview, never a subset of the full Ratings section.
         item.ratings.sorted { $0.source.sortRank < $1.source.sortRank }
     }
+
+    var familyGuidanceSummary: FamilyGuidanceSummary? {
+        guard item.kind == .movie || item.kind == .series,
+              let summary = item.familyGuidance, summary.hasContent else { return nil }
+        return summary
+    }
+
+    var hasRatings: Bool { !sortedRatings.isEmpty || familyGuidanceSummary != nil }
 
     /// Every Information column occupies one third of the spine so the lower row
     /// always lines up with the top row (About · Ratings), regardless of how many

@@ -9,10 +9,11 @@ import CoreUI
 @Observable
 final class HeroForegroundRatingsState {
     private(set) var ratings: [ExternalRating] = []
+    private(set) var familyGuidanceAge: Double?
 
-    func update(_ ratings: [ExternalRating]) {
-        guard self.ratings != ratings else { return }
-        self.ratings = ratings
+    func update(_ ratings: [ExternalRating], familyGuidanceAge: Double? = nil) {
+        if self.ratings != ratings { self.ratings = ratings }
+        if self.familyGuidanceAge != familyGuidanceAge { self.familyGuidanceAge = familyGuidanceAge }
     }
 }
 
@@ -20,7 +21,7 @@ private struct HeroForegroundRatingsView: View {
     let state: HeroForegroundRatingsState
 
     var body: some View {
-        RatingsBadgeRow(ratings: state.ratings)
+        RatingsBadgeRow(ratings: state.ratings, familyGuidanceAge: state.familyGuidanceAge)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -287,8 +288,8 @@ final class HeroForegroundUIView: UIView {
 
         overviewLabel.text = model.overview
         overviewLabel.isHidden = (model.overview ?? "").isEmpty
-        ratingsState.update(model.ratings)
-        ratingsHost.view!.isHidden = model.ratings.isEmpty
+        ratingsState.update(model.ratings, familyGuidanceAge: model.familyGuidanceAge)
+        ratingsHost.view!.isHidden = model.ratings.isEmpty && model.familyGuidanceAge == nil
 
         applyPills(model)
         applyDots(model)

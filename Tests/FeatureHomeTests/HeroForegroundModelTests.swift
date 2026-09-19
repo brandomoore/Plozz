@@ -15,6 +15,64 @@ final class HeroForegroundModelTests: XCTestCase {
     private typealias Builder = HeroForegroundModelBuilder
     private typealias PillInput = HeroForegroundModelBuilder.PillInput
 
+    func testHeroShowsAgeAndTwoReviewsByDefaultAndHonorsHiding() {
+        var item = movie()
+        item.familyGuidance = .init(recommendedAge: 14, qualityRating: 5)
+        item.ratings = [
+            .init(source: .imdb, value: 8, scale: .outOfTen),
+            .init(source: .rottenTomatoes, value: 94, scale: .percent),
+            .init(source: .rottenTomatoesAudience, value: 88, scale: .percent)
+        ]
+        func model(visible: Bool, preferences: DetailPageSettings = .default) -> HeroForegroundModel {
+            Builder.model(
+                item: item, overviewVisible: true, ratingsVisible: visible,
+                ratingPreferences: preferences, maskedTitle: nil, pillInputs: [],
+                selectedIndex: 0, heroFocused: false, slideCount: 1, slideIndex: 0
+            )
+        }
+        let shown = model(visible: true)
+        XCTAssertEqual(shown.familyGuidanceAge, 14)
+        XCTAssertEqual(shown.ratings.map(\.source), [.rottenTomatoesAudience, .rottenTomatoes])
+        XCTAssertNil(model(visible: false).familyGuidanceAge)
+        XCTAssertTrue(model(visible: false).ratings.isEmpty)
+        let custom = model(visible: true, preferences: .init(
+            showsHeaderFamilyGuidance: false, maxHeaderRatings: 3
+        ))
+        XCTAssertNil(custom.familyGuidanceAge)
+        XCTAssertEqual(custom.ratings.count, 3)
+        item.familyGuidance = .init(recommendedAge: nil, qualityRating: 5)
+        XCTAssertNil(model(visible: true).familyGuidanceAge, "A quality score is never an age.")
+        item.familyGuidance = .init(recommendedAge: 14, qualityRating: nil)
+        item.ratings = []
+        XCTAssertEqual(model(visible: true).familyGuidanceAge, 14, "Age-only headers remain visible.")
+    }
+
+    func testDetailHeroCacheRefreshesWhenAgeAndReviewsArrive() {
+        let cache = HeroPresentationCache()
+        var item = movie()
+        XCTAssertNil(cache.presentation(for: item).familyGuidanceAge)
+        item.familyGuidance = .init(recommendedAge: 14, qualityRating: nil)
+        item.ratings = [.init(source: .imdb, value: 8, scale: .outOfTen)]
+        XCTAssertEqual(cache.presentation(for: item).familyGuidanceAge, 14)
+        XCTAssertEqual(cache.presentation(for: item).ratings, item.ratings)
+        item.familyGuidance = .init(recommendedAge: 16, qualityRating: nil)
+        XCTAssertEqual(cache.presentation(for: item).familyGuidanceAge, 16)
+    }
+
+    func testFocusedEpisodeKeepsTheShowsAgeRecommendation() {
+        let root = HeroPresentation(
+            item: MediaItem(id: "show", title: "Show", kind: .series,
+                            familyGuidance: .init(recommendedAge: 14, qualityRating: nil)),
+            artworkStyle: .landscape, surface: .detail
+        )
+        let episode = HeroPresentation(
+            item: MediaItem(id: "episode", title: "Episode", kind: .episode,
+                            familyGuidance: .init(recommendedAge: 5, qualityRating: nil)),
+            artworkStyle: .landscape, surface: .detail
+        )
+        XCTAssertEqual(HeroContentPolicy.familyGuidanceAge(focused: episode, root: root), 14)
+    }
+
     private func movie(
         id: String = "m1",
         title: String = "The Example",

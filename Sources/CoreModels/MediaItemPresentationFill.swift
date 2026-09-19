@@ -23,6 +23,7 @@ public extension MediaItem {
         if officialRating?.isEmpty != false {
             officialRating = donor.officialRating
         }
+        if familyGuidance == nil { familyGuidance = donor.familyGuidance }
         if genres.isEmpty { genres = donor.genres }
         if people.isEmpty {
             people = donor.people

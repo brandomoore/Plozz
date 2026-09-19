@@ -1,6 +1,6 @@
 #if os(iOS)
 import CoreModels
-import CoreUI
+@testable import CoreUI
 import SwiftUI
 import UIKit
 import XCTest
@@ -23,6 +23,54 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
             .environment(\.dynamicTypeSize, textSize)
             .environment(\.horizontalSizeClass, .compact)
         ).sizeThatFits(in: CGSize(width: width, height: 2_000))
+    }
+
+    func testGuidanceHeaderFitsNarrowPhonesAndExpandsWithDynamicType() {
+        let header = FamilyGuidanceHeader(
+            title: "A movie with a longer title",
+            summary: .init(recommendedAge: 14, qualityRating: 5,
+                           overview: "A brief description of the guidance for this movie.")
+        )
+        let standard = size(of: header, width: 280)
+        let accessible = size(of: header, width: 280, textSize: .accessibility3)
+        XCTAssertLessThanOrEqual(standard.width, 280.5)
+        XCTAssertLessThanOrEqual(accessible.width, 280.5)
+        XCTAssertGreaterThan(accessible.height, standard.height)
+    }
+
+    func testGuidanceTileWithInlineDisclosureFitsNarrowTouchColumns() {
+        let summary = FamilyGuidanceSummary(recommendedAge: 8, qualityRating: 4,
+                                            overview: "Strong heroine and positive messages.")
+        let tile = FamilyGuidanceTile(
+            item: MediaItem(id: "fixture", title: "Fixture", kind: .series, familyGuidance: summary),
+            summary: summary
+        )
+        for width in [CGFloat(130), 150, 248] {
+            for textSize in [DynamicTypeSize.large, .accessibility3] {
+                let result = size(of: tile, width: width, textSize: textSize)
+                XCTAssertLessThanOrEqual(result.width, width + 0.5)
+                XCTAssertGreaterThan(result.height, 0)
+            }
+        }
+    }
+
+    func testAgeAndReviewsFitOrWrapWithoutClippingAtLargeTextSizes() {
+        for width in [CGFloat(180), 280, 393] {
+            for textSize in [DynamicTypeSize.large, .xxxLarge, .accessibility3] {
+                let result = size(
+                    of: DetailHeaderMetadataRow(ratings: ratings, badges: badges, familyGuidanceAge: 14),
+                    width: width, textSize: textSize
+                )
+                XCTAssertGreaterThan(result.height, 0)
+                XCTAssertLessThanOrEqual(result.width, width + 0.5)
+                let ageSize = size(of: FamilyGuidanceAgeBadge(age: 14), width: width, textSize: textSize)
+                XCTAssertGreaterThanOrEqual(result.height, ageSize.height)
+            }
+        }
+        let ageOnly = size(
+            of: DetailHeaderMetadataRow(ratings: [], badges: [], familyGuidanceAge: 14), width: 280
+        )
+        XCTAssertGreaterThan(ageOnly.height, 0)
     }
 
     func testSparseKorraMetadataRemainsOneLine() {

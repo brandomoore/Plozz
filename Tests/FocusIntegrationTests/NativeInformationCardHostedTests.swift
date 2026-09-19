@@ -1,18 +1,253 @@
 import CoreModels
 @testable import CoreUI
+import Observation
 import SwiftUI
 import TVUIKit
 import UIKit
+import Vision
 import XCTest
 
 @MainActor
 final class NativeInformationCardHostedTests: XCTestCase {
+    func testInformationTextDoesNotReplayDuringUnrelatedAnimatedUpdates() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let model = NativeInformationRefreshModel()
+        let host = UIHostingController(rootView: NativeInformationRefreshView(model: model))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        window.layoutIfNeeded()
+        try await Task.sleep(for: .seconds(1))
+        let cards = nativeCards(in: window).filter { !$0.isFocused }
+        XCTAssertGreaterThanOrEqual(cards.count, 4)
+        let frames = cards.map { $0.contentView.convert($0.contentView.bounds, to: window).insetBy(dx: 12, dy: 12) }
+        let baseline = try informationPixels(window)
+        var changes: [Int] = []
+        for tick in 1...12 {
+            withAnimation(.easeInOut(duration: 0.3)) { model.generation = tick }
+            try await Task.sleep(for: .milliseconds(50))
+            let current = try informationPixels(window)
+            var changedPixels = 0
+            for frame in frames {
+                let region = frame.intersection(window.bounds).integral
+                for y in Int(region.minY)..<Int(region.maxY) {
+                    for x in Int(region.minX)..<Int(region.maxX) {
+                        let offset = (y * 1920 + x) * 4
+                        if (0..<3).contains(where: { abs(Int(baseline[offset + $0]) - Int(current[offset + $0])) > 3 }) {
+                            changedPixels += 1
+                        }
+                    }
+                }
+            }
+            changes.append(changedPixels)
+            if tick == 3 || tick == 10 {
+                let screenshot = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
+                screenshot.name = "information-refresh-\(tick)"
+                screenshot.lifetime = .keepAlways
+                add(screenshot)
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let evidence = XCTAttachment(string: "Changed text/surface pixels per unrelated update: \(changes)")
+        evidence.name = "information-refresh-pixel-changes"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        XCTAssertLessThanOrEqual(changes.max() ?? 0, 20, "Unchanged information must not fade or reveal partial text again.")
+    }
+
+    func testMinimumSizeProbesDoNotResizeAnAlreadyPlacedNativeCard() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let model = NativeInformationRefreshModel()
+        window.rootViewController = UIHostingController(rootView:
+            NativeInformationSizingProbeView(model: model)
+                .environment(\.plozzCardFocusStyle, .system)
+                .environment(\.themePalette, .dark)
+        )
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        window.layoutIfNeeded()
+        try await Task.sleep(for: .seconds(1))
+        let card = try XCTUnwrap(nativeCards(in: window).first)
+        let baseline = try informationPixels(window)
+        let region = card.contentView.convert(card.contentView.bounds, to: window).insetBy(dx: 12, dy: 12).integral
+        var sizes: [CGSize] = []
+        var changedPixels: [Int] = []
+        for tick in 0..<8 {
+            withAnimation(.easeInOut(duration: 0.3)) { model.generation = tick }
+            try await Task.sleep(for: .milliseconds(60))
+            sizes.append(card.contentSize)
+            XCTAssertEqual(card.contentSize.width, 300, accuracy: 1)
+            XCTAssertEqual(card.contentSize.height, 280, accuracy: 1)
+            XCTAssertEqual(card.contentView.bounds.width, 300, accuracy: 1)
+            XCTAssertEqual(card.contentView.bounds.height, 280, accuracy: 1)
+            let current = try informationPixels(window)
+            var changed = 0
+            for y in Int(region.minY)..<Int(region.maxY) {
+                for x in Int(region.minX)..<Int(region.maxX) {
+                    let offset = (y * 1920 + x) * 4
+                    if (0..<3).contains(where: { abs(Int(baseline[offset + $0]) - Int(current[offset + $0])) > 3 }) {
+                        changed += 1
+                    }
+                }
+            }
+            changedPixels.append(changed)
+        }
+        let evidence = XCTAttachment(string: "Visible native content sizes: \(sizes); changed pixels: \(changedPixels)")
+        evidence.name = "native-information-sizing-probes"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        let screenshot = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
+        screenshot.name = "native-information-sizing-probes"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        XCTAssertLessThanOrEqual(changedPixels.max() ?? 0, 20, "Sizing probes must not animate unchanged text.")
+
+        model.item.ratings[2] = .init(source: .community, value: 8.9, scale: .outOfTen)
+        try await Task.sleep(for: .milliseconds(400))
+        let image = try XCTUnwrap(DetailTransitionSnapshot.image(of: window))
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+        let recognized = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        XCTAssertTrue(recognized.contains { $0.contains("8.9") },
+                      "Real rating updates must remain visible rather than being frozen to suppress animation: \(recognized)")
+    }
+
+    func testLoadingShimmerDoesNotAnimateSiblingNativeInformationText() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let model = NativeInformationRefreshModel()
+        window.rootViewController = UIHostingController(rootView: NativeInformationShimmerFixture(model: model))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        model.showsInformation = true
+        try await Task.sleep(for: .seconds(3))
+        let cards = nativeCards(in: window).filter { !$0.isFocused }
+        XCTAssertGreaterThanOrEqual(cards.count, 4)
+        let frames = cards.map { $0.contentView.convert($0.contentView.bounds, to: window).insetBy(dx: 12, dy: 12) }
+        let baseline = try informationPixels(window)
+        var counts: [Int] = []
+        var shimmerCounts: [Int] = []
+        let shimmerRegion = model.shimmerFrame.intersection(window.bounds).integral
+        XCTAssertFalse(shimmerRegion.isEmpty)
+        for sample in 0..<8 {
+            try await Task.sleep(for: .milliseconds(300))
+            let current = try informationPixels(window)
+            var count = 0
+            for frame in frames {
+                let region = frame.intersection(window.bounds).integral
+                for y in Int(region.minY)..<Int(region.maxY) {
+                    for x in Int(region.minX)..<Int(region.maxX) {
+                        let offset = (y * 1920 + x) * 4
+                        if (0..<3).contains(where: { abs(Int(baseline[offset + $0]) - Int(current[offset + $0])) > 3 }) {
+                            count += 1
+                        }
+                    }
+                }
+            }
+            counts.append(count)
+            var shimmerChanged = 0
+            for y in Int(shimmerRegion.minY)..<Int(shimmerRegion.maxY) {
+                for x in Int(shimmerRegion.minX)..<Int(shimmerRegion.maxX) {
+                    let offset = (y * 1920 + x) * 4
+                    if (0..<3).contains(where: { abs(Int(baseline[offset + $0]) - Int(current[offset + $0])) > 3 }) {
+                        shimmerChanged += 1
+                    }
+                }
+            }
+            shimmerCounts.append(shimmerChanged)
+            if sample == 1 || sample == 5 {
+                let attachment = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
+                attachment.name = "native-repeating-entry-\(sample)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+        let evidence = XCTAttachment(string: "Changed information pixels: \(counts); shimmer pixels: \(shimmerCounts)")
+        evidence.name = "native-repeating-entry-counts"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        XCTAssertLessThanOrEqual(counts.max() ?? 0, 20)
+        XCTAssertGreaterThan(shimmerCounts.max() ?? 0, 20, "Loading shimmer itself must keep animating.")
+
+        func shimmerChanges(after pause: Duration) async throws -> Int {
+            let before = try informationPixels(window)
+            try await Task.sleep(for: pause)
+            let after = try informationPixels(window)
+            var changed = 0
+            for y in Int(shimmerRegion.minY)..<Int(shimmerRegion.maxY) {
+                for x in Int(shimmerRegion.minX)..<Int(shimmerRegion.maxX) {
+                    let offset = (y * 1920 + x) * 4
+                    if (0..<3).contains(where: { abs(Int(before[offset + $0]) - Int(after[offset + $0])) > 3 }) {
+                        changed += 1
+                    }
+                }
+            }
+            return changed
+        }
+
+        model.shimmerActive = false
+        try await Task.sleep(for: .milliseconds(400))
+        let inactiveChanges = try await shimmerChanges(after: .milliseconds(400))
+        XCTAssertEqual(inactiveChanges, 0)
+        model.shimmerActive = true
+        var resumedChanges = 0
+        for _ in 0..<8 {
+            resumedChanges = max(resumedChanges, try await shimmerChanges(after: .milliseconds(300)))
+        }
+        XCTAssertGreaterThan(resumedChanges, 20, "Loading shimmer must restart after becoming active again.")
+    }
+
+    private func informationPixels(_ window: UIWindow) throws -> [UInt8] {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.preferredRange = .standard
+        let image = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let cgImage = try XCTUnwrap(image.cgImage)
+        XCTAssertEqual(cgImage.bitsPerPixel, 32)
+        XCTAssertEqual(cgImage.bytesPerRow, 1920 * 4)
+        return Array(try XCTUnwrap(cgImage.dataProvider?.data) as Data)
+    }
+
     func testInformationGridSettlesWithoutBlockingTheMainThread() async throws {
         let deadline = ContinuousClock.now + .seconds(10)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
               ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(25))
         }
+
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
         let previousWindow = scene.windows.first(where: \.isKeyWindow)
@@ -124,6 +359,109 @@ final class NativeInformationCardHostedTests: XCTestCase {
             Text("Credits and license information")
                 .plozzForeground(.primary)
                 .onAppear { observe(palette, scheme) }
+        }
+    }
+}
+
+@MainActor @Observable
+private final class NativeInformationRefreshModel {
+    var generation = 0
+    var showsInformation = false
+    var shimmerActive = true
+    @ObservationIgnored var shimmerFrame = CGRect.zero
+    var item: MediaItem = {
+        var item = MediaItem(id: "information-refresh", title: "A summer story", kind: .movie)
+        item.overview = "Two people meet while working together. Their friendship grows through shared stories, unexpected choices, and an eventful summer in the city."
+        item.productionYear = 2009
+        item.runtime = 5_700
+        item.officialRating = "PG-13"
+        item.genres = ["Comedy", "Drama", "Romance"]
+        item.tags = ["friendship", "city", "summer", "memories", "choices", "work"]
+        item.studios = ["Fictional Pictures"]
+        item.ratings = [
+            .init(source: .critic, value: 8, scale: .outOfTen),
+            .init(source: .tmdb, value: 7.3, scale: .outOfTen),
+            .init(source: .community, value: 7.3, scale: .outOfTen)
+        ]
+        return item
+    }()
+}
+
+private struct NativeInformationRefreshKey: EnvironmentKey {
+    static let defaultValue = 0
+}
+
+private extension EnvironmentValues {
+    var nativeInformationRefresh: Int {
+        get { self[NativeInformationRefreshKey.self] }
+        set { self[NativeInformationRefreshKey.self] = newValue }
+    }
+}
+
+private struct NativeInformationRefreshView: View {
+    let model: NativeInformationRefreshModel
+
+    var body: some View {
+        ScrollView {
+            DetailInformationSections(
+                item: model.item, horizontalInset: 80,
+                selectedSource: MediaSourceRef(
+                    accountID: "fixture", itemID: model.item.id,
+                    providerKind: .jellyfin, serverName: "Fixture server", locality: .local
+                )
+            )
+        }
+        .environment(\.nativeInformationRefresh, model.generation)
+        .environment(\.plozzCardFocusStyle, .system)
+        .environment(\.plozzNativeFocusSurface, true)
+        .environment(\.themePalette, .dark)
+        .environment(\.colorScheme, .dark)
+    }
+}
+
+private struct NativeInformationSizingProbeView: View {
+    let model: NativeInformationRefreshModel
+
+    var body: some View {
+        NativeInformationSizingProbe(generation: model.generation) {
+            RatingTile(rating: model.item.ratings[2])
+        }
+        .frame(width: 300, height: 280)
+    }
+}
+
+private struct NativeInformationSizingProbe: Layout {
+    let generation: Int
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let size = subviews[0].sizeThatFits(proposal)
+        _ = subviews[0].sizeThatFits(.zero)
+        return size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews[0].place(at: bounds.origin, proposal: proposal)
+    }
+}
+
+private struct NativeInformationShimmerFixture: View {
+    let model: NativeInformationRefreshModel
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if model.showsInformation {
+                NativeInformationRefreshView(model: model)
+                    .transition(.identity)
+            }
+            Color.gray
+                .frame(width: 200, height: 24)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                    model.shimmerFrame = $0
+                }
+                .shimmering(active: model.shimmerActive)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(12)
         }
     }
 }

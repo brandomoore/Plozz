@@ -124,6 +124,22 @@ final class PlexHybridDirectPlayTests: XCTestCase {
         XCTAssertFalse(try canDirectPlay(json, caps: caps, hybrid: true))
     }
 
+    func testHDR10PlusPreservesDirectPlayAndStillRejectsSDROutputs() throws {
+        for (container, hybrid) in [("mkv", true), ("mp4", false)] {
+            let json = """
+            {"id":1,"container":"\(container)","videoCodec":"hevc","audioCodec":"aac",
+             "Part":[{"id":2,"key":"/library/parts/2/file.\(container)","container":"\(container)","Stream":[
+               {"id":10,"streamType":1,"index":0,"codec":"hevc","colorTrc":"smpte2094-40"},
+               {"id":11,"streamType":2,"index":1,"codec":"aac"}
+             ]}]}
+            """
+            for hdr10 in [false, true] {
+                let caps = MediaCapabilities(supportsHEVC: true, supportsHDR10: hdr10, supportsDolbyVision: false)
+                XCTAssertEqual(try canDirectPlay(json, caps: caps, hybrid: hybrid), hdr10)
+            }
+        }
+    }
+
     // MARK: DTS / TrueHD audio in an Apple container gated on the flag
 
     private let dtsMP4 = """

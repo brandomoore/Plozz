@@ -6,6 +6,7 @@ import CoreModels
 public struct AdaptiveMediaMetadataRow: View {
     private let facts: [String]
     private let ratings: [ExternalRating]
+    private let familyGuidanceAge: Double?
     private let badges: [MediaBadge]
     private let centered: Bool
 
@@ -13,19 +14,24 @@ public struct AdaptiveMediaMetadataRow: View {
         facts: [String],
         ratings: [ExternalRating],
         badges: [MediaBadge],
+        familyGuidanceAge: Double? = nil,
         centered: Bool = false
     ) {
         self.facts = facts
         self.ratings = ratings
+        self.familyGuidanceAge = familyGuidanceAge
         self.badges = badges
         self.centered = centered
     }
 
     public var body: some View {
-        if !facts.isEmpty || !ratings.isEmpty || !badges.isEmpty {
+        if !facts.isEmpty || !ratings.isEmpty || !badges.isEmpty || familyGuidanceAge != nil {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
                     MetadataFactsText(facts: facts)
+                    if let familyGuidanceAge {
+                        FamilyGuidanceAgeBadge(age: familyGuidanceAge)
+                    }
                     ForEach(ratings) { rating in
                         RatingBadge(rating: rating)
                     }
@@ -43,13 +49,16 @@ public struct AdaptiveMediaMetadataRow: View {
                             centered: centered
                         )
                     }
-                    if !ratings.isEmpty {
+                    if !ratings.isEmpty || familyGuidanceAge != nil {
                         WrappingHStackLayout(
                             alignment: centered ? .center : .leading,
                             spacing: 12,
                             lineSpacing: 8,
                             balancesLastRow: true
                         ) {
+                            if let familyGuidanceAge {
+                                FamilyGuidanceAgeBadge(age: familyGuidanceAge)
+                            }
                             ForEach(ratings) { rating in
                                 RatingBadge(rating: rating)
                             }

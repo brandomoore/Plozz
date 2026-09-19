@@ -171,6 +171,16 @@ class LocalizationBatchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Correct English plural structures"):
                 BATCHES.current_packets(["de"], Path("unused-snapshot.json"))
 
+    def test_stale_plural_history_uses_the_same_scope_as_catalog_validation(self) -> None:
+        entry = {"extractionState": "stale", "localizations": {"de": unit("%lld Einträge")}}
+        catalog = {"sourceLanguage": "en", "strings": {"%lld items": entry}}
+        with patch.object(BATCHES.ARTIFACTS, "load", return_value=catalog), \
+             patch.object(BATCHES.SOURCE, "INFO_CATALOGS", {}):
+            self.assertIn("de", BATCHES.current_packets(["de"], Path("unused-snapshot.json")))
+            entry.pop("extractionState")
+            with self.assertRaisesRegex(ValueError, "Correct English plural structures"):
+                BATCHES.current_packets(["de"], Path("unused-snapshot.json"))
+
     def test_plan_never_overwrites_existing_work(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

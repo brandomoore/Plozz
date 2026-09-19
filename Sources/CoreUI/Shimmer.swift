@@ -54,17 +54,20 @@ private struct ShimmerModifier: ViewModifier {
                         // instead of a relentless strobe.
                         .frame(width: max(width, 1) * 0.95)
                         .offset(x: phase * max(width, 1) * 2.0)
+                        // Keep the repeat off transactions used to mount unrelated native content.
+                        .animation(
+                            .easeInOut(duration: duration).repeatForever(autoreverses: false),
+                            value: phase
+                        )
                         .blendMode(.plusLighter)
                         .allowsHitTesting(false)
                     }
                     .mask(content)
                 }
                 .onAppear {
-                    phase = -1
-                    withAnimation(.easeInOut(duration: duration).repeatForever(autoreverses: false)) {
-                        phase = 1
-                    }
+                    phase = 1
                 }
+                .onDisappear { phase = -1 }
         )
     }
 }

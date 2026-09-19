@@ -186,6 +186,8 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// Provider-native string (Jellyfin `OfficialRating`); `nil` when unrated or
     /// unreported. Rendered as an outlined badge on the detail hero.
     public var officialRating: String?
+    /// Provider-supplied family guidance, separate from the official certificate.
+    public var familyGuidance: FamilyGuidanceSummary?
 
     /// Genre labels for the item, e.g. `["Action", "Adventure"]`. Ordered as the
     /// provider returns them; the detail metadata line shows the first few.
@@ -440,6 +442,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         productionYear: Int? = nil,
         releaseDate: Date? = nil,
         officialRating: String? = nil,
+        familyGuidance: FamilyGuidanceSummary? = nil,
         genres: [String] = [],
         people: [MediaPerson] = [],
         studios: [String] = [],
@@ -500,6 +503,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         self.productionYear = productionYear
         self.releaseDate = releaseDate
         self.officialRating = officialRating
+        self.familyGuidance = familyGuidance
         self.genres = genres
         self.people = people
         self.studios = studios
@@ -560,6 +564,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         case fileBrowserContainerID
         case originalTitle
         case productionYear, releaseDate, officialRating, genres, people, studios, tags, taglines
+        case familyGuidance
         case seriesID, seasonID, runtime, resumePosition, playedPercentage, isPlayed, hasBeenPlayed
         case posterURL, seriesPosterURL, backdropURL, heroBackdropURL
         case fallbackArtworkURL, logoURL, ratings, providerIDs, metadataProvenance
@@ -598,6 +603,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         productionYear = try container.decodeIfPresent(Int.self, forKey: .productionYear)
         releaseDate = try container.decodeIfPresent(Date.self, forKey: .releaseDate)
         officialRating = try container.decodeIfPresent(String.self, forKey: .officialRating)
+        familyGuidance = try container.decodeIfPresent(FamilyGuidanceSummary.self, forKey: .familyGuidance)
         genres = try container.decodeIfPresent([String].self, forKey: .genres) ?? []
         people = try container.decodeIfPresent([MediaPerson].self, forKey: .people) ?? []
         studios = try container.decodeIfPresent([String].self, forKey: .studios) ?? []

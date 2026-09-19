@@ -166,6 +166,9 @@ public struct ThemePalette: Equatable, Sendable {
     /// opaque backing that stops the drop shadow bleeding through the glass.
     public let isLight: Bool
 
+    /// Standard dimming behind app-owned dialogs; system presentations own theirs.
+    public var dialogBackdropOpacity: Double { isLight ? 0.4 : 0.85 }
+
     /// Only the module's own `dark`/`pureBlack`/`light` literals construct palettes;
     /// external callers use the static factories (`palette(for:)`) or the ready
     /// palettes. Kept `internal` (not `public`) so adding tokens here is never a
@@ -378,9 +381,8 @@ public extension ThemePalette {
         cardOpaqueBorder: Color.white.opacity(0.12),
         // OLED never lifts (that defeats pixels-off black). A raised surface stays
         // the same near-black as the page and separates by a hairline border only.
-        // Overlays get a brighter, mandatory hairline plus a shadow so a modal is
-        // unmistakably above two otherwise-identical black surfaces. Hairlines use
-        // the shared cool-neutral tint, brightened to ~Twitter's OLED border weight.
+        // Overlays keep a subtle mandatory hairline plus a shadow; the shared
+        // dim backdrop provides the stronger separation from the page.
         raised: SurfaceStyle(
             fill: Color(red: 0.025, green: 0.025, blue: 0.03),
             border: ThemePalette.darkHairline.opacity(0.26),
@@ -388,7 +390,7 @@ public extension ThemePalette {
         ),
         overlay: SurfaceStyle(
             fill: Color(red: 0.025, green: 0.025, blue: 0.03),
-            border: ThemePalette.darkHairline.opacity(0.36),
+            border: ThemePalette.darkHairline.opacity(0.13),
             borderWidth: 1,
             shadow: SurfaceShadow(color: .black.opacity(0.6), radius: 28, y: 16)
         ),

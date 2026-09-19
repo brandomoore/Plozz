@@ -1,21 +1,54 @@
 import SwiftUI
 import CoreModels
 
-/// The default stays on one line; opting into more than two ratings allows wrapping.
-public struct DetailHeaderMetadataRow: View {
-    private let ratings: [ExternalRating]
-    private let badges: [MediaBadge]
-    @State private var showsDetails = false
+private struct DetailHeaderSettingsKey: EnvironmentKey {
+    static let defaultValue: DetailPageSettingsModel? = nil
+}
 
-    public init(ratings: [ExternalRating], badges: [MediaBadge]) {
-        self.ratings = ratings
-        self.badges = badges
+public extension EnvironmentValues {
+    var detailHeaderSettings: DetailPageSettingsModel? {
+        get { self[DetailHeaderSettingsKey.self] }
+        set { self[DetailHeaderSettingsKey.self] = newValue }
+    }
+}
+
+public struct HeaderRatingPreviewControls: View {
+    @Binding private var settings: DetailPageSettings
+
+    public init(settings: Binding<DetailPageSettings>) {
+        _settings = settings
     }
 
     public var body: some View {
-        if !ratings.isEmpty || !badges.isEmpty {
+        Toggle("Show Common Sense age", isOn: $settings.showsHeaderFamilyGuidance)
+        Picker("Review scores shown", selection: $settings.maxHeaderRatings) {
+            ForEach(Array(DetailPageSettings.headerRatingCountRange), id: \.self) { count in
+                Text(count, format: .number).tag(count)
+            }
+        }
+    }
+}
+
+/// Richer previews wrap without hiding the recommended age or extra review scores.
+public struct DetailHeaderMetadataRow: View {
+    private let ratings: [ExternalRating]
+    private let badges: [MediaBadge]
+    private let familyGuidanceAge: Double?
+    @State private var showsDetails = false
+
+    public init(ratings: [ExternalRating], badges: [MediaBadge], familyGuidanceAge: Double? = nil) {
+        self.ratings = ratings
+        self.badges = badges
+        self.familyGuidanceAge = familyGuidanceAge
+    }
+
+    public var body: some View {
+        if !ratings.isEmpty || !badges.isEmpty || familyGuidanceAge != nil {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
+                    if let familyGuidanceAge {
+                        FamilyGuidanceAgeBadge(age: familyGuidanceAge)
+                    }
                     ForEach(ratings) { RatingBadge(rating: $0) }
                     if !badges.isEmpty {
                         Button { showsDetails = true } label: {
@@ -32,6 +65,9 @@ public struct DetailHeaderMetadataRow: View {
                 .fixedSize(horizontal: true, vertical: true)
 
                 HStack(spacing: 12) {
+                    if let familyGuidanceAge {
+                        FamilyGuidanceAgeBadge(age: familyGuidanceAge)
+                    }
                     ForEach(ratings) { RatingBadge(rating: $0) }
                     if !badges.isEmpty {
                         formatsDisclosure
@@ -39,13 +75,16 @@ public struct DetailHeaderMetadataRow: View {
                 }
                 .fixedSize(horizontal: true, vertical: true)
 
-                if ratings.count > 2 {
+                if ratings.count > 2 || familyGuidanceAge != nil {
                     WrappingHStackLayout(
                         alignment: .center,
                         spacing: 12,
                         lineSpacing: 8,
                         balancesLastRow: true
                     ) {
+                        if let familyGuidanceAge {
+                            FamilyGuidanceAgeBadge(age: familyGuidanceAge)
+                        }
                         ForEach(ratings) { RatingBadge(rating: $0) }
                         if !badges.isEmpty {
                             formatsDisclosure
@@ -75,8 +114,15 @@ public struct DetailHeaderMetadataRow: View {
             .sheet(isPresented: $showsDetails) {
                 NavigationStack {
                     List {
-                        if !ratings.isEmpty {
+                        if !ratings.isEmpty || familyGuidanceAge != nil {
                             Section("Ratings") {
+                                if let familyGuidanceAge {
+                                    HStack {
+                                        Text("Recommended age")
+                                        Spacer()
+                                        FamilyGuidanceAgeBadge(age: familyGuidanceAge)
+                                    }
+                                }
                                 ForEach(ratings) { rating in
                                     HStack {
                                         Text(verbatim: rating.source.displayName)
@@ -114,7 +160,7 @@ public struct DetailHeaderMetadataRow: View {
     }
 
     private var detailsTitle: LocalizedStringResource {
-        if ratings.isEmpty { return "Picture & sound" }
+        if ratings.isEmpty && familyGuidanceAge == nil { return "Picture & sound" }
         if badges.isEmpty { return "Ratings" }
         return "Ratings & formats"
     }

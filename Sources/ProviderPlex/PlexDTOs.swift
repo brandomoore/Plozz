@@ -185,6 +185,7 @@ struct PlexMetadata: Decodable {
     let parentYear: Int?
     /// Content certificate, e.g. `TV-14`, `PG-13`, `R`.
     let contentRating: String?
+    let CommonSenseMedia: [PlexCommonSenseMedia]?
     /// Critic score (0–10 on Plex's normalised scale); `ratingImage` names the
     /// source, e.g. `rottentomatoes://image.rating.ripe` or `imdb://…`.
     let rating: Double?
@@ -622,7 +623,7 @@ struct PlexConnectionDTO: Decodable {
 // silently dropping a 4K Dolby Vision file to a coarse/empty badge set. These
 // helpers accept any of the representations so a single quirky field can never
 // nuke an item's technical badges.
-private extension KeyedDecodingContainer {
+extension KeyedDecodingContainer {
     func flexibleBool(_ key: Key) -> Bool? {
         if let value = try? decode(Bool.self, forKey: key) { return value }
         if let value = try? decode(Int.self, forKey: key) { return value != 0 }

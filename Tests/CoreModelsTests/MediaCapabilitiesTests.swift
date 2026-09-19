@@ -20,7 +20,7 @@ final class MediaCapabilitiesPolicyTests: XCTestCase {
             supportsHLG: true,
             supportsDolbyVision: false
         )
-        XCTAssertEqual(caps.allowedHDRRanges, [.sdr, .hlg, .hdr10])
+        XCTAssertEqual(caps.allowedHDRRanges, [.sdr, .hlg, .hdr10, .hdr10Plus])
     }
 
     func testDolbyVisionAdvertisesProfile5And8VariantsOnly() {
@@ -31,13 +31,12 @@ final class MediaCapabilitiesPolicyTests: XCTestCase {
         )
         // P5 (DOVI) + the three P8 cross-compatible variants — and nothing else.
         XCTAssertEqual(caps.allowedHDRRanges, [
-            .sdr, .hlg, .hdr10,
+            .sdr, .hlg, .hdr10, .hdr10Plus,
             .dolbyVision, .dolbyVisionWithHDR10, .dolbyVisionWithHLG, .dolbyVisionWithSDR
         ])
     }
 
-    func testNeverAdvertisesHDR10Plus() {
-        // No combination of capabilities should ever surface an HDR10+ token.
+    func testHDR10PlusDirectPlayFollowsItsHDR10BaseCapability() {
         for hdr10 in [true, false] {
             for hlg in [true, false] {
                 for dovi in [true, false] {
@@ -47,10 +46,7 @@ final class MediaCapabilitiesPolicyTests: XCTestCase {
                         supportsDolbyVision: dovi
                     )
                     let raws = caps.allowedHDRRanges.map(\.rawValue)
-                    XCTAssertFalse(
-                        raws.contains(where: { $0.localizedCaseInsensitiveContains("HDR10Plus") }),
-                        "HDR10+ must never be advertised (hdr10=\(hdr10) hlg=\(hlg) dovi=\(dovi))"
-                    )
+                    XCTAssertEqual(raws.contains("HDR10Plus"), hdr10)
                 }
             }
         }
@@ -60,6 +56,7 @@ final class MediaCapabilitiesPolicyTests: XCTestCase {
         XCTAssertEqual(HDRRange.sdr.rawValue, "SDR")
         XCTAssertEqual(HDRRange.hlg.rawValue, "HLG")
         XCTAssertEqual(HDRRange.hdr10.rawValue, "HDR10")
+        XCTAssertEqual(HDRRange.hdr10Plus.rawValue, "HDR10Plus")
         XCTAssertEqual(HDRRange.dolbyVision.rawValue, "DOVI")
         XCTAssertEqual(HDRRange.dolbyVisionWithHDR10.rawValue, "DOVIWithHDR10")
         XCTAssertEqual(HDRRange.dolbyVisionWithHLG.rawValue, "DOVIWithHLG")

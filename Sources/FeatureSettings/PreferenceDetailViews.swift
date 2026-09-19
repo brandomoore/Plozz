@@ -235,13 +235,14 @@ struct SpoilerRowsBuilder {
 struct DetailPageDetailView: View {
     @Bindable var themeMusic: ThemeMusicSettingsModel
     @Bindable var heroBackground: HeroBackgroundSettingsModel
+    @Environment(\.detailHeaderSettings) private var detailHeaderSettings
 
     var body: some View {
         SettingsSplitLayout(title: "Detail Page", rows: heroRows)
     }
 
     private var heroRows: [SettingsSplitRow] {
-        [
+        var rows = [
             SettingsSplitRow(
                 id: "detail-page-hero-mode",
                 title: "Background",
@@ -270,6 +271,29 @@ struct DetailPageDetailView: View {
                 }
             }
         ]
+        if let detailHeaderSettings {
+            rows.append(SettingsSplitRow(
+                id: "detail-page-header-ratings",
+                title: "Header ratings",
+                description: "The Common Sense age appears separately from review scores. Full ratings remain in title information. Spoiler settings still apply."
+            ) {
+                DetailHeaderRatingsSettingsForm(model: detailHeaderSettings)
+            })
+        }
+        return rows
+    }
+}
+
+private struct DetailHeaderRatingsSettingsForm: View {
+    @Bindable var model: DetailPageSettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
+            Toggle("Show ratings in header", isOn: $model.settings.showsHeaderRatings)
+            if model.settings.showsHeaderRatings {
+                HeaderRatingPreviewControls(settings: $model.settings)
+            }
+        }
     }
 }
 

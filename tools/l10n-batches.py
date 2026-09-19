@@ -47,7 +47,7 @@ def write(path: Path, value: Any) -> None:
 
 def current_packets(languages: list[str] | None, snapshot_path: Path) -> dict[str, dict[str, Any]]:
     catalog = ARTIFACTS.load(SOURCE.CATALOG)
-    plural_problems = SYNC.plural_problems(catalog.get("strings", {}))
+    plural_problems = SYNC.plural_problems(SYNC.active_catalog_strings(catalog.get("strings", {})))
     if plural_problems:
         raise ValueError("Correct English plural structures before batching: " + "; ".join(plural_problems[:5]))
     languages = ARTIFACTS.catalog_languages(catalog) if languages is None else languages

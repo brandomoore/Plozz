@@ -83,15 +83,16 @@ final class JellyfinCapabilityProfileTests: XCTestCase {
         return try XCTUnwrap(range["Value"] as? String)
     }
 
-    func testHDR10PlusTokenNeverEmitted() throws {
-        let caps = MediaCapabilities(
-            supportsHEVC: true,
-            supportsHDR10: true,
-            supportsHLG: true,
-            supportsDolbyVision: true
-        )
-        let tokens = try hevcVideoRange(encoded(.appleTV(capabilities: caps))).split(separator: "|").map(String.init)
-        XCTAssertFalse(tokens.contains("HDR10Plus"))
+    func testHDR10PlusTokenPreservesDirectPlayOnHDR10CapableOutputs() throws {
+        for hybrid in [false, true] {
+            for hdr10 in [false, true] {
+                let caps = MediaCapabilities(supportsHEVC: true, supportsHDR10: hdr10)
+                let profile = JellyfinCapabilityProfile.appleTV(capabilities: caps, hybridEngineEnabled: hybrid)
+                let tokens = try hevcVideoRange(encoded(profile)).split(separator: "|").map(String.init)
+                XCTAssertEqual(tokens.contains("HDR10Plus"), hdr10)
+                XCTAssertEqual(tokens.contains("HDR10"), hdr10)
+            }
+        }
     }
 
     func testDolbyVisionRangesOnlyProfile5And8WhenSupported() throws {

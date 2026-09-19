@@ -80,6 +80,18 @@ final class HeroLiveMergeTests: XCTestCase {
 
     // MARK: - Fresh data still lands
 
+    func testBasicGuidanceSurvivesSparseRefreshAndAcceptsANewerRecommendation() {
+        var showing = item("movie")
+        showing.familyGuidance = .init(recommendedAge: 14, qualityRating: 5)
+        var fresh = item("movie")
+        let retained = HeroLiveMerge.merge(showing: [showing], fresh: [fresh], limit: 8)
+        XCTAssertEqual(retained.items.first?.familyGuidance, showing.familyGuidance)
+
+        fresh.familyGuidance = .init(recommendedAge: 16, qualityRating: 4)
+        let updated = HeroLiveMerge.merge(showing: [showing], fresh: [fresh], limit: 8)
+        XCTAssertEqual(updated.items.first?.familyGuidance, fresh.familyGuidance)
+    }
+
     func testARetainedSlotTakesTheFresherPayloadWithoutMoving() {
         let showing = [item("a", overview: nil), item("b")]
         let fresh = [item("a", overview: "now enriched"), item("b")]

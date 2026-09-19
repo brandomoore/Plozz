@@ -33,6 +33,8 @@ enum HDRDisplayMode: Equatable {
         switch range {
         case .sdr: self = .sdr
         case .hlg: self = .hlg
+        // Both use PQ/BT.2020 display criteria. HDR10+ additionally requires
+        // the video's per-frame metadata, not a different static display mode.
         case .hdr10, .hdr10Plus: self = .hdr10
         case .dolbyVision: self = .dolbyVision
         }

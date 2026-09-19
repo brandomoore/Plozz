@@ -22,12 +22,14 @@ final class ProfileSettingsModelTests: XCTestCase {
         let subtitleBefore = ObjectIdentifier(model.subtitleBehaviorModel)
         // A non-injectable model (always built) must also swap.
         let heroBefore = ObjectIdentifier(model.heroSettingsModel)
+        let detailBefore = ObjectIdentifier(model.detailPageModel)
 
         model.rebuild(namespace: "ns-b")
 
         XCTAssertNotEqual(themeBefore, ObjectIdentifier(model.themeModel))
         XCTAssertNotEqual(subtitleBefore, ObjectIdentifier(model.subtitleBehaviorModel))
         XCTAssertNotEqual(heroBefore, ObjectIdentifier(model.heroSettingsModel))
+        XCTAssertNotEqual(detailBefore, ObjectIdentifier(model.detailPageModel))
     }
 
     /// `rebuild(namespace:)` must swap *every* sub-model, not just a

@@ -435,6 +435,19 @@ Pin decorations to the native overlay container with constraints; do not rewrite
 their frames during native focus layout.
 `TVCardView` hosts live content in its documented `contentView`. Neither control
 overrides `focusSizeIncrease`, adds transforms or manufactures lighting/outlines.
+Home Libraries use the shared `NativeArtworkPoster` in System focus, with 16:9
+artwork owned by `TVPosterView` and `SystemPosterCaption` outside the native
+surface. Neither library nor server text may become part of a `TVCardView`.
+The native artwork carries accessible names (including localized synthesized
+library names) and the original selection action; the caption reserves its own
+focus travel without scaling or changing the row footprint. Existing music
+callers retain the shared poster's square default.
+Custom Highlight/Outline Library cards keep their inner artwork clip so
+fill-scaled images cannot cover card padding or caption spacing.
+`NativeLibraryCardHostedTests` loads controlled loopback artwork into real Library
+cards inside lazy rails, checking aspect ratios, unchanged slot widths, caption
+separation, native activation, missing artwork, and custom card geometry across
+framed/borderless modes and standard/compact density.
 The documented `cardBackgroundColor` uses the active theme's raised surface,
 and hosted text retains that same theme rather than being forced into Light.
 TVUIKit still owns the state-dependent alpha, projection and lighting. This keeps
@@ -444,6 +457,25 @@ without borrowing the custom focus style's extra column gutter.
 Card fitting
 honors finite width proposals; unspecified-width probes must not install the
 10,000-point expanded fitting size as the card's content width.
+Sizing queries are read-only: SwiftUI can ask for a zero/minimum width after it
+has already measured the eventual placement. Changing `TVCardView.contentSize`
+inside that query shrinks live content to the probe (for example 135pt inside a
+300pt slot), cropping labels and replaying apparent reveals on later layout passes.
+Only `NativeTVCard.Container.layoutSubviews` commits the actual placed bounds.
+Hosted information-card regressions repeat those probes under animated parent
+updates, require stable pixels and dimensions, and verify real score changes still
+render. Do not suppress all child animations or discard metadata updates to mask it.
+Loading shimmer's repeat must be scoped to its gradient stripe with
+`.animation(_:value:)`, not started by a broad repeating `withAnimation` in
+`onAppear`. A device reproduction showed native Details/Playback text opacity
+and rating-label bounds cycling every 2.3 seconds with **zero** card updates,
+fitting calls, or layouts. That was a separate fault from sizing probes: the
+loading repeat had escaped into native-hosted content. Isolating the stripe
+stopped both the observed symptom and the recorded layer changes.
+Hosted tests also keep the shimmer itself animated, exercise deactivate/reactivate,
+and require sibling information pixels to remain stable. The existing Reduce Motion
+branch remains a static dim without an animated stripe.
+Simulator refresh tests alone did not reproduce that device-only leakage.
 Unspecified-height queries use compressed Auto Layout fitting, not an expanded
 height: flexible rating labels otherwise become 10,000 points tall and inflate
 the About column's text measurements. A non-focusable container reports the visible
@@ -587,6 +619,92 @@ unchanged. `ServerToggleTests` asserts the canonical Jellyfin parameter alongsid
 fresh-account resolution and stale-credential rejection. On a Jellyfin server
 with legacy authorization disabled, a selected Music track must start and advance
 past 0:00 rather than fail with `NSURLErrorDomain -1013`.
+
+## Shared custom-dialog appearance
+
+App-owned tvOS guidance, expanded-overview, title-overview, and startup-release-note
+dialogs use `PlozzDialogBackdrop` and the shared `.overlay` surface. Dark and Black
+dim the underlying page by 85%; Light retains 40%. Startup release notes retain
+their 72% minimum in Light and follow the stronger shared dimming in Dark/Black.
+Border, fill, and shadow come from `ThemePalette.overlay`, including the subtle
+Black-appearance hairline (13% opacity), rather than individual dialog implementations.
+Native alerts/sheets retain system-managed dimming; anchored playback menus are
+not blocking dialogs and do not gain a screen-wide dimmer.
+
+`DialogSurfaceTests` verifies rendered backdrop pixel values, preserves the
+stronger minimum, and checks that the Black border is visible but subtle without
+changing layout. Remote guidance tests keep focus, scrolling, and dismissal covered.
+
+## Common Sense Media guidance
+
+The Ratings section keeps Common Sense Media age recommendations separate from
+certification labels such as PG-13. Basic `CommonSenseMedia` data comes from the
+Plex item-detail response; the full review is requested only when its tile opens,
+through the fixed Discover host and global Plex GUID. It is not fetched for
+every poster or copied into the external critic-score list.
+
+The tile emphasizes age using the app's standard non-rounded typography, with no
+adjacent quality fraction. The supplied Common
+Sense mark retains its original colors, with a dark backing on light surfaces.
+The disclosure chevron sits inline at the trailing edge of the Common Sense row,
+vertically centered with its label, rather than floating in the tile's corner.
+The tvOS dialog pins its age/title/summary above separate topic and reading
+viewports. Its two-column grid places age beside title/branding, then aligns the
+recommended-age caption with the synopsis's first baseline. Wrapped and missing
+synopses must preserve that structure without overlapping the reader; touch
+layouts retain their vertical stack. Only the selected topic's explanation is
+visible. Review scores have
+their own page and star treatment; content levels use ticks and retain real zero
+versus missing values. On tvOS a clear full-screen presentation hosts one themed
+panel over a dim backdrop; do not nest that panel inside a second glass sheet.
+Use the shared overlay surface, including its subtle Black-appearance border,
+and the theme-aware panel-header button style for Done's focused contrast. Common Sense
+branding lives in the header, not a duplicate footer. iOS navigates from the
+overview into individual sections.
+
+Hero/header previews default to the Common Sense age plus two available review
+scores. The age never consumes a review slot or replaces the official
+certification. Home and detail preferences persist independently per profile,
+including age visibility and review count; saved source order/selections survive
+upgrades, and global hiding/spoiler rules still apply. Full title information
+retains all ratings. Existing hero detail enrichment carries basic guidance
+without fetching cloud reviews. Episode Home slides use their represented
+show's guidance, while the episode play target remains unchanged.
+
+`PlexCommonSenseMediaTests` covers movie/show summaries, absent and episode data,
+full category mapping, zero versus missing scores, invalid values, global-ID
+validation, and restricted versus unavailable versus failed requests.
+`FamilyGuidanceServiceTests` verifies Plex Home uses the active person's cloud
+credential, never the owner's fallback, and discards responses after profile,
+credential, or source-access changes. Full reviews are sheet-local rather than
+shared or persisted across profiles.
+
+`FamilyGuidanceRemoteTests` exercises the real Ratings section with native tvOS
+focus: Select opens the review, Menu restores the tile, failed requests can be
+retried, and restricted access never renders invented category scores. Opening
+long content must keep the large age and summary visible. Both pane viewports
+are focus sections; while reading, only the selected menu row remains eligible
+for Left return, and the rest reopen when menu focus returns. Arrow presses
+scroll the native text reader, alongside its standard swipe handling; regressions
+measure paragraph movement in both directions, not just focus retention. Up scrolls
+while the reader is below its top edge; once at the top (including short text),
+Up can move natively to Done. Down remains in the reader, while Left and Menu retain
+their normal exit behavior. The full-width header is also a focus section so Up
+from Overview reaches Done. Menu content stays inside its viewport, and the reader
+extends into the space freed by removing the footer. Black, Dark, and Light
+fixtures cover the sheet edge and readable viewport.
+The native text reader must have a rectangular clipped viewport: tvOS gives
+`UITextView` a 20pt corner radius by default, which cuts glyphs beneath the heading
+when text uses the card's existing padding. `FamilyGuidanceReaderHostedTests`
+checks pixels at both top corners, focused and unfocused across scroll offsets,
+while ensuring below-viewport content remains clipped. Only the outer card keeps
+rounded corners; do not fix this by changing text padding or disabling clipping.
+Header regressions cover age-only data, quality-without-age, two-score defaults,
+per-profile persistence, hydrated hero-cache invalidation, and touch wrapping at
+large Dynamic Type sizes.
+The same tile and sheet content are used by iOS; unsupported providers simply
+have no guidance tile. New interface copy is localized through the app catalog;
+review text and category labels are provider content.
 
 ## CI pipeline
 

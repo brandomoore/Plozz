@@ -1890,6 +1890,9 @@ private struct PlozziOSHomeSettingsView: View {
                 if hero.settings.isEnabled {
                     Toggle("Hide watched titles", isOn: $hero.settings.hideWatched)
                     Toggle("Show ratings", isOn: $hero.settings.showsRatings)
+                    if hero.settings.showsRatings {
+                        HeaderRatingPreviewControls(settings: $hero.settings.ratingPreferences)
+                    }
                     Toggle("Auto-advance", isOn: $hero.settings.autoAdvance)
                     Toggle(
                         "Play trailer behind the hero",
@@ -2117,10 +2120,8 @@ private struct PlozziOSDetailPageSettingsView: View {
         List {
             SettingsSectionGroup("Header ratings") {
                 Toggle("Show ratings in header", isOn: $detailPage.settings.showsHeaderRatings)
-                Picker("Maximum ratings shown", selection: $detailPage.settings.maxHeaderRatings) {
-                    ForEach(Array(DetailPageSettings.headerRatingCountRange), id: \.self) { count in
-                        Text(count, format: .number).tag(count)
-                    }
+                if detailPage.settings.showsHeaderRatings {
+                    HeaderRatingPreviewControls(settings: $detailPage.settings)
                 }
                 NavigationLink {
                     PlozziOSDetailRatingPriorityView(model: detailPage)
@@ -2128,7 +2129,7 @@ private struct PlozziOSDetailPageSettingsView: View {
                     Text("Rating sources & order")
                 }
             } footer: {
-                Text("This limits how many scores appear in the header, not how many sources you can enable. Missing scores are skipped in your source order. More than two scores can wrap onto extra lines. Spoiler settings still apply.")
+                Text("The Common Sense age appears separately from review scores. Missing scores are skipped in your source order, and extra badges can wrap. Full ratings remain in title information. Spoiler settings still apply.")
             }
             SettingsSectionGroup("Behind the hero") {
                 Picker(

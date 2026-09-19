@@ -1554,7 +1554,7 @@ private struct HomeShareScanRefreshObserver: View {
     }
 }
 
-private struct LibraryCardView: View {
+struct LibraryCardView: View {
     let aggregated: AggregatedLibrary
     let subtitle: String   // l10n:content — library card subtitle from the server
     /// When `true`, the card wears a subtle corner spinner — this library belongs
@@ -1594,6 +1594,36 @@ private struct LibraryCardView: View {
     }
 
     var body: some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect {
+            NativeArtworkPoster(
+                width: metrics.landscapeCardSlotWidth - metrics.borderlessCardSideMargin * 2,
+                aspectRatio: 16.0 / 9.0,
+                title: aggregated.library.title,
+                subtitle: subtitle.isEmpty ? nil : subtitle,
+                localizedTitle: aggregated.library.synthesizedName?.title,
+                placeholderSymbol: librarySymbol,
+                focus: $isFocused,
+                action: action
+            ) {
+                FallbackAsyncImage(
+                    urls: [aggregated.library.imageURL].compactMap { $0 },
+                    variant: .landscapeCard,
+                    pinIdentity: aggregated.key
+                ) {
+                    placeholder
+                }
+            }
+        } else {
+            customCard
+        }
+        #else
+        customCard
+        #endif
+    }
+
+    @ViewBuilder
+    private var customCard: some View {
         switch cardStyle {
         case .framed:
             framedCard
@@ -1606,7 +1636,8 @@ private struct LibraryCardView: View {
         VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
             artwork
                 .frame(width: metrics.landscapeWidth, height: metrics.landscapeHeight)
-                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
+                // Keep fill-scaled artwork inside its inset rounded bounds.
+                .clipShape(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
                 .plozzMediaEdge(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -1657,7 +1688,7 @@ private struct LibraryCardView: View {
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
                 .frame(width: width)
                 .overlay { artwork }
-                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: metrics.landscapeCardCornerRadius, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: metrics.landscapeCardCornerRadius, style: .continuous))
                 .plozzMediaEdge(cornerRadius: metrics.landscapeCardCornerRadius)
                 .plozzFocusHalo(
                     cornerRadius: metrics.landscapeCardCornerRadius,

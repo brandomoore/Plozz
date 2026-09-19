@@ -45,8 +45,9 @@ struct HeroForegroundModel: Equatable {
     /// item's short marketing tagline when it has one, otherwise its long
     /// overview as a fallback. `nil` only when neither exists / text is hidden.
     let overview: String?
-    /// Every external rating available for the title, spoiler-gated by caller.
+    /// The selected review-score preview, spoiler-gated by caller.
     let ratings: [ExternalRating]
+    let familyGuidanceAge: Double?
     /// The visible action pills, left-to-right, exactly matching the SwiftUI
     /// hero's `buttons(for:)` order. Non-interactive here — the SwiftUI overlay
     /// owns focus/selection/dispatch — but their *visuals* (including the selected
@@ -274,6 +275,7 @@ enum HeroForegroundModelBuilder {
         item: MediaItem,
         overviewVisible: Bool,
         ratingsVisible: Bool = true,
+        ratingPreferences: DetailPageSettings = .default,
         maskedTitle: String?,
         pillInputs: [PillInput],
         selectedIndex: Int,
@@ -286,6 +288,7 @@ enum HeroForegroundModelBuilder {
         dotsDwellDuration: Double = 0,
         dotsPausedAt: Date? = nil
     ) -> HeroForegroundModel {
+        let presentation = HeroPresentation(item: item, artworkStyle: .landscape, surface: .home)
         let pills = pillInputs.map(pill(for:))
         let clamped = pills.isEmpty ? 0 : min(max(selectedIndex, 0), pills.count - 1)
         let dots: HeroForegroundModel.Dots? =
@@ -307,15 +310,14 @@ enum HeroForegroundModelBuilder {
             ratingBadgeText: ratingBadgeText(for: item),
             scheduleLine: scheduleLine,
             overview: overviewVisible
-                ? HeroContentPolicy.homeDescription(
-                    for: HeroPresentation(
-                        item: item,
-                        artworkStyle: .landscape,
-                        surface: .home
-                    )
-                )?.overviewPlainText
+                ? HeroContentPolicy.homeDescription(for: presentation)?.overviewPlainText
                 : nil,
-            ratings: ratingsVisible ? item.ratings : [],
+            ratings: ratingPreferences.headerRatings(
+                from: item.ratings, isAnime: presentation.isAnime, hidesRatings: !ratingsVisible
+            ),
+            familyGuidanceAge: ratingPreferences.headerFamilyGuidanceAge(
+                from: presentation.familyGuidanceAge, hidesRatings: !ratingsVisible
+            ),
             pills: pills,
             selectedIndex: clamped,
             heroFocused: heroFocused,

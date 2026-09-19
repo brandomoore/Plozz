@@ -4,6 +4,40 @@ Plozz uses two playback engines, automatically selected per-item based on
 container, codecs, and subtitle requirements. The goal is maximum format coverage
 with the best possible quality (Dolby Vision, Atmos, full-timeline seek).
 
+## Dependency version
+
+Plozz pins upstream AetherEngine **7.1.1** to commit
+`755cc21ccaf5d1fc165a570f524163e12923872e`. Its iOS/tvOS 18 minimum matches
+Plozz's existing deployment targets. The engine owns the FFmpegBuild 3.3.x and
+LibDovi 2.1.x dependencies; Plozz does not link a second FFmpeg build.
+
+This dependency update retains Plozz's playback routing and optional-feature
+settings. It does not connect container chapters to Up Next; marker-less content
+continues using the configured lead-time fallback.
+
+## HDR10+ source preservation
+
+An HDR10-capable playback path accepts HDR10+ source files without requesting a
+server video transcode. HDR10+ has an HDR10-compatible base layer: supported
+Apple TV/display combinations can use its dynamic metadata, while an HDR10-only
+output retains the base picture. Accepting the source does not force an HDR10+
+HDMI mode or claim that the connected display supports it.
+
+Jellyfin/Emby HEVC capability profiles include `HDR10Plus` alongside `HDR10`.
+Plex's range gate also recognizes the `smpte2094-40` metadata signal and retains
+the SDR-only fallback. Source badges keep HDR10+ distinct from HDR10; Emby's
+`ExtendedVideoType: Hdr10Plus` is normalized without inventing it when absent.
+
+Native AVPlayer items leave per-frame HDR display metadata enabled even when
+server metadata is missing or says SDR. AVFoundation applies only metadata the
+stream actually carries. HDR10 and HDR10+ use the same PQ/BT.2020 static display
+criteria; dynamic metadata, not a separate synthetic criteria mode, supplies
+the HDR10+ difference. Aether owns that handling on the Plozzigen path.
+
+HDMI acceptance must be confirmed on an HDR10+-capable TV. A successful build,
+an HDR10+ source badge, or correct fallback on an HDR10-only TV is not proof of
+HDR10+ output.
+
 ## Engine Overview
 
 | Engine | Internal name | Underlying tech | Primary use case |

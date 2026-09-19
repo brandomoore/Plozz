@@ -1036,9 +1036,16 @@ struct HomeHeroView: View {
                         .contentTransition(.opacity)
                 }
 
-                if settings.shouldShowRatings(for: item, spoilerSettings: spoilerSettings),
-                   !item.ratings.isEmpty {
-                    RatingsBadgeRow(ratings: item.ratings)
+                if settings.shouldShowRatings(for: item, spoilerSettings: spoilerSettings) {
+                    let presentation = HeroPresentation(item: item, artworkStyle: .landscape, surface: .home)
+                    RatingsBadgeRow(
+                        ratings: settings.ratingPreferences.headerRatings(
+                            from: item.ratings, isAnime: presentation.isAnime, hidesRatings: false
+                        ),
+                        familyGuidanceAge: settings.ratingPreferences.headerFamilyGuidanceAge(
+                            from: presentation.familyGuidanceAge, hidesRatings: false
+                        )
+                    )
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentTransition(.opacity)
                 }
@@ -1227,6 +1234,7 @@ struct HomeHeroView: View {
             item: item,
             overviewVisible: !hideText,
             ratingsVisible: settings.shouldShowRatings(for: item, spoilerSettings: spoilerSettings),
+            ratingPreferences: settings.ratingPreferences,
             maskedTitle: masked,
             pillInputs: foregroundPillInputs(for: item),
             selectedIndex: selectedIndex,
