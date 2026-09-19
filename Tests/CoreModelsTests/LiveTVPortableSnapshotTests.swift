@@ -74,6 +74,46 @@ final class LiveTVPortableSnapshotTests: XCTestCase {
         )))
     }
 
+    func testPortableIdentifierFastPathPreservesTheSubstringPolicy() {
+        var values = [
+            "", "account|server-user_123", "a:b", "a/b", ":://", ":/:/", "://",
+            "https://server", "server?token", "server\nuser", "server\ruser",
+            "caf\u{e9}", "cafe\u{301}", "user\u{1f600}", "?\u{301}", ":\u{301}//",
+            "https://caf\u{e9}", "user\u{200b}?value", "user\u{200b}\nvalue",
+            String(repeating: "a", count: 512), String(repeating: "a", count: 513),
+            String(repeating: "\u{e9}", count: 256), String(repeating: "\u{e9}", count: 257)
+        ]
+        for byte in UInt8(0)...127 {
+            let character = String(UnicodeScalar(byte))
+            values.append("prefix\(character)suffix")
+            values.append(":\(character)/")
+            values.append(":/\(character)")
+        }
+        let alphabet = ["a", ":", "/", "?", "\n"]
+        for first in alphabet {
+            for second in alphabet {
+                for third in alphabet {
+                    values.append(first + second + third)
+                }
+            }
+        }
+        let record = LiveTVPortableRecord(serverEnrollmentSuppressed: true)
+        for value in values {
+            let expected = !value.isEmpty && value.utf8.count <= 512
+                && !value.contains("://") && !value.contains("?") && !value.contains("\n")
+            let key = LiveTVPortableRecordKey(
+                profileID: "profile", kind: .serverEnrollment, entityID: value
+            )
+            if expected {
+                XCTAssertNoThrow(try record.validate(key: key), value.debugDescription)
+            } else {
+                XCTAssertThrowsError(try record.validate(key: key), value.debugDescription) {
+                    XCTAssertEqual($0 as? LiveTVPortableStateError, .invalidRecord)
+                }
+            }
+        }
+    }
+
     private func makeSnapshot(count: Int) throws -> LibraryChannelSnapshot {
         let items = try (0..<count).map { index in
             try LibraryChannelItem(

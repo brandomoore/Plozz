@@ -315,6 +315,13 @@ not wall-clock startup timings. Main-thread rendering remained expensive and
 paging still hitched; reducing background work alone did not resolve the UI
 bottleneck.
 
+The portable Live TV record validator has a separate identifier policy: reject
+URL schemes, query markers, and newlines, without imposing the library recipe's
+character allowlist. Its ASCII path scans bytes for those exact patterns; every
+non-ASCII value still uses the original substring checks. Keep those policies
+distinct. Parity coverage includes every ASCII byte, overlapping scheme prefixes,
+Unicode combining marks, and the 512-byte boundary.
+
 #### Measured persistence follow-up and completion barriers
 
 The Release capture identified main-thread identity load (180.2 ms, including
