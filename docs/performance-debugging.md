@@ -144,6 +144,22 @@ and return tour. Repeated headings are disambiguated using adjacent rows and car
 identities, not the heading alone. `--observe-home` captures accessibility evidence
 without sending directional input. These modes prove functional coverage only.
 
+For a cold **Hero → Continue Watching** case, start the unbound runner before
+the externally controlled app launch and retain the new PID and launch timestamp.
+Use `PLOZZ_HOME_FIRST_DOWN_ONLY=1` with `--run-vertical-roundtrip` and one
+repetition. This requires the hero to already hold focus, disables sidebar
+recovery, and sends no preparatory navigation. `PLOZZ_HOME_HERO_WARM_PAIRS=1..6`
+can follow that first Down with explicitly warm Hero/CW pairs; those repetitions
+are not cold evidence. An asleep-device launch rejection is a blocked run, not
+an app crash, and must not trigger an unapproved wake or a replacement launch.
+
+`PLOZZ_HOME_HERO_ONE_SHOT=1` is an experimental alternative using the public
+`XCTMetric` lifecycle callbacks for one cold and one warm Down, without
+`XCTestCase.measure` warm-up iterations. It requires `FIRST_DOWN_ONLY=1` and
+`HERO_WARM_PAIRS=0`, validates the target app's metric identifiers, and records
+raw units and measurement timestamps. Its runtime collection must be validated
+before interpreting zero results; compilation alone is insufficient.
+
 Artifacts include the original app log, test result, actual focus/input timeline,
 and, when diagnostics are available, `frame-window-summary.json`. Callback-only
 hero-off workloads require contemporaneous diagnostic samples; native hitch
@@ -168,6 +184,12 @@ between the actual hero and Continue Watching. Neither the retained samples nor
 a warm functional tour prove immediate-startup performance: record the first
 input's time relative to a separately verified new app process and distinguish
 that first traversal from the warmed repetitions.
+
+`--measure-vertical-burst` is a different, **warm media-row** workload. It
+pre-verifies adjacent rows, then sends six Down/Up pairs per measurement without
+accessibility checks between presses. Log the actual cadence and verify the
+ending destination. A Continue Watching/Watchlist or Watchlist/Recently Added
+burst is not a substitute for the cold Hero/Continue Watching case.
 
 The driver exports `native-metrics.json` from the result bundle and requires
 finite native hitch measurements, not just successful focus assertions. Keep the
@@ -733,6 +755,11 @@ utilisation = "death by a thousand re-renders", not one big stall.
    owns its asynchronous logo and backdrop tones inside the overlay. Resolving
    contrast must not reconfigure the enclosing native poster; the hosted
    regression checks that boundary while preserving the overlay's geometry.
+   Navigation selection bindings also keep their destination plan outside the
+   getter: every rail item can read that getter several times during focus
+   updates. Build the plan while constructing the binding, so SwiftUI observes
+   library/layout changes there, but continue reading the live stored selection
+   and entry override inside the getter.
 2. **Make off-screen content lazy so Liquid Glass doesn't stay live.** A
    `.glassEffect()`/`plozzGlassCard` keeps recomputing its SDF as long as the
    view exists. Eager `HStack`/`VStack` rails inside a `ScrollView` keep *every*

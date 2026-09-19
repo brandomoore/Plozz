@@ -140,6 +140,14 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
         try runRows(nativeMetric: true, heroAllowed: true)
     }
 
+    func testObservedHomeVerticalBurstWarm() throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["PLOZZ_HOME_VERTICAL_BURST"] == "1",
+            "Requires explicit six-pair vertical burst opt-in."
+        )
+        try runRows(nativeMetric: true, heroAllowed: true, verticalBurst: true)
+    }
+
     func testObservedHomeVerticalRoundtripWarm() throws {
         try XCTSkipUnless(
             ProcessInfo.processInfo.environment["PLOZZ_HOME_VERTICAL_ROUNDTRIP"] == "1",
@@ -159,7 +167,8 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
     private func runRows(
         verticalOnly: Bool = false, horizontalOnly: Bool = false,
         sweep: Bool = false, nativeMetric: Bool = false,
-        heroAllowed: Bool = false, verticalRoundtrip: Bool = false, observeOnly: Bool = false
+        heroAllowed: Bool = false, verticalRoundtrip: Bool = false, observeOnly: Bool = false,
+        verticalBurst: Bool = false
     ) throws {
         #if !os(tvOS) || targetEnvironment(simulator)
         throw XCTSkip("Physical tvOS only.")
@@ -199,6 +208,10 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
             event("complete")
             return
         }
+        if environment["PLOZZ_HOME_HERO_ONE_SHOT"] == "1" {
+            try runOneShotHeroCase(app: app)
+            return
+        }
         let continueWatchingTitle = ProcessInfo.processInfo.environment["PLOZZ_HOME_CONTINUE_WATCHING_LABEL"] ?? "Continue Watching"
         var ready = try waitForContent(app: app, heroAllowed: heroAllowed)
         if nativeMetric, heroAllowed,
@@ -212,7 +225,9 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
             return
         }
         if nativeMetric, heroAllowed {
-            ready = try prepareObservedMetricRow(from: ready, app: app)
+            ready = try prepareObservedMetricRow(
+                from: ready, app: app, knownNeighborsOnly: verticalBurst
+            )
         }
         if verticalRoundtrip {
             try runObservedVerticalRoundtrip(from: ready, app: app)
@@ -246,6 +261,10 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
         var scene = ready
         event("\(heroAllowed ? "observed" : "hero-off").row-ready title=\(title.debugDescription)")
 
+        if verticalBurst {
+            try measureVerticalBurst(from: scene, app: app)
+            return
+        }
         if nativeMetric {
             try measureNativeHitches(from: scene, app: app)
             return
@@ -436,8 +455,71 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
         event("complete")
     }
 
+    private func measureVerticalBurst(from initial: Scene, app: XCUIApplication) throws {
+        guard #available(tvOS 26.0, *) else { throw XCTSkip("Native hitch metrics require tvOS 26 or newer.") }
+        guard ProcessInfo.processInfo.environment["PLOZZ_HOME_METRIC_IDLE_CONTROL"] != "1" else {
+            try fail(.notReady, "Vertical bursts do not support the horizontal idle control.")
+        }
+        guard let sourceIndex = initial.rows.firstIndex(where: { $0.focusedCard != nil }),
+              initial.rows.indices.contains(sourceIndex + 1) else {
+            try fail(.notReady, "Burst requires a source and adjacent lower row already exposed; no discovery Down.")
+        }
+        let source = initial.rows[sourceIndex]
+        let destination = initial.rows[sourceIndex + 1]
+        guard matchingRows(source, in: initial).count == 1,
+              matchingRows(destination, in: initial).count == 1,
+              !destination.title.isEmpty, destination.cards.count >= 2 else {
+            try fail(.notReady, "Burst pair is not uniquely identified with real cards.")
+        }
+        var scene = initial
+        event("burst.pair-ready source=\(source.title.debugDescription) destination=\(destination.title.debugDescription) sourceFrame=\(source.frame) destinationFrame=\(destination.frame)")
+        try input(.down, phase: "burst.preverify-down", app: app)
+        scene = try observeSettledFocus(app, phase: "burst.preverified-down")
+        try requireFocused(destination, in: scene)
+        try input(.up, phase: "burst.preverify-up", app: app)
+        scene = try observeSettledFocus(app, phase: "burst.preverified-up")
+        try requireFocused(source, in: scene)
+        event("burst.pair.verified pairs=6 axBetweenPresses=false")
+
+        let options = XCTMeasureOptions()
+        options.iterationCount = 3
+        options.invocationOptions = [.manuallyStart, .manuallyStop]
+        var iteration = 0
+        var failure: Error?
+        measure(metrics: [XCTHitchMetric(application: app)], options: options) {
+            iteration += 1
+            do {
+                try self.requireFocused(source, in: scene)
+                self.event("lower-rows.input-window.begin")
+                self.event("native.metric.begin iteration=\(iteration) direction=vertical-burst pairs=6")
+                self.startMeasuring()
+                for pair in 1...6 {
+                    self.event("burst.input.begin iteration=\(iteration) pair=\(pair) direction=down")
+                    XCUIRemote.shared.press(.down)
+                    self.event("burst.input.end iteration=\(iteration) pair=\(pair) direction=down")
+                    self.event("burst.input.begin iteration=\(iteration) pair=\(pair) direction=up")
+                    XCUIRemote.shared.press(.up)
+                    self.event("burst.input.end iteration=\(iteration) pair=\(pair) direction=up")
+                }
+                self.stopMeasuring()
+                self.event("native.metric.end iteration=\(iteration)")
+                self.event("lower-rows.input-window.end")
+                scene = try self.observeSettledFocus(app, phase: "burst.end-focus")
+                try self.requireFocused(source, in: scene)
+                self.event("burst.end-focus.verified iteration=\(iteration) title=\(source.title.debugDescription)")
+            } catch {
+                failure = error
+                XCTFail("Vertical burst did not preserve its verified pair: \(error)")
+            }
+        }
+        if let failure { throw failure }
+        event("native.metric.verified title=\(source.title.debugDescription) destination=\(destination.title.debugDescription) direction=vertical-burst pairs=6 axBetweenPresses=false")
+        event("complete")
+    }
+
     private func prepareObservedMetricRow(
-        from initial: Scene, app: XCUIApplication, requestedRow: String? = nil
+        from initial: Scene, app: XCUIApplication, requestedRow: String? = nil,
+        knownNeighborsOnly: Bool = false
     ) throws -> Scene {
         var scene = initial
         let continueWatchingTitle = ProcessInfo.processInfo.environment["PLOZZ_HOME_CONTINUE_WATCHING_LABEL"] ?? "Continue Watching"
@@ -446,6 +528,10 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
             try input(.down, phase: "native.prepare-from-hero", app: app)
             scene = try observeSettledFocus(app, phase: "native.prepared-from-hero")
             try requireFocused(row, in: scene)
+        }
+        if knownNeighborsOnly {
+            Thread.sleep(forTimeInterval: 1)
+            scene = try observe(app, phase: "native.known-preparation-settled")
         }
         guard let requested = requestedRow ?? ProcessInfo.processInfo.environment["PLOZZ_HOME_START_ROW"],
               !requested.isEmpty else { return scene }
@@ -461,6 +547,9 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
             let ascending = matches.first.map { $0 < currentIndex } ?? (requested == continueWatchingTitle)
             let nextIndex = currentIndex + (ascending ? -1 : 1)
             let expected = scene.rows.indices.contains(nextIndex) ? scene.rows[nextIndex] : nil
+            if knownNeighborsOnly, expected == nil {
+                try fail(.notReady, "Burst positioning requires an already observed adjacent destination; no exploration input.")
+            }
             event("native.prepare-row source=\(current.title.debugDescription) target=\(requested.debugDescription) measured=false")
             try input(ascending ? .up : .down, phase: "native.prepare-row", app: app)
             scene = try observeSettledFocus(app, phase: "native.prepared-row")
@@ -468,6 +557,10 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
                 try requireFocused(expected, in: scene)
             } else if !hasMovedVertically(from: current, in: scene, ascending: ascending) {
                 try fail(.notReady, "Requested row search did not verify an adjacent destination; no more input.")
+            }
+            if knownNeighborsOnly {
+                Thread.sleep(forTimeInterval: 1)
+                scene = try observe(app, phase: "native.known-preparation-settled")
             }
         }
         try fail(.notReady, "Requested row was not reached within sixteen verified steps.")
@@ -545,7 +638,127 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
         event("complete")
     }
 
+    private func runOneShotHeroCase(app: XCUIApplication) throws {
+        guard #available(tvOS 26.0, *) else { throw XCTSkip("Single-shot hitch metrics require tvOS 26 or newer.") }
+        guard ProcessInfo.processInfo.environment["PLOZZ_HOME_FIRST_DOWN_ONLY"] == "1",
+              ProcessInfo.processInfo.environment["PLOZZ_HOME_METRIC_IDLE_CONTROL"] != "1" else {
+            try fail(.notReady, "Single-shot capture requires the strict cold Hero case, not an idle control.")
+        }
+        guard app.state == .runningForeground else {
+            try fail(.notReady, "Fresh app is not foreground; no activation or replacement attempted.")
+        }
+        let coldMetric: any XCTMetric = XCTHitchMetric(application: app)
+        var coldStopped = false
+        defer { if !coldStopped { coldMetric.didStopMeasuring?() } }
+        event("one-shot.cold.collector-setup.begin beforeAXReadiness=true")
+        coldMetric.willBeginMeasuring?()
+        event("one-shot.cold.collector-setup.end")
+        let ready = try waitForContent(app: app, heroAllowed: true)
+        try requireHeroFocused(in: ready)
+        let row = try continueWatching(in: ready)
+        event("one-shot.cold.ready heroIdentifier=\(heroID) heroFocused=true focusedRows=0 cwCards=\(row.cards.count) cwFrame=\(row.frame)")
+        try captureOneShotDown(metric: coldMetric, app: app, phase: "cold", stopped: &coldStopped)
+        var scene = try observeSettledFocus(app, phase: "one-shot.cold.destination")
+        try requireFocused(row, in: scene)
+        event("one-shot.cold.validated destination=\(row.title.debugDescription) standardMeasure=false warmup=false")
+
+        let warmMetric: any XCTMetric = XCTHitchMetric(application: app)
+        var warmStopped = false
+        defer { if !warmStopped { warmMetric.didStopMeasuring?() } }
+        event("one-shot.warm.collector-setup.begin beforeAXReadiness=true")
+        warmMetric.willBeginMeasuring?()
+        try input(.up, phase: "one-shot.warm.prepare-hero", app: app)
+        scene = try observeSettledFocus(app, phase: "one-shot.warm.hero-ready")
+        try requireHeroFocused(in: scene)
+        _ = try continueWatching(in: scene)
+        event("one-shot.warm.ready explicitlyWarm=true")
+        try captureOneShotDown(metric: warmMetric, app: app, phase: "warm", stopped: &warmStopped)
+        scene = try observeSettledFocus(app, phase: "one-shot.warm.destination")
+        try requireFocused(row, in: scene)
+        event("one-shot.warm.validated destination=\(row.title.debugDescription) standardMeasure=false warmup=false")
+        event("roundtrip.verified rows=1 heroRoundtrip=false singleShot=true coldAndWarm=true")
+        event("complete")
+    }
+
+    private func captureOneShotDown(
+        metric: any XCTMetric, app: XCUIApplication, phase: String, stopped: inout Bool
+    ) throws {
+        guard ProcessInfo.processInfo.systemUptime - started < inputBudget,
+              app.state == .runningForeground else {
+            try fail(.notReady, "Single-shot input requires the same foreground app within its input budget.")
+        }
+        let start = XCTPerformanceMeasurementTimestamp()
+        event("one-shot.\(phase).input.begin direction=down")
+        XCUIRemote.shared.press(.down)
+        event("one-shot.\(phase).input.end direction=down")
+        Thread.sleep(forTimeInterval: 1)
+        let end = XCTPerformanceMeasurementTimestamp()
+        metric.didStopMeasuring?()
+        stopped = true
+        event("one-shot.\(phase).collector-stopped axInsideInterval=false")
+        let measurements: [XCTPerformanceMeasurement]
+        do {
+            measurements = try metric.reportMeasurements(from: start, to: end)
+        } catch {
+            event("one-shot.error phase=\(phase) error=\(String(describing: error).debugDescription)")
+            throw error
+        }
+        let values: [[String: Any]] = measurements.map {
+            ["identifier": $0.identifier, "displayName": $0.displayName,
+             "doubleValue": $0.doubleValue, "unitSymbol": $0.unitSymbol]
+        }
+        let payload: [String: Any] = [
+            "phase": phase, "standardXCTestMeasure": false, "warmupIterations": 0,
+            "startWallUnix": start.date.timeIntervalSince1970,
+            "endWallUnix": end.date.timeIntervalSince1970,
+            "startAbsoluteTime": start.absoluteTime,
+            "endAbsoluteTime": end.absoluteTime,
+            "startAbsoluteNanoseconds": start.absoluteTimeNanoSeconds,
+            "endAbsoluteNanoseconds": end.absoluteTimeNanoSeconds,
+            "requestedIntervalSeconds": Double(end.absoluteTimeNanoSeconds - start.absoluteTimeNanoSeconds) / 1_000_000_000,
+            "postPressNoAXWaitSeconds": 1, "measurements": values
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = "\(phase)-hero-one-shot-metrics"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        event("one-shot.result \(String(decoding: data, as: UTF8.self))")
+        guard !measurements.isEmpty,
+              measurements.allSatisfy({ $0.doubleValue.isFinite && $0.doubleValue >= 0 }) else {
+            try fail(.notReady, "Public single-shot callback returned no valid measurements; no fallback or retry.")
+        }
+        let identifiers = measurements.map(\.identifier)
+        let executable = ProcessInfo.processInfo.environment["PLOZZ_HOME_APP_BUNDLE_ID"] == "com.thatcube.Plozz.FocusHost"
+            ? "FocusHost" : "Plozz"
+        let prefix = "com.apple.dt.XCTMetric_Hitch-\(executable)"
+        guard [".number", ".total.duration", ".time.ratio"].allSatisfy({ suffix in
+            identifiers.contains(prefix + suffix)
+        }) else {
+            try fail(.notReady, "Public single-shot callback lacks the target app's native hitch count/duration/ratio.")
+        }
+    }
+
     private func runObservedVerticalRoundtrip(from initial: Scene, app: XCUIApplication) throws {
+        if ProcessInfo.processInfo.environment["PLOZZ_HOME_FIRST_DOWN_ONLY"] == "1" {
+            try requireHeroFocused(in: initial)
+            let row = try continueWatching(in: initial)
+            event("cold.hero-cw.ready heroIdentifier=\(heroID) heroPresent=true heroFocused=true focusedRows=0 cwTitle=\(row.title.debugDescription) cards=\(row.cards.count) cwFrame=\(row.frame)")
+            try input(.down, phase: "cold.first-down", app: app)
+            var scene = try observeSettledFocus(app, phase: "cold.first-down-focus")
+            try requireFocused(row, in: scene)
+            event("cold.first-down.verified title=\(row.title.debugDescription) card=\(scene.focusedRow?.focusedCard?.label.debugDescription ?? "<none>")")
+            let warmPairs = Int(ProcessInfo.processInfo.environment["PLOZZ_HOME_HERO_WARM_PAIRS"] ?? "") ?? 0
+            guard (0...6).contains(warmPairs) else {
+                try fail(.notReady, "Warm Hero/CW repetitions must be bounded to zero through six pairs.")
+            }
+            if warmPairs > 0 {
+                scene = try repeatWarmHeroPair(from: scene, row: row, app: app, pairs: warmPairs)
+            }
+            event("roundtrip.verified rows=1 heroRoundtrip=\(scene.heroFocused) firstDownOnly=true warmHeroPairs=\(warmPairs)")
+            event("complete")
+            return
+        }
         if ProcessInfo.processInfo.environment["PLOZZ_HOME_REQUIRE_HERO"] == "1",
            !initial.heroPresent {
             try fail(.notReady, "Requested Hero-to-CW flow requires an observed hero; no setting changes or input attempted.")
@@ -622,6 +835,38 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
         }
         event("roundtrip.verified rows=\(route.count) heroRoundtrip=\(startedOnHero) exhaustive=false performanceMeasured=false")
         event("complete")
+    }
+
+    private func repeatWarmHeroPair(
+        from initial: Scene, row: Row, app: XCUIApplication, pairs: Int
+    ) throws -> Scene {
+        var scene = initial
+        try requireFocused(row, in: scene)
+        event("warm.hero-cw.begin coldFirstDownAlreadyVerified=true pairs=\(pairs)")
+        try input(.up, phase: "warm.hero-cw.initial-up", app: app)
+        scene = try observeSettledFocus(app, phase: "warm.hero-cw.initial-hero")
+        try requireHeroFocused(in: scene)
+        event("warm.hero-cw.pair.verified")
+        event("warm.hero-cw.burst.begin pairs=\(pairs) axBetweenPresses=false")
+        for pair in 1...pairs {
+            event("warm.hero-cw.input.begin pair=\(pair) direction=down")
+            XCUIRemote.shared.press(.down)
+            event("warm.hero-cw.input.end pair=\(pair) direction=down")
+            event("warm.hero-cw.input.begin pair=\(pair) direction=up")
+            XCUIRemote.shared.press(.up)
+            event("warm.hero-cw.input.end pair=\(pair) direction=up")
+        }
+        event("warm.hero-cw.burst.end")
+        scene = try observeSettledFocus(app, phase: "warm.hero-cw.end-hero")
+        try requireHeroFocused(in: scene)
+        try input(.down, phase: "warm.hero-cw.postverify-down", app: app)
+        scene = try observeSettledFocus(app, phase: "warm.hero-cw.postverify-cw")
+        try requireFocused(row, in: scene)
+        try input(.up, phase: "warm.hero-cw.postverify-up", app: app)
+        scene = try observeSettledFocus(app, phase: "warm.hero-cw.postverify-hero")
+        try requireHeroFocused(in: scene)
+        event("warm.hero-cw.verified pairs=\(pairs) bothDestinationsVerified=true")
+        return scene
     }
 
     private func sweepRows(from initial: Scene, app: XCUIApplication) throws {
@@ -726,7 +971,8 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
                focused.cards.contains(where: { $0.frame.intersects(scene.frame) }) {
                 return scene
             }
-            if scene.railFocused, !returnedFromSidebar,
+            if ProcessInfo.processInfo.environment["PLOZZ_HOME_FIRST_DOWN_ONLY"] != "1",
+               scene.railFocused, !returnedFromSidebar,
                scene.rows.contains(where: { $0.cards.count >= 2 }) {
                 returnedFromSidebar = true
                 event("readiness.sidebar-return measured=false")
