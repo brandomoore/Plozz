@@ -208,10 +208,6 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
             event("complete")
             return
         }
-        if environment["PLOZZ_HOME_HERO_ONE_SHOT"] == "1" {
-            try runOneShotHeroCase(app: app)
-            return
-        }
         let continueWatchingTitle = ProcessInfo.processInfo.environment["PLOZZ_HOME_CONTINUE_WATCHING_LABEL"] ?? "Continue Watching"
         var ready = try waitForContent(app: app, heroAllowed: heroAllowed)
         if nativeMetric, heroAllowed,
@@ -638,113 +634,15 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
         event("complete")
     }
 
-    private func runOneShotHeroCase(app: XCUIApplication) throws {
-        guard #available(tvOS 26.0, *) else { throw XCTSkip("Single-shot hitch metrics require tvOS 26 or newer.") }
-        guard ProcessInfo.processInfo.environment["PLOZZ_HOME_FIRST_DOWN_ONLY"] == "1",
-              ProcessInfo.processInfo.environment["PLOZZ_HOME_METRIC_IDLE_CONTROL"] != "1" else {
-            try fail(.notReady, "Single-shot capture requires the strict cold Hero case, not an idle control.")
-        }
-        guard app.state == .runningForeground else {
-            try fail(.notReady, "Fresh app is not foreground; no activation or replacement attempted.")
-        }
-        let coldMetric: any XCTMetric = XCTHitchMetric(application: app)
-        var coldStopped = false
-        defer { if !coldStopped { coldMetric.didStopMeasuring?() } }
-        event("one-shot.cold.collector-setup.begin beforeAXReadiness=true")
-        coldMetric.willBeginMeasuring?()
-        event("one-shot.cold.collector-setup.end")
-        let ready = try waitForContent(app: app, heroAllowed: true)
-        try requireHeroFocused(in: ready)
-        let row = try continueWatching(in: ready)
-        event("one-shot.cold.ready heroIdentifier=\(heroID) heroFocused=true focusedRows=0 cwCards=\(row.cards.count) cwFrame=\(row.frame)")
-        try captureOneShotDown(metric: coldMetric, app: app, phase: "cold", stopped: &coldStopped)
-        var scene = try observeSettledFocus(app, phase: "one-shot.cold.destination")
-        try requireFocused(row, in: scene)
-        event("one-shot.cold.validated destination=\(row.title.debugDescription) standardMeasure=false warmup=false")
-
-        let warmMetric: any XCTMetric = XCTHitchMetric(application: app)
-        var warmStopped = false
-        defer { if !warmStopped { warmMetric.didStopMeasuring?() } }
-        event("one-shot.warm.collector-setup.begin beforeAXReadiness=true")
-        warmMetric.willBeginMeasuring?()
-        try input(.up, phase: "one-shot.warm.prepare-hero", app: app)
-        scene = try observeSettledFocus(app, phase: "one-shot.warm.hero-ready")
-        try requireHeroFocused(in: scene)
-        _ = try continueWatching(in: scene)
-        event("one-shot.warm.ready explicitlyWarm=true")
-        try captureOneShotDown(metric: warmMetric, app: app, phase: "warm", stopped: &warmStopped)
-        scene = try observeSettledFocus(app, phase: "one-shot.warm.destination")
-        try requireFocused(row, in: scene)
-        event("one-shot.warm.validated destination=\(row.title.debugDescription) standardMeasure=false warmup=false")
-        event("roundtrip.verified rows=1 heroRoundtrip=false singleShot=true coldAndWarm=true")
-        event("complete")
-    }
-
-    private func captureOneShotDown(
-        metric: any XCTMetric, app: XCUIApplication, phase: String, stopped: inout Bool
-    ) throws {
-        guard ProcessInfo.processInfo.systemUptime - started < inputBudget,
-              app.state == .runningForeground else {
-            try fail(.notReady, "Single-shot input requires the same foreground app within its input budget.")
-        }
-        let start = XCTPerformanceMeasurementTimestamp()
-        event("one-shot.\(phase).input.begin direction=down")
-        XCUIRemote.shared.press(.down)
-        event("one-shot.\(phase).input.end direction=down")
-        Thread.sleep(forTimeInterval: 1)
-        let end = XCTPerformanceMeasurementTimestamp()
-        metric.didStopMeasuring?()
-        stopped = true
-        event("one-shot.\(phase).collector-stopped axInsideInterval=false")
-        let measurements: [XCTPerformanceMeasurement]
-        do {
-            measurements = try metric.reportMeasurements(from: start, to: end)
-        } catch {
-            event("one-shot.error phase=\(phase) error=\(String(describing: error).debugDescription)")
-            throw error
-        }
-        let values: [[String: Any]] = measurements.map {
-            ["identifier": $0.identifier, "displayName": $0.displayName,
-             "doubleValue": $0.doubleValue, "unitSymbol": $0.unitSymbol]
-        }
-        let payload: [String: Any] = [
-            "phase": phase, "standardXCTestMeasure": false, "warmupIterations": 0,
-            "startWallUnix": start.date.timeIntervalSince1970,
-            "endWallUnix": end.date.timeIntervalSince1970,
-            "startAbsoluteTime": start.absoluteTime,
-            "endAbsoluteTime": end.absoluteTime,
-            "startAbsoluteNanoseconds": start.absoluteTimeNanoSeconds,
-            "endAbsoluteNanoseconds": end.absoluteTimeNanoSeconds,
-            "requestedIntervalSeconds": Double(end.absoluteTimeNanoSeconds - start.absoluteTimeNanoSeconds) / 1_000_000_000,
-            "postPressNoAXWaitSeconds": 1, "measurements": values
-        ]
-        let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
-        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
-        attachment.name = "\(phase)-hero-one-shot-metrics"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        event("one-shot.result \(String(decoding: data, as: UTF8.self))")
-        guard !measurements.isEmpty,
-              measurements.allSatisfy({ $0.doubleValue.isFinite && $0.doubleValue >= 0 }) else {
-            try fail(.notReady, "Public single-shot callback returned no valid measurements; no fallback or retry.")
-        }
-        let identifiers = measurements.map(\.identifier)
-        let executable = ProcessInfo.processInfo.environment["PLOZZ_HOME_APP_BUNDLE_ID"] == "com.thatcube.Plozz.FocusHost"
-            ? "FocusHost" : "Plozz"
-        let prefix = "com.apple.dt.XCTMetric_Hitch-\(executable)"
-        guard [".number", ".total.duration", ".time.ratio"].allSatisfy({ suffix in
-            identifiers.contains(prefix + suffix)
-        }) else {
-            try fail(.notReady, "Public single-shot callback lacks the target app's native hitch count/duration/ratio.")
-        }
-    }
-
     private func runObservedVerticalRoundtrip(from initial: Scene, app: XCUIApplication) throws {
         if ProcessInfo.processInfo.environment["PLOZZ_HOME_FIRST_DOWN_ONLY"] == "1" {
             try requireHeroFocused(in: initial)
             let row = try continueWatching(in: initial)
             event("cold.hero-cw.ready heroIdentifier=\(heroID) heroPresent=true heroFocused=true focusedRows=0 cwTitle=\(row.title.debugDescription) cards=\(row.cards.count) cwFrame=\(row.frame)")
+            event("cold.transition-window.begin axInsideInterval=false")
             try input(.down, phase: "cold.first-down", app: app)
+            Thread.sleep(forTimeInterval: 1)
+            event("cold.transition-window.end postPressWaitSeconds=1 axInsideInterval=false")
             var scene = try observeSettledFocus(app, phase: "cold.first-down-focus")
             try requireFocused(row, in: scene)
             event("cold.first-down.verified title=\(row.title.debugDescription) card=\(scene.focusedRow?.focusedCard?.label.debugDescription ?? "<none>")")

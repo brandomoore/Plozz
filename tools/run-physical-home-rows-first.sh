@@ -7,6 +7,10 @@ cd "$(dirname "$0")/.."
 DEVICE="${PLOZZ_HOME_DEVICE_ID:-${PLOZZ_HOME_ROWS_FIRST:-}}"
 APP_ID="${PLOZZ_HOME_APP_BUNDLE_ID:-com.thatcube.Plozz}"
 EXPECT_HITCHES="${PLOZZ_HOME_EXPECT_HITCHES:-0}"
+if [[ "${PLOZZ_HOME_HERO_ONE_SHOT:-0}" != "0" ]]; then
+  echo "Direct XCTMetric lifecycle capture is unsupported; use the strict first-Down case with external profiling." >&2
+  exit 2
+fi
 if [[ "$EXPECT_HITCHES" != "0" && "$EXPECT_HITCHES" != "1" ]]; then
   echo "PLOZZ_HOME_EXPECT_HITCHES must be 0 or 1." >&2
   exit 2
@@ -114,11 +118,6 @@ export TEST_RUNNER_PLOZZ_HOME_VERTICAL_ROUNDTRIP=0
 export TEST_RUNNER_PLOZZ_HOME_OBSERVE_ONLY=0
 export TEST_RUNNER_PLOZZ_HOME_VERTICAL_BURST=0
 export TEST_RUNNER_PLOZZ_HOME_FIRST_DOWN_ONLY="${PLOZZ_HOME_FIRST_DOWN_ONLY:-0}"
-export TEST_RUNNER_PLOZZ_HOME_HERO_ONE_SHOT="${PLOZZ_HOME_HERO_ONE_SHOT:-0}"
-if [[ "$TEST_RUNNER_PLOZZ_HOME_HERO_ONE_SHOT" != "0" && "$TEST_RUNNER_PLOZZ_HOME_HERO_ONE_SHOT" != "1" ]]; then
-  echo "PLOZZ_HOME_HERO_ONE_SHOT must be 0 or 1." >&2
-  exit 2
-fi
 export TEST_RUNNER_PLOZZ_HOME_HERO_WARM_PAIRS="${PLOZZ_HOME_HERO_WARM_PAIRS:-0}"
 if [[ ! "$TEST_RUNNER_PLOZZ_HOME_HERO_WARM_PAIRS" =~ ^[0-6]$ ]]; then
   echo "PLOZZ_HOME_HERO_WARM_PAIRS must be 0 through 6." >&2
@@ -126,11 +125,6 @@ if [[ ! "$TEST_RUNNER_PLOZZ_HOME_HERO_WARM_PAIRS" =~ ^[0-6]$ ]]; then
 fi
 if [[ "$TEST_RUNNER_PLOZZ_HOME_HERO_WARM_PAIRS" != "0" && "$TEST_RUNNER_PLOZZ_HOME_FIRST_DOWN_ONLY" != "1" ]]; then
   echo "Warm Hero/CW pairs require an explicit first-Down-only cold case." >&2
-  exit 2
-fi
-if [[ "$TEST_RUNNER_PLOZZ_HOME_HERO_ONE_SHOT" == "1" &&
-      ( "$TEST_RUNNER_PLOZZ_HOME_FIRST_DOWN_ONLY" != "1" || "$TEST_RUNNER_PLOZZ_HOME_HERO_WARM_PAIRS" != "0" ) ]]; then
-  echo "Single-shot cold/warm metrics require FIRST_DOWN_ONLY=1 and HERO_WARM_PAIRS=0." >&2
   exit 2
 fi
 if [[ "$TEST_RUNNER_PLOZZ_HOME_FIRST_DOWN_ONLY" != "0" && "$TEST_RUNNER_PLOZZ_HOME_FIRST_DOWN_ONLY" != "1" ]]; then
@@ -261,7 +255,6 @@ elif [[ "$MODE" == "--run-vertical-roundtrip" ]]; then
   echo "PLOZZ_HOME_REQUIRE_HERO=1 refuses input unless the actual hero is exposed."
   echo "PLOZZ_HOME_FIRST_DOWN_ONLY=1 overrides the tour: one already-focused Hero Down, then stop."
   echo "Optional PLOZZ_HOME_HERO_WARM_PAIRS=1..6 adds explicitly warm Hero/CW-only pairs afterward."
-  echo "PLOZZ_HOME_HERO_ONE_SHOT=1 uses public XCTMetric callbacks for one cold and one warm Down, without XCTestCase.measure."
 elif [[ "$MODE" == "--measure-vertical-burst" ]]; then
   echo "Preverify an observed adjacent Down/Up pair; six alternating pairs per sample, no AX between presses."
   echo "Three retained native samples plus XCTest warm-up. Actual press cadence is logged, not assumed."
@@ -377,28 +370,6 @@ if [[ "$MODE" == "--observe-home" || "$MODE" == "--run-vertical-roundtrip" ]]; t
   if ! grep -q "PLZROWS .* $REQUIRED_EVENT " "$OUT/test.log"; then
     echo "Missing observed-Home workload evidence." >&2
     exit 1
-  fi
-  if [[ "$TEST_RUNNER_PLOZZ_HOME_HERO_ONE_SHOT" == "1" ]]; then
-    if ! grep -q 'PLZROWS .* one-shot.cold.validated ' "$OUT/test.log" ||
-       ! grep -q 'PLZROWS .* one-shot.warm.validated ' "$OUT/test.log"; then
-      echo "Missing validated cold/warm single-shot metrics or focus proof." >&2
-      exit 1
-    fi
-    python3 - "$OUT" <<'PY'
-import json
-from pathlib import Path
-import sys
-root = Path(sys.argv[1])
-records = [json.loads(line.split("one-shot.result ", 1)[1])
-           for line in (root / "test.log").read_text().splitlines()
-           if line.startswith("PLZROWS ") and "one-shot.result " in line]
-if [record["phase"] for record in records] != ["cold", "warm"]:
-    raise SystemExit("Expected exactly one cold and one warm single-shot record.")
-(root / "one-shot-metrics.json").write_text(json.dumps(records, indent=2) + "\n")
-PY
-    printf '{"nativeMetricsCollected":true,"singleShot":true,"standardXCTestMeasure":false,"smoothnessVerdict":null}\n' > "$OUT/validation.json"
-    echo "One cold and one warm public-callback native interval recorded; not standard retained-sample statistics."
-    exit 0
   fi
   printf '{"nativeMetricsCollected":false,"performanceMeasured":false,"coverage":"observed Home only; inspect timeline"}\n' > "$OUT/validation.json"
   echo "Observed Home coverage recorded; this functional run is not a performance measurement."

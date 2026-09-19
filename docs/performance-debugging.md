@@ -153,12 +153,12 @@ can follow that first Down with explicitly warm Hero/CW pairs; those repetitions
 are not cold evidence. An asleep-device launch rejection is a blocked run, not
 an app crash, and must not trigger an unapproved wake or a replacement launch.
 
-`PLOZZ_HOME_HERO_ONE_SHOT=1` is an experimental alternative using the public
-`XCTMetric` lifecycle callbacks for one cold and one warm Down, without
-`XCTestCase.measure` warm-up iterations. It requires `FIRST_DOWN_ONLY=1` and
-`HERO_WARM_PAIRS=0`, validates the target app's metric identifiers, and records
-raw units and measurement timestamps. Its runtime collection must be validated
-before interpreting zero results; compilation alone is insufficient.
+Direct calls to `XCTMetric`'s lifecycle callbacks do not replace XCTest's
+measurement setup. On Xcode 27, a built-in hitch metric asserted `_startDate`
+when asked to report a manually collected interval. That experiment was removed;
+the old `PLOZZ_HOME_HERO_ONE_SHOT` flag now fails before starting a runner.
+Use external profiling for the first cold transition, not discarded warm-up
+samples or empty direct-callback results.
 
 Artifacts include the original app log, test result, actual focus/input timeline,
 and, when diagnostics are available, `frame-window-summary.json`. Callback-only
@@ -768,6 +768,12 @@ utilisation = "death by a thousand re-renders", not one big stall.
    rest of the app already used lazy stacks.) Do **not** reach for
    `GlassEffectContainer` to "fix" it — Home/Search prove it's unnecessary and it
    can alter glass blending.
+   The custom rail also defers Live TV's content factory until its first visit.
+   Merely hiding it with opacity left its library-runtime refresh tasks and guide
+   construction active during cold Home startup. `RetainedLiveTVDestination`
+   mounts immediately when selected, keeps the same state after leaving, and
+   resets with the profile identity. Hosted checks cover zero construction before
+   visiting, initial standalone entry, retained state, and profile replacement.
 3. **Throttle continuous animators.** A `TimelineView(.animation(minimumInterval:
    …))` re-renders its subtree at that rate forever while visible. Keep the
    interval as coarse as the effect allows and the animated subtree tiny (the

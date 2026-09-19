@@ -1389,7 +1389,7 @@ struct MainTabView: View {
         .environment(navigationChrome)
     }
 
-    /// Keeps the Live TV destination mounted while another custom-rail
+    /// Keeps Live TV mounted after its first visit while another custom-rail
     /// route is selected. Native TabView already retains visited tabs; matching that
     /// lifetime here preserves in-memory source, Favorites, and filter choices while
     /// `isActive = false` still tears down playback and pending tune work.
@@ -1403,19 +1403,22 @@ struct MainTabView: View {
                 .allowsHitTesting(!showsLiveTV)
                 .accessibilityHidden(showsLiveTV)
 
-            LiveTVShellDestination(
-                isActive: showsLiveTV,
-                profileID: activeProfile.id,
-                preferencesNamespace: liveTVPreferencesNamespace,
-                accountsProviders: accountsProviders,
-                authenticatedHTTPResolver: authenticatedHTTPResolver,
-                connectServer: onAddAccount,
-                didConfigurePlaylist: onConfiguredIPTVPlaylist,
-                completeLibraryChannelPlayback: completeLibraryChannelPlayback,
-                isProfileAuthorized: isLiveTVProfileAuthorized,
-                onExpandedChange: updateLiveTVChrome,
-                onOpenTitle: openTitleFromLiveTV
-            )
+            RetainedLiveTVDestination(isActive: showsLiveTV) {
+                LiveTVShellDestination(
+                    isActive: showsLiveTV,
+                    profileID: activeProfile.id,
+                    preferencesNamespace: liveTVPreferencesNamespace,
+                    accountsProviders: accountsProviders,
+                    authenticatedHTTPResolver: authenticatedHTTPResolver,
+                    connectServer: onAddAccount,
+                    didConfigurePlaylist: onConfiguredIPTVPlaylist,
+                    completeLibraryChannelPlayback: completeLibraryChannelPlayback,
+                    isProfileAuthorized: isLiveTVProfileAuthorized,
+                    onExpandedChange: updateLiveTVChrome,
+                    onOpenTitle: openTitleFromLiveTV
+                )
+            }
+            .id(activeProfile.id)
             .opacity(showsLiveTV ? 1 : 0)
             .disabled(!showsLiveTV)
             .allowsHitTesting(showsLiveTV)
