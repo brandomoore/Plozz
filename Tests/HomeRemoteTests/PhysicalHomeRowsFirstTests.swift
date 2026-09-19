@@ -830,6 +830,9 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
                      && sidebarButtons.contains(where: containsFocus))
         let focusedRow = rows.first { $0.focusedCard != nil }
         event("\(phase) realMediaRows=\(rows.count) focusedRows=\(rows.filter { $0.focusedCard != nil }.count) heroPresent=\(heroPresent) heroFocused=\(heroFocused) railFocused=\(railFocused) focusRow=\(focusedRow?.title.debugDescription ?? "<none>") focusCard=\(focusedRow?.focusedCard?.label.debugDescription ?? "<none>")")
+        if let focusedRow, let card = focusedRow.focusedCard {
+            event("\(phase) focusedCardGeometry row=\(focusedRow.title.debugDescription) label=\(card.label.debugDescription) frame=\(card.frame) rowFrame=\(focusedRow.frame)")
+        }
         if focusedRow == nil {
             for element in elements.filter(\.hasFocus).prefix(8) {
                 event("\(phase) focusedElement type=\(element.elementType.rawValue) identifier=\(element.identifier.debugDescription) label=\(element.label.debugDescription) frame=\(element.frame)")
