@@ -27,6 +27,7 @@ struct PlozziOSLibraryRoute: Hashable, Identifiable {
     var containerKind: MediaItemKind
     var accountID: String?
     var synthesizedName: MediaLibrary.SynthesizedName?
+    var collectionSourceTitle: String?
 
     /// Stable across the value's lifetime so it can also drive a
     /// `navigationDestination(item:)` push (the screenshot router's path). The
@@ -39,6 +40,7 @@ struct PlozziOSLibraryRoute: Hashable, Identifiable {
         self.containerKind = library.kind
         self.accountID = accountID
         self.synthesizedName = library.synthesizedName
+        self.collectionSourceTitle = library.collectionSourceTitle
     }
 }
 
@@ -61,7 +63,14 @@ struct PlozziOSLibraryDestinationView: View {
     }
 
     private var title: String { // l10n:content - provider name or locale-scoped resource bridged to the grid's String API
-        guard var resource = route.synthesizedName?.title else { return route.title }
+        let library = MediaLibrary(
+            id: route.containerID,
+            title: route.title,
+            kind: route.containerKind,
+            synthesizedName: route.synthesizedName,
+            collectionSourceTitle: route.collectionSourceTitle
+        )
+        guard var resource = library.localizedTitle else { return route.title }
         resource.locale = locale
         return String(localized: resource) // l10n:content - recomputed from the observed locale, never cached
     }

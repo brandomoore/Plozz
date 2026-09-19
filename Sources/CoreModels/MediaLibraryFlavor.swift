@@ -52,7 +52,7 @@ public extension MediaLibrary {
             case .movies: return .movies
             case .tvShows: return .tvShows
             case .anime: return .anime
-            case .browseFiles: return .mixed
+            case .browseFiles, .collections: return .mixed
             case .generic: break
             }
         }

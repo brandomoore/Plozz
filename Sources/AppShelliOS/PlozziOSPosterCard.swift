@@ -6,6 +6,7 @@ import SwiftUI
 struct PlozziOSPosterCard: View {
     let item: MediaItem?
     var style: PosterCardView.Style = .poster
+    var artworkPolicy: CardArtworkPolicy = .standard
     /// Identify the card by its show — artwork plus logo — instead of by the
     /// item's own thumbnail. Continue Watching opts in.
     var showsSeriesArtwork: Bool = false
@@ -30,6 +31,7 @@ struct PlozziOSPosterCard: View {
         PosterCardView(
             item: item ?? placeholderItem,
             style: style,
+            artworkPolicy: artworkPolicy,
             spoilerSettings: spoilerSettings,
             showsSeriesArtwork: showsSeriesArtwork,
             reservesSubtitleSpace: reservesSubtitleSpace,

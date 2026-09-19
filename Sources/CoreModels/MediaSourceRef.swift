@@ -54,6 +54,12 @@ public struct MediaSourceRef: Codable, Hashable, Identifiable, Sendable {
     /// fetch populates them (rows/cards never carry versions), so a server can be
     /// chosen before its file list is known (the server default plays).
     public var versions: [MediaVersion]
+    /// Provider-stated edition of this physical item, including single-file items.
+    public var edition: String?
+
+    public var selectableVersions: [MediaVersion] {
+        versions.map { $0.qualified(accountID: accountID, itemID: itemID, edition: edition) }
+    }
 
     // Per-source watch-state, folded into the merged item's unified state.
 
@@ -82,6 +88,7 @@ public struct MediaSourceRef: Codable, Hashable, Identifiable, Sendable {
         accountName: String? = nil,
         locality: SourceLocality? = nil,
         versions: [MediaVersion] = [],
+        edition: String? = nil,
         resumePosition: TimeInterval? = nil,
         playedPercentage: Double? = nil,
         isPlayed: Bool = false,
@@ -98,6 +105,7 @@ public struct MediaSourceRef: Codable, Hashable, Identifiable, Sendable {
         self.accountName = accountName
         self.locality = locality
         self.versions = versions
+        self.edition = edition
         self.resumePosition = resumePosition
         self.playedPercentage = playedPercentage
         self.isPlayed = isPlayed
@@ -108,7 +116,7 @@ public struct MediaSourceRef: Codable, Hashable, Identifiable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case accountID, itemID, libraryID, kind, providerKind, serverName, accountName
-        case locality, versions, resumePosition, playedPercentage, isPlayed
+        case locality, versions, edition, resumePosition, playedPercentage, isPlayed
         case hasBeenPlayed, isFavorite, lastPlayedAt
     }
 
@@ -123,6 +131,7 @@ public struct MediaSourceRef: Codable, Hashable, Identifiable, Sendable {
         accountName = try container.decodeIfPresent(String.self, forKey: .accountName)
         locality = try container.decodeIfPresent(SourceLocality.self, forKey: .locality)
         versions = try container.decodeIfPresent([MediaVersion].self, forKey: .versions) ?? []
+        edition = try container.decodeIfPresent(String.self, forKey: .edition)
         resumePosition = try container.decodeIfPresent(TimeInterval.self, forKey: .resumePosition)
         playedPercentage = try container.decodeIfPresent(Double.self, forKey: .playedPercentage)
         isPlayed = try container.decodeIfPresent(Bool.self, forKey: .isPlayed) ?? false

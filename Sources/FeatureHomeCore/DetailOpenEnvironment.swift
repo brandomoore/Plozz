@@ -1,3 +1,4 @@
+import Foundation
 import CoreModels
 import CoreNetworking
 import MetadataKit
@@ -103,8 +104,46 @@ public struct DetailOpenEnvironment {
         // before answering, so a title the viewer owns arrives here with
         // `isDiscovery == false` and does get its sources.
         let indexed = isDiscovery ? [] : identitySources(item)
+        var own: [MediaSourceRef] = []
+        if !isDiscovery, let opening = openingSource(for: item) {
+            var source = (item.sources + indexed).first {
+                $0.accountID == opening.accountID && $0.itemID == opening.itemID
+            } ?? MediaSourceRef(
+                accountID: opening.accountID,
+                itemID: opening.itemID,
+                kind: item.kind
+            )
+            source.kind = item.kind
+            source.libraryID = item.libraryID ?? source.libraryID
+            source.edition = item.edition ?? source.edition
+            if !item.versions.isEmpty {
+                source.versions = item.versions
+            } else if source.versions.isEmpty {
+                source.versions = [MediaVersion.synthesized(from: item)]
+            }
+            source.resumePosition = item.resumePosition
+            source.playedPercentage = item.playedPercentage
+            source.isPlayed = item.isPlayed
+            source.hasBeenPlayed = item.hasBeenPlayed
+            source.isFavorite = item.isFavorite
+            source.lastPlayedAt = item.lastPlayedAt
+            own = [source]
+        }
         var seen = Set<String>()
-        return (item.sources + indexed).filter { seen.insert($0.id).inserted }
+        return (own + item.sources + indexed).filter { seen.insert($0.id).inserted }
+    }
+
+    /// Library grids preserve physical provider items; Home/Search aggregation
+    /// stamps `isMergedTitle`. Only an independently listed, explicitly named
+    /// edition expresses an item choice, never an arbitrary merged representative.
+    public static func openingSource(for item: MediaItem) -> MediaItemSourceIdentity? {
+        if let opening = item.editionOpeningSource { return opening }
+        guard !item.isMergedTitle, item.locallyValidatedPlayableSource,
+              item.kind == .movie,
+              let edition = item.edition,
+              !edition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let account = item.sourceAccountID else { return nil }
+        return MediaItemSourceIdentity(accountID: account, itemID: item.id)
     }
 
     /// The Related-row policy shared by both platform shells. Discovery details keep
@@ -129,6 +168,8 @@ public struct DetailOpenEnvironment {
         for item: MediaItem,
         selectedSource: MediaSourceRef?
     ) -> MediaItem {
+        var item = item
+        item.editionOpeningSource = openingSource(for: item)
         guard let selectedSource else { return item }
         if item.locallyValidatedPlayableSource,
            item.id == selectedSource.itemID,
@@ -158,9 +199,12 @@ public struct DetailOpenEnvironment {
             liveSource.locality = locality
             return liveSource
         }
+        let opening = openingSource(for: item)
         let selected = isDiscovery
             ? nil
-            : CrossSourceSelector.bestSelection(
+            : sources.first(where: {
+                $0.accountID == opening?.accountID && $0.itemID == opening?.itemID
+            }) ?? CrossSourceSelector.bestSelection(
                 from: sources,
                 capabilities: .detected(),
                 preferring: libraryOrigin

@@ -520,6 +520,16 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     )
                 }
 
+                if detail.item.kind == .collection, !isDiscoveryItem {
+                    PlozziOSCollectionMembersSection(
+                        items: detail.children,
+                        state: detail.collectionMembersState ?? .idle,
+                        inset: pageInset,
+                        onSelect: { itemNavigator?($0) },
+                        onRetry: { Task { await viewModel.retryCollectionMembers() } }
+                    )
+                }
+
                 if isDiscoveryItem, detail.item.kind != .movie, detail.item.kind != .series {
                     PlozziOSRequestAction(
                         item: detail.item,
@@ -727,7 +737,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
             libraryOrigin: viewModel.originSourceAccountID,
             itemSourceAccountID: item.sourceAccountID,
             sources: available,
-            capabilities: capabilities
+            capabilities: capabilities,
+            openingSource: item.editionOpeningSource
         )
         let sources = DetailPlaybackSelection.serverChoices(from: available)
         let versions = DetailPlaybackSelection.versions(
@@ -842,7 +853,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
             libraryOrigin: viewModel.originSourceAccountID,
             itemSourceAccountID: item.sourceAccountID,
             sources: sources,
-            capabilities: capabilities
+            capabilities: capabilities,
+            openingSource: item.editionOpeningSource
         )
         let choices = DetailPlaybackSelection.serverChoices(from: sources)
         let versions = DetailPlaybackSelection.versions(
@@ -931,7 +943,8 @@ private struct PlozziOSCanonicalItemDetailView: View {
             libraryOrigin: viewModel.originSourceAccountID,
             itemSourceAccountID: item.sourceAccountID,
             sources: sources,
-            capabilities: capabilities
+            capabilities: capabilities,
+            openingSource: item.editionOpeningSource
         )
         let versions = DetailPlaybackSelection.versions(
             for: item,

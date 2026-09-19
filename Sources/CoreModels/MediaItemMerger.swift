@@ -197,7 +197,9 @@ public enum MediaItemMerger {
         var seenServerItem: [String: Int] = [:]
         for index in items.indices {
             let item = items[index]
-            let scope = item.sourceAccountID.flatMap { serverInfo($0)?.serverID } ?? item.sourceAccountID
+            let scope = item.kind == .collection
+                ? item.sourceAccountID
+                : item.sourceAccountID.flatMap { serverInfo($0)?.serverID } ?? item.sourceAccountID
             guard let scope else { continue }
             // Include the media kind in the key: two items sharing a (server, id)
             // but of different kinds are never the same work (defensive — a real
@@ -231,6 +233,7 @@ public enum MediaItemMerger {
         }
         if !ownerByRef.isEmpty {
             for index in items.indices {
+                guard items[index].kind != .collection else { continue }
                 for ref in identitySources(items[index]) {
                     guard let owner = ownerByRef["\(ref.accountID):\(ref.itemID)"], owner != index else { continue }
                     // Only union same-kind rows. `identitySources` is kind-scoped and
@@ -435,6 +438,15 @@ public enum MediaItemMerger {
             preconditionFailure("mergeGroup requires at least one item")
         }
         var primary = richestMember(of: duplicates)
+        if primary.kind == .collection {
+            primary.additionalSourceAccountIDs = []
+            primary.sources = primary.sources.filter {
+                $0.accountID == primary.sourceAccountID && $0.itemID == primary.id
+            }
+            return primary
+        }
+        primary.isMergedTitle = true
+        primary.editionOpeningSource = nil
 
         // The eager index's known servers for this title (origin-agnostic SSOT),
         // resolved from the primary's identities. Folded in below so even a
@@ -603,6 +615,7 @@ public enum MediaItemMerger {
             accountName: info?.accountName,
             locality: info?.locality,
             versions: versions,
+            edition: item.edition,
             resumePosition: item.resumePosition,
             playedPercentage: item.playedPercentage,
             isPlayed: item.isPlayed,

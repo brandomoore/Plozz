@@ -35,7 +35,8 @@ public enum MediaFileSizeFormatter {
 /// mode is known only after provider resolution and is shown in Playback
 /// Diagnostics, never guessed in the version menu.
 public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
-    /// Provider media-source id; threaded into `playbackInfo(for:mediaSourceID:)`.
+    /// Provider media-source id, or an account/item-qualified combined-picker id.
+    /// ``playbackMediaSourceID`` is the id providers accept.
     public var id: String
     /// Raw provider-supplied source name (Jellyfin `MediaSources[].Name`), e.g.
     /// "Movie (2009) Bluray-2160p Atmos". `nil` when the server reports none.
@@ -81,12 +82,15 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
     /// When this version is backed by a **different** provider item than the one
     /// containing it (the same-account-duplicate case: two separate Jellyfin
     /// movie items for the same film), the backing item's id. Playback must
-    /// repoint to this id before resolving the stream. `nil` when the version is
-    /// an "intrinsic" `MediaSources` entry on the containing item (the
-    /// traditional multi-version case where one item exposes several files).
+    /// repoint to this id before resolving the stream. Also stamped on intrinsic
+    /// versions when building a combined picker; nil only while still unbound.
     public var sourceItemID: String?
     /// The account that owns ``sourceItemID``. Set whenever ``sourceItemID`` is.
     public var sourceAccountID: String?
+
+    /// Original provider file id when `id` is qualified for a combined picker.
+    /// Never send the account/item-qualified picker identity to a provider.
+    public var providerMediaSourceID: String?
 
     /// The **real** per-file stream metadata this version was built from, when it
     /// was synthesised from a whole backing item (the same-account-duplicate
@@ -119,6 +123,7 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
         container: String? = nil,
         sourceItemID: String? = nil,
         sourceAccountID: String? = nil,
+        providerMediaSourceID: String? = nil,
         sourceMetadata: MediaSourceMetadata? = nil
     ) {
         self.id = id
@@ -139,7 +144,39 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
         self.container = container
         self.sourceItemID = sourceItemID
         self.sourceAccountID = sourceAccountID
+        self.providerMediaSourceID = providerMediaSourceID
         self.sourceMetadata = sourceMetadata
+    }
+
+    public var playbackMediaSourceID: String? {
+        if id.hasPrefix("synth:") { return nil }
+        return providerMediaSourceID ?? id
+    }
+
+    /// Binds both intrinsic files and synthetic single-file choices to their
+    /// physical owner. Numeric Plex media ids are only unique within a server.
+    public func qualified(
+        accountID: String,
+        itemID: String,
+        edition: String? = nil
+    ) -> MediaVersion {
+        var copy = self
+        let account = sourceAccountID ?? accountID
+        let item = sourceItemID ?? itemID
+        copy.sourceAccountID = account
+        copy.sourceItemID = item
+        if copy.edition?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            copy.edition = edition
+        }
+        let owner = [account, item].map { Data($0.utf8).base64EncodedString() }
+            .joined(separator: ":")
+        if let mediaID = playbackMediaSourceID {
+            copy.providerMediaSourceID = mediaID
+            copy.id = "media:\(owner):\(Data(mediaID.utf8).base64EncodedString())"
+        } else {
+            copy.id = "synth:\(owner)"
+        }
+        return copy
     }
 
     /// Synthesises a single ``MediaVersion`` describing `item`'s lone backing
@@ -167,6 +204,7 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
             id: "synth:\(item.id)",
             name: nil,
             fileName: item.mediaInfo?.fileName,
+            edition: item.edition,
             width: video?.width,
             height: video?.height,
             bitrate: video?.bitrate,
@@ -280,7 +318,7 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
     }
 
     /// The edition / cut to surface for this version: the provider's explicit
-    /// `edition` when present, otherwise one parsed from the source `name`
+    /// `edition` when present, otherwise one parsed from the source `name` or filename
     /// (Extended, Theatrical, Director's Cut, …). `nil` when neither names a cut.
     /// This is the signal that distinguishes two otherwise-identical "4K · 12 GB"
     /// files, so the picker leads with it.
@@ -289,7 +327,7 @@ public struct MediaVersion: Codable, Hashable, Identifiable, Sendable {
             let trimmed = edition.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { return trimmed }
         }
-        return EditionParser.edition(from: name)
+        return EditionParser.edition(from: name) ?? EditionParser.edition(from: fileName)
     }
 
     /// The source-quality token parsed from `name` (Remux, BluRay, WEB-DL, …), or

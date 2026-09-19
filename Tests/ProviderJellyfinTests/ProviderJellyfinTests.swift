@@ -781,11 +781,13 @@ final class JellyfinProviderMappingTests: XCTestCase {
     func testExtrasCombineLocalTrailersAndSpecialFeatures() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/Items/m1/LocalTrailers", json: """
-        [{"Id":"t1","Name":"Official Trailer","Type":"Trailer","SupportsResume":false}]
+        [{"Id":"t1","Name":"Official Trailer","Type":"Trailer","SupportsResume":false,
+          "ImageTags":{"Primary":"trailer-primary"},"BackdropImageTags":["trailer-backdrop"]}]
         """)
         stub.stub(pathSuffix: "/Items/m1/SpecialFeatures", json: """
         [
-          {"Id":"f1","Name":"Making Of","Type":"Video","ExtraType":"BehindTheScenes","SupportsResume":true},
+          {"Id":"f1","Name":"Making Of","Type":"Video","ExtraType":"BehindTheScenes","SupportsResume":true,
+           "ImageTags":{"Primary":"feature-primary"},"BackdropImageTags":["feature-backdrop"]},
           {"Id":"f2","Name":"Mystery","Type":"Video","ExtraType":"FutureType"}
         ]
         """)
@@ -796,6 +798,21 @@ final class JellyfinProviderMappingTests: XCTestCase {
         XCTAssertEqual(extras.map(\.item.id), ["t1", "f1", "f2"])
         XCTAssertEqual(extras.map(\.kind), [.trailer, .behindTheScenes, .unknown])
         XCTAssertEqual(extras.map(\.supportsResume), [false, true, true])
+        XCTAssertEqual(extras.map(\.item.kind), [.video, .video, .video])
+        for (extra, prefix) in zip(extras.prefix(2), ["trailer", "feature"]) {
+            for (url, kind, tag) in [
+                (extra.item.posterURL, "Primary", "\(prefix)-primary"),
+                (extra.item.backdropURL, "Backdrop", "\(prefix)-backdrop")
+            ] {
+                let components = try XCTUnwrap(url.flatMap {
+                    URLComponents(url: $0, resolvingAgainstBaseURL: false)
+                })
+                XCTAssertEqual(components.path, "/Items/\(extra.item.id)/Images/\(kind)")
+                XCTAssertEqual(components.queryItems?.first(where: { $0.name == "tag" })?.value, tag)
+            }
+        }
+        XCTAssertNil(extras[2].item.posterURL)
+        XCTAssertNil(extras[2].item.backdropURL)
         XCTAssertTrue(stub.sentPaths.contains { $0.hasSuffix("/Users/u1/Items/m1/SpecialFeatures") })
     }
 

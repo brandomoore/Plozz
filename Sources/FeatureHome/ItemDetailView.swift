@@ -239,6 +239,11 @@ public struct ItemDetailView: View {
                     capabilities: capabilities,
                     versionPreferences: versionPreferences
                 )
+            } else if case let .failed(error)? = detail.collectionMembersState {
+                ContentStateView(
+                    state: LoadState<Int>.failed(error),
+                    onRetry: { Task { await viewModel.retryCollectionMembers() } }
+                ) { _ in EmptyView() }
             } else if isEmptyContainer(detail) {
                 emptyFolderState(detail.item)
             } else if isLoadingContainer(detail) {
@@ -834,7 +839,9 @@ public struct ItemDetailView: View {
                 .plozzForeground(.secondary)
             Text(item.title)
                 .font(.title2.weight(.semibold))
-            Text("No playable media in this folder.")
+            Text(item.kind == .collection
+                 ? LocalizedStringResource("This collection is empty.")
+                 : LocalizedStringResource("No playable media in this folder."))
                 .font(.title3)
                 .plozzForeground(.secondary)
                 .multilineTextAlignment(.center)
@@ -920,7 +927,8 @@ public struct ItemDetailView: View {
             libraryOrigin: viewModel.originSourceAccountID,
             itemSourceAccountID: item.sourceAccountID,
             sources: sources,
-            capabilities: capabilities
+            capabilities: capabilities,
+            openingSource: item.editionOpeningSource
         )
     }
 

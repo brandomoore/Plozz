@@ -37,6 +37,26 @@ supported capability remains at parity.
 - **Co-equal with `ProviderPlex`.** Any new `MediaProvider` capability must be
   implemented here whenever it's implemented for Plex (and vice versa).
 
+## Collections
+
+Jellyfin and Emby retain the server's native `boxsets` library and `BoxSet`
+items. Both use the shared Collections-library/list → detail → members flow.
+`MediaProvider.collectionMembers(of:page:)` pages direct members through
+`/Users/{userID}/Items?ParentId={collectionID}&Recursive=false`. It deliberately
+omits `IncludeItemTypes`, `SortBy`, and `SortOrder`: members can have mixed kinds,
+and the server owns collection membership and display order. Library listing
+remains a separate `items(in:kind:page:)` query.
+
+The shared detail model fetches bounded pages and distinguishes failed loads from
+empty collections, with retry on tvOS and iOS. It never caches a failed partial
+load as a complete collection.
+
+Protocol references: Jellyfin
+[`ItemsController`](https://github.com/jellyfin/jellyfin/blob/master/Jellyfin.Api/Controllers/ItemsController.cs)
+and [`BoxSet`](https://github.com/jellyfin/jellyfin/blob/master/MediaBrowser.Controller/Entities/Movies/BoxSet.cs).
+Tests: `MediaBrowserCollectionBrowsingTests` (both provider kinds) and shared
+`CollectionDetailBrowsingTests`.
+
 ## Where to look first
 
 - `JellyfinClient.swift` — the `MediaProvider` impl.

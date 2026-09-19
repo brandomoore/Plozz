@@ -606,6 +606,23 @@ public struct JellyfinClient: Sendable {
         return try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL).Items
     }
 
+    /// Direct BoxSet membership, without a type filter or a sort override.
+    func collectionMembers(userID: String, collectionID: String, page: PageRequest) async throws -> ItemsResponse {
+        let endpoint = Endpoint(
+            path: "/Users/\(userID)/Items",
+            queryItems: [
+                URLQueryItem(name: "ParentId", value: collectionID),
+                URLQueryItem(name: "Recursive", value: "false"),
+                URLQueryItem(name: "StartIndex", value: String(page.startIndex)),
+                URLQueryItem(name: "Limit", value: String(page.limit)),
+                URLQueryItem(name: "EnableTotalRecordCount", value: "true"),
+                URLQueryItem(name: "Fields", value: "Overview,MediaStreams,MediaSources,Genres,ProviderIds")
+            ],
+            headers: authHeaders
+        )
+        return try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
+    }
+
     /// `GET /Users/{userId}/Items/{itemId}/LocalTrailers` — the local trailer
     /// files Jellyfin detected alongside an item. Each is a fully playable
     /// `BaseItemDto` (its own item id), so it streams through the normal

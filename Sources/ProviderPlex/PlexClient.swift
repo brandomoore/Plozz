@@ -585,6 +585,16 @@ public struct PlexClient: Sendable {
         ).MediaContainer.Metadata ?? []
     }
 
+    /// Both static and smart collections resolve through their children endpoint.
+    /// Omitting `sort` preserves the server's configured collection order.
+    func collectionMembers(ratingKey: String, start: Int, size: Int) async throws -> PlexMediaContainer {
+        try await decodeStreamEnriched(
+            PlexMediaContainerResponse.self,
+            path: "/library/metadata/\(ratingKey)/children",
+            query: containerQuery(start: start, size: size)
+        ).MediaContainer
+    }
+
     /// `GET /library/metadata/{ratingKey}/extras` — trailers and other extras
     /// (behind-the-scenes, deleted scenes, …) attached to an item. Each extra is
     /// a `clip` with its own ratingKey that streams through the normal playback

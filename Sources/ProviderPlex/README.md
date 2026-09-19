@@ -34,6 +34,27 @@ first-class backends; co-equal with `ProviderJellyfin`.
   rewrites the stored admin account's token; per-user tokens live in a
   short-lived override map.
 
+## Collections
+
+Movie/show sections expose a derived, section-scoped Collections library. It
+uses the same library grid and collection detail as Jellyfin/Emby, not a separate
+Plex selector. IDs (`plex:collections:<sectionID>`) identify collection *lists*;
+they must never be sent to a metadata/children endpoint or interpreted as item IDs.
+
+Discovery pages `/library/sections/{sectionID}/all?type=18`. Collection membership
+uses `MediaProvider.collectionMembers(of:page:)`, backed by paged
+`/library/metadata/{ratingKey}/children`, with no type or sort override. That same
+endpoint serves static and smart collections and preserves their server order.
+Detail loading reads bounded pages, publishes only a complete result, and exposes
+failures separately from an empty collection with a retry action on both platforms.
+
+Protocol references: python-plexapi
+[`LibrarySection.collections` / `search`](https://github.com/pkkid/python-plexapi/blob/master/plexapi/library.py),
+[`SEARCHTYPES`](https://github.com/pkkid/python-plexapi/blob/master/plexapi/utils.py),
+and [`Collection._items`](https://github.com/pkkid/python-plexapi/blob/master/plexapi/collection.py).
+
+Tests: `PlexCollectionBrowsingTests` and shared `CollectionDetailBrowsingTests`.
+
 ## Where to look first
 
 - `PlexProvider.swift` / `PlexClient.swift` — the `MediaProvider` entry.

@@ -123,9 +123,9 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
     }
 
     public func libraries() async throws -> [MediaLibrary] {
-        try await client.sections().compactMap { dir in
-            guard let id = dir.key else { return nil }
-            return MediaLibrary(
+        try await client.sections().flatMap { dir -> [MediaLibrary] in
+            guard let id = dir.key else { return [] }
+            let library = MediaLibrary(
                 id: id,
                 title: dir.title ?? "Library",
                 kind: Self.kind(forSectionType: dir.type),
@@ -134,7 +134,31 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
                 imageURL: client.imageURL(path: dir.thumb ?? dir.composite, maxWidth: 400),
                 isMusic: dir.type == "artist"
             )
+            guard dir.type == "movie" || dir.type == "show" else { return [library] }
+            let collectionSourceTitle = dir.title.flatMap { title -> String? in
+                let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+            return [library, MediaLibrary(
+                id: Self.collectionLibraryID(sectionID: id),
+                title: collectionSourceTitle.map { "Collections in \($0)" } ?? "Collections",
+                kind: .collection,
+                synthesizedName: .collections,
+                collectionSourceTitle: collectionSourceTitle,
+                imageURL: library.imageURL
+            )]
         }
+    }
+
+    static func collectionLibraryID(sectionID: String) -> String {
+        "plex:collections:\(sectionID)"
+    }
+
+    private static func collectionSectionID(_ containerID: String) -> String? {
+        let prefix = "plex:collections:"
+        guard containerID.hasPrefix(prefix) else { return nil }
+        let sectionID = String(containerID.dropFirst(prefix.count))
+        return sectionID.isEmpty ? nil : sectionID
     }
 
     /// Continue Watching, read from Plex's **own hub** wherever the server offers
@@ -448,6 +472,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
     /// so what remains is genuinely additive AND populated: "More in <Genre>",
     /// "Because you watched…", "Top Rated", "Start Watching", …
     public func libraryHubs(libraryID: String, kind: MediaItemKind, limit: Int) async throws -> [LibrarySection] {
+        guard Self.collectionSectionID(libraryID) == nil else { return [] }
         let hubs = try await client.sectionHubs(sectionID: libraryID, count: limit)
         return hubs.compactMap { hub in
             guard !Self.isBaseDuplicateHub(identifier: hub.hubIdentifier, context: hub.context, title: hub.title) else { return nil }
@@ -626,6 +651,22 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         try await client.children(ratingKey: itemID).map(map(metadata:))
     }
 
+    public func collectionMembers(of collectionID: String, page: PageRequest) async throws -> MediaPage {
+        guard Self.collectionSectionID(collectionID) == nil,
+              page.startIndex >= 0, page.limit > 0 else { throw AppError.invalidResponse }
+        let container = try await client.collectionMembers(
+            ratingKey: collectionID, start: page.startIndex, size: page.limit
+        )
+        let items = (container.Metadata ?? []).map(map(metadata:))
+        return MediaPage(
+            items: items,
+            startIndex: page.startIndex,
+            totalCount: container.totalSize
+                ?? (page.startIndex + items.count
+                    + (items.count == page.limit && !items.isEmpty ? 1 : 0))
+        )
+    }
+
     public func mediaSegments(for itemID: String) async throws -> [MediaSegment] {
         // Best-effort: marker-less servers/items return [] rather than failing.
         let markers = (try? await client.mediaSegments(ratingKey: itemID)) ?? []
@@ -654,20 +695,33 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
     }
 
     public func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
-        let type = Self.sectionType(forContainerKind: kind)
+        let collectionSectionID = Self.collectionSectionID(containerID)
+        if kind == .collection, collectionSectionID == nil {
+            return try await collectionMembers(of: containerID, page: page)
+        }
+        let type = collectionSectionID == nil ? Self.sectionType(forContainerKind: kind) : 18
         PlozzLog.networking.info(
             "Plex library browse: section=\(containerID) kind=\(kind.rawValue) type=\(type.map(String.init) ?? "-") start=\(page.startIndex) size=\(page.limit) sort=\(page.sort.field.rawValue)/\(page.sort.direction.rawValue)"
         )
         do {
             let container = try await client.sectionItems(
-                sectionID: containerID,
+                sectionID: collectionSectionID ?? containerID,
                 type: type,
                 start: page.startIndex,
                 size: page.limit,
                 sort: page.sort
             )
-            let items = (container.Metadata ?? []).map(map(metadata:))
-            let total = container.totalSize ?? container.size ?? (page.startIndex + items.count)
+            let items = (container.Metadata ?? []).map(map(metadata:)).map { item in
+                item.taggingLibrary(collectionSectionID ?? containerID)
+            }
+            let total: Int
+            if collectionSectionID != nil {
+                total = container.totalSize
+                    ?? (page.startIndex + items.count
+                        + (items.count == page.limit && !items.isEmpty ? 1 : 0))
+            } else {
+                total = container.totalSize ?? container.size ?? (page.startIndex + items.count)
+            }
             PlozzLog.networking.info("Plex library browse: section=\(containerID) returned=\(items.count) total=\(total)")
             return MediaPage(items: items, startIndex: page.startIndex, totalCount: total)
         } catch {
@@ -686,7 +740,8 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         kind: MediaItemKind,
         sort: CoreModels.SortDescriptor
     ) async throws -> [LibraryLetterIndexEntry] {
-        guard sort.field == .name else { return [] }
+        guard sort.field == .name, kind != .collection,
+              Self.collectionSectionID(containerID) == nil else { return [] }
         let type = Self.sectionType(forContainerKind: kind)
         let directories = try await client.firstCharacter(sectionID: containerID, type: type)
         // Fold the facet onto the canonical "#"/A–Z rail buckets, preserving the
@@ -1616,6 +1671,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             artworkSelections: heroArtworkSelections(from: dto),
             mediaInfo: Self.sourceMetadata(from: dto),
             libraryID: dto.librarySectionID.map(String.init),
+            edition: dto.editionTitle,
             versions: Self.versions(from: dto.Media, edition: dto.editionTitle),
             isFavorite: false,
             lastPlayedAt: dto.lastViewedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }

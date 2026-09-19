@@ -68,7 +68,8 @@ public final class LibraryBrowseViewModel {
     public var sourceServerID: String { provider.session.server.id }
 
     public var availableSortFields: [SortField] {
-        (provider as? any MediaSortFieldProviding)?
+        if containerKind == .collection { return [.name, .dateAdded] }
+        return (provider as? any MediaSortFieldProviding)?
             .supportedSortFields(in: containerID, kind: containerKind)
             ?? SortField.allCases
     }

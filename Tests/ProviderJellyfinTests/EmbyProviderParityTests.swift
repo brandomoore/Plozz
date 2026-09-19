@@ -136,7 +136,8 @@ final class EmbyProviderParityTests: XCTestCase {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/Items/movie1/LocalTrailers", json: "[]")
         stub.stub(pathSuffix: "/Items/movie1/SpecialFeatures", json: """
-        [{"Id":"extra1","Name":"Deleted Scene","Type":"Video","ExtraType":"DeletedScene"}]
+        [{"Id":"extra1","Name":"Deleted Scene","Type":"Video","ExtraType":"DeletedScene",
+          "ImageTags":{"Primary":"extra-primary"},"BackdropImageTags":["extra-backdrop"]}]
         """)
         let provider = JellyfinProvider(session: makeSession(), http: stub)
 
@@ -144,6 +145,18 @@ final class EmbyProviderParityTests: XCTestCase {
 
         XCTAssertEqual(extras.map(\.item.id), ["extra1"])
         XCTAssertEqual(extras.map(\.kind), [.deletedScene])
+        let extra = try XCTUnwrap(extras.first)
+        XCTAssertEqual(extra.item.kind, .video)
+        for (url, kind, tag) in [
+            (extra.item.posterURL, "Primary", "extra-primary"),
+            (extra.item.backdropURL, "Backdrop", "extra-backdrop")
+        ] {
+            let components = try XCTUnwrap(url.flatMap {
+                URLComponents(url: $0, resolvingAgainstBaseURL: false)
+            })
+            XCTAssertEqual(components.path, "/Items/extra1/Images/\(kind)")
+            XCTAssertEqual(components.queryItems?.first(where: { $0.name == "tag" })?.value, tag)
+        }
         XCTAssertEqual(provider.kind, .emby)
         XCTAssertTrue(stub.sentPaths.contains { $0.hasSuffix("/Users/u1/Items/movie1/SpecialFeatures") })
     }

@@ -14,6 +14,7 @@ public struct PosterCardView: View {
 
     private let item: MediaItem
     private let style: Style
+    private let artworkPolicy: CardArtworkPolicy
     private let spoilerSettings: SpoilerSettings
     /// Identify the card by its **show** — the show's wide artwork with its logo
     /// laid over it — instead of by the item's own thumbnail. Used by Continue
@@ -78,6 +79,7 @@ public struct PosterCardView: View {
     public init(
         item: MediaItem,
         style: Style = .poster,
+        artworkPolicy: CardArtworkPolicy = .standard,
         spoilerSettings: SpoilerSettings = .default,
         showsSeriesArtwork: Bool = false,
         enablesAsyncArtworkFallback: Bool = true,
@@ -92,9 +94,10 @@ public struct PosterCardView: View {
     ) {
         self.item = item
         self.style = style
+        self.artworkPolicy = artworkPolicy
         self.spoilerSettings = spoilerSettings
         self.showsSeriesArtwork = showsSeriesArtwork
-        self.enablesAsyncArtworkFallback = enablesAsyncArtworkFallback
+        self.enablesAsyncArtworkFallback = enablesAsyncArtworkFallback && artworkPolicy.allowsOnlineFallback
         self.reservesSubtitleSpace = reservesSubtitleSpace
         self.statusCueText = statusCue
         self.playsOnSelect = playsOnSelect
@@ -283,7 +286,7 @@ public struct PosterCardView: View {
                 onResolveReference: { reference in
                     artworkAlreadyCarriesTitle = reference.map(titleBearingArtwork.contains) ?? false
                 },
-                pinIdentity: item.stablePresentationID,
+                pinIdentity: artworkPolicy.pinIdentity(for: item),
                 content: { _ in Color.clear },
                 placeholder: { Color.clear }
             )
@@ -781,24 +784,7 @@ public struct PosterCardView: View {
 
     // MARK: Artwork
     private var artworkReferences: [ArtworkReference] {
-        switch style {
-        case .poster:
-            return item.artworkReferences(for: item.kind == .episode ? .seriesPoster : .poster)
-        case .landscape:
-            if item.kind == .episode {
-                return item.artworkReferences(for: .episodeThumbnail)
-            }
-            // Local landscape/detail selections are explicit presentation candidates.
-            // The remote rail order remains the long-standing backdrop → poster →
-            // fallback sequence; a full-resolution hero must never jump the rail.
-            let explicit = item.artworkSelections
-                .first(where: { $0.placement == .detailBackdrop })?
-                .references ?? []
-            let legacy = [item.backdropURL, item.posterURL, item.fallbackArtworkURL]
-                .compactMap { $0.map(ArtworkReference.remote) }
-            var seen = Set<ArtworkReference>()
-            return (explicit + legacy).filter { seen.insert($0).inserted }
-        }
+        artworkPolicy.references(for: item, style: style)
     }
 
     @ViewBuilder
@@ -877,7 +863,7 @@ public struct PosterCardView: View {
         cardStyle == .borderless ? borderlessBadgeInset : 8
     }
 
-    private var realArtwork: some View {
+    var realArtwork: some View {
         FallbackAsyncImage(
             references: artworkReferences,
             maxAspectRatio: posterAspectGuard,
@@ -889,7 +875,7 @@ public struct PosterCardView: View {
             // is title-specific, so its task/memo identity has to be too.
             // Otherwise every posterless card shares one empty-reference key and
             // inherits whichever fallback image resolved first.
-            pinIdentity: item.stablePresentationID
+            pinIdentity: artworkPolicy.pinIdentity(for: item)
         ) {
             neutralPlaceholder
         }
@@ -907,7 +893,7 @@ public struct PosterCardView: View {
     /// a landscape *episode* card it first tries the real per-episode still (a
     /// genuine thumbnail), then falls back to the show's backdrop — anime via
     /// Shoko/AniDB usually ship no per-episode image, so TMDb supplies it.
-    private var asyncArtworkFallback: (@Sendable () async -> URL?)? {
+    var asyncArtworkFallback: (@Sendable () async -> URL?)? {
         guard enablesAsyncArtworkFallback else { return nil }
         // The inner resolver (the actual network lookup) for this card's style.
         let inner: (@Sendable () async -> URL?)?
@@ -1034,7 +1020,7 @@ public struct PosterCardView: View {
             maxAspectRatio: posterAspectGuard,
             variant: artworkVariant,
             asyncFallbackURL: placeholderArtworkFallback,
-            pinIdentity: item.stablePresentationID
+            pinIdentity: artworkPolicy.pinIdentity(for: item)
         ) {
             neutralPlaceholder
         }
@@ -1606,8 +1592,17 @@ public extension MediaItem {
     /// Ordered real-image candidates a `PosterCardView` of `style` will try before
     /// any async (TMDb) fallback. Rails use this to prefetch each card's artwork
     /// into `ArtworkImageCache` ahead of scroll, so a card already has its decoded
-    /// thumbnail the moment it appears. Mirrors `PosterCardView.artworkCandidates`.
-    func artworkCandidates(for style: PosterCardView.Style) -> [URL] {
+    /// thumbnail the moment it appears.
+    func artworkCandidates(
+        for style: PosterCardView.Style,
+        artworkPolicy: CardArtworkPolicy = .standard
+    ) -> [URL] {
+        if artworkPolicy == .extra {
+            return artworkPolicy.references(for: self, style: style).compactMap {
+                if case .remote(let url) = $0 { return url }
+                return nil
+            }
+        }
         switch style {
         case .poster:
             // A poster grid always wants the vertical show/movie poster. For an

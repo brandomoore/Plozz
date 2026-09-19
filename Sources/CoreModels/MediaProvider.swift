@@ -89,6 +89,11 @@ public protocol MediaProvider: Sendable {
     /// the sort means restarting paging from `startIndex` 0.
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage
 
+    /// Members of a server-defined collection, not a library's collection list.
+    /// Preserve the server's collection order (including smart/custom ordering);
+    /// `page.sort` is deliberately ignored. Do not filter members to collections.
+    func collectionMembers(of collectionID: String, page: PageRequest) async throws -> MediaPage
+
     /// The alphabet fast-scroll index for a container browsed by **name**: for
     /// each present letter, the 0-based index of its first item in the current
     /// sort. Powers the trailing A–Z rail on the library grid.
@@ -365,6 +370,16 @@ public enum MediaProviderURLIdentity {
 // doubles) inherit safe no-ops, so adding the capability never forces every
 // conformer to implement it.
 public extension MediaProvider {
+    func collectionMembers(of collectionID: String, page: PageRequest) async throws -> MediaPage {
+        guard page.startIndex >= 0, page.limit > 0 else { throw AppError.invalidResponse }
+        let members = try await children(of: collectionID)
+        return MediaPage(
+            items: Array(members.dropFirst(page.startIndex).prefix(page.limit)),
+            startIndex: page.startIndex,
+            totalCount: members.count
+        )
+    }
+
     func reauthenticatedImageURL(
         _ persistedURL: URL,
         maxWidth: Int?

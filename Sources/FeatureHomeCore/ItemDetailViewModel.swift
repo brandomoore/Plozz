@@ -46,6 +46,8 @@ public final class ItemDetailViewModel {
         /// be distinguished from "still loading"). Leaf items — which never have
         /// children — are considered loaded immediately.
         public var childrenLoaded: Bool = false
+        /// Collection membership failures are not authoritative empty results.
+        public var collectionMembersState: LoadState<Int>?
         /// The series' cached upcoming-episode schedule, when one is known.
         ///
         /// Carried here rather than as its own observable property so it costs
@@ -62,6 +64,7 @@ public final class ItemDetailViewModel {
     }
 
     public private(set) var state: LoadState<Detail> = .idle
+    @ObservationIgnored private var collectionLoadGeneration: UInt64 = 0
 
     /// Playable trailers for this item, loaded alongside detail. Empty until
     /// resolved (and when the backend has none). Each is tagged with this
@@ -276,6 +279,8 @@ public final class ItemDetailViewModel {
     private var activeProvider: any MediaProvider
     private var activeItemID: String
     private var activeSourceAccountID: String?
+    private let editionOpeningSource: MediaItemSourceIdentity?
+    private let openingEdition: String?
     /// Invalidates every publication owned by an older active source, including
     /// the initial load and its snapshot restore.
     private var sourceGeneration: UInt64 = 0
@@ -510,6 +515,8 @@ public final class ItemDetailViewModel {
         snapshotCache: DetailSnapshotCache = .ephemeral
     ) {
         self.relatedTitlesLoader = relatedTitlesLoader
+        self.editionOpeningSource = initialItem?.editionOpeningSource
+        self.openingEdition = initialItem?.edition
         self.provider = provider
         self.itemID = itemID
         self.activeProvider = provider
@@ -687,6 +694,17 @@ public final class ItemDetailViewModel {
             )
             let taggedItem = tagged(item)
 
+            if item.kind == .collection {
+                state = .loaded(Detail(
+                    item: taggedItem,
+                    children: state.value?.children ?? [],
+                    collectionMembersState: .loading
+                ))
+                hasPaintedFreshDetail = true
+                await retryCollectionMembers()
+                return
+            }
+
             // Container kinds (series/season/folder/collection) have children
             // to list; leaf items (movies, episodes, videos) don't.
             let needsChildren: Bool
@@ -807,8 +825,17 @@ public final class ItemDetailViewModel {
             // Don't bury an already-painted hero under a full-screen error just
             // because the detail re-fetch failed; the seeded hero stays usable.
             if isCurrent(), state.value == nil { state = .failed(error) }
+            if isCurrent(), error != .cancelled,
+               case var .loaded(detail) = state, detail.item.kind == .collection {
+                detail.collectionMembersState = .failed(error)
+                state = .loaded(detail)
+            }
         } catch {
             if isCurrent(), state.value == nil { state = .failed(.unknown("")) }
+            if isCurrent(), case var .loaded(detail) = state, detail.item.kind == .collection {
+                detail.collectionMembersState = .failed(.unknown(""))
+                state = .loaded(detail)
+            }
         }
     }
 
@@ -1604,6 +1631,14 @@ public final class ItemDetailViewModel {
             from: state.value?.item
         )
         captureSeriesContext(from: item)
+        if item.kind == .collection {
+            if case var .loaded(detail) = state {
+                detail.item = tagged(item)
+                state = .loaded(detail)
+            }
+            await retryCollectionMembers()
+            return
+        }
         let children: [MediaItem]
         switch item.kind {
         case .series, .season, .folder, .collection:
@@ -1753,6 +1788,64 @@ public final class ItemDetailViewModel {
                 return result ?? []
             }
             return []
+        }
+    }
+
+    /// Reads bounded pages without changing the existing collection detail/rail
+    /// presentation. A failed later page is never cached as an empty collection.
+    public func retryCollectionMembers() async {
+        guard case var .loaded(detail) = state, detail.item.kind == .collection else { return }
+        collectionLoadGeneration &+= 1
+        let requestGeneration = collectionLoadGeneration
+        let generation = sourceGeneration
+        let provider = activeProvider
+        let itemID = detail.item.id
+        detail.collectionMembersState = .loading
+        state = .loaded(detail)
+
+        do {
+            var members: [MediaItem] = []
+            var seen = Set<String>()
+            var start = 0
+            while true {
+                try Task.checkCancellation()
+                let page = try await provider.collectionMembers(
+                    of: itemID, page: PageRequest(startIndex: start)
+                )
+                guard !Task.isCancelled,
+                      requestGeneration == collectionLoadGeneration,
+                      isStillLoaded(detail.item, sourceGeneration: generation) else { return }
+                guard page.startIndex == start, page.totalCount >= 0 else {
+                    throw AppError.invalidResponse
+                }
+                if page.items.isEmpty {
+                    guard start >= page.totalCount else { throw AppError.invalidResponse }
+                    break
+                }
+                let additions = page.items.filter { seen.insert($0.id).inserted }
+                guard !additions.isEmpty else { throw AppError.invalidResponse }
+                members.append(contentsOf: additions)
+                start += page.items.count
+                if start >= page.totalCount { break }
+            }
+            guard !Task.isCancelled,
+                  requestGeneration == collectionLoadGeneration,
+                  isStillLoaded(detail.item, sourceGeneration: generation),
+                  case var .loaded(current) = state else { return }
+            current.children = members.map(tagged)
+            current.childrenLoaded = true
+            current.collectionMembersState = members.isEmpty ? .empty : .loaded(members.count)
+            state = .loaded(current)
+            persistSnapshot()
+        } catch {
+            guard !Task.isCancelled,
+                  !(error is CancellationError),
+                  (error as? AppError) != .cancelled,
+                  requestGeneration == collectionLoadGeneration,
+                  isStillLoaded(detail.item, sourceGeneration: generation),
+                  case var .loaded(current) = state else { return }
+            current.collectionMembersState = .failed((error as? AppError) ?? .unknown(""))
+            state = .loaded(current)
         }
     }
 
@@ -2057,7 +2150,13 @@ public final class ItemDetailViewModel {
     /// Stamps an item with this detail's owning account (if any) so navigation
     /// keeps routing to the right provider.
     private func tagged(_ item: MediaItem) -> MediaItem {
-        let tagged = activeSourceAccountID.map { item.taggingSource($0) } ?? item
+        var tagged = activeSourceAccountID.map { item.taggingSource($0) } ?? item
+        if editionOpeningSource?.matches(tagged) == true {
+            tagged.editionOpeningSource = editionOpeningSource
+            tagged.edition = Self.nonblankEdition(tagged.edition) ?? Self.nonblankEdition(openingEdition)
+        } else {
+            tagged.editionOpeningSource = nil
+        }
         return seasonWatchMutations.reduce(tagged) { item, mutation in
             mutation.applied(to: item)
         }
@@ -2377,7 +2476,8 @@ public final class ItemDetailViewModel {
             return
         }
         sources = activeSources.map { source in
-            guard source.itemID == primary.id else { return source }
+            guard source.itemID == primary.id,
+                  source.accountID == activeSourceAccountID else { return source }
             var seeded = source
             // Single-file primary items report no intrinsic versions; synthesise
             // one so the combined version picker (across same-account siblings)
@@ -2385,12 +2485,13 @@ public final class ItemDetailViewModel {
             seeded.versions = primary.versions.isEmpty
                 ? [MediaVersion.synthesized(from: primary)]
                 : primary.versions
+            seeded.edition = primary.edition
             seeded.resumePosition = primary.resumePosition
             seeded.playedPercentage = primary.playedPercentage
             seeded.isPlayed = primary.isPlayed
             seeded.isFavorite = primary.isFavorite
             seeded.lastPlayedAt = primary.lastPlayedAt
-            return seeded
+            return Self.preservingEditionMetadata(in: seeded, from: source)
         }
         applyUnifiedWatchState()
     }
@@ -2442,12 +2543,64 @@ public final class ItemDetailViewModel {
         seeded.versions = primary.versions.isEmpty
             ? [MediaVersion.synthesized(from: primary)]
             : primary.versions
+        seeded.edition = primary.edition
         seeded.resumePosition = primary.resumePosition
         seeded.playedPercentage = primary.playedPercentage
         seeded.isPlayed = primary.isPlayed
         seeded.isFavorite = primary.isFavorite
         seeded.lastPlayedAt = primary.lastPlayedAt
-        return seeded
+        return Self.preservingEditionMetadata(in: seeded, from: source)
+    }
+
+    /// Sparse detail responses may omit editionTitle. Retain only metadata for
+    /// the same owner and file; source-level fallback must not label new files.
+    static func preservingEditionMetadata(
+        in fresh: MediaSourceRef,
+        from known: MediaSourceRef
+    ) -> MediaSourceRef {
+        guard fresh.accountID == known.accountID, fresh.itemID == known.itemID else { return fresh }
+        let incoming = fresh.selectableVersions
+        let previous = known.selectableVersions
+        let matches = incoming.map { version -> MediaVersion? in
+            guard version.sourceAccountID == fresh.accountID,
+                  version.sourceItemID == fresh.itemID else { return nil }
+            return previous.first { candidate in
+                guard candidate.id == version.id else { return false }
+                if version.playbackMediaSourceID != nil { return true }
+                // Synthetic ids identify an item, not its replaceable lone file.
+                if let revision = version.sourceMetadata?.sourceRevision {
+                    return revision == candidate.sourceMetadata?.sourceRevision
+                }
+                guard let file = Self.nonblankEdition(version.fileName) else { return false }
+                return file == Self.nonblankEdition(candidate.fileName)
+            }
+        }
+        var result = fresh
+        let freshEdition = nonblankEdition(fresh.edition)
+        result.edition = freshEdition
+        result.versions = fresh.versions.enumerated().map { index, version in
+            var restored = version
+            restored.edition = nonblankEdition(version.edition)
+                ?? freshEdition
+                ?? matches[index].flatMap { nonblankEdition($0.edition) }
+            return restored
+        }
+        if freshEdition == nil,
+           let previousEdition = nonblankEdition(known.edition),
+           !incoming.isEmpty,
+           matches.allSatisfy({ $0 != nil }),
+           result.versions.allSatisfy({
+               nonblankEdition($0.edition)?.caseInsensitiveCompare(previousEdition) == .orderedSame
+           }) {
+            result.edition = previousEdition
+        }
+        return result
+    }
+
+    private static func nonblankEdition(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 
     private func applyDiscoveredSources(_ discovered: [MediaSourceRef], primary: MediaItem) async {
@@ -2508,7 +2661,10 @@ public final class ItemDetailViewModel {
 
     private struct AlternateSourceUpdate: Sendable {
         var sourceID: String
+        var accountID: String
+        var itemID: String
         var versions: [MediaVersion]
+        var edition: String?
         var resumePosition: TimeInterval?
         var playedPercentage: Double?
         var isPlayed: Bool
@@ -2522,7 +2678,7 @@ public final class ItemDetailViewModel {
         guard sources.count > 1 else { return }
         let token = enrichmentGeneration
         let requests: [AlternateSourceRequest] = sources.compactMap { source in
-            guard source.itemID != primaryID,
+            guard source.itemID != primaryID || source.accountID != activeSourceAccountID,
                   let provider = alternateProviderResolver(source.accountID) else { return nil }
             return AlternateSourceRequest(
                 sourceID: source.id,
@@ -2576,7 +2732,9 @@ public final class ItemDetailViewModel {
             var nextIndex = 0
             func makeTask(index: Int, request: AlternateSourceRequest) {
                 group.addTask {
-                    guard let alt = try? await request.provider.item(id: request.itemID) else {
+                    guard let alt = try? await request.provider.item(id: request.itemID),
+                          alt.id == request.itemID,
+                          alt.sourceAccountID == nil || alt.sourceAccountID == request.accountID else {
                         return (index, nil)
                     }
                     let tagged = alt.taggingSource(request.accountID)
@@ -2585,7 +2743,10 @@ public final class ItemDetailViewModel {
                         : tagged.versions
                     return (index, AlternateSourceUpdate(
                         sourceID: request.sourceID,
+                        accountID: request.accountID,
+                        itemID: request.itemID,
                         versions: versions,
+                        edition: tagged.edition,
                         resumePosition: tagged.resumePosition,
                         playedPercentage: tagged.playedPercentage,
                         isPlayed: tagged.isPlayed,
@@ -2647,14 +2808,18 @@ public final class ItemDetailViewModel {
         var updatedSources = sources
         var changed = false
         for update in updates {
-            guard let index = updatedSources.firstIndex(where: { $0.id == update.sourceID }) else { continue }
+            guard let index = updatedSources.firstIndex(where: {
+                $0.id == update.sourceID && $0.accountID == update.accountID && $0.itemID == update.itemID
+            }) else { continue }
             var source = updatedSources[index]
             source.versions = update.versions
+            source.edition = update.edition
             source.resumePosition = update.resumePosition
             source.playedPercentage = update.playedPercentage
             source.isPlayed = update.isPlayed
             source.isFavorite = update.isFavorite
             source.lastPlayedAt = update.lastPlayedAt
+            source = Self.preservingEditionMetadata(in: source, from: updatedSources[index])
             if source != updatedSources[index] {
                 updatedSources[index] = source
                 changed = true

@@ -467,7 +467,7 @@ final class PlexProviderMappingTests: XCTestCase {
         """)
         let provider = PlexProvider(session: makeSession(), http: stub)
 
-        let libs = try await provider.libraries()
+        let libs = try await provider.libraries().filter { $0.kind != .collection }
         XCTAssertEqual(libs.map(\.title), ["Movies", "Shows"])
         XCTAssertEqual(libs.map(\.id), ["1", "2"])
         XCTAssertEqual(libs[0].kind, .movie)
@@ -501,8 +501,10 @@ final class PlexProviderMappingTests: XCTestCase {
         stub.stub(pathSuffix: "/library/metadata/101/extras", json: """
         {"MediaContainer":{"size":3,"Metadata":[
           {"ratingKey":"e1","type":"clip","subtype":"behindTheScenes","title":"Making Of",
+           "thumb":"/library/metadata/e1/thumb/1","art":"/library/metadata/101/art/1",
            "Media":[{"Part":[{"key":"/library/parts/1/file.mkv","file":"/movies/Making Of.mkv"}]}]},
           {"ratingKey":"e2","type":"clip","extraType":2,"title":"Alternate Ending",
+           "thumb":"/library/metadata/e2/thumb/1","art":"/library/metadata/101/art/1",
            "Media":[{"Part":[{"key":"/library/parts/2/file.mkv","file":"/movies/Alternate Ending.mkv"}]}]},
           {"ratingKey":"e3","guid":"iva://provider/123","type":"clip","subtype":"trailer","title":"Hosted Trailer"}
         ]}}
@@ -514,6 +516,27 @@ final class PlexProviderMappingTests: XCTestCase {
         XCTAssertEqual(extras.map(\.item.id), ["e1", "e2"])
         XCTAssertEqual(extras.map(\.kind), [.behindTheScenes, .deletedScene])
         XCTAssertEqual(extras.map(\.rawProviderType), ["behindTheScenes", "2"])
+        XCTAssertEqual(extras.map(\.item.kind), [.video, .video])
+        XCTAssertTrue(extras[0].item.backdropURL == extras[1].item.backdropURL)
+        for extra in extras {
+            for (url, path, width) in [
+                (extra.item.posterURL, "/library/metadata/\(extra.item.id)/thumb/1", "500"),
+                (extra.item.backdropURL, "/library/metadata/101/art/1", "1280")
+            ] {
+                let components = try XCTUnwrap(url.flatMap {
+                    URLComponents(url: $0, resolvingAgainstBaseURL: false)
+                })
+                XCTAssertEqual(components.path, "/photo/:/transcode")
+                let query = components.queryItems ?? []
+                XCTAssertEqual(query.first(where: { $0.name == "width" })?.value, width)
+                XCTAssertTrue(query.first(where: { $0.name == "X-Plex-Token" })?.value == "TOKEN")
+                let inner = try XCTUnwrap(
+                    query.first(where: { $0.name == "url" })?.value.flatMap(URLComponents.init(string:))
+                )
+                XCTAssertEqual(inner.path, path)
+                XCTAssertTrue(inner.queryItems?.first(where: { $0.name == "X-Plex-Token" })?.value == "TOKEN")
+            }
+        }
         XCTAssertEqual(
             stub.queryItems(forPathSuffix: "/library/metadata/101/extras")?
                 .first(where: { $0.name == "includeExternalMedia" })?.value,

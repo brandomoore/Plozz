@@ -54,12 +54,19 @@ public enum DetailPlaybackSelection {
         libraryOrigin: String?,
         itemSourceAccountID: String?,
         sources: [MediaSourceRef],
-        capabilities: MediaCapabilities
+        capabilities: MediaCapabilities,
+        openingSource: MediaItemSourceIdentity? = nil
     ) -> MediaSourceRef? {
         let choices = serverChoices(from: sources)
         guard choices.count > 1 || sources.count > 1 else { return nil }
         if let sourceOverride,
            let match = choices.first(where: { $0.accountID == sourceOverride }) {
+            return match
+        }
+        if let openingSource,
+           let match = sources.first(where: {
+               $0.accountID == openingSource.accountID && $0.itemID == openingSource.itemID
+           }) {
             return match
         }
         if let libraryOrigin,
@@ -81,11 +88,23 @@ public enum DetailPlaybackSelection {
         guard let activeAccountID else {
             return item.versions.sortedForPicker()
         }
-        let active = sources.filter { $0.accountID == activeAccountID }
+        let active = sources.filter {
+            $0.accountID == activeAccountID && ($0.kind == nil || $0.kind == item.kind)
+        }
         guard !active.isEmpty else {
             return item.versions.sortedForPicker()
         }
-        return active.flatMap(\.versions).sortedForPicker()
+        let versions = active.flatMap { source -> [MediaVersion] in
+            guard source.versions.isEmpty,
+                  source.itemID == item.id, source.accountID == item.sourceAccountID else {
+                return source.selectableVersions
+            }
+            let own = item.versions.isEmpty ? [MediaVersion.synthesized(from: item)] : item.versions
+            return own.map {
+                $0.qualified(accountID: source.accountID, itemID: source.itemID, edition: item.edition)
+            }
+        }
+        return versions.isEmpty ? item.versions.sortedForPicker() : versions.sortedForPicker()
     }
 
     public static func preferredVersionID(
@@ -96,9 +115,24 @@ public enum DetailPlaybackSelection {
         capabilities: MediaCapabilities
     ) -> String? {
         guard versions.count > 1 else { return nil }
-        if let versionOverride,
-           versions.contains(where: { $0.id == versionOverride }) {
-            return versionOverride
+        if let versionOverride, let selected = matchingVersion(versionOverride, in: versions, for: item) {
+            return selected.id
+        }
+        if let selectedID = item.selectedVersionID,
+           let selected = matchingVersion(selectedID, in: versions, for: item) {
+            return selected.id
+        }
+        let candidates: [MediaVersion]
+        if let opening = item.editionOpeningSource {
+            let editionVersions = versions.filter { version in
+                if let account = version.sourceAccountID, let id = version.sourceItemID {
+                    return account == opening.accountID && id == opening.itemID
+                }
+                return opening.matches(item)
+            }
+            candidates = editionVersions.isEmpty ? versions : editionVersions
+        } else {
+            candidates = versions
         }
         let key = versionPreferenceKey(for: item)
         // An exact file id, but ONLY for a title whose key is its own — a movie
@@ -115,8 +149,8 @@ public enum DetailPlaybackSelection {
         // is not consulted at all; the descriptor is the only honest answer.
         if item.seriesID == nil {
             let remembered = preferences.preferredVersionID(forTitle: key)
-            if let remembered, versions.contains(where: { $0.id == remembered }) {
-                return remembered
+            if let remembered, let selected = matchingVersion(remembered, in: candidates, for: item) {
+                return selected.id
             }
         }
         // Otherwise the remembered SHAPE. This is what carries a choice across a
@@ -124,11 +158,15 @@ public enum DetailPlaybackSelection {
         // above can never match another episode — only "2160p Dolby Vision
         // Bluray" can. Falls through when nothing is close enough, because
         // forcing a bad match is worse than the device-recommended pick.
-        if let descriptor = preferences.preferredVersionDescriptor(forTitle: key),
-           let match = versions.bestMatch(for: descriptor) {
+        // Legacy unqualified ids cannot prove ownership across servers that reuse
+        // numeric ids. Their portable descriptors remain useful during migration.
+        let descriptor = preferences.preferredVersionDescriptor(forTitle: key)
+            ?? preferences.preferredVersionDescriptor(forTitle: item.seriesID ?? item.id)
+        if let descriptor,
+           let match = candidates.bestMatch(for: descriptor) {
             return match.id
         }
-        return versions.recommendedSelection(for: capabilities)?.id
+        return candidates.recommendedSelection(for: capabilities)?.id
     }
 
     /// The item as it should actually be played: the show's remembered version
@@ -161,7 +199,32 @@ public enum DetailPlaybackSelection {
     }
 
     public static func versionPreferenceKey(for item: MediaItem) -> String {
-        item.seriesID ?? item.id
+        let title = item.seriesID ?? item.id
+        guard let account = item.sourceAccountID else { return title }
+        return "account:\(Data(account.utf8).base64EncodedString()):\(Data(title.utf8).base64EncodedString())"
+    }
+
+    private static func matchingVersion(
+        _ id: String,
+        in versions: [MediaVersion],
+        for item: MediaItem
+    ) -> MediaVersion? {
+        if let exact = versions.first(where: { $0.id == id }) { return exact }
+        let matches = versions.filter { version in
+            if version.playbackMediaSourceID == id
+                || (version.playbackMediaSourceID == nil
+                    && version.sourceItemID.map { "synth:\($0)" } == id) {
+                return true
+            }
+            // Reconstruct the qualified identity from proven ownership rather
+            // than stripping a saved token down to a potentially colliding id.
+            guard let account = version.sourceAccountID ?? item.sourceAccountID else { return false }
+            return version.qualified(
+                accountID: account,
+                itemID: version.sourceItemID ?? item.id
+            ).id == id
+        }
+        return matches.count == 1 ? matches.first : nil
     }
 
     public static func playItem(

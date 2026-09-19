@@ -69,6 +69,7 @@ public struct MediaRowView: View {
     /// both copies survive into the row.
     private let items: [MediaItem]
     private let presentation: Presentation
+    private let artworkPolicy: CardArtworkPolicy
     private let spoilerSettings: SpoilerSettings
     /// Identify each card by its show — the show's artwork with its logo over it
     /// — rather than by the item's own thumbnail. Continue Watching opts in.
@@ -198,6 +199,7 @@ public struct MediaRowView: View {
         title: Text?,
         items: [MediaItem],
         style: PosterCardView.Style = .poster,
+        artworkPolicy: CardArtworkPolicy = .standard,
         spoilerSettings: SpoilerSettings = .default,
         showsSeriesArtwork: Bool = false,
         initialFocusID: String? = nil,
@@ -220,6 +222,7 @@ public struct MediaRowView: View {
             title: title,
             items: items,
             presentation: style == .poster ? .poster : .landscape,
+            artworkPolicy: artworkPolicy,
             spoilerSettings: spoilerSettings,
             showsSeriesArtwork: showsSeriesArtwork,
             initialFocusID: initialFocusID,
@@ -244,6 +247,7 @@ public struct MediaRowView: View {
         title: Text?,
         items: [MediaItem],
         presentation: Presentation,
+        artworkPolicy: CardArtworkPolicy = .standard,
         spoilerSettings: SpoilerSettings = .default,
         showsSeriesArtwork: Bool = false,
         initialFocusID: String? = nil,
@@ -268,6 +272,7 @@ public struct MediaRowView: View {
         let uniqueItems = Self.uniqued(items)
         self.items = uniqueItems
         self.presentation = presentation
+        self.artworkPolicy = artworkPolicy
         self.spoilerSettings = spoilerSettings
         self.showsSeriesArtwork = showsSeriesArtwork
         self.initialFocusID = Self.presentationID(
@@ -696,6 +701,7 @@ public struct MediaRowView: View {
                 PosterCardView(
                     item: item,
                     style: .poster,
+                    artworkPolicy: artworkPolicy,
                     spoilerSettings: spoilerSettings,
                     showsSeriesArtwork: showsSeriesArtwork,
                     statusCue: statusCue?(item),
@@ -711,6 +717,7 @@ public struct MediaRowView: View {
                 PosterCardView(
                     item: item,
                     style: .landscape,
+                    artworkPolicy: artworkPolicy,
                     spoilerSettings: spoilerSettings,
                     showsSeriesArtwork: showsSeriesArtwork,
                     statusCue: statusCue?(item),
@@ -960,7 +967,8 @@ public struct MediaRowView: View {
                 for: candidate,
                 style: artworkStyle,
                 spoilerSettings: spoilerSettings,
-                showsSeriesArtwork: showsSeriesArtwork
+                showsSeriesArtwork: showsSeriesArtwork,
+                artworkPolicy: artworkPolicy
             )
             // Queue a tiny nearest-first frame before this card's heavier full
             // decode. One preview candidate is enough; if the primary is invalid,
@@ -1007,7 +1015,8 @@ public struct MediaRowView: View {
                           for: candidate,
                           style: artworkStyle,
                           spoilerSettings: spoilerSettings,
-                          showsSeriesArtwork: showsSeriesArtwork
+                          showsSeriesArtwork: showsSeriesArtwork,
+                          artworkPolicy: artworkPolicy
                       ).first,
                       ArtworkImageVariant.posterPreview.hasDistinctRequestURL(
                           from: .posterCard,
@@ -1191,7 +1200,8 @@ public struct MediaRowView: View {
     /// costs nothing, where warming every candidate would cost on every card.
     private func prefetchHeroPreview(for item: MediaItem?) {
         #if canImport(UIKit)
-        guard let item,
+        guard artworkPolicy == .standard,
+              let item,
               !prefetchedHeroIDs.contains(item.stablePresentationID) else {
             return
         }
@@ -1318,13 +1328,16 @@ public enum MediaArtworkPrefetchPolicy {
         for item: MediaItem,
         style: PosterCardView.Style,
         spoilerSettings: SpoilerSettings,
-        showsSeriesArtwork: Bool = false
+        showsSeriesArtwork: Bool = false,
+        artworkPolicy: CardArtworkPolicy = .standard
     ) -> [URL] {
         // Series-artwork mode paints show art on every card regardless of watch
         // state, so warm that rather than a thumbnail the card will never draw.
         // Movies and series keep their own art — they already *are* the show.
         if showsSeriesArtwork {
-            guard item.kind == .episode else { return item.artworkCandidates(for: style) }
+            guard item.kind == .episode else {
+                return item.artworkCandidates(for: style, artworkPolicy: artworkPolicy)
+            }
             return seriesArtworkCandidates(for: item, style: style)
         }
         if item.kind == .episode,
@@ -1348,7 +1361,7 @@ public enum MediaArtworkPrefetchPolicy {
             // poster the card is still drawing.
             return seriesArtworkCandidates(for: item, style: style)
         }
-        return item.artworkCandidates(for: style)
+        return item.artworkCandidates(for: style, artworkPolicy: artworkPolicy)
     }
 
     /// Spoiler-safe show art for an episode, ordered for the card's shape: a wide

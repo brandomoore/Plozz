@@ -35,6 +35,7 @@ struct ExtrasRowView: View {
                 title: Text("Extras"),
                 items: extras.map(\.item),
                 style: .landscape,
+                artworkPolicy: .extra,
                 spoilerSettings: spoilerSettings,
                 leadingInset: leadingInset,
                 onFocusEntered: onFocusEntered,

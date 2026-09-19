@@ -16,8 +16,8 @@ public extension MediaLibrary {
     /// so anywhere that reached for `title` directly would silently be wrong for
     /// share users.
     var displayName: Text {
-        guard let synthesizedName else { return Text(verbatim: title) }
-        return Text(synthesizedName.title)
+        guard let localizedTitle else { return Text(verbatim: title) }
+        return Text(localizedTitle)
     }
 }
 #endif

@@ -785,6 +785,20 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
         }
     }
 
+    public func collectionMembers(of collectionID: String, page: PageRequest) async throws -> MediaPage {
+        guard page.startIndex >= 0, page.limit > 0 else { throw AppError.invalidResponse }
+        let response = try await client.collectionMembers(
+            userID: session.userID, collectionID: collectionID, page: page
+        )
+        let count = response.Items.count
+        return MediaPage(
+            items: response.Items.map(map(item:)),
+            startIndex: page.startIndex,
+            totalCount: response.TotalRecordCount
+                ?? (page.startIndex + count + (count == page.limit && count > 0 ? 1 : 0))
+        )
+    }
+
     /// The alphabet fast-scroll index for a name-sorted library. For each of
     /// A…Z it asks the server how many items sort before that letter
     /// (`NameLessThan=L`, matched against `SortName` — the same key the browse

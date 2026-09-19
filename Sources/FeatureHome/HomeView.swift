@@ -1600,7 +1600,7 @@ struct LibraryCardView: View {
                 aspectRatio: 16.0 / 9.0,
                 title: aggregated.library.title,
                 subtitle: subtitle.isEmpty ? nil : subtitle,
-                localizedTitle: aggregated.library.synthesizedName?.title,
+                localizedTitle: aggregated.library.localizedTitle,
                 placeholderSymbol: librarySymbol,
                 focus: $isFocused,
                 action: action

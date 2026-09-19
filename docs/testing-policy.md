@@ -620,6 +620,67 @@ fresh-account resolution and stale-credential rejection. On a Jellyfin server
 with legacy authorization disabled, a selected Music track must start and advance
 past 0:00 rather than fail with `NSURLErrorDomain -1013`.
 
+## Extras artwork
+
+Extras rails on tvOS and iOS opt into the shared `CardArtworkPolicy.extra`.
+The extra's primary artwork precedes server backdrop selections and legacy
+fan-art fallbacks, without changing its provider kind or playback identity.
+Generic movie-title artwork enrichment is disabled for extras, including when
+online artwork is preferred. Their image-resolution identity is separate from
+ordinary cards so an earlier online winner cannot leak into an extra's image.
+Rendering and remote prefetch use the same ordered, deduplicated candidates.
+Ordinary movie, episode, and spoiler-safe artwork policies remain unchanged.
+
+`ExtrasArtworkPolicyTests` covers distinct thumbnails with a shared parent
+backdrop, explicit artwork selections, missing and failed primary images,
+authenticated URL preservation, network-file artwork, both online preferences,
+and actual rendered pixels after a generic card has cached the wrong image.
+Plex, Jellyfin, and Emby provider fixtures independently verify that extras keep
+their own primary image paths before the presentation policy selects them.
+
+## Server-defined collections
+
+Collections use the same library grid, detail destination, and member navigation
+for Plex, Jellyfin, and Emby. Plex derives section-scoped Collections libraries;
+Jellyfin and Emby retain their native BoxSet views. Collection discovery and
+collection membership are different queries: listing collections must never
+filter a collection's contents down to other collections.
+
+`MediaProvider.collectionMembers` preserves server ordering and pages complete
+membership. Detail loading distinguishes an empty collection from a failed or
+incomplete request, supports retry, and rejects repeated pages or stale results.
+Both shells expose the same member state. Server/account ownership stays attached
+to every item; a collection's external catalogue ID does not make another user's
+collection an interchangeable playback source.
+
+`PlexCollectionBrowsingTests`, `MediaBrowserCollectionBrowsingTests`,
+`CollectionDetailBrowsingTests`, and `CollectionIdentityTests` cover discovery,
+static/smart membership, pagination, mixed member kinds, account isolation,
+retry/cancellation, and server-defined ordering.
+
+## Edition and file selection
+
+A named movie edition selected from an individual library card retains its
+account/item identity when opening detail. A merged Home/Search representative
+is not an explicit edition choice and retains automatic source recommendations.
+Both use the same combined detail page and version menu; explicit menu choices
+can still switch to another edition or file.
+
+Provider edition labels survive single-file synthesis and persisted metadata.
+Picker identities qualify the account, backing item, and intrinsic media ID;
+playback receives the owning provider item and its original media ID, never a
+synthetic picker ID. Remembered choices must resolve against both qualified
+detail candidates and raw provider candidates without crossing owners.
+Transient opening intent must not be serialized as a lasting playback choice.
+Sparse refreshes preserve known edition facts only for the same source/file.
+
+`EditionPlaybackRoutingTests`, `EditionDetailSelectionTests`,
+`EditionDetailViewModelTests`, and `PlexEditionIdentityTests` cover separate
+editions with multiple encodings, colliding IDs, synthetic/stale source refs,
+explicit overrides, merged-card defaults, snapshot refresh, and exact Plex
+playback routing. Existing same-account grouping and version preference tests
+remain part of the regression selection.
+
 ## Shared custom-dialog appearance
 
 App-owned tvOS guidance, expanded-overview, title-overview, and startup-release-note

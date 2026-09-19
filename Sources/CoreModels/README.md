@@ -24,6 +24,11 @@ language every other module speaks.
   here (e.g. `Account`, `Profile`) carry only non-secret metadata.
 - **Provider-agnostic.** No type here may assume Jellyfin- or Plex-specific
   behavior; the only provider seam is `MediaProvider`.
+- **Collections are server-defined groups, not alternate title sources.**
+  Collection identity stays scoped to the owning account and item ID, even when
+  two groups share a catalogue collection ID or physical server. Library
+  collection discovery uses `items(in:kind:page:)`; `collectionMembers(of:page:)`
+  is separate and preserves server membership/order rather than the grid's sort.
 
 ## Public surface, at a glance
 
