@@ -89,6 +89,12 @@ public protocol MediaProvider: Sendable {
     /// the sort means restarting paging from `startIndex` 0.
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage
 
+    /// Server-defined collections belonging to this library, ordered/paged as a
+    /// collection list. This is distinct from browsing a collection's members.
+    /// Providers advertise support with `ProviderCapability.libraryCollections`.
+    /// Unsupported providers throw `.notFound`, never a misleading empty page.
+    func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage
+
     /// Members of a server-defined collection, not a library's collection list.
     /// Preserve the server's collection order (including smart/custom ordering);
     /// `page.sort` is deliberately ignored. Do not filter members to collections.
@@ -370,6 +376,10 @@ public enum MediaProviderURLIdentity {
 // doubles) inherit safe no-ops, so adding the capability never forces every
 // conformer to implement it.
 public extension MediaProvider {
+    func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
+        throw AppError.notFound
+    }
+
     func collectionMembers(of collectionID: String, page: PageRequest) async throws -> MediaPage {
         guard page.startIndex >= 0, page.limit > 0 else { throw AppError.invalidResponse }
         let members = try await children(of: collectionID)

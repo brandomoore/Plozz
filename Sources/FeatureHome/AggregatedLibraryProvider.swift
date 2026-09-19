@@ -58,12 +58,24 @@ public struct AggregatedLibrarySource: Sendable {
 /// fetches further batches when the caller scrolls past what's already merged.
 /// Each merged card keeps every server's source ref (via the merger) so tapping
 /// it opens a detail view with a working server picker and unified watch-state.
-public final class AggregatedLibraryProvider: MediaProvider, @unchecked Sendable {
+public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting, @unchecked Sendable {
     public let kind: ProviderKind
     public let session: UserSession
 
     private let sources: [AggregatedLibrarySource]
     private let cache: Cache
+    private let collectionCache: Cache
+
+    public var capabilities: ProviderCapability {
+        sources.allSatisfy {
+            ($0.provider as? any CapabilityReporting)?.capabilities.contains(.libraryCollections) == true
+        } ? [.libraryCollections] : []
+    }
+
+    private enum BrowseContent: Equatable, Sendable {
+        case titles
+        case collections
+    }
 
     /// How many times one fill retries a silent source before emitting past it.
     ///
@@ -151,8 +163,8 @@ public final class AggregatedLibraryProvider: MediaProvider, @unchecked Sendable
         /// provider instance, so without this the aggregate would answer the new
         /// sort out of a buffer built for the old one — a sort menu that appears to
         /// do nothing, or worse, silently mixes two orderings.
-        func prepare(for sort: CoreModels.SortDescriptor, sourceIDs: [String]) {
-            guard activeSort != sort else { return }
+        func prepare(for sort: CoreModels.SortDescriptor, sourceIDs: [String], force: Bool = false) {
+            guard force || activeSort != sort else { return }
             activeSort = sort
             offsets = Dictionary(uniqueKeysWithValues: sourceIDs.map { ($0, 0) })
             totals.removeAll()
@@ -379,6 +391,12 @@ public final class AggregatedLibraryProvider: MediaProvider, @unchecked Sendable
             identityRevision: identityRevision,
             departureGrace: departureGrace
         )
+        self.collectionCache = Cache(
+            serverInfo: serverInfo,
+            identitySources: { _ in [] },
+            identityRevision: { 0 },
+            departureGrace: departureGrace
+        )
         self.kind = sources[0].provider.kind
         self.session = sources[0].provider.session
     }
@@ -392,8 +410,7 @@ public final class AggregatedLibraryProvider: MediaProvider, @unchecked Sendable
     public func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
 
     /// Protocol-conformance fallback only — **not** the routing path for a user
-    /// action. The grid pages exclusively through ``items(in:kind:page:)`` (the
-    /// only method `LibraryBrowseViewModel` calls on this provider), and every
+    /// action. The grid uses paged title or collection discovery, and every
     /// paged item is tagged with its owning `sourceAccountID`, so tapping a grid
     /// cell opens its detail through the **real per-account provider** (resolved
     /// from that tag), never through this aggregate.
@@ -428,6 +445,18 @@ public final class AggregatedLibraryProvider: MediaProvider, @unchecked Sendable
     }
 
     public func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        try await loadPage(kind: kind, page: page, content: .titles, cache: cache)
+    }
+
+    public func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
+        guard capabilities.contains(.libraryCollections) else { throw AppError.notFound }
+        guard page.startIndex >= 0, page.limit > 0 else { throw AppError.invalidResponse }
+        return try await loadPage(kind: .collection, page: page, content: .collections, cache: collectionCache)
+    }
+
+    private func loadPage(
+        kind: MediaItemKind, page: PageRequest, content: BrowseContent, cache: Cache
+    ) async throws -> MediaPage {
         let sourceIDs = sources.map(\.sourceKey)
         await cache.initialize(with: sourceIDs)
 
@@ -440,19 +469,18 @@ public final class AggregatedLibraryProvider: MediaProvider, @unchecked Sendable
         // read-fetch-advance loop AND the merged-buffer snapshot so a concurrent
         // prefetch can't skip a page window nor observe a half-advanced buffer.
         //
-        // Released through `defer` rather than at the exits. Nothing between here
-        // and the end of the fill throws today, but the gate has no timeout and no
-        // cancellation path: if a future `try` — or an early return added to the
-        // loop — ever skipped the release, `fillInProgress` would latch true and
-        // EVERY later page would suspend forever with no error and no recovery.
-        // That failure is severe enough that the gate must not depend on the
-        // control flow staying the way it is today.
+        // Collection errors and cancellation must release the same gate as a
+        // successful fill, or later retries would wait forever.
         await cache.acquireFill()
         defer { Task { [cache] in await cache.releaseFill() } }
+        if content == .collections { try Task.checkCancellation() }
         // A changed sort invalidates every buffered page and the whole running
         // merge. Done inside the gate, so a concurrent prefetch can never observe
         // a half-reset cache or fold a page fetched under the old ordering.
-        await cache.prepare(for: page.sort, sourceIDs: sourceIDs)
+        await cache.prepare(
+            for: page.sort, sourceIDs: sourceIDs,
+            force: content == .collections && page.startIndex == 0
+        )
         /// Sources that have used up their in-fill retries and are being emitted
         /// past. Scoped per call so a blip never persists into the next request.
         var stalled: Set<String> = []
@@ -464,6 +492,7 @@ public final class AggregatedLibraryProvider: MediaProvider, @unchecked Sendable
         var answeredThisFill: Set<String> = []
         var askedThisFill: Set<String> = []
         while await cache.mergedCount() < targetCount {
+            if content == .collections { try Task.checkCancellation() }
             let allExhausted = await cache.allExhausted(sourceIDs: sourceIDs)
             let hasPending = await cache.hasPending(sourceIDs)
             if allExhausted, !hasPending { break }
@@ -476,11 +505,13 @@ public final class AggregatedLibraryProvider: MediaProvider, @unchecked Sendable
             var progressed = false
             if !hungry.isEmpty {
                 let tf = Date()
-                let produced = await fetchNextBatch(
+                let produced = try await fetchNextBatch(
                     into: hungry,
                     kind: kind,
                     sort: page.sort,
-                    limit: page.limit
+                    limit: page.limit,
+                    content: content,
+                    cache: cache
                 )
                 fetchMs += Int(Date().timeIntervalSince(tf) * 1000)
                 progressed = !produced.isEmpty
@@ -571,31 +602,47 @@ public final class AggregatedLibraryProvider: MediaProvider, @unchecked Sendable
         into sourceKeys: [String],
         kind: MediaItemKind,
         sort: CoreModels.SortDescriptor,
-        limit: Int
-    ) async -> Set<String> {
+        limit: Int,
+        content: BrowseContent,
+        cache: Cache
+    ) async throws -> Set<String> {
         let chunkSize = max(20, limit)
         let wanted = Set(sourceKeys)
         let targets = sources.filter { wanted.contains($0.sourceKey) }
         guard !targets.isEmpty else { return [] }
 
-        typealias BatchResult = (sourceKey: String, accountID: String, page: MediaPage?)
+        typealias BatchResult = (sourceKey: String, accountID: String, page: MediaPage?, error: AppError?)
         let results: [BatchResult] = await withTaskGroup(of: BatchResult.self) { group in
             for source in targets {
                 group.addTask {
-                    if await self.cache.isExhausted(source.sourceKey) {
-                        return (source.sourceKey, source.accountID, nil)
+                    if await cache.isExhausted(source.sourceKey) {
+                        return (source.sourceKey, source.accountID, nil, nil)
                     }
-                    let offset = await self.cache.offset(for: source.sourceKey)
-                    if let page = try? await source.provider.items(
-                        in: source.containerID,
-                        // A combined browse mixes libraries of different kinds, so
-                        // each source pages with ITS OWN kind when it declares one.
-                        kind: source.kind ?? kind,
-                        page: PageRequest(startIndex: offset, limit: chunkSize, sort: sort)
-                    ) {
-                        return (source.sourceKey, source.accountID, page)
+                    let offset = await cache.offset(for: source.sourceKey)
+                    let request = PageRequest(startIndex: offset, limit: chunkSize, sort: sort)
+                    do {
+                        let page: MediaPage
+                        if content == .collections {
+                            page = try await source.provider.collections(in: source.containerID, page: request)
+                            guard page.startIndex == offset, page.totalCount >= 0,
+                                  !page.items.isEmpty || offset >= page.totalCount else {
+                                throw AppError.invalidResponse
+                            }
+                        } else {
+                            page = try await source.provider.items(
+                                in: source.containerID,
+                                kind: source.kind ?? kind,
+                                page: request
+                            )
+                        }
+                        return (source.sourceKey, source.accountID, page, nil)
+                    } catch is CancellationError {
+                        return (source.sourceKey, source.accountID, nil, .cancelled)
+                    } catch let error as AppError {
+                        return (source.sourceKey, source.accountID, nil, error)
+                    } catch {
+                        return (source.sourceKey, source.accountID, nil, .unknown(""))
                     }
-                    return (source.sourceKey, source.accountID, nil)
                 }
             }
 
@@ -604,6 +651,11 @@ public final class AggregatedLibraryProvider: MediaProvider, @unchecked Sendable
             return collected
         }
 
+        // A missing source must not turn a collection list into an empty or
+        // complete-looking success. Keep title browsing's existing resilience.
+        if content == .collections, let error = results.compactMap(\.error).first {
+            throw error
+        }
         var produced: Set<String> = []
         for result in results {
             guard let page = result.page else {

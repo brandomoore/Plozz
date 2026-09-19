@@ -147,7 +147,7 @@ public final class HomeViewModel {
         /// Removes credentials from every URL that crosses the Home-snapshot
         /// persistence boundary.
         func sanitizedForPersistence() -> Content {
-            var libraries = libraries
+            var libraries = libraries.filter { !$0.isRetiredCollectionShortcut }
             for index in libraries.indices {
                 libraries[index].library.imageURL = SyncURLSanitizer.sanitize(
                     libraries[index].library.imageURL

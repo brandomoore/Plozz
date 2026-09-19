@@ -468,5 +468,5 @@ extension PlexProvider: CapabilityReporting {
     /// library is still detected at runtime via `musicLibraries()`, so the Music
     /// tab stays hidden for accounts without one. `.remoteSubtitles` advertises
     /// the server-proxied on-demand subtitle search/download (OpenSubtitles.com).
-    public var capabilities: ProviderCapability { [.video, .music, .remoteSubtitles] }
+    public var capabilities: ProviderCapability { [.video, .music, .remoteSubtitles, .libraryCollections] }
 }

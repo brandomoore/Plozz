@@ -614,6 +614,23 @@ public struct PlexClient: Sendable {
             .MediaContainer.Metadata ?? []
     }
 
+    /// Collection discovery must not inherit the stream-element filter used by
+    /// playable-item lists. `includeElements` is a whitelist, not enrichment.
+    func sectionCollections(
+        sectionID: String,
+        start: Int,
+        size: Int,
+        sort: CoreModels.SortDescriptor
+    ) async throws -> PlexMediaContainer {
+        let endpoint = Endpoint(
+            path: "/library/sections/\(sectionID)/collections",
+            queryItems: containerQuery(start: start, size: size)
+                + [URLQueryItem(name: "sort", value: Self.sortQuery(for: sort))],
+            headers: headers
+        )
+        return try await decode(PlexMediaContainerResponse.self, endpoint).MediaContainer
+    }
+
     /// `GET /library/sections/{id}/all` — one page of a library section, paged
     /// server-side with `X-Plex-Container-Start` / `X-Plex-Container-Size`.
     func sectionItems(

@@ -13,6 +13,7 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
     public let accountID: String
     public let credentialRevision: CredentialRevision
     let client: JellyfinClient
+    let collectionLibraryCache = MediaBrowserCollectionLibraryCache()
     let liveTVLeases = JellyfinLiveTVLeaseStore()
     let themeArchiveResolver: @Sendable (String?) async -> URL?
     private let authenticatedStreamProber: (any AuthenticatedHTTPStreamProbing)?

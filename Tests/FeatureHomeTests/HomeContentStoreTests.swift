@@ -45,6 +45,61 @@ final class HomeContentStoreTests: XCTestCase {
         XCTAssertEqual(loaded?.continueWatching.first?.id, "i0")
     }
 
+    func testLegacySnapshotRemovesSyntheticCollectionLibrariesWithoutLosingRows() throws {
+        struct Stored: Codable {
+            var content: HomeViewModel.Content
+            var savedAt: Date
+        }
+        let store = HomeContentStore(directory: tempDir)
+        store.save(content(latest: 1))
+        let schema = try XCTUnwrap(FileManager.default
+            .contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil)
+            .first(where: \.hasDirectoryPath))
+        let file = try XCTUnwrap(FileManager.default
+            .contentsOfDirectory(at: schema, includingPropertiesForKeys: nil)
+            .first { $0.pathExtension == "json" })
+        let libraries = collectionMigrationLibraries()
+        var legacy = content(cw: 2, latest: 1, watchlist: 3)
+        legacy.libraries = libraries
+        try JSONEncoder().encode(Stored(content: legacy, savedAt: Date())).write(to: file)
+
+        let loaded = try XCTUnwrap(store.load())
+        XCTAssertEqual(loaded.libraries, Array(libraries.dropFirst()))
+        XCTAssertEqual(loaded.continueWatching, legacy.continueWatching)
+        XCTAssertEqual(loaded.latest, legacy.latest)
+        XCTAssertEqual(loaded.watchlist, legacy.watchlist)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    func testSavedSnapshotExcludesRetiredShortcutsButKeepsNativeCollections() {
+        let store = HomeContentStore(directory: tempDir)
+        var snapshot = content(latest: 1)
+        let libraries = collectionMigrationLibraries()
+        snapshot.libraries = libraries
+        store.save(snapshot)
+        XCTAssertEqual(store.load()?.libraries, Array(libraries.dropFirst()))
+    }
+
+    private func collectionMigrationLibraries() -> [AggregatedLibrary] {
+        [
+            AggregatedLibrary(
+                accountID: "plex", accountName: "Viewer", serverName: "Plex",
+                providerKind: .plex,
+                library: MediaLibrary(id: "plex:collections:1", title: "Collections in Movies", kind: .collection)
+            ),
+            AggregatedLibrary(
+                accountID: "plex", accountName: "Viewer", serverName: "Plex",
+                providerKind: .plex,
+                library: MediaLibrary(id: "1", title: "Movies", kind: .movie)
+            ),
+            AggregatedLibrary(
+                accountID: "emby", accountName: "Viewer", serverName: "Emby",
+                providerKind: .emby,
+                library: MediaLibrary(id: "boxsets", title: "Collections", kind: .collection)
+            )
+        ]
+    }
+
     func testSaveBoundsDiscoveryPreviewsButPreservesContinueWatchingAndWatchlist() {
         let store = HomeContentStore(namespace: nil, directory: tempDir, maxItemsPerRow: 10)
         store.save(content(cw: 150, latest: 40, watchlist: 25))

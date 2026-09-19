@@ -123,9 +123,9 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
     }
 
     public func libraries() async throws -> [MediaLibrary] {
-        try await client.sections().flatMap { dir -> [MediaLibrary] in
-            guard let id = dir.key else { return [] }
-            let library = MediaLibrary(
+        try await client.sections().compactMap { dir in
+            guard let id = dir.key else { return nil }
+            return MediaLibrary(
                 id: id,
                 title: dir.title ?? "Library",
                 kind: Self.kind(forSectionType: dir.type),
@@ -134,19 +134,6 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
                 imageURL: client.imageURL(path: dir.thumb ?? dir.composite, maxWidth: 400),
                 isMusic: dir.type == "artist"
             )
-            guard dir.type == "movie" || dir.type == "show" else { return [library] }
-            let collectionSourceTitle = dir.title.flatMap { title -> String? in
-                let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                return trimmed.isEmpty ? nil : trimmed
-            }
-            return [library, MediaLibrary(
-                id: Self.collectionLibraryID(sectionID: id),
-                title: collectionSourceTitle.map { "Collections in \($0)" } ?? "Collections",
-                kind: .collection,
-                synthesizedName: .collections,
-                collectionSourceTitle: collectionSourceTitle,
-                imageURL: library.imageURL
-            )]
         }
     }
 
@@ -652,7 +639,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
     }
 
     public func collectionMembers(of collectionID: String, page: PageRequest) async throws -> MediaPage {
-        guard Self.collectionSectionID(collectionID) == nil,
+        guard !collectionID.hasPrefix("plex:collections:"),
               page.startIndex >= 0, page.limit > 0 else { throw AppError.invalidResponse }
         let container = try await client.collectionMembers(
             ratingKey: collectionID, start: page.startIndex, size: page.limit
@@ -694,34 +681,55 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         )
     }
 
+    public func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
+        guard !libraryID.isEmpty, page.startIndex >= 0, page.limit > 0 else {
+            throw AppError.invalidResponse
+        }
+        if libraryID.hasPrefix("plex:collections:"), Self.collectionSectionID(libraryID) == nil {
+            throw AppError.invalidResponse
+        }
+        let sectionID = Self.collectionSectionID(libraryID) ?? libraryID
+        let container = try await client.sectionCollections(
+            sectionID: sectionID, start: page.startIndex, size: page.limit, sort: page.sort
+        )
+        if container.Metadata?.isEmpty != false {
+            guard (container.size ?? 0) == 0,
+                  (container.totalSize ?? page.startIndex) <= page.startIndex,
+                  container.Directory?.isEmpty != false else {
+                throw AppError.invalidResponse
+            }
+        }
+        let items = (container.Metadata ?? []).map(map(metadata:)).map { $0.taggingLibrary(sectionID) }
+        let total = container.totalSize
+            ?? (page.startIndex + items.count
+                + (items.count == page.limit && !items.isEmpty ? 1 : 0))
+        PlozzLog.networking.info(
+            "Plex collection browse: section=\(sectionID) route=collections start=\(page.startIndex) returned=\(items.count) total=\(total)"
+        )
+        return MediaPage(items: items, startIndex: page.startIndex, totalCount: total)
+    }
+
     public func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
-        let collectionSectionID = Self.collectionSectionID(containerID)
-        if kind == .collection, collectionSectionID == nil {
+        if containerID.hasPrefix("plex:collections:") {
+            guard let sectionID = Self.collectionSectionID(containerID) else {
+                throw AppError.invalidResponse
+            }
+            return try await collections(in: sectionID, page: page)
+        }
+        if kind == .collection {
             return try await collectionMembers(of: containerID, page: page)
         }
-        let type = collectionSectionID == nil ? Self.sectionType(forContainerKind: kind) : 18
+        let type = Self.sectionType(forContainerKind: kind)
         PlozzLog.networking.info(
             "Plex library browse: section=\(containerID) kind=\(kind.rawValue) type=\(type.map(String.init) ?? "-") start=\(page.startIndex) size=\(page.limit) sort=\(page.sort.field.rawValue)/\(page.sort.direction.rawValue)"
         )
         do {
             let container = try await client.sectionItems(
-                sectionID: collectionSectionID ?? containerID,
-                type: type,
-                start: page.startIndex,
-                size: page.limit,
-                sort: page.sort
+                sectionID: containerID, type: type, start: page.startIndex,
+                size: page.limit, sort: page.sort
             )
-            let items = (container.Metadata ?? []).map(map(metadata:)).map { item in
-                item.taggingLibrary(collectionSectionID ?? containerID)
-            }
-            let total: Int
-            if collectionSectionID != nil {
-                total = container.totalSize
-                    ?? (page.startIndex + items.count
-                        + (items.count == page.limit && !items.isEmpty ? 1 : 0))
-            } else {
-                total = container.totalSize ?? container.size ?? (page.startIndex + items.count)
-            }
+            let items = (container.Metadata ?? []).map(map(metadata:))
+            let total = container.totalSize ?? container.size ?? (page.startIndex + items.count)
             PlozzLog.networking.info("Plex library browse: section=\(containerID) returned=\(items.count) total=\(total)")
             return MediaPage(items: items, startIndex: page.startIndex, totalCount: total)
         } catch {

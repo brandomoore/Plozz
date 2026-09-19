@@ -71,9 +71,10 @@ public struct LibraryBrowseView: View {
         // scales with the UI-density setting. Search reuses the same spec so the
         // two surfaces match.
         let columns = metrics.posterColumns
+        let generation = viewModel.contentGeneration
         return ContentStateView(
             state: viewModel.state,
-            emptyMessage: "This library is empty.",
+            emptyMessage: viewModel.emptyMessage,
             onRetry: { Task { await viewModel.loadFirstPage() } },
             loadingContent: {
                 if viewModel.isMediaShare {
@@ -88,19 +89,21 @@ public struct LibraryBrowseView: View {
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
                         header
+                            .id("library-browse-header")
                         scanBanner
                         LazyVGrid(columns: columns, spacing: metrics.gridSpacing) {
                             ForEach(0..<total, id: \.self) { index in
                                 LibraryGridCell(
                                     slot: viewModel.slot(at: index),
                                     index: index,
+                                    generation: generation,
                                     spoilerSettings: spoilerSettings,
                                     onSelect: onSelect,
                                     onAppear: { idx in
-                                        await viewModel.itemAppeared(at: idx)
+                                        await viewModel.itemAppeared(at: idx, generation: generation)
                                         prefetchArtwork(aheadFrom: idx)
                                     },
-                                    onDisappear: { viewModel.itemDisappeared(at: $0) }
+                                    onDisappear: { viewModel.itemDisappeared(at: $0, generation: generation) }
                                 )
                                 // Explicit scroll identity so the rail's
                                 // `scrollTo(startIndex)` lands on the right row.
@@ -111,6 +114,7 @@ public struct LibraryBrowseView: View {
                         .padding(.trailing, HomeLayout.horizontalPadding)
                         .padding(.bottom, PlozzTheme.Metrics.screenVerticalPadding)
                         .focusSection()
+                        .id(viewModel.contentMode)
                     }
                     .padding(.top, PlozzTheme.Spacing.large)
                     #if canImport(UIKit)
@@ -158,12 +162,34 @@ public struct LibraryBrowseView: View {
                 .onChange(of: viewModel.showsLetterRail) { _, shows in
                     if !shows { railHasRevealed = false }
                 }
+                .onChange(of: viewModel.contentMode) { _, _ in
+                    proxy.scrollTo("library-browse-header", anchor: .top)
+                }
             }
         }
         // Browse is a full-screen sub-page: hide the top tab bar so it reads as a
         // dedicated destination with no navigation chrome pinned at the top.
         .toolbar(.hidden, for: .tabBar)
+        .safeAreaInset(edge: .top) {
+            // Keep the mode menu reachable even when collections are empty,
+            // unavailable, or still loading. Loaded grids retain their header.
+            if viewModel.supportsCollections, viewModel.state.value == nil {
+                header
+                    .padding(.top, PlozzTheme.Spacing.large)
+            }
+        }
         .safeAreaInset(edge: .bottom) {
+            if let error = viewModel.pageError {
+                HStack(spacing: PlozzTheme.Spacing.large) {
+                    Text(error.userMessage)
+                        .plozzForeground(.secondary)
+                    Button("Try Again") {
+                        Task { await viewModel.retryFailedPages() }
+                    }
+                    .plozzActionButton()
+                }
+                .padding()
+            }
             if viewModel.state.value == nil, let library = viewModel.fileBrowserLibrary {
                 LibraryFileBrowseButton(library: library, onSelect: onSelect)
                     .plozzActionButton()
@@ -174,6 +200,11 @@ public struct LibraryBrowseView: View {
         // lacked this guard and reloaded the library every time the user came back
         // from a detail page.
         .task { await viewModel.loadFirstPageIfNeeded() }
+        .onChange(of: viewModel.contentMode) { _, _ in
+            railFocusedLetter = nil
+            railHasRevealed = false
+            artworkPrefetch = ArtworkPrefetchTracker()
+        }
         .onAppear { MainThreadStallProbe.context = "library" }
         .background {
             if viewModel.isMediaShare {
@@ -235,6 +266,9 @@ public struct LibraryBrowseView: View {
             Spacer(minLength: PlozzTheme.Spacing.large)
             if let library = viewModel.fileBrowserLibrary {
                 LibraryFileBrowseButton(library: library, onSelect: onSelect)
+            }
+            if viewModel.supportsCollections {
+                LibraryContentModeControl(viewModel: viewModel)
             }
             sortControl
         }
@@ -340,6 +374,30 @@ public struct LibraryBrowseView: View {
     }
 }
 
+private struct LibraryContentModeControl: View {
+    let viewModel: LibraryBrowseViewModel
+
+    var body: some View {
+        Menu {
+            Picker("Show", selection: Binding(
+                get: { viewModel.contentMode },
+                set: { mode in Task { await viewModel.setContentMode(mode) } }
+            )) {
+                ForEach(LibraryContentMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+        } label: {
+            Label {
+                Text(viewModel.contentMode.displayName)
+            } icon: {
+                Image(systemName: "rectangle.stack")
+            }
+        }
+        .accessibilityIdentifier("library-content-mode")
+    }
+}
+
 private struct LibraryFileBrowseButton: View {
     let library: MediaLibrary
     let onSelect: (MediaItem) -> Void
@@ -376,6 +434,7 @@ private struct ShareLibraryLoadingView: View {
 private struct LibraryGridCell: View {
     let slot: LibrarySlot?
     let index: Int
+    let generation: Int
     let spoilerSettings: SpoilerSettings
     let onSelect: (MediaItem) -> Void
     let onAppear: (Int) async -> Void
@@ -402,7 +461,7 @@ private struct LibraryGridCell: View {
                 PosterPlaceholderView()
             }
         }
-        .task(id: index) { await onAppear(index) }
+        .task(id: generation) { await onAppear(index) }
         .onDisappear { onDisappear(index) }
     }
 }

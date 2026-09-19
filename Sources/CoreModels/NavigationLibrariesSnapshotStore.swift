@@ -33,11 +33,11 @@ public final class NavigationLibrariesSnapshotStore: NavigationLibrariesSnapshot
               let libraries = try? JSONDecoder().decode([AggregatedLibrary].self, from: data) else {
             return []
         }
-        return libraries
+        return libraries.filter { !$0.isRetiredCollectionShortcut }
     }
 
     public func save(_ libraries: [AggregatedLibrary]) {
-        let bounded = Array(libraries.prefix(Self.limit))
+        let bounded = Array(libraries.filter { !$0.isRetiredCollectionShortcut }.prefix(Self.limit))
         guard let data = try? JSONEncoder().encode(bounded) else { return }
         defaults.set(data, forKey: key)
     }

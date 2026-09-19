@@ -640,11 +640,21 @@ their own primary image paths before the presentation policy selects them.
 
 ## Server-defined collections
 
-Collections use the same library grid, detail destination, and member navigation
-for Plex, Jellyfin, and Emby. Plex derives section-scoped Collections libraries;
-Jellyfin and Emby retain their native BoxSet views. Collection discovery and
-collection membership are different queries: listing collections must never
-filter a collection's contents down to other collections.
+Movie/TV libraries expose the same Titles / Collections switch for Plex,
+Jellyfin, and Emby. Collections reuse the existing grid, detail destination, and
+member navigation. Native Jellyfin/Emby BoxSet roots remain browseable; Plozz
+does not add synthetic Collections libraries. Previously cached synthetic Plex
+shortcuts are filtered on read and future writes without clearing other Home
+or navigation data.
+
+`MediaProvider.collections(in:page:)` discovers collections belonging to a
+specific library. It is distinct from collection membership: listing collections
+must never filter a collection's contents down to other collections. Mode
+switches isolate page counts, sorts, letter offsets and pending requests; stale
+callbacks cannot change the newly selected mode. Merged-library providers keep
+separate title/collection buffers and forward each original library ID. A failed
+collection source remains a retryable error rather than an empty or partial
+success.
 
 `MediaProvider.collectionMembers` preserves server ordering and pages complete
 membership. Detail loading distinguishes an empty collection from a failed or
@@ -654,9 +664,11 @@ to every item; a collection's external catalogue ID does not make another user's
 collection an interchangeable playback source.
 
 `PlexCollectionBrowsingTests`, `MediaBrowserCollectionBrowsingTests`,
-`CollectionDetailBrowsingTests`, and `CollectionIdentityTests` cover discovery,
-static/smart membership, pagination, mixed member kinds, account isolation,
-retry/cancellation, and server-defined ordering.
+`CollectionDetailBrowsingTests`, `CollectionIdentityTests`,
+`LibraryCollectionModeTests`, `AggregatedLibraryCollectionTests`, and
+`RetiredCollectionShortcutTests` cover discovery, static/smart membership,
+pagination, mixed member kinds, account isolation, retry/cancellation,
+mode-switch races, snapshot migration and server-defined ordering.
 
 ## Edition and file selection
 

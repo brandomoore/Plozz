@@ -208,21 +208,28 @@ struct PlozziOSLibraryGridView: View {
     }
 
     var body: some View {
+        let generation = viewModel.contentGeneration
         Group {
             switch viewModel.state {
             case .idle, .loading:
                 ProgressView("Loading \(title)…")
             case .empty:
-                ContentUnavailableView(
-                    "This library is empty",
-                    systemImage: "rectangle.stack"
-                )
+                ContentUnavailableView {
+                    Label {
+                        Text(viewModel.emptyMessage)
+                    } icon: {
+                        Image(systemName: "rectangle.stack")
+                    }
+                }
             case let .loaded(total):
                 if total == 0 {
-                    ContentUnavailableView(
-                        "This library is empty",
-                        systemImage: "rectangle.stack"
-                    )
+                    ContentUnavailableView {
+                        Label {
+                            Text(viewModel.emptyMessage)
+                        } icon: {
+                            Image(systemName: "rectangle.stack")
+                        }
+                    }
                 } else {
                     ScrollView {
                         scanBanner
@@ -236,14 +243,16 @@ struct PlozziOSLibraryGridView: View {
                                 PlozziOSLibraryItemCell(
                                     slot: viewModel.slot(at: index),
                                     index: index,
+                                    generation: generation,
                                     provider: provider,
-                                    onAppear: { await viewModel.itemAppeared(at: index) },
-                                    onDisappear: { viewModel.itemDisappeared(at: index) }
+                                    onAppear: { await viewModel.itemAppeared(at: index, generation: generation) },
+                                    onDisappear: { viewModel.itemDisappeared(at: index, generation: generation) }
                                 )
                             }
                         }
                         .padding()
                     }
+                    .id(viewModel.contentMode)
                 }
             case let .failed(error):
                 ContentUnavailableView {
@@ -259,7 +268,25 @@ struct PlozziOSLibraryGridView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+            if let error = viewModel.pageError {
+                HStack {
+                    Text(error.userMessage)
+                        .plozzForeground(.secondary)
+                    Button("Try Again") {
+                        Task { await viewModel.retryFailedPages() }
+                    }
+                }
+                .padding()
+                .background(.regularMaterial)
+            }
+        }
         .toolbar {
+            if viewModel.supportsCollections {
+                ToolbarItem(placement: .primaryAction) {
+                    PlozziOSLibraryContentModeControl(viewModel: viewModel)
+                }
+            }
             if let library = viewModel.fileBrowserLibrary {
                 ToolbarItem(placement: .primaryAction) {
                     NavigationLink(
@@ -378,10 +405,35 @@ struct PlozziOSLibraryGridView: View {
     }
 }
 
+private struct PlozziOSLibraryContentModeControl: View {
+    let viewModel: LibraryBrowseViewModel
+
+    var body: some View {
+        Menu {
+            Picker("Show", selection: Binding(
+                get: { viewModel.contentMode },
+                set: { mode in Task { await viewModel.setContentMode(mode) } }
+            )) {
+                ForEach(LibraryContentMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+        } label: {
+            Label {
+                Text(viewModel.contentMode.displayName)
+            } icon: {
+                Image(systemName: "rectangle.stack")
+            }
+        }
+        .accessibilityIdentifier("library-content-mode")
+    }
+}
+
 private struct PlozziOSLibraryItemCell: View {
     @Environment(PlozziOSAppModel.self) private var appModel
     let slot: LibrarySlot?
     let index: Int
+    let generation: Int
     let provider: any MediaProvider
     let onAppear: () async -> Void
     let onDisappear: () -> Void
@@ -419,7 +471,7 @@ private struct PlozziOSLibraryItemCell: View {
                 card
             }
         }
-        .task(id: index) { await onAppear() }
+        .task(id: generation) { await onAppear() }
         .onDisappear(perform: onDisappear)
     }
 

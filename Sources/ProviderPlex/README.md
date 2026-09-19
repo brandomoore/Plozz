@@ -36,22 +36,32 @@ first-class backends; co-equal with `ProviderJellyfin`.
 
 ## Collections
 
-Movie/show sections expose a derived, section-scoped Collections library. It
-uses the same library grid and collection detail as Jellyfin/Emby, not a separate
-Plex selector. IDs (`plex:collections:<sectionID>`) identify collection *lists*;
-they must never be sent to a metadata/children endpoint or interpreted as item IDs.
+`libraries()` returns actual server sections only. Collection discovery is an
+option inside a movie/TV library, exposed by `.libraryCollections` and
+`MediaProvider.collections(in:page:)`. It pages the dedicated
+`/library/sections/{sectionID}/collections` endpoint with the selected sort.
+Discovery deliberately omits `includeElements=Stream`: Plex documents
+`includeElements` as an element whitelist, not a request for additional streams.
+Nonempty envelopes with missing metadata are failures, not empty libraries.
 
-Discovery pages `/library/sections/{sectionID}/all?type=18`. Collection membership
+Previously persisted `plex:collections:<sectionID>` IDs still route to scoped
+discovery, but new library lists never synthesize these shortcuts. Legacy
+`MediaLibrary` Codable fields remain readable while navigation migrates caches.
+
+Collection membership
 uses `MediaProvider.collectionMembers(of:page:)`, backed by paged
 `/library/metadata/{ratingKey}/children`, with no type or sort override. That same
 endpoint serves static and smart collections and preserves their server order.
 Detail loading reads bounded pages, publishes only a complete result, and exposes
 failures separately from an empty collection with a retry action on both platforms.
 
-Protocol references: python-plexapi
+Protocol references: [Plex's official API and response customization](https://developer.plex.tv/pms/)
+documents the dedicated collection endpoint and `MediaContainer.Metadata` JSON
+envelope. python-plexapi uses the alternative `/all?type=18` discovery query:
 [`LibrarySection.collections` / `search`](https://github.com/pkkid/python-plexapi/blob/master/plexapi/library.py),
 [`SEARCHTYPES`](https://github.com/pkkid/python-plexapi/blob/master/plexapi/utils.py),
-and [`Collection._items`](https://github.com/pkkid/python-plexapi/blob/master/plexapi/collection.py).
+and [`Collection._items`](https://github.com/pkkid/python-plexapi/blob/master/plexapi/collection.py)
+documents the shared static/smart membership path.
 
 Tests: `PlexCollectionBrowsingTests` and shared `CollectionDetailBrowsingTests`.
 

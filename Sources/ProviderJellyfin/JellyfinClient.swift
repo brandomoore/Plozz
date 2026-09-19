@@ -711,6 +711,53 @@ public struct JellyfinClient: Sendable {
         return try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
     }
 
+    /// Global BoxSets are intentional here: released Jellyfin and Emby servers
+    /// discard ParentId when IncludeItemTypes=BoxSet. Membership is scoped by
+    /// the provider using separately fetched library/member IDs.
+    func collectionCandidates(userID: String, page: PageRequest) async throws -> ItemsResponse {
+        let endpoint = Endpoint(
+            path: "/Users/\(userID)/Items",
+            queryItems: [
+                URLQueryItem(name: "IncludeItemTypes", value: "BoxSet"),
+                URLQueryItem(name: "Recursive", value: "true"),
+                URLQueryItem(name: "StartIndex", value: String(page.startIndex)),
+                URLQueryItem(name: "Limit", value: String(page.limit)),
+                URLQueryItem(name: "SortBy", value: Self.sortBy(for: page.sort.field)),
+                URLQueryItem(name: "SortOrder", value: Self.sortOrder(for: page.sort.direction)),
+                URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio,ProviderIds"),
+                URLQueryItem(name: "ImageTypeLimit", value: "1"),
+                URLQueryItem(name: "EnableTotalRecordCount", value: "true")
+            ],
+            headers: authHeaders
+        )
+        return try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
+    }
+
+    func collectionScopeItems(
+        userID: String, parentID: String, recursive: Bool, start: Int, limit: Int
+    ) async throws -> ItemsResponse {
+        let endpoint = Endpoint(
+            path: "/Users/\(userID)/Items",
+            queryItems: [
+                URLQueryItem(name: "ParentId", value: parentID),
+                URLQueryItem(name: "Recursive", value: recursive ? "true" : "false"),
+                URLQueryItem(name: "SortBy", value: "SortName"),
+                URLQueryItem(name: "SortOrder", value: "Ascending"),
+                URLQueryItem(name: "StartIndex", value: String(start)),
+                URLQueryItem(name: "Limit", value: String(limit)),
+                URLQueryItem(
+                    name: providerKind == .emby ? "GroupItemsIntoCollections" : "CollapseBoxSetItems",
+                    value: "false"
+                ),
+                URLQueryItem(name: "EnableImages", value: "false"),
+                URLQueryItem(name: "EnableUserData", value: "false"),
+                URLQueryItem(name: "EnableTotalRecordCount", value: "true")
+            ],
+            headers: authHeaders
+        )
+        return try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
+    }
+
     /// Count of items in a container, matching the same recursive/type filters
     /// `items(...)` uses, optionally restricted to those whose **sort name** is
     /// alphabetically less than `nameLessThan`. `Limit=0` fetches no rows — only

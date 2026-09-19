@@ -320,7 +320,9 @@ public final class HomeContentStore: HomeContentStoring, @unchecked Sendable {
             try? FileManager.default.removeItem(at: fileURL)
             return nil
         }
-        return stored.content.isEmpty ? nil : stored.content
+        var content = stored.content
+        content.libraries.removeAll(where: \.isRetiredCollectionShortcut)
+        return content.isEmpty ? nil : content
     }
 
     public func clear() {

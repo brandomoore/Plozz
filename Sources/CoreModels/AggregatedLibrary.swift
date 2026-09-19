@@ -43,4 +43,12 @@ public struct AggregatedLibrary: Codable, Hashable, Identifiable, Sendable {
     public var key: String { "\(accountID):\(library.id)" }
 
     public var id: String { key }
+
+    /// Older snapshots contain synthetic Plex collection libraries. Collections
+    /// now live inside the real library browser instead of separate shortcuts.
+    public var isRetiredCollectionShortcut: Bool {
+        providerKind == .plex
+            && library.kind == .collection
+            && library.id.hasPrefix("plex:collections:")
+    }
 }
