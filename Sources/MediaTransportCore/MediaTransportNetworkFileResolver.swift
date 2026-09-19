@@ -131,6 +131,10 @@ public struct MediaTransportNetworkFileResolver: MediaTransportNetworkFileResolv
                 playbackLease: playbackLease
             )
         } catch {
+            if let transportError = error as? MediaTransportError,
+               sessionLease.session.shouldRetireAfterOpenFailure(transportError) {
+                await sessionLease.reportConnectionFailure()
+            }
             sessionLease.release()
             await playbackLease?.releaseAndWait()
             throw error

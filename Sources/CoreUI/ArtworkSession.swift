@@ -18,6 +18,8 @@ import CoreModels
 public enum ArtworkSession {
     public static let memoryCapacityBytes = 64 * 1024 * 1024
     public static let diskCapacityBytes = 384 * 1024 * 1024
+    public static let requestTimeoutSeconds: TimeInterval = 15
+    public static let resourceTimeoutSeconds: TimeInterval = 30
 
     public struct CacheUsage: Sendable {
         public let memoryBytes: Int
@@ -44,8 +46,8 @@ public enum ArtworkSession {
 
     public static let shared: URLSession = {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 30
+        config.timeoutIntervalForRequest = requestTimeoutSeconds
+        config.timeoutIntervalForResource = resourceTimeoutSeconds
         config.httpMaximumConnectionsPerHost = 6
         // A bounded, dedicated *byte* cache. Foundation owns per-entry eviction;
         // Plozz owns the enforceable capacity and reports current usage.

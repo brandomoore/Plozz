@@ -322,6 +322,44 @@ These changes preserve layout and rendering behavior. Their combined real-Home
 performance still requires repeated device measurements; successful builds or
 functional focus checks are not a claim that all navigation hitches are gone.
 
+#### Shared artwork load recovery
+
+Home, library, and detail artwork share `ArtworkImageCache`. Its in-flight entries
+must not live indefinitely: one stalled request can otherwise collect new callers
+long after the original view disappeared. A shared load has one 30-second lifetime,
+matching the artwork resource timeout; joining it does not extend that deadline.
+Expiry retires the exact load, releases all waiting consumers, and cancels its
+transfer and decode job so the existing fallback chain can continue. Cancelled
+network-file loads leave the concurrency-limiter queue without waiting for an
+occupied permit. Running operations retain their permits until they return;
+expiration must not overbook uncooperative I/O.
+
+A late completion or deadline cannot overwrite or retire a replacement request.
+Cancelling one consumer preserves work needed by another; cancelling the last
+consumer also retires the deadline. Credential invalidation still takes precedence.
+Already-decoded, admitted pixels remain usable if optional disk persistence runs
+past the deadline. Logical expiry does not prove that uncooperative underlying I/O
+has drained, so transport limits and explicit resource shutdown remain necessary.
+`ArtworkLoadRecoveryTests` exercises stalled remote and network-file loads with
+controlled deadlines, including old-work completion after a successful replacement.
+The hosted `NativeFocusRequestHostedTests` recovery case uses the production
+deadline and fallback retry, asserting that the visible native poster receives
+artwork without replacing its view or losing focus.
+
+Network-file opens also report connection failures to
+`MediaTransportResolverRegistry`. The failed connection generation stops accepting
+new leases; the next normal request can reconnect while existing readers retain
+their original session until their last lease drains. Releases and failure reports
+are generation-bound, so old work cannot affect the replacement. The session owns
+error classification: SMB distinguishes connection-loss NTSTATUS values from
+missing-file and authentication failures. Credential/trust boundaries remain
+unchanged, and the failed open still propagates its original error rather than
+retrying inside the resolver. `ResolverFailureRetirementTests` and
+`SMBMediaTransportTests` cover those ownership and failure-classification rules.
+
+These regressions establish recovery behavior, not the cause of an unrecorded
+on-device incident.
+
 #### Library-channel identifier validation during Home paging
 
 A physical Time Profiler capture of six seconds of requested Continue Watching

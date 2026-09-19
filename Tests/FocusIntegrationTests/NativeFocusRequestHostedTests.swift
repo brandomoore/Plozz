@@ -131,6 +131,80 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         }
     }
 
+    private actor StalledThenRecoveredArtworkLoader: ArtworkNetworkFileLoading {
+        let data: Data
+        private var calls = 0
+        private var released = false
+        private var blocked: CheckedContinuation<Void, Never>?
+
+        init(data: Data) { self.data = data }
+
+        func loadArtwork(_ reference: NetworkArtworkReference, maximumBytes: Int) async throws -> Data {
+            calls += 1
+            if calls == 1, !released {
+                await withCheckedContinuation { blocked = $0 }
+            }
+            return data
+        }
+
+        func release() {
+            released = true
+            blocked?.resume()
+            blocked = nil
+        }
+    }
+
+    func testVisiblePosterRecoversAfterSharedLoadExpiresWithoutRecreationOrFocusLoss() async throws {
+        let fixture = try await makeFixture()
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 300)).image {
+            UIColor.blue.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 200, height: 300))
+        }
+        let loader = StalledThenRecoveredArtworkLoader(data: try XCTUnwrap(image.jpegData(compressionQuality: 0.9)))
+        let cache = ArtworkImageCache.shared
+        cache.configure(networkFileService: ArtworkNetworkFileService(loader: loader))
+        defer {
+            fixture.close()
+            cache.configure(networkFileService: nil)
+            Task { await loader.release() }
+        }
+        let account = UUID().uuidString
+        let reference = ArtworkReference.networkFile(try NetworkArtworkReference(
+            accountID: account,
+            credentialRevision: CredentialRevision(),
+            catalogArtworkID: "hosted-recovery",
+            representation: RemoteFileRepresentation(
+                size: 1_024,
+                identity: RemoteFileIdentity(kind: .modificationTime, modifiedAt: .distantPast),
+                consistency: .changeDetecting
+            ),
+            sourceRevision: UUID().uuidString
+        ))
+        let model = BitmapFixtureModel()
+        model.references = [reference]
+        let host = UIHostingController(rootView: BitmapFixture(model: model)
+            .environment(\.plozzCardFocusStyle, .system))
+        fixture.window.rootViewController = host
+        fixture.window.layoutIfNeeded()
+        try await waitUntil {
+            model.focus != nil && cache.inFlightTaskForTesting(reference: reference, variant: .posterCard) != nil
+        }
+        let original = try XCTUnwrap(nativePoster(in: host.view))
+        let oldWork = cache.inFlightTaskForTesting(reference: reference, variant: .posterCard)
+        model.focus?.requestFocus(animated: false)
+        try await waitUntil { original.isFocused }
+        XCTAssertNil(cache.cachedImage(for: reference, variant: .posterCard))
+        try await waitUntil(timeout: .seconds(45)) {
+            guard let resolved = cache.cachedImage(for: reference, variant: .posterCard) else { return false }
+            return original.image?.cgImage === resolved.cgImage
+        }
+        XCTAssertTrue(nativePoster(in: host.view) === original)
+        XCTAssertTrue(original.isFocused)
+        await loader.release()
+        await oldWork?.value
+        await cache.purgeNetworkArtwork(accountID: account)
+    }
+
     func testCachedBitmapReachesNativeContentBeforeAppearanceCallbacks() throws {
         let reference = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://example.test/native-warm.png")))
         let image = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 300)).image {
@@ -565,10 +639,11 @@ final class NativeFocusRequestHostedTests: XCTestCase {
 
     private func waitUntil(
         file: StaticString = #filePath, line: UInt = #line,
+        timeout: Duration = .seconds(5),
         diagnostic: (@MainActor () -> String)? = nil,
         _ predicate: @MainActor () -> Bool
     ) async throws {
-        let deadline = ContinuousClock.now + .seconds(5)
+        let deadline = ContinuousClock.now + timeout
         while !predicate(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
