@@ -126,21 +126,31 @@ PLOZZ_HOME_REPEATS=3 \
 bash tools/run-physical-home-rows-first.sh --run-horizontal-only
 ```
 
-The already-installed Release app must have diagnostics enabled. Confirm the
-current app process and populated Home content, then post the unique
-`warm-ready` notification printed by the runner within 30 seconds. Each repeat
+Confirm the current Release app process and populated Home content, then post the
+unique `warm-ready` notification printed by the runner within 30 seconds. Each repeat
 prints its own notification; do not relaunch or reactivate between repeats.
 `--run-vertical-only` checks two vertical moves in each direction across available
 neighboring rows. `--run-hero-off` combines horizontal and vertical work. The
-runner never changes the hero setting; enable hero-off mode in the app first.
+runner never changes the hero setting; use these hero-off workloads only when
+the hero is already disabled.
 Omit `PLOZZ_HOME_START_ROW` to measure the current populated row. Section titles
 must match the app's effective language.
 
+`--run-vertical-roundtrip` follows the observed Home layout with the hero either
+enabled or disabled. It visits up to sixteen identified media rows, then returns
+through those rows to the starting position. Set `PLOZZ_HOME_REQUIRE_HERO=1` and
+`PLOZZ_HOME_CW_PAGING=1` for the primary Hero, Continue Watching paging, lower-row,
+and return tour. Repeated headings are disambiguated using adjacent rows and card
+identities, not the heading alone. `--observe-home` captures accessibility evidence
+without sending directional input. These modes prove functional coverage only.
+
 Artifacts include the original app log, test result, actual focus/input timeline,
-and `frame-window-summary.json`. Missing contemporaneous display frames fail
-the driver even if old samples exist. An unavailable row, changed app process,
-or disconnected test runner is incomplete coverage, not a passing performance
-result. Installing a different build during a run invalidates the comparison.
+and, when diagnostics are available, `frame-window-summary.json`. Callback-only
+hero-off workloads require contemporaneous diagnostic samples; native hitch
+measurements remain valid without them and explicitly record their absence.
+An unavailable row, changed app process, or disconnected test runner is incomplete
+coverage, not a passing performance result. Installing a different build during
+a run invalidates the comparison.
 
 ### Presented-frame hitch measurements
 
@@ -150,6 +160,14 @@ On tvOS 26 or newer, the physical runner can collect `XCTHitchMetric(application
 unambiguous neighboring row. Each workload returns three samples after XCTest's
 warm-up iteration. Manual measurement boundaries exclude accessibility snapshots
 and the reverse input used to reset the starting position.
+
+Use `PLOZZ_HOME_ALLOW_HERO=1` for row measurements while leaving the hero enabled.
+`PLOZZ_HOME_START_ROW` preparation follows verified adjacent rows outside the
+measurement. `--measure-hero-down` / `--measure-hero-up` measure the transition
+between the actual hero and Continue Watching. Neither the retained samples nor
+a warm functional tour prove immediate-startup performance: record the first
+input's time relative to a separately verified new app process and distinguish
+that first traversal from the warmed repetitions.
 
 The driver exports `native-metrics.json` from the result bundle and requires
 finite native hitch measurements, not just successful focus assertions. Keep the
@@ -704,6 +722,10 @@ utilisation = "death by a thousand re-renders", not one big stall.
    re-renders. A zero-size "sink" view that reads the value and forwards it into
    an `@Observable`/`@State` model is a clean way to confine a high-frequency
    clock (see `PlaybackClock` in `NowPlayingView.swift`).
+   Continue Watching follows the same boundary: `ContinueWatchingSeriesLogo`
+   owns its asynchronous logo and backdrop tones inside the overlay. Resolving
+   contrast must not reconfigure the enclosing native poster; the hosted
+   regression checks that boundary while preserving the overlay's geometry.
 2. **Make off-screen content lazy so Liquid Glass doesn't stay live.** A
    `.glassEffect()`/`plozzGlassCard` keeps recomputing its SDF as long as the
    view exists. Eager `HStack`/`VStack` rails inside a `ScrollView` keep *every*

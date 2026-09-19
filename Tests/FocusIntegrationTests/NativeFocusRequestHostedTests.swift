@@ -25,6 +25,83 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         func updateUIView(_ view: UIView, context: Context) {}
     }
 
+    private final class LogoHostProbe {
+        var updates = 0
+        weak var view: UIView?
+    }
+
+    private struct LogoHostFixture: UIViewRepresentable {
+        let logo: ContinueWatchingSeriesLogo
+        let probe: LogoHostProbe
+
+        func makeUIView(context: Context) -> UIView {
+            let view = UIHostingConfiguration { logo }.margins(.all, 0).makeContentView()
+            probe.view = view
+            return view
+        }
+
+        func updateUIView(_ view: UIView, context: Context) {
+            guard let content = view as? any UIContentView else {
+                XCTFail("Expected the logo's SwiftUI hosting content view")
+                return
+            }
+            probe.updates += 1
+            content.configuration = UIHostingConfiguration { logo }.margins(.all, 0)
+        }
+    }
+
+    func testContinueWatchingLogoResolutionStaysInsideItsHostedOverlay() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let url = try XCTUnwrap(URL(string: "https://logo-scope.example.test/\(UUID()).png"))
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 160, height: 80)).image {
+            UIColor.red.setFill()
+            $0.fill(CGRect(x: 10, y: 10, width: 140, height: 60))
+        }
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+        ))
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        let request = URLRequest(url: url)
+        cache.storeCachedResponse(
+            CachedURLResponse(response: response, data: try XCTUnwrap(image.pngData())),
+            for: request
+        )
+        defer { cache.removeCachedResponse(for: request) }
+        let references = [ArtworkReference.remote(url)]
+        let key = HeroLogoMemo.key(for: references)
+        XCTAssertNil(HeroLogoMemo.value(for: key))
+        let probe = LogoHostProbe()
+        let host = UIHostingController(rootView: LogoHostFixture(
+            logo: ContinueWatchingSeriesLogo(
+                title: Text(verbatim: "Series logo"),
+                logoReferences: references,
+                artworkReferences: references,
+                artworkVariant: .landscapeCard,
+                asyncFallbackURL: nil
+            ),
+            probe: probe
+        ).frame(width: 388, height: 264))
+        fixture.window.rootViewController = host
+        fixture.window.layoutIfNeeded()
+        let overlay = try XCTUnwrap(probe.view)
+        let initialBounds = overlay.bounds
+        let initialUpdates = probe.updates
+        XCTAssertGreaterThan(initialUpdates, 0)
+        try await waitUntil { HeroLogoMemo.value(for: key) != nil }
+        let sample = await HeroBackgroundSampler.sample(
+            references: references, region: ContinueWatchingCardShape.logoSampleRegion,
+            variant: .landscapeCard
+        )
+        XCTAssertNotNil(sample)
+        try await Task.sleep(for: .milliseconds(350))
+        fixture.window.layoutIfNeeded()
+        XCTAssertEqual(probe.updates, initialUpdates, "Logo and backdrop tones must not reconfigure their UIKit host.")
+        XCTAssertTrue(probe.view === overlay)
+        XCTAssertEqual(overlay.bounds, initialBounds)
+    }
+
     @Observable
     fileprivate final class BitmapFixtureModel {
         var references: [ArtworkReference] = []

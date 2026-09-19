@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Hero-off warm rows driver. Build/install only the unbound XCTest runner, never Plozz.
-# Parent confirms current Home with a real card focused; no relaunch or setting changes.
+# Existing-Home driver. Build/install only the unbound XCTest runner, never Plozz.
+# Parent confirms the current process; no app relaunch or setting changes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -25,7 +25,7 @@ if [[ ! "$REPEATS" =~ ^[1-3]$ ]]; then
   echo "PLOZZ_HOME_REPEATS must be 1, 2, or 3." >&2
   exit 2
 fi
-if [[ $# -ne 1 || ( "$MODE" != "--build-runner" && "$MODE" != "--run" && "$MODE" != "--run-hero-off" && "$MODE" != "--run-vertical-only" && "$MODE" != "--run-horizontal-only" && "$MODE" != "--sweep-down" && "$MODE" != "--sweep-up" && "$MODE" != "--measure-right" && "$MODE" != "--measure-left" && "$MODE" != "--measure-down" && "$MODE" != "--measure-up" ) ]]; then
+if [[ $# -ne 1 || ( "$MODE" != "--build-runner" && "$MODE" != "--run" && "$MODE" != "--run-hero-off" && "$MODE" != "--run-vertical-only" && "$MODE" != "--run-horizontal-only" && "$MODE" != "--sweep-down" && "$MODE" != "--sweep-up" && "$MODE" != "--measure-right" && "$MODE" != "--measure-left" && "$MODE" != "--measure-down" && "$MODE" != "--measure-up" && "$MODE" != "--measure-hero-down" && "$MODE" != "--measure-hero-up" && "$MODE" != "--run-vertical-roundtrip" && "$MODE" != "--observe-home" ) ]]; then
   echo "Usage: bash tools/run-physical-home-rows-first.sh --build-runner"
   echo "Then: PLOZZ_HOME_ROWS_FIRST=$DEVICE PLOZZ_HOME_RELEASE_APP_INSTALLED=1 bash tools/run-physical-home-rows-first.sh --run-hero-off"
   echo "--run is also a hero-off alias."
@@ -33,6 +33,10 @@ if [[ $# -ne 1 || ( "$MODE" != "--build-runner" && "$MODE" != "--run" && "$MODE"
   echo "Use --run-horizontal-only for a Right/Left hold pair on the focused real row."
   echo "Use --sweep-down or --sweep-up to page through up to four rows per repetition."
   echo "Use --measure-right/left for paging or --measure-down/up for native row-transition hitch metrics."
+  echo "PLOZZ_HOME_ALLOW_HERO=1 preserves hero ON for --measure-right/left/down/up; START_ROW preparation is unmeasured."
+  echo "Use --measure-hero-down/up for native Hero/Continue Watching transitions without changing settings."
+  echo "Use --run-vertical-roundtrip for observed Hero/CW paging and available lower rows, then return."
+  echo "Use --observe-home for AX evidence only, without directional input."
   exit 2
 fi
 if [[ "$MODE" != "--build-runner" && ( "${PLOZZ_HOME_ROWS_FIRST:-}" != "$DEVICE" || "${PLOZZ_HOME_RELEASE_APP_INSTALLED:-}" != "1" ) ]]; then
@@ -104,6 +108,30 @@ export TEST_RUNNER_PLOZZ_HOME_TARGET_DEVICE="$DEVICE"
 export TEST_RUNNER_PLOZZ_HOME_APP_CONFIGURATION=Release
 export TEST_RUNNER_PLOZZ_HOME_APP_BUNDLE_ID="$APP_ID"
 export TEST_RUNNER_PLOZZ_HOME_HERO_OFF=1
+export TEST_RUNNER_PLOZZ_HOME_HERO_ON=0
+export TEST_RUNNER_PLOZZ_HOME_VERTICAL_ROUNDTRIP=0
+export TEST_RUNNER_PLOZZ_HOME_OBSERVE_ONLY=0
+export TEST_RUNNER_PLOZZ_HOME_ALLOW_HERO="${PLOZZ_HOME_ALLOW_HERO:-0}"
+export TEST_RUNNER_PLOZZ_HOME_CONFIRMATION_TIMEOUT="${PLOZZ_HOME_CONFIRMATION_TIMEOUT:-30}"
+if [[ ! "$TEST_RUNNER_PLOZZ_HOME_CONFIRMATION_TIMEOUT" =~ ^[0-9]+$ ]] ||
+   (( TEST_RUNNER_PLOZZ_HOME_CONFIRMATION_TIMEOUT < 30 || TEST_RUNNER_PLOZZ_HOME_CONFIRMATION_TIMEOUT > 90 )); then
+  echo "PLOZZ_HOME_CONFIRMATION_TIMEOUT must be between 30 and 90 seconds." >&2
+  exit 2
+fi
+if [[ "$TEST_RUNNER_PLOZZ_HOME_ALLOW_HERO" != "0" && "$TEST_RUNNER_PLOZZ_HOME_ALLOW_HERO" != "1" ]]; then
+  echo "PLOZZ_HOME_ALLOW_HERO must be 0 or 1." >&2
+  exit 2
+fi
+export TEST_RUNNER_PLOZZ_HOME_CW_PAGING="${PLOZZ_HOME_CW_PAGING:-0}"
+export TEST_RUNNER_PLOZZ_HOME_REQUIRE_HERO="${PLOZZ_HOME_REQUIRE_HERO:-0}"
+if [[ "$TEST_RUNNER_PLOZZ_HOME_REQUIRE_HERO" != "0" && "$TEST_RUNNER_PLOZZ_HOME_REQUIRE_HERO" != "1" ]]; then
+  echo "PLOZZ_HOME_REQUIRE_HERO must be 0 or 1." >&2
+  exit 2
+fi
+if [[ "$TEST_RUNNER_PLOZZ_HOME_CW_PAGING" != "0" && "$TEST_RUNNER_PLOZZ_HOME_CW_PAGING" != "1" ]]; then
+  echo "PLOZZ_HOME_CW_PAGING must be 0 or 1." >&2
+  exit 2
+fi
 export TEST_RUNNER_PLOZZ_HOME_VERTICAL_ONLY=0
 export TEST_RUNNER_PLOZZ_HOME_HORIZONTAL_ONLY=0
 export TEST_RUNNER_PLOZZ_HOME_SWEEP_DIRECTION=""
@@ -117,6 +145,7 @@ export TEST_RUNNER_PLOZZ_HOME_SWEEP_STOP_ROW="${PLOZZ_HOME_SWEEP_STOP_ROW:-}"
 TEST_METHOD=testHeroDisabledFocusedRowAndAvailableLowerRowsWarm
 RUNNER_LIMIT=120
 INPUT_BUDGET=100
+SCENARIO=hero-off
 if [[ "$MODE" == "--run-vertical-only" ]]; then
   export TEST_RUNNER_PLOZZ_HOME_VERTICAL_ONLY=1
   TEST_METHOD=testHeroDisabledVerticalRowsWarm
@@ -132,17 +161,42 @@ elif [[ "$MODE" == "--sweep-down" || "$MODE" == "--sweep-up" ]]; then
   TEST_METHOD=testHeroDisabledRowSweepWarm
   RUNNER_LIMIT=150
   INPUT_BUDGET=130
-elif [[ "$MODE" == "--measure-right" || "$MODE" == "--measure-left" || "$MODE" == "--measure-down" || "$MODE" == "--measure-up" ]]; then
+elif [[ "$MODE" == "--observe-home" ]]; then
+  export TEST_RUNNER_PLOZZ_HOME_HERO_OFF=0
+  export TEST_RUNNER_PLOZZ_HOME_OBSERVE_ONLY=1
+  TEST_METHOD=testObservedHomeStateWarm
+  SCENARIO=observed-home
+  RUNNER_LIMIT=60
+  INPUT_BUDGET=0
+elif [[ "$MODE" == "--run-vertical-roundtrip" ]]; then
+  export TEST_RUNNER_PLOZZ_HOME_HERO_OFF=0
+  export TEST_RUNNER_PLOZZ_HOME_VERTICAL_ROUNDTRIP=1
+  TEST_METHOD=testObservedHomeVerticalRoundtripWarm
+  SCENARIO=observed-home
+  RUNNER_LIMIT=150
+  INPUT_BUDGET=130
+elif [[ "$MODE" == "--measure-right" || "$MODE" == "--measure-left" || "$MODE" == "--measure-down" || "$MODE" == "--measure-up" || "$MODE" == "--measure-hero-down" || "$MODE" == "--measure-hero-up" ]]; then
   export TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION="${MODE#--measure-}"
   TEST_METHOD=testHeroDisabledNativeHitchMetricWarm
+  if [[ "$TEST_RUNNER_PLOZZ_HOME_ALLOW_HERO" == "1" && ( "$MODE" == "--measure-right" || "$MODE" == "--measure-left" || "$MODE" == "--measure-down" || "$MODE" == "--measure-up" ) ]]; then
+    export TEST_RUNNER_PLOZZ_HOME_HERO_OFF=0
+    TEST_METHOD=testObservedHomeNativeRowHitchMetricWarm
+    SCENARIO=observed-rows
+  fi
+  if [[ "$MODE" == "--measure-hero-down" || "$MODE" == "--measure-hero-up" ]]; then
+    export TEST_RUNNER_PLOZZ_HOME_HERO_OFF=0
+    export TEST_RUNNER_PLOZZ_HOME_HERO_ON=1
+    TEST_METHOD=testHeroEnabledNativeHitchMetricWarm
+    SCENARIO=hero-enabled
+  fi
   RUNNER_LIMIT=150
   INPUT_BUDGET=130
 fi
 export TEST_RUNNER_PLOZZ_HOME_CONTINUE_WATCHING_LABEL="${PLOZZ_HOME_CONTINUE_WATCHING_LABEL:-Continue Watching}"
 export TEST_RUNNER_PLOZZ_HOME_NAVIGATION_LABEL="${PLOZZ_HOME_NAVIGATION_LABEL:-Home}"
 export TEST_RUNNER_PLOZZ_HOME_START_ROW="${PLOZZ_HOME_START_ROW:-}"
-printf 'scenario=hero-off\nverticalOnly=%s\nhorizontalOnly=%s\nsweepDirection=%s\nlifecycle=warm-existing-no-relaunch\ncausalComparison=false\nmetricIdleControl=%s\n' \
-  "$TEST_RUNNER_PLOZZ_HOME_VERTICAL_ONLY" "$TEST_RUNNER_PLOZZ_HOME_HORIZONTAL_ONLY" \
+printf 'scenario=%s\nverticalOnly=%s\nhorizontalOnly=%s\nsweepDirection=%s\nlifecycle=warm-existing-no-relaunch\ncausalComparison=false\nmetricIdleControl=%s\n' \
+  "$SCENARIO" "$TEST_RUNNER_PLOZZ_HOME_VERTICAL_ONLY" "$TEST_RUNNER_PLOZZ_HOME_HORIZONTAL_ONLY" \
   "$TEST_RUNNER_PLOZZ_HOME_SWEEP_DIRECTION" "$TEST_RUNNER_PLOZZ_HOME_METRIC_IDLE_CONTROL" > "$OUT/scenario.txt"
 printf 'bundleID=%s\nexpectHitches=%s\n' "$APP_ID" "$EXPECT_HITCHES" >> "$OUT/scenario.txt"
 if [[ "$EXPECT_HITCHES" == "1" && -z "$TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION" ]]; then
@@ -150,12 +204,22 @@ if [[ "$EXPECT_HITCHES" == "1" && -z "$TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION"
   exit 2
 fi
 echo "Warm app only: do not launch, terminate, replace, or change its environment."
-echo "Keep the user's Home hero OFF. This row-only isolation does not establish hero causation."
-echo "Existing diagnostics should already include PLZPERF_STDOUT=1 PLZXMEM=1 PLZPERF_ANIMATIONS=1 PLZIO=1."
+echo "Scenario: $SCENARIO. Never change the user's hero setting to fit a test."
+echo "Native hitch metrics do not require app diagnostic flags; callback samples are supplemental."
 echo "Wait for PLZROWS warm-ready; confirm current Home with an actual populated row/card focused, then:"
 echo "xcrun devicectl device notification post --device $DEVICE --name <confirmedNotification> --timeout 15"
-echo "30s confirmation, 15s real-card readiness, ${INPUT_BUDGET}s input budget, ${RUNNER_LIMIT}s hard runner limit."
-if [[ "$MODE" == "--run-vertical-only" ]]; then
+echo "${TEST_RUNNER_PLOZZ_HOME_CONFIRMATION_TIMEOUT}s confirmation, 15s real-card readiness, ${INPUT_BUDGET}s input budget, ${RUNNER_LIMIT}s hard runner limit."
+if [[ "$MODE" == "--observe-home" ]]; then
+  echo "Read current foreground Home AX only; no sidebar recovery or directional input."
+elif [[ "$MODE" == "--run-vertical-roundtrip" ]]; then
+  echo "Observe actual hero/rows. If starting on Hero, verify Down to Continue Watching."
+  echo "Visit at most sixteen media rows, identifying each destination before another input, then return."
+  echo "Optional PLOZZ_HOME_CW_PAGING=1 adds CW paging after Hero Down; default is vertical-only."
+  echo "PLOZZ_HOME_REQUIRE_HERO=1 refuses input unless the actual hero is exposed."
+elif [[ "$MODE" == "--measure-hero-down" || "$MODE" == "--measure-hero-up" ]]; then
+  echo "Require actual Hero and Continue Watching. Measure one transition, verify focus, reset outside measurement."
+  echo "XCTest excludes its warm-up iteration: three retained samples do not prove first-load smoothness."
+elif [[ "$MODE" == "--run-vertical-only" ]]; then
   echo "No Left/Right calls or holds: two steps through identifiable real rows, then reverse to the starting row."
   echo "Any currently focused real row is eligible; unavailable lower rows report NOT_READY and partial coverage."
 elif [[ "$MODE" == "--run-horizontal-only" ]]; then
@@ -174,12 +238,13 @@ REPEAT_ARGS=()
 if [[ "$REPEATS" -gt 1 ]]; then
   REPEAT_ARGS=(-test-iterations "$REPEATS" -test-repetition-relaunch-enabled NO)
 fi
-if python3 tools/run-bounded.py "$((RUNNER_LIMIT * REPEATS))" "hero-off warm row paging" -- \
+if python3 tools/run-bounded.py "$((RUNNER_LIMIT * REPEATS))" "existing Home navigation" -- \
   xcodebuild test-without-building -xctestrun "$RUN_FILE" \
   -destination "platform=tvOS,id=$DEVICE" -destination-timeout 30 \
   -parallel-testing-enabled NO \
   "-only-testing:PlozzHomeRemoteTests/PhysicalHomeRowsFirstTests/$TEST_METHOD" \
   "-only-testing:PlozzHomeRemoteTests/PhysicalHomeRowsFirstTests/testRowMatchingDistinguishesSharedLeadingTitles" \
+  "-only-testing:PlozzHomeRemoteTests/PhysicalHomeRowsFirstTests/testVerticalDiscoveryUsesAdjacentSourceDespiteSharedLibraryTitles" \
   "${REPEAT_ARGS[@]+"${REPEAT_ARGS[@]}"}" \
   -test-timeouts-enabled YES -default-test-execution-time-allowance "$RUNNER_LIMIT" \
   -maximum-test-execution-time-allowance "$RUNNER_LIMIT" -collect-test-diagnostics never \
@@ -192,8 +257,10 @@ if ! xcrun devicectl device copy from --device "$DEVICE" \
   --domain-type appDataContainer --domain-identifier "$APP_ID" \
   --source Library/Caches/plzxmem.log --destination "$OUT/plzxmem.log" \
   --timeout 30 --json-output "$OUT/diagnostic-copy.json"; then
-  echo "testExit=$STATUS; diagnostic copy failed. Warm app was not relaunched." >&2
-  exit 1
+  echo "testExit=$STATUS; callback diagnostic copy unavailable. Existing app was not relaunched." >&2
+  if [[ -z "$TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION" && "$SCENARIO" == "hero-off" ]]; then
+    exit 1
+  fi
 fi
 if [[ "$STATUS" -ne 0 ]]; then
   echo "Driver failed ($STATUS). Distinguish NOT_READY from INPUT_FAILED in test.log." >&2
@@ -201,7 +268,7 @@ if [[ "$STATUS" -ne 0 ]]; then
 fi
 if [[ -n "$TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION" ]]; then
   xcrun xcresulttool get test-results metrics --path "$OUT/RowsFirst.xcresult" > "$OUT/native-metrics.json"
-  python3 - "$OUT/native-metrics.json" "$EXPECT_HITCHES" <<'PY'
+  python3 - "$OUT/native-metrics.json" "$EXPECT_HITCHES" "${APP_ID##*.}" <<'PY'
 import json
 import math
 from pathlib import Path
@@ -211,9 +278,9 @@ data = json.loads(Path(sys.argv[1]).read_text())
 metrics = []
 def visit(value):
     if isinstance(value, dict):
-        if "hitch" in str(value.get("displayName", "")).lower():
+        if str(value.get("identifier", "")).startswith(f"com.apple.dt.XCTMetric_Hitch-{sys.argv[3]}."):
             measurements = value.get("measurements", [])
-            if len(measurements) >= 3 and all(isinstance(item, (int, float)) and math.isfinite(item) for item in measurements):
+            if len(measurements) >= 3 and all(isinstance(item, (int, float)) and math.isfinite(item) and item >= 0 for item in measurements):
                 metrics.append(value)
         for child in value.values():
             visit(child)
@@ -221,17 +288,27 @@ def visit(value):
         for child in value:
             visit(child)
 visit(data)
-if not metrics:
-    raise SystemExit("No complete native hitch measurements; functional navigation alone is not a performance result.")
+units = {metric.get("unitOfMeasurement") for metric in metrics}
+if not {"s", "hitches", "ms per s"}.issubset(units):
+    raise SystemExit("Missing native hitch duration/count/ratio for the expected executable; navigation alone is not a performance result.")
 if sys.argv[2] == "1" and not any(
     value > 0 for metric in metrics for value in metric["measurements"]
 ):
     raise SystemExit("Positive control reported no hitches; verify the measured executable before trusting zero results.")
 PY
 fi
-if ! grep -q 'PLZROWS .* hero-off.row-ready ' "$OUT/test.log" ||
-   ! grep -q 'PLZROWS .* complete[[:space:]]*$' "$OUT/test.log"; then
-  echo "Missing real hero-off starting-row/completion evidence; skipped tests are not success." >&2
+if ! grep -q 'PLZROWS .* complete[[:space:]]*$' "$OUT/test.log"; then
+  echo "Missing completion evidence; skipped tests are not success." >&2
+  exit 1
+fi
+if [[ "$SCENARIO" == "hero-off" ]] && ! grep -q 'PLZROWS .* hero-off.row-ready ' "$OUT/test.log"; then
+  echo "Missing real hero-off starting-row evidence." >&2
+  exit 1
+elif [[ "$SCENARIO" == "hero-enabled" ]] && ! grep -q 'PLZROWS .* hero.row-ready .*heroPresent=true' "$OUT/test.log"; then
+  echo "Missing actual hero/Continue Watching readiness." >&2
+  exit 1
+elif [[ "$SCENARIO" == "observed-rows" ]] && ! grep -q 'PLZROWS .* observed.row-ready ' "$OUT/test.log"; then
+  echo "Missing actual starting-row focus evidence." >&2
   exit 1
 fi
 COMPLETIONS="$(grep -c 'PLZROWS .* complete[[:space:]]*$' "$OUT/test.log" || true)"
@@ -239,13 +316,23 @@ if [[ "$COMPLETIONS" -ne "$REPEATS" ]]; then
   echo "Expected $REPEATS complete navigation runs; observed $COMPLETIONS." >&2
   exit 1
 fi
-if [[ "$MODE" != "--run-horizontal-only" && -z "$TEST_RUNNER_PLOZZ_HOME_SWEEP_DIRECTION" && -z "$TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION" ]] &&
+if [[ "$SCENARIO" == "hero-off" && "$MODE" != "--run-horizontal-only" && -z "$TEST_RUNNER_PLOZZ_HOME_SWEEP_DIRECTION" && -z "$TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION" ]] &&
    { ! grep -q 'PLZROWS .* lower-row.verified ' "$OUT/test.log" ||
      ! grep -q 'PLZROWS .* hero-off.starting-row.restored[[:space:]]*$' "$OUT/test.log"; }; then
   echo "Missing verified vertical movement and return." >&2
   exit 1
 fi
-if [[ -n "$TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION" ]]; then
+if [[ "$MODE" == "--observe-home" || "$MODE" == "--run-vertical-roundtrip" ]]; then
+  REQUIRED_EVENT=observation.verified
+  if [[ "$MODE" == "--run-vertical-roundtrip" ]]; then REQUIRED_EVENT=roundtrip.verified; fi
+  if ! grep -q "PLZROWS .* $REQUIRED_EVENT " "$OUT/test.log"; then
+    echo "Missing observed-Home workload evidence." >&2
+    exit 1
+  fi
+  printf '{"nativeMetricsCollected":false,"performanceMeasured":false,"coverage":"observed Home only; inspect timeline"}\n' > "$OUT/validation.json"
+  echo "Observed Home coverage recorded; this functional run is not a performance measurement."
+  exit 0
+elif [[ -n "$TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION" ]]; then
   if ! grep -q 'PLZROWS .* native.metric.verified ' "$OUT/test.log"; then
     echo "Missing verified native hitch workload." >&2
     exit 1
@@ -267,10 +354,15 @@ elif ! grep -q 'PLZROWS .* first-row.horizontal.verified ' "$OUT/test.log"; then
   exit 1
 fi
 if ! grep 'PLZPERF .*fps=' "$OUT/plzxmem.log" > "$OUT/frame-samples.log"; then
+  if [[ -n "$TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION" ]]; then
+    printf '{"nativeMetricsCollected":true,"callbackSamples":"unavailable","smoothnessVerdict":null}\n' > "$OUT/validation.json"
+    echo "Native hitch metrics and focus proof collected. Callback samples unavailable; no app restart attempted."
+    exit 0
+  fi
   echo "No app frame samples; navigation may pass, but performance is unmeasured." >&2
   exit 1
 fi
-python3 - "$OUT" <<'PY'
+if python3 - "$OUT" <<'PY'
 import json
 from pathlib import Path
 import re
@@ -315,4 +407,13 @@ for name, start, end in windows:
     "limitations": "Window includes XCTest waits and bracketed AX checks; sampled callback gaps are not presented-frame metrics or a smoothness verdict."
 }, indent=2) + "\n")
 PY
+then
+  printf '{"nativeMetricsCollected":%s,"callbackSamples":"contemporaneous","smoothnessVerdict":null}\n' \
+    "$([[ -n "$TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION" ]] && echo true || echo false)" > "$OUT/validation.json"
+elif [[ -n "$TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION" ]]; then
+  printf '{"nativeMetricsCollected":true,"callbackSamples":"not-validated","smoothnessVerdict":null}\n' > "$OUT/validation.json"
+  echo "Native metrics remain available; callback overlap validation failed and must not support performance claims."
+else
+  exit 1
+fi
 echo "Warm UI-input coverage recorded. Align frame samples with PLZROWS uptime windows; full app log includes earlier history."
