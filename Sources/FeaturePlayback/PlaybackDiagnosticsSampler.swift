@@ -32,9 +32,8 @@ public final class PlaybackDiagnosticsSampler {
     /// Live engine telemetry source (dropped frames / FPS / bitrate). Used to fill
     /// the per-tick metrics on engines with no `AVPlayer` access log (Plozzigen).
     private var engineTelemetry: (@MainActor () -> EngineLiveTelemetry?)?
-    /// Engine-probed source facts (real range/audio/dimensions). Fills the
-    /// diagnostics for sources with no provider metadata (SMB) where the engine's
-    /// own demux is the only source of truth.
+    /// Engine-probed input facts, not a measurement of the display/HDMI output.
+    /// The probed range corrects provider hints for original-source playback.
     private var probedFacts: (@MainActor () -> EngineProbedSourceFacts?)?
     private var timerTask: Task<Void, Never>?
 
@@ -59,14 +58,15 @@ public final class PlaybackDiagnosticsSampler {
     ///   - mode: how the server delivers the stream (direct play / remux /
     ///     transcode), shown verbatim in the overlay's Source row.
     ///   - metadata: provider source facts (codec/HDR/channels/…). These are the
-    ///     authoritative baseline; the transcoded asset itself exposes little,
-    ///     so this is what makes the overlay match a direct-play client.
+    ///     baseline, corrected by engine-probed source range when available.
+    ///     For server transcodes, retain the original-source metadata instead of
+    ///     replacing it with facts about the re-encoded asset.
     ///   - engineName: the engine decoding the stream (e.g. `AVPlayer`, `VLCKit`),
     ///     shown in the overlay so the user can see which engine is active.
     ///
     /// `player` is optional: a non-AVFoundation engine (Plozzigen) has no
     /// `AVPlayer`, so the live per-tick metrics (observed bitrate, dropped frames,
-    /// presentation size) are skipped, but the authoritative baseline from
+    /// presentation size) are skipped, but the source baseline from
     /// `metadata` — container, codecs, HDR, mode, and the engine name — is still
     /// published so the overlay works on every engine.
     public func start(
@@ -156,7 +156,7 @@ public final class PlaybackDiagnosticsSampler {
         }
     }
 
-    private func sampleTick() {
+    func sampleTick() {
         var diagnostics = staticDiagnostics
 
         // Per-tick AVFoundation metrics (native engine only; Plozzigen has no item).
@@ -218,17 +218,12 @@ public final class PlaybackDiagnosticsSampler {
             }
         }
 
-        // Fill the authoritative stream facts from the engine's OWN probe when the
-        // provider gave us none (SMB shares have no server metadata). Only fill
-        // where the baseline is still empty/unknown, so real provider facts always
-        // win — and we assert a range ONLY when the engine actually knows one
-        // (better to show nothing than a defaulted "SDR").
+        // An actual source probe outranks a provider's range hint. For a server
+        // transcode the engine sees the re-encoded input, not the original source
+        // described here. Neither source tells us what the HDMI output is.
         if let f = probedFacts?() {
-            if diagnostics.hdr == .unknown, let r = f.range {
-                diagnostics.hdr = Self.hdrFormat(for: r)
-                if diagnostics.videoRangeType == nil {
-                    diagnostics.videoRangeType = Self.rangeToken(for: r)
-                }
+            if diagnostics.mode != .transcode, let range = f.range {
+                Self.applySourceRange(range, to: &diagnostics)
             }
             if diagnostics.resolution == nil, let w = f.videoWidth, let h = f.videoHeight, w > 0, h > 0 {
                 diagnostics.resolution = .init(width: w, height: h)
@@ -266,6 +261,24 @@ public final class PlaybackDiagnosticsSampler {
         case .hdr10: return .hdr10
         case .hdr10Plus: return .hdr10Plus
         case .dolbyVision: return .dolbyVision
+        }
+    }
+
+    private static func applySourceRange(_ range: SourceDynamicRange, to diagnostics: inout PlaybackDiagnostics) {
+        diagnostics.hdr = hdrFormat(for: range)
+        // Keep richer matching tokens (e.g. DOVIWithHDR10) and explicit P7
+        // details; replace a conflicting token instead of publishing two ranges.
+        if SourceDynamicRange.classify(videoRangeType: diagnostics.videoRangeType) != range {
+            diagnostics.videoRangeType = rangeToken(for: range)
+        }
+        if range != .dolbyVision {
+            diagnostics.dolbyVisionProfile = nil
+            if let transferRange = SourceDynamicRange.classify(
+                videoRangeType: nil, colorTransfer: diagnostics.colorTransfer
+            ), transferRange != range,
+               !(range == .hdr10Plus && transferRange == .hdr10) {
+                diagnostics.colorTransfer = nil
+            }
         }
     }
 
@@ -355,7 +368,9 @@ public final class PlaybackDiagnosticsSampler {
                 if info.videoCodec == nil {
                     info.videoCodec = PlaybackDiagnostics.friendlyCodecName(codec)
                 }
-                if info.hdr == .unknown {
+                // A transcoded asset cannot establish the original source range.
+                // Codec/PQ alone also cannot distinguish HDR10 from HDR10+.
+                if info.mode != .transcode, info.hdr == .unknown {
                     info.hdr = PlaybackDiagnostics.classifyHDR(videoCodec: codec, transferFunction: transfer)
                 }
             }

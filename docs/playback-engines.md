@@ -30,9 +30,27 @@ the SDR-only fallback. Source badges keep HDR10+ distinct from HDR10; Emby's
 
 Native AVPlayer items leave per-frame HDR display metadata enabled even when
 server metadata is missing or says SDR. AVFoundation applies only metadata the
-stream actually carries. HDR10 and HDR10+ use the same PQ/BT.2020 static display
-criteria; dynamic metadata, not a separate synthetic criteria mode, supplies
-the HDR10+ difference. Aether owns that handling on the Plozzigen path.
+stream actually carries. On tvOS the native engine loads the played asset's
+`preferredDisplayCriteria` asynchronously, as prescribed for custom player
+interfaces by [Apple](https://developer.apple.com/documentation/avfoundation/avdisplaycriteria).
+Synthetic source-hint criteria are only a bootstrap for HDR HLS startup, not
+the final substitute for the asset's format. Stopped/replaced loads cannot
+apply late criteria, and native teardown does not clear a differing request
+that another player has since installed on the same window.
+
+Aether remains the display-criteria writer for Plozzigen. Plozz supplies a
+positive already-HDR panel assertion only when the bound screen reports both
+current and potential EDR headroom above one; source labels and display
+capability alone never assert that the panel is in HDR. No Dolby Vision or
+HDR10+ display support is invented.
+
+The diagnostic HDR label describes the **source**, not measured HDMI output.
+On original-source playback, a current engine source probe overrides incomplete
+provider range hints, including Emby reporting HDR10 for an HDR10+ file. Server
+transcodes retain the original-source metadata rather than treating the
+re-encoded asset as evidence about the original file.
+
+These are candidate corrections for issue #58, not a hardware-verified fix.
 
 HDMI acceptance must be confirmed on an HDR10+-capable TV. A successful build,
 an HDR10+ source badge, or correct fallback on an HDR10-only TV is not proof of
