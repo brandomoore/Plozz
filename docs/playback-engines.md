@@ -52,6 +52,33 @@ re-encoded asset as evidence about the original file.
 
 These are candidate corrections for issue #58, not a hardware-verified fix.
 
+### Supplemental Emby HDR10+ detection
+
+Emby's `ExtendedVideoType` can identify HDR10+, but a missing declaration is
+not proof that the file lacks dynamic metadata. The delayed detail-page probe
+can confirm HDR10+ on an original HEVC source independently of its audio codec,
+including titles whose Atmos badge is already known. It is not a library-wide
+scan and playback never waits for it.
+
+The HDR probe examines bounded video packets, not filenames or arbitrary byte
+matches in a container. Only positively identified HDR10+ metadata upgrades the
+source badge. An exhausted budget, inaccessible stream or ordinary HDR10 result
+does not downgrade a server declaration. Dolby Vision keeps its primary
+classification. The existing Atmos decode probe is requested only when its own
+confirmation is missing.
+
+HDR inspection is capped at 8 MiB of reserved HTTP ranges, 128 packets and five
+seconds, with two-second request deadlines. Ignored or invalid Range responses
+are rejected before buffering a full body; redirects may not cross origins.
+The engine's existing FFmpeg libraries demux the bounded data, and the probe
+validates HEVC SEI/T.35 HDR10+ payloads without opening a video decoder.
+
+Probe coverage and positive results are cached independently for audio and
+video, scoped to the original media-source revision. A replaced file invalidates
+both, and cancelled or stale responses cannot restore an old revision. Confirmed
+facts are reused in the detail snapshot and fresh playback request, rather than
+being lost when the server repeats its incomplete metadata.
+
 HDMI acceptance must be confirmed on an HDR10+-capable TV. A successful build,
 an HDR10+ source badge, or correct fallback on an HDR10-only TV is not proof of
 HDR10+ output.
