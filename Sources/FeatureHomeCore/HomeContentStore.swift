@@ -1,5 +1,6 @@
 import Foundation
 import CoreModels
+import CoreNetworking
 
 /// Persists a bounded snapshot of the last successful Home ``HomeViewModel/Content``
 /// **per profile**, so the next launch can paint stable rows immediately while
@@ -13,7 +14,7 @@ import CoreModels
 /// snapshot is cached too a relaunch repaints stable Home content from disk with no
 /// network in the critical path. Volatile content publishes once when confirmed.
 ///
-/// Security: only already-displayed, non-secret metadata is stored — the same
+/// Security: only already-curated, non-secret metadata is stored — the same
 /// `MediaItem` / `AggregatedLibrary` values that `DetailSnapshotCache` and the
 /// artwork caches already write to the Caches directory. Access tokens continue to
 /// live only in the Keychain; every artwork URL is stripped of credentials before
@@ -38,6 +39,15 @@ public protocol HomeContentStoring: AnyObject, Sendable {
     /// sources and are not part of ``HomeViewModel/Content``.
     func loadHero(for key: HeroConfigurationKey) -> [MediaItem]?
     func saveHero(_ items: [MediaItem], for key: HeroConfigurationKey)
+    /// Validated alternatives retain source provenance independently of display
+    /// count. A legacy flat snapshot deliberately has no inferred provenance.
+    func loadHeroCandidatePool(for key: HeroConfigurationKey) -> HeroFreshnessCandidatePool?
+    func saveHeroCandidatePool(_ pool: HeroFreshnessCandidatePool, for key: HeroConfigurationKey)
+    /// Bounded hashed identities, not playback state. Catalog/hero clears retain
+    /// this separate history so a catalog refresh does not make seen titles new.
+    func loadHeroExposureHistory() -> HeroExposureHistory
+    func saveHeroExposureHistory(_ history: HeroExposureHistory)
+    func prewarmHeroCaches()
     /// Discards the hero snapshot.
     ///
     /// `saveHero` refuses to write an empty set, so that a failed refresh cannot
@@ -62,6 +72,14 @@ public extension HomeContentStoring {
     var persistenceScope: String {
         "instance:\(ObjectIdentifier(self))"
     }
+
+    func loadHeroCandidatePool(for key: HeroConfigurationKey) -> HeroFreshnessCandidatePool? { nil }
+    func saveHeroCandidatePool(_ pool: HeroFreshnessCandidatePool, for key: HeroConfigurationKey) {
+        saveHero(pool.durable().orderedItems(for: key), for: key)
+    }
+    func loadHeroExposureHistory() -> HeroExposureHistory { HeroExposureHistory() }
+    func saveHeroExposureHistory(_ history: HeroExposureHistory) {}
+    func prewarmHeroCaches() {}
 }
 
 /// Prepares the synchronous first-paint cache without doing filesystem work on MainActor.
@@ -72,7 +90,9 @@ public actor HomeContentPrewarmer {
 
     public func prepare(makeStore: @Sendable () -> any HomeContentStoring) {
         guard !Task.isCancelled else { return }
-        _ = makeStore().load()
+        let store = makeStore()
+        _ = store.load()
+        store.prewarmHeroCaches()
     }
 }
 
@@ -93,6 +113,7 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
     public var sources: [HeroSourceKind]
     public var maxItems: Int
     public var hideWatched: Bool
+    public var watchlistDiscoveryEnabled: Bool
     /// The libraries the viewer restricted the Random source to. Empty means "all
     /// currently-visible libraries". Included because narrowing it is a request
     /// for different titles — unlike the *resolved* library list, which changes
@@ -104,19 +125,22 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
             sources = []
             maxItems = 0
             hideWatched = false
+            watchlistDiscoveryEnabled = false
             randomLibraryKeys = []
             return
         }
         sources = settings.sources
         maxItems = settings.maxItems
         hideWatched = settings.hideWatched
+        watchlistDiscoveryEnabled = settings.isEnabled(.watchlist)
+            && settings.watchlistDiscoveryEnabled
         randomLibraryKeys = settings.isEnabled(.randomFromLibrary)
             ? settings.randomLibraryKeys
             : []
     }
 
     private enum CodingKeys: String, CodingKey {
-        case sources, maxItems, hideWatched, randomLibraryKeys
+        case sources, maxItems, hideWatched, randomLibraryKeys, watchlistDiscoveryEnabled
     }
 
     /// Lenient, like ``HeroSettings``: a persisted key written before a field
@@ -127,6 +151,9 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
         sources = try container.decode([HeroSourceKind].self, forKey: .sources)
         maxItems = try container.decode(Int.self, forKey: .maxItems)
         hideWatched = try container.decode(Bool.self, forKey: .hideWatched)
+        watchlistDiscoveryEnabled = try container.decodeIfPresent(
+            Bool.self, forKey: .watchlistDiscoveryEnabled
+        ) ?? false
         randomLibraryKeys =
             ((try? container.decodeIfPresent(
                 Set<String>.self,
@@ -143,6 +170,7 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
 public final class HomeContentStore: HomeContentStoring, @unchecked Sendable {
     private let fileURL: URL?
     private let heroFileURL: URL?
+    private let heroExposureFileURL: URL?
     private let legacyWatchlistSeedFileURL: URL?
     private let legacyWatchlistSourceFileURL: URL?
     private let maxItemsPerRow: Int
@@ -166,6 +194,7 @@ public final class HomeContentStore: HomeContentStoring, @unchecked Sendable {
         var key: HeroConfigurationKey
         var items: [MediaItem]
         var savedAt: Date
+        var candidatePool: HeroFreshnessCandidatePool? = nil
     }
 
     private struct StoredLegacyWatchlistSeed: Codable {
@@ -213,6 +242,7 @@ public final class HomeContentStore: HomeContentStoring, @unchecked Sendable {
     private static var memoRevision: [String: UInt64] = [:]
     private static var heroMemo: [String: StoredHero?] = [:]
     private static var heroMemoRevision: [String: UInt64] = [:]
+    private static var heroExposureMemo: [String: HeroExposureHistory] = [:]
 
     public init(
         namespace: String? = nil,
@@ -229,6 +259,7 @@ public final class HomeContentStore: HomeContentStoring, @unchecked Sendable {
         guard let directory else {
             self.fileURL = nil
             self.heroFileURL = nil
+            self.heroExposureFileURL = nil
             self.legacyWatchlistSeedFileURL = nil
             self.legacyWatchlistSourceFileURL = nil
             return
@@ -243,6 +274,9 @@ public final class HomeContentStore: HomeContentStoring, @unchecked Sendable {
         self.fileURL = dir.appendingPathComponent(safe).appendingPathExtension("json")
         self.heroFileURL = dir
             .appendingPathComponent(safe + "-hero")
+            .appendingPathExtension("json")
+        self.heroExposureFileURL = dir
+            .appendingPathComponent(safe + "-hero-exposure")
             .appendingPathExtension("json")
         self.legacyWatchlistSeedFileURL = dir
             .appendingPathComponent(
@@ -405,6 +439,67 @@ public final class HomeContentStore: HomeContentStoring, @unchecked Sendable {
     }
 
     public func loadHero(for key: HeroConfigurationKey) -> [MediaItem]? {
+        guard let stored = loadStoredHero(),
+              stored.key == key, !stored.items.isEmpty else { return nil }
+        return stored.items
+    }
+
+    public func loadHeroCandidatePool(for key: HeroConfigurationKey) -> HeroFreshnessCandidatePool? {
+        guard let stored = loadStoredHero(), stored.key == key,
+              let pool = stored.candidatePool?.durable(), !pool.isEmpty else { return nil }
+        return pool
+    }
+
+    public func prewarmHeroCaches() {
+        _ = loadStoredHero()
+        _ = loadHeroExposureHistory()
+    }
+
+    public func loadHeroExposureHistory() -> HeroExposureHistory {
+        guard let heroExposureFileURL else { return HeroExposureHistory() }
+        let path = heroExposureFileURL.path
+        Self.lock.lock()
+        let memoized = Self.heroExposureMemo[path]
+        Self.lock.unlock()
+        if let memoized { return memoized }
+        let loaded: HeroExposureHistory
+        do {
+            loaded = try JSONDecoder().decode(
+                HeroExposureHistory.self, from: Data(contentsOf: heroExposureFileURL)
+            )
+        } catch {
+            let failure = error as NSError
+            if failure.domain != NSCocoaErrorDomain || failure.code != NSFileReadNoSuchFileError {
+                PlozzLog.app.error("Hero exposure history could not be loaded")
+            }
+            loaded = HeroExposureHistory()
+        }
+        Self.lock.lock()
+        // A writer may have finished while the cold read was decoding.
+        let current = Self.heroExposureMemo[path] ?? loaded
+        Self.heroExposureMemo[path] = current
+        Self.lock.unlock()
+        return current
+    }
+
+    public func saveHeroExposureHistory(_ history: HeroExposureHistory) {
+        guard let heroExposureFileURL else { return }
+        do {
+            let data = try JSONEncoder().encode(history)
+            try FileManager.default.createDirectory(
+                at: heroExposureFileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: heroExposureFileURL, options: .atomic)
+            Self.lock.lock()
+            Self.heroExposureMemo[heroExposureFileURL.path] = history
+            Self.lock.unlock()
+        } catch {
+            PlozzLog.app.error("Hero exposure history could not be saved")
+        }
+    }
+
+    private func loadStoredHero() -> StoredHero? {
         guard let heroFileURL else { return nil }
         let path = heroFileURL.path
         Self.lock.lock()
@@ -425,6 +520,10 @@ public final class HomeContentStore: HomeContentStoring, @unchecked Sendable {
             }
             Self.lock.unlock()
         }
+        Self.lock.lock()
+        let isCurrent = Self.heroMemoRevision[path, default: 0] == revision
+        Self.lock.unlock()
+        guard isCurrent else { return nil }
         guard let stored else { return nil }
         guard Date().timeIntervalSince(stored.savedAt) < heroMaxAge else {
             Self.lock.lock()
@@ -434,8 +533,7 @@ public final class HomeContentStore: HomeContentStoring, @unchecked Sendable {
             Self.lock.unlock()
             return nil
         }
-        guard stored.key == key, !stored.items.isEmpty else { return nil }
-        return stored.items
+        return stored
     }
 
     public func clearHero() {
@@ -448,6 +546,20 @@ public final class HomeContentStore: HomeContentStoring, @unchecked Sendable {
     }
 
     public func saveHero(_ items: [MediaItem], for key: HeroConfigurationKey) {
+        saveHero(items, candidatePool: nil, for: key)
+    }
+
+    public func saveHeroCandidatePool(_ pool: HeroFreshnessCandidatePool, for key: HeroConfigurationKey) {
+        let durable = pool.sanitizedForPersistence()
+        guard !durable.isEmpty else { return }
+        saveHero(durable.orderedItems(for: key), candidatePool: durable, for: key)
+    }
+
+    private func saveHero(
+        _ items: [MediaItem],
+        candidatePool: HeroFreshnessCandidatePool?,
+        for key: HeroConfigurationKey
+    ) {
         IOTimingDiagnostics.measure(
             .homeHeroSave, metrics: { _ in .init(items: items.count) }
         ) {
@@ -460,7 +572,8 @@ public final class HomeContentStore: HomeContentStoring, @unchecked Sendable {
                     items: Array(items.prefix(max(key.maxItems, 1))).map {
                         $0.sanitizingArtworkCredentials()
                     },
-                    savedAt: Date()
+                    savedAt: Date(),
+                    candidatePool: candidatePool
                 )
             }
             guard let data = try? IOTimingDiagnostics.measure(
@@ -623,6 +736,8 @@ public final class InMemoryHomeContentStore: HomeContentStoring, @unchecked Send
     private let lock = NSLock()
     private var content: HomeViewModel.Content?
     private var hero: (key: HeroConfigurationKey, items: [MediaItem])?
+    private var heroCandidatePool: (key: HeroConfigurationKey, pool: HeroFreshnessCandidatePool)?
+    private var heroExposureHistory = HeroExposureHistory()
 
     public init(_ initial: HomeViewModel.Content? = nil) {
         self.content = initial
@@ -642,6 +757,7 @@ public final class InMemoryHomeContentStore: HomeContentStoring, @unchecked Send
         lock.lock(); defer { lock.unlock() }
         content = nil
         hero = nil
+        heroCandidatePool = nil
     }
 
     public func clearRows() {
@@ -658,11 +774,36 @@ public final class InMemoryHomeContentStore: HomeContentStoring, @unchecked Send
     public func saveHero(_ items: [MediaItem], for key: HeroConfigurationKey) {
         lock.lock(); defer { lock.unlock() }
         hero = items.isEmpty ? nil : (key, items)
+        heroCandidatePool = nil
+    }
+
+    public func loadHeroCandidatePool(for key: HeroConfigurationKey) -> HeroFreshnessCandidatePool? {
+        lock.lock(); defer { lock.unlock() }
+        return heroCandidatePool?.key == key ? heroCandidatePool?.pool : nil
+    }
+
+    public func saveHeroCandidatePool(_ pool: HeroFreshnessCandidatePool, for key: HeroConfigurationKey) {
+        let durable = pool.sanitizedForPersistence()
+        guard !durable.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        heroCandidatePool = (key, durable)
+        hero = (key, durable.orderedItems(for: key))
+    }
+
+    public func loadHeroExposureHistory() -> HeroExposureHistory {
+        lock.lock(); defer { lock.unlock() }
+        return heroExposureHistory
+    }
+
+    public func saveHeroExposureHistory(_ history: HeroExposureHistory) {
+        lock.lock(); defer { lock.unlock() }
+        heroExposureHistory = history
     }
 
     public func clearHero() {
         lock.lock(); defer { lock.unlock() }
         hero = nil
+        heroCandidatePool = nil
     }
 }
 

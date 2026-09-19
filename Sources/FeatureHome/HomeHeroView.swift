@@ -86,6 +86,8 @@ struct HomeHeroView: View {
     /// in without ever displacing what the viewer is looking at (see
     /// ``HeroLiveMerge``). Fires on appearance and on every page.
     var onPinnedItemsChanged: (Set<String>) -> Void = { _ in }
+    var onItemExposed: (MediaItem) -> Void = { _ in }
+    var exposureScopeID: ObjectIdentifier?
     /// Leaf-owned recede state. Passing the model reference keeps the high-frequency
     /// animation state out of `HomeView`'s observation surface, so moving between
     /// the hero and Continue Watching no longer invalidates every Home row.
@@ -522,6 +524,13 @@ struct HomeHeroView: View {
             heroBackdrop(height: height)
         }
         .opacity(heroVisible ? 1 : 0)
+        .trackHeroExposure(
+            item: current,
+            isVisible: isFrontmost && !receded && heroVisible && metadataVisible
+                && seasonPickerItem == nil && !showingSeasonLookupFailure,
+            scopeID: exposureScopeID,
+            onExposure: onItemExposed
+        )
         .confirmationDialog(
             seasonPickerItem?.title ?? "Request Seasons",
             isPresented: Binding(

@@ -11,6 +11,7 @@ actor HomeSnapshotPersistence {
 
     private var newestGenerationByScope: [String: UInt64] = [:]
     private var newestHeroGenerationByScope: [String: UInt64] = [:]
+    private var newestHeroExposureGenerationByScope: [String: UInt64] = [:]
 
     func save(
         _ content: HomeViewModel.Content,
@@ -80,6 +81,29 @@ actor HomeSnapshotPersistence {
         store.clearHero()
     }
 
+    func saveHeroCandidatePool(
+        _ pool: HeroFreshnessCandidatePool,
+        for key: HeroConfigurationKey,
+        generation: UInt64,
+        to store: any HomeContentStoring
+    ) {
+        let scope = store.persistenceScope
+        guard generation > newestHeroGenerationByScope[scope, default: 0] else { return }
+        newestHeroGenerationByScope[scope] = generation
+        store.saveHeroCandidatePool(pool, for: key)
+    }
+
+    func saveHeroExposureHistory(
+        _ history: HeroExposureHistory,
+        generation: UInt64,
+        to store: any HomeContentStoring
+    ) {
+        let scope = store.persistenceScope
+        guard generation > newestHeroExposureGenerationByScope[scope, default: 0] else { return }
+        newestHeroExposureGenerationByScope[scope] = generation
+        store.saveHeroExposureHistory(history)
+    }
+
     private func overlay(
         _ updates: [MediaItem],
         on previous: [MediaItem]
@@ -95,6 +119,33 @@ actor HomeSnapshotPersistence {
             updatesByID.removeValue(forKey: $0.stablePresentationID) != nil
         })
         return result
+    }
+}
+
+/// Replacement Home models share accepted exposures even while their disk write
+/// is queued. This deliberately has no Observation publisher.
+@MainActor
+private final class HeroExposureState {
+    private static var states: [String: HeroExposureState] = [:]
+    private static var scopeOrder: [String] = []
+    private let scopeOwner: any HomeContentStoring
+    var history: HeroExposureHistory
+
+    private init(history: HeroExposureHistory, store: any HomeContentStoring) {
+        self.history = history
+        self.scopeOwner = store
+    }
+
+    static func state(for store: any HomeContentStoring) -> HeroExposureState {
+        let scope = store.persistenceScope
+        if let existing = states[scope] { return existing }
+        let state = HeroExposureState(history: store.loadHeroExposureHistory(), store: store)
+        states[scope] = state
+        scopeOrder.append(scope)
+        while scopeOrder.count > 32 {
+            states.removeValue(forKey: scopeOrder.removeFirst())
+        }
+        return state
     }
 }
 
@@ -314,6 +365,15 @@ public final class HomeViewModel {
     @ObservationIgnored private var heroPersistenceTask: Task<Void, Never>?
     @ObservationIgnored private var heroPersistenceGeneration: UInt64 = 0
     @ObservationIgnored private var cachedHeroIsInvalidated = false
+    @ObservationIgnored private let heroExposureState: HeroExposureState
+    @ObservationIgnored private var heroSessionSeed = UInt64.random(in: .min ... .max)
+    private struct HeroLaunchSelectionKey: Hashable {
+        var configuration: HeroConfigurationKey
+        var disabledLibraryKeys: Set<String>
+    }
+    @ObservationIgnored private var cachedHeroSelections: [HeroLaunchSelectionKey: [MediaItem]] = [:]
+    @ObservationIgnored private var heroExposurePersistenceTask: Task<Void, Never>?
+    @ObservationIgnored private var heroExposurePersistenceGeneration: UInt64 = 0
     /// View subscriptions disappear while detail/playback covers Home, but the
     /// retained model must still receive completion and server-confirmation events.
     @ObservationIgnored private nonisolated(unsafe) var watchMutationObserver: NSObjectProtocol?
@@ -376,6 +436,7 @@ public final class HomeViewModel {
         self.aggregator = aggregator
         self.layoutStore = layoutStore
         self.contentStore = contentStore
+        self.heroExposureState = HeroExposureState.state(for: contentStore)
         self.identitySources = identitySources
         self.currentVisibility = currentVisibility
         self.pendingWatchMutations = pendingWatchMutations
@@ -1245,13 +1306,102 @@ public final class HomeViewModel {
     /// repaint a stale playback position either.
     public func cachedHeroItems(for settings: HeroSettings) -> [MediaItem]? {
         guard settings.isActive, !cachedHeroIsInvalidated else { return nil }
-        guard let stored = contentStore.loadHero(
-            for: HeroConfigurationKey(settings: settings)
-        ) else { return nil }
+        let key = HeroConfigurationKey(settings: settings)
+        let visibility = currentVisibility()
+        let selectionKey = HeroLaunchSelectionKey(
+            configuration: key, disabledLibraryKeys: visibility.disabledKeys
+        )
+        if let selected = cachedHeroSelections[selectionKey] {
+            return selected.isEmpty ? nil : selected
+        }
+        let stored: [MediaItem]
+        if let pool = contentStore.loadHeroCandidatePool(for: key) {
+            let rehydratedPool = pool.durable().mapItems { item in
+                mediaItemActionHandler?.rehydratePersistedArtwork([item]).first ?? item
+            }
+            stored = rehydratedPool.select(
+                settings: settings,
+                freshness: heroFreshnessSnapshot(),
+                isEligible: { source, item in
+                    guard source != .featured else { return true }
+                    return item.isVisibleOnHome { key in
+                        guard visibility.isEnabled(key) else { return false }
+                        if source == .watchlist { return true }
+                        if source == .randomFromLibrary, !settings.randomLibraryKeys.isEmpty {
+                            return settings.randomLibraryKeys.contains(key)
+                        }
+                        return visibility.isVisible(key)
+                    }
+                }
+            )
+        } else {
+            // Legacy blobs have no source provenance. Reordering them would
+            // silently turn recency/Continue Watching into discovery.
+            guard let legacy = contentStore.loadHero(for: key) else { return nil }
+            stored = settings.sources == [.featured] ? legacy : legacy.filter {
+                $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled)
+            }
+        }
         let durable = HeroDurableSnapshot.filter(stored)
         let rehydrated = mediaItemActionHandler?
             .rehydratePersistedArtwork(durable) ?? durable
+        if cachedHeroSelections.count >= 8 { cachedHeroSelections.removeAll() }
+        cachedHeroSelections[selectionKey] = rehydrated
         return rehydrated.isEmpty ? nil : rehydrated
+    }
+
+    public func heroFreshnessSnapshot() -> HeroFreshnessSnapshot {
+        HeroFreshnessSnapshot(history: heroExposureState.history, sessionSeed: heroSessionSeed)
+    }
+
+    /// Call at an explicit new browsing-session boundary, never from `body`.
+    /// Already displayed items remain the shell's responsibility.
+    public func beginHeroBrowsingSession() {
+        heroSessionSeed = UInt64.random(in: .min ... .max)
+        cachedHeroSelections.removeAll()
+    }
+
+    public func recordHeroExposure(_ item: MediaItem) {
+        recordHeroExposure(item, at: Date())
+    }
+
+    func recordHeroExposure(_ item: MediaItem, at date: Date) {
+        heroExposureState.history.record(item, at: date)
+        let history = heroExposureState.history
+        let generation = Self.nextSnapshotPersistenceGeneration()
+        heroExposurePersistenceGeneration = generation
+        let store = contentStore
+        heroExposurePersistenceTask = Task {
+            await HomeSnapshotPersistence.shared.saveHeroExposureHistory(
+                history, generation: generation, to: store
+            )
+        }
+    }
+
+    public func waitForHeroExposurePersistence() async {
+        while let task = heroExposurePersistenceTask {
+            let generation = heroExposurePersistenceGeneration
+            await task.value
+            if generation == heroExposurePersistenceGeneration { return }
+        }
+    }
+
+    public func cacheHeroCandidatePool(_ pool: HeroFreshnessCandidatePool, for settings: HeroSettings) {
+        guard settings.isActive else { return }
+        let durable = pool.durable()
+        guard !durable.isEmpty else { return }
+        let generation = Self.nextSnapshotPersistenceGeneration()
+        heroPersistenceGeneration = generation
+        let store = contentStore
+        let key = HeroConfigurationKey(settings: settings)
+        heroPersistenceTask = Task { [weak self] in
+            await HomeSnapshotPersistence.shared.saveHeroCandidatePool(
+                durable, for: key, generation: generation, to: store
+            )
+            if self?.heroPersistenceGeneration == generation {
+                self?.cachedHeroIsInvalidated = false
+            }
+        }
     }
 
     public func cacheHeroItems(_ items: [MediaItem], for settings: HeroSettings) {
@@ -1278,6 +1428,7 @@ public final class HomeViewModel {
         let generation = Self.nextSnapshotPersistenceGeneration()
         heroPersistenceGeneration = generation
         cachedHeroIsInvalidated = true
+        cachedHeroSelections.removeAll()
         let store = contentStore
         heroPersistenceTask = Task { [weak self] in
             await HomeSnapshotPersistence.shared.clearHero(generation: generation, store: store)
@@ -1303,6 +1454,7 @@ public final class HomeViewModel {
         let generation = Self.nextSnapshotPersistenceGeneration()
         heroPersistenceGeneration = generation
         cachedHeroIsInvalidated = true
+        cachedHeroSelections.removeAll()
         let store = contentStore
         let task = Task { [weak self] in
             await HomeSnapshotPersistence.shared.clear(generation: generation, store: store)

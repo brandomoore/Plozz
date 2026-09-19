@@ -26,6 +26,8 @@ final class HeroSettingsTests: XCTestCase {
         XCTAssertEqual(d.sources, HeroSourceKind.allCases)
         XCTAssertTrue(d.hideWatched)
         XCTAssertFalse(d.showsRatings)
+        XCTAssertFalse(d.watchlistDiscoveryEnabled)
+        XCTAssertEqual(d.maxItems, 8)
     }
 
     func testMaxItemsIsClamped() {
@@ -153,6 +155,30 @@ final class HeroSettingsTests: XCTestCase {
             XCTAssertEqual(settings.maxItems, 4)
             XCTAssertFalse(settings.hideWatched)
         }
+    }
+
+    func testWatchlistDiscoveryDefaultsOffForLegacyOrMalformedSettings() throws {
+        for field in ["", #","watchlistDiscoveryEnabled":null"#, #","watchlistDiscoveryEnabled":"invalid""#] {
+            let data = Data(#"{"maxItems":20,"hideWatched":false\#(field)}"#.utf8)
+            let settings = try JSONDecoder().decode(HeroSettings.self, from: data)
+            XCTAssertFalse(settings.watchlistDiscoveryEnabled)
+            XCTAssertEqual(settings.maxItems, 20)
+            XCTAssertFalse(settings.hideWatched)
+        }
+    }
+
+    func testWatchlistDiscoveryIsPersistedAndTransferredPerProfile() {
+        var settings = HeroSettings.default
+        settings.watchlistDiscoveryEnabled = true
+        settings.maxItems = 20
+        let first = HeroSettingsStore(defaults: defaults, namespace: "first")
+        let second = HeroSettingsStore(defaults: defaults, namespace: "second")
+        first.save(settings)
+        XCTAssertEqual(first.load(), settings)
+        XCTAssertFalse(second.load().watchlistDiscoveryEnabled)
+        let snapshot = ProfileSettingsTransfer.capture(namespace: "first", defaults: defaults)
+        ProfileSettingsTransfer.apply(snapshot, namespace: "second", defaults: defaults)
+        XCTAssertEqual(second.load(), settings)
     }
 
     func testHomeRatingsVisibilityStillHonorsSpoilersForEachPlayableKind() {

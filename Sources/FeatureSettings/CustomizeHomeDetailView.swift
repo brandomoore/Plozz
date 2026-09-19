@@ -296,6 +296,19 @@ struct CustomizeHomeDetailView: View {
                     }
                 }
 
+                if hero.settings.isEnabled(.watchlist) {
+                    SettingsDetailGroup(
+                        title: "Watchlist picks",
+                        description: "Prefer titles you haven't seen in the hero recently. Turn off to keep your watchlist order."
+                    ) {
+                        Toggle(
+                            "Discovery rotation",
+                            isOn: $hero.settings.watchlistDiscoveryEnabled
+                        )
+                        .toggleStyle(SettingsSwitchToggleStyle())
+                    }
+                }
+
                 SettingsDetailGroup(title: "Rotation") {
                     VStack(alignment: .leading, spacing: 24) {
                         LabeledSettingRow("Items in rotation") {

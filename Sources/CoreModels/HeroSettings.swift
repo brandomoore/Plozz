@@ -35,6 +35,9 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// from every hero source.
     public var hideWatched: Bool
 
+    /// Uses unseen/least-recently-shown picks instead of the established Watchlist order.
+    public var watchlistDiscoveryEnabled: Bool
+
     /// Scores are optional Home chrome, independent of detail-page rating preferences.
     public var showsRatings: Bool
     public var ratingPreferences: DetailPageSettings
@@ -75,6 +78,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         maxItems: Int,
         trailersEnabled: Bool,
         hideWatched: Bool = true,
+        watchlistDiscoveryEnabled: Bool = false,
         showsRatings: Bool = false,
         ratingPreferences: DetailPageSettings = .default,
         randomLibraryKeys: Set<String>,
@@ -89,6 +93,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         self.maxItems = maxItems.clamped(to: HeroSettings.maxItemsRange)
         self.trailersEnabled = trailersEnabled
         self.hideWatched = hideWatched
+        self.watchlistDiscoveryEnabled = watchlistDiscoveryEnabled
         self.showsRatings = showsRatings
         self.ratingPreferences = ratingPreferences
         self.randomLibraryKeys = randomLibraryKeys
@@ -98,6 +103,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case isEnabled, sources, maxItems, trailersEnabled, hideWatched, showsRatings
+        case watchlistDiscoveryEnabled
         case ratingPreferences
         case randomLibraryKeys, autoAdvance, autoAdvanceSeconds
         case offeredSourcesVersion
@@ -122,6 +128,9 @@ public struct HeroSettings: Codable, Equatable, Sendable {
             maxItems: value(Int.self, .maxItems, d.maxItems),
             trailersEnabled: value(Bool.self, .trailersEnabled, d.trailersEnabled),
             hideWatched: value(Bool.self, .hideWatched, d.hideWatched),
+            watchlistDiscoveryEnabled: value(
+                Bool.self, .watchlistDiscoveryEnabled, d.watchlistDiscoveryEnabled
+            ),
             showsRatings: value(Bool.self, .showsRatings, d.showsRatings),
             ratingPreferences: value(DetailPageSettings.self, .ratingPreferences, d.ratingPreferences),
             randomLibraryKeys: value(Set<String>.self, .randomLibraryKeys, d.randomLibraryKeys),
@@ -175,6 +184,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         try c.encode(maxItems, forKey: .maxItems)
         try c.encode(trailersEnabled, forKey: .trailersEnabled)
         try c.encode(hideWatched, forKey: .hideWatched)
+        try c.encode(watchlistDiscoveryEnabled, forKey: .watchlistDiscoveryEnabled)
         try c.encode(showsRatings, forKey: .showsRatings)
         try c.encode(ratingPreferences, forKey: .ratingPreferences)
         try c.encode(randomLibraryKeys, forKey: .randomLibraryKeys)

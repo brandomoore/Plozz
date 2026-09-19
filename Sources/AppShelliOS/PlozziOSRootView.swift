@@ -907,6 +907,10 @@ private struct PlozziOSTabShell: View {
                 onAddServer: onAddServer,
                 onShowSettings: showSettings
             )
+            .environment(
+                \.plozziOSHomeIsFrontmost,
+                effectiveSelectedDestination == .home && !isShowingMorePage && !showingSettings
+            )
             .plozziOSLibraryDestination(appModel: appModel)
             .plozziOSItemNavigation(appModel: appModel, registersScreenshotRouting: true)
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -1585,6 +1589,7 @@ private struct PlozziOSHomeLandingView: View {
                 onAddServer: onAddServer,
                 onShowSettings: onShowSettings
             )
+            .id(ObjectIdentifier(viewModel))
         }
     }
 }

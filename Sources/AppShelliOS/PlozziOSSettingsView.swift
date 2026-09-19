@@ -1952,6 +1952,16 @@ private struct PlozziOSHomeSettingsView: View {
             }
 
             if hero.settings.isEnabled {
+                if hero.settings.isEnabled(.watchlist) {
+                    SettingsSectionGroup("Watchlist picks") {
+                        Toggle(
+                            "Discovery rotation",
+                            isOn: $hero.settings.watchlistDiscoveryEnabled
+                        )
+                    } footer: {
+                        Text("Prefer titles you haven't seen in the hero recently. Turn off to keep your watchlist order.")
+                    }
+                }
                 SettingsSectionGroup("Rotation") {
                     Stepper(
                         "Items: \(hero.settings.maxItems)",

@@ -2,6 +2,7 @@
 import SwiftUI
 import AppRuntime
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureHome
 import FeatureHomeCore
@@ -69,7 +70,15 @@ func makeHeroFeaturedProvider(
             finalLimit: limit,
             hideWatched: hideWatched
         )
-        let items = (try? await seer.trending(limit: candidateLimit)) ?? []
+        let items: [MediaItem]
+        do {
+            items = try await seer.trending(limit: candidateLimit)
+        } catch is CancellationError {
+            return []
+        } catch {
+            PlozzLog.networking.error("Hero Featured candidates could not be loaded")
+            return []
+        }
         return await HeroCandidateWatchStateEnricher.enrich(
             items,
             enabled: hideWatched,
@@ -80,15 +89,19 @@ func makeHeroFeaturedProvider(
 }
 
 func makeHeroFeaturedStatusProvider(
-    seer: SeerService,
-    hideWatched: Bool
-) -> FeaturedContentProviding {
-    { limit in
-        let candidateLimit = HeroCandidatePool.requestLimit(
-            finalLimit: limit,
-            hideWatched: hideWatched
-        )
-        return (try? await seer.trending(limit: candidateLimit)) ?? []
+    seer: SeerService
+) -> HeroFeaturedStatusProviding {
+    { items in
+        var refreshed: [MediaItem] = []
+        for item in items {
+            guard !Task.isCancelled else { return [] }
+            guard let (status, progress) = await seer.availability(for: item) else { continue }
+            var updated = item
+            updated.availability = status
+            updated.downloadProgress = progress
+            refreshed.append(updated)
+        }
+        return refreshed
     }
 }
 

@@ -238,7 +238,8 @@ struct HomeTab: View {
                 heroBackground: heroBackground,
                 heroTrailerController: heroTrailerController,
                 onPollShares: onPollShares,
-                heroIsFrontmost: path.isEmpty,
+                heroIsFrontmost: isActiveTab && path.isEmpty
+                    && playRequest == nil && resumePrompt == nil,
                 heroRuntime: heroRuntime,
                 heroFeaturedProvider: makeHeroFeaturedProvider(
                     seer: seer,
@@ -247,8 +248,7 @@ struct HomeTab: View {
                     identitySources: identitySources
                 ),
                 heroFeaturedStatusProvider: makeHeroFeaturedStatusProvider(
-                    seer: seer,
-                    hideWatched: heroSettings.settings.hideWatched
+                    seer: seer
                 ),
                 heroRandomProvider: makeHeroRandomProvider(
                     accounts: accounts,

@@ -360,6 +360,41 @@ retrying inside the resolver. `ResolverFailureRetirementTests` and
 These regressions establish recovery behavior, not the cause of an unrecorded
 on-device incident.
 
+#### Hero freshness without navigation churn
+
+The visible carousel and its cached candidate pool have separate limits. The
+carousel still defaults to eight slides (configurable from one to twenty).
+Featured and Random request up to 48 raw candidates; each discovery source keeps
+`min(40, max(12, displayedCount * 2))` validated alternatives. Seerr trending
+retrieval paginates with a five-request/100-candidate ceiling instead of silently
+truncating page one. Watched, artwork, library visibility, and deduplication
+rules still apply before a title can become a slide.
+
+`HeroFreshnessSnapshot` ranks discovery candidates by never shown, then least
+recently shown, with stable per-session tie-breaking. Continue Watching and
+Recently Added keep their existing order. Watchlist keeps the viewer's list
+order (new additions normally lead) unless Discovery rotation is enabled.
+Cached alternatives retain their source provenance, allowing even a one-slide
+hero to choose a different discovery title on the next cold launch. Legacy flat
+snapshots retain their order until replaced by a fresh, source-aware pool.
+
+A title counts as seen only after the current slide remains visible for two
+seconds in the active app. Hidden tabs, covered pages, receded/offscreen heroes,
+and in-progress slide transitions do not count. Exposure updates do not publish
+observable Home state; bounded per-profile hashed identity history is written
+off the main actor. Reading, fetching, validating, or caching a title never
+records exposure.
+
+The retained refresh clock requests a full curation after ten minutes while
+Home is visible, or on a stale foreground/Home return. It is independent of the
+content task key, so unchanged rows cannot suppress freshness indefinitely.
+Fresh data is merged without displacing the current slide or restarting its
+trailer; failed refreshes retain the usable cache. Explicit library/source
+eligibility changes override that protection and invalidate stale selections,
+including memoized startup choices. Featured status polling
+refreshes the displayed titles directly, including titles outside trending's
+first page. These policies are shared by tvOS and iOS.
+
 #### Library-channel identifier validation during Home paging
 
 A physical Time Profiler capture of six seconds of requested Continue Watching

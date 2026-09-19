@@ -110,13 +110,17 @@ public enum HeroLiveMerge {
     ///     to show" rather than "a fetch failed". Only the caller can tell those
     ///     apart, and getting it wrong either blanks a good carousel or keeps a
     ///     dead one, so it has no safe default beyond "assume failure".
+    ///   - preservesPinnedItems: a novelty-only background refresh may replace
+    ///     alternatives, but never the slide being viewed, even after many folds.
+    ///     Leave false for authoritative settings/content changes.
     public static func merge(
         showing: [MediaItem],
         fresh: [MediaItem],
         limit: Int,
         pinnedItemIDs: Set<String> = [],
         misses: [String: Int] = [:],
-        freshIsAuthoritative: Bool = false
+        freshIsAuthoritative: Bool = false,
+        preservesPinnedItems: Bool = false
     ) -> Outcome {
         guard limit > 0 else { return Outcome(items: []) }
         guard !showing.isEmpty else {
@@ -138,7 +142,7 @@ public enum HeroLiveMerge {
         // a carousel that never rotates still updates.
         let deferralCeiling = retentionGrace + pinnedDeferralLimit
         let effectivePinned = pinnedItemIDs.filter {
-            (misses[$0] ?? 0) < deferralCeiling
+            preservesPinnedItems || (misses[$0] ?? 0) < deferralCeiling
         }
 
         let freshTokens = fresh.map { HeroDedupe.tokens(for: $0) }
@@ -201,7 +205,8 @@ public enum HeroLiveMerge {
             let ceiling = pinnedItemIDs.contains(item.id)
                 ? deferralCeiling
                 : retentionGrace
-            guard missCount < ceiling else {
+            guard missCount < ceiling
+                    || (preservesPinnedItems && pinnedItemIDs.contains(item.id)) else {
                 retired.append(item.id)
                 continue
             }
