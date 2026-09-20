@@ -1,7 +1,23 @@
 import Foundation
 import CoreModels
+import FeatureHomeCore
 
 public enum PlaybackSourceSelection {
+    /// Detail entry keeps the physical container or deliberately chosen edition.
+    /// Direct playback and generic merged cards retain best-source routing.
+    @MainActor
+    public static func bestDetailItem(
+        _ item: MediaItem,
+        accounts: [ResolvedAccount],
+        identitySources: (MediaItem) -> [MediaSourceRef]
+    ) -> MediaItem {
+        if item.kind == .folder || item.kind == .collection
+            || DetailOpenEnvironment.openingSource(for: item) != nil {
+            return item
+        }
+        return bestPlayItem(item, accounts: accounts, identitySources: identitySources)
+    }
+
     /// Permanent, opt-in tracing of every playback routing decision
     /// (`PLOZZ_TRACE_SOURCE=1`).
     ///

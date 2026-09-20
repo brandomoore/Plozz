@@ -3,6 +3,78 @@ import CoreModels
 @testable import AppRuntime
 
 final class PlaybackSourceSelectionTests: XCTestCase {
+    @MainActor
+    func testDetailEntryKeepsTheIndividuallyListedEdition() {
+        let (clicked, sources) = editionFixture()
+        let selected = PlaybackSourceSelection.bestDetailItem(
+            clicked, accounts: [], identitySources: { _ in sources }
+        )
+        XCTAssertEqual(selected.id, clicked.id)
+        XCTAssertEqual(selected.edition, clicked.edition)
+    }
+
+    @MainActor
+    func testMergedDetailEntryStillUsesTheRecommendedSource() {
+        var (item, sources) = editionFixture()
+        item.isMergedTitle = true
+        let selected = PlaybackSourceSelection.bestDetailItem(
+            item, accounts: [], identitySources: { _ in sources }
+        )
+        XCTAssertEqual(selected.id, "20")
+        XCTAssertEqual(selected.edition, "Extended")
+    }
+
+    @MainActor
+    func testUnlabelledDetailEntryStillUsesTheRecommendedSource() {
+        var (item, sources) = editionFixture()
+        item.edition = nil
+        let selected = PlaybackSourceSelection.bestDetailItem(
+            item, accounts: [], identitySources: { _ in sources }
+        )
+        XCTAssertEqual(selected.id, "20")
+    }
+
+    @MainActor
+    func testDetailContainersKeepTheirPhysicalOwnerWithoutResolvingPlayableSources() {
+        for kind in [MediaItemKind.folder, .collection] {
+            let item = MediaItem(id: "container", title: "Container", kind: kind, sourceAccountID: "owner")
+            let selected = PlaybackSourceSelection.bestDetailItem(
+                item, accounts: [], identitySources: { _ in
+                    XCTFail("A container must not enter title/playback source ranking.")
+                    return []
+                }
+            )
+            XCTAssertEqual(selected, item)
+        }
+    }
+
+    func testDirectPlaybackRecommendationRemainsIndependentOfDetailEditionIntent() {
+        let (item, sources) = editionFixture()
+        let selected = PlaybackSourceSelection.bestPlayItem(
+            item, accounts: [], identitySources: { _ in sources }
+        )
+        XCTAssertEqual(selected.id, "20")
+    }
+
+    private func editionFixture() -> (MediaItem, [MediaSourceRef]) {
+        let item = MediaItem(
+            id: "10", title: "Movie", kind: .movie,
+            sourceAccountID: "plex", edition: "Theatrical",
+            versions: [MediaVersion(id: "original-file", height: 480, videoCodec: "h264")]
+        )
+        return (item, [
+            MediaSourceRef(
+                accountID: "plex", itemID: "10", kind: .movie,
+                versions: item.versions, edition: "Theatrical"
+            ),
+            MediaSourceRef(
+                accountID: "plex", itemID: "20", kind: .movie,
+                versions: [MediaVersion(id: "extended-file", height: 1080, videoCodec: "h264")],
+                edition: "Extended"
+            )
+        ])
+    }
+
     func testPlexDiscoverItemRetargetsToIndexedLocalCopy() {
         let discoverID = "5d7768881999bc0020dc8374"
         let item = MediaItem(

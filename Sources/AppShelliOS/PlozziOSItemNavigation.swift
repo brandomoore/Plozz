@@ -134,10 +134,7 @@ private struct PlozziOSItemPage: View {
     let item: MediaItem
 
     var body: some View {
-        // Filesystem folders and server collections retain their physical
-        // identity; playable titles keep the normal best-source detail routing.
-        let target = item.kind == .folder || item.kind == .collection
-            ? item : PlaybackSourceSelection.bestPlayItem(
+        let target = PlaybackSourceSelection.bestDetailItem(
             item,
             accounts: appModel.accountsProviders.resolvedActiveAccounts,
             identitySources: appModel.identityIndex.identitySourcesProvider

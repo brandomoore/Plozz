@@ -2430,11 +2430,12 @@ private struct PlozziOSHomeMediaCard: View {
     @Environment(\.plozziOSRailPlay) private var railPlay
 
     var body: some View {
-        let detailItem = PlaybackSourceSelection.bestPlayItem(
-            item,
-            accounts: appModel.accountsProviders.resolvedActiveAccounts,
-            identitySources: appModel.identityIndex.identitySourcesProvider
-        )
+        let playsDirectly = interaction == .play && railPlay != nil && item.isPlayableNow
+        let accounts = appModel.accountsProviders.resolvedActiveAccounts
+        let identitySources = appModel.identityIndex.identitySourcesProvider
+        let detailItem = playsDirectly
+            ? PlaybackSourceSelection.bestPlayItem(item, accounts: accounts, identitySources: identitySources)
+            : PlaybackSourceSelection.bestDetailItem(item, accounts: accounts, identitySources: identitySources)
         let detailProvider = appModel.provider(for: detailItem) ?? provider
         Group {
             // A Continue Watching card resumes; every other rail opens detail.
@@ -2442,7 +2443,7 @@ private struct PlozziOSHomeMediaCard: View {
             // and an item that is actually playable — a discovery/request stub has
             // nothing to run — so both fall back to the detail push rather than
             // opening a broken player.
-            if interaction == .play, let railPlay, item.isPlayableNow {
+            if playsDirectly, let railPlay {
                 Button { railPlay(detailItem) } label: { card }
                     .buttonStyle(.plain)
             } else if let detailProvider {

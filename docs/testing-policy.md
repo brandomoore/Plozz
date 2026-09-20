@@ -739,6 +739,13 @@ is not an explicit edition choice and retains automatic source recommendations.
 Both use the same combined detail page and version menu; explicit menu choices
 can still switch to another edition or file.
 
+Before opening detail, iOS Home cards and context-menu navigation use
+`PlaybackSourceSelection.bestDetailItem`. Applying playback ranking first would
+replace the clicked edition before the shared detail policy could preserve it.
+Direct-play rows still use `bestPlayItem`; merged and unlabelled detail cards
+still receive normal recommendations. `PlaybackSourceSelectionTests` covers
+these entry-point distinctions and physical collection/folder identity.
+
 Provider edition labels survive single-file synthesis and persisted metadata.
 Picker identities qualify the account, backing item, and intrinsic media ID;
 playback receives the owning provider item and its original media ID, never a
