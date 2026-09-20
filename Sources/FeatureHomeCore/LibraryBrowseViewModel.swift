@@ -61,8 +61,9 @@ public final class LibraryBrowseViewModel {
             && (provider as? any CapabilityReporting)?.capabilities.contains(.libraryCollections) == true
     }
 
-    /// Cell callbacks from a discarded mode/sort must not affect the new grid.
-    public var contentGeneration: Int { loadGeneration }
+    /// Invalidates cells only when replacing the browsing destination/order.
+    /// Background catalog refreshes retain this generation and existing slots.
+    public private(set) var contentGeneration = 0
 
     public var emptyMessage: LocalizedStringResource {
         if browseScope == .collectionMembers { return "This collection is empty." }
@@ -158,7 +159,8 @@ public final class LibraryBrowseViewModel {
     /// Last index whose cell appeared. Large jumps imply a fast scroll and trigger
     /// deeper look-ahead prefetching.
     private var lastAppearedIndex: Int?
-    /// Monotonic token bumped on every `loadFirstPage`. A rapid sort toggle (or a
+    /// Request token for first-page loads and background refreshes, separate from
+    /// the still-visible grid's generation. A rapid sort toggle (or a
     /// container change) can leave two first-page loads in flight on a slow/large
     /// library; each runs as its own unstructured `Task`, so neither cancels the
     /// other. Capturing the generation at request time and re-checking it after the
@@ -224,7 +226,7 @@ public final class LibraryBrowseViewModel {
     /// Called when a cell leaves the visible viewport. Used to cancel stale,
     /// off-screen page loads so bandwidth/CPU goes to visible content.
     public func itemDisappeared(at index: Int, generation: Int? = nil) {
-        guard index >= 0, generation == nil || generation == loadGeneration else { return }
+        guard index >= 0, generation == nil || generation == contentGeneration else { return }
         let page = pageForIndex(index)
         guard visibleIndices.remove(index) != nil else { return }
         updateTopVisibleIndex()
@@ -270,6 +272,7 @@ public final class LibraryBrowseViewModel {
     /// Loads (or reloads) the first page and sizes the grid to the full library.
     public func loadFirstPage() async {
         loadGeneration += 1
+        contentGeneration += 1
         let generation = loadGeneration
         let mode = contentMode
         let request = pageRequest(forPage: 0)
@@ -336,7 +339,6 @@ public final class LibraryBrowseViewModel {
         let generation = loadGeneration
         let mode = contentMode
         let sortAtRequest = sort
-        let visiblePages = Set(visibleIndices.map(pageForIndex)).subtracting([0])
         do {
             let firstPage = try await Self.fetchPage(
                 provider: provider,
@@ -348,11 +350,13 @@ public final class LibraryBrowseViewModel {
                 priority: .userInitiated
             )
             guard !Task.isCancelled, generation == loadGeneration else { return }
-            var refreshed: [(index: Int, page: MediaPage)] = [(0, firstPage)]
-            // Local SQLite reads are fast; fetch every currently-visible page before
-            // replacing slots so focused content never turns into a placeholder.
-            for pageIndex in visiblePages.sorted()
-                where startIndex(forPage: pageIndex) < firstPage.totalCount {
+            var refreshed: [Int: MediaPage] = [0: firstPage]
+            // The viewport can move while the refresh awaits a page. Include the
+            // latest visible pages before committing so focused slots stay loaded.
+            while let pageIndex = Set(visibleIndices.map(pageForIndex))
+                .subtracting(refreshed.keys)
+                .filter({ startIndex(forPage: $0) < firstPage.totalCount })
+                .min() {
                 let page = try await Self.fetchPage(
                     provider: provider,
                     containerID: containerID,
@@ -367,7 +371,7 @@ public final class LibraryBrowseViewModel {
                     priority: .userInitiated
                 )
                 guard !Task.isCancelled, generation == loadGeneration else { return }
-                refreshed.append((pageIndex, page))
+                refreshed[pageIndex] = page
             }
             guard !Task.isCancelled, generation == loadGeneration else { return }
             cancelAllPageLoads()
@@ -376,10 +380,18 @@ public final class LibraryBrowseViewModel {
             failedPages = []
             pageError = nil
             totalCount = firstPage.totalCount
-            loaded = Self.makeSlots(count: firstPage.totalCount)
-            for entry in refreshed {
-                fill(entry.page)
-                pagesLoaded.insert(entry.index)
+            resize(to: firstPage.totalCount)
+            // Native cells observe these objects directly. Replacing the array
+            // with new boxes would strand them on the previous catalog snapshot.
+            let refreshedIndices = Set(refreshed.values.flatMap { page in
+                page.startIndex..<(page.startIndex + page.items.count)
+            })
+            for (index, slot) in loaded.enumerated() where !refreshedIndices.contains(index) {
+                slot.item = nil
+            }
+            for (index, page) in refreshed.sorted(by: { $0.key < $1.key }) {
+                fill(page)
+                pagesLoaded.insert(index)
             }
             state = firstPage.totalCount == 0 ? .empty : .loaded(firstPage.totalCount)
             letterIndexTask?.cancel()
@@ -422,13 +434,13 @@ public final class LibraryBrowseViewModel {
             return
         }
         let sortAtRequest = sort
-        let generation = loadGeneration
+        let generation = contentGeneration
         letterIndexTask = Task { [weak self] in
             guard let self else { return }
             let entries = (try? await self.provider.letterIndex(
                 in: self.containerID, kind: self.containerKind, sort: sortAtRequest
             )) ?? []
-            guard !Task.isCancelled, generation == self.loadGeneration,
+            guard !Task.isCancelled, generation == self.contentGeneration,
                   sortAtRequest == self.sort else { return }
             self.letterEntries = entries
         }
@@ -469,18 +481,18 @@ public final class LibraryBrowseViewModel {
     /// page) so content arrives just ahead of the user's scroll.
     public func itemAppeared(at index: Int, generation: Int? = nil) async {
         guard !Task.isCancelled, state.value != nil, index >= 0, index < totalCount,
-              generation == nil || generation == loadGeneration else { return }
-        let generation = loadGeneration
+              generation == nil || generation == contentGeneration else { return }
+        let generation = contentGeneration
         let page = pageForIndex(index)
         if visibleIndices.insert(index).inserted {
             visibleCellCountsByPage[page, default: 0] += 1
             updateTopVisibleIndex()
         }
         await noteInteractiveBrowseActivity()
-        guard !Task.isCancelled, generation == loadGeneration,
+        guard !Task.isCancelled, generation == contentGeneration,
               visibleIndices.contains(index) else { return }
         await ensurePageLoaded(page)
-        guard !Task.isCancelled, generation == loadGeneration else { return }
+        guard !Task.isCancelled, generation == contentGeneration else { return }
         let lookAhead = prefetchLookAheadPages(for: index, inPage: page)
         if lookAhead > 0 {
             for offset in 1...lookAhead {
@@ -540,9 +552,9 @@ public final class LibraryBrowseViewModel {
     }
 
     public func retryFailedPages() async {
-        let generation = loadGeneration
+        let generation = contentGeneration
         for page in failedPages.sorted() {
-            guard !Task.isCancelled, generation == loadGeneration else { return }
+            guard !Task.isCancelled, generation == contentGeneration else { return }
             await ensurePageLoaded(page)
         }
     }
@@ -638,7 +650,7 @@ public final class LibraryBrowseViewModel {
 
         pagesInFlight.insert(page)
         let request = pageRequest(forPage: page)
-        let generation = loadGeneration
+        let generation = contentGeneration
         let mode = contentMode
         let requestID = UUID()
         pageRequestIDs[page] = requestID
@@ -661,7 +673,7 @@ public final class LibraryBrowseViewModel {
         defer {
             if pageRequestIDs[page] == requestID { finishPageLoad(page) }
         }
-        guard !Task.isCancelled, generation == loadGeneration else { return }
+        guard !Task.isCancelled, generation == contentGeneration else { return }
         do {
             let response = try await Self.fetchPage(
                 provider: provider,
@@ -672,7 +684,7 @@ public final class LibraryBrowseViewModel {
                 request: request,
                 priority: priority
             )
-            guard !Task.isCancelled, generation == loadGeneration else { return }
+            guard !Task.isCancelled, generation == contentGeneration else { return }
             if response.totalCount != totalCount {
                 totalCount = response.totalCount
                 resize(to: response.totalCount)
@@ -692,12 +704,12 @@ public final class LibraryBrowseViewModel {
         } catch is CancellationError {
             return
         } catch let error as AppError {
-            guard !Task.isCancelled, generation == loadGeneration else { return }
+            guard !Task.isCancelled, generation == contentGeneration else { return }
             PlozzLog.app.error("LibraryBrowse: page \(page) failed for \(containerID): \(String(describing: error))")
             failedPages.insert(page)
             pageError = error
         } catch {
-            guard !Task.isCancelled, generation == loadGeneration else { return }
+            guard !Task.isCancelled, generation == contentGeneration else { return }
             PlozzLog.app.error("LibraryBrowse: page \(page) failed for \(containerID): \(String(describing: error))")
             failedPages.insert(page)
             pageError = .unknown("")
@@ -837,6 +849,9 @@ public final class LibraryBrowseViewModel {
             loaded.append(contentsOf: Self.makeSlots(count: count - loaded.count))
         } else if count < loaded.count {
             loaded.removeLast(loaded.count - count)
+            for index in visibleIndices.filter({ $0 >= count }) {
+                itemDisappeared(at: index, generation: contentGeneration)
+            }
         }
     }
 }

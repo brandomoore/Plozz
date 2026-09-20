@@ -111,7 +111,11 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
         header: AnyView, hidesScrollIndicator: Bool,
         onSelect: @escaping (MediaItem) -> Void, onLoaded: @escaping (Int) -> Void
     ) {
-        let reset = self.model !== model || self.generation != generation || self.total != total
+        let reset = self.model !== model || self.generation != generation
+        let previousCount = self.total
+        if !reset, previousCount != total {
+            collection.layoutIfNeeded()
+        }
         if reset { stopObserving() }
         self.model = model
         self.total = total
@@ -144,6 +148,20 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
             collection.reloadData()
             collection.setContentOffset(.zero, animated: false)
         } else {
+            if previousCount != total {
+                if let lastFocusedIndex, lastFocusedIndex.item >= total {
+                    self.lastFocusedIndex = total > 0 ? IndexPath(item: total - 1, section: 0) : nil
+                }
+                UIView.performWithoutAnimation {
+                    collection.performBatchUpdates {
+                        if total > previousCount {
+                            collection.insertItems(at: (previousCount..<total).map { IndexPath(item: $0, section: 0) })
+                        } else {
+                            collection.deleteItems(at: (total..<previousCount).map { IndexPath(item: $0, section: 0) })
+                        }
+                    }
+                }
+            }
             for cell in collection.visibleCells {
                 guard let cell = cell as? NativeTVLibraryCell else { continue }
                 cell.configure(item: cell.item, spoilerSettings: spoilerSettings, environment: environment)

@@ -657,6 +657,19 @@ and compares the detail-transition source rectangle with those pixels. Ordinary
 non-grid native lockup controls are unchanged. These simulator checks do not
 establish physical touchpad behavior or Apple TV frame-time performance.
 
+`NativeLibraryRefreshHostedTests` covers count corrections while scrolled,
+same-count catalog updates, cell/selection identity, and retained native focus.
+Count-only changes insert/remove tail slots without resetting the collection.
+Catalog refreshes update existing `LibrarySlot` objects in place, including the
+pages visible when the refresh commits; they must not strand cell observers on
+discarded objects.
+
+The displayed grid's `contentGeneration` is separate from the first-page/refresh
+request token. Only replacing the browsing order invalidates cell callbacks.
+Failed background refreshes leave existing callbacks and in-flight page loads
+usable, while successful refreshes cancel old page loads before publishing new
+slot contents. Mode/sort tests still require retired callbacks to be rejected.
+
 ## Extras artwork
 
 Extras rails on tvOS and iOS opt into the shared `CardArtworkPolicy.extra`.
