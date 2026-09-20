@@ -28,11 +28,13 @@ struct PlozziOSLibraryRoute: Hashable, Identifiable {
     var accountID: String?
     var synthesizedName: MediaLibrary.SynthesizedName?
     var collectionSourceTitle: String?
+    var browseScope: LibraryBrowseScope
 
     /// Stable across the value's lifetime so it can also drive a
     /// `navigationDestination(item:)` push (the screenshot router's path). The
-    /// server-scoped container id is already unique per library.
-    var id: String { "\(accountID ?? "")#\(containerID)" }
+    /// Scope distinguishes a collection-list library from collection membership,
+    /// even if a server happens to reuse the same container id for both.
+    var id: String { "\(accountID ?? "")#\(browseScope.rawValue)#\(containerID)" }
 
     init(library: MediaLibrary, accountID: String?) {
         self.title = library.title
@@ -41,6 +43,17 @@ struct PlozziOSLibraryRoute: Hashable, Identifiable {
         self.accountID = accountID
         self.synthesizedName = library.synthesizedName
         self.collectionSourceTitle = library.collectionSourceTitle
+        self.browseScope = .library
+    }
+
+    init(collection: CollectionBrowseRoute) {
+        title = collection.title
+        containerID = collection.collectionID
+        containerKind = .collection
+        accountID = collection.accountID
+        synthesizedName = nil
+        collectionSourceTitle = nil
+        browseScope = .collectionMembers
     }
 }
 
@@ -82,7 +95,8 @@ struct PlozziOSLibraryDestinationView: View {
                     provider: provider,
                     containerID: route.containerID,
                     containerKind: route.containerKind,
-                    sourceAccountID: route.accountID
+                    sourceAccountID: route.accountID,
+                    browseScope: route.browseScope
                 ),
                 title: title,
                 provider: provider,

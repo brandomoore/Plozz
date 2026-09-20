@@ -63,7 +63,15 @@ struct PlozziOSItemDetailView: View {
 
     @ViewBuilder
     private var detailBody: some View {
-        if let library = MediaFolderNavigation.library(
+        if let collection = CollectionBrowseRoute(
+            item: item,
+            fallbackAccountID: originSourceAccountID ?? provider.session.server.id
+        ) {
+            PlozziOSLibraryDestinationView(
+                appModel: appModel,
+                route: PlozziOSLibraryRoute(collection: collection)
+            )
+        } else if let library = MediaFolderNavigation.library(
             for: item,
             providerKind: provider.kind,
             sourceAccountID: originSourceAccountID ?? item.sourceAccountID ?? provider.session.server.id
@@ -517,16 +525,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
                         },
                         onHeroShowsSeriesChange: { seriesHeroShowsSeries = $0 },
                         onPlay: play
-                    )
-                }
-
-                if detail.item.kind == .collection, !isDiscoveryItem {
-                    PlozziOSCollectionMembersSection(
-                        items: detail.children,
-                        state: detail.collectionMembersState ?? .idle,
-                        inset: pageInset,
-                        onSelect: { itemNavigator?($0) },
-                        onRetry: { Task { await viewModel.retryCollectionMembers() } }
                     )
                 }
 

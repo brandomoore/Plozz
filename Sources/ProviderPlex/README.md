@@ -52,8 +52,9 @@ Collection membership
 uses `MediaProvider.collectionMembers(of:page:)`, backed by paged
 `/library/metadata/{ratingKey}/children`, with no type or sort override. That same
 endpoint serves static and smart collections and preserves their server order.
-Detail loading reads bounded pages, publishes only a complete result, and exposes
-failures separately from an empty collection with a retry action on both platforms.
+Both platforms browse members in the existing vertical library grid, fetching
+bounded pages on demand rather than loading a whole collection before first paint.
+Failures remain separate from empty results and expose retry.
 
 Protocol references: [Plex's official API and response customization](https://developer.plex.tv/pms/)
 documents the dedicated collection endpoint and `MediaContainer.Metadata` JSON

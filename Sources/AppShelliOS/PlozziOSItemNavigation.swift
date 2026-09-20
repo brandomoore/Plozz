@@ -134,10 +134,10 @@ private struct PlozziOSItemPage: View {
     let item: MediaItem
 
     var body: some View {
-        // Resolve against the best server for this title, the same way a tapped
-        // card does, so a navigated push is not pinned to whichever server
-        // happened to back the row it came from.
-        let target = item.kind == .folder ? item : PlaybackSourceSelection.bestPlayItem(
+        // Filesystem folders and server collections retain their physical
+        // identity; playable titles keep the normal best-source detail routing.
+        let target = item.kind == .folder || item.kind == .collection
+            ? item : PlaybackSourceSelection.bestPlayItem(
             item,
             accounts: appModel.accountsProviders.resolvedActiveAccounts,
             identitySources: appModel.identityIndex.identitySourcesProvider

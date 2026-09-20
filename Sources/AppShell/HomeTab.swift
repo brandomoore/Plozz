@@ -1067,7 +1067,23 @@ struct HomeTab: View {
     @ViewBuilder
     private func itemDetail(for item: MediaItem, libraryOrigin: String?) -> some View {
         let provider = resolveProvider(libraryOrigin ?? item.sourceAccountID, in: accounts)
-        if let library = MediaFolderNavigation.library(
+        if let route = CollectionBrowseRoute(
+            item: item,
+            fallbackAccountID: libraryOrigin ?? provider.session.server.id
+        ) {
+            LibraryBrowseView(
+                viewModel: LibraryBrowseViewModel(
+                    provider: resolveProvider(route.accountID, in: accounts),
+                    containerID: route.collectionID,
+                    containerKind: .collection,
+                    sourceAccountID: route.accountID,
+                    browseScope: .collectionMembers
+                ),
+                title: Text(verbatim: route.title),
+                spoilerSettings: spoilerSettings,
+                onSelect: { navigate($0, libraryOrigin: route.accountID) }
+            )
+        } else if let library = MediaFolderNavigation.library(
             for: item,
             providerKind: provider.kind,
             sourceAccountID: libraryOrigin ?? item.sourceAccountID ?? provider.session.server.id

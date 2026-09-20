@@ -15,6 +15,11 @@ public enum LibraryContentMode: String, CaseIterable, Sendable {
     }
 }
 
+public enum LibraryBrowseScope: String, Hashable, Sendable {
+    case library
+    case collectionMembers
+}
+
 /// Drives a *sparse* library grid: it loads the first page to learn the
 /// library's total size, then lazily fetches each further page only when a cell
 /// that belongs to it scrolls into view. The grid is sized to the full
@@ -52,7 +57,7 @@ public final class LibraryBrowseViewModel {
     public private(set) var contentMode: LibraryContentMode = .titles
 
     public var supportsCollections: Bool {
-        (containerKind == .movie || containerKind == .series)
+        browseScope == .library && (containerKind == .movie || containerKind == .series)
             && (provider as? any CapabilityReporting)?.capabilities.contains(.libraryCollections) == true
     }
 
@@ -60,12 +65,14 @@ public final class LibraryBrowseViewModel {
     public var contentGeneration: Int { loadGeneration }
 
     public var emptyMessage: LocalizedStringResource {
-        contentMode == .collections ? "No collections in this library." : "This library is empty."
+        if browseScope == .collectionMembers { return "This collection is empty." }
+        return contentMode == .collections ? "No collections in this library." : "This library is empty."
     }
 
     private let provider: any MediaProvider
     private let containerID: String
     private let containerKind: MediaItemKind
+    public let browseScope: LibraryBrowseScope
     private let firstPageSize: Int
     private let subsequentPageSize: Int
     private let defaults: UserDefaults
@@ -93,6 +100,7 @@ public final class LibraryBrowseViewModel {
     public var sourceServerID: String { provider.session.server.id }
 
     public var availableSortFields: [SortField] {
+        if browseScope == .collectionMembers { return [] }
         if browseKind == .collection { return [.name, .dateAdded] }
         return (provider as? any MediaSortFieldProviding)?
             .supportedSortFields(in: containerID, kind: containerKind)
@@ -108,6 +116,7 @@ public final class LibraryBrowseViewModel {
     }
 
     public var fileBrowserLibrary: MediaLibrary? {
+        guard browseScope == .library else { return nil }
         guard let browser = provider as? any MediaFileBrowsing else { return nil }
         var library = browser.fileBrowserLibrary
         guard library.id != containerID else { return nil }
@@ -172,18 +181,22 @@ public final class LibraryBrowseViewModel {
         pageSize: Int = PageRequest.defaultLimit,
         defaults: UserDefaults = .standard,
         sortKeySuffix: String? = nil,
-        sourceAccountID: String? = nil
+        sourceAccountID: String? = nil,
+        browseScope: LibraryBrowseScope = .library
     ) {
         self.provider = provider
         self.containerID = containerID
         self.containerKind = containerKind
+        self.browseScope = browseScope
         let tuned = Self.tunedPageSizes(for: pageSize)
         self.firstPageSize = tuned.first
         self.subsequentPageSize = tuned.subsequent
         self.defaults = defaults
         self.sortKeySuffix = sortKeySuffix
         self.sourceAccountID = sourceAccountID
-        self.sort = Self.loadSort(for: containerKind, suffix: sortKeySuffix, from: defaults)
+        self.sort = browseScope == .collectionMembers
+            ? .default
+            : Self.loadSort(for: containerKind, suffix: sortKeySuffix, from: defaults)
         if !availableSortFields.contains(sort.field) {
             let field = availableSortFields.first ?? .name
             self.sort = CoreModels.SortDescriptor(field: field, direction: field.defaultDirection)
@@ -284,6 +297,7 @@ public final class LibraryBrowseViewModel {
                 provider: provider,
                 containerID: containerID,
                 containerKind: containerKind,
+                browseScope: browseScope,
                 contentMode: mode,
                 request: request,
                 priority: .userInitiated
@@ -328,6 +342,7 @@ public final class LibraryBrowseViewModel {
                 provider: provider,
                 containerID: containerID,
                 containerKind: containerKind,
+                browseScope: browseScope,
                 contentMode: mode,
                 request: pageRequest(forPage: 0),
                 priority: .userInitiated
@@ -342,6 +357,7 @@ public final class LibraryBrowseViewModel {
                     provider: provider,
                     containerID: containerID,
                     containerKind: containerKind,
+                    browseScope: browseScope,
                     contentMode: mode,
                     request: PageRequest(
                         startIndex: startIndex(forPage: pageIndex),
@@ -400,7 +416,7 @@ public final class LibraryBrowseViewModel {
     private func loadLetterIndexIfNeeded() {
         letterIndexTask?.cancel()
         // A library's title-letter offsets do not describe its scoped collections.
-        guard contentMode == .titles,
+        guard browseScope == .library, contentMode == .titles,
               sort.field == .name, totalCount >= Self.minItemsForLetterRail else {
             letterEntries = []
             return
@@ -651,6 +667,7 @@ public final class LibraryBrowseViewModel {
                 provider: provider,
                 containerID: containerID,
                 containerKind: containerKind,
+                browseScope: browseScope,
                 contentMode: mode,
                 request: request,
                 priority: priority
@@ -732,11 +749,17 @@ public final class LibraryBrowseViewModel {
         provider: any MediaProvider,
         containerID: String,
         containerKind: MediaItemKind,
+        browseScope: LibraryBrowseScope,
         contentMode: LibraryContentMode,
         request: PageRequest,
         priority: TaskPriority
     ) async throws -> MediaPage {
         let task = Task.detached(priority: priority) {
+            if browseScope == .collectionMembers {
+                return try await fetchCollectionMembers(
+                    provider: provider, collectionID: containerID, request: request
+                )
+            }
             if contentMode == .collections {
                 return try await provider.collections(in: containerID, page: request)
             }
@@ -747,6 +770,34 @@ public final class LibraryBrowseViewModel {
         } onCancel: {
             task.cancel()
         }
+    }
+
+    /// Some servers cap membership pages below the requested sparse-grid span.
+    /// Fill that span in server order rather than leaving its tail as permanent
+    /// placeholders after marking the page loaded.
+    private nonisolated static func fetchCollectionMembers(
+        provider: any MediaProvider, collectionID: String, request: PageRequest
+    ) async throws -> MediaPage {
+        var items: [MediaItem] = []
+        var totalCount: Int?
+        while items.count < request.limit {
+            try Task.checkCancellation()
+            let start = request.startIndex + items.count
+            if let totalCount, start >= totalCount { break }
+            let page = try await provider.collectionMembers(
+                of: collectionID,
+                page: PageRequest(startIndex: start, limit: request.limit - items.count)
+            )
+            guard page.startIndex == start, page.totalCount >= 0,
+                  page.items.count <= request.limit - items.count,
+                  !page.items.isEmpty || start >= page.totalCount else {
+                throw AppError.invalidResponse
+            }
+            totalCount = page.totalCount
+            items.append(contentsOf: page.items)
+            if page.items.isEmpty { break }
+        }
+        return MediaPage(items: items, startIndex: request.startIndex, totalCount: totalCount ?? 0)
     }
 
     /// Writes a fetched page's items into their absolute slots. Mutates each

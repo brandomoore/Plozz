@@ -640,9 +640,12 @@ their own primary image paths before the presentation policy selects them.
 
 ## Server-defined collections
 
-Movie/TV libraries expose the same Titles / Collections switch for Plex,
-Jellyfin, and Emby. Collections reuse the existing grid, detail destination, and
-member navigation. Native Jellyfin/Emby BoxSet roots remain browseable; Plozz
+Movie/TV libraries expose the same horizontal Titles / Collections control for
+Plex, Jellyfin, and Emby. Both options stay visible, selection stays distinct
+from focus, and moving the remote focus alone does not switch the page.
+Opening a collection uses the same full vertical poster grid as library/folder
+browsing, not a detail hero with a horizontal contents rail.
+Native Jellyfin/Emby BoxSet roots remain browseable; Plozz
 does not add synthetic Collections libraries. Previously cached synthetic Plex
 shortcuts are filtered on read and future writes without clearing other Home
 or navigation data.
@@ -656,10 +659,13 @@ separate title/collection buffers and forward each original library ID. A failed
 collection source remains a retryable error rather than an empty or partial
 success.
 
-`MediaProvider.collectionMembers` preserves server ordering and pages complete
-membership. Detail loading distinguishes an empty collection from a failed or
-incomplete request, supports retry, and rejects repeated pages or stale results.
-Both shells expose the same member state. Server/account ownership stays attached
+`MediaProvider.collectionMembers` preserves server ordering. A collection-member
+browser loads its first page and fetches later pages as the grid needs them;
+it must not fetch the entire collection before displaying its first posters.
+Member scope is explicit and distinct from a native Collections library root.
+Unavailable sorting and title-letter offsets must not be offered for a
+server-ordered member list. Both shells distinguish loading, empty and failed
+states and retain retry, navigation and scroll restoration. Server/account ownership stays attached
 to every item; a collection's external catalogue ID does not make another user's
 collection an interchangeable playback source.
 

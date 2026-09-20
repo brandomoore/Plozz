@@ -681,6 +681,35 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         XCTAssertTrue(fixture.model.navigationAnimations.contains(true))
     }
 
+    func testCollectionAndFolderBrowseNeverInstallDetailNavigationGuards() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let chrome = NavigationChromeModel()
+        let token = UUID()
+        DetailTransitionNavigation.registerChrome(chrome, in: fixture.window, token: token)
+        defer { DetailTransitionNavigation.unregisterChrome(in: fixture.window, token: token) }
+
+        for kind: MediaItemKind in [.folder, .collection] {
+            let item = MediaItem(id: "browse-\(kind.rawValue)", title: "Browse", kind: kind)
+            fixture.model.source.prepare(for: item)
+            var navigated = false
+            withCinematicDetailNavigation(for: item) {
+                navigated = true
+                chrome.setStackDepth(1)
+            }
+            XCTAssertTrue(navigated)
+            let pending = DetailTransitionNavigation.take(in: fixture.window)
+            XCTAssertNil(pending, "Library-style browsing has no cinematic destination to consume an entrance.")
+            pending?.discard()
+            XCTAssertTrue(overlays(in: fixture.window).isEmpty)
+            XCTAssertTrue(inputGuards(in: fixture.window).isEmpty)
+            XCTAssertFalse(chrome.transitionSuppressesFocus)
+            XCTAssertTrue(chrome.isChromeHidden, "Only the normal pushed-stack depth hides the rail.")
+            chrome.setStackDepth(0)
+            XCTAssertFalse(chrome.isChromeHidden, "Back must not leave a detail-presentation token behind.")
+        }
+    }
+
     func testMemoryPressureReleasesTheReturnBackdropWithoutBlockingBack() async throws {
         final class WeakSurface {
             weak var value: DetailTransitionSurface?

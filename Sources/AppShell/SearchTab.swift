@@ -157,7 +157,22 @@ struct SearchTab: View {
             )
             .navigationDestination(for: MediaItem.self) { item in
                 let provider = resolveProvider(item.sourceAccountID, in: accounts)
-                if let library = MediaFolderNavigation.library(
+                if let route = CollectionBrowseRoute(
+                    item: item, fallbackAccountID: provider.session.server.id
+                ) {
+                    LibraryBrowseView(
+                        viewModel: LibraryBrowseViewModel(
+                            provider: provider,
+                            containerID: route.collectionID,
+                            containerKind: .collection,
+                            sourceAccountID: route.accountID,
+                            browseScope: .collectionMembers
+                        ),
+                        title: Text(verbatim: route.title),
+                        spoilerSettings: spoilerSettings,
+                        onSelect: { open($0) }
+                    )
+                } else if let library = MediaFolderNavigation.library(
                     for: item,
                     providerKind: provider.kind,
                     sourceAccountID: item.sourceAccountID ?? provider.session.server.id

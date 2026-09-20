@@ -77,8 +77,8 @@ public struct LibraryBrowseView: View {
             emptyMessage: viewModel.emptyMessage,
             onRetry: { Task { await viewModel.loadFirstPage() } },
             loadingContent: {
-                if viewModel.isMediaShare {
-                    ShareLibraryLoadingView()
+                if viewModel.isMediaShare || viewModel.browseScope == .collectionMembers {
+                    LibraryBrowseLoadingView()
                 } else {
                     LoadingMessagesView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -88,8 +88,9 @@ public struct LibraryBrowseView: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-                        header
-                            .id("library-browse-header")
+                        if !viewModel.supportsCollections {
+                            header
+                        }
                         scanBanner
                         LazyVGrid(columns: columns, spacing: metrics.gridSpacing) {
                             ForEach(0..<total, id: \.self) { index in
@@ -162,18 +163,16 @@ public struct LibraryBrowseView: View {
                 .onChange(of: viewModel.showsLetterRail) { _, shows in
                     if !shows { railHasRevealed = false }
                 }
-                .onChange(of: viewModel.contentMode) { _, _ in
-                    proxy.scrollTo("library-browse-header", anchor: .top)
-                }
             }
+            .id(viewModel.contentMode)
         }
         // Browse is a full-screen sub-page: hide the top tab bar so it reads as a
         // dedicated destination with no navigation chrome pinned at the top.
         .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .top) {
-            // Keep the mode menu reachable even when collections are empty,
-            // unavailable, or still loading. Loaded grids retain their header.
-            if viewModel.supportsCollections, viewModel.state.value == nil {
+        .safeAreaInset(edge: .top, spacing: 0) {
+            // The segment buttons keep the same identity and focus while the
+            // body reloads. Other libraries retain their scrolling header.
+            if viewModel.supportsCollections || viewModel.state.value == nil {
                 header
                     .padding(.top, PlozzTheme.Spacing.large)
             }
@@ -256,9 +255,7 @@ public struct LibraryBrowseView: View {
     /// actually flying through the library rather than sitting at the top.
     private var railRevealThreshold: Int { max(1, metrics.posterColumns.count) * 2 }
 
-    /// The library title and Sort control. It scrolls *with* the grid (it is the
-    /// first row of the scroll content), so nothing is pinned to the top of the
-    /// sub-page.
+    /// Libraries with content modes keep this header visible across state changes.
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             title
@@ -270,7 +267,9 @@ public struct LibraryBrowseView: View {
             if viewModel.supportsCollections {
                 LibraryContentModeControl(viewModel: viewModel)
             }
-            sortControl
+            if !viewModel.availableSortFields.isEmpty {
+                sortControl
+            }
         }
 
         .padding(.leading, contentLeadingPadding)
@@ -376,25 +375,75 @@ public struct LibraryBrowseView: View {
 
 private struct LibraryContentModeControl: View {
     let viewModel: LibraryBrowseViewModel
+    @Environment(\.themePalette) private var palette
 
     var body: some View {
-        Menu {
-            Picker("Show", selection: Binding(
-                get: { viewModel.contentMode },
-                set: { mode in Task { await viewModel.setContentMode(mode) } }
-            )) {
-                ForEach(LibraryContentMode.allCases, id: \.self) { mode in
-                    Text(mode.displayName).tag(mode)
+        HStack(spacing: 6) {
+            ForEach(LibraryContentMode.allCases, id: \.self) { mode in
+                let isSelected = viewModel.contentMode == mode
+                Button {
+                    Task { await viewModel.setContentMode(mode) }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(mode.displayName)
+                            .fontWeight(.semibold)
+                            .lineLimit(1)
+                        Image(systemName: "checkmark")
+                            .font(.subheadline.weight(.bold))
+                            .opacity(isSelected ? 1 : 0)
+                            .accessibilityHidden(true)
+                    }
                 }
-            }
-        } label: {
-            Label {
-                Text(viewModel.contentMode.displayName)
-            } icon: {
-                Image(systemName: "rectangle.stack")
+                .buttonStyle(LibraryContentSegmentStyle(isSelected: isSelected))
+                .accessibilityValue(isSelected ? Text("Selected") : Text(verbatim: ""))
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .accessibilityIdentifier("library-content-mode-\(mode.rawValue)")
             }
         }
+        .padding(8)
+        .background(Capsule().fill(palette.cardSurface.opacity(0.45)))
+        .overlay(Capsule().strokeBorder(palette.cardBorder.opacity(0.8), lineWidth: 1))
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityLabel("Show")
         .accessibilityIdentifier("library-content-mode")
+    }
+}
+
+/// Mirrors Settings' press-to-commit segments: selection remains visible after
+/// focus leaves, while the bright focus thumb never changes the selected page.
+private struct LibraryContentSegmentStyle: ButtonStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        SegmentBody(configuration: configuration, isSelected: isSelected)
+    }
+
+    private struct SegmentBody: View {
+        let configuration: ButtonStyle.Configuration
+        let isSelected: Bool
+        @Environment(\.isFocused) private var isFocused
+        @Environment(\.colorScheme) private var colorScheme
+        @Environment(\.themePalette) private var palette
+
+        var body: some View {
+            configuration.label
+                .font(.headline)
+                .foregroundStyle(isFocused
+                    ? (colorScheme == .dark ? Color.black : .white)
+                    : (isSelected ? palette.primaryText : palette.secondaryText))
+                .padding(.horizontal, 22)
+                .padding(.vertical, 12)
+                .background {
+                    Capsule()
+                        .fill(isFocused
+                            ? (colorScheme == .dark ? Color.white : .black)
+                            : palette.primaryText.opacity(isSelected ? 0.14 : 0))
+                }
+                .scaleEffect(configuration.isPressed ? 0.97 : (isFocused ? 1.04 : 1))
+                .animation(.easeOut(duration: 0.16), value: isFocused)
+                .animation(.easeOut(duration: 0.16), value: isSelected)
+                .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+        }
     }
 }
 
@@ -413,7 +462,7 @@ private struct LibraryFileBrowseButton: View {
     }
 }
 
-private struct ShareLibraryLoadingView: View {
+private struct LibraryBrowseLoadingView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {

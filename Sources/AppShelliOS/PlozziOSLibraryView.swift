@@ -268,6 +268,14 @@ struct PlozziOSLibraryGridView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if viewModel.supportsCollections {
+                PlozziOSLibraryContentModeControl(viewModel: viewModel)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(.bar)
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if let error = viewModel.pageError {
                 HStack {
@@ -282,11 +290,6 @@ struct PlozziOSLibraryGridView: View {
             }
         }
         .toolbar {
-            if viewModel.supportsCollections {
-                ToolbarItem(placement: .primaryAction) {
-                    PlozziOSLibraryContentModeControl(viewModel: viewModel)
-                }
-            }
             if let library = viewModel.fileBrowserLibrary {
                 ToolbarItem(placement: .primaryAction) {
                     NavigationLink(
@@ -299,8 +302,10 @@ struct PlozziOSLibraryGridView: View {
                     }
                 }
             }
-            ToolbarItem(placement: .primaryAction) {
-                sortControl
+            if !viewModel.availableSortFields.isEmpty {
+                ToolbarItem(placement: .primaryAction) {
+                    sortControl
+                }
             }
         }
         .task { await viewModel.loadFirstPageIfNeeded() }
@@ -409,22 +414,15 @@ private struct PlozziOSLibraryContentModeControl: View {
     let viewModel: LibraryBrowseViewModel
 
     var body: some View {
-        Menu {
-            Picker("Show", selection: Binding(
-                get: { viewModel.contentMode },
-                set: { mode in Task { await viewModel.setContentMode(mode) } }
-            )) {
-                ForEach(LibraryContentMode.allCases, id: \.self) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            }
-        } label: {
-            Label {
-                Text(viewModel.contentMode.displayName)
-            } icon: {
-                Image(systemName: "rectangle.stack")
+        Picker("Show", selection: Binding(
+            get: { viewModel.contentMode },
+            set: { mode in Task { await viewModel.setContentMode(mode) } }
+        )) {
+            ForEach(LibraryContentMode.allCases, id: \.self) { mode in
+                Text(mode.displayName).tag(mode)
             }
         }
+        .pickerStyle(.segmented)
         .accessibilityIdentifier("library-content-mode")
     }
 }
@@ -441,7 +439,14 @@ private struct PlozziOSLibraryItemCell: View {
     var body: some View {
         Group {
             if let item = slot?.item {
-                if let library = MediaFolderNavigation.library(
+                if let route = CollectionBrowseRoute(
+                    item: item, fallbackAccountID: provider.session.server.id
+                ) {
+                    NavigationLink(value: PlozziOSLibraryRoute(collection: route)) {
+                        card
+                    }
+                    .buttonStyle(.plain)
+                } else if let library = MediaFolderNavigation.library(
                     for: item,
                     providerKind: provider.kind
                 ) {

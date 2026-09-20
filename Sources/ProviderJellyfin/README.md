@@ -72,9 +72,10 @@ omits `IncludeItemTypes`, `SortBy`, and `SortOrder`: members can have mixed kind
 and the server owns collection membership and display order. Library listing
 remains a separate `items(in:kind:page:)` query; the member API is unchanged.
 
-The shared detail model fetches bounded pages and distinguishes failed loads from
-empty collections, with retry on tvOS and iOS. It never caches a failed partial
-load as a complete collection.
+Both platforms browse members in the existing vertical library grid. The first
+page paints without waiting for the rest of the collection; later pages load as
+needed. Failed pages remain retryable and are never treated as authoritative
+empty results.
 
 Protocol references: released Jellyfin
 [`ItemsController`](https://github.com/jellyfin/jellyfin/blob/v10.11.0/Jellyfin.Api/Controllers/ItemsController.cs#L274-L278),
