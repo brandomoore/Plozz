@@ -21,6 +21,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     private let source = DetailTransitionSourceReference()
     private var overlay: (UIView & UIContentView)?
     private var overlayFocused = false
+    private var isConfiguredForDisplay = false
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -43,7 +44,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    public override var canBecomeFocused: Bool { item != nil && environment.isEnabled }
+    public override var canBecomeFocused: Bool { isConfiguredForDisplay && environment.isEnabled }
 
     public static func height(for width: CGFloat, environment: EnvironmentValues) -> CGFloat {
         let metrics = environment.plozzMetrics
@@ -56,6 +57,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     }
 
     public func configure(item: MediaItem?, spoilerSettings: SpoilerSettings, environment: EnvironmentValues) {
+        isConfiguredForDisplay = true
         self.item = item
         self.spoilerSettings = spoilerSettings
         self.environment = environment
@@ -64,7 +66,9 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             environment.plozzCardStyle == .framed
             ? PlozzTheme.Metrics.posterArtCornerRadius : environment.plozzMetrics.posterCardCornerRadius
         accessibilityLabel = item?.posterCaptionTitle(spoilerSettings: spoilerSettings).resolve(locale: environment.locale)
+            ?? loadingTitle
         accessibilityValue = item?.posterCaptionSubtitle()
+        accessibilityTraits = item == nil || !environment.isEnabled ? [.button, .notEnabled] : .button
         accessibilityHint = nil
         if item?.kind == .folder {
             var value = LocalizedStringResource("Folder")
@@ -74,7 +78,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             accessibilityValue = String(localized: value)
             accessibilityHint = String(localized: hint)
         }
-        accessibilityElementsHidden = item == nil
+        accessibilityElementsHidden = false
         let references =
             item.map {
                 spoilerSettings.shouldHideThumbnail(for: $0) && $0.kind == .episode
@@ -179,6 +183,8 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         artworkReferences = []
         artwork = nil
         item = nil
+        isConfiguredForDisplay = false
+        accessibilityElementsHidden = true
         onRequestFocus = nil
         source.itemKey = ""
         source.isFocused = false
@@ -203,7 +209,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             environment.layoutDirection == .rightToLeft
             ? .forceRightToLeft : .forceLeftToRight
         caption.title.configure(
-            text: item?.posterCaptionTitle(spoilerSettings: spoilerSettings).resolve(locale: environment.locale) ?? "",
+            text: item?.posterCaptionTitle(spoilerSettings: spoilerSettings).resolve(locale: environment.locale) ?? loadingTitle,
             font: .systemFont(ofSize: metrics.cardTitleFontSize, weight: .semibold),
             color: color, scrolls: scrolls
         )
@@ -226,6 +232,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
                 progressHorizontalInset: 16, progressBottomInset: 16
             )
         }
+
         let configuration = UIHostingConfiguration {
             NativeLibraryArtworkOverlay(
                 symbol: item.map { .init(for: $0) } ?? .playback,
@@ -241,6 +248,12 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             overlay = configuration.makeContentView()
             overlay?.isUserInteractionEnabled = false
         }
+    }
+
+    private var loadingTitle: String {
+        var title = LocalizedStringResource("Loading")
+        title.locale = environment.locale
+        return String(localized: title)
     }
 
     private static let placeholder = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 3)).image {

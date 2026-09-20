@@ -110,7 +110,27 @@ final class LibraryHeldScrollTests: XCTestCase {
         let after = try scrollPosition(in: app)
         XCTAssertGreaterThan(after.offset - before.offset, after.viewport * 3)
         XCTAssertTrue(app.staticTexts["library-hold-status"].label.contains("loaded=28"))
-        XCTAssertTrue(app.otherElements["List index"].firstMatch.hasFocus)
+        let nativeIndex = app.otherElements["List index"].firstMatch
+        let indexFocused = nativeIndex.exists && nativeIndex.hasFocus
+        let loadingFocused = focusedLabel(in: try app.snapshot(), prefix: "Loading") != nil
+        XCTAssertTrue(indexFocused || loadingFocused)
+        if indexFocused { XCUIRemote.shared.press(.left) }
+        Thread.sleep(forTimeInterval: 0.6)
+        let exited = try scrollPosition(in: app)
+        XCTAssertGreaterThan(exited.offset, after.offset - after.viewport,
+                             "Leaving fast scroll must not return to the old loaded frontier.")
+        XCUIRemote.shared.press(.select)
+        let selection = app.staticTexts["library-hold-selection"]
+        XCTAssertFalse(selection.exists && !selection.label.isEmpty, "A loading slot must not open an item.")
+        let loaded = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                !app.staticTexts["library-hold-status"].label.contains("loaded=28")
+            }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: 25), .completed)
+        Thread.sleep(forTimeInterval: 0.6)
+        XCTAssertGreaterThan(try scrollPosition(in: app).offset, after.offset - after.viewport,
+                             "Metadata arriving must not restore offscreen remembered focus.")
     }
 
     private func exerciseHold(borderless: Bool, preloaded: Bool) throws {

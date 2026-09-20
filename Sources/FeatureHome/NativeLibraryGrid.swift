@@ -306,7 +306,14 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     }
 
     func indexPathForPreferredFocusedView(in collectionView: UICollectionView) -> IndexPath? {
-        requestedFocusIndex ?? lastFocusedIndex
+        if let requestedFocusIndex { return requestedFocusIndex }
+        let visible = collectionView.indexPathsForVisibleItems.filter {
+            collectionView.cellForItem(at: $0)?.canBecomeFocused == true
+                && collectionView.layoutAttributesForItem(at: $0)?.frame.intersects(collectionView.bounds) == true
+        }
+        if let lastFocusedIndex, visible.contains(lastFocusedIndex) { return lastFocusedIndex }
+        // Loaded and loading slots share the same native focus identity.
+        return visible.sorted().first ?? lastFocusedIndex
     }
 
     func collectionView(
@@ -317,6 +324,10 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     }
 
     func collectionView(_ collectionView: UICollectionView, canFocusItemAt indexPath: IndexPath) -> Bool {
+        environment.isEnabled
+    }
+
+    func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
         environment.isEnabled && model?.item(at: indexPath.item) != nil
     }
 

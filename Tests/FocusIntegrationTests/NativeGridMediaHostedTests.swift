@@ -100,7 +100,10 @@ final class NativeGridMediaHostedTests: XCTestCase {
         XCTAssertNil(cell.item)
         XCTAssertFalse(cell.canBecomeFocused)
         cell.configure(item: nil, spoilerSettings: .default, environment: EnvironmentValues())
-        XCTAssertTrue(cell.accessibilityElementsHidden)
+        XCTAssertTrue(cell.canBecomeFocused)
+        XCTAssertFalse(cell.accessibilityElementsHidden)
+        XCTAssertTrue(cell.accessibilityTraits.contains(.notEnabled))
+        XCTAssertNotNil(cell.accessibilityLabel)
     }
 
     func testNativeFolderAndSharedCaptionMetadata() throws {
