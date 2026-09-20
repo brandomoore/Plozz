@@ -3,12 +3,20 @@ import XCTest
 @testable import EnginePlozzigen
 
 final class PlozzigenLiveOutputTests: XCTestCase {
-    func testPanelHDRAssertionRequiresActualFiniteHeadroomNotJustDisplayCapability() {
-        XCTAssertTrue(PlozzigenVideoEngine.panelHDRAssertion(currentHeadroom: 2, potentialHeadroom: 4))
-        XCTAssertFalse(PlozzigenVideoEngine.panelHDRAssertion(currentHeadroom: 1, potentialHeadroom: 4))
-        XCTAssertFalse(PlozzigenVideoEngine.panelHDRAssertion(currentHeadroom: 2, potentialHeadroom: 1))
-        XCTAssertFalse(PlozzigenVideoEngine.panelHDRAssertion(currentHeadroom: .nan, potentialHeadroom: 4))
-        XCTAssertFalse(PlozzigenVideoEngine.panelHDRAssertion(currentHeadroom: 2, potentialHeadroom: .infinity))
+    func testOutputPoliciesLeavePanelModeInferenceToAether() {
+        for var options in [
+            LoadOptions(matchContentEnabled: true),
+            PlozzigenVideoEngine.liveLoadOptions(httpHeaders: [:]),
+        ] {
+            for suppressesDisplayMatching in [true, false] {
+                PlozzigenVideoEngine.applyLiveOutputPolicy(
+                    .init(isAudible: true, sharesAudioSession: false,
+                          suppressesDisplayMatching: suppressesDisplayMatching),
+                    to: &options)
+                XCTAssertFalse(options.panelIsInHDRMode)
+                XCTAssertTrue(options.attemptsHDRMasterOnUnprovenPanel)
+            }
+        }
     }
 
     func testScheduledFilesAndNetworkStreamsShareDisplaySuppression() {

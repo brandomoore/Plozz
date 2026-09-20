@@ -6,14 +6,19 @@ with the best possible quality (Dolby Vision, Atmos, full-timeline seek).
 
 ## Dependency version
 
-Plozz pins upstream AetherEngine **7.1.1** to commit
-`755cc21ccaf5d1fc165a570f524163e12923872e`. Its iOS/tvOS 18 minimum matches
-Plozz's existing deployment targets. The engine owns the FFmpegBuild 3.3.x and
+Plozz pins upstream AetherEngine **7.7.1** to commit
+`fa67d5862730e820eb1718d16c24f4db18251237`. Its iOS/tvOS 18 minimum matches
+Plozz's existing deployment targets. The engine owns the FFmpegBuild 3.4.x and
 LibDovi 2.1.x dependencies; Plozz does not link a second FFmpeg build.
 
 This dependency update retains Plozz's playback routing and optional-feature
 settings. It does not connect container chapters to Up Next; marker-less content
 continues using the configured lead-time fallback.
+
+The 7.1.1 to 7.7.1 update preserves HDR routing during audio changes and
+background recovery, retains the native Now Playing host across screensaver
+recovery, and avoids dispatch-pool starvation in loopback connections and source
+size probes. FFmpegBuild 3.4.x adds AV1 Dolby Vision sample-entry support.
 
 ## HDR10+ source preservation
 
@@ -38,11 +43,12 @@ the final substitute for the asset's format. Stopped/replaced loads cannot
 apply late criteria, and native teardown does not clear a differing request
 that another player has since installed on the same window.
 
-Aether remains the display-criteria writer for Plozzigen. Plozz supplies a
-positive already-HDR panel assertion only when the bound screen reports both
-current and potential EDR headroom above one; source labels and display
-capability alone never assert that the panel is in HDR. No Dolby Vision or
-HDR10+ display support is invented.
+Aether remains the display-criteria writer for Plozzigen. Plozz does not supply
+an already-HDR panel assertion from EDR headroom: that reading is unreliable
+as proof of the current tvOS output mode. The pinned engine already attempts
+an HDR master for an eligible but unproven display during on-demand playback,
+with a media-playlist fallback if AVPlayer rejects it. Live playback retains
+Aether's separate policy. No Dolby Vision or HDR10+ display support is invented.
 
 The diagnostic HDR label describes the **source**, not measured HDMI output.
 On original-source playback, a current engine source probe overrides incomplete

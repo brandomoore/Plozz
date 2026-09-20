@@ -363,7 +363,6 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             matchContentEnabled: true,
             audioBridgeMode: channels > 6 ? .lossless : .surroundCompat
         )
-        options.panelIsInHDRMode = currentPanelHDRAssertion
         Self.applyLiveOutputPolicy(outputPolicy, to: &options)
         // Build the native WebVTT renditions so subtitles can travel into a
         // Picture in Picture window, where our own overlay cannot follow: it is a
@@ -493,7 +492,6 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         var stage = "engine.load"
         do {
             var options = Self.liveLoadOptions(httpHeaders: httpHeaders)
-            options.panelIsInHDRMode = currentPanelHDRAssertion
             Self.applyLiveOutputPolicy(outputPolicy, to: &options)
             try await engine.load(url: url, options: options)
             guard liveAttemptGate.accepts(liveGeneration) else { return }
@@ -634,22 +632,6 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     nonisolated static func applyLiveOutputPolicy(_ policy: LiveChannelOutputPolicy, to options: inout LoadOptions) {
         options.suppressDisplayCriteria = policy.suppressesDisplayMatching
         options.matchContentEnabled = !policy.suppressesDisplayMatching
-    }
-
-    private var currentPanelHDRAssertion: Bool {
-        #if os(tvOS)
-        guard let screen = videoView.window?.screen else { return false }
-        return Self.panelHDRAssertion(
-            currentHeadroom: screen.currentEDRHeadroom,
-            potentialHeadroom: screen.potentialEDRHeadroom)
-        #else
-        return false
-        #endif
-    }
-
-    nonisolated static func panelHDRAssertion(currentHeadroom: CGFloat, potentialHeadroom: CGFloat) -> Bool {
-        currentHeadroom.isFinite && potentialHeadroom.isFinite
-            && currentHeadroom > 1 && potentialHeadroom > 1
     }
 
     private nonisolated static func activateLiveAudioSession() throws {
@@ -803,9 +785,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         status = .loading
         do {
             try Task.checkCancellation()
-            let panelIsInHDRMode = currentPanelHDRAssertion
             try await engine.reloadAtCurrentPosition { options in
-                options.panelIsInHDRMode = panelIsInHDRMode
                 Self.applyLiveOutputPolicy(outputPolicy, to: &options)
             }
             try Task.checkCancellation()
