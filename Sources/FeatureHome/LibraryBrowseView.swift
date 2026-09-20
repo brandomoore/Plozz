@@ -372,28 +372,73 @@ public struct LibraryBrowseView: View {
 
 private struct LibraryContentModeControl: View {
     let viewModel: LibraryBrowseViewModel
+    @Environment(\.themePalette) private var palette
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
 
     var body: some View {
-        HStack(spacing: PlozzTheme.Spacing.medium) {
+        HStack(spacing: 6) {
             ForEach(LibraryContentMode.allCases, id: \.self) { mode in
                 let isSelected = viewModel.contentMode == mode
                 Button {
                     Task { await viewModel.setContentMode(mode) }
                 } label: {
                     Text(mode.displayName)
-                        .fontWeight(isSelected ? .semibold : .regular)
-                        .underline(isSelected)
+                        .fontWeight(.semibold)
                         .lineLimit(1)
                 }
-                .buttonStyle(.automatic)
+                .buttonStyle(LibraryContentSegmentStyle(isSelected: isSelected))
                 .accessibilityValue(isSelected ? Text("Selected") : Text(verbatim: ""))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .accessibilityIdentifier("library-content-mode-\(mode.rawValue)")
             }
         }
+        .padding(6)
+        .background {
+            if reduceTransparency {
+                Capsule().fill(palette.raised.fill)
+            } else {
+                Capsule().fill(.regularMaterial)
+            }
+        }
         .fixedSize(horizontal: true, vertical: false)
         .accessibilityLabel("Show")
         .accessibilityIdentifier("library-content-mode")
+    }
+}
+
+private struct LibraryContentSegmentStyle: ButtonStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        SegmentBody(configuration: configuration, isSelected: isSelected)
+    }
+
+    private struct SegmentBody: View {
+        let configuration: ButtonStyle.Configuration
+        let isSelected: Bool
+        @Environment(\.isFocused) private var isFocused
+        @Environment(\.colorScheme) private var colorScheme
+        @Environment(\.themePalette) private var palette
+
+        var body: some View {
+            configuration.label
+                .font(.body)
+                .foregroundStyle(isFocused
+                    ? (colorScheme == .dark ? Color.black : .white)
+                    : (isSelected ? palette.primaryText : palette.secondaryText))
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background {
+                    Capsule()
+                        .fill(isFocused
+                            ? (colorScheme == .dark ? Color.white : .black)
+                            : palette.primaryText.opacity(isSelected ? 0.18 : 0))
+                }
+                .scaleEffect(configuration.isPressed ? 0.97 : (isFocused ? 1.04 : 1))
+                .animation(.easeOut(duration: 0.16), value: isFocused)
+                .animation(.easeOut(duration: 0.16), value: isSelected)
+                .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+        }
     }
 }
 
