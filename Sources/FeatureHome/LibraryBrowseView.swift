@@ -4,9 +4,8 @@ import CoreModels
 import CoreUI
 import FeatureHomeCore
 
-/// A sparse, lazily-loaded poster grid for browsing a single library. Each cell
-/// is the shared `CoreUI.PosterCardView` (`.poster` style) — identical to Home's
-/// "Recently Added" row — flowing as many fixed-width columns as fit the width.
+/// A sparse, lazily-loaded poster grid for browsing a single library. System
+/// focus uses reusable UIKit media cells; custom styles use `PosterCardView`.
 ///
 /// After the first page loads (which reports the library's total size), the grid
 /// is laid out for the *entire* library at once: every slot renders a card, and
@@ -29,6 +28,9 @@ public struct LibraryBrowseView: View {
     /// goes away (a non-name sort) so re-entering name sort re-arms the reveal.
     @State private var railHasRevealed = false
     @State private var sortButtonHeight: CGFloat?
+    #if os(tvOS)
+    @State private var nativeScrollTarget = NativeLibraryScrollTarget()
+    #endif
     /// Pre-built so a synthesized library name ("Movies" on a file share) is
     /// our translated copy while a server's own name stays verbatim.
     private let title: Text
@@ -41,6 +43,7 @@ public struct LibraryBrowseView: View {
     /// Per-profile card presentation. Decides how far a grid card insets its
     /// artwork, which is what the banner's edges have to match.
     @Environment(\.plozzCardStyle) private var cardStyle
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
     /// App-wide media-share scan/enrich status (optional so previews/tests that
     /// don't inject it don't crash). Feeds the banner under this library's title.
     @Environment(ShareScanStatusModel.self) private var shareScanStatus: ShareScanStatusModel?
@@ -85,85 +88,15 @@ public struct LibraryBrowseView: View {
                 }
             }
         ) { total in
-            ScrollViewReader { proxy in
-                ScrollView(.vertical) {
-                    LazyVStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-                        header
-                        scanBanner
-                        LazyVGrid(columns: columns, spacing: metrics.gridSpacing) {
-                            ForEach(0..<total, id: \.self) { index in
-                                LibraryGridCell(
-                                    slot: viewModel.slot(at: index),
-                                    index: index,
-                                    generation: generation,
-                                    spoilerSettings: spoilerSettings,
-                                    onSelect: onSelect,
-                                    onAppear: { idx in
-                                        await viewModel.itemAppeared(at: idx, generation: generation)
-                                        prefetchArtwork(aheadFrom: idx)
-                                    },
-                                    onDisappear: { viewModel.itemDisappeared(at: $0, generation: generation) }
-                                )
-                                .environment(\.plozzNativeGridFocus, true)
-                                // Explicit scroll identity so the rail's
-                                // `scrollTo(startIndex)` lands on the right row.
-                                .id(index)
-                            }
-                        }
-                        .padding(.leading, contentLeadingPadding)
-                        .padding(.trailing, HomeLayout.horizontalPadding)
-                        .padding(.bottom, PlozzTheme.Metrics.screenVerticalPadding)
-                        .focusSection()
-                        .id(viewModel.contentMode)
-                    }
-                    .padding(.top, PlozzTheme.Spacing.large)
-                    #if canImport(UIKit)
-                    // Suppress the native scroll indicator while the alphabet rail
-                    // is up (it can't be reliably killed by `.scrollIndicators`, and
-                    // it drifts out of sync with the letters). Attached as a
-                    // NON-LAZY `.background` on the scroll *content* so it (a) lives
-                    // inside the UIScrollView — its superview walk finds it — and
-                    // (b) is never culled the way a lazy `LazyVStack` child is the
-                    // moment it scrolls off, which is exactly when we need it alive.
-                    .background(
-                        ScrollIndicatorHider(hidden: isRailVisible)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    )
-                    #endif
-                }
-                // Never clip a focused card's lift, shadow or border.
-                .scrollClipDisabled()
-                // Rail + its "you are here" highlight live in a dedicated layer so
-                // that tracking `topVisibleIndex` (which ticks on every cell that
-                // scrolls in or out) re-renders only this small ~26-letter rail —
-                // never the parent's (potentially thousands of) poster cells.
-                .overlay(alignment: .trailing) {
-                    LibraryRailLayer(
-                        viewModel: viewModel,
-                        railFocusedLetter: $railFocusedLetter,
-                        railHasRevealed: $railHasRevealed,
-                        revealThreshold: railRevealThreshold,
-                        proxy: proxy
-                    )
-                }
-                // A transient jumbo letter that appears while flying the rail so
-                // the current jump target is legible from across the room.
-                .overlay(alignment: .center) {
-                    if let letter = railFocusedLetter {
-                        LetterJumpBubble(letter: letter)
-                            .transition(.scale.combined(with: .opacity))
-                            .allowsHitTesting(false)
-                    }
-                }
-                .animation(.easeOut(duration: 0.15), value: railFocusedLetter)
-                // Re-arm the reveal whenever the rail stops being eligible (e.g. a
-                // switch to a non-name sort), so the next name sort starts hidden.
-                .onChange(of: viewModel.showsLetterRail) { _, shows in
-                    if !shows { railHasRevealed = false }
-                }
+            #if os(tvOS)
+            if focusStyle.usesSystemEffect {
+                nativeGrid(total: total, generation: generation)
+            } else {
+                swiftUIGrid(total: total, generation: generation, columns: columns)
             }
-            .id(viewModel.contentMode)
+            #else
+            swiftUIGrid(total: total, generation: generation, columns: columns)
+            #endif
         }
         // Browse is a full-screen sub-page: hide the top tab bar so it reads as a
         // dedicated destination with no navigation chrome pinned at the top.
@@ -193,9 +126,6 @@ public struct LibraryBrowseView: View {
                     .padding()
             }
         }
-        // Shared with the iOS grid so the two platforms cannot drift again: iOS
-        // lacked this guard and reloaded the library every time the user came back
-        // from a detail page.
         .task { await viewModel.loadFirstPageIfNeeded() }
         .onChange(of: viewModel.contentMode) { _, _ in
             railFocusedLetter = nil
@@ -219,8 +149,6 @@ public struct LibraryBrowseView: View {
             }
         }
         .task {
-            // Opt-in (PLZXMEM=1) memory/background-activity sampler. Fully inert
-            // when disabled — returns before starting any timer or keep-alive loop.
             guard BrowseDiagnostics.isEnabled else { return }
             BrowseDiagnostics.event("screen browse+")
             let sampler = BrowseDiagnostics.startSampler(label: "browse") {
@@ -238,9 +166,122 @@ public struct LibraryBrowseView: View {
                 sampler?.cancel()
                 BrowseDiagnostics.event("screen browse-")
             }
-            // Keep alive for the lifetime of this view; cancelled on disappear.
             while !Task.isCancelled { try? await Task.sleep(nanoseconds: 1_000_000_000) }
         }
+    }
+
+    #if os(tvOS)
+    private func nativeGrid(total: Int, generation: Int) -> some View {
+        NativeLibraryGrid(
+            viewModel: viewModel, total: total, generation: generation,
+            spoilerSettings: spoilerSettings,
+            leadingInset: contentLeadingPadding, trailingInset: HomeLayout.horizontalPadding,
+            scrollTarget: nativeScrollTarget,
+            hidesScrollIndicator: isRailVisible,
+            header: VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
+                header
+                scanBanner
+            }
+            .padding(.top, PlozzTheme.Spacing.large),
+            onSelect: onSelect, onLoaded: { prefetchArtwork(aheadFrom: $0) }
+        )
+        .overlay(alignment: .trailing) {
+            LibraryRailLayer(
+                viewModel: viewModel, railFocusedLetter: $railFocusedLetter,
+                railHasRevealed: $railHasRevealed, revealThreshold: railRevealThreshold,
+                scrollTo: { nativeScrollTarget.scroll(to: $0) }
+            )
+        }
+        .overlay {
+            if let letter = railFocusedLetter {
+                LetterJumpBubble(letter: letter).allowsHitTesting(false)
+            }
+        }
+        .onChange(of: viewModel.showsLetterRail) { _, shows in
+            if !shows { railHasRevealed = false }
+        }
+    }
+    #endif
+
+    private func swiftUIGrid(total: Int, generation: Int, columns: [GridItem]) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
+                    header
+                    scanBanner
+                    LazyVGrid(columns: columns, spacing: metrics.gridSpacing) {
+                        ForEach(0..<total, id: \.self) { index in
+                            LibraryGridCell(
+                                slot: viewModel.slot(at: index),
+                                index: index,
+                                generation: generation,
+                                spoilerSettings: spoilerSettings,
+                                onSelect: onSelect,
+                                onAppear: { idx in
+                                    await viewModel.itemAppeared(at: idx, generation: generation)
+                                    prefetchArtwork(aheadFrom: idx)
+                                },
+                                onDisappear: { viewModel.itemDisappeared(at: $0, generation: generation) }
+                            )
+                            // Explicit scroll identity so the rail's
+                            // `scrollTo(startIndex)` lands on the right row.
+                            .id(index)
+                        }
+                    }
+                    .padding(.leading, contentLeadingPadding)
+                    .padding(.trailing, HomeLayout.horizontalPadding)
+                    .padding(.bottom, PlozzTheme.Metrics.screenVerticalPadding)
+                    .focusSection()
+                    .id(viewModel.contentMode)
+                }
+                .padding(.top, PlozzTheme.Spacing.large)
+                #if canImport(UIKit)
+                // Suppress the native scroll indicator while the alphabet rail
+                // is up (it can't be reliably killed by `.scrollIndicators`, and
+                // it drifts out of sync with the letters). Attached as a
+                // NON-LAZY `.background` on the scroll *content* so it (a) lives
+                // inside the UIScrollView — its superview walk finds it — and
+                // (b) is never culled the way a lazy `LazyVStack` child is the
+                // moment it scrolls off, which is exactly when we need it alive.
+                .background(
+                    ScrollIndicatorHider(hidden: isRailVisible)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                )
+                #endif
+            }
+            // Never clip a focused card's lift, shadow or border.
+            .scrollClipDisabled()
+            // Rail + its "you are here" highlight live in a dedicated layer so
+            // that tracking `topVisibleIndex` (which ticks on every cell that
+            // scrolls in or out) re-renders only this small ~26-letter rail —
+            // never the parent's (potentially thousands of) poster cells.
+            .overlay(alignment: .trailing) {
+                LibraryRailLayer(
+                    viewModel: viewModel,
+                    railFocusedLetter: $railFocusedLetter,
+                    railHasRevealed: $railHasRevealed,
+                    revealThreshold: railRevealThreshold,
+                    scrollTo: { proxy.scrollTo($0, anchor: .top) }
+                )
+            }
+            // A transient jumbo letter that appears while flying the rail so
+            // the current jump target is legible from across the room.
+            .overlay(alignment: .center) {
+                if let letter = railFocusedLetter {
+                    LetterJumpBubble(letter: letter)
+                        .transition(.scale.combined(with: .opacity))
+                        .allowsHitTesting(false)
+                }
+            }
+            .animation(.easeOut(duration: 0.15), value: railFocusedLetter)
+            // Re-arm the reveal whenever the rail stops being eligible (e.g. a
+            // switch to a non-name sort), so the next name sort starts hidden.
+            .onChange(of: viewModel.showsLetterRail) { _, shows in
+                if !shows { railHasRevealed = false }
+            }
+        }
+        .id(viewModel.contentMode)
     }
 
     /// Whether the alphabet rail should currently be on screen: it must be
@@ -267,7 +308,9 @@ public struct LibraryBrowseView: View {
             }
             if !viewModel.availableSortFields.isEmpty {
                 sortControl
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                    .onGeometryChange(for: CGFloat.self) {
+                        $0.size.height
+                    } action: { height in
                         if height > 0 { sortButtonHeight = height }
                     }
             }
@@ -409,6 +452,7 @@ private struct LibraryContentModeControl: View {
             }
         }
         .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Show")
         .accessibilityIdentifier("library-content-mode")
     }
@@ -564,7 +608,7 @@ private struct LibraryRailLayer: View {
     @Binding var railFocusedLetter: String?
     @Binding var railHasRevealed: Bool
     let revealThreshold: Int
-    let proxy: ScrollViewProxy
+    let scrollTo: (Int) -> Void
 
     private var isRailVisible: Bool { viewModel.showsLetterRail && railHasRevealed }
 
@@ -585,7 +629,7 @@ private struct LibraryRailLayer: View {
                     onScrollToLetter: { entry in
                         viewModel.prepareJump(toIndex: entry.startIndex)
                         withAnimation(.easeOut(duration: 0.2)) {
-                            proxy.scrollTo(entry.startIndex, anchor: .top)
+                            scrollTo(entry.startIndex)
                         }
                     }
                 )
@@ -872,7 +916,7 @@ private struct ScrollIndicatorHider: UIViewControllerRepresentable {
     }
 }
 
-private final class ScrollIndicatorHiderController: UIViewController {
+final class ScrollIndicatorHiderController: UIViewController {
     var hidden: Bool = false {
         didSet { if hidden != oldValue { syncDisplayLink() } }
     }

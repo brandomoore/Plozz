@@ -626,14 +626,22 @@ tvOS library grids retain lazy, paged rendering and use six columns at Default
 density; other density presets and Search's column count are unchanged. The
 existing bounded metadata-fetch budgets remain independent of this layout change.
 
-On tvOS, virtualized grid cards keep directional input on SwiftUI's focus owner
-while `TVMediaItemContentConfiguration` supplies native TVUIKit presentation.
+On tvOS, System-focus libraries use a `UICollectionView` with reusable
+`NativeTVLibraryCell` focus owners and `TVMediaItemContentConfiguration`.
 Recycling a focused-control-origin `TVCardView`/`TVPosterView` ended a held Down
 gesture after three or four rows even with all 500 items loaded. Reassigning
 enabled state, adding focus sections and forwarding presses did not correct it.
 Retaining every card corrected the symptom but is not acceptable for large
-libraries. The content-configuration path preserves lazy rendering and permits
-the platform's native fast-scroll index to take focus normally.
+libraries. The interim SwiftUI-focus/content-configuration bridge preserved the
+hold but lost visible native artwork focus on the physical TV. Real UIKit cell
+focus and UIKit-delivered configuration state are required; manually setting a
+configuration's focused flag is not equivalent.
+
+The native collection observes individual visible `LibrarySlot` objects, reuses
+decoded artwork, and cancels cell work on reuse/disappearance. Captions and the
+scrolling SwiftUI header stay outside the artwork's projection. Custom focus
+styles and iOS retain their existing grids. The shared view model still owns
+provider-neutral paging, collections, sort generations, and the A-Z index.
 
 `LibraryHeldScrollTests` drives real remote holds through the production grid,
 measures the actual scroll view's offset, checks both framed/borderless native
@@ -641,8 +649,13 @@ presentations with preloaded and paged data, and verifies selecting a real item
 after fast scrolling. Pending metadata must not prevent the native index from
 continuing to scroll. A focused native fast-scroll index is not a lost-focus
 failure; requested focus or loaded-slot counts alone do not prove traversal.
-`NativeGridMediaHostedTests` checks the native presentation and borderless caption
-separation. Ordinary non-grid native lockup controls are unchanged.
+The remote fixture also bounds resident cells and exercises context-menu
+navigation, return focus/scroll position, switching to Collections, and a
+600-member collection. `NativeGridMediaHostedTests` compares actual painted
+poster bounds before/after real collection-cell focus, checks caption separation,
+and compares the detail-transition source rectangle with those pixels. Ordinary
+non-grid native lockup controls are unchanged. These simulator checks do not
+establish physical touchpad behavior or Apple TV frame-time performance.
 
 ## Extras artwork
 

@@ -10,18 +10,44 @@ struct LibraryHeldScrollFixture: View {
     @State private var model: LibraryBrowseViewModel?
     @State private var metrics = LibraryScrollMetrics()
     @State private var selection = ""
+    @State private var path: [LibraryFixtureRoute] = []
+    @State private var provider: LibraryHeldScrollProvider?
+    private let actions = LibraryFixtureActions()
+    private var exercisesNavigation: Bool {
+        ProcessInfo.processInfo.arguments.contains("--library-interaction-fixture")
+    }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             if let model {
                 LibraryBrowseView(
                     viewModel: model, title: Text("Library hold fixture"),
-                    onSelect: { selection = $0.title }
+                    onSelect: select
                 )
                 .overlay(alignment: .bottomLeading) {
                     LibraryScrollStatus(model: model, metrics: metrics, selection: selection)
                 }
                 .background { LibraryScrollObserver(metrics: metrics) }
+                .navigationDestination(for: LibraryFixtureRoute.self) { route in
+                    switch route {
+                    case let .collection(id, title):
+                        if let provider {
+                            LibraryBrowseView(
+                                viewModel: LibraryBrowseViewModel(
+                                    provider: provider, containerID: id, containerKind: .collection,
+                                    sourceAccountID: "fixture", browseScope: .collectionMembers
+                                ),
+                                title: Text(title), onSelect: select
+                            )
+                        }
+                    case let .detail(id, title, account):
+                        VStack {
+                            Text(title).accessibilityIdentifier("library-detail-title")
+                            Text(verbatim: "\(id)|\(account)").accessibilityIdentifier("library-detail-identity")
+                            Button("Back to library") { path.removeLast() }
+                        }
+                    }
+                }
             } else {
                 ProgressView("Preparing fixture")
             }
@@ -34,6 +60,8 @@ struct LibraryHeldScrollFixture: View {
         .environment(\.plozzMetrics, .standard)
         .environment(\.themePalette, .dark)
         .environment(\.colorScheme, .dark)
+        .mediaItemActionHandler(actions)
+        .mediaItemNavigator(select)
         .task {
             guard model == nil else { return }
             var settings = MetadataProviderSettingsStore().load()
@@ -59,11 +87,14 @@ struct LibraryHeldScrollFixture: View {
                     preconditionFailure("Library fixture image failed to decode")
                 }
             }
+            let provider = LibraryHeldScrollProvider(
+                artwork: artwork,
+                delayed: ProcessInfo.processInfo.arguments.contains("--delayed-library-page"),
+                collectionsEnabled: exercisesNavigation
+            )
+            self.provider = provider
             model = LibraryBrowseViewModel(
-                provider: LibraryHeldScrollProvider(
-                    artwork: artwork,
-                    delayed: ProcessInfo.processInfo.arguments.contains("--delayed-library-page")
-                ),
+                provider: provider,
                 containerID: "library", containerKind: .movie,
                 pageSize: ProcessInfo.processInfo.arguments.contains("--all-library-items")
                     ? 500 : PageRequest.defaultLimit,
@@ -71,6 +102,27 @@ struct LibraryHeldScrollFixture: View {
             )
         }
     }
+
+    private func select(_ item: MediaItem) {
+        selection = item.title
+        guard exercisesNavigation else { return }
+        if item.kind == .collection {
+            path.append(.collection(id: item.id, title: item.title))
+        } else {
+            path.append(.detail(id: item.id, title: item.title, account: item.sourceAccountID ?? ""))
+        }
+    }
+}
+
+private enum LibraryFixtureRoute: Hashable {
+    case collection(id: String, title: String)
+    case detail(id: String, title: String, account: String)
+}
+
+@MainActor
+private final class LibraryFixtureActions: MediaItemActionHandling {
+    func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] { [.goToMovie] }
+    func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {}
 }
 
 @MainActor
@@ -78,6 +130,7 @@ struct LibraryHeldScrollFixture: View {
 private final class LibraryScrollMetrics {
     var offset: CGFloat = 0
     var viewport: CGFloat = 0
+    var peakCells = 0
 }
 
 private struct LibraryScrollStatus: View {
@@ -92,6 +145,7 @@ private struct LibraryScrollStatus: View {
             Text(verbatim: "\(Int(metrics.offset))|\(Int(metrics.viewport))")
                 .accessibilityIdentifier("library-scroll-position")
             Text(selection).accessibilityIdentifier("library-hold-selection")
+            Text(verbatim: "\(metrics.peakCells)").accessibilityIdentifier("library-peak-cells")
         }
         .font(.caption2)
         .allowsHitTesting(false)
@@ -133,6 +187,9 @@ private struct LibraryScrollObserver: UIViewRepresentable {
             guard let scroll else { return }
             if abs(metrics.offset - scroll.contentOffset.y) > 0.5 { metrics.offset = scroll.contentOffset.y }
             if metrics.viewport != scroll.bounds.height { metrics.viewport = scroll.bounds.height }
+            if let collection = scroll as? UICollectionView {
+                metrics.peakCells = max(metrics.peakCells, collection.subviews.filter { $0 is UICollectionViewCell }.count)
+            }
         }
 
         private func findScroll(in view: UIView) -> UIScrollView? {
@@ -146,9 +203,11 @@ private struct LibraryScrollObserver: UIViewRepresentable {
     }
 }
 
-private struct LibraryHeldScrollProvider: MediaProvider {
+private struct LibraryHeldScrollProvider: MediaProvider, CapabilityReporting {
     let artwork: URL
     let delayed: Bool
+    let collectionsEnabled: Bool
+    var capabilities: ProviderCapability { collectionsEnabled ? [.video, .libraryCollections] : [.video] }
     let kind: ProviderKind = .plex
     let session = UserSession(
         server: MediaServer(id: "fixture", name: "Fixture", baseURL: URL(string: "https://fixture.test")!, provider: .plex),
@@ -171,6 +230,20 @@ private struct LibraryHeldScrollProvider: MediaProvider {
 
     func letterIndex(in containerID: String, kind: MediaItemKind, sort: CoreModels.SortDescriptor) async throws -> [LibraryLetterIndexEntry] {
         [LibraryLetterIndexEntry(letter: "A", startIndex: 0), LibraryLetterIndexEntry(letter: "M", startIndex: 250)]
+    }
+
+    func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
+        let items = (page.startIndex..<min(12, page.startIndex + page.limit)).map {
+            MediaItem(id: "collection-\($0)", title: "Collection item \($0)", kind: .collection, posterURL: artwork)
+        }
+        return MediaPage(items: items, startIndex: page.startIndex, totalCount: 12)
+    }
+
+    func collectionMembers(of collectionID: String, page: PageRequest) async throws -> MediaPage {
+        let items = (page.startIndex..<min(600, page.startIndex + page.limit)).map {
+            MediaItem(id: "member-\($0)", title: "Member item \($0)", kind: .movie, posterURL: artwork)
+        }
+        return MediaPage(items: items, startIndex: page.startIndex, totalCount: 600)
     }
 
     func libraries() async throws -> [MediaLibrary] { [] }

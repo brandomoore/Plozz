@@ -560,20 +560,11 @@ struct NativeTVCardButtonStyle: PrimitiveButtonStyle {
         let configuration: PrimitiveButtonStyleConfiguration
         @PlozzCardFocus private var focus: Bool
         @Environment(\.isEnabled) private var isEnabled
-        @Environment(\.plozzNativeGridFocus) private var nativeGridFocus
 
         @ViewBuilder
         var body: some View {
-            if nativeGridFocus {
-                NativeTVGridCard(content: configuration.label, isFocused: focus)
-                    .focusableCard(
-                        isFocused: $focus.focusState, cornerRadius: 0,
-                        isEnabled: isEnabled, action: configuration.trigger
-                    )
-            } else {
-                NativeTVCard(content: configuration.label, focus: $focus, isEnabled: isEnabled, action: configuration.trigger)
-                    .focused($focus.focusState)
-            }
+            NativeTVCard(content: configuration.label, focus: $focus, isEnabled: isEnabled, action: configuration.trigger)
+                .focused($focus.focusState)
         }
     }
 }

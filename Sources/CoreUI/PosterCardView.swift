@@ -75,9 +75,6 @@ public struct PosterCardView: View {
     /// resting surface on focus (no glass lift, so no glowing frame) and reads as
     /// focused through movement and light instead — see `plozzCardFocusLift`.
     @Environment(\.plozzCardFocusStyle) private var focusStyle
-    @Environment(\.plozzNativeGridFocus) private var nativeGridFocus
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.locale) private var locale
 
     public init(
         item: MediaItem,
@@ -228,11 +225,7 @@ public struct PosterCardView: View {
 
     #if os(tvOS)
     private var nativePosterTitle: NativePosterText {
-        if item.kind == .episode, let series = item.parentTitle, !series.isEmpty {
-            return .content(series)
-        }
-        if hideText { return .localized(spoilerSettings.maskedTitle(for: item)) }
-        return .content(item.title)
+        item.posterCaptionTitle(spoilerSettings: spoilerSettings)
     }
 
     private var nativeUsesProtectedArtwork: Bool {
@@ -289,39 +282,19 @@ public struct PosterCardView: View {
 
     @ViewBuilder
     private var nativePosterSurface: some View {
-        if nativeGridFocus {
-            NativeTVGridPoster(
-                image: nativePosterArtwork.image,
-                aspectRatio: borderlessAspectRatio,
-                fallbackWidth: size.width,
-                overlay: nativePosterOverlay,
-                isFocused: isFocused,
-                source: detailTransitionSource
-            )
-            .focusableCard(
-                isFocused: $isFocused.focusState,
-                cornerRadius: borderlessCornerRadius,
-                isEnabled: isEnabled,
-                action: selectCard
-            )
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text(verbatim: nativePosterTitle.resolve(locale: locale)))
-            .accessibilityValue(Text(verbatim: subtitleText ?? ""))
-        } else {
-            NativeTVPoster(
-                image: nativePosterArtwork.image,
-                treatment: nativePosterTreatment,
-                aspectRatio: borderlessAspectRatio,
-                fallbackWidth: size.width,
-                title: showsSeriesArtwork ? nil : nativePosterTitle,
-                subtitle: showsSeriesArtwork ? nil : subtitleText,
-                overlay: nativePosterOverlay,
-                focus: $isFocused,
-                source: detailTransitionSource,
-                action: selectCard
-            )
-            .focused($isFocused.focusState)
-        }
+        NativeTVPoster(
+            image: nativePosterArtwork.image,
+            treatment: nativePosterTreatment,
+            aspectRatio: borderlessAspectRatio,
+            fallbackWidth: size.width,
+            title: showsSeriesArtwork ? nil : nativePosterTitle,
+            subtitle: showsSeriesArtwork ? nil : subtitleText,
+            overlay: nativePosterOverlay,
+            focus: $isFocused,
+            source: detailTransitionSource,
+            action: selectCard
+        )
+        .focused($isFocused.focusState)
     }
 
     private var nativePosterOverlay: some View {
@@ -728,26 +701,8 @@ public struct PosterCardView: View {
     /// Secondary line — subtitle facts plus card runtime/remaining when available.
     /// The runtime/"… left" is dropped when the resume chip is shown, since the
     /// chip already carries the time on the artwork (no need to repeat it here).
-    private var subtitleText: String? {  // l10n:content — composes CoreModels content (subtitle/runtime) with a "left" qualifier word; joined plain-String pipeline (see comment below), not a Text-rendered LSR
-        var parts: [String] = []
-        // Skipped in series-artwork mode: `subtitle` has been promoted to the
-        // primary line there (see `primaryText`), and printing it in both places
-        // would read as a stutter.
-        if !showsSeriesArtwork,
-           let subtitle = item.subtitle?.trimmingCharacters(in: .whitespacesAndNewlines), !subtitle.isEmpty {
-            parts.append(subtitle)
-        }
-        if !showsResumeChip,
-           let runtime = item.cardRuntimeText?.trimmingCharacters(in: .whitespacesAndNewlines), !runtime.isEmpty {
-            // `cardRuntimeText` is bare ("20m"); `subtitleText` is a plain String
-            // joined with `·` and passed through `BorderlessCardCaption.subtitle`
-            // (already `// l10n:content`, not a translated `Text`), so the "left"
-            // suffix is composed here as plain interpolation rather than via
-            // `String(localized:)`, which the guard flags as eager resolution.
-            parts.append(item.cardRuntimeIsRemaining ? "\(runtime) left" : runtime)
-        }
-        guard !parts.isEmpty else { return nil }
-        return parts.joined(separator: " · ")
+    private var subtitleText: String? {  // l10n:content — provider subtitle and preformatted runtime
+        item.posterCaptionSubtitle(showsSubtitle: !showsSeriesArtwork, showsRuntime: !showsResumeChip)
     }
 
     // MARK: Resume chip
@@ -1497,7 +1452,7 @@ enum PosterCardPresentation {
 
 /// Dedicated folder artwork: a generic symbol only. The item's real title stays
 /// in the normal caption below the card, so it is never duplicated in the poster.
-private struct FolderPlaceholderArtwork: View {
+struct FolderPlaceholderArtwork: View {
     let foreground: Color
     let background: Color
     let isFocused: Bool
@@ -1521,7 +1476,7 @@ private struct FolderPlaceholderArtwork: View {
 /// Small navigation cue over recognized folder artwork. Its geometry mirrors the
 /// existing watched badge, but keeps a neutral scrim so it cannot be mistaken for
 /// playback state.
-private struct FolderNavigationBadge: View {
+struct FolderNavigationBadge: View {
     let size: CGFloat
 
     var body: some View {
@@ -1590,19 +1545,10 @@ private struct CardFocusOwner: ViewModifier {
     let action: () -> Void
     @Environment(\.plozzCardFocusStyle) private var style
     @Environment(\.isEnabled) private var parentEnabled
-    @Environment(\.plozzNativeGridFocus) private var nativeGridFocus
 
     func body(content: Content) -> some View {
         if style.usesSystemEffect {
-            if nativeGridFocus {
-                NativeTVGridCard(content: content, isFocused: isFocused.focusState.wrappedValue)
-                    .focusableCard(
-                        isFocused: isFocused.focusState,
-                        cornerRadius: cornerRadius,
-                        isEnabled: isEnabled && parentEnabled,
-                        action: action
-                    )
-            } else if nativeFocusInContent {
+            if nativeFocusInContent {
                 content.disabled(!isEnabled || !parentEnabled)
             } else {
                 NativeTVCard(
@@ -1626,6 +1572,18 @@ private struct CardFocusOwner: ViewModifier {
 #endif
 
 public extension MediaItem {
+    /// Shared provider metadata for SwiftUI cards and native library cells.
+    func posterCaptionSubtitle(showsSubtitle: Bool = true, showsRuntime: Bool = true) -> String? { // l10n:content
+        var parts: [String] = []
+        if showsSubtitle, let subtitle = subtitle?.trimmingCharacters(in: .whitespacesAndNewlines), !subtitle.isEmpty {
+            parts.append(subtitle)
+        }
+        if showsRuntime, let runtime = cardRuntimeText?.trimmingCharacters(in: .whitespacesAndNewlines), !runtime.isEmpty {
+            parts.append(cardRuntimeIsRemaining ? "\(runtime) left" : runtime)
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     /// Ordered real-image candidates a `PosterCardView` of `style` will try before
     /// any async (TMDb) fallback. Rails use this to prefetch each card's artwork
     /// into `ArtworkImageCache` ahead of scroll, so a card already has its decoded
