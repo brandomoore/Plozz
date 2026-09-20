@@ -208,22 +208,37 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         caption.semanticContentAttribute =
             environment.layoutDirection == .rightToLeft
             ? .forceRightToLeft : .forceLeftToRight
-        caption.title.configure(
-            text: item?.posterCaptionTitle(spoilerSettings: spoilerSettings).resolve(locale: environment.locale) ?? loadingTitle,
-            font: .systemFont(ofSize: metrics.cardTitleFontSize, weight: .semibold),
-            color: color, scrolls: scrolls
-        )
-        caption.subtitle.configure(
-            text: item?.posterCaptionSubtitle() ?? " ",
-            font: .systemFont(ofSize: metrics.cardSubtitleFontSize),
-            color: color, scrolls: scrolls
-        )
+        if let item {
+            caption.title.configure(
+                text: item.posterCaptionTitle(spoilerSettings: spoilerSettings).resolve(locale: environment.locale),
+                font: .systemFont(ofSize: metrics.cardTitleFontSize, weight: .semibold),
+                color: color, scrolls: scrolls
+            )
+            caption.subtitle.configure(
+                text: item.posterCaptionSubtitle() ?? " ",
+                font: .systemFont(ofSize: metrics.cardSubtitleFontSize),
+                color: color, scrolls: scrolls
+            )
+        } else {
+            caption.title.configurePlaceholder(
+                font: .systemFont(ofSize: metrics.cardTitleFontSize, weight: .semibold),
+                color: UIColor(palette.fill), widthFraction: 0.7, height: (16 * metrics.scale).rounded()
+            )
+            caption.subtitle.configurePlaceholder(
+                font: .systemFont(ofSize: metrics.cardSubtitleFontSize),
+                color: UIColor(palette.fill), widthFraction: 0.45, height: (13 * metrics.scale).rounded()
+            )
+        }
         caption.setFocused(
             isFocused, travel: metrics.focusCaptionPush(for: .system),
             animated: animated && !environment.accessibilityReduceMotion)
     }
 
     private func updateOverlay() {
+        guard item != nil else {
+            overlay = nil
+            return
+        }
         let metrics = environment.plozzMetrics
         let indicators = item.map {
             MediaCardPlaybackIndicators(

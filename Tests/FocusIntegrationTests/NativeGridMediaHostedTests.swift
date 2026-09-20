@@ -106,6 +106,58 @@ final class NativeGridMediaHostedTests: XCTestCase {
         XCTAssertNotNil(cell.accessibilityLabel)
     }
 
+    func testLoadingSkeletonHasPlainArtworkAndCaptionBarsWithoutChangingGeometry() throws {
+        for palette in [ThemePalette.dark, .light, .pureBlack] {
+            for style in [CardStyle.framed, .borderless] {
+                var environment = EnvironmentValues()
+                environment.themePalette = palette
+                environment.plozzCardStyle = style
+                environment.plozzMetrics = .standard
+                environment.locale = Locale(identifier: "en")
+                let cell = NativeTVLibraryCell(frame: CGRect(
+                    x: 0, y: 0, width: 300,
+                    height: NativeTVLibraryCell.height(for: 300, environment: environment)
+                ))
+                cell.configure(item: nil, spoilerSettings: .default, environment: environment)
+                cell.updateConfiguration(using: cell.configurationState)
+                cell.layoutIfNeeded()
+                let content = try XCTUnwrap(cell.contentConfiguration as? TVMediaItemContentConfiguration)
+                XCTAssertNotNil(content.image)
+                XCTAssertNil(content.overlayView, "Pending metadata must not draw a playback/folder glyph.")
+                XCTAssertEqual(cell.accessibilityLabel, "Loading")
+                XCTAssertTrue(cell.canBecomeFocused)
+                XCTAssertTrue(cell.accessibilityTraits.contains(.notEnabled))
+                let caption = try XCTUnwrap(descendant(SystemPosterCaption.CaptionView.self, in: cell))
+                caption.layoutIfNeeded()
+                let height = caption.intrinsicContentSize.height
+                for (line, fraction) in [(caption.title, CGFloat(0.7)), (caption.subtitle, CGFloat(0.45))] {
+                    line.layoutIfNeeded()
+                    let label = try XCTUnwrap(descendant(UILabel.self, in: line))
+                    XCTAssertTrue(label.isHidden)
+                    XCTAssertTrue(label.text?.isEmpty ?? true)
+                    let bar = try XCTUnwrap(line.subviews.first { !$0.isHidden && !($0 is UILabel) })
+                    XCTAssertEqual(bar.backgroundColor, UIColor(palette.fill))
+                    XCTAssertEqual(bar.bounds.width, (line.bounds.width * fraction).rounded())
+                    XCTAssertGreaterThan(bar.bounds.height, 0)
+                    XCTAssertNil(label.layer.animation(forKey: "captionMarquee"))
+                }
+                cell.configure(
+                    item: MediaItem(id: "loaded", title: "Resolved title", kind: .movie),
+                    spoilerSettings: .default, environment: environment
+                )
+                cell.updateConfiguration(using: cell.configurationState)
+                cell.layoutIfNeeded()
+                XCTAssertEqual(caption.intrinsicContentSize.height, height)
+                let title = try XCTUnwrap(descendant(UILabel.self, in: caption.title))
+                XCTAssertFalse(title.isHidden)
+                XCTAssertEqual(title.text, "Resolved title")
+                XCTAssertFalse(cell.accessibilityTraits.contains(.notEnabled))
+                XCTAssertTrue(cell.canBecomeFocused)
+                XCTAssertTrue(caption.title.subviews.filter { !($0 is UILabel) }.allSatisfy(\.isHidden))
+            }
+        }
+    }
+
     func testNativeFolderAndSharedCaptionMetadata() throws {
         let cell = NativeTVLibraryCell(frame: CGRect(x: 0, y: 0, width: 300, height: 600))
         var environment = EnvironmentValues()

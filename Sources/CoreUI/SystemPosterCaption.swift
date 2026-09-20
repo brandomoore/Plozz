@@ -111,8 +111,11 @@ struct SystemPosterCaption: UIViewRepresentable {
 
     final class CaptionLine: UIView {
         private let label = UILabel()
+        private let placeholder = UIView()
         private let fade = CAGradientLayer()
         private var scrolls = false
+        private var placeholderWidthFraction: CGFloat?
+        private var placeholderHeight: CGFloat = 0
         private var motion: Motion?
         private static let animationKey = "captionMarquee"
         var lineHeight: CGFloat { ceil(label.font.lineHeight) }
@@ -132,6 +135,10 @@ struct SystemPosterCaption: UIViewRepresentable {
             label.isAccessibilityElement = false
             label.numberOfLines = 1
             addSubview(label)
+            placeholder.isHidden = true
+            placeholder.isUserInteractionEnabled = false
+            placeholder.isAccessibilityElement = false
+            addSubview(placeholder)
             fade.startPoint = CGPoint(x: 0, y: 0.5)
             fade.endPoint = CGPoint(x: 1, y: 0.5)
         }
@@ -139,10 +146,27 @@ struct SystemPosterCaption: UIViewRepresentable {
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
         func configure(text: String, font: UIFont, color: UIColor, scrolls: Bool) {
+            placeholderWidthFraction = nil
+            placeholder.isHidden = true
+            label.isHidden = false
             label.text = text
             label.font = font
             label.textColor = color
             self.scrolls = scrolls
+            setNeedsLayout()
+        }
+
+        func configurePlaceholder(font: UIFont, color: UIColor, widthFraction: CGFloat, height: CGFloat) {
+            label.text = nil
+            label.font = font
+            label.isHidden = true
+            label.layer.removeAnimation(forKey: Self.animationKey)
+            motion = nil
+            scrolls = false
+            placeholderWidthFraction = widthFraction
+            placeholderHeight = height
+            placeholder.backgroundColor = color
+            placeholder.isHidden = false
             setNeedsLayout()
         }
 
@@ -158,6 +182,19 @@ struct SystemPosterCaption: UIViewRepresentable {
 
         override func layoutSubviews() {
             super.layoutSubviews()
+            if let fraction = placeholderWidthFraction {
+                let width = (bounds.width * fraction).rounded()
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                layer.mask = nil
+                placeholder.frame = CGRect(
+                    x: (bounds.width - width) / 2, y: (lineHeight - placeholderHeight) / 2,
+                    width: width, height: placeholderHeight
+                )
+                placeholder.layer.cornerRadius = placeholderHeight / 2
+                CATransaction.commit()
+                return
+            }
             let rightToLeft = effectiveUserInterfaceLayoutDirection == .rightToLeft
             let next = Motion(text: label.text ?? "", font: label.font, width: bounds.width,
                               rightToLeft: rightToLeft, scrolls: scrolls && window != nil)

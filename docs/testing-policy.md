@@ -652,8 +652,11 @@ failure; requested focus or loaded-slot counts alone do not prove traversal.
 After leaving fast scroll, delayed metadata arrival must preserve the current
 viewport rather than restore an old offscreen focus preference. Explicit detail
 return requests remain separate from this passive preference.
-System-grid loading cards retain their real cell focus identity and announce
-Loading, but selection and context actions stay disabled until metadata arrives.
+System-grid loading cards use plain gray artwork and caption bars, without
+visible loading copy or playback glyphs. They retain their real cell focus
+identity and announce Loading to accessibility; selection and context actions
+stay disabled until metadata arrives. Skeleton caption lines reserve the normal
+font metrics, so filling a card never changes its layout height.
 The remote fixture also bounds resident cells and exercises context-menu
 navigation, return focus/scroll position, switching to Collections, and a
 600-member collection. `NativeGridMediaHostedTests` compares actual painted
