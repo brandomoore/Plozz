@@ -171,8 +171,8 @@ final class PlayerInputView: UIView {
 
 /// Owns the focusable input surface, hosts the engine's bare video output view,
 /// the SwiftUI controls overlay, and every Siri Remote gesture. Scrubbing is
-/// preview-only — the engine is never seeked until the viewer commits (Select),
-/// so the scrub stays perfectly smooth regardless of stream/seek latency. All
+/// preview-only: movement updates the timeline independently of a committed
+/// engine seek, including when an earlier seek is still settling. All
 /// playback is driven through the `VideoEngine` protocol + `PlayerActions`, never
 /// a concrete player, so this UI is reused verbatim by every engine.
 final class PlayerInputViewController: UIViewController, UIGestureRecognizerDelegate {
@@ -189,6 +189,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     /// per-gesture state that used to live inline in `handlePan`; the point→
     /// seconds math stays in ``ScrubGeometry`` and the side effects stay here.
     private var scrubGesture = ScrubGestureInterpreter()
+    private var lastPanSampleTimestamp: TimeInterval?
     private var resumeAfterScrub = false
 
     /// Pending debounced commit for a *flick*-ended scrub. A fast flick lift
@@ -939,59 +940,22 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
             maxAccelMultiplier: 5)
     }
 
-    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+    @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard model.duration > 0 else { return }
         guard focusContext == .surface else { return }
         guard surfacePan?.click.suppressesPan != true else { return }
         switch gesture.state {
         case .began:
+            if model.isScrubbing { cancelScrubCommit() }
             scrubGesture.begin()
+            lastPanSampleTimestamp = (gesture as? PlayerSurfacePanGestureRecognizer)?.contactStartTimestamp
             ScrubDiagnostics.note("remote-pan began context=\(focusContext)")
+            advanceScrub(using: gesture)
         case .changed:
-            let translation = gesture.translation(in: view)
-            let sampleStart = ScrubDiagnostics.enabled ? CACurrentMediaTime() : 0
-            let wasUndecided = scrubGesture.axis == .undecided
-            let outcome = scrubGesture.changed(
-                translationX: Double(translation.x),
-                translationY: Double(translation.y),
-                velocityX: Double(gesture.velocity(in: view).x),
-                isScrubbing: model.isScrubbing,
-                seekWithoutPausing: model.skipGesture.seekWithoutPausing,
-                isPaused: model.isPaused)
-            if ScrubDiagnostics.enabled, wasUndecided, scrubGesture.axis != .undecided {
-                ScrubDiagnostics.note(
-                    "remote-pan lock x=\(translation.x) y=\(translation.y) outcome=\(outcome) "
-                        + "paused=\(model.isPaused) scrubbing=\(model.isScrubbing)")
-            }
-            switch outcome {
-            case .ignore:
-                break
-            case .enterControlBar:
-                handleDown()
-            case .moveUp:
-                handleUp()
-            case .flashAndSuppress:
-                // Pause-to-seek gate: flash the transport for feedback only.
-                flashControls()
-            case let .advance(deltaPoints, smoothedSpeed, beginScrub, continueTraversal):
-                // Continuing a flick-bridged traversal cancels the pending commit
-                // and keeps scrubbing (momentum carried in the interpreter).
-                if continueTraversal { cancelScrubCommit() }
-                if beginScrub { self.beginScrub() }
-                model.scrubSeconds = ScrubGeometry.advance(
-                    scrubSeconds: model.scrubSeconds,
-                    translationDeltaPoints: deltaPoints,
-                    speedPointsPerSecond: smoothedSpeed,
-                    tuning: scrubTuning,
-                    duration: model.duration)
-                let cacheHit = updatePreviewThumbnail()
-                if ScrubDiagnostics.enabled {
-                    scrubDiag.recordSample(
-                        handlerMs: (CACurrentMediaTime() - sampleStart) * 1000,
-                        cacheHit: cacheHit)
-                }
-            }
+            advanceScrub(using: gesture)
         case .ended, .cancelled, .failed:
+            // A coalesced flick can arrive as began/ended with no changed event.
+            if gesture.state == .ended { advanceScrub(using: gesture) }
             ScrubDiagnostics.note("remote-pan end state=\(gesture.state.rawValue) axis=\(scrubGesture.axis)")
             // Auto-commit a horizontal scrub on lift, like Apple's own
             // AVPlayerViewController — but distinguish a deliberate landing
@@ -1002,7 +966,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
                 velocityX: Double(gesture.velocity(in: view).x),
                 isScrubbing: model.isScrubbing) {
             case .none:
-                break
+                if model.isScrubbing, scrubCommitTask == nil { scheduleScrubCommit() }
             case .commit:
                 commitScrub()
             case .bridgeCommit:
@@ -1010,6 +974,55 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
             }
         default:
             break
+        }
+    }
+
+    private func advanceScrub(using gesture: UIPanGestureRecognizer) {
+        let translation = gesture.translation(in: view)
+        let sampleStart = ScrubDiagnostics.enabled ? CACurrentMediaTime() : 0
+        let timestamp = (gesture as? PlayerSurfacePanGestureRecognizer)?.sampleTimestamp ?? CACurrentMediaTime()
+        let elapsed = lastPanSampleTimestamp.map { max(0, timestamp - $0) } ?? (1.0 / 60.0)
+        lastPanSampleTimestamp = timestamp
+        let wasUndecided = scrubGesture.axis == .undecided
+        let outcome = scrubGesture.changed(
+            translationX: Double(translation.x),
+            translationY: Double(translation.y),
+            velocityX: Double(gesture.velocity(in: view).x),
+            isScrubbing: model.isScrubbing,
+            seekWithoutPausing: model.skipGesture.seekWithoutPausing,
+            isPaused: model.isPaused,
+            elapsed: elapsed)
+        if ScrubDiagnostics.enabled, wasUndecided, scrubGesture.axis != .undecided {
+            ScrubDiagnostics.note(
+                "remote-pan lock phase=\(gesture.state.rawValue) dt=\(elapsed) x=\(translation.x) y=\(translation.y) outcome=\(outcome) "
+                    + "paused=\(model.isPaused) scrubbing=\(model.isScrubbing)")
+        }
+        switch outcome {
+        case .ignore:
+            break
+        case .enterControlBar:
+            if model.isScrubbing { scheduleScrubCommit() }
+            handleDown()
+        case .moveUp:
+            if model.isScrubbing { scheduleScrubCommit() }
+            handleUp()
+        case .flashAndSuppress:
+            flashControls()
+        case let .advance(deltaPoints, smoothedSpeed, beginScrub, continueTraversal):
+            if continueTraversal { cancelScrubCommit() }
+            if beginScrub { self.beginScrub() }
+            model.scrubSeconds = ScrubGeometry.advance(
+                scrubSeconds: model.scrubSeconds,
+                translationDeltaPoints: deltaPoints,
+                speedPointsPerSecond: smoothedSpeed,
+                tuning: scrubTuning,
+                duration: model.duration)
+            let cacheHit = updatePreviewThumbnail()
+            if ScrubDiagnostics.enabled {
+                scrubDiag.recordSample(
+                    handlerMs: (CACurrentMediaTime() - sampleStart) * 1000,
+                    cacheHit: cacheHit)
+            }
         }
     }
 

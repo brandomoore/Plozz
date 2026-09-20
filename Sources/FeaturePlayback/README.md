@@ -73,6 +73,24 @@ Suppression lasts for that contact only; the next touch can swipe immediately.
 These rules are covered by `RemoteClickInterpreterTests` and
 `ScrubGestureInterpreterTests`.
 
+Scrub movement is consumed at pan begin, change, and normal lift. UIKit can
+coalesce a short swipe into begin/end without a changed event, especially at a
+content-matched 24 Hz. The axis threshold excludes only its fixed dead-zone
+distance, never the entire first delivered translation. A follow-up pan suspends
+the pending flick commit immediately; a tiny follow-up that never locks an axis
+reschedules that commit on lift rather than leaving playback in preview mode.
+`PlayerScrubInputTests` exercises these UIKit callback phases, including movement
+while an earlier engine seek remains pending. Display cadence and backend seek
+latency are measured separately; changing the HDMI refresh mode is not this fix.
+
+Per-sample time-label reads live in `PlayerTimelineTimes`, not in the full
+controls body, so moving the timeline does not rebuild unrelated menus and
+controls. Preserve the existing reveal/fade, playhead, and thumbnail animations
+when optimizing this path; removing visual polish is not a performance fix.
+Velocity smoothing uses elapsed touch-event time rather than a fixed weight per
+callback, preserving the same response at 24 Hz and 60 Hz without changing
+Match Content settings.
+
 For live input diagnostics, launch with `SCRUB_DIAG=1` and capture stdout.
 `PLZSCRUB remote-` lines include touch boundaries, press types, sampled positions,
 resolved click actions, pan decisions, and focus transitions. The probe is

@@ -75,8 +75,8 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             var hint = LocalizedStringResource("Open folder")
             value.locale = environment.locale
             hint.locale = environment.locale
-            accessibilityValue = String(localized: value)
-            accessibilityHint = String(localized: hint)
+            accessibilityValue = String(localized: value) // l10n:content — UIKit boundary; resolved with the current environment locale on every update
+            accessibilityHint = String(localized: hint) // l10n:content — UIKit boundary; resolved with the current environment locale on every update
         }
         accessibilityElementsHidden = false
         let references =
@@ -268,7 +268,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     private var loadingTitle: String {
         var title = LocalizedStringResource("Loading")
         title.locale = environment.locale
-        return String(localized: title)
+        return String(localized: title) // l10n:content — UIKit accessibility boundary; computed from the current environment locale
     }
 
     private static let placeholder = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 3)).image {

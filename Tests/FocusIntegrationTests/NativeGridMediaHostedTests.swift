@@ -158,6 +158,26 @@ final class NativeGridMediaHostedTests: XCTestCase {
         }
     }
 
+    func testLoadingAndFolderAccessibilityResolveTheCurrentLocaleOnEveryUpdate() {
+        let cell = NativeTVLibraryCell(frame: CGRect(x: 0, y: 0, width: 300, height: 600))
+        let folder = MediaItem(id: "folder", title: "Movies", kind: .folder)
+        var environment = EnvironmentValues()
+        for identifier in ["en", "fr", "de", "en"] {
+            environment.locale = Locale(identifier: identifier)
+            cell.configure(item: nil, spoilerSettings: .default, environment: environment)
+            var loading = LocalizedStringResource("Loading")
+            loading.locale = environment.locale
+            XCTAssertEqual(cell.accessibilityLabel, String(localized: loading))
+            cell.configure(item: folder, spoilerSettings: .default, environment: environment)
+            var value = LocalizedStringResource("Folder")
+            var hint = LocalizedStringResource("Open folder")
+            value.locale = environment.locale
+            hint.locale = environment.locale
+            XCTAssertEqual(cell.accessibilityValue, String(localized: value))
+            XCTAssertEqual(cell.accessibilityHint, String(localized: hint))
+        }
+    }
+
     func testNativeFolderAndSharedCaptionMetadata() throws {
         let cell = NativeTVLibraryCell(frame: CGRect(x: 0, y: 0, width: 300, height: 600))
         var environment = EnvironmentValues()

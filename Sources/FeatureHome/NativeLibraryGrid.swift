@@ -354,7 +354,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
                 var title = action.title
                 title.locale = locale
                 let menuAction = UIAction(
-                    title: String(localized: title), image: UIImage(systemName: action.systemImage),
+                    title: String(localized: title), image: UIImage(systemName: action.systemImage), // l10n:content — UIKit menu boundary; resolved with the current menu locale
                     attributes: action.isDestructive ? .destructive : []
                 ) { [weak self] _ in
                     if action.isNavigation {
@@ -365,7 +365,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
                 }
                 if var value = action.accessibilityState {
                     value.locale = locale
-                    menuAction.accessibilityValue = String(localized: value)
+                    menuAction.accessibilityValue = String(localized: value) // l10n:content — UIKit accessibility boundary; resolved with the current menu locale
                 }
                 return menuAction
             }

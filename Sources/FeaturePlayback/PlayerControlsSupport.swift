@@ -163,6 +163,82 @@ struct ScrubBar: View {
     }
 }
 
+/// Keep per-sample clock reads out of the full controls tree without changing
+/// the transport's established geometry or animation policies.
+struct PlayerTimelineTimes: View {
+    let model: PlayerControlsModel
+
+    var body: some View {
+        let fadeGap: CGFloat = 16
+        let curLabel = PlayerControls.timeLabel(model.displaySeconds)
+        let remLabel = "-" + PlayerControls.timeLabel(max(0, model.duration - model.displaySeconds))
+        let curW = PlayerControls.measuredTimeWidth(curLabel)
+        let remW = PlayerControls.measuredTimeWidth(remLabel)
+        return GeometryReader { geo in
+            let width = geo.size.width
+            let midY = geo.size.height / 2
+            let knobX = width * CGFloat(model.progressFraction)
+            let halfCur = curW / 2
+            let centerX = min(max(knobX, halfCur), max(halfCur, width - halfCur))
+            let currentRightEdge = centerX + halfCur
+            let remainingLeftEdge = width - remW
+            let glyphShown = !model.isScrubbing
+                && (model.skipGesture.hintVisible || (model.isPaused && model.intendsPause) || model.isSeeking)
+            let glyphReach: CGFloat = glyphShown ? 40 : 0
+            let remainingHidden = currentRightEdge + glyphReach + fadeGap >= remainingLeftEdge
+
+            Text(curLabel)
+                .monospacedDigit()
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.white)
+                .fixedSize()
+                .shadow(radius: 3)
+                .overlay(alignment: .trailing) {
+                    statusGlyph
+                        .frame(width: 30, height: 30)
+                        .offset(x: 40)
+                        .opacity(model.isScrubbing ? 0 : 1)
+                        .animation(
+                            PlayerControls.transportFadeAnimation(scrubbing: model.isScrubbing),
+                            value: model.isScrubbing
+                        )
+                }
+                .position(x: centerX, y: midY)
+
+            Text(remLabel)
+                .monospacedDigit()
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.7))
+                .fixedSize()
+                .shadow(radius: 3)
+                .opacity(remainingHidden ? 0 : 1)
+                .animation(.easeOut(duration: 0.15), value: remainingHidden)
+                .frame(width: width, alignment: .trailing)
+                .position(x: width / 2, y: midY)
+        }
+    }
+
+    @ViewBuilder private var statusGlyph: some View {
+        if model.skipGesture.hintVisible {
+            Image(systemName: model.skipGesture.hintForward
+                ? model.skipGesture.forwardInterval.forwardSymbol
+                : model.skipGesture.backwardInterval.backwardSymbol)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.white)
+                .transition(.scale(scale: 0.5).combined(with: .opacity))
+        } else if model.isSeeking {
+            ProgressView()
+                .tint(.white)
+                .controlSize(.small)
+        } else if model.isPaused && model.intendsPause && !model.isScrubbing {
+            // A preview pause is not user intent; never flash it at seek commit.
+            Image(systemName: "pause.circle.fill")
+                .font(.system(size: 24))
+                .foregroundStyle(.white)
+        }
+    }
+}
+
 /// The Info-card action-button style: an **instant** focus treatment (no fade).
 /// The stock `.glass` / `.borderedProminent` styles animate their own focus
 /// highlight, which can't be disabled from outside — so the Info card draws its

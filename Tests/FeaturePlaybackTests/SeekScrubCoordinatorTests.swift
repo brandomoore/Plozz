@@ -1,6 +1,9 @@
 #if canImport(AVFoundation)
 import CoreModels
 import XCTest
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @testable import FeaturePlayback
 
@@ -212,6 +215,154 @@ final class SeekScrubCoordinatorTests: XCTestCase {
         XCTAssertEqual(controls.pendingSeekTarget, 77)
     }
 }
+
+#if canImport(UIKit)
+@MainActor
+final class PlayerScrubInputTests: XCTestCase {
+    func testBeganSampleMovesPreviewWhileAnEarlierSeekIsPending() {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        model.isSeeking = true
+        let gesture = ScrubInputPan()
+        gesture.phase = .began
+        gesture.travel = CGPoint(x: 500, y: 0)
+        controller.handlePan(gesture)
+        XCTAssertTrue(model.isScrubbing)
+        XCTAssertTrue(model.isSeeking)
+        XCTAssertEqual(model.scrubSeconds, 100 + (500 - 18) * 0.18, accuracy: 0.001)
+        XCTAssertTrue(recorder.targets.isEmpty, "Moving the preview must not commit a seek.")
+    }
+
+    func testShortPanWithoutChangedEventStillMovesAndCommits() {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        let gesture = ScrubInputPan()
+        gesture.phase = .began
+        gesture.travel = CGPoint(x: 10, y: 0)
+        controller.handlePan(gesture)
+        XCTAssertFalse(model.isScrubbing)
+        gesture.phase = .ended
+        gesture.travel = CGPoint(x: 100, y: 0)
+        controller.handlePan(gesture)
+        XCTAssertEqual(recorder.targets.count, 1)
+        XCTAssertEqual(recorder.targets.first ?? -1, 100 + (100 - 18) * 0.18, accuracy: 0.001)
+        XCTAssertFalse(model.isScrubbing)
+    }
+
+    func testEndedSampleIncludesTravelSinceTheLastChangedEvent() {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        let gesture = ScrubInputPan()
+        gesture.phase = .began
+        gesture.travel = CGPoint(x: 20, y: 0)
+        controller.handlePan(gesture)
+        gesture.phase = .changed
+        gesture.travel = CGPoint(x: 40, y: 0)
+        controller.handlePan(gesture)
+        gesture.phase = .ended
+        gesture.travel = CGPoint(x: 100, y: 0)
+        controller.handlePan(gesture)
+        XCTAssertEqual(recorder.targets.first ?? -1, 100 + (100 - 18) * 0.18, accuracy: 0.001)
+        XCTAssertFalse(model.isScrubbing)
+    }
+
+    func testCancellationDoesNotApplyUncommittedTerminalTravel() {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        let gesture = ScrubInputPan()
+        gesture.phase = .began
+        gesture.travel = CGPoint(x: 40, y: 0)
+        controller.handlePan(gesture)
+        let preview = model.scrubSeconds
+        gesture.phase = .cancelled
+        gesture.travel = CGPoint(x: 1000, y: 0)
+        controller.handlePan(gesture)
+        XCTAssertEqual(recorder.targets, [preview])
+    }
+
+    func testFollowUpPanSuspendsFlickCommitBeforeAxisLock() async throws {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        let gesture = ScrubInputPan()
+        gesture.phase = .began
+        gesture.travel = CGPoint(x: 50, y: 0)
+        gesture.speed = CGPoint(x: 2000, y: 0)
+        controller.handlePan(gesture)
+        gesture.phase = .ended
+        controller.handlePan(gesture)
+        XCTAssertTrue(model.isScrubbing)
+        gesture.phase = .began
+        gesture.travel = CGPoint(x: 5, y: 0)
+        gesture.speed = .zero
+        controller.handlePan(gesture)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertTrue(recorder.targets.isEmpty)
+        XCTAssertTrue(model.isScrubbing)
+        gesture.phase = .ended
+        gesture.travel = CGPoint(x: 60, y: 0)
+        controller.handlePan(gesture)
+        XCTAssertEqual(recorder.targets.count, 1)
+        XCTAssertEqual(recorder.targets.first, model.scrubSeconds)
+    }
+
+    func testTinyFollowUpPanRestartsCommitAfterLift() async throws {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        let gesture = ScrubInputPan()
+        gesture.phase = .began
+        gesture.travel = CGPoint(x: 50, y: 0)
+        gesture.speed = CGPoint(x: 2000, y: 0)
+        controller.handlePan(gesture)
+        gesture.phase = .ended
+        controller.handlePan(gesture)
+        gesture.phase = .began
+        gesture.travel = CGPoint(x: 5, y: 0)
+        gesture.speed = .zero
+        controller.handlePan(gesture)
+        gesture.phase = .ended
+        gesture.travel = CGPoint(x: 10, y: 0)
+        controller.handlePan(gesture)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(recorder.targets.count, 1)
+        XCTAssertFalse(model.isScrubbing)
+    }
+
+    private func makeInput() -> (PlayerInputViewController, PlayerControlsModel, ScrubInputRecorder) {
+        let model = PlayerControlsModel()
+        model.duration = 7200
+        model.currentSeconds = 100
+        model.isPaused = true
+        let recorder = ScrubInputRecorder()
+        let controller = PlayerInputViewController(
+            engine: SeekSpyEngine(), model: model,
+            actions: PlayerActions(
+                seek: { recorder.targets.append($0); model.currentSeconds = $0 },
+                togglePlayPause: { model.isPaused.toggle() }
+            )
+        )
+        controller.loadViewIfNeeded()
+        controller.view.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        return (controller, model, recorder)
+    }
+}
+
+@MainActor
+private final class ScrubInputRecorder {
+    var targets: [TimeInterval] = []
+}
+
+private final class ScrubInputPan: UIPanGestureRecognizer {
+    var phase: UIGestureRecognizer.State = .possible
+    var travel: CGPoint = .zero
+    var speed: CGPoint = .zero
+    override var state: UIGestureRecognizer.State {
+        get { phase }
+        set { phase = newValue }
+    }
+    override func translation(in view: UIView?) -> CGPoint { travel }
+    override func velocity(in view: UIView?) -> CGPoint { speed }
+}
+#endif
 
 // MARK: - Spies
 

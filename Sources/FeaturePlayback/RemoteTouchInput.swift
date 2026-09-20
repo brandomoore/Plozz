@@ -3,16 +3,31 @@ import UIKit
 
 final class PlayerSurfacePanGestureRecognizer: UIPanGestureRecognizer {
     var click = RemoteClickInterpreter()
+    private(set) var contactStartTimestamp: TimeInterval?
+    private(set) var sampleTimestamp: TimeInterval?
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         click.touchBegan()
+        contactStartTimestamp = event.timestamp
+        sampleTimestamp = event.timestamp
         ScrubDiagnostics.note("remote-touch began")
         super.touchesBegan(touches, with: event)
     }
 
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        sampleTimestamp = event.timestamp
+        super.touchesMoved(touches, with: event)
+    }
+
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        sampleTimestamp = event.timestamp
         ScrubDiagnostics.note("remote-touch ended click=\(click.suppressesPan)")
         super.touchesEnded(touches, with: event)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        sampleTimestamp = event.timestamp
+        super.touchesCancelled(touches, with: event)
     }
 }
 #endif
