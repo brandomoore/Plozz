@@ -28,6 +28,8 @@ public struct LibraryBrowseView: View {
     /// you're actually flying through content. Reset when the rail's eligibility
     /// goes away (a non-name sort) so re-entering name sort re-arms the reveal.
     @State private var railHasRevealed = false
+    /// Match the adjacent native menu rather than maintaining a second control height.
+    @State private var sortControlHeight: CGFloat?
     /// Pre-built so a synthesized library name ("Movies" on a file share) is
     /// our translated copy while a server's own name stays verbatim.
     private let title: Text
@@ -265,10 +267,13 @@ public struct LibraryBrowseView: View {
                 LibraryFileBrowseButton(library: library, onSelect: onSelect)
             }
             if viewModel.supportsCollections {
-                LibraryContentModeControl(viewModel: viewModel)
+                LibraryContentModeControl(viewModel: viewModel, height: sortControlHeight)
             }
             if !viewModel.availableSortFields.isEmpty {
                 sortControl
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        if height > 0 { sortControlHeight = height }
+                    }
             }
         }
 
@@ -374,7 +379,9 @@ public struct LibraryBrowseView: View {
 }
 
 private struct LibraryContentModeControl: View {
+    private static let trackInset: CGFloat = 4
     let viewModel: LibraryBrowseViewModel
+    let height: CGFloat?
     @Environment(\.themePalette) private var palette
 
     var body: some View {
@@ -384,23 +391,21 @@ private struct LibraryContentModeControl: View {
                 Button {
                     Task { await viewModel.setContentMode(mode) }
                 } label: {
-                    HStack(spacing: 8) {
-                        Text(mode.displayName)
-                            .fontWeight(.semibold)
-                            .lineLimit(1)
-                        Image(systemName: "checkmark")
-                            .font(.subheadline.weight(.bold))
-                            .opacity(isSelected ? 1 : 0)
-                            .accessibilityHidden(true)
-                    }
+                    Text(mode.displayName)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
                 }
-                .buttonStyle(LibraryContentSegmentStyle(isSelected: isSelected))
+                .buttonStyle(LibraryContentSegmentStyle(
+                    isSelected: isSelected,
+                    height: height.map { max(0, $0 - Self.trackInset * 2) }
+                ))
                 .accessibilityValue(isSelected ? Text("Selected") : Text(verbatim: ""))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .accessibilityIdentifier("library-content-mode-\(mode.rawValue)")
             }
         }
-        .padding(8)
+        .padding(Self.trackInset)
+        .frame(height: height)
         .background(Capsule().fill(palette.cardSurface.opacity(0.45)))
         .overlay(Capsule().strokeBorder(palette.cardBorder.opacity(0.8), lineWidth: 1))
         .fixedSize(horizontal: true, vertical: false)
@@ -413,26 +418,29 @@ private struct LibraryContentModeControl: View {
 /// focus leaves, while the bright focus thumb never changes the selected page.
 private struct LibraryContentSegmentStyle: ButtonStyle {
     let isSelected: Bool
+    let height: CGFloat?
 
     func makeBody(configuration: Configuration) -> some View {
-        SegmentBody(configuration: configuration, isSelected: isSelected)
+        SegmentBody(configuration: configuration, isSelected: isSelected, height: height)
     }
 
     private struct SegmentBody: View {
         let configuration: ButtonStyle.Configuration
         let isSelected: Bool
+        let height: CGFloat?
         @Environment(\.isFocused) private var isFocused
         @Environment(\.colorScheme) private var colorScheme
         @Environment(\.themePalette) private var palette
 
         var body: some View {
             configuration.label
-                .font(.headline)
+                .font(.body)
                 .foregroundStyle(isFocused
                     ? (colorScheme == .dark ? Color.black : .white)
                     : (isSelected ? palette.primaryText : palette.secondaryText))
-                .padding(.horizontal, 22)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .frame(height: height)
                 .background {
                     Capsule()
                         .fill(isFocused
