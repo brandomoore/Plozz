@@ -86,7 +86,7 @@ let package = Package(
         // Powers the native HLS-fMP4 remux path for MKV → DoVi + Atmos + seek.
         // See AGENTS.local.md › "Playback engine (AetherEngine / Plozzigen)".
         //
-        // Pinned to the UPSTREAM release tag 7.7.1 -> fa67d5862730e820eb1718d16c24f4db18251237.
+        // Pinned to the UPSTREAM release tag 7.8.0 -> b44385c32e899a7f3420ceee1526cb17738acc55.
         //
         // Plozz no longer carries an AetherEngine fork. Everything the old
         // `plozz-pin-*` stack existed for is upstream as of 5.23.2:
@@ -185,9 +185,12 @@ let package = Package(
         // avoids dispatch-pool starvation in loopback I/O. FFmpegBuild 3.4.x adds
         // AV1 Dolby Vision sample-entry support; deployment targets are unchanged.
         //
+        // 7.8.0 adds opt-in live-stream recording APIs. Existing playback behavior
+        // and deployment targets remain unchanged.
+        //
         // SMB enters AetherEngine only through Plozz's protocol-neutral custom-source
         // bridge; the engine's legacy SMB URL product is not linked.
-        .package(url: "https://github.com/superuser404notfound/AetherEngine", revision: "fa67d5862730e820eb1718d16c24f4db18251237"),
+        .package(url: "https://github.com/superuser404notfound/AetherEngine", revision: "b44385c32e899a7f3420ceee1526cb17738acc55"),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x decode-only) and LibDovi (Dolby Vision
         // RPU parser) are pulled in TRANSITIVELY by AetherEngine — its own manifest
         // declares and consumes them. Plozz used to declare them directly only for
