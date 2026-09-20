@@ -4,6 +4,48 @@ import XCTest
 @testable import FeatureHomeCore
 
 final class HeroDiscoveryIntegrationTests: XCTestCase {
+    func testMixedCacheCannotReclassifyRemovedWatchlistItemAsFeatured() async {
+        var settings = HeroSettings.default
+        settings.sources = [.watchlist, .featured]
+        settings.discoverySources = [.tmdb]
+        settings.autoAdvance = false
+        let removed = MediaItem(
+            id: "watchlist-only", title: "Removed", kind: .movie,
+            backdropURL: URL(string: "https://images.example.test/removed.jpg"),
+            providerIDs: ["Tmdb": "42"], availability: .unknown,
+            locallyValidatedPlayableSource: false
+        )
+        let featured = MediaItem(
+            id: "featured", title: "Featured", kind: .movie,
+            backdropURL: URL(string: "https://images.example.test/featured.jpg"),
+            providerIDs: ["Tmdb": "43"], discoverySources: [.tmdb],
+            availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        let fallback = HeroDiscoveryStatus.attributedFeaturedCandidates(
+            [removed, featured], sources: settings.discoverySources
+        )
+        XCTAssertEqual(fallback.map(\.id), [featured.id])
+        let initial = HeroSourceEligibility(settings: settings, removedFromWatchlist: [removed])
+        let result = await HeroCurator().curateResult(
+            settings: settings, continueWatching: [], watchlist: [removed],
+            sourceEligibility: initial,
+            featuredProvider: { _ in fallback },
+            artworkValidator: { _ in true }
+        )
+        XCTAssertEqual(result.items.map(\.id), [featured.id])
+        let final = HeroSourceEligibility(
+            settings: settings, removedFromWatchlist: [removed],
+            supportingCandidates: result.candidatePool
+        )
+        let merged = HeroLiveMerge.merge(
+            showing: [removed], fresh: result.items, limit: 2,
+            pinnedItemIDs: [removed.id], preservesPinnedItems: true,
+            sourceEligibility: final
+        )
+        XCTAssertEqual(merged.items.map(\.id), [featured.id])
+        XCTAssertEqual(merged.retired, [removed.id])
+    }
+
     func testPinnedTargetIsRevokedWhenOnlyAnotherAccountStillVerifies() {
         let first = MediaSourceRef(accountID: "a", itemID: "a-item", kind: .movie)
         let second = MediaSourceRef(accountID: "b", itemID: "b-item", kind: .movie)

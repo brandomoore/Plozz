@@ -822,7 +822,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AppRuntimeTests",
-            dependencies: ["AppRuntime", "CoreModels", "FeatureAuthCore", "CrashReporting"]
+            dependencies: ["AppRuntime", "CoreModels", "FeatureAuthCore", "CrashReporting", "FeatureHome"]
         ),
         .testTarget(
             name: "MediaDownloadsTests",

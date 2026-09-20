@@ -87,8 +87,10 @@ public struct HeroDiscoveryRuntime: Sendable {
                 guard record.id == key.itemID,
                       record.kind == item.kind,
                       record.locallyValidatedPlayableSource,
-                      Self.matchesStrongIdentity(item, record),
-                      !owned.contains(where: { Self.hasConflictingStrongIdentity($0, record) }) else {
+                      HeroDiscoveryIdentityVerification.matches(item, record),
+                      !owned.contains(where: {
+                          HeroDiscoveryIdentityVerification.hasConflictingStrongIdentity($0, record)
+                      }) else {
                     rejectedIdentity = true
                     continue
                 }
@@ -281,30 +283,6 @@ public struct HeroDiscoveryRuntime: Sendable {
             !owned.ratings.contains { $0.source == rating.source }
         }
         return donor
-    }
-
-    private static func strongIDs(_ item: MediaItem) -> [String: String] {
-        Dictionary(MediaItemIdentity.identities(for: item).compactMap { identity in
-            guard case let .external(source, value) = identity else { return nil }
-            return (source, value)
-        }, uniquingKeysWith: { first, _ in first })
-    }
-
-    private static func matchesStrongIdentity(_ external: MediaItem, _ record: MediaItem) -> Bool {
-        let expected = strongIDs(external)
-        let actual = strongIDs(record)
-        let shared = Set(expected.keys).intersection(actual.keys)
-        // Index membership schedules verification; it is not enough to bless a
-        // title-only or sparse live record as a playable copy of this title.
-        return !shared.isEmpty && shared.allSatisfy { expected[$0] == actual[$0] }
-    }
-
-    private static func hasConflictingStrongIdentity(_ first: MediaItem, _ second: MediaItem) -> Bool {
-        let firstIDs = strongIDs(first)
-        let secondIDs = strongIDs(second)
-        return firstIDs.contains { key, value in
-            secondIDs[key].map { $0 != value } ?? false
-        }
     }
 
     private static func fillMissingProviderIDs(on owned: inout MediaItem, from donor: MediaItem) {

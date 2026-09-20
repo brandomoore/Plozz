@@ -67,8 +67,9 @@ public enum HeroDiscoverySource: String, CaseIterable, Codable, Hashable, Sendab
 /// Providers may additionally admit older series with verified current airings.
 public struct HeroDiscoveryRecency: Hashable, Sendable {
     public static let `default` = HeroDiscoveryRecency()
-    /// Retires saved Featured pools from the older all-time/recommendation feeds.
-    public static let contentVersion = 1
+    /// Retires older feed policies and pools that inferred Featured provenance
+    /// from availability alone.
+    public static let contentVersion = 2
     public let years: Int
 
     public init(years: Int = 2) {
@@ -186,6 +187,34 @@ public extension HeroDiscoveryProviding {
 
 public typealias HeroDiscoveryContentProviding =
     @Sendable (HeroDiscoveryRequest, [HeroDiscoverySource]) async -> [MediaItem]
+
+/// The same live identity proof applies when discovery resolves ownership and
+/// when an already-verified copy supplies a later watch-state update.
+public enum HeroDiscoveryIdentityVerification {
+    public static func matches(_ expected: MediaItem, _ record: MediaItem) -> Bool {
+        guard expected.kind == record.kind else { return false }
+        let expectedIDs = strongIDs(expected)
+        let actualIDs = strongIDs(record)
+        let shared = Set(expectedIDs.keys).intersection(actualIDs.keys)
+        // Index membership alone cannot bless a sparse or title-only record.
+        return !shared.isEmpty && shared.allSatisfy { expectedIDs[$0] == actualIDs[$0] }
+    }
+
+    public static func hasConflictingStrongIdentity(_ first: MediaItem, _ second: MediaItem) -> Bool {
+        let firstIDs = strongIDs(first)
+        let secondIDs = strongIDs(second)
+        return firstIDs.contains { key, value in
+            secondIDs[key].map { $0 != value } ?? false
+        }
+    }
+
+    private static func strongIDs(_ item: MediaItem) -> [String: String] {
+        Dictionary(MediaItemIdentity.identities(for: item).compactMap { identity in
+            guard case let .external(source, value) = identity else { return nil }
+            return (source, value)
+        }, uniquingKeysWith: { first, _ in first })
+    }
+}
 
 public extension MediaItem {
     /// Retains the visible title while revoking library actions and watch state.

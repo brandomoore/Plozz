@@ -90,6 +90,8 @@ struct PlozziOSHomeView: View {
     /// How many consecutive curations have failed to offer each retained title,
     /// so a deleted or un-watchlisted one eventually leaves. See `HeroLiveMerge`.
     @State private var heroRetainedMisses: [String: Int] = [:]
+    @State private var heroEligibility = HeroSourceEligibility.unrestricted
+    @State private var heroCandidatePool = HeroFreshnessCandidatePool.empty
     /// The Random source's retained draw, so a background recomputation reuses the
     /// titles already on screen instead of re-shuffling every library on every
     /// connected server. See ``HeroRandomRollStore``.
@@ -116,6 +118,7 @@ struct PlozziOSHomeView: View {
     @State private var heroSeasonLookupFailures: Set<String> = []
     @State private var heroSeasonLookupIDs: [String: UUID] = [:]
     @State private var watchlistIntentRevision = 0
+    @State private var discoveryIdentityRevision = 0
     @State private var homeHasAppeared = false
     @State private var heroFreshnessRefresh = HeroFreshnessRefreshDriver()
     private let appModel: PlozziOSAppModel
@@ -146,6 +149,7 @@ struct PlozziOSHomeView: View {
             ratingsProvider: RatingsServiceFactory.make()
         )
         self.viewModel = viewModel
+        _discoveryIdentityRevision = State(initialValue: appModel.identityIndex.identityRevisionProvider())
         // Paint last session's hero in the first frame instead of a skeleton. It
         // holds no Continue Watching slides (see `HeroCurationResult.durableItems`),
         // and the fresh curation folds into it rather than replacing it, so the
@@ -205,6 +209,9 @@ struct PlozziOSHomeView: View {
         .plozziOSTracksHeroContainerHeight()
         .onAppear { homeHasAppeared = true }
         .onDisappear { homeHasAppeared = false }
+        .onChange(of: ObjectIdentifier(viewModel)) { _, _ in
+            resetHeroScope()
+        }
         .onChange(of: appModel.settings.homeVisibility.visibility.disabledKeys) { _, disabled in
             heroPinnedItemIDs = []
             heroRetainedMisses = [:]
@@ -212,6 +219,8 @@ struct PlozziOSHomeView: View {
             heroItems = viewModel.cachedHeroItems(for: settings) ?? []
             heroCuratedConfiguration = HeroConfigurationKey(settings: settings)
             heroCuratedDisabledLibraryKeys = disabled
+            heroCandidatePool = .empty
+            refreshHeroSourceEligibility()
         }
         .task(id: homeIsFrontmost && homeHasAppeared && scenePhase == .active
             && playbackRequest == nil && appModel.settings.hero.settings.isActive) {
@@ -245,12 +254,8 @@ struct PlozziOSHomeView: View {
                 for: appModel.settings.homeVisibility.visibility
             )
         }
-        .task(
-            id: FeaturedLoadID(
-                isConfigured: appModel.seerService.isConfigured,
-                configuration: HeroConfigurationKey(settings: appModel.settings.hero.settings)
-            )
-        ) {
+        .task(id: featuredStatusKey) {
+            guard featuredStatusKey.isActive else { return }
             await refreshFeaturedStatusLoop()
         }
         .onReceive(
@@ -258,6 +263,8 @@ struct PlozziOSHomeView: View {
                 for: .universalWatchlistDidChange
             )
         ) { _ in
+            refreshHeroSourceEligibility()
+            watchlistIntentRevision &+= 1
             viewModel.scheduleDurableWatchlistRefresh()
         }
         .onReceive(
@@ -265,6 +272,7 @@ struct PlozziOSHomeView: View {
                 for: .watchlistIntentDidChange
             )
         ) { _ in
+            refreshHeroSourceEligibility()
             watchlistIntentRevision &+= 1
         }
         .onReceive(
@@ -275,6 +283,8 @@ struct PlozziOSHomeView: View {
             // The cache is already in memory, and nobody is waiting for a press
             // acknowledgement. Fold last-known ownership immediately rather than
             // waiting for the interaction debounce used above.
+            refreshHeroSourceEligibility()
+            watchlistIntentRevision &+= 1
             viewModel.refreshDurableWatchlist()
         }
         .onReceive(
@@ -282,10 +292,16 @@ struct PlozziOSHomeView: View {
                 for: .universalWatchlistLoadingProgressDidChange
             )
         ) { _ in
+            if isHeroWatchlistMembershipReady {
+                refreshHeroSourceEligibility()
+                watchlistIntentRevision &+= 1
+            }
             viewModel.refreshWatchlistLoadingProgress()
         }
         .onReceive(NotificationCenter.default.publisher(for: .identityIndexDidUpdate)) { _ in
-            viewModel.scheduleReenrich()
+            viewModel.scheduleReenrich {
+                discoveryIdentityRevision = appModel.identityIndex.identityRevisionProvider()
+            }
         }
         // Lets a Continue Watching card resume without knowing how playback is
         // presented. Routed through the same `play` the hero uses, so a series
@@ -362,6 +378,19 @@ struct PlozziOSHomeView: View {
 
     private func loadedContent(_ content: HomeViewModel.Content) -> some View {
         let visibility = appModel.settings.homeVisibility
+        let settings = appModel.settings.hero.settings
+        let randomLibraries = HeroRandomLibrarySelection.resolve(
+            content.libraries, settings: settings,
+            isVisible: visibility.isVisibleOnHome
+        )
+        let sourceEligibility = heroSourceEligibility(
+            content: content, randomLibraries: randomLibraries,
+            candidates: heroItems, supportingCandidates: heroCandidatePool
+        )
+        let displayHeroItems = HeroCurator().reconcile(
+            heroItems, settings: settings, watchMutations: [],
+            sourceEligibility: sourceEligibility
+        )
         let rows = HomeRow.rows(
             for: content,
             isLibraryVisible: visibility.isVisibleOnHome,
@@ -395,7 +424,7 @@ struct PlozziOSHomeView: View {
                 let heroConfiguration = HeroConfigurationKey(
                     settings: appModel.settings.hero.settings
                 )
-                if heroItems.isEmpty || heroCuratedConfiguration != heroConfiguration
+                if displayHeroItems.isEmpty || heroCuratedConfiguration != heroConfiguration
                     || heroCuratedDisabledLibraryKeys != visibility.visibility.disabledKeys {
                     // Reserve the hero's height while it resolves, so the rows
                     // below don't get shoved down when it lands (tvOS has had
@@ -403,7 +432,7 @@ struct PlozziOSHomeView: View {
                     PlozziOSHomeHeroSkeleton(style: heroStyle)
                 } else {
                     PlozziOSHomeHeroCarousel(
-                        items: heroItems,
+                        items: displayHeroItems,
                         autoAdvance: appModel.settings.hero.settings.autoAdvance,
                         autoAdvanceSeconds:
                             appModel.settings.hero.settings.autoAdvanceSeconds,
@@ -433,6 +462,7 @@ struct PlozziOSHomeView: View {
                         onPinnedItemsChanged: { heroPinnedItemIDs = $0 },
                         onItemExposed: { viewModel.recordHeroExposure($0) },
                         exposureScopeID: ObjectIdentifier(viewModel),
+                        identityIndexRevision: discoveryIdentityRevision,
                         isFrontmost: homeIsFrontmost && homeHasAppeared
                             && playbackRequest == nil && heroRequestConfirmItem == nil
                             && heroRequestError == nil,
@@ -452,8 +482,8 @@ struct PlozziOSHomeView: View {
                     // suppresses a late swap: that keeps the *text* when a logo
                     // misses the window, and the ask here is to see the logo. This
                     // wins the race instead of hiding the loser.
-                    .task(id: heroItems.map(\.id).joined(separator: "|")) {
-                        await warmHeroLogos(for: heroItems)
+                    .task(id: displayHeroItems.map(\.id).joined(separator: "|")) {
+                        await warmHeroLogos(for: displayHeroItems)
                     }
                 }
 
@@ -558,11 +588,13 @@ struct PlozziOSHomeView: View {
             heroPullModel.update(pullDistance)
         }
         .task(
-            id: PlozziOSHeroLoadID(
+            id: HeroCurationLoadKey(
                 content: content,
                 settings: appModel.settings.hero.settings,
                 visibility: appModel.settings.homeVisibility.visibility,
                 freshnessRevision: heroFreshnessRefresh.revision,
+                identityIndexRevision: discoveryIdentityRevision,
+                watchlistMembershipRevision: watchlistIntentRevision,
                 scopeID: ObjectIdentifier(viewModel),
                 seerRevision: appModel.seerService.connectionRevision
             )
@@ -580,7 +612,19 @@ struct PlozziOSHomeView: View {
     /// Seerr with per-title TMDB lookups indefinitely.
     private static let featuredRefreshSlow: Duration = .seconds(20)
 
-    /// Periodically re-fetches featured (Seerr) status and folds each fresh
+    private var featuredStatusKey: HeroStatusRefreshKey {
+        HeroStatusRefreshKey(
+            requestableItems: heroItems.filter {
+                $0.availability != nil && appModel.seerService.hasRequestIdentity(for: $0)
+            },
+            settings: appModel.settings.hero.settings,
+            isConfigured: appModel.seerService.isConfigured,
+            contextID: appModel.plozziOSSeasonRequestContextID,
+            scopeID: ObjectIdentifier(viewModel)
+        )
+    }
+
+    /// Periodically re-fetches optional Seerr status and folds each fresh
     /// title's `availability` + `downloadProgress` back onto the matching hero
     /// item **in place**, so the request CTA tracks the server live
     /// (Request → "NN%" → Play) as a download progresses — mirroring tvOS. Only
@@ -621,22 +665,14 @@ struct PlozziOSHomeView: View {
     /// requested and left the trending list, so the CTA doesn't get stuck on
     /// "Requested" while it's actually downloading.
     private func refreshFeaturedStatusOnce() async {
-        let hero = appModel.settings.hero.settings
-        guard hero.isActive,
-              hero.sources.contains(.featured),
-              appModel.seerService.isConfigured else {
-            return
-        }
-        let inFlight = heroItems.filter { $0.availability != nil }
-        guard !inFlight.isEmpty else { return }
-
-        var statusByID: [String: (MediaAvailabilityStatus?, Double?)] = [:]
-        for item in inFlight {
-            if let status = await appModel.seerService.availability(for: item) {
-                statusByID[item.id] = (status.0, status.1)
-            }
-        }
-        if Task.isCancelled || statusByID.isEmpty { return }
+        let key = featuredStatusKey
+        guard key.isActive, !Task.isCancelled else { return }
+        let updates = await appModel.seerService.availabilityUpdates(for: heroItems)
+        guard !Task.isCancelled, key == featuredStatusKey, !updates.isEmpty else { return }
+        let statusByID = Dictionary(
+            updates.map { ($0.id, ($0.availability, $0.downloadProgress)) },
+            uniquingKeysWith: { _, last in last }
+        )
         foldFeaturedStatus(statusByID, into: &heroItems)
         foldFeaturedStatus(statusByID, into: &featuredItems)
     }
@@ -929,6 +965,63 @@ struct PlozziOSHomeView: View {
         SeasonRequestState.itemKey(for: item)
     }
 
+    private var isHeroWatchlistMembershipReady: Bool {
+        let handler = appModel.mediaItemActionHandler
+        return handler.isDurableWatchlistPresentationReady()
+            && handler.durableWatchlistLoadingTargetCount() == nil
+    }
+
+    private func resetHeroScope() {
+        heroEligibility = .unrestricted
+        heroCandidatePool = .empty
+        heroPinnedItemIDs = []
+        heroRetainedMisses = [:]
+        featuredItems = []
+        featuredConfiguration = nil
+        featuredDisabledLibraryKeys = []
+        let settings = appModel.settings.hero.settings
+        heroItems = viewModel.cachedHeroItems(for: settings) ?? []
+        heroCuratedConfiguration = HeroConfigurationKey(settings: settings)
+        heroCuratedDisabledLibraryKeys = appModel.settings.homeVisibility.visibility.disabledKeys
+        discoveryIdentityRevision = appModel.identityIndex.identityRevisionProvider()
+    }
+
+    private func refreshHeroSourceEligibility() {
+        guard let content = viewModel.state.value else { return }
+        let randomLibraries = HeroRandomLibrarySelection.resolve(
+            content.libraries, settings: appModel.settings.hero.settings,
+            isVisible: appModel.settings.homeVisibility.isVisibleOnHome
+        )
+        heroEligibility = heroSourceEligibility(
+            content: content, randomLibraries: randomLibraries,
+            candidates: heroItems + Array(content.watchlist.prefix(HeroFreshnessCandidatePool.maximumItemsPerSource)),
+            supportingCandidates: heroCandidatePool
+        )
+    }
+
+    private func heroSourceEligibility(
+        content: HomeViewModel.Content,
+        randomLibraries: [HeroRandomLibrary],
+        candidates: [MediaItem],
+        supportingCandidates: HeroFreshnessCandidatePool
+    ) -> HeroSourceEligibility {
+        let handler = appModel.mediaItemActionHandler
+        let ready = isHeroWatchlistMembershipReady
+        return HeroSourceEligibility.capture(
+            settings: appModel.settings.hero.settings,
+            candidates: candidates,
+            continueWatching: content.continueWatching,
+            recentlyAdded: content.latest,
+            randomLibraries: randomLibraries,
+            supportingCandidates: supportingCandidates,
+            previous: heroEligibility
+        ) { item in
+            let subject = item.watchlistSubject
+            if handler.isActivelyRemovingFromWatchlist(subject) { return false }
+            return ready ? handler.isWatchlisted(subject) : nil
+        }
+    }
+
     private func loadHero(from content: HomeViewModel.Content) async {
         let settings = appModel.settings.hero.settings
         let disabledLibraryKeys = appModel.settings.homeVisibility.visibility.disabledKeys
@@ -980,12 +1073,13 @@ struct PlozziOSHomeView: View {
             disabledLibraryKeys: featuredDisabledLibraryKeys,
             matching: configuration, currentDisabledKeys: disabledLibraryKeys
         ) ?? HeroDiscoveryStatus.cachedCandidates(
-            heroItems.filter { $0.availability != nil || !$0.discoverySources.isEmpty },
+            HeroDiscoveryStatus.attributedFeaturedCandidates(
+                heroItems, sources: settings.discoverySources
+            ),
             configuration: heroCuratedConfiguration,
             disabledLibraryKeys: heroCuratedDisabledLibraryKeys,
             matching: configuration, currentDisabledKeys: disabledLibraryKeys
         ) ?? []
-        let seer = appModel.seerService
         let discovery = HeroDiscoveryRuntime(
             accounts: appModel.accountsProviders.resolvedActiveAccounts,
             identitySources: appModel.identityIndex.identitySourcesProvider
@@ -1005,6 +1099,12 @@ struct PlozziOSHomeView: View {
             scope: appModel.profiles.activeNamespace ?? ""
         )
         let curator = HeroCurator()
+        let initialEligibility = heroSourceEligibility(
+            content: content, randomLibraries: randomLibraries,
+            candidates: heroItems + Array(content.watchlist.prefix(HeroFreshnessCandidatePool.maximumItemsPerSource)),
+            supportingCandidates: heroCandidatePool
+        )
+        heroEligibility = initialEligibility
         let result = await curator.curateResult(
             settings: settings,
             continueWatching: content.continueWatching,
@@ -1013,6 +1113,7 @@ struct PlozziOSHomeView: View {
             randomLibraries: randomLibraries,
             watchMutations: pendingMutations,
             freshness: viewModel.heroFreshnessSnapshot(),
+            sourceEligibility: initialEligibility,
             featuredProvider: { limit in
                 let fresh = await discovery.candidates(
                     HeroDiscoveryRequest(
@@ -1038,11 +1139,9 @@ struct PlozziOSHomeView: View {
         // List records can carry an overview but omit their tagline. Publish only
         // after the full hero metadata is ready, otherwise selecting a slide starts
         // a detail fetch that visibly replaces the overview with the tagline.
-        let statuses = await seer.availabilityUpdates(for: result.items)
-        guard !Task.isCancelled else { return }
-        let enriched = await heroMetadataEnricher.enrich(
-            HeroDiscoveryStatus.merging(statuses, into: result.items)
-        )
+        let enriched = await heroMetadataEnricher.enrich(result.items, preservingPinnedSeries: {
+            heroItems.filter { $0.kind == .series && heroPinnedItemIDs.contains($0.id) }
+        })
         guard !Task.isCancelled else { return }
         let curated = curator.deduplicating(enriched)
         // Fold the fresh curation into what is already on screen rather than
@@ -1062,11 +1161,19 @@ struct PlozziOSHomeView: View {
         )
         let foldsIntoLoadedSet = heroCuratedConfiguration == configuration
             && heroCuratedDisabledLibraryKeys == disabledLibraryKeys
+        let updatedPool = result.candidatePool.updatingItems(curated)
+        let sourceEligibility = heroSourceEligibility(
+            content: content, randomLibraries: randomLibraries,
+            candidates: heroItems + curated + updatedPool.buckets
+                .filter { $0.source == .watchlist }.flatMap(\.items),
+            supportingCandidates: updatedPool
+        )
         let showing = foldsIntoLoadedSet
             ? curator.reconcile(
                 heroItems,
                 settings: settings,
-                watchMutations: pendingMutations
+                watchMutations: pendingMutations,
+                sourceEligibility: sourceEligibility
             )
             : []
         let merge = HeroLiveMerge.merge(
@@ -1076,8 +1183,11 @@ struct PlozziOSHomeView: View {
             pinnedItemIDs: heroPinnedItemIDs,
             misses: foldsIntoLoadedSet ? heroRetainedMisses : [:],
             freshIsAuthoritative: freshIsAuthoritative,
-            preservesPinnedItems: true
+            preservesPinnedItems: true,
+            sourceEligibility: sourceEligibility
         )
+        heroEligibility = sourceEligibility
+        heroCandidatePool = sourceEligibility.filtering(updatedPool)
         heroCuratedConfiguration = configuration
         heroCuratedDisabledLibraryKeys = disabledLibraryKeys
         heroRetainedMisses = merge.misses
@@ -1089,51 +1199,12 @@ struct PlozziOSHomeView: View {
         // including a transient failure right after a settings change, when
         // `showing` is deliberately empty — and deleting the snapshot there is the
         // very thing `saveHero`'s empty-write refusal exists to prevent.
-        let durablePool = result.candidatePool.updatingItems(curated).durable()
+        let durablePool = heroCandidatePool.durable()
         if durablePool.isEmpty, freshIsAuthoritative {
             viewModel.clearCachedHeroItems()
         } else {
             viewModel.cacheHeroCandidatePool(durablePool, for: settings)
         }
-    }
-}
-
-private struct FeaturedLoadID: Equatable {
-    let isConfigured: Bool
-    let configuration: HeroConfigurationKey
-}
-
-private struct PlozziOSHeroLoadID: Equatable {
-    let continueWatching: [MediaItem]
-    let watchlist: [MediaItem]
-    let recentlyAdded: [MediaItem]
-    let libraries: [AggregatedLibrary]
-    let configuration: HeroConfigurationKey
-    let visibility: HomeLibraryVisibility
-    let freshnessRevision: Int
-    let scopeID: ObjectIdentifier
-    let seerRevision: UUID
-    let discoverySeeds: [HeroDiscoveryRequest.SeedIdentity]
-
-    init(
-        content: HomeViewModel.Content,
-        settings: HeroSettings,
-        visibility: HomeLibraryVisibility,
-        freshnessRevision: Int,
-        scopeID: ObjectIdentifier,
-        seerRevision: UUID
-    ) {
-        continueWatching = settings.isEnabled(.continueWatching) ? content.continueWatching : []
-        watchlist = settings.isEnabled(.watchlist) ? content.watchlist : []
-        recentlyAdded = settings.isEnabled(.recentlyAdded) ? content.latest : []
-        libraries = settings.isEnabled(.randomFromLibrary) ? content.libraries : []
-        configuration = HeroConfigurationKey(settings: settings)
-        self.visibility = visibility
-        self.freshnessRevision = freshnessRevision
-        self.scopeID = scopeID
-        self.seerRevision = seerRevision
-        discoverySeeds = settings.usesDiscoveryWatchlistSeeds
-            ? HeroDiscoveryRequest(seeds: content.watchlist).seedIdentities : []
     }
 }
 
@@ -1156,8 +1227,8 @@ private struct PlozziOSHomeHeroCarousel: View {
     /// the clock on screen actually belongs to the slide being shown.
     @State private var dwellItemID: String?
     @State private var dragOffset: CGFloat = 0
-    @State private var rootItems: [String: MediaItem] = [:]
-    @State private var playTargets: [String: MediaItem] = [:]
+    @State private var rootItems: [String: HeroResolutionCacheEntry] = [:]
+    @State private var playTargets: [String: HeroResolutionCacheEntry] = [:]
     @State private var transitionTargetID: String?
     @State private var transitionDirection: CGFloat = 0
     @State private var transitionInProgress = false
@@ -1184,6 +1255,7 @@ private struct PlozziOSHomeHeroCarousel: View {
     var onPinnedItemsChanged: (Set<String>) -> Void = { _ in }
     var onItemExposed: (MediaItem) -> Void = { _ in }
     var exposureScopeID: ObjectIdentifier?
+    var identityIndexRevision = 0
     var isFrontmost = true
     let pullModel: PlozziOSHomeHeroPullModel
 
@@ -1448,12 +1520,31 @@ private struct PlozziOSHomeHeroCarousel: View {
         .onChange(of: PlozziOSHeroPinnedIDs(selectedItemID, transitionTargetID), initial: true) { _, pinned in
             onPinnedItemsChanged(pinned.ids)
         }
-        .task(id: selectedItemID) {
+        .task(id: currentItem.map { resolutionKey(for: $0) }) {
             guard let currentItem else { return }
             async let root: Void = resolveRootItem(for: currentItem)
             async let play: Void = resolvePlayTarget(for: currentItem)
-            async let art: Void = warmAdjacentArtwork()
-            _ = await (root, play, art)
+            _ = await (root, play)
+        }
+        .task(id: selectedItemID) {
+            await warmAdjacentArtwork()
+        }
+        .onChange(of: items.map(\.id)) { _, ids in
+            let retained = Set(ids)
+            rootItems = rootItems.filter { retained.contains($0.key) }
+            playTargets = playTargets.filter { retained.contains($0.key) }
+        }
+        .onChange(of: exposureScopeID) { _, _ in
+            let currentKeys = Dictionary(
+                items.map { ($0.id, resolutionKey(for: $0)) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            rootItems = rootItems.filter { id, entry in
+                currentKeys[id].flatMap { entry.value(for: $0) } != nil
+            }
+            playTargets = playTargets.filter { id, entry in
+                currentKeys[id].flatMap { entry.value(for: $0) } != nil
+            }
         }
         .onAppear(perform: installTrailerEndHandler)
         .onDisappear {
@@ -1576,7 +1667,14 @@ private struct PlozziOSHomeHeroCarousel: View {
     }
 
     private func rootItem(for item: MediaItem) -> MediaItem {
-        rootItems[item.id] ?? item
+        rootItems[item.id]?.value(for: resolutionKey(for: item)) ?? item
+    }
+
+    private func resolutionKey(for item: MediaItem) -> HeroPlaybackResolutionKey {
+        HeroPlaybackResolutionKey(
+            item: item, scopeID: exposureScopeID,
+            identityIndexRevision: identityIndexRevision
+        )
     }
 
     /// Request CTA descriptor for a discovery **movie or series** hero. Movies get
@@ -1634,7 +1732,7 @@ private struct PlozziOSHomeHeroCarousel: View {
 
     private func playTarget(for item: MediaItem) -> MediaItem? {
         guard item.discoverySources.isEmpty || item.locallyValidatedPlayableSource else { return nil }
-        if let resolved = playTargets[item.id] {
+        if let resolved = playTargets[item.id]?.value(for: resolutionKey(for: item)) {
             return resolved
         }
         switch item.kind {
@@ -1648,17 +1746,19 @@ private struct PlozziOSHomeHeroCarousel: View {
 
     private func resolveRootItem(for item: MediaItem) async {
         guard item.discoverySources.isEmpty || item.locallyValidatedPlayableSource else { return }
-        guard rootItems[item.id] == nil else { return }
+        let key = resolutionKey(for: item)
+        guard rootItems[item.id]?.value(for: key) == nil else { return }
         let target = bestLibraryItem(for: item)
+        guard target.discoverySources.isEmpty || target.locallyValidatedPlayableSource else { return }
         guard let provider = provider(for: target) else {
-            rootItems[item.id] = item
+            rootItems[item.id] = HeroResolutionCacheEntry(key: key, item: item)
             return
         }
-        var hydrated = (try? await provider.item(id: target.id)) ?? target
-        if hydrated.sourceAccountID == nil,
-           let sourceAccountID = target.sourceAccountID {
-            hydrated = hydrated.taggingSource(sourceAccountID)
-        }
+        let response = (try? await provider.item(id: target.id)) ?? target
+        guard !Task.isCancelled,
+              let hydrated = HeroDiscoveryPlaybackTarget.validatedHydration(
+                response, original: item, selected: target
+              ) else { return }
         let metadataID: String
         if (hydrated.kind == .episode || hydrated.kind == .season),
            let seriesID = hydrated.seriesID {
@@ -1674,37 +1774,24 @@ private struct PlozziOSHomeHeroCarousel: View {
                let sourceAccountID = target.sourceAccountID {
                 root = root.taggingSource(sourceAccountID)
             }
-            rootItems[item.id] = root
+            rootItems[item.id] = HeroResolutionCacheEntry(key: key, item: root)
         } catch {
             guard !Task.isCancelled else { return }
-            rootItems[item.id] = item
+            rootItems[item.id] = HeroResolutionCacheEntry(key: key, item: item)
         }
     }
 
     private func resolvePlayTarget(for item: MediaItem) async {
         guard item.discoverySources.isEmpty || item.locallyValidatedPlayableSource else { return }
-        guard playTargets[item.id] == nil else {
-            return
-        }
+        let key = resolutionKey(for: item)
+        guard playTargets[item.id]?.value(for: key) == nil else { return }
         let selected = bestLibraryItem(for: item)
+        guard selected.discoverySources.isEmpty || selected.locallyValidatedPlayableSource else { return }
         guard let provider = provider(for: selected) else { return }
-        var hydrated = (try? await provider.item(id: selected.id)) ?? selected
-        if hydrated.sourceAccountID == nil,
-           let sourceAccountID = selected.sourceAccountID {
-            hydrated = hydrated.taggingSource(sourceAccountID)
-        }
-        guard var target = await HeroPlayTargetResolver.resolve(
-            item: hydrated,
-            provider: provider
-        ) else {
-            return
-        }
-        guard !Task.isCancelled else { return }
-        if target.sourceAccountID == nil,
-           let sourceAccountID = selected.sourceAccountID {
-            target = target.taggingSource(sourceAccountID)
-        }
-        playTargets[item.id] = target
+        guard let projected = await HeroDiscoveryPlaybackTarget.resolve(
+            original: item, selected: selected, provider: provider
+        ), !Task.isCancelled else { return }
+        playTargets[item.id] = HeroResolutionCacheEntry(key: key, item: projected)
     }
 
     private func bestLibraryItem(for item: MediaItem) -> MediaItem {

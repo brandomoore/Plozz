@@ -9,6 +9,9 @@ import RatingsService
 /// change after arrival, so both platform shells run this bounded enrichment
 /// before merging a fresh curation into the live set.
 public struct HeroMetadataEnricher: Sendable {
+    public typealias PinnedSeriesProvider = @MainActor @Sendable () -> [MediaItem]
+    @TaskLocal private static var pinnedSeriesProvider: PinnedSeriesProvider?
+
     private struct Enrichment: Sendable {
         let root: MediaItem
         let playTarget: MediaItem?
@@ -31,7 +34,20 @@ public struct HeroMetadataEnricher: Sendable {
         self.ratingsProvider = ratingsProvider
     }
 
-    public func enrich(_ items: [MediaItem]) async -> [MediaItem] {
+    /// Scoped adapter for callers whose injected enrichment closure predates the
+    /// pinned-presentation argument. Task-local scope cannot leak between profiles
+    /// or concurrent curations, and the ordinary default remains next-up episodes.
+    public static func withPinnedSeries(
+        _ presentations: @escaping PinnedSeriesProvider,
+        operation: @Sendable () async -> [MediaItem]
+    ) async -> [MediaItem] {
+        await $pinnedSeriesProvider.withValue(presentations, operation: operation)
+    }
+
+    public func enrich(
+        _ items: [MediaItem],
+        preservingPinnedSeries: PinnedSeriesProvider? = nil
+    ) async -> [MediaItem] {
         let targets = Dictionary(
             uniqueKeysWithValues: items.indices.compactMap { index -> (Int, MediaItem)? in
                 let item = items[index]
@@ -123,13 +139,20 @@ public struct HeroMetadataEnricher: Sendable {
             return items
         }
 
+        // Focus/auto-advance can change while metadata loads. Preserve the series
+        // being viewed now, not the slide that was pinned when the request began.
+        let pinnedSeries = await (preservingPinnedSeries ?? Self.pinnedSeriesProvider)?() ?? []
+        guard !Task.isCancelled else { return items }
         var enriched = items
         for (index, detail) in details {
             let originalProviderIDs = enriched[index].providerIDs
             let discoverySources = enriched[index].discoverySources
             let discoveryURLs = enriched[index].discoveryURLs
             let originalCarriesSeriesIDs = enriched[index].kind == .series
-            if var playTarget = detail.playTarget {
+            let preservesSeries = Self.preservesVerifiedSeries(
+                enriched[index], root: detail.root, whilePinned: pinnedSeries
+            )
+            if !preservesSeries, var playTarget = detail.playTarget {
                 playTarget.discoverySources = HeroDiscoverySource.normalized(
                     playTarget.discoverySources + discoverySources
                 )
@@ -204,6 +227,32 @@ public struct HeroMetadataEnricher: Sendable {
             }
         }
         return await applyingCachedRatings(to: enriched)
+    }
+
+    private static func preservesVerifiedSeries(
+        _ item: MediaItem,
+        root: MediaItem,
+        whilePinned presentations: [MediaItem]
+    ) -> Bool {
+        guard item.kind == .series, root.kind == .series,
+              item.locallyValidatedPlayableSource else { return false }
+        // Keep the input's verified series proof, never manufacture a series ref
+        // from a resolved episode id. A retargeted root must be one of its copies.
+        let rootMatchesVerifiedCopy =
+            (item.sourceAccountID != nil && item.sourceAccountID == root.sourceAccountID && item.id == root.id)
+            || item.sources.contains {
+                $0.accountID == root.sourceAccountID && $0.itemID == root.id
+                    && ($0.kind == nil || $0.kind == .series)
+            }
+        guard rootMatchesVerifiedCopy else { return false }
+        return presentations.contains { presentation in
+            guard presentation.kind == .series else { return false }
+            if let accountID = presentation.sourceAccountID,
+               item.sourceAccountID == accountID, item.id == presentation.id {
+                return true
+            }
+            return HeroDiscoveryIdentityVerification.matches(presentation, item)
+        }
     }
 
     private func resolve(

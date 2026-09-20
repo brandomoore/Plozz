@@ -6,6 +6,54 @@ import XCTest
 @testable import AppRuntime
 
 final class HeroDiscoveryRuntimeTests: XCTestCase {
+    @MainActor
+    func testColdFeaturedReverifiesAfterIndexPublicationAndUpgradesThePinnedSlide() async throws {
+        let raw = external()
+        let record = owned()
+        let fixture = fixture(records: [record])
+        let snapshot = IdentityIndexSnapshotStore()
+        let runtime = HeroDiscoveryRuntime(
+            accounts: [fixture.account], identitySources: snapshot.sourcesProvider(),
+            discovery: { _, _ in [raw] }
+        )
+        var settings = HeroSettings.default
+        settings.sources = [.featured]
+        settings.autoAdvance = false
+        let scope = NSObject()
+        let connection = UUID()
+        func loadKey() -> HeroCurationLoadKey {
+            HeroCurationLoadKey(
+                content: .init(), settings: settings, visibility: .default,
+                freshnessRevision: 0, identityIndexRevision: snapshot.revision,
+                scopeID: ObjectIdentifier(scope), seerRevision: connection
+            )
+        }
+
+        let coldKey = loadKey()
+        let cold = await runtime.candidates(.init(), sources: [.tmdb], hideWatched: true)
+        let showing = try XCTUnwrap(cold.first)
+        XCTAssertFalse(showing.hasPlayableLibraryTarget())
+        let index = IdentityIndex()
+        await index.ingest([record], accountID: fixture.account.account.id)
+        snapshot.update(await index.snapshot())
+        XCTAssertNotEqual(loadKey(), coldKey, "Index publication must restart the actual curation task identity.")
+
+        let fresh = await runtime.candidates(.init(), sources: [.tmdb], hideWatched: true)
+        let merged = HeroLiveMerge.merge(
+            showing: cold, fresh: fresh, limit: 1,
+            pinnedItemIDs: [showing.id], preservesPinnedItems: true
+        )
+        let visible = try XCTUnwrap(merged.items.first)
+        XCTAssertEqual(visible.id, showing.id, "Learning ownership must not replace the visible slide.")
+        XCTAssertTrue(visible.hasPlayableLibraryTarget())
+        let target = PlaybackSourceSelection.bestPlayItem(
+            visible, accounts: [fixture.account], identitySources: snapshot.sourcesProvider()
+        )
+        XCTAssertEqual(target.id, record.id, "Playback must use the verified physical ID, never the display alias.")
+        XCTAssertEqual(target.sourceAccountID, fixture.account.account.id)
+        XCTAssertEqual(visible.sources.map(\.itemID), [record.id])
+    }
+
     func testRejectedDiscoveryCannotRegainOwnershipDuringRoutingOrMetadataEnrichment() async throws {
         let raw = external(kind: .series)
         let record = owned(kind: .series).taggingLibrary("hidden")

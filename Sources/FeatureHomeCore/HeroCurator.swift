@@ -90,6 +90,7 @@ public struct HeroCurator: Sendable {
         randomLibraries: [HeroRandomLibrary] = [],
         watchMutations: [MediaItemMutation] = [],
         freshness: HeroFreshnessSnapshot = .disabled,
+        sourceEligibility: HeroSourceEligibility = .unrestricted,
         featuredProvider: FeaturedContentProviding = HeroFeaturedProvider.none,
         randomProvider: RandomLibraryContentProviding = HeroRandomProvider.none,
         artworkProvider: @escaping HeroArtworkProviding = HeroArtworkProvider.none,
@@ -103,6 +104,7 @@ public struct HeroCurator: Sendable {
             randomLibraries: randomLibraries,
             watchMutations: watchMutations,
             freshness: freshness,
+            sourceEligibility: sourceEligibility,
             featuredProvider: featuredProvider,
             randomProvider: randomProvider,
             artworkProvider: artworkProvider,
@@ -121,6 +123,7 @@ public struct HeroCurator: Sendable {
         randomLibraries: [HeroRandomLibrary] = [],
         watchMutations: [MediaItemMutation] = [],
         freshness: HeroFreshnessSnapshot = .disabled,
+        sourceEligibility: HeroSourceEligibility = .unrestricted,
         featuredProvider: FeaturedContentProviding = HeroFeaturedProvider.none,
         randomProvider: RandomLibraryContentProviding = HeroRandomProvider.none,
         artworkProvider: @escaping HeroArtworkProviding = HeroArtworkProvider.none,
@@ -157,7 +160,7 @@ public struct HeroCurator: Sendable {
             }
         }.enumerated().map { index, items in
             let filtered = HeroWatchEligibility.filter(
-                items,
+                items.filter { sourceEligibility.allows($0, from: settings.sources[index]) },
                 settings: settings,
                 mutations: watchMutations
             )
@@ -218,7 +221,8 @@ public struct HeroCurator: Sendable {
         watchlist: [MediaItem],
         recentlyAdded: [MediaItem] = [],
         watchMutations: [MediaItemMutation] = [],
-        freshness: HeroFreshnessSnapshot = .disabled
+        freshness: HeroFreshnessSnapshot = .disabled,
+        sourceEligibility: HeroSourceEligibility = .unrestricted
     ) -> [MediaItem] {
         guard settings.isActive else { return [] }
         let perSource: [[MediaItem]] = settings.sources.map { source in
@@ -235,7 +239,7 @@ public struct HeroCurator: Sendable {
 
         }.enumerated().map { index, items in
             let filtered = HeroWatchEligibility.filter(
-                items,
+                items.filter { sourceEligibility.allows($0, from: settings.sources[index]) },
                 settings: settings,
                 mutations: watchMutations
             )
@@ -248,17 +252,17 @@ public struct HeroCurator: Sendable {
         )
     }
 
-    /// Reapplies current watched-state intent to an already-curated Hero while an
-    /// async watch-history refresh is in flight. The candidate set and artwork stay
-    /// stable, so focus is preserved, but a newly watched title cannot linger.
+    /// Reapplies watch-state and authoritative source eligibility while a refresh
+    /// is in flight. Other candidates retain their order and artwork.
     public func reconcile(
         _ items: [MediaItem],
         settings: HeroSettings?,
-        watchMutations: [MediaItemMutation]
+        watchMutations: [MediaItemMutation],
+        sourceEligibility: HeroSourceEligibility = .unrestricted
     ) -> [MediaItem] {
         guard let settings, settings.isActive else { return [] }
         return HeroWatchEligibility.filter(
-            items,
+            sourceEligibility.filtering(items),
             settings: settings,
             mutations: watchMutations
         )

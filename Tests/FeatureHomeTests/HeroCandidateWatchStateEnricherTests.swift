@@ -172,10 +172,84 @@ final class HeroCandidateWatchStateEnricherTests: XCTestCase {
         XCTAssertEqual(enriched, [watched])
     }
 
+    func testVerifiedDiscoveryCompletionRefreshesCurrentAndHistoricalState() async throws {
+        let source = MediaSourceRef(
+            accountID: "verified", itemID: "physical", kind: .movie,
+            resumePosition: 45, playedPercentage: 0.1
+        )
+        let candidate = MediaItem(
+            id: "physical", title: "Movie", kind: .movie,
+            resumePosition: 45, playedPercentage: 0.1,
+            providerIDs: ["Tmdb": "42"], discoverySources: [.tmdb],
+            sourceAccountID: "verified", sources: [source]
+        )
+        let completedAt = Date(timeIntervalSince1970: 20)
+        let refreshed = await HeroCandidateWatchStateEnricher.enrich(
+            [candidate],
+            sourceRefs: { _ in
+                XCTFail("Verified discovery must refresh carried copies, not new index hints.")
+                return []
+            },
+            fetch: { ref in
+                MediaItem(
+                    id: ref.itemID, title: "Movie", kind: .movie,
+                    resumePosition: 600, playedPercentage: 1,
+                    isPlayed: true, hasBeenPlayed: false,
+                    providerIDs: ["TMDB ID": "42"], sourceAccountID: ref.accountID,
+                    lastPlayedAt: completedAt
+                )
+            }
+        )
+
+        let item = try XCTUnwrap(refreshed.first)
+        XCTAssertTrue(item.hasBeenPlayed)
+        XCTAssertTrue(item.isPlayed)
+        XCTAssertNil(item.resumePosition)
+        XCTAssertEqual(item.lastPlayedAt, completedAt)
+        XCTAssertEqual(item.sources.map(\.id), [source.id])
+        XCTAssertEqual(item.sources.first?.hasBeenPlayed, true)
+        XCTAssertTrue(item.locallyValidatedPlayableSource)
+    }
+
     func testCandidatePoolOversamplesOnlyForWatchedFiltering() {
         XCTAssertEqual(HeroCandidatePool.requestLimit(finalLimit: 8, hideWatched: false), 8)
         XCTAssertEqual(HeroCandidatePool.requestLimit(finalLimit: 8, hideWatched: true), 16)
         XCTAssertEqual(HeroCandidatePool.requestLimit(finalLimit: 30, hideWatched: true), 48)
         XCTAssertEqual(HeroCandidatePool.requestLimit(finalLimit: 0, hideWatched: true), 0)
+    }
+
+    func testCancelledDiscoveryRefreshCannotPublishLateDisqualification() async {
+        let source = MediaSourceRef(accountID: "verified", itemID: "physical", kind: .movie)
+        let candidate = MediaItem(
+            id: "physical", title: "Movie", kind: .movie,
+            providerIDs: ["Tmdb": "42"], discoverySources: [.tmdb],
+            sourceAccountID: "verified", sources: [source]
+        )
+        let started = expectation(description: "Verified detail lookup started")
+        let task = Task {
+            await HeroCandidateWatchStateEnricher.enrich(
+                [candidate], sourceRefs: { _ in [] },
+                fetch: { _ in
+                    started.fulfill()
+                    do {
+                        try await Task.sleep(for: .seconds(30))
+                    } catch is CancellationError {
+                        // Simulate a provider delivering a late response despite cancellation.
+                    } catch {
+                        XCTFail("Unexpected delay failure: \(error)")
+                    }
+                    return MediaItem(
+                        id: "different-item", title: "Different movie", kind: .movie,
+                        isPlayed: true, providerIDs: ["Tmdb": "9999"]
+                    )
+                }
+            )
+        }
+        await fulfillment(of: [started], timeout: 2)
+        task.cancel()
+        let result = await task.value
+        XCTAssertTrue(result.isEmpty)
+        XCTAssertTrue(candidate.locallyValidatedPlayableSource)
+        XCTAssertEqual(candidate.sources, [source])
     }
 }

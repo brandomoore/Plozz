@@ -392,7 +392,9 @@ content task key, so unchanged rows cannot suppress freshness indefinitely.
 Fresh data is merged without displacing the current slide or restarting its
 trailer; failed refreshes retain the usable cache. Explicit library/source
 eligibility changes override that protection and invalidate stale selections,
-including memoized startup choices. Featured status polling
+including memoized startup choices. Explicit Watchlist membership removal must
+also retire a pin when no other enabled source still supplies that title;
+ordinary discovery rotation must not. Featured status polling
 refreshes the displayed titles directly, including titles outside trending's
 first page. These policies are shared by tvOS and iOS.
 
@@ -405,6 +407,27 @@ through metadata enrichment, CTA classification, or playback selection.
 Discovery-tagged records use only their verified source set; explicit library
 disablement also prunes cached ownership. A failed provider lookup preserves an
 external title, not an invented playable copy.
+Lightweight watch-state refreshes must preserve this boundary too: they read
+only carried, verified copies and accept live watch fields only from matching
+identities. They must not widen routing through index hints.
+
+iOS curation keys include the scoped identity-index publication revision when
+Featured discovery is enabled. An index warming after cold discovery therefore
+triggers live ownership verification without waiting for the ten-minute timer.
+Source-label and other presentation-only settings do not trigger that work.
+The selected slide's root/episode resolution and caches also key on ownership,
+routing and scope rather than display id alone. A pinned catalog series can gain
+Play without paging away, and revoked routes cannot reuse its cached episode.
+Provider hydration must still match the verified physical parent before querying
+children. Resolved episodes retain discovery provenance and only the actual
+resolved provider route, never alternate episode routes inferred from series refs.
+
+Optional Seerr availability runs independently of initial hero publication.
+Status task keys change when published request identities or profile/connection
+scope changes, not when status/progress values change. A batch returns completed
+statuses within five seconds; the shared four-operation limit includes cancelled
+or retired HTTP work until it actually returns. Deadline, cancellation, and
+connection rotation stop admitting more candidates.
 
 `HeroDiscoveryService` caches only public, unowned provider results, separately
 from profile watch state and hero exposure. It coalesces identical requests,

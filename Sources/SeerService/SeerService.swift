@@ -48,6 +48,7 @@ public final class SeerService {
     /// contexts with nothing to migrate (tests/previews).
     @ObservationIgnored private let legacyCredentialStore: SeerCredentialStoring?
     @ObservationIgnored private let http: HTTPClient
+    @ObservationIgnored let discoveryStatusCoordinator: SeerDiscoveryStatusCoordinator
     /// Invalidates in-flight lifecycle work without changing the revision of the
     /// last successfully adopted connection.
     @ObservationIgnored private var connectionAttemptGeneration: UInt64 = 0
@@ -67,12 +68,18 @@ public final class SeerService {
     public init(
         connectionStore: SeerConnectionStoring,
         legacyCredentialStore: SeerCredentialStoring? = nil,
-        http: HTTPClient = URLSessionHTTPClient()
+        http: HTTPClient = URLSessionHTTPClient(),
+        discoveryStatusResponseBudget: Duration = .seconds(5)
     ) {
         self.connectionStore = connectionStore
         self.legacyCredentialStore = legacyCredentialStore
         self.http = http
-        self.config = Self.loadConfig(from: connectionStore)
+        let config = Self.loadConfig(from: connectionStore)
+        self.config = config
+        self.discoveryStatusCoordinator = SeerDiscoveryStatusCoordinator(
+            client: SeerClient(config: config, http: http),
+            responseBudget: discoveryStatusResponseBudget
+        )
     }
 
     /// Whether a server URL + API key are saved (feature is set up). The hero
@@ -292,6 +299,7 @@ public final class SeerService {
         cachedRadarr = nil
         cachedSonarr = nil
         connectionRevision = UUID()
+        discoveryStatusCoordinator.replaceClient(with: client)
     }
 
     private static func summary(from status: SeerStatus) -> LocalizedStringResource {

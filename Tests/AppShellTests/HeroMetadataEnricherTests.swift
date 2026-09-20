@@ -1,9 +1,194 @@
 import XCTest
+import Foundation
 import CoreModels
 import RatingsService
+import AppRuntime
+import FeatureHomeCore
 @testable import AppShell
 
+private final class PinnedSeriesTestState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [MediaItem] = []
+    var items: [MediaItem] { lock.withLock { stored } }
+    func set(_ items: [MediaItem]) { lock.withLock { stored = items } }
+}
+
 final class HeroMetadataEnricherTests: XCTestCase {
+    func testPinnedExternalSeriesKeepsVerifiedSeriesThroughEnrichmentMergeAndPlaybackResolution() async throws {
+        let scenario = pinnedSeriesScenario()
+        let accounts = [scenario.account]
+        let enricher = HeroMetadataEnricher(
+            accounts: accounts,
+            targetSelector: { PlaybackSourceSelection.bestPlayItem($0, accounts: accounts, identitySources: { _ in [] }) }
+        )
+        let fresh = await enricher.enrich(
+            [scenario.verified], preservingPinnedSeries: { [scenario.external] }
+        )
+        let series = try XCTUnwrap(fresh.first)
+        XCTAssertEqual(series.kind, .series)
+        XCTAssertEqual(series.id, scenario.verified.id)
+        XCTAssertEqual(series.providerID(.tmdb), "42")
+        XCTAssertNil(series.providerID(.seriesTmdb))
+        XCTAssertEqual(series.sources, scenario.verified.sources)
+        XCTAssertEqual(series.taglines, ["Series tagline"])
+        XCTAssertEqual(series.discoverySources, [.tmdb])
+
+        let merge = HeroLiveMerge.merge(
+            showing: [scenario.external], fresh: fresh, limit: 1,
+            pinnedItemIDs: [scenario.external.id], preservesPinnedItems: true
+        )
+        let visible = try XCTUnwrap(merge.items.first)
+        XCTAssertEqual(visible.id, scenario.external.id)
+        XCTAssertEqual(visible.kind, .series)
+        XCTAssertTrue(visible.hasPlayableLibraryTarget())
+        XCTAssertNil(visible.sourceAccountID)
+        XCTAssertEqual(visible.sources.map(\.itemID), [scenario.verified.id])
+        XCTAssertTrue(visible.sources.allSatisfy { $0.kind == .series })
+        XCTAssertFalse(visible.sources.contains { $0.itemID == scenario.episode.id })
+
+        let scope = NSObject()
+        let externalResolution = HeroPlaybackResolutionKey(
+            item: scenario.external, scopeID: ObjectIdentifier(scope), identityIndexRevision: 1
+        )
+        let ownedResolution = HeroPlaybackResolutionKey(
+            item: visible, scopeID: ObjectIdentifier(scope), identityIndexRevision: 1
+        )
+        XCTAssertNotEqual(externalResolution, ownedResolution,
+                          "The carousel must restart episode resolution without paging away.")
+        let physicalSeries = PlaybackSourceSelection.bestPlayItem(
+            visible, accounts: accounts, identitySources: { _ in [] }
+        )
+        XCTAssertEqual(physicalSeries.id, scenario.verified.id)
+        XCTAssertEqual(physicalSeries.sourceAccountID, scenario.account.account.id)
+        let target = await HeroPlayTargetResolver.playbackTarget(
+            for: physicalSeries, provider: scenario.account.provider
+        )
+        let episode = try XCTUnwrap(target)
+        XCTAssertEqual(episode.kind, .episode)
+        XCTAssertEqual(episode.id, scenario.episode.id)
+        XCTAssertEqual(episode.sourceAccountID, scenario.account.account.id)
+        let projected = try XCTUnwrap(HeroDiscoveryPlaybackTarget.project(
+            resolved: episode, original: visible, selected: physicalSeries
+        ))
+        let routed = PlaybackSourceSelection.bestPlayItem(
+            projected, accounts: accounts,
+            identitySources: { _ in
+                XCTFail("Resolving an episode must not lose discovery's verified-source boundary.")
+                return []
+            }
+        )
+        XCTAssertEqual(routed.id, episode.id)
+        XCTAssertEqual(routed.sourceAccountID, scenario.account.account.id)
+        XCTAssertEqual(projected.discoverySources, visible.discoverySources)
+        let cache = HeroResolutionCacheEntry(key: ownedResolution, item: projected)
+        XCTAssertEqual(cache.value(for: ownedResolution)?.kind, .episode)
+        XCTAssertNil(cache.value(for: externalResolution))
+    }
+
+    func testTVClosureContextPreservesPinnedSeriesAndUnpinnedEnrichmentStillFindsNextEpisode() async throws {
+        let scenario = pinnedSeriesScenario()
+        let enrich = makeHeroMetadataEnricher(
+            accounts: [scenario.account], identitySources: { _ in [] }
+        )
+        let pinned = await HeroMetadataEnricher.withPinnedSeries({ [scenario.external] }) {
+            await enrich([scenario.verified])
+        }
+        XCTAssertEqual(pinned.first?.kind, .series)
+        XCTAssertEqual(pinned.first?.id, scenario.verified.id)
+        let unpinned = await enrich([scenario.verified])
+        let episode = try XCTUnwrap(unpinned.first)
+        XCTAssertEqual(episode.kind, .episode)
+        XCTAssertEqual(episode.id, scenario.episode.id)
+        XCTAssertEqual(episode.seriesID, scenario.verified.id)
+        XCTAssertEqual(episode.providerID(.tmdb), "episode-42-2")
+        XCTAssertEqual(episode.providerID(.seriesTmdb), "42")
+        XCTAssertEqual(episode.discoverySources, [.tmdb])
+        let merge = HeroLiveMerge.merge(
+            showing: pinned, fresh: unpinned, limit: 1,
+            pinnedItemIDs: [], preservesPinnedItems: true
+        )
+        XCTAssertEqual(merge.items.first?.kind, .episode)
+        XCTAssertEqual(merge.items.first?.id, scenario.episode.id)
+    }
+
+    func testPinnedSeriesPreservationDoesNotApplyToDifferentOrWeaklyMatchedTitles() async {
+        let scenario = pinnedSeriesScenario()
+        let accounts = [scenario.account]
+        let enricher = HeroMetadataEnricher(
+            accounts: accounts,
+            targetSelector: { PlaybackSourceSelection.bestPlayItem($0, accounts: accounts, identitySources: { _ in [] }) }
+        )
+        var unrelated = scenario.external
+        unrelated.providerIDs = ["Tmdb": "99"]
+        let unrelatedSeries = unrelated
+        let otherPinned = await enricher.enrich([scenario.verified], preservingPinnedSeries: { [unrelatedSeries] })
+        XCTAssertEqual(otherPinned.first?.kind, .episode)
+        var titleOnly = scenario.external
+        titleOnly.title = scenario.verified.title
+        titleOnly.providerIDs = [:]
+        let titleOnlySeries = titleOnly
+        let weaklyPinned = await enricher.enrich([scenario.verified], preservingPinnedSeries: { [titleOnlySeries] })
+        XCTAssertEqual(weaklyPinned.first?.kind, .episode)
+    }
+
+    func testSeriesPinnedAfterEnrichmentStartsStillGetsPlayableSeriesProof() async throws {
+        let scenario = pinnedSeriesScenario()
+        let pins = PinnedSeriesTestState()
+        let accounts = [scenario.account]
+        let enricher = HeroMetadataEnricher(
+            accounts: accounts,
+            targetSelector: { item in
+                pins.set([scenario.external])
+                return PlaybackSourceSelection.bestPlayItem(item, accounts: accounts, identitySources: { _ in [] })
+            }
+        )
+        let fresh = await enricher.enrich(
+            [scenario.verified], preservingPinnedSeries: { pins.items }
+        )
+        XCTAssertEqual(fresh.first?.kind, .series)
+        let merged = HeroLiveMerge.merge(
+            showing: [scenario.external], fresh: fresh, limit: 1,
+            pinnedItemIDs: [scenario.external.id], preservesPinnedItems: true
+        )
+        let visible = try XCTUnwrap(merged.items.first)
+        XCTAssertEqual(visible.id, scenario.external.id)
+        XCTAssertTrue(visible.hasPlayableLibraryTarget())
+    }
+
+    private func pinnedSeriesScenario() -> (
+        external: MediaItem, verified: MediaItem, episode: MediaItem, account: ResolvedAccount
+    ) {
+        let accountID = "series-account"
+        let seriesID = "library-series"
+        let external = MediaItem(
+            id: "tmdb:series:42", title: "Visible series", kind: .series,
+            backdropURL: URL(string: "https://public.example/series.jpg"),
+            providerIDs: ["Tmdb": "42"], discoverySources: [.tmdb],
+            availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        let verified = MediaItem(
+            id: seriesID, title: "Library series", kind: .series,
+            backdropURL: URL(string: "https://server.example/series.jpg"),
+            providerIDs: ["Tmdb": "42"], discoverySources: [.tmdb],
+            sourceAccountID: accountID,
+            sources: [.init(accountID: accountID, itemID: seriesID, kind: .series)]
+        )
+        var hydrated = verified
+        hydrated.taglines = ["Series tagline"]
+        hydrated.overview = "Series overview"
+        let episode = MediaItem(
+            id: "library-episode", title: "Next episode", kind: .episode,
+            seasonNumber: 1, episodeNumber: 2, seriesID: seriesID,
+            runtime: 1_200, resumePosition: 100,
+            providerIDs: ["Tmdb": "episode-42-2"]
+        )
+        let account = resolved(
+            accountID, details: [seriesID: hydrated, episode.id: episode],
+            childrenByID: [seriesID: [episode]]
+        )
+        return (external, verified, episode, account)
+    }
+
     func testBasicGuidanceEnrichesAnOtherwiseCompleteHeroWithoutFetchingACloudReview() async {
         let sparse = MediaItem(
             id: "movie", title: "Movie", kind: .movie, overview: "Overview",
@@ -191,7 +376,8 @@ final class HeroMetadataEnricherTests: XCTestCase {
 
     private func resolved(
         _ accountID: String,
-        details: [String: MediaItem]
+        details: [String: MediaItem],
+        childrenByID: [String: [MediaItem]] = [:]
     ) -> ResolvedAccount {
         let session = UserSession(
             server: MediaServer(
@@ -214,7 +400,7 @@ final class HeroMetadataEnricherTests: XCTestCase {
         )
         return ResolvedAccount(
             account: account,
-            provider: HeroMetadataProvider(session: session, details: details)
+            provider: HeroMetadataProvider(session: session, details: details, childrenByID: childrenByID)
         )
     }
 }
@@ -260,10 +446,12 @@ private class HeroMetadataProvider: MediaProvider, @unchecked Sendable {
     let kind: ProviderKind = .jellyfin
     let session: UserSession
     private let details: [String: MediaItem]
+    private let childrenByID: [String: [MediaItem]]
 
-    init(session: UserSession, details: [String: MediaItem]) {
+    init(session: UserSession, details: [String: MediaItem], childrenByID: [String: [MediaItem]] = [:]) {
         self.session = session
         self.details = details
+        self.childrenByID = childrenByID
     }
 
     func libraries() async throws -> [MediaLibrary] { [] }
@@ -276,7 +464,7 @@ private class HeroMetadataProvider: MediaProvider, @unchecked Sendable {
     }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
-    func children(of itemID: String) async throws -> [MediaItem] { [] }
+    func children(of itemID: String) async throws -> [MediaItem] { childrenByID[itemID] ?? [] }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
     func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}

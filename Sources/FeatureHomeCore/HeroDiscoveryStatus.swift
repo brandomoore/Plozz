@@ -1,6 +1,14 @@
 import CoreModels
 
 public enum HeroDiscoveryStatus {
+    /// Availability also appears on Watchlist titles; only discovery attribution
+    /// can classify an item from a mixed carousel as a Featured fallback.
+    public static func attributedFeaturedCandidates(
+        _ items: [MediaItem], sources: [HeroDiscoverySource]
+    ) -> [MediaItem] {
+        items.filter { $0.discoverySources.contains(where: sources.contains) }
+    }
+
     public static func cachedCandidates(
         _ items: [MediaItem],
         configuration: HeroConfigurationKey?,

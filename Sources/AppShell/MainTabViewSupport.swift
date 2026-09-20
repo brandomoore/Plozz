@@ -240,7 +240,9 @@ private func makeHeroWatchStateFetcher(
 /// Backs `HomeView`'s external-refresh fast path so a warmed identity index or a
 /// cross-device watch drops a now-seen title without the full re-curate that
 /// profiling showed drove multi-second stalls while browsing. A no-op passthrough
-/// when Hide Watched is off (nothing to re-check).
+/// when Hide Watched is off (nothing to re-check). The enricher consults
+/// `identitySources` only for ordinary library/legacy candidates; discovery-tagged
+/// items retain the verified-copy boundary established by `HeroDiscoveryRuntime`.
 func makeHeroWatchStateRefresher(
     accounts: [ResolvedAccount],
     hideWatched: Bool,

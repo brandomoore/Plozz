@@ -46,6 +46,8 @@ public final class HomeHeroRuntimeState {
     /// a deleted or un-watchlisted one eventually leaves rather than haunting the
     /// carousel. See ``HeroLiveMerge``. Unobserved: only the fold reads it.
     @ObservationIgnored var retainedMisses: [String: Int] = [:]
+    @ObservationIgnored var candidatePool: HeroFreshnessCandidatePool = .empty
+    @ObservationIgnored var sourceEligibility: HeroSourceEligibility = .unrestricted
     /// Live, in-session watched/unwatched intents replayed onto the hero until the
     /// durable snapshot catches up. Kept bounded via ``registerWatchMutation(_:)``.
     var watchMutations: [MediaItemMutation] = []
@@ -69,6 +71,8 @@ public final class HomeHeroRuntimeState {
         freshnessRefresh = HeroFreshnessRefreshDriver()
         pinnedItemIDs = []
         retainedMisses = [:]
+        candidatePool = .empty
+        sourceEligibility = .unrestricted
         externalRefreshRevision &+= 1
         scopeRevision &+= 1
     }
@@ -374,6 +378,7 @@ public struct HomeView: View {
                 randomLibraries: randomLibraries,
                 externalRefreshRevision: heroRuntime.externalRefreshRevision,
                 freshnessRevision: heroRuntime.freshnessRefresh.revision,
+                watchlistMembershipRevision: watchlistIntentRevision,
                 disabledLibraryKeys: visibility.visibility.disabledKeys,
                 discoveryUsesWatchlist: heroDiscoveryProvider != nil,
                 awaitingLiveHome: viewModel.isShowingCachedSnapshot
@@ -383,6 +388,12 @@ public struct HomeView: View {
             // the rows — no pop-in. Once `recomputeHero` finishes, the retained
             // runtime items (which also include the async Featured/Random sources)
             // take over. See `HomeHeroDisplayResolver` for the full priority order.
+            let displayEligibility = heroSourceEligibility(
+                content: heroContent,
+                randomLibraries: randomLibraries,
+                candidates: heroRuntime.items + heroRuntime.cachedItems,
+                supportingCandidates: heroRuntime.candidatePool
+            )
             let displayHeroItems = HomeHeroDisplayResolver.resolve(
                 runtime: heroRuntime,
                 key: heroRecomputeKey,
@@ -390,7 +401,8 @@ public struct HomeView: View {
                 continueWatching: heroContent.continueWatching,
                 watchlist: heroContent.watchlist,
                 recentlyAdded: heroContent.latest,
-                curator: heroCurator
+                curator: heroCurator,
+                sourceEligibility: displayEligibility
             )
             let heroSlotState = HomeHeroSlotState.resolve(
                 isConfigured: heroSettings?.settings.isActive ?? false,
@@ -656,9 +668,10 @@ public struct HomeView: View {
             // so a title flipping Request → Downloading % → Play never resets the
             // hero's current slide, backdrop, paging, dwell, or focus (HomeHeroView
             // only reacts to a change in the items' *ids* — see its id-keyed
-            // onChange). Restarts with the recompute baseline; idles when Featured
-            // is off or absent.
-            .task(id: heroRecomputeKey) {
+            // onChange). Starts when requestable slides are published and stays
+            // independent of curation; status-only updates do not restart it.
+            .task(id: heroStatusRefreshKey) {
+                guard heroStatusRefreshKey.isActive else { return }
                 await refreshFeaturedStatusLoop()
             }
         }
@@ -706,6 +719,8 @@ public struct HomeView: View {
                 for: .universalWatchlistDidChange
             )
         ) { _ in
+            refreshHeroSourceEligibility()
+            watchlistIntentRevision &+= 1
             viewModel.scheduleDurableWatchlistRefresh()
         }
         .onReceive(
@@ -713,6 +728,7 @@ public struct HomeView: View {
                 for: .watchlistIntentDidChange
             )
         ) { _ in
+            refreshHeroSourceEligibility()
             watchlistIntentRevision &+= 1
         }
         .onReceive(
@@ -726,6 +742,8 @@ public struct HomeView: View {
             // stopped, then the rail visibly reloaded. Use the same pending fold
             // as ordinary Watchlist changes. With no input it still lands after
             // 350ms; every move re-arms it until navigation settles.
+            refreshHeroSourceEligibility()
+            watchlistIntentRevision &+= 1
             viewModel.scheduleDurableWatchlistRefresh()
         }
         .onReceive(
@@ -733,6 +751,11 @@ public struct HomeView: View {
                 for: .universalWatchlistLoadingProgressDidChange
             )
         ) { _ in
+            if mediaItemActionHandler?.isDurableWatchlistPresentationReady() == true,
+               mediaItemActionHandler?.durableWatchlistLoadingTargetCount() == nil {
+                refreshHeroSourceEligibility()
+                watchlistIntentRevision &+= 1
+            }
             viewModel.refreshWatchlistLoadingProgress()
         }
         // New content that lands while the viewer sits on Home appears without a
@@ -819,6 +842,48 @@ public struct HomeView: View {
     /// back to the top and re-expand the hero to full-screen.
     private static let heroTopID = "home-hero-top"
 
+    @MainActor
+    private func refreshHeroSourceEligibility() {
+        guard let content = viewModel.state.value else { return }
+        let libraries = HeroRandomLibrarySelection.resolve(
+            content.libraries, settings: heroSettings?.settings,
+            isVisible: { visibility.isVisible($0) }
+        )
+        heroRuntime.sourceEligibility = heroSourceEligibility(
+            content: content, randomLibraries: libraries,
+            candidates: heroRuntime.items + heroRuntime.cachedItems
+                + Array(content.watchlist.prefix(HeroFreshnessCandidatePool.maximumItemsPerSource)),
+            supportingCandidates: heroRuntime.candidatePool
+        )
+    }
+
+    @MainActor
+    private func heroSourceEligibility(
+        content: HomeViewModel.Content,
+        randomLibraries: [HeroRandomLibrary],
+        candidates: [MediaItem],
+        supportingCandidates: HeroFreshnessCandidatePool = .empty
+    ) -> HeroSourceEligibility {
+        let handler = mediaItemActionHandler
+        let membershipIsReady = handler?.isDurableWatchlistPresentationReady() == true
+            && handler?.durableWatchlistLoadingTargetCount() == nil
+        return HeroSourceEligibility.capture(
+            settings: heroSettings?.settings,
+            candidates: candidates,
+            continueWatching: content.continueWatching,
+            recentlyAdded: content.latest,
+            randomLibraries: randomLibraries,
+            supportingCandidates: supportingCandidates,
+            previous: heroRuntime.sourceEligibility
+        ) { item in
+            guard let handler else { return nil }
+            let subject = item.watchlistSubject
+            if handler.isActivelyRemovingFromWatchlist(subject) { return false }
+            // Ask the membership ledger, not a potentially empty/loading row.
+            return membershipIsReady ? handler.isWatchlisted(subject) : nil
+        }
+    }
+
     /// Recomputes the curated hero items for the current Home `content` and the
     /// active hero settings, via the injected curator + content seams. Clears the
     /// set when the hero is disabled so Home falls back to its classic layout.
@@ -872,11 +937,17 @@ public struct HomeView: View {
             let durable = await viewModel.pendingHeroWatchMutations()
             heroRuntime.durableWatchMutations = durable
             heroRuntime.hasHydratedDurableMutations = true
+            let sourceEligibility = heroSourceEligibility(
+                content: content, randomLibraries: randomLibraries,
+                candidates: refreshed, supportingCandidates: heroRuntime.candidatePool
+            )
             let reconciled = heroCurator.reconcile(
                 refreshed,
                 settings: settings,
-                watchMutations: durable + heroRuntime.watchMutations
+                watchMutations: durable + heroRuntime.watchMutations,
+                sourceEligibility: sourceEligibility
             )
+            heroRuntime.sourceEligibility = sourceEligibility
             if reconciled != heroRuntime.items { heroRuntime.items = reconciled }
             heroRuntime.completedKey = key
             PlozzLog.boot("HomeHero.curate REFRESH-ONLY items=\(reconciled.count)")
@@ -898,7 +969,9 @@ public struct HomeView: View {
             heroRuntime.cachedKey == HeroConfigurationKey(settings: settings)
             && heroRuntime.cachedDisabledLibraryKeys == key.disabledLibraryKeys
         let cachedFeatured = seedMatchesConfiguration
-            ? heroRuntime.cachedItems.filter { $0.availability != nil || !$0.discoverySources.isEmpty }
+            ? HeroDiscoveryStatus.attributedFeaturedCandidates(
+                heroRuntime.cachedItems, sources: settings.discoverySources
+            )
             : []
         // Reuse the Random source's retained draw. Recomputation is triggered by
         // things the viewer never asked for, and re-shuffling every visible library
@@ -912,6 +985,14 @@ public struct HomeView: View {
             scope: String(heroRuntime.scopeRevision)
         )
         let retainedRandomProvider = heroRandomProvider
+        let initialEligibility = heroSourceEligibility(
+            content: content,
+            randomLibraries: randomLibraries,
+            candidates: heroRuntime.items + heroRuntime.cachedItems
+                + Array(content.watchlist.prefix(HeroFreshnessCandidatePool.maximumItemsPerSource)),
+            supportingCandidates: heroRuntime.candidatePool
+        )
+        heroRuntime.sourceEligibility = initialEligibility
         let result = await HomePerfDiagnostics.measureCurate {
             await heroCurator.curateResult(
                 settings: settings,
@@ -921,6 +1002,7 @@ public struct HomeView: View {
                 randomLibraries: randomLibraries,
                 watchMutations: durableWatchMutations + heroRuntime.watchMutations,
                 freshness: viewModel.heroFreshnessSnapshot(),
+                sourceEligibility: initialEligibility,
                 featuredProvider: { limit in
                     let fresh: [MediaItem]
                     if let heroDiscoveryProvider {
@@ -966,10 +1048,15 @@ public struct HomeView: View {
             featuredDiscoveryEnabled: heroDiscoveryProvider == nil
                 ? nil : !settings.discoverySources.isEmpty
         )
+        let fallbackEligibility = heroSourceEligibility(
+            content: content, randomLibraries: randomLibraries,
+            candidates: heroRuntime.cachedItems, supportingCandidates: result.candidatePool
+        )
+        heroRuntime.sourceEligibility = fallbackEligibility
         if items.isEmpty,
            !freshIsAuthoritative,
            seedMatchesConfiguration,
-           !heroRuntime.cachedItems.isEmpty {
+           !fallbackEligibility.filtering(heroRuntime.cachedItems).isEmpty {
             // Featured/Random are network sources. A transient empty refresh must
             // not tear down a good launch snapshot; retain it for this session and
             // try again on the next cold launch. Gated on the emptiness being
@@ -984,12 +1071,16 @@ public struct HomeView: View {
         // Mixed/local heroes stay on their fixed placeholder until presentation
         // metadata—including shared cached ratings—is complete, then publish once.
         // This prevents badges and labels changing underneath the viewer.
-        if heroSeerConnected {
-            let statuses = await heroFeaturedStatusProvider(items)
-            guard !Task.isCancelled else { return }
-            items = HeroDiscoveryStatus.merging(statuses, into: items)
+        let enrichMetadata = heroMetadataEnricher
+        let enrichmentItems = items
+        let runtime = heroRuntime
+        let enriched = await HeroMetadataEnricher.withPinnedSeries({
+            (runtime.items + runtime.cachedItems).filter {
+                $0.kind == .series && runtime.pinnedItemIDs.contains($0.id)
+            }
+        }) {
+            await enrichMetadata(enrichmentItems)
         }
-        let enriched = await heroMetadataEnricher(items)
         guard !Task.isCancelled else { return }
         let stableItems = heroCurator.deduplicating(enriched)
         // Fold the fresh curation into whatever is already on screen instead of
@@ -1012,6 +1103,14 @@ public struct HomeView: View {
         let onScreen = foldsIntoLoadedSet && !heroRuntime.items.isEmpty
             ? heroRuntime.items
             : (seedMatchesConfiguration ? heroRuntime.cachedItems : [])
+        let updatedPool = result.candidatePool.updatingItems(stableItems)
+        let sourceEligibility = heroSourceEligibility(
+            content: content,
+            randomLibraries: randomLibraries,
+            candidates: onScreen + stableItems + updatedPool.buckets
+                .filter { $0.source == .watchlist }.flatMap(\.items),
+            supportingCandidates: updatedPool
+        )
         let showing = heroCurator.reconcile(
             onScreen,
             settings: settings,
@@ -1024,17 +1123,20 @@ public struct HomeView: View {
             pinnedItemIDs: heroRuntime.pinnedItemIDs,
             misses: foldsIntoLoadedSet ? heroRuntime.retainedMisses : [:],
             freshIsAuthoritative: freshIsAuthoritative,
-            preservesPinnedItems: true
+            preservesPinnedItems: true,
+            sourceEligibility: sourceEligibility
         )
+        heroRuntime.sourceEligibility = sourceEligibility
         heroRuntime.retainedMisses = merge.misses
         if merge.items != heroRuntime.items { heroRuntime.items = merge.items }
         heroRuntime.cachedItems = []
         heroRuntime.cachedKey = nil
         heroRuntime.completedKey = key
+        heroRuntime.candidatePool = sourceEligibility.filtering(updatedPool)
         // Persist what the next launch may repaint instead of a skeleton: the
         // curated set minus its Continue Watching slides, whose resume positions go
         // stale the moment anything is watched anywhere.
-        let durablePool = result.candidatePool.updatingItems(stableItems).durable()
+        let durablePool = heroRuntime.candidatePool.durable()
         if durablePool.isEmpty, freshIsAuthoritative {
             // Nothing durable left to promise the next launch. Saying so takes an
             // explicit clear: `cacheHeroItems` refuses to write an empty set, so
@@ -1065,39 +1167,33 @@ public struct HomeView: View {
     /// order or any item's id. That's what guarantees the hero carousel doesn't
     /// re-seat, re-wipe its backdrop, restart its dwell, or move focus — only the
     /// primary button re-derives. Reassigns `heroItems` only when something
-    /// actually changed. Idles (re-checking each interval) while the Featured
-    /// source is disabled or no featured item is present, so nothing is fetched
-    /// needlessly; cancelled automatically when the task is torn down.
+    /// actually changed. The task is inactive without requestable Featured
+    /// titles and is cancelled when its published identities or scope change.
+    @MainActor
+    private var heroStatusRefreshKey: HeroStatusRefreshKey {
+        HeroStatusRefreshKey(
+            requestableItems: heroRuntime.items.filter {
+                $0.availability != nil && heroRequestIdentity($0)
+            },
+            settings: heroSettings?.settings,
+            isConfigured: heroSeerConnected,
+            contextID: String(heroRuntime.scopeRevision),
+            scopeID: ObjectIdentifier(heroRuntime)
+        )
+    }
+
     @MainActor
     private func refreshFeaturedStatusLoop() async {
         while !Task.isCancelled {
-            try? await Task.sleep(for: Self.featuredRefreshInterval)
-            if Task.isCancelled { return }
-            guard let settings = heroSettings?.settings, settings.isActive,
-                  settings.isEnabled(.featured),
-                  heroRuntime.items.contains(where: { $0.availability != nil })
-            else { continue }
-
+            let key = heroStatusRefreshKey
+            guard key.isActive else { return }
             let fresh = await heroFeaturedStatusProvider(
-                heroRuntime.items.filter { $0.availability != nil }
+                heroRuntime.items.filter { $0.availability != nil && heroRequestIdentity($0) }
             )
-            if Task.isCancelled { return }
-            guard !fresh.isEmpty else { continue }
-            var statusByID: [String: (availability: MediaAvailabilityStatus?, progress: Double?)] = [:]
-            for item in fresh { statusByID[item.id] = (item.availability, item.downloadProgress) }
-
-            var updated = heroRuntime.items
-            var changed = false
-            for index in updated.indices {
-                guard let status = statusByID[updated[index].id] else { continue }
-                if updated[index].availability != status.availability
-                    || updated[index].downloadProgress != status.progress {
-                    updated[index].availability = status.availability
-                    updated[index].downloadProgress = status.progress
-                    changed = true
-                }
-            }
-            if changed { heroRuntime.items = updated }
+            guard !Task.isCancelled, key == heroStatusRefreshKey else { return }
+            let updated = HeroDiscoveryStatus.merging(fresh, into: heroRuntime.items)
+            if updated != heroRuntime.items { heroRuntime.items = updated }
+            try? await Task.sleep(for: Self.featuredRefreshInterval)
         }
     }
 
@@ -1264,6 +1360,7 @@ struct HeroRecomputeKey: Equatable {
     let configuration: HeroConfigurationKey
     let externalRefreshRevision: Int
     let freshnessRevision: Int
+    let watchlistMembershipRevision: Int
     let disabledLibraryKeys: Set<String>
     let discoverySeeds: [HeroDiscoveryRequest.SeedIdentity]
     let awaitingLiveHome: Bool
@@ -1274,6 +1371,7 @@ struct HeroRecomputeKey: Equatable {
         randomLibraries: [HeroRandomLibrary],
         externalRefreshRevision: Int = 0,
         freshnessRevision: Int = 0,
+        watchlistMembershipRevision: Int = 0,
         disabledLibraryKeys: Set<String> = [],
         discoveryUsesWatchlist: Bool = false,
         awaitingLiveHome: Bool = false
@@ -1305,6 +1403,7 @@ struct HeroRecomputeKey: Equatable {
         self.externalRefreshRevision = settings?.requiresExternalWatchHistory == true
             ? externalRefreshRevision : 0
         self.freshnessRevision = activeSources.isEmpty ? 0 : freshnessRevision
+        self.watchlistMembershipRevision = activeSources.contains(.watchlist) ? watchlistMembershipRevision : 0
         self.disabledLibraryKeys = activeSources.isEmpty ? [] : disabledLibraryKeys
         discoverySeeds = discoveryUsesWatchlist && settings?.usesDiscoveryWatchlistSeeds == true
             ? HeroDiscoveryRequest(seeds: content.watchlist).seedIdentities : []
@@ -1325,6 +1424,7 @@ struct HeroRecomputeKey: Equatable {
             && hideWatched == other.hideWatched
             && configuration == other.configuration
             && freshnessRevision == other.freshnessRevision
+            && watchlistMembershipRevision == other.watchlistMembershipRevision
             && disabledLibraryKeys == other.disabledLibraryKeys
             && discoverySeeds == other.discoverySeeds
             && awaitingLiveHome == other.awaitingLiveHome
@@ -1427,7 +1527,8 @@ enum HomeHeroDisplayResolver {
         continueWatching: [MediaItem],
         watchlist: [MediaItem],
         recentlyAdded: [MediaItem] = [],
-        curator: HeroCurator
+        curator: HeroCurator,
+        sourceEligibility: HeroSourceEligibility = .unrestricted
     ) -> [MediaItem] {
         let watchMutations = runtime.durableWatchMutations + runtime.watchMutations
         let canReuseLoadedItems = runtime.completedKey?.matchesConfiguration(key) == true
@@ -1436,7 +1537,8 @@ enum HomeHeroDisplayResolver {
             let reconciled = curator.reconcile(
                 runtime.items,
                 settings: settings,
-                watchMutations: watchMutations
+                watchMutations: watchMutations,
+                sourceEligibility: sourceEligibility
             )
             if !reconciled.isEmpty { return reconciled }
         }
@@ -1449,7 +1551,8 @@ enum HomeHeroDisplayResolver {
         return curator.reconcile(
             runtime.cachedItems,
             settings: settings,
-            watchMutations: watchMutations
+            watchMutations: watchMutations,
+            sourceEligibility: sourceEligibility
         )
     }
 }

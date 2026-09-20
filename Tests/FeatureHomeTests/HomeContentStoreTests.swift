@@ -579,7 +579,7 @@ final class HomeContentStoreTests: XCTestCase {
         settings.sources = [.featured]
         let current = HeroConfigurationKey(settings: settings)
         var retired = current
-        retired.discoveryContentVersion = 0
+        retired.discoveryContentVersion = HeroDiscoveryRecency.contentVersion - 1
         let store = HomeContentStore(namespace: "retired-featured", directory: tempDir)
         let items = makeItems(2)
         store.saveHeroCandidatePool(.init(buckets: [.init(source: .featured, items: items)]), for: retired)

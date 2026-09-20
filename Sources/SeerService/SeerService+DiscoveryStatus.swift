@@ -10,41 +10,18 @@ public extension SeerService {
     }
 
     /// Status for the visible carousel, not another fetch of trending's first page.
+    /// Returns completed updates in input order within one overall response budget
+    /// (five seconds by default). Cancellation or a replaced connection discards
+    /// the batch; timeouts and individual failures preserve completed statuses.
     func availabilityUpdates(for items: [MediaItem]) async -> [MediaItem] {
-        guard isConfigured else { return [] }
+        guard isConfigured, !Task.isCancelled else { return [] }
         let revision = connectionRevision
-        let candidates = Array(items.filter {
-            $0.availability != nil && hasRequestIdentity(for: $0)
+        let candidates = Array(items.lazy.filter {
+            $0.availability != nil && self.hasRequestIdentity(for: $0)
         }.prefix(HeroSettings.maxItemsRange.upperBound))
         guard !candidates.isEmpty else { return [] }
-        let updates = await withTaskGroup(
-            of: (Int, MediaItem?).self, returning: [Int: MediaItem].self
-        ) { group in
-            var next = 0
-            func addNext() {
-                guard next < candidates.count, !Task.isCancelled else { return }
-                let index = next
-                let item = candidates[index]
-                next += 1
-                group.addTask {
-                    guard let (status, progress) = await self.availability(for: item) else {
-                        return (index, nil)
-                    }
-                    var updated = item
-                    updated.availability = status
-                    updated.downloadProgress = progress
-                    return (index, updated)
-                }
-            }
-            for _ in 0..<min(4, candidates.count) { addNext() }
-            var result: [Int: MediaItem] = [:]
-            for await (index, item) in group {
-                if let item { result[index] = item }
-                addNext()
-            }
-            return result
-        }
+        let updates = await discoveryStatusCoordinator.updates(for: candidates)
         guard !Task.isCancelled, connectionRevision == revision else { return [] }
-        return candidates.indices.compactMap { updates[$0] }
+        return updates
     }
 }
