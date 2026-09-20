@@ -180,6 +180,11 @@ let package = Package(
         // FFmpegBuild advances to 3.3.x with matching archive dSYMs. New optional
         // transport and Dolby Vision policies retain their upstream defaults.
         //
+        // 7.7.1 preserves HDR routing across audio changes and background reloads,
+        // keeps the native Now Playing host across screensaver recovery, and
+        // avoids dispatch-pool starvation in loopback I/O. FFmpegBuild 3.4.x adds
+        // AV1 Dolby Vision sample-entry support; deployment targets are unchanged.
+        //
         // 7.8.1 includes the merged item-diagnostic and subtitle-OCR fixes:
         // native log reads stay off the main actor, and Vision recognition stays
         // off Swift's cooperative executor with bounded, cancellation-safe admission.

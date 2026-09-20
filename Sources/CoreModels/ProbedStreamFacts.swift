@@ -78,6 +78,11 @@ public extension MediaSourceMetadata {
     func confirmingAtmos() -> MediaSourceMetadata {
         ProbedStreamFacts(audioIsAtmos: true).applying(to: self)
     }
+
+    func confirmingHDR10Plus() -> MediaSourceMetadata {
+        guard SourceDynamicRange.providerHint(from: self) != .dolbyVision else { return self }
+        return ProbedStreamFacts(videoRangeType: "HDR10Plus").applying(to: self)
+    }
 }
 
 public extension MediaItem {
@@ -111,6 +116,32 @@ public extension MediaItem {
     func confirmingAtmos() -> MediaItem {
         applyingSupplementalStreamFacts(ProbedStreamFacts(audioIsAtmos: true))
     }
+
+    func confirmingHDR10Plus() -> MediaItem {
+        guard SourceDynamicRange.providerHint(from: mediaInfo) != .dolbyVision else { return self }
+        return applyingSupplementalStreamFacts(ProbedStreamFacts(videoRangeType: "HDR10Plus"))
+    }
+}
+
+public struct SupplementalStreamProbeRequirements: OptionSet, Sendable, Hashable {
+    public let rawValue: UInt8
+    public init(rawValue: UInt8) { self.rawValue = rawValue }
+    public static let atmos = Self(rawValue: 1 << 0)
+    public static let hdr10Plus = Self(rawValue: 1 << 1)
+
+    public static func missingEmbyFacts(in metadata: MediaSourceMetadata?) -> Self {
+        var result: Self = []
+        if metadata?.audio?.codec?.lowercased() == "eac3",
+           metadata?.audio?.profile?.localizedCaseInsensitiveContains("atmos") != true {
+            result.insert(.atmos)
+        }
+        let range = SourceDynamicRange.providerHint(from: metadata)
+        if ["hevc", "h265", "h.265"].contains(metadata?.video?.codec?.lowercased() ?? ""),
+           range == nil || range == .hdr10 {
+            result.insert(.hdr10Plus)
+        }
+        return result
+    }
 }
 
 /// Probes a credential-free network file's headers for real stream facts.
@@ -127,6 +158,17 @@ public protocol NetworkFileStreamProbing: Sendable {
 /// and returned facts remain secret-free.
 public protocol AuthenticatedHTTPStreamProbing: Sendable {
     func probe(locator: AuthenticatedHTTPPlaybackLocator) async -> ProbedStreamFacts?
+    func probe(
+        locator: AuthenticatedHTTPPlaybackLocator, requirements: SupplementalStreamProbeRequirements
+    ) async -> ProbedStreamFacts?
+}
+
+public extension AuthenticatedHTTPStreamProbing {
+    func probe(
+        locator: AuthenticatedHTTPPlaybackLocator, requirements: SupplementalStreamProbeRequirements
+    ) async -> ProbedStreamFacts? {
+        await probe(locator: locator)
+    }
 }
 
 /// Optional provider capability for delayed, authoritative stream inspection.

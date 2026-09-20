@@ -97,18 +97,20 @@ final class ProfileSettingsModelTests: XCTestCase {
     /// same-namespace round-trip still swaps because rebuild always constructs anew.
     func testRebuildRoundTripScopesToNamespace() {
         let model = ProfileSettingsModel(namespace: "ns-a")
-        let themeA = ObjectIdentifier(model.themeModel)
+        // Retain the instances: a released object's address can be reused by a
+        // later allocation and is not evidence that the model was reused.
+        let themeA = model.themeModel
 
         model.rebuild(namespace: "ns-b")
-        let themeB = ObjectIdentifier(model.themeModel)
-        XCTAssertNotEqual(themeA, themeB)
+        let themeB = model.themeModel
+        XCTAssertFalse(themeA === themeB)
 
         // Returning to the original namespace rebuilds fresh state scoped to it
         // rather than restoring the prior instance.
         model.rebuild(namespace: "ns-a")
-        let themeABack = ObjectIdentifier(model.themeModel)
-        XCTAssertNotEqual(themeB, themeABack)
-        XCTAssertNotEqual(themeA, themeABack)
+        let themeABack = model.themeModel
+        XCTAssertFalse(themeB === themeABack)
+        XCTAssertFalse(themeA === themeABack)
     }
 
     func testRebuildScopesAccidentalExitPreferenceToActiveProfile() {

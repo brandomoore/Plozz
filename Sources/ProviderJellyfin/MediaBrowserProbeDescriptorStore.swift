@@ -12,7 +12,7 @@ actor MediaBrowserProbeDescriptorStore {
     }
 
     private var descriptors: [String: Descriptor] = [:]
-    private var completedRevisions: Set<String> = []
+    private var completedRevisions: [String: SupplementalStreamProbeRequirements] = [:]
     private var factsByRevision: [String: ProbedStreamFacts] = [:]
     private var lruItemIDs: [String] = []
 
@@ -20,6 +20,11 @@ actor MediaBrowserProbeDescriptorStore {
         guard let source = sources?.first,
               let container = source.Container,
               !container.isEmpty else {
+            if let previous = descriptors.removeValue(forKey: itemID) {
+                completedRevisions[previous.revision] = nil
+                factsByRevision[previous.revision] = nil
+            }
+            lruItemIDs.removeAll { $0 == itemID }
             return
         }
         let sourceID = source.Id ?? itemID
@@ -30,7 +35,7 @@ actor MediaBrowserProbeDescriptorStore {
             size: source.Size
         )
         if let previous = descriptors[itemID], previous.revision != revision {
-            completedRevisions.remove(previous.revision)
+            completedRevisions[previous.revision] = nil
             factsByRevision[previous.revision] = nil
         }
         descriptors[itemID] = Descriptor(
@@ -49,13 +54,23 @@ actor MediaBrowserProbeDescriptorStore {
         return descriptors[itemID]
     }
 
-    func cachedResult(for revision: String) -> (completed: Bool, facts: ProbedStreamFacts?) {
-        (completedRevisions.contains(revision), factsByRevision[revision])
+    func cachedResult(
+        for revision: String, requirements: SupplementalStreamProbeRequirements = []
+    ) -> (completed: Bool, facts: ProbedStreamFacts?) {
+        (completedRevisions[revision].map { $0.isSuperset(of: requirements) } ?? false, factsByRevision[revision])
     }
 
-    func store(_ facts: ProbedStreamFacts?, for revision: String) {
-        completedRevisions.insert(revision)
-        factsByRevision[revision] = facts
+    func store(
+        _ facts: ProbedStreamFacts?, for revision: String, requirements: SupplementalStreamProbeRequirements
+    ) {
+        guard descriptors.values.contains(where: { $0.revision == revision }) else { return }
+        completedRevisions[revision, default: []].formUnion(requirements)
+        var confirmed = factsByRevision[revision] ?? ProbedStreamFacts()
+        if requirements.contains(.atmos), facts?.audioIsAtmos == true { confirmed.audioIsAtmos = true }
+        if requirements.contains(.hdr10Plus), facts?.videoRangeType == "HDR10Plus" {
+            confirmed.videoRangeType = "HDR10Plus"
+        }
+        factsByRevision[revision] = confirmed.audioIsAtmos || confirmed.videoRangeType != nil ? confirmed : nil
     }
 
     private func touch(_ itemID: String) {
@@ -69,7 +84,7 @@ actor MediaBrowserProbeDescriptorStore {
             guard let descriptor = descriptors.removeValue(forKey: itemID) else {
                 continue
             }
-            completedRevisions.remove(descriptor.revision)
+            completedRevisions[descriptor.revision] = nil
             factsByRevision[descriptor.revision] = nil
         }
     }

@@ -6,6 +6,7 @@ import XCTest
 private actor StubAuthenticatedStreamProber: AuthenticatedHTTPStreamProbing {
     let facts: ProbedStreamFacts?
     private(set) var locators: [AuthenticatedHTTPPlaybackLocator] = []
+    private(set) var requirements: [SupplementalStreamProbeRequirements] = []
 
     init(facts: ProbedStreamFacts?) {
         self.facts = facts
@@ -14,6 +15,12 @@ private actor StubAuthenticatedStreamProber: AuthenticatedHTTPStreamProbing {
     func probe(locator: AuthenticatedHTTPPlaybackLocator) async -> ProbedStreamFacts? {
         locators.append(locator)
         return facts
+    }
+    func probe(
+        locator: AuthenticatedHTTPPlaybackLocator, requirements: SupplementalStreamProbeRequirements
+    ) async -> ProbedStreamFacts? {
+        self.requirements.append(requirements)
+        return await probe(locator: locator)
     }
 }
 
@@ -398,6 +405,98 @@ final class EmbyProviderParityTests: XCTestCase {
 
         XCTAssertNil(facts)
         XCTAssertTrue(capturedLocators.isEmpty)
+    }
+
+    func testEmbyHDRProbeDoesNotRequireEAC3AndCarriesConfirmationIntoPlayback() async throws {
+        let stub = StubHTTPClient()
+        let streams = """
+        [{"Index":0,"Type":"Video","Codec":"hevc","ExtendedVideoType":"Hdr10","ColorTransfer":"smpte2084"},
+         {"Index":1,"Type":"Audio","Codec":"aac","Channels":2,"IsDefault":true}]
+        """
+        let sources = """
+        [{"Id":"hdr-source","ETag":"hdr-revision","Container":"mp4","Size":123456,
+          "SupportsDirectPlay":true,"MediaStreams":\(streams)}]
+        """
+        stub.stub(pathSuffix: "/Users/u1/Items/hdr", json: """
+        {"Id":"hdr","Name":"HDR movie","Type":"Movie","MediaStreams":\(streams),"MediaSources":\(sources)}
+        """)
+        stub.stub(pathSuffix: "/Items/hdr/PlaybackInfo", json: """
+        {"MediaSources":\(sources),"PlaySessionId":"play-hdr"}
+        """)
+        let prober = StubAuthenticatedStreamProber(facts: .init(videoRangeType: "HDR10Plus"))
+        let provider = JellyfinProvider(session: makeSession(), http: stub, authenticatedStreamProber: prober)
+        let item = try await provider.item(id: "hdr")
+        let facts = await provider.supplementalStreamFacts(for: item)
+        XCTAssertEqual(facts?.videoRangeType, "HDR10Plus")
+        let requested = await prober.requirements
+        XCTAssertEqual(requested, [.hdr10Plus])
+        _ = await provider.supplementalStreamFacts(for: item)
+        let cached = await prober.locators
+        XCTAssertEqual(cached.count, 1)
+        XCTAssertEqual(cached.first?.resource.path, "Videos/hdr/stream.mp4")
+        let playback = try await provider.playbackInfo(for: "hdr", mediaSourceID: "hdr-source", forceTranscode: false)
+        XCTAssertEqual(playback.item.mediaInfo?.video?.videoRangeType, "HDR10Plus")
+        XCTAssertEqual(playback.sourceMetadata?.video?.videoRangeType, "HDR10Plus")
+    }
+
+    func testDeclaredHDR10PlusAndDolbyVisionDoNotNeedASecondHDRProbe() async throws {
+        for range in ["Hdr10Plus", "DolbyVision"] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/Users/u1/Items/hdr", json: """
+            {"Id":"hdr","Name":"HDR","Type":"Movie",
+             "MediaStreams":[{"Index":0,"Type":"Video","Codec":"hevc","ExtendedVideoType":"\(range)"},
+                             {"Index":1,"Type":"Audio","Codec":"aac"}],
+             "MediaSources":[{"Id":"source","Container":"mkv","ETag":"r1"}]}
+            """)
+            let prober = StubAuthenticatedStreamProber(facts: .init(videoRangeType: "HDR10"))
+            let provider = JellyfinProvider(session: makeSession(), http: stub, authenticatedStreamProber: prober)
+            let item = try await provider.item(id: "hdr")
+            let facts = await provider.supplementalStreamFacts(for: item)
+            XCTAssertNil(facts)
+            let calls = await prober.locators
+            XCTAssertTrue(calls.isEmpty)
+        }
+    }
+
+    func testUnconfirmedHDRProbeCannotDowngradeTheSource() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/Users/u1/Items/hdr", json: """
+        {"Id":"hdr","Name":"HDR","Type":"Movie",
+         "MediaStreams":[{"Index":0,"Type":"Video","Codec":"hevc","ExtendedVideoType":"Hdr10"}],
+         "MediaSources":[{"Id":"source","Container":"mkv","ETag":"r1"}]}
+        """)
+        let prober = StubAuthenticatedStreamProber(facts: .init(videoRangeType: "SDR"))
+        let provider = JellyfinProvider(session: makeSession(), http: stub, authenticatedStreamProber: prober)
+        let item = try await provider.item(id: "hdr")
+        let result = await provider.supplementalStreamFacts(for: item)
+        XCTAssertNil(result)
+        XCTAssertEqual(item.mediaInfo?.video?.videoRangeType, "HDR10")
+    }
+
+    func testProbeCacheTracksAudioAndVideoConfirmationIndependently() async throws {
+        let store = MediaBrowserProbeDescriptorStore()
+        let sources = try JSONDecoder().decode([MediaSourceInfo].self, from: Data("""
+        [{"Id":"source","Container":"mkv","ETag":"r1","Size":100}]
+        """.utf8))
+        await store.remember(itemID: "movie", sources: sources)
+        let descriptor = await store.descriptor(for: "movie")
+        let revision = try XCTUnwrap(descriptor).revision
+        await store.store(.init(audioIsAtmos: true), for: revision, requirements: .atmos)
+        let needsVideo = await store.cachedResult(for: revision, requirements: .hdr10Plus)
+        XCTAssertFalse(needsVideo.completed)
+        await store.store(.init(videoRangeType: "HDR10Plus"), for: revision, requirements: .hdr10Plus)
+        let combined = await store.cachedResult(for: revision, requirements: [.atmos, .hdr10Plus])
+        XCTAssertTrue(combined.completed)
+        XCTAssertEqual(combined.facts?.audioIsAtmos, true)
+        XCTAssertEqual(combined.facts?.videoRangeType, "HDR10Plus")
+        let changed = try JSONDecoder().decode([MediaSourceInfo].self, from: Data("""
+        [{"Id":"source","Container":"mkv","ETag":"r2","Size":101}]
+        """.utf8))
+        await store.remember(itemID: "movie", sources: changed)
+        await store.store(.init(videoRangeType: "HDR10Plus"), for: revision, requirements: .hdr10Plus)
+        let old = await store.cachedResult(for: revision)
+        XCTAssertFalse(old.completed)
+        XCTAssertNil(old.facts)
     }
 
     func testProbeDescriptorStoreEvictsLeastRecentlyUsedItems() async throws {

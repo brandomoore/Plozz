@@ -786,6 +786,51 @@ final class ItemDetailViewModelTests: XCTestCase {
         )
     }
 
+    func testEmbyHDR10PlusProbeUpdatesDetailDespiteKnownAtmos() async {
+        let item = MediaItem(
+            id: "hdr-movie", title: "HDR movie", kind: .movie,
+            mediaInfo: MediaSourceMetadata(
+                container: "mp4", sourceRevision: "hdr-r1",
+                video: .init(codec: "hevc", videoRangeType: "HDR10"),
+                audio: .init(codec: "eac3", profile: "Dolby Atmos")))
+        let provider = FakeMediaProvider(allItems: [item], kind: .emby)
+        let gate = AsyncGate()
+        provider.supplementalFactsGate = { await gate.wait() }
+        provider.supplementalFactsByItem[item.id] = .init(videoRangeType: "HDR10Plus")
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: item.id,
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache())
+        await vm.load()
+        XCTAssertEqual(vm.state.value?.item.mediaInfo?.video?.videoRangeType, "HDR10")
+        gate.open()
+        await waitUntil { vm.state.value?.item.mediaInfo?.video?.videoRangeType == "HDR10Plus" }
+        XCTAssertEqual(provider.supplementalProbeCount, 1)
+        XCTAssertEqual(vm.state.value?.item.mediaInfo?.audio?.profile, "Dolby Atmos")
+    }
+
+    func testHDR10PlusConfirmationSurvivesOnlyTheSameSourceRevision() async {
+        for sameRevision in [true, false] {
+            let fresh = MediaItem(
+                id: "hdr-movie", title: "HDR movie", kind: .movie,
+                mediaInfo: MediaSourceMetadata(
+                    container: "mp4", sourceRevision: sameRevision ? "hdr-r1" : "hdr-r2",
+                    video: .init(codec: "hevc", videoRangeType: "HDR10"),
+                    audio: .init(codec: "aac")))
+            var cached = fresh
+            cached.mediaInfo?.sourceRevision = "hdr-r1"
+            cached.mediaInfo?.video?.videoRangeType = "HDR10Plus"
+            let provider = FakeMediaProvider(allItems: [fresh], kind: .emby)
+            let vm = ItemDetailViewModel(
+                provider: provider, itemID: fresh.id, initialItem: cached,
+                onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+                trailerCache: TrailerResolutionCache())
+            await vm.load()
+            XCTAssertEqual(
+                vm.state.value?.item.mediaInfo?.video?.videoRangeType, sameRevision ? "HDR10Plus" : "HDR10")
+        }
+    }
+
     func testAtmosProbeDoesNotRunWhenServerAlreadyReportsAtmos() async {
         let item = MediaItem(
             id: "movie",

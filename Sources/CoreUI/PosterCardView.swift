@@ -1565,20 +1565,23 @@ private struct CardFocusOwner: ViewModifier {
                 .onTapGesture(perform: action)
                 .disabled(!isEnabled)
                 .accessibilityAddTraits(.isButton)
-                .modifier(CardAccessibilityMetadata(label: accessibilityLabel, value: accessibilityValue))
+                .modifier(CardAccessibilityMetadata(
+                    label: accessibilityLabel.map { Text(verbatim: $0) },
+                    value: accessibilityValue.map { Text(verbatim: $0) }
+                ))
         }
     }
 }
 
 private struct CardAccessibilityMetadata: ViewModifier {
-    let label: String?
-    let value: String?
+    let label: Text?
+    let value: Text?
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if let label {
-            content.accessibilityLabel(Text(verbatim: label))
-                .accessibilityValue(Text(verbatim: value ?? ""))
+            content.accessibilityLabel(label)
+                .accessibilityValue(value ?? Text(verbatim: ""))
         } else {
             content
         }
