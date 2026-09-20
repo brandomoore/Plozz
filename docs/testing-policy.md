@@ -643,6 +643,10 @@ their own primary image paths before the presentation policy selects them.
 Movie/TV libraries expose the same horizontal Titles / Collections control for
 Plex, Jellyfin, and Emby. Both options stay visible, selection stays distinct
 from focus, and moving the remote focus alone does not switch the page.
+On tvOS the options use the same native button treatment as Sort, without a
+selection checkmark. The library header scrolls with the grid rather than
+remaining pinned; mode switching stays available in loading, empty and error
+states. The iOS mode control likewise scrolls with loaded content.
 Opening a collection uses the same full vertical poster grid as library/folder
 browsing, not a detail hero with a horizontal contents rail.
 Native Jellyfin/Emby BoxSet roots remain browseable; Plozz

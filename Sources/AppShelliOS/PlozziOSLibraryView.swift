@@ -232,6 +232,11 @@ struct PlozziOSLibraryGridView: View {
                     }
                 } else {
                     ScrollView {
+                        if viewModel.supportsCollections {
+                            PlozziOSLibraryContentModeControl(viewModel: viewModel)
+                                .padding(.horizontal)
+                                .padding(.vertical, 8)
+                        }
                         scanBanner
                         LazyVGrid(
                             columns: settings.density.density.iOSPosterGridColumns(
@@ -269,7 +274,8 @@ struct PlozziOSLibraryGridView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .top, spacing: 0) {
-            if viewModel.supportsCollections {
+            if viewModel.supportsCollections,
+               viewModel.state.value == nil || viewModel.state.value == 0 {
                 PlozziOSLibraryContentModeControl(viewModel: viewModel)
                     .padding(.horizontal)
                     .padding(.vertical, 8)

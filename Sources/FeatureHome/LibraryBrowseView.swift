@@ -28,8 +28,6 @@ public struct LibraryBrowseView: View {
     /// you're actually flying through content. Reset when the rail's eligibility
     /// goes away (a non-name sort) so re-entering name sort re-arms the reveal.
     @State private var railHasRevealed = false
-    /// Match the adjacent native menu rather than maintaining a second control height.
-    @State private var sortControlHeight: CGFloat?
     /// Pre-built so a synthesized library name ("Movies" on a file share) is
     /// our translated copy while a server's own name stays verbatim.
     private let title: Text
@@ -90,9 +88,7 @@ public struct LibraryBrowseView: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-                        if !viewModel.supportsCollections {
-                            header
-                        }
+                        header
                         scanBanner
                         LazyVGrid(columns: columns, spacing: metrics.gridSpacing) {
                             ForEach(0..<total, id: \.self) { index in
@@ -172,9 +168,8 @@ public struct LibraryBrowseView: View {
         // dedicated destination with no navigation chrome pinned at the top.
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .top, spacing: 0) {
-            // The segment buttons keep the same identity and focus while the
-            // body reloads. Other libraries retain their scrolling header.
-            if viewModel.supportsCollections || viewModel.state.value == nil {
+            // Keep switching available when there is no grid to scroll.
+            if viewModel.state.value == nil {
                 header
                     .padding(.top, PlozzTheme.Spacing.large)
             }
@@ -257,7 +252,7 @@ public struct LibraryBrowseView: View {
     /// actually flying through the library rather than sitting at the top.
     private var railRevealThreshold: Int { max(1, metrics.posterColumns.count) * 2 }
 
-    /// Libraries with content modes keep this header visible across state changes.
+    /// The library title and controls scroll with the loaded grid.
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             title
@@ -267,13 +262,10 @@ public struct LibraryBrowseView: View {
                 LibraryFileBrowseButton(library: library, onSelect: onSelect)
             }
             if viewModel.supportsCollections {
-                LibraryContentModeControl(viewModel: viewModel, height: sortControlHeight)
+                LibraryContentModeControl(viewModel: viewModel)
             }
             if !viewModel.availableSortFields.isEmpty {
                 sortControl
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                        if height > 0 { sortControlHeight = height }
-                    }
             }
         }
 
@@ -379,79 +371,29 @@ public struct LibraryBrowseView: View {
 }
 
 private struct LibraryContentModeControl: View {
-    private static let trackInset: CGFloat = 4
     let viewModel: LibraryBrowseViewModel
-    let height: CGFloat?
-    @Environment(\.themePalette) private var palette
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: PlozzTheme.Spacing.medium) {
             ForEach(LibraryContentMode.allCases, id: \.self) { mode in
                 let isSelected = viewModel.contentMode == mode
                 Button {
                     Task { await viewModel.setContentMode(mode) }
                 } label: {
                     Text(mode.displayName)
-                        .fontWeight(.semibold)
+                        .fontWeight(isSelected ? .semibold : .regular)
+                        .underline(isSelected)
                         .lineLimit(1)
                 }
-                .buttonStyle(LibraryContentSegmentStyle(
-                    isSelected: isSelected,
-                    height: height.map { max(0, $0 - Self.trackInset * 2) }
-                ))
+                .buttonStyle(.automatic)
                 .accessibilityValue(isSelected ? Text("Selected") : Text(verbatim: ""))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .accessibilityIdentifier("library-content-mode-\(mode.rawValue)")
             }
         }
-        .padding(Self.trackInset)
-        .frame(height: height)
-        .background(Capsule().fill(palette.cardSurface.opacity(0.45)))
-        .overlay(Capsule().strokeBorder(palette.cardBorder.opacity(0.8), lineWidth: 1))
         .fixedSize(horizontal: true, vertical: false)
         .accessibilityLabel("Show")
         .accessibilityIdentifier("library-content-mode")
-    }
-}
-
-/// Mirrors Settings' press-to-commit segments: selection remains visible after
-/// focus leaves, while the bright focus thumb never changes the selected page.
-private struct LibraryContentSegmentStyle: ButtonStyle {
-    let isSelected: Bool
-    let height: CGFloat?
-
-    func makeBody(configuration: Configuration) -> some View {
-        SegmentBody(configuration: configuration, isSelected: isSelected, height: height)
-    }
-
-    private struct SegmentBody: View {
-        let configuration: ButtonStyle.Configuration
-        let isSelected: Bool
-        let height: CGFloat?
-        @Environment(\.isFocused) private var isFocused
-        @Environment(\.colorScheme) private var colorScheme
-        @Environment(\.themePalette) private var palette
-
-        var body: some View {
-            configuration.label
-                .font(.body)
-                .foregroundStyle(isFocused
-                    ? (colorScheme == .dark ? Color.black : .white)
-                    : (isSelected ? palette.primaryText : palette.secondaryText))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .frame(height: height)
-                .background {
-                    Capsule()
-                        .fill(isFocused
-                            ? (colorScheme == .dark ? Color.white : .black)
-                            : palette.primaryText.opacity(isSelected ? 0.14 : 0))
-                }
-                .scaleEffect(configuration.isPressed ? 0.97 : (isFocused ? 1.04 : 1))
-                .animation(.easeOut(duration: 0.16), value: isFocused)
-                .animation(.easeOut(duration: 0.16), value: isSelected)
-                .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-        }
     }
 }
 
