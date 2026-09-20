@@ -574,9 +574,26 @@ final class HomeContentStoreTests: XCTestCase {
         )
     }
 
-    func testALegacyFeaturedOnlySeedIsStillReadableForAFeaturedOnlyHero() throws {
-        // The one case where the old file is genuinely a seed of the whole
-        // carousel, because Featured was the only source.
+    func testRetiredFeaturedCandidatePoolIsRejectedWithoutClearingExposureHistory() {
+        var settings = HeroSettings.default
+        settings.sources = [.featured]
+        let current = HeroConfigurationKey(settings: settings)
+        var retired = current
+        retired.discoveryContentVersion = 0
+        let store = HomeContentStore(namespace: "retired-featured", directory: tempDir)
+        let items = makeItems(2)
+        store.saveHeroCandidatePool(.init(buckets: [.init(source: .featured, items: items)]), for: retired)
+        var history = HeroExposureHistory()
+        history.record(items[0])
+        store.saveHeroExposureHistory(history)
+
+        XCTAssertNotNil(store.loadHeroCandidatePool(for: retired))
+        XCTAssertNil(store.loadHeroCandidatePool(for: current))
+        XCTAssertNil(store.loadHero(for: current))
+        XCTAssertEqual(store.loadHeroExposureHistory(), history)
+    }
+
+    func testLegacyFeaturedSeedCannotRestoreTheRetiredAllTimeFeed() throws {
         try writeLegacyHeroFile(
             namespace: "legacy-featured",
             sources: ["featured"],
@@ -596,10 +613,10 @@ final class HomeContentStoreTests: XCTestCase {
         )
         let store = HomeContentStore(namespace: "legacy-featured", directory: tempDir)
 
-        XCTAssertEqual(
-            store.loadHero(for: HeroConfigurationKey(settings: settings))?.map(\.id),
-            ["f0", "f1"]
-        )
+        let key = HeroConfigurationKey(settings: settings)
+        XCTAssertEqual(key.discoveryContentVersion, HeroDiscoveryRecency.contentVersion)
+        XCTAssertNil(store.loadHero(for: key))
+        XCTAssertNil(store.loadHeroCandidatePool(for: key))
     }
 
     func testALegacyFeaturedBucketIsNeverRepaintedAsAMixedHero() throws {

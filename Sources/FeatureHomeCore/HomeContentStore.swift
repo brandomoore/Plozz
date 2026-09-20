@@ -115,6 +115,7 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
     public var hideWatched: Bool
     public var watchlistDiscoveryEnabled: Bool
     public var discoverySources: [HeroDiscoverySource]
+    public var discoveryContentVersion: Int
     /// The libraries the viewer restricted the Random source to. Empty means "all
     /// currently-visible libraries". Included because narrowing it is a request
     /// for different titles — unlike the *resolved* library list, which changes
@@ -128,6 +129,7 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
             hideWatched = false
             watchlistDiscoveryEnabled = false
             discoverySources = []
+            discoveryContentVersion = 0
             randomLibraryKeys = []
             return
         }
@@ -137,6 +139,7 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
         watchlistDiscoveryEnabled = settings.isEnabled(.watchlist)
             && settings.watchlistDiscoveryEnabled
         discoverySources = settings.isEnabled(.featured) ? settings.discoverySources : []
+        discoveryContentVersion = settings.isEnabled(.featured) ? HeroDiscoveryRecency.contentVersion : 0
         randomLibraryKeys = settings.isEnabled(.randomFromLibrary)
             ? settings.randomLibraryKeys
             : []
@@ -144,6 +147,7 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case sources, maxItems, hideWatched, randomLibraryKeys, watchlistDiscoveryEnabled, discoverySources
+        case discoveryContentVersion
     }
 
     /// Lenient, like ``HeroSettings``: a persisted key written before a field
@@ -162,6 +166,9 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
         discoverySources = sources.contains(.featured)
             ? HeroDiscoverySource.normalized(discoveryNames.compactMap(HeroDiscoverySource.init(rawValue:)))
             : []
+        discoveryContentVersion = sources.contains(.featured)
+            ? try container.decodeIfPresent(Int.self, forKey: .discoveryContentVersion) ?? 0
+            : 0
         randomLibraryKeys =
             ((try? container.decodeIfPresent(
                 Set<String>.self,

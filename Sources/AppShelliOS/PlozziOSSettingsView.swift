@@ -1890,6 +1890,15 @@ private struct PlozziOSHomeSettingsView: View {
                     if hero.settings.showsRatings {
                         HeaderRatingPreviewControls(settings: $hero.settings.ratingPreferences)
                     }
+                    Toggle(isOn: $hero.settings.showsDiscoverySources) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Show discovery sources")
+                            Text("Show the catalogs behind each title. Titles from Simkl always show its required credit, even when this is off.")
+                                .font(.footnote)
+                                .plozzForeground(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     Toggle("Auto-advance", isOn: $hero.settings.autoAdvance)
                     Toggle(
                         "Play trailer behind the hero",

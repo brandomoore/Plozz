@@ -51,7 +51,8 @@ public struct TVDBDiscoveryProvider: HeroDiscoveryProviding {
                 query: query
             )
             let response: Response<Record> = try Self.decode(data)
-            feeds.append(response.data.prefix(100).compactMap { $0.mediaItem(kind: kind) })
+            feeds.append(response.data.prefix(100).compactMap { $0.mediaItem(kind: kind) }
+                .filter { request.recency.includesRelease(of: $0, at: request.now) })
         }
         try Task.checkCancellation()
         var result: [MediaItem] = []

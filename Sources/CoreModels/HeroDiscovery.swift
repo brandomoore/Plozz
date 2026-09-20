@@ -4,10 +4,10 @@ public enum HeroDiscoverySource: String, CaseIterable, Codable, Hashable, Sendab
     case tmdb, simkl, anilist, tvdb, tvmaze
 
     public var id: String { rawValue }
-    public var usesTitleSeeds: Bool { self == .tmdb }
+    public var usesTitleSeeds: Bool { false }
 
-    /// Anime remains an explicit choice rather than assuming every profile wants it.
-    public static let defaultSelection: [HeroDiscoverySource] = [.tmdb, .simkl, .tvdb, .tvmaze]
+    /// Anime and Simkl's visibly credited trends are explicit choices.
+    public static let defaultSelection: [HeroDiscoverySource] = [.tmdb, .tvdb, .tvmaze]
 
     public var displayName: String {
         switch self {
@@ -21,7 +21,7 @@ public enum HeroDiscoverySource: String, CaseIterable, Codable, Hashable, Sendab
 
     public var detail: LocalizedStringResource {
         switch self {
-        case .tmdb: return "Movies and shows, including picks related to your watchlist."
+        case .tmdb: return "Recent popular movies and shows, weekly trends, and currently airing TV."
         case .simkl: return "Movies and shows people are watching this week."
         case .anilist: return "Trending and seasonal anime."
         case .tvdb: return "Movies and shows from TheTVDB's catalog."
@@ -63,6 +63,50 @@ public enum HeroDiscoverySource: String, CaseIterable, Codable, Hashable, Sendab
     }
 }
 
+/// Featured's release window is independent of library, Watchlist and resume rows.
+/// Providers may additionally admit older series with verified current airings.
+public struct HeroDiscoveryRecency: Hashable, Sendable {
+    public static let `default` = HeroDiscoveryRecency()
+    /// Retires saved Featured pools from the older all-time/recommendation feeds.
+    public static let contentVersion = 1
+    public let years: Int
+
+    public init(years: Int = 2) {
+        self.years = min(10, max(1, years))
+    }
+
+    public func cutoff(at now: Date) -> Date {
+        let today = Self.calendar.startOfDay(for: now)
+        return Self.calendar.date(byAdding: .year, value: -years, to: today)!
+    }
+
+    public func includesRelease(of item: MediaItem, at now: Date) -> Bool {
+        let calendar = Self.calendar
+        let today = calendar.startOfDay(for: now)
+        let earliest = cutoff(at: now)
+        if let release = item.releaseDate {
+            let releasedOn = calendar.startOfDay(for: release)
+            return releasedOn >= earliest && releasedOn <= today
+        }
+        guard let year = item.productionYear else { return false }
+        // Year-only records keep the boundary year without inventing a release day.
+        return (calendar.component(.year, from: earliest)...calendar.component(.year, from: today))
+            .contains(year)
+    }
+
+    public func includesUpcomingEpisode(at airing: Date, now: Date) -> Bool {
+        let today = Self.calendar.startOfDay(for: now)
+        let nextWeek = Self.calendar.date(byAdding: .day, value: 7, to: today)!
+        return airing >= today && airing < nextWeek
+    }
+
+    private static var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+}
+
 /// Public metadata inputs only. Providers never receive profile credentials or
 /// a complete watch history; a few locally selected titles can seed related picks.
 public struct HeroDiscoveryRequest: Sendable {
@@ -81,6 +125,7 @@ public struct HeroDiscoveryRequest: Sendable {
     public let region: String
     public let seeds: [MediaItem]
     public let now: Date
+    public let recency: HeroDiscoveryRecency
     public var seedIdentities: [SeedIdentity] {
         seeds.map { item in
             SeedIdentity(
@@ -96,7 +141,8 @@ public struct HeroDiscoveryRequest: Sendable {
         language: String = "en",
         region: String = "US",
         seeds: [MediaItem] = [],
-        now: Date = Date()
+        now: Date = Date(),
+        recency: HeroDiscoveryRecency = .default
     ) {
         self.limit = min(Self.maximumLimit, max(0, limit))
         self.language = language
@@ -120,6 +166,7 @@ public struct HeroDiscoveryRequest: Sendable {
             )
         }
         self.now = now
+        self.recency = recency
     }
 }
 

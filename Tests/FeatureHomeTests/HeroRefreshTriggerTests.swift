@@ -5,7 +5,7 @@ import XCTest
 @testable import FeatureHome
 
 final class HeroRefreshTriggerTests: XCTestCase {
-    func testFeaturedRecommendationsTrackSeedsWhenWatchlistRowIsNotAHeroSource() {
+    func testFeaturedTrendsDoNotReloadWhenUnrelatedWatchlistIDsChange() {
         var settings = HeroSettings.default
         settings.sources = [.featured]
         settings.discoverySources = [.tmdb]
@@ -21,8 +21,9 @@ final class HeroRefreshTriggerTests: XCTestCase {
             ]),
             settings: settings, randomLibraries: [], discoveryUsesWatchlist: true
         )
-        XCTAssertNotEqual(before, after)
-        XCTAssertFalse(before.matchesIgnoringExternalRefresh(after))
+        XCTAssertFalse(settings.usesDiscoveryWatchlistSeeds)
+        XCTAssertEqual(before, after)
+        XCTAssertTrue(before.matchesIgnoringExternalRefresh(after))
         XCTAssertTrue(before.matchesConfiguration(after))
     }
 
@@ -38,6 +39,17 @@ final class HeroRefreshTriggerTests: XCTestCase {
             settings: settings, randomLibraries: [], discoveryUsesWatchlist: true
         )
         XCTAssertEqual(before, after)
+    }
+
+    func testDiscoveryCreditPreferenceDoesNotRestartCurationOrRetireCachedTitles() {
+        var settings = HeroSettings.default
+        let originalConfiguration = HeroConfigurationKey(settings: settings)
+        let before = HeroRecomputeKey(content: .init(), settings: settings, randomLibraries: [])
+        settings.showsDiscoverySources = true
+        let after = HeroRecomputeKey(content: .init(), settings: settings, randomLibraries: [])
+        XCTAssertEqual(HeroConfigurationKey(settings: settings), originalConfiguration)
+        XCTAssertEqual(before, after)
+        XCTAssertFalse(HeroRecomputePolicy.shouldRun(key: after, completedKey: before))
     }
 
     @MainActor

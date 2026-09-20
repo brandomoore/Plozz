@@ -7,6 +7,8 @@ import XCTest
 @testable import MetadataKit
 
 final class SimklDiscoveryProviderTests: XCTestCase {
+    private let now = ISO8601DateFormatter().date(from: "2026-09-20T00:00:00Z")!
+
     func testCombinedWeeklyShapeMapsCanonicalIDsAndActualFanart() async throws {
         let fixture = PublicFeedDiscoveryTestTransport([.json("""
         {"movies":[{
@@ -23,7 +25,7 @@ final class SimklDiscoveryProviderTests: XCTestCase {
         }],"anime":[]}
         """)])
         let provider = SimklDiscoveryProvider(http: fixture.http, clientID: "test-registration")
-        let items = try await provider.discover(.init())
+        let items = try await provider.discover(.init(now: now, recency: .init(years: 5)))
         XCTAssertEqual(items.map(\.id), ["simkl:movie:2123791", "simkl:series:1130204"])
         XCTAssertEqual(items.map(\.kind), [.movie, .series])
         XCTAssertEqual(items.map(\.productionYear), [2026, 2022])
@@ -63,12 +65,12 @@ final class SimklDiscoveryProviderTests: XCTestCase {
 
     func testMovieAndSeriesIDsCannotCollideAndAnimeIsOptIn() async throws {
         let feed = """
-        {"movies":[{"title":"Movie","ids":{"simkl_id":1,"tmdb":42}}],
-         "tv":[{"title":"Series","ids":{"simkl_id":"1","tmdb":"42"}}],
+        {"movies":[{"title":"Movie","year":2026,"ids":{"simkl_id":1,"tmdb":42}}],
+         "tv":[{"title":"Series","year":2026,"ids":{"simkl_id":"1","tmdb":"42"}}],
          "anime":[
-           {"title":"Anime Movie","anime_type":"movie","ids":{"simkl_id":3,"mal":"0","anilist":"5"}},
-           {"title":"Anime Series","anime_type":"tv","ids":{"simkl_id":4,"mal":"21","anidb":"69"}},
-           {"title":"Original Video","anime_type":"ova","ids":{"simkl_id":5,"mal":null}},
+           {"title":"Anime Movie","year":2026,"anime_type":"movie","ids":{"simkl_id":3,"mal":"0","anilist":"5"}},
+           {"title":"Anime Series","year":2026,"anime_type":"tv","ids":{"simkl_id":4,"mal":"21","anidb":"69"}},
+           {"title":"Original Video","year":2026,"anime_type":"ova","ids":{"simkl_id":5,"mal":null}},
            {"title":"Unknown format","ids":{"simkl_id":6}},
            {"title":"Music video","anime_type":"music video","ids":{"simkl_id":7}}
          ]}
@@ -76,8 +78,8 @@ final class SimklDiscoveryProviderTests: XCTestCase {
         let fixture = PublicFeedDiscoveryTestTransport([.json(feed), .json(feed)])
         let general = SimklDiscoveryProvider(http: fixture.http, clientID: "test")
         let optedIn = SimklDiscoveryProvider(http: fixture.http, clientID: "test", includesAnime: true)
-        let ordinary = try await general.discover(.init())
-        let anime = try await optedIn.discover(.init())
+        let ordinary = try await general.discover(.init(now: now))
+        let anime = try await optedIn.discover(.init(now: now))
         XCTAssertEqual(ordinary.map(\.id), ["simkl:movie:1", "simkl:series:1"])
         XCTAssertEqual(anime.map(\.id), ["simkl:movie:1", "simkl:series:1", "simkl:movie:3", "simkl:series:4", "simkl:series:5"])
         XCTAssertEqual(anime[2].providerID(.aniList), "5")
@@ -97,7 +99,7 @@ final class SimklDiscoveryProviderTests: XCTestCase {
           {"title":"Zero","ids":{"simkl_id":0}},
           {"title":"Negative","ids":{"simkl_id":-1}},
           {"title":" ","ids":{"simkl_id":9}},
-          {"title":"Valid","ids":{"simkl_id":10,"tmdb":"0","mal":"-1","tvdb":"missing","imdb":"bad"},
+          {"title":"Valid","year":2026,"ids":{"simkl_id":10,"tmdb":"0","mal":"-1","tvdb":"missing","imdb":"bad"},
            "release_date":"02/30/2026","poster":"https://untrusted.invalid/image.jpg","fanart":"../wrong"},
           {"title":"Duplicate","ids":{"simkl_id":10}}
         ],"tv":[],"anime":[
@@ -106,27 +108,42 @@ final class SimklDiscoveryProviderTests: XCTestCase {
         """)])
         let items = try await SimklDiscoveryProvider(
             http: fixture.http, clientID: "test", includesAnime: true
-        ).discover(.init())
+        ).discover(.init(now: now))
         XCTAssertEqual(items.map(\.id), ["simkl:movie:10"])
         XCTAssertTrue(items[0].providerIDs.isEmpty)
-        XCTAssertNil(items[0].productionYear)
+        XCTAssertEqual(items[0].productionYear, 2026)
         XCTAssertNil(items[0].releaseDate)
         XCTAssertNil(items[0].posterURL)
         XCTAssertNil(items[0].backdropURL)
     }
 
     func testBoundedSingleRequestAndOutputClamp() async throws {
-        let movies = (1...100).map { #"{"title":"Movie","ids":{"simkl_id":\#($0)}}"# }
+        let movies = (1...100).map { #"{"title":"Movie","year":2026,"ids":{"simkl_id":\#($0)}}"# }
         let feed = #"{"movies":[\#(movies.joined(separator: ","))],"tv":[],"anime":[]}"#
         let fixture = PublicFeedDiscoveryTestTransport([.json(feed), .json(feed)])
         let provider = SimklDiscoveryProvider(http: fixture.http, clientID: "test")
-        let limited = try await provider.discover(.init(limit: 2))
-        let clamped = try await provider.discover(.init(limit: 1_000))
+        let limited = try await provider.discover(.init(limit: 2, now: now))
+        let clamped = try await provider.discover(.init(limit: 1_000, now: now))
         XCTAssertEqual(limited.count, 2)
         XCTAssertEqual(clamped.count, 48)
         let requests = await fixture.requests
         XCTAssertEqual(requests.count, 2)
         XCTAssertTrue(requests.allSatisfy { $0.url?.path.hasSuffix("week_100.json") == true })
+    }
+
+    func testWeeklyTrendsCannotReintroduceClassicsOrUndatedTitles() async throws {
+        let fixture = PublicFeedDiscoveryTestTransport([.json("""
+        {"movies":[
+          {"title":"Classic","year":1994,"ids":{"simkl_id":1}},
+          {"title":"Boundary","release_date":"09/20/2024","ids":{"simkl_id":2}},
+          {"title":"Too old","release_date":"09/19/2024","ids":{"simkl_id":3}},
+          {"title":"Unknown","ids":{"simkl_id":4}},
+          {"title":"Future","release_date":"12/01/2026","ids":{"simkl_id":5}}
+        ],"tv":[{"title":"Old trending show","year":2001,"ids":{"simkl_id":6}}],"anime":[]}
+        """)])
+        let items = try await SimklDiscoveryProvider(http: fixture.http, clientID: "test")
+            .discover(.init(now: now))
+        XCTAssertEqual(items.map(\.id), ["simkl:movie:2"])
     }
 
     func testUnconfiguredDisabledAndZeroLimitPerformNoIOAndFingerprintIsOpaque() async throws {

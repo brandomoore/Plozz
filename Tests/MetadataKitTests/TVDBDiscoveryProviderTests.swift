@@ -4,6 +4,8 @@ import XCTest
 @testable import MetadataKit
 
 final class TVDBDiscoveryProviderTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_779_494_400)
+
     private var config: TVDBConfig {
         TVDBConfig(apiKey: "fixture-api-key", apiBaseURL: URL(string: "https://tvdb.example/v4")!)
     }
@@ -130,28 +132,28 @@ final class TVDBDiscoveryProviderTests: XCTestCase {
         let fixture = TMDbTVDBDiscoveryFixture { request, _ in
             if request.url!.path == "/v4/movies/filter" {
                 return .init(json: """
-                    {"data":[{"id":42,"name":" Movie ","year":"2020","image":"/banners/poster.jpg"},
-                             {"id":42,"name":"Duplicate"},{"id":43,"name":"Second Movie"}]}
+                    {"data":[{"id":42,"name":" Movie ","year":"2025","image":"/banners/poster.jpg"},
+                             {"id":42,"name":"Duplicate"},{"id":43,"name":"Second Movie","year":"2026"}]}
                     """)
             }
             if request.url!.path == "/v4/series/filter" {
                 return .init(json: """
-                    {"data":[{"id":42,"name":"Show","year":"2021","firstAired":"2021-04-03",
+                    {"data":[{"id":42,"name":"Show","year":"2025","firstAired":"2025-04-03",
                               "overview":" Story ","image":"https://artworks.thetvdb.com/poster.jpg"}]}
                     """)
             }
             return TMDbTVDBDiscoveryFixture.tvdbReply(request)
         }
-        let items = try await TVDBDiscoveryProvider(config: config, http: fixture.http).discover(.init())
+        let items = try await TVDBDiscoveryProvider(config: config, http: fixture.http).discover(.init(now: now))
         XCTAssertEqual(items.map(\.id), ["tvdb:movie:42", "tvdb:series:42", "tvdb:movie:43"])
         XCTAssertEqual(items[0].title, "Movie")
-        XCTAssertEqual(items[0].productionYear, 2020)
+        XCTAssertEqual(items[0].productionYear, 2025)
         XCTAssertEqual(items[0].posterURL?.absoluteString, "https://artworks.thetvdb.com/banners/poster.jpg")
-        XCTAssertEqual(items[1].releaseDate, ISO8601DateFormatter().date(from: "2021-04-03T00:00:00Z"))
+        XCTAssertEqual(items[1].releaseDate, ISO8601DateFormatter().date(from: "2025-04-03T00:00:00Z"))
         XCTAssertEqual(items[1].overview, "Story")
         let service = HeroDiscoveryService()
         let composed = await service.discover(
-            .init(), sources: [.tvdb],
+            .init(now: now), sources: [.tvdb],
             providers: [TVDBDiscoveryProvider(config: config, http: fixture.http)]
         )
         XCTAssertEqual(composed.first { $0.kind == .movie }?.discoveryURLs["tvdb"]?.absoluteString,
@@ -181,10 +183,10 @@ final class TVDBDiscoveryProviderTests: XCTestCase {
                          {"id":2,"name":" "},{"name":"Missing ID"},
                          {"id":3,"name":"Adult","adult":true},
                          {"id":4,"name":"Adult","isAdult":true},
-                         {"id":5,"name":"Good","image":"file:///private/poster"}]}
+                         {"id":5,"name":"Good","year":"2026","image":"file:///private/poster"}]}
                 """)
         }
-        let items = try await TVDBDiscoveryProvider(config: config, http: fixture.http).discover(.init())
+        let items = try await TVDBDiscoveryProvider(config: config, http: fixture.http).discover(.init(now: now))
         XCTAssertEqual(items.map(\.id), ["tvdb:movie:5", "tvdb:series:5"])
         XCTAssertTrue(items.allSatisfy { $0.posterURL == nil })
     }
@@ -194,19 +196,37 @@ final class TVDBDiscoveryProviderTests: XCTestCase {
             guard request.url!.lastPathComponent == "filter" else {
                 return TMDbTVDBDiscoveryFixture.tvdbReply(request)
             }
-            let records = (1...60).map { #"{"id":\#($0),"name":"Title \#($0)"}"# }.joined(separator: ",")
+            let records = (1...60).map { #"{"id":\#($0),"name":"Title \#($0)","year":"2026"}"# }.joined(separator: ",")
             return .init(json: #"{"data":[\#(records)]}"#)
         }
         let provider = TVDBDiscoveryProvider(config: config, http: fixture.http)
-        let items = try await provider.discover(.init(limit: 3))
+        let items = try await provider.discover(.init(limit: 3, now: now))
         XCTAssertEqual(items.map(\.id), ["tvdb:movie:1", "tvdb:series:1", "tvdb:movie:2"])
-        let many = try await provider.discover(.init(limit: 999))
+        let many = try await provider.discover(.init(limit: 999, now: now))
         XCTAssertEqual(many.count, 48)
         XCTAssertEqual(many.filter { $0.kind == .movie }.map { $0.providerIDs["Tvdb"]! },
                        (1...24).map(String.init))
         let requests = await fixture.recorded()
         XCTAssertEqual(requests.count, 7)
         XCTAssertTrue(requests.allSatisfy { TMDbTVDBDiscoveryFixture.query($0)["page"] == nil })
+    }
+
+    func testResponseDatesStillMustMeetTheRecentReleasePolicy() async throws {
+        let fixture = TMDbTVDBDiscoveryFixture { request, _ in
+            guard request.url!.lastPathComponent == "filter" else {
+                return TMDbTVDBDiscoveryFixture.tvdbReply(request)
+            }
+            return .init(json: """
+            {"data":[
+              {"id":1,"name":"Classic","year":"1994"},
+              {"id":2,"name":"Recent","firstAired":"2024-05-23"},
+              {"id":3,"name":"Too old","year":"2026","firstAired":"2024-05-22"},
+              {"id":4,"name":"Unknown"}
+            ]}
+            """)
+        }
+        let items = try await TVDBDiscoveryProvider(config: config, http: fixture.http).discover(.init(now: now))
+        XCTAssertEqual(items.map(\.id), ["tvdb:movie:2", "tvdb:series:2"])
     }
 
     func testLoginFailureRetainsHTTPStatus() async throws {

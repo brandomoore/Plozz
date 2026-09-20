@@ -4,13 +4,13 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// Filtered movie/TV discovery plus public, title-related recommendations.
+/// Weekly trends and recent popular releases, plus verified currently airing TV.
 /// Application authentication only: no TMDb account or watch-history upload.
 /// API: https://developer.themoviedb.org/reference/discover-movie
 /// and https://developer.themoviedb.org/reference/discover-tv.
 public struct TMDbDiscoveryProvider: HeroDiscoveryProviding {
     public let source: HeroDiscoverySource = .tmdb
-    public let usesTitleSeeds = true
+    public let usesTitleSeeds = false
     private let access: TMDbAccess
     private let http: MetadataDiscoveryHTTPClient
 
@@ -39,16 +39,27 @@ public struct TMDbDiscoveryProvider: HeroDiscoveryProviding {
         try Task.checkCancellation()
         guard isEnabled, request.limit > 0 else { return [] }
         var feeds: [[MediaItem]] = []
+        var currentlyAiring = Set<String>()
         for feed in Self.feeds(for: request) {
             try Task.checkCancellation()
             let response = try await http.decode(
                 Response.self,
                 from: makeRequest(path: feed.path, query: feed.query)
             )
-            feeds.append(response.results.prefix(100).compactMap { $0.mediaItem(kind: feed.kind) })
+            let items = response.results.prefix(100).compactMap { $0.mediaItem(kind: feed.kind) }
+            if feed.isCurrentlyAiring {
+                currentlyAiring.formUnion(items.map(\.id))
+            }
+            feeds.append(items)
         }
         try Task.checkCancellation()
-        return Self.interleaved(feeds, limit: request.limit)
+        let recent = feeds.map { items in
+            items.filter { item in
+                request.recency.includesRelease(of: item, at: request.now)
+                    || (item.kind == .series && currentlyAiring.contains(item.id))
+            }
+        }
+        return Self.interleaved(recent, limit: request.limit)
     }
 
     private func makeRequest(path: String, query: [URLQueryItem]) throws -> URLRequest {
@@ -69,55 +80,35 @@ public struct TMDbDiscoveryProvider: HeroDiscoveryProviding {
         var path: String
         var kind: MediaItemKind
         var query: [URLQueryItem]
-    }
-
-    /// Two recent feeds, two established-title feeds, at most two seed feeds.
-    /// Genre OR groups broaden the catalog picks without cloning daily trending.
-    private struct Filter {
-        let kind: MediaItemKind
-        let recent: Bool
-        let minimumVotes: Int
-        let minimumRating: Double
-        let genres: String?
-
-        static let defaults = [
-            Filter(kind: .movie, recent: true, minimumVotes: 100, minimumRating: 6, genres: nil),
-            Filter(kind: .series, recent: true, minimumVotes: 50, minimumRating: 6, genres: nil),
-            Filter(kind: .movie, recent: false, minimumVotes: 1_000, minimumRating: 7,
-                   genres: "12|16|35|80|99|18|10751|14|36|27|10402|9648|10749|878|53|10752|37|28"),
-            Filter(kind: .series, recent: false, minimumVotes: 250, minimumRating: 7,
-                   genres: "10759|16|35|80|99|18|10751|10762|9648|10765|10768|37")
-        ]
+        var isCurrentlyAiring = false
     }
 
     private static func feeds(for request: HeroDiscoveryRequest) -> [Feed] {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let today = calendar.startOfDay(for: request.now)
-        let cutoff = calendar.date(byAdding: .year, value: -3, to: today) ?? today
-        let beforeCutoff = calendar.date(byAdding: .day, value: -1, to: cutoff) ?? cutoff
+        let cutoff = request.recency.cutoff(at: request.now)
         let language = request.language.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "_", with: "-")
         let common = [
             URLQueryItem(name: "language", value: language.isEmpty ? "en" : language),
             URLQueryItem(name: "page", value: "1")
         ]
-        var feeds = Filter.defaults.map { filter in
-            let movie = filter.kind == .movie
+        var feeds = [
+            Feed(path: "3/trending/movie/week", kind: .movie, query: common),
+            Feed(path: "3/trending/tv/week", kind: .series, query: common)
+        ]
+        for kind in [MediaItemKind.movie, .series] {
+            let movie = kind == .movie
             let dateKey = movie ? "primary_release_date" : "first_air_date"
             var query = common + [
                 URLQueryItem(name: "include_adult", value: "false"),
-                URLQueryItem(name: "sort_by", value: filter.recent ? "popularity.desc" : "vote_average.desc"),
-                URLQueryItem(name: "vote_count.gte", value: String(filter.minimumVotes)),
-                URLQueryItem(name: "vote_average.gte", value: String(filter.minimumRating)),
-                URLQueryItem(name: "\(dateKey).lte", value: day(filter.recent ? today : beforeCutoff))
+                URLQueryItem(name: "sort_by", value: "popularity.desc"),
+                URLQueryItem(name: "vote_count.gte", value: movie ? "100" : "50"),
+                URLQueryItem(name: "vote_average.gte", value: "6.0"),
+                URLQueryItem(name: "\(dateKey).gte", value: day(cutoff)),
+                URLQueryItem(name: "\(dateKey).lte", value: day(today))
             ]
-            if filter.recent {
-                query.append(URLQueryItem(name: "\(dateKey).gte", value: day(cutoff)))
-            }
-            if let genres = filter.genres {
-                query.append(URLQueryItem(name: "with_genres", value: genres))
-            }
             if movie {
                 let region = request.region.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
                 query.append(URLQueryItem(name: "region", value: region.isEmpty ? "US" : region))
@@ -125,41 +116,16 @@ public struct TMDbDiscoveryProvider: HeroDiscoveryProviding {
             } else {
                 query.append(URLQueryItem(name: "include_null_first_air_dates", value: "false"))
             }
-            return Feed(path: "3/discover/\(movie ? "movie" : "tv")", kind: filter.kind, query: query)
+            feeds.append(Feed(path: "3/discover/\(movie ? "movie" : "tv")", kind: kind, query: query))
         }
-        var seen = Set<String>()
-        var recommendations: [Feed] = []
-        for seed in request.seeds {
-            let kind: MediaItemKind
-            let rawID: String?
-            switch seed.kind {
-            case .movie:
-                kind = .movie
-                rawID = seed.providerIDs.providerID(.tmdb)
-            case .series:
-                kind = .series
-                rawID = seed.providerIDs.providerID(.tmdb) ?? seed.providerIDs.providerID(.seriesTmdb)
-            case .season, .episode:
-                kind = .series
-                rawID = seed.providerIDs.providerID(.seriesTmdb)
-            default:
-                continue
-            }
-            guard let rawID, let id = positiveID(rawID) else { continue }
-            let path = "3/\(kind == .movie ? "movie" : "tv")/\(id)/recommendations"
-            guard seen.insert(path).inserted else { continue }
-            recommendations.append(Feed(path: path, kind: kind, query: common))
-            if recommendations.count == 2 { break }
-        }
-        feeds.insert(contentsOf: recommendations, at: 2)
+        // This endpoint verifies episodes airing in the next seven days; a show's
+        // original premiere remains unchanged even when an older series qualifies.
+        feeds.append(Feed(
+            path: "3/tv/on_the_air", kind: .series,
+            query: common + [URLQueryItem(name: "timezone", value: "UTC")],
+            isCurrentlyAiring: true
+        ))
         return feeds
-    }
-
-    private static func positiveID(_ raw: String) -> Int? {
-        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, value.utf8.allSatisfy({ (48...57).contains($0) }),
-              let id = Int(value), id > 0 else { return nil }
-        return id
     }
 
     private static func day(_ date: Date) -> String {

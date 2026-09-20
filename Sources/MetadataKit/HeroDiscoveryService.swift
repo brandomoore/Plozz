@@ -15,6 +15,7 @@ public actor HeroDiscoveryService {
         let day: Int
         let limit: Int
         let seeds: [HeroDiscoveryRequest.SeedIdentity]
+        let recency: HeroDiscoveryRecency
     }
 
     private struct Cached {
@@ -88,7 +89,7 @@ public actor HeroDiscoveryService {
         )
         let providerRequest = HeroDiscoveryRequest(
             limit: perProviderLimit, language: request.language,
-            region: request.region, seeds: request.seeds, now: request.now
+            region: request.region, seeds: request.seeds, now: request.now, recency: request.recency
         )
         let requestID = UUID()
         let channel = AsyncStream<Reply>.makeStream(bufferingPolicy: .bufferingNewest(active.count))
@@ -247,7 +248,7 @@ public actor HeroDiscoveryService {
             source: provider.source, provider: provider.cacheIdentifier,
             language: request.language, region: request.region,
             day: Int(request.now.timeIntervalSince1970 / 86_400),
-            limit: request.limit, seeds: seeds
+            limit: request.limit, seeds: seeds, recency: request.recency
         )
     }
 

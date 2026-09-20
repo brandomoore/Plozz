@@ -526,20 +526,23 @@ struct HomeHeroView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             if let item = current {
-                // Share one credit across both foreground renderers, in the
-                // trailing paging band without changing the action-row layout.
-                HeroDiscoveryAttribution(sources: item.discoverySources)
-                    .frame(maxWidth: Self.screenWidth * 0.3, alignment: .trailing)
-                    .padding(.trailing, PlozzTheme.Metrics.screenPadding)
-                    .padding(.bottom, Self.contentBottomInset - Self.pagingDotsDrop)
-                    .allowsHitTesting(false)
-                    .opacity(isFrontmost && !receded && metadataVisible ? 1 : 0)
-                    .accessibilityHidden(!isFrontmost || receded || !metadataVisible || !heroVisible)
-                    .transaction {
-                        if !isFrontmost || receded || !metadataVisible {
-                            $0.animation = nil
+                let attributionSources = settings.discoveryAttributionSources(for: item)
+                if !attributionSources.isEmpty {
+                    // Share one credit across both foreground renderers, in the
+                    // trailing paging band without changing the action-row layout.
+                    HeroDiscoveryAttribution(sources: attributionSources)
+                        .frame(maxWidth: Self.screenWidth * 0.3, alignment: .trailing)
+                        .padding(.trailing, PlozzTheme.Metrics.screenPadding)
+                        .padding(.bottom, Self.contentBottomInset - Self.pagingDotsDrop)
+                        .allowsHitTesting(false)
+                        .opacity(isFrontmost && !receded && metadataVisible ? 1 : 0)
+                        .accessibilityHidden(!isFrontmost || receded || !metadataVisible || !heroVisible)
+                        .transaction {
+                            if !isFrontmost || receded || !metadataVisible {
+                                $0.animation = nil
+                            }
                         }
-                    }
+                }
             }
         }
         .opacity(heroVisible ? 1 : 0)

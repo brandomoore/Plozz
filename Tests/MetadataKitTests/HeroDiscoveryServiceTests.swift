@@ -24,7 +24,9 @@ final class HeroDiscoveryServiceTests: XCTestCase {
         }
         let provider = TMDbDiscoveryProvider(access: .directToken("fixture"), http: http)
         let service = HeroDiscoveryService()
-        let items = await service.discover(.init(), sources: [.tmdb], providers: [provider])
+        let items = await service.discover(
+            .init(now: Date(timeIntervalSince1970: 1_735_689_600)), sources: [.tmdb], providers: [provider]
+        )
         XCTAssertEqual(items.first { $0.kind == .movie }?.discoveryURLs["tmdb"]?.absoluteString,
                        "https://www.themoviedb.org/movie/42")
         XCTAssertEqual(items.first { $0.kind == .series }?.discoveryURLs["tmdb"]?.absoluteString,
@@ -96,6 +98,24 @@ final class HeroDiscoveryServiceTests: XCTestCase {
         _ = await service.discover(second, sources: [.tmdb, .simkl], providers: [newCredential, simkl])
         let rotatedCount = await calls.count
         XCTAssertEqual(rotatedCount, 4)
+    }
+
+    func testRecencyPolicyReachesProvidersAndSeparatesCachedFeeds() async {
+        let calls = DiscoveryCallRecorder()
+        let service = HeroDiscoveryService()
+        let provider = DiscoveryFixtureProvider(source: .tmdb) { request in
+            await calls.record()
+            return [Self.item("window-\(request.recency.years)")]
+        }
+        let now = Date(timeIntervalSince1970: 1_779_494_400)
+        for years in [2, 5, 2, 5] {
+            let items = await service.discover(
+                .init(now: now, recency: .init(years: years)), sources: [.tmdb], providers: [provider]
+            )
+            XCTAssertEqual(items.first?.id, "window-\(years)")
+        }
+        let count = await calls.count
+        XCTAssertEqual(count, 2)
     }
 
     func testCancelledConsumerDoesNotCancelAnotherConsumerOrSharedLoad() async {

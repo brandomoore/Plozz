@@ -48,6 +48,12 @@ public struct AniListDiscoveryProvider: HeroDiscoveryProviding {
             for page in [trending, seasonal] where index < page.count {
                 guard let media = page[index],
                       let item = Self.item(media, language: request.language),
+                      request.recency.includesRelease(of: item, at: request.now)
+                        || (item.kind == .series && media.nextAiringEpisode.map {
+                            request.recency.includesUpcomingEpisode(
+                                at: Date(timeIntervalSince1970: $0.airingAt), now: request.now
+                            )
+                        } == true),
                       seen.insert(item.id).inserted else { continue }
                 items.append(item)
                 if items.count == request.limit { return items }
@@ -148,6 +154,7 @@ public struct AniListDiscoveryProvider: HeroDiscoveryProviding {
       title { english romaji native }
       description(asHtml: false)
       startDate { year month day }
+      nextAiringEpisode { airingAt }
       genres bannerImage coverImage { extraLarge large }
     }
     """
@@ -186,9 +193,14 @@ public struct AniListDiscoveryProvider: HeroDiscoveryProviding {
         let title: Title?
         let description: String?
         let startDate: StartDate?
+        let nextAiringEpisode: AiringEpisode?
         let genres: [String]?
         let bannerImage: String?
         let coverImage: CoverImage?
+
+        struct AiringEpisode: Decodable, Sendable {
+            let airingAt: TimeInterval
+        }
 
         struct Title: Decodable, Sendable {
             let english: String?

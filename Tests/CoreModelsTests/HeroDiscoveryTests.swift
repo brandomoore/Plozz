@@ -3,10 +3,11 @@ import XCTest
 @testable import CoreModels
 
 final class HeroDiscoveryTests: XCTestCase {
-    func testDefaultSourcesExcludeTraktAndKeepAnimeOptIn() {
-        XCTAssertEqual(HeroDiscoverySource.defaultSelection, [.tmdb, .simkl, .tvdb, .tvmaze])
+    func testDefaultSourcesExcludeTraktAndKeepAnimeAndSimklOptIn() {
+        XCTAssertEqual(HeroDiscoverySource.defaultSelection, [.tmdb, .tvdb, .tvmaze])
         XCTAssertFalse(HeroDiscoverySource.allCases.map(\.rawValue).contains("trakt"))
         XCTAssertFalse(HeroSettings.default.discoverySources.contains(.anilist))
+        XCTAssertFalse(HeroSettings.default.discoverySources.contains(.simkl))
     }
 
     func testSourceSettingsPreserveExplicitEmptyAndIgnoreUnknownNames() throws {
@@ -53,6 +54,49 @@ final class HeroDiscoveryTests: XCTestCase {
         personal.allowsTitleBasedMetadataMatching = false
         let folder = MediaItem(id: "folder", title: "Files", kind: .folder)
         XCTAssertTrue(HeroDiscoveryRequest(seeds: [personal, folder]).seeds.isEmpty)
+    }
+
+    func testFeaturedReleaseWindowUsesTwoCalendarYearsAndPreservesBoundaryDates() throws {
+        let formatter = ISO8601DateFormatter()
+        let now = try XCTUnwrap(formatter.date(from: "2026-09-20T12:00:00Z"))
+        let recency = HeroDiscoveryRecency.default
+        XCTAssertEqual(recency.years, 2)
+        XCTAssertEqual(recency.cutoff(at: now), formatter.date(from: "2024-09-20T00:00:00Z"))
+        for (date, included) in [
+            ("1994-09-23T00:00:00Z", false),
+            ("2024-09-19T23:59:59Z", false),
+            ("2024-09-20T00:00:00Z", true),
+            ("2026-09-20T23:59:59Z", true),
+            ("2026-09-21T00:00:00Z", false)
+        ] {
+            let item = MediaItem(
+                id: date, title: "Movie", kind: .movie, productionYear: 2026,
+                releaseDate: try XCTUnwrap(formatter.date(from: date))
+            )
+            XCTAssertEqual(recency.includesRelease(of: item, at: now), included, date)
+        }
+        for (year, included) in [(1994, false), (2023, false), (2024, true), (2026, true), (2027, false)] {
+            let item = MediaItem(id: "year", title: "Movie", kind: .movie, productionYear: year)
+            XCTAssertEqual(recency.includesRelease(of: item, at: now), included)
+        }
+        XCTAssertFalse(recency.includesRelease(of: MediaItem(id: "unknown", title: "Unknown", kind: .movie), at: now))
+        XCTAssertEqual(HeroDiscoveryRecency(years: 0).years, 1)
+        XCTAssertEqual(HeroDiscoveryRecency(years: 100).years, 10)
+    }
+
+    func testUpcomingEpisodeEvidenceMustBeCurrentAndHandlesLeapYears() throws {
+        let formatter = ISO8601DateFormatter()
+        let now = try XCTUnwrap(formatter.date(from: "2028-02-29T12:00:00Z"))
+        let recency = HeroDiscoveryRecency.default
+        XCTAssertEqual(recency.cutoff(at: now), formatter.date(from: "2026-02-28T00:00:00Z"))
+        XCTAssertTrue(recency.includesUpcomingEpisode(
+            at: try XCTUnwrap(formatter.date(from: "2028-03-01T00:00:00Z")), now: now
+        ))
+        for date in ["2028-02-28T00:00:00Z", "2028-03-07T00:00:00Z", "2029-01-01T00:00:00Z"] {
+            XCTAssertFalse(recency.includesUpcomingEpisode(
+                at: try XCTUnwrap(formatter.date(from: date)), now: now
+            ), date)
+        }
     }
 
     func testAttributionSurvivesCodingAndPresentationMerge() throws {

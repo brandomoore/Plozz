@@ -418,6 +418,12 @@ Provider selection is part of `HeroConfigurationKey`. In particular, switching
 from one feed to another must not allow a failed refresh to relabel and persist
 the previous feed's candidates under the new selection. Attribution source
 names and per-item URLs remain separate from playable server identity.
+Featured's two-year release policy is also versioned in that key, retiring
+older all-time catalog seeds and candidate pools without deleting exposure
+history or unrelated Home caches. Current-airing evidence can admit older
+series without changing their original premiere dates. Feed caches distinguish
+release-window policies. Hero source labels are optional and default off;
+Simkl is opt-in and always carries its required visible credit when used.
 See `Sources/MetadataKit/README.md` for the individual feed and attribution rules.
 
 #### Library-channel identifier validation during Home paging

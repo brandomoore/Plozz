@@ -7,6 +7,8 @@ import XCTest
 @testable import MetadataKit
 
 final class AniListDiscoveryProviderTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_779_494_400)
+
     func testPublicGraphQLShapeMixesSeasonalTrendingAndPreservesMovieIdentity() async throws {
         let movie = Self.media(id: 16498, format: "MOVIE", mal: 0)
         let series = Self.media(id: 21, format: "TV", mal: 21)
@@ -15,7 +17,7 @@ final class AniListDiscoveryProviderTests: XCTestCase {
             .json(Self.response(trending: [movie, series], seasonal: [movie, seasonal])),
         ])
         let provider = AniListDiscoveryProvider(http: fixture.http)
-        let items = try await provider.discover(.init(limit: 3, language: "ja-JP"))
+        let items = try await provider.discover(.init(limit: 3, language: "ja-JP", now: now))
 
         XCTAssertEqual(items.map(\.id), ["anilist:movie:16498", "anilist:series:21", "anilist:series:178789"])
         XCTAssertEqual(items.map(\.kind), [.movie, .series, .series])
@@ -23,8 +25,8 @@ final class AniListDiscoveryProviderTests: XCTestCase {
         XCTAssertEqual(items[0].providerID(.aniList), "16498")
         XCTAssertNil(items[0].providerID(.myAnimeList))
         XCTAssertEqual(items[1].providerID(.myAnimeList), "21")
-        XCTAssertEqual(items[0].productionYear, 2024)
-        XCTAssertEqual(items[0].releaseDate, Self.date("2024-04-01T00:00:00Z"))
+        XCTAssertEqual(items[0].productionYear, 2025)
+        XCTAssertEqual(items[0].releaseDate, Self.date("2025-04-01T00:00:00Z"))
         XCTAssertEqual(items[0].posterURL?.absoluteString, "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/a.jpg")
         XCTAssertEqual(items[0].backdropURL?.absoluteString, "https://s4.anilist.co/file/anilistcdn/media/anime/banner/a.jpg")
         XCTAssertEqual(items[0].metadataProvenance[.title]?.sourceURL?.absoluteString, "https://anilist.co/anime/16498")
@@ -51,6 +53,7 @@ final class AniListDiscoveryProviderTests: XCTestCase {
         XCTAssertTrue(document.contains("isAdult: false"))
         XCTAssertTrue(document.contains("TRENDING_DESC"))
         XCTAssertTrue(document.contains("POPULARITY_DESC"))
+        XCTAssertTrue(document.contains("nextAiringEpisode { airingAt }"))
         XCTAssertFalse(document.contains("onList"))
     }
 
@@ -67,7 +70,7 @@ final class AniListDiscoveryProviderTests: XCTestCase {
                 Self.media(id: 4, format: "MANGA"), valid,
             ], seasonal: [])),
         ])
-        let items = try await AniListDiscoveryProvider(http: fixture.http).discover(.init())
+        let items = try await AniListDiscoveryProvider(http: fixture.http).discover(.init(now: now))
         XCTAssertEqual(items.map(\.id), ["anilist:series:7"])
         XCTAssertEqual(items.first?.title, "Fallback")
         XCTAssertEqual(items.first?.productionYear, 2026)
@@ -108,7 +111,8 @@ final class AniListDiscoveryProviderTests: XCTestCase {
         let media = (1...60).map { Self.media(id: $0) }
         let fixture = PublicFeedDiscoveryTestTransport([.json(Self.response(trending: media, seasonal: media))])
         let seed = MediaItem(id: "private-id", title: "Private library title", kind: .movie, sourceAccountID: "account-secret")
-        let items = try await AniListDiscoveryProvider(http: fixture.http).discover(.init(limit: 999, seeds: [seed]))
+        let items = try await AniListDiscoveryProvider(http: fixture.http)
+            .discover(.init(limit: 999, seeds: [seed], now: now))
         XCTAssertEqual(items.count, 48)
         let requests = await fixture.requests
         XCTAssertEqual(requests.count, 1)
@@ -132,6 +136,25 @@ final class AniListDiscoveryProviderTests: XCTestCase {
         XCTAssertTrue(negativeItems.isEmpty)
         let requests = await fixture.requests
         XCTAssertTrue(requests.isEmpty)
+    }
+
+    func testOldAnimeNeedsVerifiedUpcomingEpisodesRatherThanTrendingAlone() async throws {
+        let nextEpisode = now.addingTimeInterval(86_400).timeIntervalSince1970
+        let old = Self.media(id: 1).replacingOccurrences(of: #""year":2025"#, with: #""year":1999"#)
+        let returning = old.replacingOccurrences(
+            of: #""id":1,"#, with: #""id":2,"nextAiringEpisode":{"airingAt":\#(nextEpisode)},"#
+        )
+        let farFuture = old.replacingOccurrences(
+            of: #""id":1,"#, with: #""id":3,"nextAiringEpisode":{"airingAt":\#(nextEpisode + 30 * 86_400)},"#
+        )
+        let movieWithEpisode = returning.replacingOccurrences(of: #""format":"TV""#, with: #""format":"MOVIE""#)
+            .replacingOccurrences(of: #""id":2,"#, with: #""id":4,"#)
+        let fixture = PublicFeedDiscoveryTestTransport([
+            .json(Self.response(trending: [old, returning, farFuture, movieWithEpisode], seasonal: [Self.media(id: 5)]))
+        ])
+        let items = try await AniListDiscoveryProvider(http: fixture.http).discover(.init(now: now))
+        XCTAssertEqual(items.map(\.id), ["anilist:series:5", "anilist:series:2"])
+        XCTAssertEqual(items.first { $0.id == "anilist:series:2" }?.productionYear, 1999)
     }
 
     func testGraphQLErrorsRejectPartialDataAndMissingDataIsNotEmptySuccess() async throws {
@@ -196,7 +219,7 @@ final class AniListDiscoveryProviderTests: XCTestCase {
         """
         {"id":\(id),"idMal":\(mal),"type":"ANIME","format":"\(format)","isAdult":\(adult),
          "title":{"english":"English","romaji":"Romaji","native":"日本語"},
-         "startDate":{"year":2024,"month":4,"day":1},"description":"A public synopsis.",
+         "startDate":{"year":2025,"month":4,"day":1},"description":"A public synopsis.",
          "genres":["Action"],"bannerImage":"https://s4.anilist.co/file/anilistcdn/media/anime/banner/a.jpg",
          "coverImage":{"extraLarge":"https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/a.jpg"}}
         """

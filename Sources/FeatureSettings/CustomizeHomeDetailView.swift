@@ -262,6 +262,13 @@ struct CustomizeHomeDetailView: View {
                 if hero.settings.showsRatings {
                     HeaderRatingPreviewControls(settings: $hero.settings.ratingPreferences)
                 }
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Show discovery sources", isOn: $hero.settings.showsDiscoverySources)
+                        .toggleStyle(SettingsSwitchToggleStyle())
+                    Text("Show the catalogs behind each title. Titles from Simkl always show its required credit, even when this is off.")
+                        .settingsHelperText()
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Toggle(
                     "Hide watched movies, shows, and episodes",
                     isOn: $hero.settings.hideWatched

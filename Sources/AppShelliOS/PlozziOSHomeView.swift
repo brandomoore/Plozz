@@ -248,7 +248,7 @@ struct PlozziOSHomeView: View {
         .task(
             id: FeaturedLoadID(
                 isConfigured: appModel.seerService.isConfigured,
-                settings: appModel.settings.hero.settings
+                configuration: HeroConfigurationKey(settings: appModel.settings.hero.settings)
             )
         ) {
             await refreshFeaturedStatusLoop()
@@ -1100,7 +1100,7 @@ struct PlozziOSHomeView: View {
 
 private struct FeaturedLoadID: Equatable {
     let isConfigured: Bool
-    let settings: HeroSettings
+    let configuration: HeroConfigurationKey
 }
 
 private struct PlozziOSHeroLoadID: Equatable {
@@ -1108,7 +1108,7 @@ private struct PlozziOSHeroLoadID: Equatable {
     let watchlist: [MediaItem]
     let recentlyAdded: [MediaItem]
     let libraries: [AggregatedLibrary]
-    let settings: HeroSettings
+    let configuration: HeroConfigurationKey
     let visibility: HomeLibraryVisibility
     let freshnessRevision: Int
     let scopeID: ObjectIdentifier
@@ -1127,7 +1127,7 @@ private struct PlozziOSHeroLoadID: Equatable {
         watchlist = settings.isEnabled(.watchlist) ? content.watchlist : []
         recentlyAdded = settings.isEnabled(.recentlyAdded) ? content.latest : []
         libraries = settings.isEnabled(.randomFromLibrary) ? content.libraries : []
-        self.settings = settings
+        configuration = HeroConfigurationKey(settings: settings)
         self.visibility = visibility
         self.freshnessRevision = freshnessRevision
         self.scopeID = scopeID
@@ -1347,13 +1347,17 @@ private struct PlozziOSHomeHeroCarousel: View {
         .frame(height: heroHeight)
         .overlay(alignment: .topLeading) {
             if let currentItem, foregroundVisible, !transitionInProgress, dragOffset == 0 {
-                HeroDiscoveryAttribution(
-                    sources: currentItem.discoverySources,
-                    links: currentItem.discoveryURLs
-                )
+                let attributionSources = appModel.settings.hero.settings
+                    .discoveryAttributionSources(for: currentItem)
+                if !attributionSources.isEmpty {
+                    HeroDiscoveryAttribution(
+                        sources: attributionSources,
+                        links: currentItem.discoveryURLs
+                    )
                     .padding(.horizontal, 20)
                     .padding(.top, 64)
                     .padding(.trailing, 72)
+                }
             }
         }
         .trackHeroExposure(

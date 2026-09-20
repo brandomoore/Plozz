@@ -61,6 +61,7 @@ public struct SimklDiscoveryProvider: HeroDiscoveryProviding {
         for index in 0..<100 {
             for (category, titles) in groups where index < titles.count {
                 guard let item = Self.item(titles[index], category: category, formatter: formatter),
+                      request.recency.includesRelease(of: item, at: request.now),
                       seen.insert(item.id).inserted else { continue }
                 items.append(item)
                 if items.count == request.limit { return items }

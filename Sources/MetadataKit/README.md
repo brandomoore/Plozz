@@ -42,17 +42,29 @@ load-bearing.
 
 ## Discovery sources
 
-TMDB combines filtered movie/TV discovery with title-related recommendations;
-these are not account-personalized recommendations. Simkl supplies independent
-watcher trends. AniList supplies seasonal/trending anime and is opt-in.
-TheTVDB supplies filtered catalog browsing. TVmaze supplies a bounded window
-of TV premieres/returning shows, not a full-catalog download.
+Featured defaults to a two-calendar-year release window. Full dates use a rolling
+cutoff; year-only metadata retains the boundary year rather than inventing a
+release day. Undated titles do not qualify on popularity alone. This policy does
+not filter Continue Watching, Watchlist, Recently Added, or Random library picks.
 
-Discovery provenance is retained on `MediaItem.discoverySources` and displayed
-on the hero. Per-source item links in `MediaItem.discoveryURLs` survive
+TMDB combines weekly movie/TV trends, recent popular movie/TV discovery, and
+currently airing series in five requests. All-time top-rated and watchlist-based
+recommendation feeds are not used. Older series qualify only with current airing
+evidence: TMDB's next-seven-day feed, AniList's next episode, or TVmaze's
+today/tomorrow season premieres. Their original release years remain unchanged.
+Simkl supplies weekly watcher trends filtered to recent releases and is opt-in.
+AniList supplies seasonal/trending anime and is also opt-in. TheTVDB supplies
+current-year catalog browsing, with response dates checked against the same
+release policy. No provider adds per-title detail requests to establish recency.
+
+Discovery provenance is retained on `MediaItem.discoverySources`. Hero source
+labels are a per-profile option, off by default, while Simkl's required
+"Simkl Trending" credit always appears when its optional feed contributes.
+General provider credits remain in Attributions & Licenses.
+Per-source item links in `MediaItem.discoveryURLs` survive
 deduplication independently of the title's single metadata-provenance entry.
-iOS exposes those links through the attribution badge; tvOS shows the credits
-without adding a focus stop. The Simkl mark is the official
+iOS exposes those links through visible attribution badges; tvOS shows enabled
+credits without adding a focus stop. The Simkl mark is the official
 [provided PNG](https://us.simkl.in/img_favicon/v2/favicon-192x192.png).
 Keep credits and links when binding a result to a library copy or merging
 duplicates. TVmaze data is CC BY-SA; Simkl's feed attribution, registered app
@@ -80,6 +92,10 @@ terms before changing their use:
 - **Cached aggressively.** Resolved URLs persist across launches in
   `MetadataDiskCache`; decoded bytes are cached by `CoreUI`'s
   `ArtworkImageCache`.
+- **Policy-aware caches.** Feed keys include the release-window policy.
+  `HeroConfigurationKey.discoveryContentVersion` retires pre-policy Featured
+  seeds and candidate pools, so an offline fallback cannot restore the old
+  all-time feed after upgrading.
 
 ## Where to look first
 
