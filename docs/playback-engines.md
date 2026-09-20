@@ -6,10 +6,26 @@ with the best possible quality (Dolby Vision, Atmos, full-timeline seek).
 
 ## Dependency version
 
-Plozz pins upstream AetherEngine **7.1.1** to commit
-`755cc21ccaf5d1fc165a570f524163e12923872e`. Its iOS/tvOS 18 minimum matches
-Plozz's existing deployment targets. The engine owns the FFmpegBuild 3.3.x and
+Plozz pins upstream AetherEngine **7.8.1** to commit
+`b89240afcaebb958632b4b2c69284138c96e275f`. Its iOS/tvOS 18 minimum matches
+Plozz's existing deployment targets. The engine owns the FFmpegBuild 3.4.x and
 LibDovi 2.1.x dependencies; Plozz does not link a second FFmpeg build.
+
+This release contains both merged integration fixes:
+
+- [superuser404notfound/AetherEngine#566](https://github.com/superuser404notfound/AetherEngine/pull/566):
+  item-bound background access/error-log reads, stale-result fencing, and bounded
+  diagnostic admission. The release also includes the upstream dedicated-thread
+  follow-up for saturated dispatch pools.
+- [superuser404notfound/AetherEngine#568](https://github.com/superuser404notfound/AetherEngine/pull/568):
+  Vision subtitle OCR runs off the cooperative executor, with one actual native
+  operation admitted process-wide and cancellation-safe cursor replay.
+
+The update also includes Matroska keyframe-boundary, bridged-audio priming,
+HDR-route preservation, and screensaver/Now Playing fixes. New prewarm and
+live-recording APIs remain opt-in; this update does not enable new app features.
+The engine's diagnostic fix does not change Plozz's separate native-AVPlayer
+diagnostics sampler.
 
 This dependency update retains Plozz's playback routing and optional-feature
 settings. It does not connect container chapters to Up Next; marker-less content
