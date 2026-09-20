@@ -28,6 +28,7 @@ public struct LibraryBrowseView: View {
     /// you're actually flying through content. Reset when the rail's eligibility
     /// goes away (a non-name sort) so re-entering name sort re-arms the reveal.
     @State private var railHasRevealed = false
+    @State private var sortButtonHeight: CGFloat?
     /// Pre-built so a synthesized library name ("Movies" on a file share) is
     /// our translated copy while a server's own name stays verbatim.
     private let title: Text
@@ -262,10 +263,13 @@ public struct LibraryBrowseView: View {
                 LibraryFileBrowseButton(library: library, onSelect: onSelect)
             }
             if viewModel.supportsCollections {
-                LibraryContentModeControl(viewModel: viewModel)
+                LibraryContentModeControl(viewModel: viewModel, buttonHeight: sortButtonHeight)
             }
             if !viewModel.availableSortFields.isEmpty {
                 sortControl
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        if height > 0 { sortButtonHeight = height }
+                    }
             }
         }
 
@@ -372,6 +376,7 @@ public struct LibraryBrowseView: View {
 
 private struct LibraryContentModeControl: View {
     let viewModel: LibraryBrowseViewModel
+    let buttonHeight: CGFloat?
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
 
@@ -386,7 +391,10 @@ private struct LibraryContentModeControl: View {
                         .fontWeight(.semibold)
                         .lineLimit(1)
                 }
-                .buttonStyle(LibraryContentSegmentStyle(isSelected: isSelected))
+                .buttonStyle(LibraryContentSegmentStyle(
+                    isSelected: isSelected,
+                    height: buttonHeight
+                ))
                 .accessibilityValue(isSelected ? Text("Selected") : Text(verbatim: ""))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .accessibilityIdentifier("library-content-mode-\(mode.rawValue)")
@@ -408,14 +416,16 @@ private struct LibraryContentModeControl: View {
 
 private struct LibraryContentSegmentStyle: ButtonStyle {
     let isSelected: Bool
+    let height: CGFloat?
 
     func makeBody(configuration: Configuration) -> some View {
-        SegmentBody(configuration: configuration, isSelected: isSelected)
+        SegmentBody(configuration: configuration, isSelected: isSelected, height: height)
     }
 
     private struct SegmentBody: View {
         let configuration: ButtonStyle.Configuration
         let isSelected: Bool
+        let height: CGFloat?
         @Environment(\.isFocused) private var isFocused
         @Environment(\.colorScheme) private var colorScheme
         @Environment(\.themePalette) private var palette
@@ -428,6 +438,7 @@ private struct LibraryContentSegmentStyle: ButtonStyle {
                     : (isSelected ? palette.primaryText : palette.secondaryText))
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
+                .frame(height: height)
                 .background {
                     Capsule()
                         .fill(isFocused
