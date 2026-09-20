@@ -12,6 +12,8 @@ import CoreUI
 /// ``SettingsRowMetrics``, so at `.primary` prominence a checkable row is exactly
 /// as tall as a switch row on the same screen, and `.secondary` steps that down
 /// for child rows — matching selector rows of the same prominence.
+/// Subtitles use the shared focus-aware secondary style to remain readable on
+/// the inverted focus background.
 struct SettingsCheckableRow: View {
     let title: Text
     var subtitle: Text? = nil
@@ -60,7 +62,7 @@ struct SettingsCheckableRow: View {
                     if let subtitle {
                         subtitle
                             .font(.footnote)
-                            .plozzForeground(.secondary)
+                            .settingsRowSecondary()
                             .lineLimit(2)
                     }
                 }

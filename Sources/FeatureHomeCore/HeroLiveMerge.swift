@@ -110,13 +110,45 @@ public enum HeroLiveMerge {
     ///     to show" rather than "a fetch failed". Only the caller can tell those
     ///     apart, and getting it wrong either blanks a good carousel or keeps a
     ///     dead one, so it has no safe default beyond "assume failure".
+    ///   - preservesPinnedItems: a novelty-only background refresh may replace
+    ///     alternatives, but never the slide being viewed, even after many folds.
+    ///     Leave false for authoritative settings/content changes.
+    ///   - sourceEligibility: authoritative source removal overrides pinning;
+    ///     ordinary refresh absence still follows the retention policy below.
     public static func merge(
         showing: [MediaItem],
         fresh: [MediaItem],
         limit: Int,
         pinnedItemIDs: Set<String> = [],
         misses: [String: Int] = [:],
-        freshIsAuthoritative: Bool = false
+        freshIsAuthoritative: Bool = false,
+        preservesPinnedItems: Bool = false,
+        sourceEligibility: HeroSourceEligibility = .unrestricted
+    ) -> Outcome {
+        let eligibleShowing = sourceEligibility.filtering(showing)
+        var outcome = mergeEligible(
+            showing: eligibleShowing,
+            fresh: sourceEligibility.filtering(fresh),
+            limit: limit,
+            pinnedItemIDs: pinnedItemIDs,
+            misses: misses,
+            freshIsAuthoritative: freshIsAuthoritative,
+            preservesPinnedItems: preservesPinnedItems
+        )
+        let ineligibleIDs = showing.filter { !sourceEligibility.allows($0) }.map(\.id)
+        outcome.retired = ineligibleIDs + outcome.retired
+        for id in ineligibleIDs { outcome.misses[id] = nil }
+        return outcome
+    }
+
+    private static func mergeEligible(
+        showing: [MediaItem],
+        fresh: [MediaItem],
+        limit: Int,
+        pinnedItemIDs: Set<String>,
+        misses: [String: Int],
+        freshIsAuthoritative: Bool,
+        preservesPinnedItems: Bool
     ) -> Outcome {
         guard limit > 0 else { return Outcome(items: []) }
         guard !showing.isEmpty else {
@@ -138,7 +170,7 @@ public enum HeroLiveMerge {
         // a carousel that never rotates still updates.
         let deferralCeiling = retentionGrace + pinnedDeferralLimit
         let effectivePinned = pinnedItemIDs.filter {
-            (misses[$0] ?? 0) < deferralCeiling
+            preservesPinnedItems || (misses[$0] ?? 0) < deferralCeiling
         }
 
         let freshTokens = fresh.map { HeroDedupe.tokens(for: $0) }
@@ -201,7 +233,8 @@ public enum HeroLiveMerge {
             let ceiling = pinnedItemIDs.contains(item.id)
                 ? deferralCeiling
                 : retentionGrace
-            guard missCount < ceiling else {
+            guard missCount < ceiling
+                    || (preservesPinnedItems && pinnedItemIDs.contains(item.id)) else {
                 retired.append(item.id)
                 continue
             }
@@ -268,6 +301,8 @@ public enum HeroLiveMerge {
     /// on iOS it can strand a committed swipe on an id that no longer exists. Such
     /// a slide keeps its record until they page away, which is the next curation's
     /// problem, not this one's.
+    /// A catalog-only presentation can acquire verified routing without adopting
+    /// a physical primary id; playback selects an actual fresh ref when invoked.
     ///
     /// Only the *presentation* the on-screen slide already resolved is carried
     /// over: re-resolving artwork would blank a backdrop that is currently
@@ -279,11 +314,84 @@ public enum HeroLiveMerge {
     ) -> MediaItem {
         guard fresh.id == showing.id || !isPinned else {
             var kept = showing
+            var verifiedRouting = false
+            if !fresh.discoverySources.isEmpty || !showing.discoverySources.isEmpty {
+                if fresh.locallyValidatedPlayableSource,
+                   let retained = fresh.sources.first(where: {
+                       $0.accountID == showing.sourceAccountID && $0.itemID == showing.id
+                   }) {
+                    kept.sources = fresh.sources
+                    kept = kept.selectingSource(retained)
+                    verifiedRouting = true
+                } else if fresh.locallyValidatedPlayableSource,
+                          isExternalPresentation(showing),
+                          HeroDiscoveryIdentityVerification.matches(showing, fresh),
+                          let upgraded = adoptingVerifiedDiscoverySources(showing, from: fresh) {
+                    kept = upgraded
+                    verifiedRouting = true
+                } else {
+                    kept = kept.removingDiscoveryOwnership()
+                    kept.availability = fresh.availability ?? .unknown
+                    kept.downloadProgress = fresh.downloadProgress
+                }
+            }
             kept.fillingMissingPresentation(from: fresh)
+            if verifiedRouting {
+                kept.availability = nil
+                kept.downloadProgress = nil
+            }
             return kept
         }
         var upgraded = fresh
         upgraded.fillingMissingPresentation(from: showing)
         return upgraded
+    }
+
+    private static func isExternalPresentation(_ item: MediaItem) -> Bool {
+        guard item.sourceAccountID == nil, item.kind == .movie || item.kind == .series else { return false }
+        // Revocation clears routing fields but deliberately keeps a library id.
+        // Only catalog-namespaced ids are presentation-only: do not mistake a
+        // previously rejected physical copy for a never-owned discovery slide.
+        let namespaces = HeroDiscoverySource.allCases.map(\.rawValue) + ["discovery", "seer"]
+        return namespaces.contains { item.id.hasPrefix("\($0):\(item.kind.rawValue):") }
+    }
+
+    private static func adoptingVerifiedDiscoverySources(
+        _ showing: MediaItem,
+        from fresh: MediaItem
+    ) -> MediaItem? {
+        var seen = Set<String>()
+        let verified = fresh.sources.compactMap { source -> MediaSourceRef? in
+            guard !source.accountID.isEmpty, !source.itemID.isEmpty,
+                  source.itemID != showing.id else { return nil }
+            let isFreshSelf = source.accountID == fresh.sourceAccountID && source.itemID == fresh.id
+            let kindMatches = source.kind == showing.kind || (source.kind == nil && isFreshSelf)
+            guard kindMatches, seen.insert(source.id).inserted else { return nil }
+            var verified = source
+            // The presentation-only id cannot act as an untyped ref's self-id
+            // during playback selection. Its verified physical record supplies
+            // the kind; untyped peer refs above remain rejected.
+            if verified.kind == nil { verified.kind = fresh.kind }
+            return verified
+        }
+        guard !verified.isEmpty else { return nil }
+        var kept = showing.removingDiscoveryOwnership()
+        kept.sources = verified
+        kept.locallyValidatedPlayableSource = true
+        kept.providerIDs = fresh.providerIDs
+        kept.runtime = fresh.runtime ?? kept.runtime
+        var accounts = Set<String>()
+        kept.additionalSourceAccountIDs = verified.map(\.accountID).filter { accounts.insert($0).inserted }
+        let state = MediaItemMerger.unifiedWatchState(from: verified)
+        kept.resumePosition = state.resumePosition
+        kept.playedPercentage = state.playedPercentage
+        kept.isPlayed = state.isPlayed
+        kept.lastPlayedAt = state.lastPlayedAt
+        kept.hasBeenPlayed = fresh.hasBeenPlayed || verified.contains { $0.hasBeenPlayed || $0.isPlayed }
+        kept.isFavorite = fresh.isFavorite || verified.contains(where: \.isFavorite)
+        // The visible catalog id is not paired with an account. Playback resolves
+        // one of these real refs before it can ask a provider to load an item.
+        kept.availability = nil
+        return kept
     }
 }

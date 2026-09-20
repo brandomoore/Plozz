@@ -9,6 +9,347 @@ import CoreModels
 
 @MainActor
 final class NativeFocusRequestHostedTests: XCTestCase {
+    private final class BitmapProbe {
+        var createdImages: [UIImage?] = []
+    }
+
+    private struct BitmapCreationProbe: UIViewRepresentable {
+        let image: UIImage?
+        let probe: BitmapProbe
+
+        func makeUIView(context: Context) -> UIView {
+            probe.createdImages.append(image)
+            return UIView()
+        }
+
+        func updateUIView(_ view: UIView, context: Context) {}
+    }
+
+    private final class LogoHostProbe {
+        var updates = 0
+        weak var view: UIView?
+    }
+
+    private struct LogoHostFixture: UIViewRepresentable {
+        let logo: ContinueWatchingSeriesLogo
+        let probe: LogoHostProbe
+
+        func makeUIView(context: Context) -> UIView {
+            let view = UIHostingConfiguration { logo }.margins(.all, 0).makeContentView()
+            probe.view = view
+            return view
+        }
+
+        func updateUIView(_ view: UIView, context: Context) {
+            guard let content = view as? any UIContentView else {
+                XCTFail("Expected the logo's SwiftUI hosting content view")
+                return
+            }
+            probe.updates += 1
+            content.configuration = UIHostingConfiguration { logo }.margins(.all, 0)
+        }
+    }
+
+    func testContinueWatchingLogoResolutionStaysInsideItsHostedOverlay() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let url = try XCTUnwrap(URL(string: "https://logo-scope.example.test/\(UUID()).png"))
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 160, height: 80)).image {
+            UIColor.red.setFill()
+            $0.fill(CGRect(x: 10, y: 10, width: 140, height: 60))
+        }
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+        ))
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        let request = URLRequest(url: url)
+        cache.storeCachedResponse(
+            CachedURLResponse(response: response, data: try XCTUnwrap(image.pngData())),
+            for: request
+        )
+        defer { cache.removeCachedResponse(for: request) }
+        let references = [ArtworkReference.remote(url)]
+        let key = HeroLogoMemo.key(for: references)
+        XCTAssertNil(HeroLogoMemo.value(for: key))
+        let probe = LogoHostProbe()
+        let host = UIHostingController(rootView: LogoHostFixture(
+            logo: ContinueWatchingSeriesLogo(
+                title: Text(verbatim: "Series logo"),
+                logoReferences: references,
+                artworkReferences: references,
+                artworkVariant: .landscapeCard,
+                asyncFallbackURL: nil
+            ),
+            probe: probe
+        ).frame(width: 388, height: 264))
+        fixture.window.rootViewController = host
+        fixture.window.layoutIfNeeded()
+        let overlay = try XCTUnwrap(probe.view)
+        let initialBounds = overlay.bounds
+        let initialUpdates = probe.updates
+        XCTAssertGreaterThan(initialUpdates, 0)
+        try await waitUntil { HeroLogoMemo.value(for: key) != nil }
+        let sample = await HeroBackgroundSampler.sample(
+            references: references, region: ContinueWatchingCardShape.logoSampleRegion,
+            variant: .landscapeCard
+        )
+        XCTAssertNotNil(sample)
+        try await Task.sleep(for: .milliseconds(350))
+        fixture.window.layoutIfNeeded()
+        XCTAssertEqual(probe.updates, initialUpdates, "Logo and backdrop tones must not reconfigure their UIKit host.")
+        XCTAssertTrue(probe.view === overlay)
+        XCTAssertEqual(overlay.bounds, initialBounds)
+    }
+
+    @Observable
+    fileprivate final class BitmapFixtureModel {
+        var references: [ArtworkReference] = []
+        var focus: PlozzCardFocus.Binding?
+    }
+
+    private struct BitmapFixture: View {
+        let model: BitmapFixtureModel
+        @PlozzCardFocus private var focused
+
+        var body: some View {
+            FallbackAsyncImage(
+                references: model.references, variant: .posterCard,
+                pinIdentity: "native-bitmap-fixture",
+                content: { _ in EmptyView() }, placeholder: { EmptyView() }
+            )
+            .resolvedBitmap { image in
+                NativeTVPoster(
+                    image: image, treatment: .original, aspectRatio: 2.0 / 3,
+                    fallbackWidth: 280, title: .content("Native artwork"), subtitle: nil,
+                    overlay: EmptyView(), focus: $focused, action: {}
+                )
+                .focused($focused.focusState)
+            }
+            .frame(width: 280)
+            .onAppear { model.focus = $focused }
+        }
+    }
+
+    private actor StalledThenRecoveredArtworkLoader: ArtworkNetworkFileLoading {
+        let data: Data
+        private var calls = 0
+        private var released = false
+        private var blocked: CheckedContinuation<Void, Never>?
+
+        init(data: Data) { self.data = data }
+
+        func loadArtwork(_ reference: NetworkArtworkReference, maximumBytes: Int) async throws -> Data {
+            calls += 1
+            if calls == 1, !released {
+                await withCheckedContinuation { blocked = $0 }
+            }
+            return data
+        }
+
+        func release() {
+            released = true
+            blocked?.resume()
+            blocked = nil
+        }
+    }
+
+    func testVisiblePosterRecoversAfterSharedLoadExpiresWithoutRecreationOrFocusLoss() async throws {
+        let fixture = try await makeFixture()
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 300)).image {
+            UIColor.blue.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 200, height: 300))
+        }
+        let loader = StalledThenRecoveredArtworkLoader(data: try XCTUnwrap(image.jpegData(compressionQuality: 0.9)))
+        let cache = ArtworkImageCache.shared
+        cache.configure(networkFileService: ArtworkNetworkFileService(loader: loader))
+        defer {
+            fixture.close()
+            cache.configure(networkFileService: nil)
+            Task { await loader.release() }
+        }
+        let account = UUID().uuidString
+        let reference = ArtworkReference.networkFile(try NetworkArtworkReference(
+            accountID: account,
+            credentialRevision: CredentialRevision(),
+            catalogArtworkID: "hosted-recovery",
+            representation: RemoteFileRepresentation(
+                size: 1_024,
+                identity: RemoteFileIdentity(kind: .modificationTime, modifiedAt: .distantPast),
+                consistency: .changeDetecting
+            ),
+            sourceRevision: UUID().uuidString
+        ))
+        let model = BitmapFixtureModel()
+        model.references = [reference]
+        let host = UIHostingController(rootView: BitmapFixture(model: model)
+            .environment(\.plozzCardFocusStyle, .system))
+        fixture.window.rootViewController = host
+        fixture.window.layoutIfNeeded()
+        try await waitUntil {
+            model.focus != nil && cache.inFlightTaskForTesting(reference: reference, variant: .posterCard) != nil
+        }
+        let original = try XCTUnwrap(nativePoster(in: host.view))
+        let oldWork = cache.inFlightTaskForTesting(reference: reference, variant: .posterCard)
+        model.focus?.requestFocus(animated: false)
+        try await waitUntil { original.isFocused }
+        XCTAssertNil(cache.cachedImage(for: reference, variant: .posterCard))
+        try await waitUntil(timeout: .seconds(45)) {
+            guard let resolved = cache.cachedImage(for: reference, variant: .posterCard) else { return false }
+            return original.image?.cgImage === resolved.cgImage
+        }
+        XCTAssertTrue(nativePoster(in: host.view) === original)
+        XCTAssertTrue(original.isFocused)
+        await loader.release()
+        await oldWork?.value
+        await cache.purgeNetworkArtwork(accountID: account)
+    }
+
+    func testCachedBitmapReachesNativeContentBeforeAppearanceCallbacks() throws {
+        let reference = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://example.test/native-warm.png")))
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 300)).image {
+            UIColor.red.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 200, height: 300))
+        }
+        let identity = UUID().uuidString
+        let key = ArtworkResolveKey.make(
+            references: [reference], variant: .posterCard, maxAspectRatio: nil,
+            pinIdentity: identity,
+            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(MetadataProviderSettingsStore().load())
+        )
+        ArtworkSeedMemo.store(image, reference: reference, for: key)
+        let probe = BitmapProbe()
+        let host = UIHostingController(rootView: FallbackAsyncImage(
+            references: [reference], variant: .posterCard, pinIdentity: identity,
+            content: { _ in EmptyView() }, placeholder: { EmptyView() }
+        ).resolvedBitmap { value in
+            BitmapCreationProbe(image: value, probe: probe)
+        })
+        _ = host.sizeThatFits(in: CGSize(width: 280, height: 420))
+        XCTAssertEqual(probe.createdImages.count, 1)
+        XCTAssertTrue(probe.createdImages.first.flatMap { $0 } === image)
+    }
+
+    func testBitmapArrivalPreservesTheNativeFocusOwner() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let model = BitmapFixtureModel()
+        let outerResolution = ArtworkResolutionState()
+        let host = UIHostingController(rootView: BitmapFixture(model: model)
+            .environment(\.plozzCardFocusStyle, .system)
+            .environment(\.artworkResolutionState, outerResolution))
+        fixture.window.rootViewController = host
+        fixture.window.layoutIfNeeded()
+        try await waitUntil { model.focus != nil && self.nativePoster(in: host.view) != nil }
+        let original = try XCTUnwrap(nativePoster(in: host.view))
+        model.focus?.requestFocus(animated: false)
+        try await waitUntil { original.isFocused }
+        let reference = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://example.test/native-arrival.png")))
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 300)).image {
+            UIColor.blue.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 200, height: 300))
+        }
+        let key = ArtworkResolveKey.make(
+            references: [reference], variant: .posterCard, maxAspectRatio: nil,
+            pinIdentity: "native-bitmap-fixture",
+            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(MetadataProviderSettingsStore().load())
+        )
+        ArtworkSeedMemo.store(image, reference: reference, for: key)
+        model.references = [reference]
+        try await waitUntil { original.image?.cgImage === image.cgImage }
+        XCTAssertTrue(nativePoster(in: host.view) === original)
+        XCTAssertTrue(original.isFocused)
+        XCTAssertNil(outerResolution.image, "Native cards must not publish into an ancestor artwork bridge.")
+        XCTAssertFalse(outerResolution.isResolved)
+    }
+
+    private struct SurfaceProbe: View {
+        @Environment(\.plozzNativeFocusSurface) private var nativeSurface
+        @Environment(\.plozzNativeArtworkSurface) private var nativeArtworkSurface
+        let record: (Bool, Bool) -> Void
+
+        var body: some View {
+            Color.clear.onAppear { record(nativeSurface, nativeArtworkSurface) }
+        }
+    }
+
+    private struct SurfaceFixture: View {
+        @PlozzCardFocus private var cardFocused
+        @PlozzCardFocus private var posterFocused
+        let card: (Bool, Bool) -> Void
+        let poster: (Bool, Bool) -> Void
+
+        var body: some View {
+            VStack {
+                SurfaceProbe(record: card)
+                    .frame(width: 300, height: 140)
+                    .focusableCard(
+                        isFocused: $cardFocused, cornerRadius: 12,
+                        accessibilityLabel: "Library", accessibilityValue: "Server", action: {}
+                    )
+                NativeTVPoster(
+                    image: nil, treatment: .original, aspectRatio: 1.5,
+                    fallbackWidth: 300, title: nil, subtitle: nil,
+                    overlay: SurfaceProbe(record: poster), focus: $posterFocused, action: {}
+                )
+                .frame(width: 300)
+            }
+        }
+    }
+
+    func testNativeHostedContentReceivesTheNativeSurfaceEnvironment() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        var card: Bool?
+        var poster: Bool?
+        var cardArtwork: Bool?
+        var posterArtwork: Bool?
+        let host = UIHostingController(rootView: SurfaceFixture(
+            card: { card = $0; cardArtwork = $1 },
+            poster: { poster = $0; posterArtwork = $1 }
+        ).environment(\.plozzCardFocusStyle, .system))
+        fixture.window.rootViewController = host
+        fixture.window.layoutIfNeeded()
+        try await waitUntil { card != nil && poster != nil }
+        XCTAssertEqual(card, true)
+        XCTAssertEqual(poster, true)
+        XCTAssertEqual(cardArtwork, false, "A generic native card still needs clipping within its artwork region.")
+        XCTAssertEqual(posterArtwork, true)
+        func nativeCard(in view: UIView) -> TVCardView? {
+            if let card = view as? TVCardView { return card }
+            return view.subviews.lazy.compactMap { nativeCard(in: $0) }.first
+        }
+        let native = try XCTUnwrap(nativeCard(in: host.view))
+        XCTAssertTrue(native.isAccessibilityElement)
+        XCTAssertEqual(native.accessibilityLabel, "Library")
+        XCTAssertEqual(native.accessibilityValue, "Server")
+        XCTAssertTrue(native.accessibilityTraits.contains(.button))
+    }
+
+    private final class CountingCaption: SystemPosterCaption.CaptionView {
+        var invalidations = 0
+
+        override func invalidateIntrinsicContentSize() {
+            invalidations += 1
+            super.invalidateIntrinsicContentSize()
+        }
+    }
+
+    func testCaptionFocusDoesNotInvalidateUnchangedRowGeometry() {
+        let caption = CountingCaption()
+        caption.setFocused(false, travel: 16, animated: false)
+        let initialSize = caption.intrinsicContentSize
+        caption.invalidations = 0
+        for index in 0..<30 {
+            caption.setFocused(index.isMultiple(of: 2), travel: 16, animated: true)
+            XCTAssertEqual(caption.intrinsicContentSize, initialSize)
+        }
+        XCTAssertEqual(caption.invalidations, 0, "Focus translates the caption; it must not remeasure its containing lazy rows.")
+        caption.setFocused(true, travel: 20, animated: false)
+        XCTAssertEqual(caption.invalidations, 1)
+        XCTAssertEqual(caption.intrinsicContentSize.height, initialSize.height + 4)
+    }
+
     func testNativePosterArtworkKeepsPreCaptionSeparationSizing() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -164,6 +505,39 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         XCTAssertEqual(poster.intrinsicContentSize, restingSize)
     }
 
+    func testContinueWatchingCardsExposeTheirTitleWithoutAddingACaption() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let movie = MediaItem(
+            id: "accessible-movie", title: "Movie title", kind: .movie,
+            allowsTitleBasedMetadataMatching: false
+        )
+        var episode = MediaItem(
+            id: "accessible-episode", title: "Episode title", kind: .episode,
+            allowsTitleBasedMetadataMatching: false
+        )
+        episode.parentTitle = "Series title"
+        for (item, title) in [(movie, "Movie title"), (episode, "Series title")] {
+            let host = UIHostingController(rootView:
+                PosterCardView(
+                    item: item, style: .landscape, showsSeriesArtwork: true,
+                    enablesAsyncArtworkFallback: false
+                ) {}
+                .frame(width: 400)
+                .environment(\.plozzCardStyle, .borderless)
+                .environment(\.plozzCardFocusStyle, .system)
+            )
+            fixture.window.rootViewController = host
+            fixture.window.layoutIfNeeded()
+            try await waitUntil { self.nativePoster(in: host.view) != nil }
+            let poster = try XCTUnwrap(nativePoster(in: host.view))
+            XCTAssertTrue(poster.isAccessibilityElement)
+            XCTAssertEqual(poster.accessibilityLabel, title)
+            XCTAssertTrue(poster.accessibilityTraits.contains(.button))
+            XCTAssertNil(poster.footerView)
+        }
+    }
+
     func testCaptionMarqueeKeepsItsRestingModelAndStopsWithoutMotionOrAWindow() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -265,10 +639,11 @@ final class NativeFocusRequestHostedTests: XCTestCase {
 
     private func waitUntil(
         file: StaticString = #filePath, line: UInt = #line,
+        timeout: Duration = .seconds(5),
         diagnostic: (@MainActor () -> String)? = nil,
         _ predicate: @MainActor () -> Bool
     ) async throws {
-        let deadline = ContinuousClock.now + .seconds(5)
+        let deadline = ContinuousClock.now + timeout
         while !predicate(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }

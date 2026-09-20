@@ -1142,7 +1142,7 @@ actor ShareCatalogStore {
             }
         } else {
             sql += " WHERE " + orderedParents.map { _ in
-                "(metadata_root=? OR substr(rel_path,1,length(?)+1)=?||'/')"
+                CatalogArtworkDirectoryScope.predicate
             }.joined(separator: " OR ")
         }
         sql += ";"
@@ -1155,10 +1155,10 @@ actor ShareCatalogStore {
                 }
             } else {
                 for parent in orderedParents {
-                    self.bindText(stmt, offset, parent)
-                    self.bindText(stmt, offset + 1, parent)
-                    self.bindText(stmt, offset + 2, parent)
-                    offset += 3
+                    for value in CatalogArtworkDirectoryScope(directory: parent).bindings {
+                        self.bindText(stmt, offset, value)
+                        offset += 1
+                    }
                 }
             }
         }) { stmt in

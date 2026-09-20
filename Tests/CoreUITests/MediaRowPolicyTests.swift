@@ -5,6 +5,36 @@ import CoreModels
 @testable import CoreUI
 
 final class MediaRowPolicyTests: XCTestCase {
+    func testOverlappingWindowsScheduleEachLogoOnlyOncePerTraversal() throws {
+        let reference = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://example.test/logo.png")))
+        var history = MediaRowLogoPrefetchHistory()
+        var scheduled = 0
+        for index in 0..<5 {
+            for candidate in MediaRowPrefetchWindow.indices(
+                from: index, direction: 1, count: 75,
+                lookahead: MediaRowPrefetchWindow.fullArtworkLookahead
+            ) {
+                if history.shouldPrefetch(id: "item-\(candidate)", references: [reference]) {
+                    scheduled += 1
+                }
+            }
+        }
+        XCTAssertEqual(scheduled, 13, "Five entering cards have overlapping nine-item windows, not 45 distinct logo jobs.")
+        history = MediaRowLogoPrefetchHistory()
+        XCTAssertTrue(history.shouldPrefetch(id: "item-4", references: [reference]))
+    }
+
+    func testLogoPrefetchAllowsChangedReferencesAndSeparateItems() throws {
+        let first = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://example.test/first.png")))
+        let changed = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://example.test/changed.png")))
+        var history = MediaRowLogoPrefetchHistory()
+        XCTAssertTrue(history.shouldPrefetch(id: "item", references: []))
+        XCTAssertTrue(history.shouldPrefetch(id: "item", references: [first]))
+        XCTAssertFalse(history.shouldPrefetch(id: "item", references: [first]))
+        XCTAssertTrue(history.shouldPrefetch(id: "item", references: [changed]))
+        XCTAssertTrue(history.shouldPrefetch(id: "other", references: [changed]))
+    }
+
     func testPrefetchWindowFollowsRightwardTraversal() {
         XCTAssertEqual(
             MediaRowPrefetchWindow.indices(

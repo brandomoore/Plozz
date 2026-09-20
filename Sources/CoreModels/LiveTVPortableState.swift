@@ -363,7 +363,22 @@ public struct LiveTVPortableRecord: Codable, Equatable, Sendable {
 
     private static func safeIdentifier(_ value: String?) -> Bool {
         guard let value, !value.isEmpty, value.utf8.count <= 512 else { return false }
-        return !value.contains("://") && !value.contains("?") && !value.contains("\n")
+        guard value.utf8.allSatisfy({ $0 < 128 }) else {
+            return !value.contains("://") && !value.contains("?") && !value.contains("\n")
+        }
+        // Portable snapshots repeat these checks for every item's server/user IDs.
+        var schemePrefix = 0
+        for byte in value.utf8 {
+            switch byte {
+            case 63, 10: return false
+            case 58: schemePrefix = 1
+            case 47 where schemePrefix > 0:
+                schemePrefix += 1
+                if schemePrefix == 3 { return false }
+            default: schemePrefix = 0
+            }
+        }
+        return true
     }
 }
 

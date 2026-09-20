@@ -16,6 +16,9 @@ final class ArtworkSessionTests: XCTestCase {
         let config = ArtworkSession.shared.configuration
         XCTAssertEqual(config.requestCachePolicy, .returnCacheDataElseLoad)
         XCTAssertEqual(config.httpMaximumConnectionsPerHost, 6)
+        XCTAssertEqual(config.timeoutIntervalForRequest, 15)
+        XCTAssertEqual(config.timeoutIntervalForResource, ArtworkSession.resourceTimeoutSeconds)
+        XCTAssertEqual(ArtworkSession.resourceTimeoutSeconds, 30)
         let cache = config.urlCache
         XCTAssertNotNil(cache)
         // The modernized directory-based URLCache keeps the same managed capacities.

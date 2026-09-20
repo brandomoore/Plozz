@@ -1,10 +1,35 @@
-import CoreModels
+@testable import CoreModels
 import Foundation
 import XCTest
 
 final class LibraryChannelScheduleTests: XCTestCase {
     private let library = LibraryChannelLibrary(accountID: "account", libraryID: "library")
     private let epoch: Int64 = 1_700_000_000
+
+    func testIdentifierFastPathPreservesCharacterRulesAndUTF8Limits() {
+        let native = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        let account = native.union(CharacterSet(charactersIn: "|"))
+        let scalarCases = (0...0x2FF).compactMap(Unicode.Scalar.init).map { "id-\(String($0))" }
+        let values = scalarCases + [
+            "", "account|library", "https://server/item", "identifier?token=value",
+            "\u{65E5}\u{672C}\u{8A9E}", "\u{1D49C}", "\u{1F600}", "e\u{301}", "\u{FF3F}",
+            String(repeating: "a", count: 512), String(repeating: "a", count: 513),
+            String(repeating: "\u{E9}", count: 256), String(repeating: "\u{E9}", count: 257)
+        ]
+        for value in values {
+            let validLength = !value.isEmpty && value.utf8.count <= 512
+            XCTAssertEqual(
+                LibraryChannelItem.isNativeIdentifier(value),
+                validLength && value.unicodeScalars.allSatisfy(native.contains),
+                value.debugDescription
+            )
+            XCTAssertEqual(
+                LibraryChannelLibrary.isSafeAccountIdentifier(value),
+                validLength && value.unicodeScalars.allSatisfy(account.contains),
+                value.debugDescription
+            )
+        }
+    }
 
     func testLibraryNavigationUsesTheOriginalMovieOrParentShowAndAccount() throws {
         for account in ["plex-account", "jellyfin-account"] {

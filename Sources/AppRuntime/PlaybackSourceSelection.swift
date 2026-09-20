@@ -39,7 +39,13 @@ public enum PlaybackSourceSelection {
         accounts: [ResolvedAccount],
         identitySources: (MediaItem) -> [MediaSourceRef]
     ) -> MediaItem {
+        if !item.discoverySources.isEmpty, !item.locallyValidatedPlayableSource {
+            return item.removingDiscoveryOwnership()
+        }
         let activeAccountIDs = Set(accounts.map(\.account.id))
+        if !item.discoverySources.isEmpty, activeAccountIDs.isEmpty {
+            return item.removingDiscoveryOwnership()
+        }
         let liveLocality: [String: SourceLocality] = Dictionary(
             accounts.map { ($0.account.id, $0.provider.connectionLocality) },
             uniquingKeysWith: { first, _ in first }
@@ -54,8 +60,9 @@ public enum PlaybackSourceSelection {
         }
 
         var unioned = item.sources
+        let indexed = item.discoverySources.isEmpty ? identitySources(item) : []
         var seen = Set(unioned.map(\.id))
-        for ref in identitySources(item) where seen.insert(ref.id).inserted {
+        for ref in indexed where seen.insert(ref.id).inserted {
             unioned.append(ref)
         }
         // Enforce the cross-kind boundary before anything can be selected. The
@@ -91,6 +98,10 @@ public enum PlaybackSourceSelection {
                 }
         )
         .map(withLiveLocality)
+        if !item.discoverySources.isEmpty, liveSources.isEmpty,
+           !activeAccountIDs.contains(item.sourceAccountID ?? "") {
+            return item.removingDiscoveryOwnership()
+        }
 
         if item.explicitSourceSelection,
            let picked = item.selectedSourceAccountID,
@@ -126,7 +137,7 @@ public enum PlaybackSourceSelection {
             }
             trace(
                 "route \(item.title) id=\(item.id) kind=\(item.kind) origin=\(item.sourceAccountID ?? "nil") "
-                    + "own=\(item.sources.count) identity=\(identitySources(item).count) live=\(liveSources.count) "
+                    + "own=\(item.sources.count) identity=\(indexed.count) live=\(liveSources.count) "
                     + "ids=\(item.providerIDs.keys.sorted().joined(separator: ",")) "
                     + "primaryPlayable=\(primaryIsPlayable) crossChoice=\(hasCrossServerChoice)"
             )

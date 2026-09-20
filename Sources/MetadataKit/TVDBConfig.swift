@@ -4,8 +4,8 @@ import Foundation
 ///
 /// TheTVDB v4 uses a single project **API key** (read from `Info.plist` as
 /// `TVDBAPIKey`, substituted from the `TVDB_API_KEY` build setting in the
-/// gitignored `Config/Secrets.local.xcconfig`). Unlike TMDb, TheTVDB licenses by
-/// parent-company revenue (free under $50k/yr, FOSS-friendly), so the key ships in
+/// gitignored `Config/Secrets.local.xcconfig`). TheTVDB licenses by parent-company
+/// revenue (free under $50k/yr, FOSS-friendly), so the key ships in
 /// every build rather than being per-user. When absent (e.g. a contributor
 /// without a key), the tier is disabled and the keyless providers carry
 /// enrichment.

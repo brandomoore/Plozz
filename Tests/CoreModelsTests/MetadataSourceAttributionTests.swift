@@ -39,4 +39,19 @@ final class MetadataSourceAttributionTests: XCTestCase {
             XCTAssertNotNil(MetadataSourceAttribution.for(source), "missing attribution for \(source.rawValue)")
         }
     }
+
+    func testAppLegalCreditsCoverFeaturedDiscoveryCatalogs() throws {
+        for title in ["TMDB", "TheTVDB", "OMDb & AniList", "TVmaze"] {
+            let entry = try XCTUnwrap(PlozzAttributions.entries.first { $0.title == title })
+            XCTAssertTrue(entry.detail.contains("Featured discovery"), title)
+        }
+    }
+
+    func testTVmazeAppLegalCreditIncludesSourceAndShareAlikeLicense() throws {
+        let entry = try XCTUnwrap(PlozzAttributions.entries.first { $0.title == "TVmaze" })
+        XCTAssertTrue(entry.detail.contains("https://www.tvmaze.com"))
+        XCTAssertTrue(entry.detail.contains("https://creativecommons.org/licenses/by-sa/4.0/"))
+        XCTAssertTrue(entry.detail.contains("filters and combines"))
+        XCTAssertTrue(entry.licenses.contains { $0.label == "CC BY-SA 4.0" })
+    }
 }

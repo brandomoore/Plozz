@@ -1,5 +1,8 @@
 import Foundation
 import CoreModels
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Resolved TheTVDB metadata for a title (the neutral result the share enricher
 /// consumes). All fields best-effort; a partial result still helps.
@@ -76,10 +79,15 @@ public struct TVDBUpcomingSchedule: Sendable, Equatable {
 /// An `actor` so the cached token is mutated safely under concurrent enrichment.
 public actor TVDBClient {
     private let config: TVDBConfig
+    private let discoveryHTTP: MetadataDiscoveryHTTPClient
     private var token: String?
 
-    public init(config: TVDBConfig = .resolved()) {
+    public init(
+        config: TVDBConfig = .resolved(),
+        http: MetadataDiscoveryHTTPClient = .init()
+    ) {
         self.config = config
+        self.discoveryHTTP = http
     }
 
     public var isConfigured: Bool { config.isConfigured }
@@ -384,12 +392,47 @@ public actor TVDBClient {
     // MARK: - Auth
 
     private func ensureToken() async -> String? {
+        try? await authenticatedToken()
+    }
+
+    private func authenticatedToken() async throws -> String {
+        try Task.checkCancellation()
         if let token { return token }
-        guard let key = config.apiKey else { return nil }
+        guard let key = config.apiKey else { throw MetadataDiscoveryHTTPError.invalidResponse }
         let url = config.apiBaseURL.appendingPathComponent("login")
-        let response = await MetadataHTTP.postJSON(LoginResponse.self, url: url, body: ["apikey": key])
-        token = response?.data?.token
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["apikey": key])
+        let response = try await discoveryHTTP.decode(LoginResponse.self, from: request)
+        guard let token = response.data?.token?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !token.isEmpty else { throw MetadataDiscoveryHTTPError.invalidResponse }
+        self.token = token
         return token
+    }
+
+    /// Discovery shares the existing in-memory JWT without exposing it outside
+    /// this actor. Unlike best-effort enrichment, transport errors stay intact.
+    func discoveryData(path: String, query: [URLQueryItem] = []) async throws -> Data {
+        let token = try await authenticatedToken()
+        let url = config.apiBaseURL.appendingPathComponent(path)
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw MetadataDiscoveryHTTPError.invalidResponse
+        }
+        if !query.isEmpty {
+            components.queryItems = (components.queryItems ?? []) + query
+        }
+        guard let finalURL = components.url else { throw MetadataDiscoveryHTTPError.invalidResponse }
+        var request = URLRequest(url: finalURL)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            return try await discoveryHTTP.data(for: request)
+        } catch {
+            if case MetadataDiscoveryHTTPError.status(401, _) = error, self.token == token {
+                self.token = nil
+            }
+            throw error
+        }
     }
 
     // MARK: - Search
@@ -663,9 +706,9 @@ public actor TVDBClient {
 
     // MARK: - DTOs
 
-    private struct LoginResponse: Decodable {
+    private struct LoginResponse: Decodable, Sendable {
         let data: TokenData?
-        struct TokenData: Decodable { let token: String? }
+        struct TokenData: Decodable, Sendable { let token: String? }
     }
 
     private struct ExtendedResponse: Decodable {

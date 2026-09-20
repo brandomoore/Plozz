@@ -153,6 +153,12 @@ public struct SyncLedger: Codable, Hashable, Sendable {
         try c.encode(clock, forKey: .clock)
     }
 
+    /// Compares the exact durable fields without encoding payloads or considering
+    /// process-local resync and capture-fence counters.
+    public func hasSamePersistedState(as other: SyncLedger) -> Bool {
+        clock == other.clock && entries == other.entries
+    }
+
     /// Records currently mirrored (excludes pending-delete tombstones) — the
     /// "N items in iCloud" count.
     public var count: Int { entries.values.filter { !$0.pendingDelete }.count }

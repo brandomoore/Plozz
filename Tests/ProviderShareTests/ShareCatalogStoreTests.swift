@@ -231,6 +231,76 @@ final class ShareCatalogStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testAlreadyCancelledEnsureOpenDoesNotCreateCatalogAndLaterTaskCanOpen() async {
+        let directory = tempDir()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let catalogDirectory = directory.appendingPathComponent("unopened", isDirectory: true)
+        let url = catalogDirectory.appendingPathComponent("cancelled-open.sqlite")
+        let connection = CatalogConnection(url: url)
+        var migrationInvoked = false
+
+        let cancelledAttempt = await Task { @MainActor in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return connection.ensureOpen { _ in
+                migrationInvoked = true
+                return true
+            }
+        }.value
+
+        XCTAssertFalse(cancelledAttempt)
+        XCTAssertFalse(migrationInvoked)
+        XCTAssertTrue(connection.isClosed)
+        XCTAssertNil(connection.db)
+        XCTAssertEqual(connection.schemaMigrationAttemptCount, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: catalogDirectory.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+
+        let subsequentAttempt = await Task { @MainActor in
+            connection.ensureOpen { _ in
+                migrationInvoked = true
+                return true
+            }
+        }.value
+
+        XCTAssertTrue(subsequentAttempt)
+        XCTAssertTrue(migrationInvoked)
+        XCTAssertNotNil(connection.db)
+        XCTAssertFalse(connection.isClosed)
+        XCTAssertFalse(connection.isInTransaction)
+        XCTAssertEqual(connection.schemaMigrationAttemptCount, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @MainActor
+    func testCancelledEnsureOpenPreservesExistingHandleAndTransaction() async throws {
+        let directory = tempDir()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let connection = CatalogConnection(
+            url: directory.appendingPathComponent("cancelled-existing-open.sqlite")
+        )
+        XCTAssertTrue(connection.ensureOpen { _ in true })
+        let originalHandle = try XCTUnwrap(connection.db)
+        let migrationAttempts = connection.schemaMigrationAttemptCount
+        XCTAssertTrue(connection.exec("BEGIN IMMEDIATE;"))
+
+        let cancelledAttempt = await Task { @MainActor in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return connection.ensureOpen { _ in
+                XCTFail("An already-open cancelled request must not run migration.")
+                return true
+            }
+        }.value
+
+        XCTAssertFalse(cancelledAttempt)
+        XCTAssertEqual(connection.db, originalHandle)
+        XCTAssertFalse(connection.isClosed)
+        XCTAssertTrue(connection.isInTransaction)
+        XCTAssertEqual(connection.schemaMigrationAttemptCount, migrationAttempts)
+        XCTAssertTrue(connection.exec("ROLLBACK;"))
+        XCTAssertFalse(connection.isInTransaction)
+    }
+
+    @MainActor
     func testCancelledInitialMigrationClosesAndRetries() async {
         let directory = tempDir()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -239,7 +309,10 @@ final class ShareCatalogStoreTests: XCTestCase {
         )
 
         let firstAttempt = await Task { @MainActor in
-            connection.ensureOpen { _ in
+            connection.ensureOpen { opened in
+                XCTAssertTrue(opened.exec(
+                    "INSERT INTO meta(key,value) VALUES('cancelled-migration','discarded');"
+                ))
                 withUnsafeCurrentTask { $0?.cancel() }
                 return true
             }
@@ -247,7 +320,23 @@ final class ShareCatalogStoreTests: XCTestCase {
 
         XCTAssertFalse(firstAttempt)
         XCTAssertNil(connection.db)
-        XCTAssertTrue(connection.ensureOpen { _ in true })
+        XCTAssertTrue(connection.isClosed)
+        XCTAssertFalse(connection.isInTransaction)
+        XCTAssertEqual(connection.schemaMigrationAttemptCount, 1)
+
+        let subsequentAttempt = await Task { @MainActor in
+            connection.ensureOpen { _ in true }
+        }.value
+
+        XCTAssertTrue(subsequentAttempt)
+        XCTAssertNotNil(connection.db)
+        XCTAssertFalse(connection.isInTransaction)
+        XCTAssertEqual(connection.schemaMigrationAttemptCount, 2)
+        var cancelledWriteCount = -1
+        connection.query("SELECT COUNT(*) FROM meta WHERE key='cancelled-migration';") {
+            cancelledWriteCount = Int(sqlite3_column_int64($0, 0))
+        }
+        XCTAssertEqual(cancelledWriteCount, 0)
     }
 
     func testSuspensionClosesCatalogAndStaleResumeCannotReopenIt() async throws {

@@ -780,8 +780,16 @@ public struct RootView: View {
                  ? "Sign this device in to “\(syncSetupOfferServerName!)”."
                  : "Send your servers and sign-in so it’s ready to watch.")
         }
-        .onAppear {
-            if case .launching = appState.state { appState.bootstrap() }
+        .task {
+            while case .launching = appState.state {
+                let namespace = appState.profilesModel.activeNamespace
+                await HomeContentPrewarmer.shared.prepare {
+                    HomeContentStore(namespace: namespace)
+                }
+                guard !Task.isCancelled else { return }
+                guard namespace == appState.profilesModel.activeNamespace else { continue }
+                if case .launching = appState.state { appState.bootstrap() }
+            }
             ScreenshotSeed.applyIfRequested(to: appState)
             appState.drainWatchOutbox()
             reconcileCrashReporting()
@@ -1505,12 +1513,12 @@ private struct PlexPINFallbackGlyph: View {
 /// Brief splash while we check for a stored session.
 private struct LaunchView: View {
     var body: some View {
-        VStack(spacing: 24) {
-            Text(verbatim: "Plozz")
-                .font(.system(size: 96, weight: .heavy, design: .rounded))
-            ProgressView()
+        VStack {
+            PlozzStartupLogo()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Loading"))
     }
 }
 

@@ -35,6 +35,13 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// from every hero source.
     public var hideWatched: Bool
 
+    /// Uses unseen/least-recently-shown picks instead of the established Watchlist order.
+    public var watchlistDiscoveryEnabled: Bool
+    public var discoverySources: [HeroDiscoverySource]
+
+    /// Optional catalog credits on Home. Mandatory Simkl credit remains visible.
+    public var showsDiscoverySources: Bool
+
     /// Scores are optional Home chrome, independent of detail-page rating preferences.
     public var showsRatings: Bool
     public var ratingPreferences: DetailPageSettings
@@ -50,9 +57,9 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// Seconds between auto-advances (clamped to ``autoAdvanceRange``).
     public var autoAdvanceSeconds: Int
 
-    /// Sensible defaults: hero on, all sources enabled (Featured is inert until
-    /// Seerr exists, so it's safe to list first), a modest rotation, trailers
-    /// off (opt-in), all libraries for Random, gentle auto-advance.
+    /// Hero on, all content categories enabled, a modest rotation, all libraries
+    /// for Random, and gentle auto-advance. Optional discovery credits are hidden.
+    /// Feed defaults are defined by ``HeroDiscoverySource/defaultSelection``.
     public static let `default` = HeroSettings(
         isEnabled: true,
         sources: HeroSourceKind.allCases,
@@ -75,6 +82,9 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         maxItems: Int,
         trailersEnabled: Bool,
         hideWatched: Bool = true,
+        watchlistDiscoveryEnabled: Bool = false,
+        discoverySources: [HeroDiscoverySource] = HeroDiscoverySource.defaultSelection,
+        showsDiscoverySources: Bool = false,
         showsRatings: Bool = false,
         ratingPreferences: DetailPageSettings = .default,
         randomLibraryKeys: Set<String>,
@@ -89,6 +99,9 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         self.maxItems = maxItems.clamped(to: HeroSettings.maxItemsRange)
         self.trailersEnabled = trailersEnabled
         self.hideWatched = hideWatched
+        self.watchlistDiscoveryEnabled = watchlistDiscoveryEnabled
+        self.discoverySources = HeroDiscoverySource.normalized(discoverySources)
+        self.showsDiscoverySources = showsDiscoverySources
         self.showsRatings = showsRatings
         self.ratingPreferences = ratingPreferences
         self.randomLibraryKeys = randomLibraryKeys
@@ -98,6 +111,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case isEnabled, sources, maxItems, trailersEnabled, hideWatched, showsRatings
+        case watchlistDiscoveryEnabled
+        case discoverySources, showsDiscoverySources
         case ratingPreferences
         case randomLibraryKeys, autoAdvance, autoAdvanceSeconds
         case offeredSourcesVersion
@@ -122,6 +137,15 @@ public struct HeroSettings: Codable, Equatable, Sendable {
             maxItems: value(Int.self, .maxItems, d.maxItems),
             trailersEnabled: value(Bool.self, .trailersEnabled, d.trailersEnabled),
             hideWatched: value(Bool.self, .hideWatched, d.hideWatched),
+            watchlistDiscoveryEnabled: value(
+                Bool.self, .watchlistDiscoveryEnabled, d.watchlistDiscoveryEnabled
+            ),
+            discoverySources: value(
+                [String].self, .discoverySources, d.discoverySources.map(\.rawValue)
+            ).compactMap(HeroDiscoverySource.init(rawValue:)),
+            showsDiscoverySources: value(
+                Bool.self, .showsDiscoverySources, d.showsDiscoverySources
+            ),
             showsRatings: value(Bool.self, .showsRatings, d.showsRatings),
             ratingPreferences: value(DetailPageSettings.self, .ratingPreferences, d.ratingPreferences),
             randomLibraryKeys: value(Set<String>.self, .randomLibraryKeys, d.randomLibraryKeys),
@@ -175,6 +199,9 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         try c.encode(maxItems, forKey: .maxItems)
         try c.encode(trailersEnabled, forKey: .trailersEnabled)
         try c.encode(hideWatched, forKey: .hideWatched)
+        try c.encode(watchlistDiscoveryEnabled, forKey: .watchlistDiscoveryEnabled)
+        try c.encode(discoverySources, forKey: .discoverySources)
+        try c.encode(showsDiscoverySources, forKey: .showsDiscoverySources)
         try c.encode(showsRatings, forKey: .showsRatings)
         try c.encode(ratingPreferences, forKey: .ratingPreferences)
         try c.encode(randomLibraryKeys, forKey: .randomLibraryKeys)
@@ -194,13 +221,24 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         isEnabled && !sources.isEmpty
     }
 
+    public var usesDiscoveryWatchlistSeeds: Bool {
+        isActive && isEnabled(.featured) && discoverySources.contains(where: \.usesTitleSeeds)
+    }
+
     public func shouldShowRatings(for item: MediaItem, spoilerSettings: SpoilerSettings) -> Bool {
         showsRatings && !spoilerSettings.shouldHideRatings(for: item)
     }
 
+    /// Credit actual contributors, including cached or library-bound titles.
+    /// Simkl requires visible branding even when optional source labels are off.
+    public func discoveryAttributionSources(for item: MediaItem) -> [HeroDiscoverySource] {
+        let contributors = HeroDiscoverySource.normalized(item.discoverySources)
+        return showsDiscoverySources ? contributors : contributors.filter { $0 == .simkl }
+    }
+
     /// Whether honoring Hide Watched requires live external watch history beyond
     /// the already-resolved Continue Watching / Watchlist sources. Only the async
-    /// discovery sources — Featured (Seerr) and Random-from-library — surface
+    /// discovery sources — Featured and Random-from-library — surface
     /// titles whose current per-profile watch state isn't already known, so this
     /// is the single predicate that gates the extra provider watch-state fetch and
     /// the hero's `externalRefreshRevision` bump.

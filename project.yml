@@ -439,6 +439,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.FocusHost
+        # Match the bundle suffix used by XCTest hitch collection; validate with the fixture's positive control.
+        EXECUTABLE_NAME: FocusHost
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
@@ -466,7 +468,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.FocusTests
         GENERATE_INFOPLIST_FILE: YES
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PlozzFocusHost.app/PlozzFocusHost"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PlozzFocusHost.app/FocusHost"
         BUNDLE_LOADER: "$(TEST_HOST)"
     dependencies:
       - target: PlozzFocusHost
@@ -490,6 +492,17 @@ schemes:
         PlozzHomeRemoteTests: [test]
     test:
       config: Debug
+      targets:
+        - PlozzHomeRemoteTests
+
+  PlozzPhysicalHomeRowsTests:
+    build:
+      targets:
+        PlozzHomeRemoteTests: [test]
+    test:
+      config: Release
+      captureScreenshotsAutomatically: false
+      preferredScreenCaptureFormat: screenshots
       targets:
         - PlozzHomeRemoteTests
 

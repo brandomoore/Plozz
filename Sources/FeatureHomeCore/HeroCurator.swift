@@ -2,6 +2,7 @@ import Foundation
 import CoreModels
 
 public typealias HeroArtworkProviding = @Sendable (MediaItem) async -> URL?
+public typealias HeroFeaturedStatusProviding = @Sendable ([MediaItem]) async -> [MediaItem]
 
 public enum HeroArtworkProvider {
     public static let none: HeroArtworkProviding = { _ in nil }
@@ -31,15 +32,18 @@ public struct HeroCurationResult: Sendable, Equatable {
     /// gains per-server detail — including other servers' resume positions — on
     /// its way to being persisted.
     public var durableItems: [MediaItem]
+    public var candidatePool: HeroFreshnessCandidatePool
 
     public init(
         items: [MediaItem],
         featuredItems: [MediaItem],
-        durableItems: [MediaItem] = []
+        durableItems: [MediaItem] = [],
+        candidatePool: HeroFreshnessCandidatePool = .empty
     ) {
         self.items = items
         self.featuredItems = featuredItems
         self.durableItems = durableItems
+        self.candidatePool = candidatePool
     }
 
     public static let empty = HeroCurationResult(
@@ -85,6 +89,8 @@ public struct HeroCurator: Sendable {
         recentlyAdded: [MediaItem] = [],
         randomLibraries: [HeroRandomLibrary] = [],
         watchMutations: [MediaItemMutation] = [],
+        freshness: HeroFreshnessSnapshot = .disabled,
+        sourceEligibility: HeroSourceEligibility = .unrestricted,
         featuredProvider: FeaturedContentProviding = HeroFeaturedProvider.none,
         randomProvider: RandomLibraryContentProviding = HeroRandomProvider.none,
         artworkProvider: @escaping HeroArtworkProviding = HeroArtworkProvider.none,
@@ -97,6 +103,8 @@ public struct HeroCurator: Sendable {
             recentlyAdded: recentlyAdded,
             randomLibraries: randomLibraries,
             watchMutations: watchMutations,
+            freshness: freshness,
+            sourceEligibility: sourceEligibility,
             featuredProvider: featuredProvider,
             randomProvider: randomProvider,
             artworkProvider: artworkProvider,
@@ -114,6 +122,8 @@ public struct HeroCurator: Sendable {
         recentlyAdded: [MediaItem] = [],
         randomLibraries: [HeroRandomLibrary] = [],
         watchMutations: [MediaItemMutation] = [],
+        freshness: HeroFreshnessSnapshot = .disabled,
+        sourceEligibility: HeroSourceEligibility = .unrestricted,
         featuredProvider: FeaturedContentProviding = HeroFeaturedProvider.none,
         randomProvider: RandomLibraryContentProviding = HeroRandomProvider.none,
         artworkProvider: @escaping HeroArtworkProviding = HeroArtworkProvider.none,
@@ -121,16 +131,22 @@ public struct HeroCurator: Sendable {
     ) async -> HeroCurationResult {
         guard settings.isActive else { return .empty }
         let limit = settings.maxItems
+        let discoveryLimit = freshness.isEnabled
+            ? HeroFreshnessSnapshot.rawDiscoveryLimit : limit
 
         // Fetch the async sources up front (concurrently), guarded on being
         // enabled so we never pay for a source the user turned off.
         async let featuredItems: [MediaItem] = settings.isEnabled(.featured)
-            ? featuredProvider(limit) : []
+            ? featuredProvider(discoveryLimit) : []
         async let randomItems: [MediaItem] = settings.isEnabled(.randomFromLibrary)
-            ? randomProvider(randomLibraries, limit) : []
+            ? randomProvider(randomLibraries, discoveryLimit) : []
 
-        let featured = await featuredItems
-        let random = await randomItems
+        let fetchedFeatured = await featuredItems
+        let fetchedRandom = await randomItems
+        let featured = freshness.isEnabled
+            ? Array(fetchedFeatured.prefix(discoveryLimit)) : fetchedFeatured
+        let random = freshness.isEnabled
+            ? Array(fetchedRandom.prefix(discoveryLimit)) : fetchedRandom
 
         // Filter before artwork resolution so rejected watched titles never spend
         // router/cache/network work finding a full-bleed backdrop.
@@ -142,17 +158,22 @@ public struct HeroCurator: Sendable {
             case .randomFromLibrary: return random
             case .watchlist: return watchlist
             }
-        }.map {
-            HeroWatchEligibility.filter(
-                $0,
+        }.enumerated().map { index, items in
+            let filtered = HeroWatchEligibility.filter(
+                items.filter { sourceEligibility.allows($0, from: settings.sources[index]) },
                 settings: settings,
                 mutations: watchMutations
             )
+            return freshness.ranked(filtered, source: settings.sources[index], settings: settings)
         }
 
         let eligible = await HeroArtworkEligibility.resolve(
             perSource,
             limitPerSource: limit,
+            limitsPerSource: settings.sources.map {
+                freshness.ranksDiscovery($0, settings: settings)
+                    ? HeroFreshnessSnapshot.candidateLimit(for: limit) : limit
+            },
             artworkProvider: artworkProvider,
             validate: artworkValidator
         )
@@ -177,13 +198,16 @@ public struct HeroCurator: Sendable {
             featuredItems: strategy.compose(featuredBuckets, limit: limit),
             durableItems: HeroDurableSnapshot.filter(
                 items.filter { !continueWatchingIDs.contains($0.id) }
-            )
+            ),
+            candidatePool: HeroFreshnessCandidatePool(buckets: zip(settings.sources, eligible).map {
+                HeroFreshnessCandidatePool.Bucket(source: $0.0, items: $0.1)
+            })
         )
     }
 
     /// A **synchronous** seed built from already-loaded Home rows plus an optional
-    /// persisted Featured bucket. Random remains empty because each appearance
-    /// deliberately requests a new server-shuffled selection.
+    /// persisted Featured bucket. Random has no row-backed synchronous candidates;
+    /// its draw is owned by the caller's asynchronous refresh policy.
     ///
     /// Home renders this instantly the moment its content is available so the
     /// hero appears in the *same frame* as the rest of the page (no pop-in), then
@@ -196,7 +220,9 @@ public struct HeroCurator: Sendable {
         continueWatching: [MediaItem],
         watchlist: [MediaItem],
         recentlyAdded: [MediaItem] = [],
-        watchMutations: [MediaItemMutation] = []
+        watchMutations: [MediaItemMutation] = [],
+        freshness: HeroFreshnessSnapshot = .disabled,
+        sourceEligibility: HeroSourceEligibility = .unrestricted
     ) -> [MediaItem] {
         guard settings.isActive else { return [] }
         let perSource: [[MediaItem]] = settings.sources.map { source in
@@ -211,12 +237,13 @@ public struct HeroCurator: Sendable {
             case .watchlist: return watchlist
             }
 
-        }.map {
-            HeroWatchEligibility.filter(
-                $0,
+        }.enumerated().map { index, items in
+            let filtered = HeroWatchEligibility.filter(
+                items.filter { sourceEligibility.allows($0, from: settings.sources[index]) },
                 settings: settings,
                 mutations: watchMutations
             )
+            return freshness.ranked(filtered, source: settings.sources[index], settings: settings)
         }
 
         return strategy.compose(
@@ -225,17 +252,17 @@ public struct HeroCurator: Sendable {
         )
     }
 
-    /// Reapplies current watched-state intent to an already-curated Hero while an
-    /// async watch-history refresh is in flight. The candidate set and artwork stay
-    /// stable, so focus is preserved, but a newly watched title cannot linger.
+    /// Reapplies watch-state and authoritative source eligibility while a refresh
+    /// is in flight. Other candidates retain their order and artwork.
     public func reconcile(
         _ items: [MediaItem],
         settings: HeroSettings?,
-        watchMutations: [MediaItemMutation]
+        watchMutations: [MediaItemMutation],
+        sourceEligibility: HeroSourceEligibility = .unrestricted
     ) -> [MediaItem] {
         guard let settings, settings.isActive else { return [] }
         return HeroWatchEligibility.filter(
-            items,
+            sourceEligibility.filtering(items),
             settings: settings,
             mutations: watchMutations
         )
@@ -308,7 +335,7 @@ public struct HeroCurator: Sendable {
 
 /// Keeps poster-only or artwork-free items out of the full-bleed hero. Parent
 /// backdrops remain eligible so episodes can use their series artwork.
-private enum HeroArtworkEligibility {
+enum HeroArtworkEligibility {
     /// How many candidate art checks overlap within a single source. The check is
     /// cache-first and only reaches the network for un-warmed art, so a small window
     /// hides that latency without flooding the shared image loader (which is also
@@ -324,6 +351,7 @@ private enum HeroArtworkEligibility {
     static func resolve(
         _ perSource: [[MediaItem]],
         limitPerSource: Int,
+        limitsPerSource: [Int]? = nil,
         artworkProvider: @escaping HeroArtworkProviding,
         validate: @escaping HeroArtworkValidating = HeroArtworkValidator.presence
     ) async -> [[MediaItem]] {
@@ -335,7 +363,7 @@ private enum HeroArtworkEligibility {
                 group.addTask {
                     let eligible = await eligible(
                         in: items,
-                        limitPerSource: limitPerSource,
+                        limitPerSource: limitsPerSource?[sourceIndex] ?? limitPerSource,
                         artworkProvider: artworkProvider,
                         validate: validate
                     )
@@ -480,6 +508,9 @@ enum HeroDedupe {
         let scope = showScope(for: item)
         let accountScope = item.sourceAccountID ?? "unscoped"
         var tokens: Set<String> = ["id:\(scope):\(accountScope):\(item.id)"]
+        for source in item.sources where showScope(for: source.kind ?? item.kind) == scope {
+            tokens.insert("id:\(scope):\(source.accountID):\(source.itemID)")
+        }
         for identity in MediaItemIdentity.identities(for: item) {
             switch identity {
             case let .external(source, value):

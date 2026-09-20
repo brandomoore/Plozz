@@ -74,7 +74,7 @@ final class NativeTVMediaCoordinator {
         request.wantsFocus = false
         focus.request.wrappedValue = request
         guard !view.isFocused else { return }
-        system.requestFocusUpdate(to: view)
+        system.requestFocusUpdate(to: window)
         system.updateFocusIfNeeded()
         if !view.isFocused {
             PlozzLog.app.debug("Native media focus request was not accepted by the current focus scope")
@@ -93,6 +93,8 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
     let focus: PlozzCardFocus.Binding
     let isEnabled: Bool
     let action: () -> Void
+    var accessibilityLabel: String? = nil
+    var accessibilityValue: String? = nil
 
     func makeCoordinator() -> NativeTVMediaCoordinator {
         NativeTVMediaCoordinator(focus: focus, action: action)
@@ -100,6 +102,7 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
 
     func makeUIView(context: Context) -> Container {
         let view = Card()
+        view.defaultAccessibilityElement = view.isAccessibilityElement
         view.cardBackgroundColor = UIColor(context.environment.themePalette.raised.fill)
         let host = configuration(in: context).makeContentView()
         view.hostedContent = host
@@ -122,6 +125,10 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
 
     func updateUIView(_ container: Container, context: Context) {
         let view = container.card
+        view.isAccessibilityElement = view.defaultAccessibilityElement || accessibilityLabel != nil
+        view.accessibilityLabel = accessibilityLabel
+        view.accessibilityValue = accessibilityValue
+        view.accessibilityTraits.insert(.button)
         let background = UIColor(context.environment.themePalette.raised.fill)
         if view.cardBackgroundColor != background { view.cardBackgroundColor = background }
         view.hostedContent?.configuration = configuration(in: context)
@@ -159,8 +166,9 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
     private func configuration(in context: Context) -> any UIContentConfiguration {
         UIHostingConfiguration {
             content
-                .environment(\.self, context.environment)
+                .environment(\.plozzNativeArtworkSurface, false)
                 .environment(\.plozzNativeFocusSurface, true)
+                .environment(\.self, context.environment)
         }
         .margins(.all, 0)
     }
@@ -196,6 +204,7 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
     }
 
     final class Card: TVCardView {
+        var defaultAccessibilityElement = false
         var hostedContent: (UIView & UIContentView)?
         var onFocus: ((Bool) -> Void)?
         var onAvailable: (() -> Void)?
@@ -268,6 +277,12 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         }
 
         func prepare(_ image: UIImage?, treatment: NativePosterImageTreatment, size: CGSize, scale: CGFloat) -> UIImage? {
+            IOTimingDiagnostics.measure(.nativePosterPrepare, minimumDurationNanoseconds: 1_000_000) {
+                prepareImage(image, treatment: treatment, size: size, scale: scale)
+            }
+        }
+
+        private func prepareImage(_ image: UIImage?, treatment: NativePosterImageTreatment, size: CGSize, scale: CGFloat) -> UIImage? {
             guard let image else { return nil }
             if original === image, self.treatment == treatment, imageSize == size, imageScale == scale { return prepared }
             original = image
@@ -282,12 +297,15 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
                 )
                 return prepared
             }
+            if treatment == .extended {
+                prepared = ExtendedArtworkBitmap.render(image: image, size: size, scale: scale)
+                if prepared == nil { original = nil }
+                return prepared
+            }
             // TVPosterView derives native focus growth from image.size in points,
             // not the cached bitmap's pixel dimensions.
             let renderer = ImageRenderer(content: Group {
-                if treatment == .extended {
-                    ExtendedArtworkFill(image: Image(uiImage: image))
-                } else if case .upcoming(let background) = treatment {
+                if case .upcoming(let background) = treatment {
                     Image(uiImage: image).resizable().scaledToFill()
                         .saturation(0)
                         .opacity(0.05)
@@ -341,6 +359,12 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
     }
 
     func updateUIView(_ container: Container, context: Context) {
+        IOTimingDiagnostics.measure(.nativePosterUpdate, minimumDurationNanoseconds: 1_000_000) {
+            updatePoster(container, context: context)
+        }
+    }
+
+    private func updatePoster(_ container: Container, context: Context) {
         let view = container.poster
         if view.contentSize.width <= 0 {
             view.contentSize = CGSize(width: fallbackWidth, height: fallbackWidth / aspectRatio)
@@ -380,8 +404,9 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
     private func overlayConfiguration(in context: Context) -> any UIContentConfiguration {
         UIHostingConfiguration {
             overlay
-                .environment(\.self, context.environment)
+                .environment(\.plozzNativeArtworkSurface, true)
                 .environment(\.plozzNativeFocusSurface, true)
+                .environment(\.self, context.environment)
         }
         .margins(.all, 0)
     }
@@ -435,6 +460,12 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         }
 
         override func layoutSubviews() {
+            IOTimingDiagnostics.measure(.nativePosterLayout, minimumDurationNanoseconds: 1_000_000) {
+                layoutPosterSubviews()
+            }
+        }
+
+        private func layoutPosterSubviews() {
             super.layoutSubviews()
             (superview as? Container)?.posterDidLayout()
             onAvailable?()

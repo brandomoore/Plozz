@@ -636,8 +636,7 @@ private struct PlozziOSSettingsSplitView: View {
                 hero: appModel.settings.hero,
                 heroBackground: appModel.settings.heroBackground,
                 visibility: appModel.settings.homeVisibility,
-                accounts: appModel.accountsProviders.resolvedActiveAccounts,
-                seerConfigured: appModel.seerService.isConfigured
+                accounts: appModel.accountsProviders.resolvedActiveAccounts
             )
         case .liveTV:
             LiveTVSettingsView(
@@ -932,8 +931,7 @@ private struct PlozziOSSettingsCompactMenu: View {
                         hero: appModel.settings.hero,
                         heroBackground: appModel.settings.heroBackground,
                         visibility: appModel.settings.homeVisibility,
-                        accounts: appModel.accountsProviders.resolvedActiveAccounts,
-                        seerConfigured: appModel.seerService.isConfigured
+                        accounts: appModel.accountsProviders.resolvedActiveAccounts
                     )
                 } label: {
                     Label("Customize Home", systemImage: "house")
@@ -1790,7 +1788,6 @@ private struct PlozziOSHomeSettingsView: View {
     @Bindable var heroBackground: HeroBackgroundSettingsModel
     let visibility: HomeLibraryVisibilityModel
     let accounts: [ResolvedAccount]
-    let seerConfigured: Bool
     @State private var libraries: [HomeLibraryChoice] = []
     @State private var isLoadingLibraries = false
     @State private var selectedLibraryID: String?
@@ -1893,6 +1890,15 @@ private struct PlozziOSHomeSettingsView: View {
                     if hero.settings.showsRatings {
                         HeaderRatingPreviewControls(settings: $hero.settings.ratingPreferences)
                     }
+                    Toggle(isOn: $hero.settings.showsDiscoverySources) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Show discovery sources")
+                            Text("Show the catalogs behind each title. Titles from Simkl always show its required credit, even when this is off.")
+                                .font(.footnote)
+                                .plozzForeground(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     Toggle("Auto-advance", isOn: $hero.settings.autoAdvance)
                     Toggle(
                         "Play trailer behind the hero",
@@ -1913,16 +1919,15 @@ private struct PlozziOSHomeSettingsView: View {
                         Toggle(
                             source.displayName,
                             isOn: Binding(
-                                get: {
-                                    source == .featured && !seerConfigured
-                                        ? false
-                                        : hero.settings.sources.contains(source)
-                                },
+                                get: { hero.settings.sources.contains(source) },
                                 set: { _ in toggleSource(source) }
                             )
                         )
-                        .disabled(source == .featured && !seerConfigured)
                     }
+                }
+
+                if hero.settings.isEnabled(.featured) {
+                    PlozziOSFeaturedDiscoverySettings(sources: $hero.settings.discoverySources)
                 }
 
                 if hero.settings.isEnabled(.randomFromLibrary) {
@@ -1952,6 +1957,16 @@ private struct PlozziOSHomeSettingsView: View {
             }
 
             if hero.settings.isEnabled {
+                if hero.settings.isEnabled(.watchlist) {
+                    SettingsSectionGroup("Watchlist picks") {
+                        Toggle(
+                            "Discovery rotation",
+                            isOn: $hero.settings.watchlistDiscoveryEnabled
+                        )
+                    } footer: {
+                        Text("Prefer titles you haven't seen in the hero recently. Turn off to keep your watchlist order.")
+                    }
+                }
                 SettingsSectionGroup("Rotation") {
                     Stepper(
                         "Items: \(hero.settings.maxItems)",
@@ -1992,7 +2007,6 @@ private struct PlozziOSHomeSettingsView: View {
     }
 
     private func toggleSource(_ source: HeroSourceKind) {
-        guard source != .featured || seerConfigured else { return }
         var enabled = Set(hero.settings.sources)
         if enabled.contains(source) {
             enabled.remove(source)
@@ -2048,6 +2062,54 @@ private struct PlozziOSHomeSettingsView: View {
             }
             return $0.title.localizedStandardCompare($1.title) == .orderedAscending
         }
+    }
+}
+
+private struct PlozziOSFeaturedDiscoverySettings: View {
+    @Binding var sources: [HeroDiscoverySource]
+
+    var body: some View {
+        SettingsSectionGroup("Featured discovery") {
+            ForEach(HeroDiscoverySource.allCases) { source in
+                let isSelected = sources.contains(source)
+                Button {
+                    toggleSource(source)
+                } label: {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(verbatim: source.displayName)
+                            Text(source.detail)
+                                .font(.footnote)
+                                .plozzForeground(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 12)
+                        SettingsCheckmark(isChecked: isSelected, prominence: .secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+            }
+        } footer: {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Choose the catalogs used for Featured. Titles may not be in your libraries. Seerr is only needed to request titles.")
+                if sources.isEmpty {
+                    Text("No sources selected. Featured won't add discovery titles.")
+                }
+            }
+        }
+    }
+
+    private func toggleSource(_ source: HeroDiscoverySource) {
+        var selected = Set(sources)
+        if selected.contains(source) {
+            selected.remove(source)
+        } else {
+            selected.insert(source)
+        }
+        sources = HeroDiscoverySource.allCases.filter(selected.contains)
     }
 }
 

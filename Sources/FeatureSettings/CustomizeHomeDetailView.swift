@@ -24,14 +24,18 @@ struct CustomizeHomeDetailView: View {
     /// The per-profile Home/visibility model (merge switch, global-row + per-library
     /// row selection, library visibility).
     let homeVisibility: HomeLibraryVisibilityModel
-    /// Whether a Seerr server is configured. The hero's **Featured** source is
-    /// sourced entirely from Seerr's trending feed, so without it that source has
-    /// nothing to show — we keep the row visible (so it's discoverable) but
-    /// disabled with a "Requires Seerr" note.
-    let seerConfigured: Bool
-
     @Environment(HeroSettingsModel.self) private var hero
     @Environment(HeroBackgroundSettingsModel.self) private var heroBackground
+
+    /// Keep existing callers compatible without retaining a Seerr dependency.
+    init(
+        discoveredLibraries: LoadState<[AggregatedLibrary]>,
+        homeVisibility: HomeLibraryVisibilityModel,
+        seerConfigured _: Bool
+    ) {
+        self.discoveredLibraries = discoveredLibraries
+        self.homeVisibility = homeVisibility
+    }
 
     var body: some View {
         SettingsSplitLayout(title: "Customize Home", rows: rows)
@@ -258,6 +262,13 @@ struct CustomizeHomeDetailView: View {
                 if hero.settings.showsRatings {
                     HeaderRatingPreviewControls(settings: $hero.settings.ratingPreferences)
                 }
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Show discovery sources", isOn: $hero.settings.showsDiscoverySources)
+                        .toggleStyle(SettingsSwitchToggleStyle())
+                    Text("Show the catalogs behind each title. Titles from Simkl always show its required credit, even when this is off.")
+                        .settingsHelperText()
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Toggle(
                     "Hide watched movies, shows, and episodes",
                     isOn: $hero.settings.hideWatched
@@ -268,23 +279,13 @@ struct CustomizeHomeDetailView: View {
                     SettingsCheckList(
                         options: orderedHeroSources,
                         title: { Text($0.displayName) },
-                        subtitle: { source in
-                            (source == .featured && !seerConfigured) ? Text("Requires Seerr") : nil
-                        },
-                        isEnabled: { source in
-                            source == .featured ? seerConfigured : true
-                        },
-                        isChecked: { source in
-                            // Without Seerr, Featured can't be active — show it
-                            // unchecked (and disabled) so it reads as unavailable,
-                            // not "on". Stored preference is untouched, so it
-                            // restores once Seerr is connected.
-                            source == .featured && !seerConfigured
-                                ? false
-                                : hero.settings.sources.contains(source)
-                        },
+                        isChecked: { hero.settings.sources.contains($0) },
                         onToggle: { toggleSource($0) }
                     )
+                }
+
+                if hero.settings.isEnabled(.featured) {
+                    FeaturedDiscoverySettings(sources: $hero.settings.discoverySources)
                 }
 
                 if hero.settings.isEnabled(.randomFromLibrary) {
@@ -293,6 +294,19 @@ struct CustomizeHomeDetailView: View {
                         description: "Leave all selected to use every library on Home."
                     ) {
                         randomLibrariesContent
+                    }
+                }
+
+                if hero.settings.isEnabled(.watchlist) {
+                    SettingsDetailGroup(
+                        title: "Watchlist picks",
+                        description: "Prefer titles you haven't seen in the hero recently. Turn off to keep your watchlist order."
+                    ) {
+                        Toggle(
+                            "Discovery rotation",
+                            isOn: $hero.settings.watchlistDiscoveryEnabled
+                        )
+                        .toggleStyle(SettingsSwitchToggleStyle())
                     }
                 }
 
@@ -384,18 +398,13 @@ struct CustomizeHomeDetailView: View {
         }
     }
 
-    /// Hero sources in the order shown in Settings: the always-available,
-    /// library-sourced ones first, then **Featured** pinned last (it depends on
-    /// Seerr, so it reads as the "extra" that may be disabled). The stored
-    /// `sources` order is unaffected — `toggleSource` re-derives it from
-    /// `allCases`, so curation/interleaving order doesn't change.
+    /// Library sources first, then Featured. Stored source order still follows
+    /// `allCases`, preserving the existing curation/interleaving order.
     private var orderedHeroSources: [HeroSourceKind] {
         HeroSourceKind.allCases.filter { $0 != .featured } + [.featured]
     }
 
     private func toggleSource(_ source: HeroSourceKind) {
-        // Featured can't be enabled without Seerr (it has no content otherwise).
-        guard source != .featured || seerConfigured else { return }
         var next = Set(hero.settings.sources)
         if next.contains(source) { next.remove(source) } else { next.insert(source) }
         hero.settings.sources = HeroSourceKind.allCases.filter { next.contains($0) }
@@ -415,6 +424,40 @@ struct CustomizeHomeDetailView: View {
         keys.formIntersection(allKeys)
         // Canonicalise "everything selected" back to empty.
         hero.settings.randomLibraryKeys = (keys == allKeys) ? [] : keys
+    }
+}
+
+private struct FeaturedDiscoverySettings: View {
+    @Binding var sources: [HeroDiscoverySource]
+
+    var body: some View {
+        SettingsDetailGroup(
+            title: "Featured discovery",
+            description: "Choose the catalogs used for Featured. Titles may not be in your libraries. Seerr is only needed to request titles."
+        ) {
+            SettingsCheckList(
+                options: HeroDiscoverySource.allCases,
+                title: { Text(verbatim: $0.displayName) },
+                subtitle: { Text($0.detail) },
+                isChecked: { sources.contains($0) },
+                onToggle: toggleSource
+            )
+            if sources.isEmpty {
+                Text("No sources selected. Featured won't add discovery titles.")
+                    .settingsHelperText()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func toggleSource(_ source: HeroDiscoverySource) {
+        var selected = Set(sources)
+        if selected.contains(source) {
+            selected.remove(source)
+        } else {
+            selected.insert(source)
+        }
+        sources = HeroDiscoverySource.allCases.filter(selected.contains)
     }
 }
 

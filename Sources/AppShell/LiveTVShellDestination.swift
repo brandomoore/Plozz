@@ -8,6 +8,25 @@ import FeatureLiveTVCore
 import FeaturePlayback
 import SwiftUI
 
+/// Match native tabs: construct Live TV on its first visit, then retain its state.
+struct RetainedLiveTVDestination<Content: View>: View {
+    let isActive: Bool
+    private let content: () -> Content
+    @State private var hasAppeared = false
+
+    init(isActive: Bool, @ViewBuilder content: @escaping () -> Content) {
+        self.isActive = isActive
+        self.content = content
+    }
+
+    var body: some View {
+        if isActive || hasAppeared {
+            content()
+                .onAppear { hasAppeared = true }
+        }
+    }
+}
+
 /// Composition root for Live TV inside Plozz's navigation.
 ///
 /// The prototype owns one player construction site and keeps this child at a

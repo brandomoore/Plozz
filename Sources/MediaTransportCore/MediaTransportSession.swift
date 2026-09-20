@@ -96,10 +96,16 @@ public protocol MediaTransportConnection: AnyObject, Sendable {
     var key: MediaTransportSessionKey { get }
     func shutdown() async
 
+    /// Classifies an observed open failure without probing or performing I/O.
+    /// True retires this connection from new leases, not from existing consumers.
+    /// Transports that expose terminal protocol statuses as `.transport` must
+    /// override the generic timeout/transport policy.
+    func shouldRetireAfterOpenFailure(_ error: MediaTransportError) -> Bool
+
     /// The session's best knowledge of whether its underlying connection is
     /// still usable — ideally WITHOUT a network round-trip.
     ///
-    /// The resolver registry caches one session per key and reuses it while it
+    /// The resolver registry caches one reusable session per key and reuses it while it
     /// sits idle (no active leases). For stateful-connection transports
     /// (SMB / SFTP / FTP / NFS) a server or NAT idle-timeout — or, on iOS, the
     /// system tearing down sockets when the app suspends — can silently drop
@@ -120,6 +126,17 @@ public protocol MediaTransportConnection: AnyObject, Sendable {
     /// all of them, including the three this comment already claimed did. A
     /// required witness makes each transport state its answer at compile time.
     func isHealthy() async -> Bool
+}
+
+public extension MediaTransportConnection {
+    func shouldRetireAfterOpenFailure(_ error: MediaTransportError) -> Bool {
+        switch error {
+        case .timeout, .transport:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 public protocol MediaTransportSession: MediaTransportConnection {

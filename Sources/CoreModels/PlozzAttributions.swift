@@ -73,7 +73,7 @@ public enum PlozzAttributions {
             title: "AetherEngine",
             detail:
                 "Plozzigen playback is powered by AetherEngine by Vincent Herbst. "
-                + "Source: github.com/superuser404notfound/AetherEngine",
+                + "Source: https://github.com/superuser404notfound/AetherEngine/tree/7.8.1",
             licenses: [.init("LGPL-3.0", family: .lgpl)]
         ),
         PlozzAttribution(
@@ -134,14 +134,16 @@ public enum PlozzAttributions {
             title: "TMDB",
             detail:
                 "This product uses the TMDB API but is not endorsed or certified by "
-                + "TMDB. Artwork and metadata are provided by TMDB (themoviedb.org).",
+                + "TMDB. Artwork, metadata, and Featured discovery data are provided "
+                + "by TMDB (https://www.themoviedb.org).",
             licenses: [.init("API", family: .api)]
         ),
         PlozzAttribution(
             title: "TheTVDB",
             detail:
-                "Metadata and artwork are provided by TheTVDB. Please consider adding "
-                + "missing information or subscribing at thetvdb.com. Plozz uses the "
+                "Metadata, artwork, and Featured discovery data are provided by TheTVDB. "
+                + "Please consider adding missing information or subscribing at "
+                + "https://thetvdb.com. Plozz uses the "
                 + "TheTVDB API but is not endorsed or certified by TheTVDB.",
             licenses: [.init("API", family: .api)]
         ),
@@ -149,8 +151,21 @@ public enum PlozzAttributions {
             title: "OMDb & AniList",
             detail:
                 "Additional ratings are sourced from the OMDb API (omdbapi.com) and "
-                + "AniList (anilist.co). Neither endorses or is affiliated with Plozz.",
+                + "AniList (https://anilist.co). AniList also provides anime metadata "
+                + "and Featured discovery data. Neither endorses or is affiliated "
+                + "with Plozz.",
             licenses: [.init("API", family: .api)]
+        ),
+        PlozzAttribution(
+            title: "TVmaze",
+            detail:
+                "TV schedules, show metadata, and Featured discovery data are provided "
+                + "by TVmaze (https://www.tvmaze.com). TVmaze API data is licensed under "
+                + "Creative Commons Attribution-ShareAlike 4.0 International "
+                + "(CC BY-SA 4.0): https://creativecommons.org/licenses/by-sa/4.0/. "
+                + "Plozz filters and combines this data for discovery. TVmaze does not "
+                + "endorse and is not affiliated with Plozz.",
+            licenses: [.init("CC BY-SA 4.0", family: .api)]
         ),
         PlozzAttribution(
             title: "Watch Tracking",

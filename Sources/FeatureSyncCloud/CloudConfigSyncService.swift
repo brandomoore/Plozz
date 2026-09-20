@@ -138,6 +138,7 @@ public actor CloudConfigSyncService {
         let onAccountSwitch: @Sendable () async -> Void
         let isHydrated: @Sendable () -> Bool
         var ledger: SyncLedger
+        let persistence = CloudSyncPersistenceState()
 
         init(
             isPrimary: Bool,
@@ -249,14 +250,17 @@ public actor CloudConfigSyncService {
 
     // Persisted across launches. Only the PRIMARY channel's engine state is kept
     // here — additional channels persist only their own ledger (see `Channel`).
-    private var engineState: CKSyncEngine.State.Serialization?
+    private var engineStateRevision: UInt64 = 0
+    private var engineState: CKSyncEngine.State.Serialization? {
+        didSet { engineStateRevision &+= 1 }
+    }
+    private(set) var hasRestoredLocalState = false
 
     public init(_ configuration: Configuration, channels extraChannels: [ChannelConfiguration] = []) {
         self.config = configuration
         self.schema = configuration.schema
         self.stateFileURL = configuration.stateFileURL
 
-        let loadedPrimary = Self.loadPersisted(from: configuration.stateFileURL)
         let primary = Channel(
             isPrimary: true,
             schema: configuration.schema,
@@ -265,9 +269,9 @@ public actor CloudConfigSyncService {
             applyRecords: configuration.applyRecords,
             onAccountSwitch: configuration.onAccountSwitch,
             isHydrated: configuration.isHydrated,
-            ledger: loadedPrimary?.ledger ?? SyncLedger()
+            ledger: SyncLedger()
         )
-        self.engineState = loadedPrimary?.engineState
+        self.engineState = nil
 
         var built: [Channel] = [primary]
         for extra in extraChannels {
@@ -279,7 +283,7 @@ public actor CloudConfigSyncService {
                 applyRecords: extra.applyRecords,
                 onAccountSwitch: extra.onAccountSwitch,
                 isHydrated: extra.isHydrated,
-                ledger: Self.loadLedger(from: extra.stateFileURL) ?? SyncLedger()
+                ledger: SyncLedger()
             ))
         }
         self.channels = built
@@ -318,6 +322,7 @@ public actor CloudConfigSyncService {
     /// reads as "how many records this device mirrors from iCloud" overall.
     private func reportRecordCount() {
         guard let status = config.status else { return }
+        restorePersistedStateIfNeeded()
         let total = channels.reduce(0) { $0 + $1.ledger.count }
         Task { @MainActor in status.syncedRecordCount = total }
     }
@@ -593,6 +598,7 @@ public actor CloudConfigSyncService {
     /// republishes local as fresh creates. Local config is never touched.
     public func resetAndReseed() async {
         guard isActive, config.isEnabled(), await accountIsAvailable() else { return }
+        restorePersistedStateIfNeeded()
         setStatus(.syncing)
         await deleteAllServerData()   // deletes records + clears every channel's ledger
         guard isActive else { return }
@@ -623,6 +629,7 @@ public actor CloudConfigSyncService {
     /// against that shared re-fetch.
     public func redownloadFromCloud() async {
         guard isActive, config.isEnabled(), await accountIsAvailable() else { setStatus(.signedOut); return }
+        restorePersistedStateIfNeeded()
         setStatus(.syncing)
         PlozzLog.sync.info("CloudSync: redownload — full resync (keep local, reset token)")
         // S3: block all publishing while the baselines are cleared, so a concurrent
@@ -736,6 +743,7 @@ public actor CloudConfigSyncService {
     /// required for a valid full resync (`redownloadFromCloud`). Otherwise the change
     /// token is preserved.
     private func rebuildEngine(resetState: Bool) {
+        restorePersistedStateIfNeeded()
         engineGeneration += 1
         if resetState { engineState = nil }
         var configuration = CKSyncEngine.Configuration(
@@ -802,19 +810,44 @@ public actor CloudConfigSyncService {
         var engineState: CKSyncEngine.State.Serialization?
     }
 
+    private func restorePersistedStateIfNeeded() {
+        guard !hasRestoredLocalState else { return }
+        let primary = Self.loadPersisted(from: config.stateFileURL)
+        channels[0].ledger = primary?.ledger ?? SyncLedger()
+        engineState = primary?.engineState
+        for channel in channels.dropFirst() {
+            channel.ledger = Self.loadLedger(from: channel.stateFileURL) ?? SyncLedger()
+        }
+        hasRestoredLocalState = true
+    }
+
+    /// Read-only local snapshot; no CloudKit engine or account access is required.
+    func restoredLedgers() -> [SyncLedger] {
+        restorePersistedStateIfNeeded()
+        return channels.map(\.ledger)
+    }
+
     private static func loadPersisted(from url: URL) -> Persisted? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(Persisted.self, from: data)
+        IOTimingDiagnostics.measure(
+            .cloudLedgerLoad, metrics: { (result: Persisted?) in .init(items: result?.ledger.entries.count) }
+        ) {
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? JSONDecoder().decode(Persisted.self, from: data)
+        }
     }
 
     /// An additional channel's on-disk shape: just its `SyncLedger` — there is only
     /// one engine, so there is no second engine state to persist alongside it.
     private static func loadLedger(from url: URL) -> SyncLedger? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        if let ledger = try? JSONDecoder().decode(SyncLedger.self, from: data) {
-            return ledger
+        IOTimingDiagnostics.measure(
+            .cloudLedgerLoad, metrics: { (result: SyncLedger?) in .init(items: result?.entries.count) }
+        ) {
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            if let ledger = try? JSONDecoder().decode(SyncLedger.self, from: data) {
+                return ledger
+            }
+            return try? JSONDecoder().decode(Persisted.self, from: data).ledger
         }
-        return try? JSONDecoder().decode(Persisted.self, from: data).ledger
     }
 
     /// Ask the server directly whether each candidate record still exists, for ONE
@@ -900,6 +933,7 @@ public actor CloudConfigSyncService {
     /// be able to cause the harm it exists to catch.
     public func reconcileServerInventory() async {
         guard isActive, config.isEnabled(), await accountIsAvailable() else { return }
+        restorePersistedStateIfNeeded()
         for channel in channels {
             await reconcileServerInventory(for: channel)
         }
@@ -978,20 +1012,36 @@ public actor CloudConfigSyncService {
         return out
     }
 
-    /// Persist EVERY channel: the primary alongside `engineState` (compat format,
-    /// `{ledger, engineState}`), every other channel as its own bare `SyncLedger`.
+    /// Persist changed channels immediately, retaining the existing file formats.
     private func persist() {
+        restorePersistedStateIfNeeded()
         for channel in channels {
             do {
-                try FileManager.default.createDirectory(
-                    at: channel.stateFileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                let data: Data
-                if channel.isPrimary {
-                    data = try JSONEncoder().encode(Persisted(ledger: channel.ledger, engineState: engineState))
-                } else {
-                    data = try JSONEncoder().encode(channel.ledger)
+                let wrote = try channel.persistence.writeIfChanged(
+                    ledger: channel.ledger,
+                    engineRevision: channel.isPrimary ? engineStateRevision : nil
+                ) {
+                    let data = try IOTimingDiagnostics.measure(
+                        .cloudLedgerEncode, metrics: { .init(bytes: $0.count) }
+                    ) {
+                        if channel.isPrimary {
+                            return try JSONEncoder().encode(Persisted(ledger: channel.ledger, engineState: engineState))
+                        }
+                        return try JSONEncoder().encode(channel.ledger)
+                    }
+                    try IOTimingDiagnostics.measure(
+                        .cloudLedgerWrite, metrics: { _ in .init(items: channel.ledger.entries.count, bytes: data.count) }
+                    ) {
+                        try FileManager.default.createDirectory(
+                            at: channel.stateFileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                        try data.write(to: channel.stateFileURL, options: .atomic)
+                    }
                 }
-                try data.write(to: channel.stateFileURL, options: .atomic)
+                if !wrote {
+                    IOTimingDiagnostics.measure(
+                        .cloudLedgerUnchanged, metrics: { _ in .init(items: channel.ledger.entries.count) }
+                    ) {}
+                }
             } catch {
                 PlozzLog.sync.error("CloudSync[\(channel.schema.zoneName)]: failed to persist state: \(error.localizedDescription)")
             }

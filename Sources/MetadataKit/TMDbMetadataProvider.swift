@@ -1,15 +1,30 @@
 import CoreModels
 import Foundation
 
+extension TMDbAccess {
+    var metadataAPIBaseURL: URL {
+        switch self {
+        case .proxy(let baseURL): return baseURL
+        case .directToken, .userToken, .disabled: return URL(string: "https://api.themoviedb.org")!
+        }
+    }
+
+    var metadataAuthorizationHeaders: [String: String] {
+        switch self {
+        case .directToken(let token), .userToken(let token):
+            return ["Authorization": "Bearer \(token)"]
+        case .proxy, .disabled:
+            return [:]
+        }
+    }
+}
+
 /// TMDb-backed artwork (backdrops, posters, logos, per-episode stills) reached via
-/// the optional, maintainer-controlled ``TMDbAccess`` (proxy or local token).
+/// the optional ``TMDbAccess`` (application token, proxy, or user-supplied token).
 ///
-/// TMDb is the gold standard for western movie/TV heroes, clear logos and episode
-/// stills, but its terms forbid distributing a key in an open-source client. So
-/// this provider is *only* enabled when a self-hostable caching proxy or a local
-/// token is configured (never in the public build). The JSON metadata calls go
-/// through `access`; the image *bytes* always come straight from TMDb's keyless
-/// CDN (`image.tmdb.org`), keeping any proxy tiny and the byte path uncapped.
+/// Plozz ships application authentication where configured; a proxy and BYOK are
+/// optional alternatives. JSON metadata calls go through `access`; image bytes
+/// come directly from TMDb's CDN. Other providers remain available without TMDb.
 public struct TMDbMetadataProvider: ArtworkProvider {
     public let id = "tmdb"
     private let access: TMDbAccess
@@ -17,10 +32,8 @@ public struct TMDbMetadataProvider: ArtworkProvider {
     /// API host: the proxy base (which forwards to TMDb, injecting the key) or
     /// TMDb directly when a local token is configured.
     private var apiBase: String {
-        switch access {
-        case .proxy(let url): return url.absoluteString.hasSuffix("/") ? String(url.absoluteString.dropLast()) : url.absoluteString
-        case .directToken, .userToken, .disabled: return "https://api.themoviedb.org"
-        }
+        let raw = access.metadataAPIBaseURL.absoluteString
+        return raw.hasSuffix("/") ? String(raw.dropLast()) : raw
     }
 
     private let imageBase = "https://image.tmdb.org/t/p"
@@ -28,10 +41,7 @@ public struct TMDbMetadataProvider: ArtworkProvider {
     /// Auth header for the JSON API: a v4 bearer in direct-token / user BYOK mode;
     /// none in proxy mode (the proxy injects the key server-side).
     private var authHeaders: [String: String] {
-        switch access {
-        case .directToken(let token), .userToken(let token): return ["Authorization": "Bearer \(token)"]
-        case .proxy, .disabled: return [:]
-        }
+        access.metadataAuthorizationHeaders
     }
 
     public init(access: TMDbAccess) {

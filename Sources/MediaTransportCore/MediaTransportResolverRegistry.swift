@@ -9,21 +9,30 @@ public final class MediaTransportResolverLease: @unchecked Sendable {
     public let session: any MediaTransportSession
 
     private let registry: MediaTransportResolverRegistry
+    private let generation: UUID
     private let lock = NSLock()
     private var isReleased = false
 
     fileprivate init(
         key: MediaTransportSessionKey,
         session: any MediaTransportSession,
+        generation: UUID,
         registry: MediaTransportResolverRegistry
     ) {
         self.key = key
         self.session = session
+        self.generation = generation
         self.registry = registry
     }
 
     deinit {
         release()
+    }
+
+    /// Stops reusing this exact connection after an observed connection failure.
+    /// Existing leases, including this one, keep ownership until they release.
+    public func reportConnectionFailure() async {
+        await registry.retireForReuse(key: key, generation: generation)
     }
 
     public func release() {
@@ -35,8 +44,9 @@ public final class MediaTransportResolverLease: @unchecked Sendable {
         if shouldRelease {
             let registry = self.registry
             let key = self.key
-            Task { [registry, key] in
-                await registry.release(key: key)
+            let generation = self.generation
+            Task { [registry, key, generation] in
+                await registry.release(key: key, generation: generation)
             }
         }
     }
@@ -49,6 +59,7 @@ public actor MediaTransportResolverRegistry: MediaTransportResolving {
     }
 
     private struct Record {
+        let generation = UUID()
         let session: any MediaTransportSession
         let finalizer: MediaTransportSessionFinalizer
         var leaseCount: Int
@@ -57,6 +68,7 @@ public actor MediaTransportResolverRegistry: MediaTransportResolving {
 
     private var adapters: [String: any MediaTransportAdapter] = [:]
     private var records: [MediaTransportSessionKey: Record] = [:]
+    private var retiredRecordsByGeneration: [UUID: Record] = [:]
     private var retiredScopes: Set<RevisionScope> = []
 
     public init() {}
@@ -117,13 +129,15 @@ public actor MediaTransportResolverRegistry: MediaTransportResolving {
         if let record = records[key] {
             guard !record.retired else { throw MediaTransportError.cancelled }
 
-            // An in-use session (active leases) is owned by its consumer and must
-            // NEVER be torn down under it — hand it back as-is.
+            // An eligible in-use session is reused without probing. Explicit
+            // failure reports remove it from reuse, not from existing consumers.
             if record.leaseCount > 0 {
                 var mutated = record
                 mutated.leaseCount += 1
                 records[key] = mutated
-                return MediaTransportResolverLease(key: key, session: mutated.session, registry: self)
+                return MediaTransportResolverLease(
+                    key: key, session: mutated.session, generation: mutated.generation, registry: self
+                )
             }
 
             // Idle cached session: its underlying connection may have been dropped
@@ -135,12 +149,14 @@ public actor MediaTransportResolverRegistry: MediaTransportResolving {
             // await above. Only act on the SAME session if it's still present,
             // still idle, and not retired.
             if let current = records[key], !current.retired,
-               current.leaseCount == 0, current.session === record.session {
+               current.leaseCount == 0, current.generation == record.generation {
                 if healthy {
                     var mutated = current
                     mutated.leaseCount += 1
                     records[key] = mutated
-                    return MediaTransportResolverLease(key: key, session: mutated.session, registry: self)
+                    return MediaTransportResolverLease(
+                        key: key, session: mutated.session, generation: mutated.generation, registry: self
+                    )
                 }
                 // Dead idle session: evict (release its socket/event-loop) and
                 // fall through to the reconnect path below.
@@ -152,7 +168,9 @@ public actor MediaTransportResolverRegistry: MediaTransportResolving {
                 var mutated = current
                 mutated.leaseCount += 1
                 records[key] = mutated
-                return MediaTransportResolverLease(key: key, session: mutated.session, registry: self)
+                return MediaTransportResolverLease(
+                    key: key, session: mutated.session, generation: mutated.generation, registry: self
+                )
             }
             // Otherwise retired/removed during the probe → fall through to the
             // reconnect path, which re-checks `retiredScopes`.
@@ -181,13 +199,29 @@ public actor MediaTransportResolverRegistry: MediaTransportResolving {
             await connected.shutdown()
             return try await lease(for: key)
         }
-        records[key] = Record(
+        let record = Record(
             session: connected,
             finalizer: { session in await session.shutdown() },
             leaseCount: 1,
             retired: false
         )
-        return MediaTransportResolverLease(key: key, session: connected, registry: self)
+        records[key] = record
+        return MediaTransportResolverLease(
+            key: key, session: connected, generation: record.generation, registry: self
+        )
+    }
+
+    /// A failed generation drains independently while the same key can reconnect.
+    /// Credential retirement remains authoritative and is never cleared here.
+    fileprivate func retireForReuse(key: MediaTransportSessionKey, generation: UUID) async {
+        guard var record = records[key], record.generation == generation else { return }
+        records.removeValue(forKey: key)
+        record.retired = true
+        if record.leaseCount == 0 {
+            await record.finalizer(record.session)
+        } else {
+            retiredRecordsByGeneration[generation] = record
+        }
     }
 
     /// Retires one immutable credential revision. New leases are rejected while
@@ -213,23 +247,38 @@ public actor MediaTransportResolverRegistry: MediaTransportResolving {
         }
     }
 
-    public var liveSessionCount: Int { records.count }
+    /// Includes failed generations still retained by existing leases.
+    public var liveSessionCount: Int { records.count + retiredRecordsByGeneration.count }
 
-    /// Test/diagnostic seam: active lease count for a key (0 ⇒ idle-cached,
-    /// nil-record ⇒ 0). Lets tests deterministically wait for a `release()` —
-    /// which is fire-and-forget via a `Task` — to land before re-leasing.
+    /// Test/diagnostic seam: active leases across current and draining generations.
+    /// Release is fire-and-forget; zero means all lease releases for the key landed.
     func activeLeaseCount(for key: MediaTransportSessionKey) -> Int {
-        records[key]?.leaseCount ?? 0
+        (records[key]?.leaseCount ?? 0) + retiredRecordsByGeneration.values.reduce(0) { count, record in
+            count + (record.session.key == key ? record.leaseCount : 0)
+        }
     }
 
-    fileprivate func release(key: MediaTransportSessionKey) async {
-        guard var record = records[key], record.leaseCount > 0 else { return }
+    fileprivate func release(key: MediaTransportSessionKey, generation: UUID) async {
+        if var record = records[key], record.generation == generation {
+            guard record.leaseCount > 0 else { return }
+            record.leaseCount -= 1
+            if record.retired, record.leaseCount == 0 {
+                records.removeValue(forKey: key)
+                await record.finalizer(record.session)
+            } else {
+                records[key] = record
+            }
+            return
+        }
+
+        guard var record = retiredRecordsByGeneration[generation],
+              record.session.key == key, record.leaseCount > 0 else { return }
         record.leaseCount -= 1
-        if record.retired, record.leaseCount == 0 {
-            records.removeValue(forKey: key)
+        if record.leaseCount == 0 {
+            retiredRecordsByGeneration.removeValue(forKey: generation)
             await record.finalizer(record.session)
         } else {
-            records[key] = record
+            retiredRecordsByGeneration[generation] = record
         }
     }
 }

@@ -103,6 +103,9 @@ public extension MediaItem {
     /// `sourceAccountID`, global provider ids, and synced binding hints do not.
     func hasPlayableLibraryTarget(additionalSources: [MediaSourceRef] = []) -> Bool {
         if locallyValidatedPlayableSource { return true }
+        // Discovery feeds undergo explicit active-profile/library verification.
+        // An index hint cannot override a rejection from that verification.
+        guard discoverySources.isEmpty else { return false }
         return additionalSources.contains {
             $0.kind == nil || $0.kind == kind
         }

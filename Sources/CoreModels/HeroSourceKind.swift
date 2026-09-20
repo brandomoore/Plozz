@@ -4,13 +4,10 @@ import Foundation
 /// model). Ordered, per-profile-configurable, and additive: a new source is a
 /// new case plus its curation branch, never a rewrite of the hero.
 ///
-/// `.featured` is the **Seerr seam** — trending/popular content that may sit
-/// *outside* the user's library. It yields nothing until a Seerr/Overseerr
-/// provider is wired in (built in parallel), so including it in the default set
-/// is harmless today and lights up automatically once that lands.
+/// Featured combines configured external discovery feeds. Seerr is optional
+/// and supplies request/availability context rather than deciding every pick.
 public enum HeroSourceKind: String, CaseIterable, Identifiable, Codable, Sendable {
-    /// Trending/popular streaming content from Seerr (outside your library).
-    /// Empty until the Seerr provider exists.
+    /// External discovery picks, matched to the user's own copies when available.
     case featured
     /// Your in-progress, resumable titles presented in a featured format.
     case continueWatching
@@ -64,7 +61,7 @@ public enum HeroSourceKind: String, CaseIterable, Identifiable, Codable, Sendabl
         switch self {
         case .featured:
             return LocalizedStringResource(
-                "Trending titles available to stream (requires Seerr).",
+                "Discover movies and shows from your selected feeds. Seerr is optional for requests.",
                 comment: "Explanation shown under the Featured hero source option in Settings."
             )
         case .continueWatching:
@@ -102,7 +99,7 @@ public enum HeroSourceKind: String, CaseIterable, Identifiable, Codable, Sendabl
     }
 
     /// Whether this source draws from local library content (as opposed to the
-    /// external Seerr `.featured` feed). Used by the curator to know which
+    /// external `.featured` feeds). Used by the curator to know which
     /// sources depend on already-aggregated Home content vs. an injected fetch.
     public var isLibrarySourced: Bool {
         self != .featured

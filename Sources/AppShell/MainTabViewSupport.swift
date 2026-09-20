@@ -2,6 +2,7 @@
 import SwiftUI
 import AppRuntime
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureHome
 import FeatureHomeCore
@@ -52,7 +53,8 @@ func resolveOptionalProvider(_ accountID: String, in accounts: [ResolvedAccount]
     accounts.first(where: { $0.account.id == accountID })?.provider
 }
 
-/// Builds the Home hero's **featured** provider from the Seerr service: trending
+/// Legacy Seerr-only provider. Production Featured uses `makeHeroDiscoveryProvider`.
+/// Builds trending
 /// titles (movies + TV) that may live outside the user's library. Returns `[]`
 /// when Seerr is unconfigured or the fetch fails, so the `.featured` hero source
 /// stays inert until a server is connected — exactly the seam `HeroCurator`
@@ -69,7 +71,15 @@ func makeHeroFeaturedProvider(
             finalLimit: limit,
             hideWatched: hideWatched
         )
-        let items = (try? await seer.trending(limit: candidateLimit)) ?? []
+        let items: [MediaItem]
+        do {
+            items = try await seer.trending(limit: candidateLimit)
+        } catch is CancellationError {
+            return []
+        } catch {
+            PlozzLog.networking.error("Hero Featured candidates could not be loaded")
+            return []
+        }
         return await HeroCandidateWatchStateEnricher.enrich(
             items,
             enabled: hideWatched,
@@ -80,15 +90,26 @@ func makeHeroFeaturedProvider(
 }
 
 func makeHeroFeaturedStatusProvider(
-    seer: SeerService,
-    hideWatched: Bool
-) -> FeaturedContentProviding {
-    { limit in
-        let candidateLimit = HeroCandidatePool.requestLimit(
-            finalLimit: limit,
-            hideWatched: hideWatched
+    seer: SeerService
+) -> HeroFeaturedStatusProviding {
+    { items in
+        await seer.availabilityUpdates(for: items)
+    }
+}
+
+func makeHeroDiscoveryProvider(
+    accounts: [ResolvedAccount],
+    hideWatched: Bool,
+    visibility: HomeLibraryVisibilityModel,
+    identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef]
+) -> HeroDiscoveryContentProviding {
+    let runtime = HeroDiscoveryRuntime(accounts: accounts, identitySources: identitySources)
+    return { request, sources in
+        let currentVisibility = await visibility.visibility
+        return await runtime.candidates(
+            request, sources: sources, hideWatched: hideWatched,
+            visibility: currentVisibility
         )
-        return (try? await seer.trending(limit: candidateLimit)) ?? []
     }
 }
 
@@ -219,7 +240,9 @@ private func makeHeroWatchStateFetcher(
 /// Backs `HomeView`'s external-refresh fast path so a warmed identity index or a
 /// cross-device watch drops a now-seen title without the full re-curate that
 /// profiling showed drove multi-second stalls while browsing. A no-op passthrough
-/// when Hide Watched is off (nothing to re-check).
+/// when Hide Watched is off (nothing to re-check). The enricher consults
+/// `identitySources` only for ordinary library/legacy candidates; discovery-tagged
+/// items retain the verified-copy boundary established by `HeroDiscoveryRuntime`.
 func makeHeroWatchStateRefresher(
     accounts: [ResolvedAccount],
     hideWatched: Bool,

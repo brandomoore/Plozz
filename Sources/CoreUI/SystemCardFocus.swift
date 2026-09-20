@@ -5,10 +5,19 @@ private struct NativeFocusSurfaceKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct NativeArtworkSurfaceKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
     var plozzNativeFocusSurface: Bool {
         get { self[NativeFocusSurfaceKey.self] }
         set { self[NativeFocusSurfaceKey.self] = newValue }
+    }
+
+    var plozzNativeArtworkSurface: Bool {
+        get { self[NativeArtworkSurfaceKey.self] }
+        set { self[NativeArtworkSurfaceKey.self] = newValue }
     }
 }
 
@@ -144,11 +153,11 @@ private struct NativeMediaButtonStyle: ViewModifier {
 
 private struct CardArtworkClip<S: Shape>: ViewModifier {
     let shape: S
-    @Environment(\.plozzNativeFocusSurface) private var nativeSurface
+    @Environment(\.plozzNativeArtworkSurface) private var nativeArtworkSurface
 
     func body(content: Content) -> some View {
         #if os(tvOS)
-        if nativeSurface {
+        if nativeArtworkSurface {
             content
         } else {
             content.clipShape(shape)

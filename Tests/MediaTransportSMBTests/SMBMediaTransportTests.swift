@@ -349,8 +349,118 @@ final class SMBMediaTransportTests: XCTestCase {
         XCTAssertTrue(backend.listedPaths.isEmpty)
     }
 
+    func testSMBMissingFileAndAuthStatusesDoNotRotateConnection() async throws {
+        let factory = FakeSMBBackendFactory()
+        let adapter = SMBMediaTransportAdapter(
+            configurationProvider: { _, _ in
+                SMBMediaTransportConfiguration(credential: .anonymous)
+            },
+            backendFactory: { factory.make() }
+        )
+        let key = try makeKey(role: .playback)
+        let registry = MediaTransportResolverRegistry(adapter: adapter)
+        let held = try await registry.lease(for: key)
+        let backend = try XCTUnwrap(factory.backends.first)
+        let finalized = expectation(description: "Terminal-error session finalized")
+        finalized.assertForOverFulfill = true
+        backend.onShutdown { finalized.fulfill() }
+        let resolver = MediaTransportNetworkFileResolver(registry: registry) { _ in key }
+        let locator = try makeLocator(for: key)
+        let statuses = [0xC000000F, 0xC0000034, 0xC000003A, 0xC0000022, 0xC000006D, 0xC0000001]
+        let errors: [MediaTransportError] = statuses.map { .transport(code: $0) } + [
+            .authentication(reason: "credentials rejected"),
+            .trust(reason: "trust rejected"),
+            .permissionDenied,
+            .invalidInput(reason: "resource not found"),
+            .sourceChanged(reason: "representation changed"),
+            .unsupportedRange(reason: "range"),
+            .cancelled,
+        ]
+        for expected in errors {
+            XCTAssertFalse(held.session.shouldRetireAfterOpenFailure(expected))
+            backend.statError = expected
+            do {
+                _ = try await resolver.resolve(locator)
+                XCTFail("Expected the original resource/auth error.")
+            } catch let error as MediaTransportError {
+                XCTAssertEqual(error, expected)
+            }
+            let next = try await registry.lease(for: key)
+            XCTAssertTrue(next.session === held.session)
+            next.release()
+        }
+        XCTAssertEqual(factory.backends.count, 1)
+        XCTAssertEqual(backend.shutdownCount, 0)
+        await registry.retire(accountID: key.accountID, credentialRevision: key.credentialRevision)
+        held.release()
+        await fulfillment(of: [finalized], timeout: 2)
+        XCTAssertEqual(backend.shutdownCount, 1)
+    }
+
+    func testSMBSessionLossStatusRetiresForNewLeases() async throws {
+        let factory = FakeSMBBackendFactory()
+        let adapter = SMBMediaTransportAdapter(
+            configurationProvider: { _, _ in
+                SMBMediaTransportConfiguration(credential: .anonymous)
+            },
+            backendFactory: { factory.make() }
+        )
+        let key = try makeKey(role: .playback)
+        let registry = MediaTransportResolverRegistry(adapter: adapter)
+        let held = try await registry.lease(for: key)
+        let oldBackend = try XCTUnwrap(factory.backends.first)
+        let oldFinalized = expectation(description: "Failed generation finalized")
+        oldFinalized.assertForOverFulfill = true
+        oldBackend.onShutdown { oldFinalized.fulfill() }
+        for code in [0xC00000B5, 0xC00000C9, 0xC0000203, 0xC000020C, 0xC000020D, 0xC0000241, 0xC000035C] {
+            XCTAssertTrue(held.session.shouldRetireAfterOpenFailure(.transport(code: code)))
+        }
+        XCTAssertTrue(held.session.shouldRetireAfterOpenFailure(.timeout))
+        XCTAssertTrue(held.session.shouldRetireAfterOpenFailure(.transport(code: -1005)))
+        oldBackend.statError = MediaTransportError.transport(code: 0xC0000203)
+        let resolver = MediaTransportNetworkFileResolver(registry: registry) { _ in key }
+        let locator = try makeLocator(for: key)
+        do {
+            _ = try await resolver.resolve(locator)
+            XCTFail("Session loss must propagate without an immediate retry.")
+        } catch let error as MediaTransportError {
+            XCTAssertEqual(error, .transport(code: 0xC0000203))
+        }
+        XCTAssertEqual(factory.backends.count, 1)
+        let replacement = try await resolver.resolve(locator)
+        let newBackend = try XCTUnwrap(factory.backends.last)
+        let newFinalized = expectation(description: "Replacement finalized")
+        newFinalized.assertForOverFulfill = true
+        newBackend.onShutdown { newFinalized.fulfill() }
+        XCTAssertEqual(factory.backends.count, 2)
+        XCTAssertEqual(oldBackend.shutdownCount, 0)
+        held.release()
+        await fulfillment(of: [oldFinalized], timeout: 2)
+        XCTAssertEqual(oldBackend.shutdownCount, 1)
+        XCTAssertEqual(newBackend.shutdownCount, 0)
+        await registry.retire(accountID: key.accountID, credentialRevision: key.credentialRevision)
+        await replacement.waitForFinalShutdown()
+        await fulfillment(of: [newFinalized], timeout: 2)
+        XCTAssertEqual(newBackend.shutdownCount, 1)
+    }
+
+    private func makeLocator(for key: MediaTransportSessionKey) throws -> NetworkFileLocator {
+        try NetworkFileLocator(
+            accountID: key.accountID,
+            sourceID: "source",
+            credentialRevision: key.credentialRevision,
+            relativePath: "artwork.jpg",
+            representation: RemoteFileRepresentation(
+                size: 0,
+                identity: RemoteFileIdentity(kind: .modificationTime, modifiedAt: Date(timeIntervalSince1970: 1)),
+                consistency: .changeDetecting
+            )
+        )
+    }
+
     private func makeKey(
-        revision: CredentialRevision = CredentialRevision()
+        revision: CredentialRevision = CredentialRevision(),
+        role: MediaTransportRole = .scanner
     ) throws -> MediaTransportSessionKey {
         MediaTransportSessionKey(
             accountID: "account",
@@ -361,7 +471,7 @@ final class SMBMediaTransportTests: XCTestCase {
                 rootPath: "/Media/Library"
             ),
             trustRevision: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)),
-            role: .scanner
+            role: role
         )
     }
 }
@@ -403,6 +513,10 @@ private final class FakeSMBBackend: SMBTransportBackend, @unchecked Sendable {
         get { lock.withLock { connectErrorStorage } }
         set { lock.withLock { connectErrorStorage = newValue } }
     }
+    var statError: (any Error)? {
+        get { lock.withLock { statErrorStorage } }
+        set { lock.withLock { statErrorStorage = newValue } }
+    }
     var connectedHost: String? { lock.withLock { connectedHostStorage } }
     var connectedPort: Int? { lock.withLock { connectedPortStorage } }
     var connectedShare: String? { lock.withLock { connectedShareStorage } }
@@ -415,6 +529,7 @@ private final class FakeSMBBackend: SMBTransportBackend, @unchecked Sendable {
 
     private var entriesStorage: [SMBBackendEntry] = []
     private var connectErrorStorage: (any Error)?
+    private var statErrorStorage: (any Error)?
     private var connectedHostStorage: String?
     private var connectedPortStorage: Int?
     private var connectedShareStorage: String?
@@ -422,6 +537,7 @@ private final class FakeSMBBackend: SMBTransportBackend, @unchecked Sendable {
     private var requiresSigningStorage: Bool?
     private var listedPathsStorage: [String] = []
     private var shutdownCountStorage = 0
+    private var shutdownObserver: (@Sendable () -> Void)?
     private let source: (any MediaTransportByteSource)?
 
     init(source: (any MediaTransportByteSource)? = nil) {
@@ -454,8 +570,9 @@ private final class FakeSMBBackend: SMBTransportBackend, @unchecked Sendable {
     }
 
     func stat(path: String) async throws -> SMBBackendEntry {
-        lock.withLock {
-            entriesStorage.first(where: { $0.name == URL(fileURLWithPath: path).lastPathComponent })
+        try lock.withLock {
+            if let error = statErrorStorage { throw error }
+            return entriesStorage.first(where: { $0.name == URL(fileURLWithPath: path).lastPathComponent })
                 ?? SMBBackendEntry(
                     name: URL(fileURLWithPath: path).lastPathComponent,
                     kind: .file,
@@ -477,8 +594,16 @@ private final class FakeSMBBackend: SMBTransportBackend, @unchecked Sendable {
         source ?? FakeByteSource(byteSize: expectedRepresentation.size)
     }
 
+    func onShutdown(_ observer: @escaping @Sendable () -> Void) {
+        lock.withLock { shutdownObserver = observer }
+    }
+
     func shutdown() async {
-        lock.withLock { shutdownCountStorage += 1 }
+        let observer = lock.withLock {
+            shutdownCountStorage += 1
+            return shutdownObserver
+        }
+        observer?()
     }
 }
 

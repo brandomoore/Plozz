@@ -218,6 +218,31 @@ private final class SMBMediaTransportSession: MediaTransportSession, @unchecked 
         await backend.shutdown()
     }
 
+    func shouldRetireAfterOpenFailure(_ error: MediaTransportError) -> Bool {
+        switch error {
+        case .timeout:
+            return true
+        case .transport(let code):
+            // mapSMBError preserves raw NTSTATUS values, including missing-file
+            // and auth errors. Only connection/session loss retires their reuse.
+            guard code >= 0x80000000 else { return true }
+            switch code {
+            case 0xC00000B5, // STATUS_IO_TIMEOUT
+                 0xC00000C9, // STATUS_NETWORK_NAME_DELETED
+                 0xC0000203, // STATUS_USER_SESSION_DELETED
+                 0xC000020C, // STATUS_CONNECTION_DISCONNECTED
+                 0xC000020D, // STATUS_CONNECTION_RESET
+                 0xC0000241, // STATUS_CONNECTION_ABORTED
+                 0xC000035C: // STATUS_NETWORK_SESSION_EXPIRED
+                return true
+            default:
+                return false
+            }
+        default:
+            return false
+        }
+    }
+
     /// A root `stat` over the live SMB session. SMB is stateful — session id,
     /// tree id, signing keys and file ids are all bound to the TCP session, and
     /// `SMBClientBackend.connect` refuses to run twice — so a dropped socket can

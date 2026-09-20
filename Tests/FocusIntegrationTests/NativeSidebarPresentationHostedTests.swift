@@ -7,6 +7,56 @@ import XCTest
 
 @MainActor
 final class NativeSidebarPresentationHostedTests: XCTestCase {
+    func testLiveTVWaitsForFirstVisitThenRetainsStateWithinItsProfile() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let model = RetentionModel()
+        fixture.window.rootViewController = UIHostingController(rootView: RetainedPage(model: model))
+        fixture.window.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(model.factoryCalls, 0, "Cold Home must not construct the hidden Live TV runtime or guide.")
+        XCTAssertEqual(model.creations, 0)
+
+        model.isActive = true
+        try await waitUntil { model.creations == 1 && model.isEnabled }
+        let firstView = try XCTUnwrap(model.view)
+        let firstState = try XCTUnwrap(model.stateID)
+        model.isActive = false
+        try await waitUntil { !model.isEnabled }
+        XCTAssertTrue(model.view === firstView)
+        XCTAssertNotNil(firstView.window)
+        model.isActive = true
+        try await waitUntil { model.isEnabled }
+        XCTAssertEqual(model.creations, 1)
+        XCTAssertEqual(model.stateID, firstState)
+
+        model.isActive = false
+        try await waitUntil { !model.isEnabled }
+        let previousCalls = model.factoryCalls
+        model.profileID = "second"
+        try await waitUntil { firstView.window == nil }
+        fixture.window.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(model.factoryCalls, previousCalls, "A different profile must not inherit a prior visit.")
+        XCTAssertEqual(model.creations, 1, "Changing profiles on Home must not mount the new profile's Live TV.")
+        model.isActive = true
+        try await waitUntil { model.creations == 2 && model.isEnabled }
+        XCTAssertFalse(model.view === firstView)
+        XCTAssertNotEqual(model.stateID, firstState)
+    }
+
+    func testInitiallySelectedLiveTVIsConstructedOnTheFirstLayout() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let model = RetentionModel()
+        model.isActive = true
+        fixture.window.rootViewController = UIHostingController(rootView: RetainedPage(model: model))
+        fixture.window.layoutIfNeeded()
+        XCTAssertGreaterThan(model.factoryCalls, 0, "Standalone Live TV must not wait for another navigation event.")
+        XCTAssertEqual(model.creations, 1)
+        XCTAssertTrue(model.isEnabled)
+    }
+
     func testInactiveAndUnpresentedPagesCannotAcceptFocus() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -76,6 +126,58 @@ final class NativeSidebarPresentationHostedTests: XCTestCase {
         var mountDestinationAnchor = false
         var prematureFocusCount = 0
         @ObservationIgnored var buttons: [NavigationRailDestination: UIButton] = [:]
+    }
+
+    @MainActor @Observable
+    fileprivate final class RetentionModel {
+        var isActive = false
+        var profileID = "first"
+        @ObservationIgnored var factoryCalls = 0
+        @ObservationIgnored var creations = 0
+        @ObservationIgnored var isEnabled = false
+        @ObservationIgnored var stateID: UUID?
+        @ObservationIgnored var view: UIView?
+    }
+
+    private struct RetainedPage: View {
+        let model: RetentionModel
+
+        var body: some View {
+            RetainedLiveTVDestination(isActive: model.isActive) {
+                let _ = model.factoryCalls += 1
+                RetainedContent(model: model)
+            }
+            .id(model.profileID)
+            .disabled(!model.isActive)
+            .opacity(model.isActive ? 1 : 0)
+        }
+    }
+
+    private struct RetainedContent: View {
+        let model: RetentionModel
+        @State private var identity = UUID()
+
+        var body: some View {
+            RetainedProbe(model: model, identity: identity)
+                .frame(width: 300, height: 200)
+        }
+    }
+
+    private struct RetainedProbe: UIViewRepresentable {
+        let model: RetentionModel
+        let identity: UUID
+
+        func makeUIView(context: Context) -> UIView {
+            let view = UIView()
+            model.view = view
+            model.creations += 1
+            return view
+        }
+
+        func updateUIView(_ view: UIView, context: Context) {
+            model.isEnabled = context.environment.isEnabled
+            model.stateID = identity
+        }
     }
 
     private struct Pages: View {

@@ -2,6 +2,7 @@
 import UIKit
 import ImageIO
 import CoreModels
+import CoreNetworking
 
 /// Process-wide, in-memory cache of *decoded* artwork images, keyed by source URL
 /// and target variant.
@@ -18,6 +19,10 @@ import CoreModels
 /// being stored, so handing one to SwiftUI never triggers a main-thread decode.
 public final class ArtworkImageCache: NSObject, @unchecked Sendable {
     public static let shared = ArtworkImageCache(derivedCache: LocalArtworkDerivedCache())
+
+    typealias LoadDeadlineScheduler = @Sendable (
+        @escaping @Sendable () -> Void
+    ) -> DispatchWorkItem
 
     private enum Source: Hashable {
         case url(URL)
@@ -154,6 +159,8 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
         var continuations: [UUID: CheckedContinuation<UIImage?, Never>] = [:]
         var foregroundWaiterCount = 0
         var decodeJob: DecodeJob?
+        var deadline: DispatchWorkItem?
+        var decodedImage: UIImage?
         let networkInvalidationToken: NetworkInvalidationToken?
 
         init(networkInvalidationToken: NetworkInvalidationToken?) {
@@ -328,15 +335,28 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
     private var backgroundGeneration: UInt64 = 0
     private let derivedCache: LocalArtworkDerivedCache
     private let warmLimiter: ConcurrencyLimiter
+    private let remoteDataLoader: @Sendable (URL) async -> Data?
+    private let loadDeadlineScheduler: LoadDeadlineScheduler
     private static let networkForegroundLimiter = ConcurrencyLimiter(limit: 2)
     private static let networkBackgroundLimiter = ConcurrencyLimiter(limit: 2)
 
     init(
         derivedCache: LocalArtworkDerivedCache,
-        warmLimiter: ConcurrencyLimiter = ArtworkSession.warmLimiter
+        warmLimiter: ConcurrencyLimiter = ArtworkSession.warmLimiter,
+        remoteDataLoader: (@Sendable (URL) async -> Data?)? = nil,
+        loadDeadlineScheduler: LoadDeadlineScheduler? = nil
     ) {
         self.derivedCache = derivedCache
         self.warmLimiter = warmLimiter
+        self.remoteDataLoader = remoteDataLoader ?? Self.downloadData
+        self.loadDeadlineScheduler = loadDeadlineScheduler ?? { action in
+            let deadline = DispatchWorkItem(block: action)
+            DispatchQueue.global(qos: .utility).asyncAfter(
+                deadline: .now() + ArtworkSession.resourceTimeoutSeconds,
+                execute: deadline
+            )
+            return deadline
+        }
         super.init()
         cache.delegate = self
         // Decoded landscape/poster thumbnails are small; cap retained pixels so the
@@ -380,6 +400,24 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
     /// transport implementation or has access to media-share credentials.
     public func configure(networkFileService: ArtworkNetworkFileService?) {
         lock.withLock { self.networkFileService = networkFileService }
+    }
+
+    var pendingWaiterCount: Int {
+        lock.withLock {
+            inFlight.values.reduce(0) { $0 + $1.waiterIsForeground.count }
+        }
+    }
+
+    func inFlightTaskForTesting(
+        reference: ArtworkReference,
+        variant: ArtworkImageVariant
+    ) -> Task<Void, Never>? {
+        let key: CacheKey
+        switch reference {
+        case .remote(let url): key = CacheKey(url: url, variant: variant)
+        case .networkFile(let file): key = CacheKey(reference: file, variant: variant)
+        }
+        return lock.withLock { inFlight[key]?.task }
     }
 
     public func setPreferredNetworkArtworkAccounts(_ accounts: Set<String>, revision: UInt64) async {
@@ -705,37 +743,53 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
         background: Bool,
         expectedBackgroundGeneration: UInt64?
     ) -> ImageWaiter? {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !background || backgroundWorkAllowed else { return nil }
-        if let expectedBackgroundGeneration,
-           expectedBackgroundGeneration != backgroundGeneration { return nil }
-        guard networkArtworkIsAdmittedLocked(for: key) else { return nil }
-        let waiterID = UUID()
-        if let existing = inFlight[key] {
-            if !background {
-                existing.foregroundWaiterCount += 1
-                existing.decodeJob?.promote(to: Self.decodeQueueFG)
+        let registration = lock.withLock { () -> (waiter: ImageWaiter, isNew: Bool)? in
+            guard !background || backgroundWorkAllowed else { return nil }
+            if let expectedBackgroundGeneration,
+               expectedBackgroundGeneration != backgroundGeneration { return nil }
+            guard networkArtworkIsAdmittedLocked(for: key) else { return nil }
+            let waiterID = UUID()
+            if let existing = inFlight[key] {
+                if !background {
+                    existing.foregroundWaiterCount += 1
+                    existing.decodeJob?.promote(to: Self.decodeQueueFG)
+                }
+                existing.waiterIsForeground[waiterID] = !background
+                return (ImageWaiter(id: waiterID, key: key, load: existing), false)
             }
-            existing.waiterIsForeground[waiterID] = !background
-            return ImageWaiter(id: waiterID, key: key, load: existing)
+            let load = ImageLoad(networkInvalidationToken: networkInvalidationToken(for: key))
+            load.waiterIsForeground[waiterID] = !background
+            load.foregroundWaiterCount = background ? 0 : 1
+            // Downloads remain cancellable; synchronous decode stays off the cooperative pool.
+            let priority: TaskPriority = background ? .utility : .userInitiated
+            load.task = Task<Void, Never>.detached(priority: priority) { [weak self, weak load] in
+                guard let self, let load else { return }
+                let image = await self.performLoad(for: key, load: load)
+                self.finishLoad(load, for: key, with: image)
+            }
+            inFlight[key] = load
+            return (ImageWaiter(id: waiterID, key: key, load: load), true)
         }
-        let load = ImageLoad(networkInvalidationToken: networkInvalidationToken(for: key))
-        load.waiterIsForeground[waiterID] = !background
-        load.foregroundWaiterCount = background ? 0 : 1
-        // Detached so the download + decode never inherit (and block) the MainActor
-        // when kicked off from a card's `onAppear`/prefetch. The download is a
-        // cancellable URLSession call and the decode runs off the cooperative pool,
-        // so cancelling this task (last waiter gone) both stops the in-flight
-        // transfer — freeing its connection — and skips the decode.
-        let priority: TaskPriority = background ? .utility : .userInitiated
-        load.task = Task<Void, Never>.detached(priority: priority) { [weak self, weak load] in
+        guard let registration else { return nil }
+        if registration.isNew {
+            installDeadline(for: registration.waiter.load, key: key)
+        }
+        return registration.waiter
+    }
+
+    private func installDeadline(for load: ImageLoad, key: CacheKey) {
+        let deadline = loadDeadlineScheduler { [weak self, weak load] in
             guard let self, let load else { return }
-            let image = await self.performLoad(for: key, load: load)
-            self.finishLoad(load, for: key, with: image)
+            if self.finishLoad(load, for: key, with: nil, expiring: true) {
+                PlozzLog.networking.error("Artwork load exceeded its deadline; retired the shared request")
+            }
         }
-        inFlight[key] = load
-        return ImageWaiter(id: waiterID, key: key, load: load)
+        let installed = lock.withLock {
+            guard inFlight[key] === load, case .pending = load.state else { return false }
+            load.deadline = deadline
+            return true
+        }
+        if !installed { deadline.cancel() }
     }
 
     private func install(
@@ -764,6 +818,7 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
     private func unregisterWaiter(_ waiter: ImageWaiter) {
         var continuation: CheckedContinuation<UIImage?, Never>?
         var taskToCancel: Task<Void, Never>?
+        var deadlineToCancel: DispatchWorkItem?
         lock.lock()
         if let wasForeground = waiter.load.waiterIsForeground.removeValue(forKey: waiter.id) {
             if wasForeground {
@@ -777,6 +832,8 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
             if waiter.load.waiterIsForeground.isEmpty,
                case .pending = waiter.load.state {
                 taskToCancel = waiter.load.task
+                deadlineToCancel = waiter.load.deadline
+                waiter.load.deadline = nil
                 if inFlight[waiter.key] === waiter.load {
                     inFlight[waiter.key] = nil
                 }
@@ -784,17 +841,23 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
         }
         lock.unlock()
         continuation?.resume(returning: nil)
+        deadlineToCancel?.cancel()
         taskToCancel?.cancel()
     }
 
     private func performLoad(for key: CacheKey, load: ImageLoad) async -> UIImage? {
         if Task.isCancelled { return nil }
+        let background = lock.withLock { () -> Bool? in
+            guard inFlight[key] === load, case .pending = load.state else { return nil }
+            return load.foregroundWaiterCount == 0
+        }
+        guard let background else { return nil }
         let data: Data?
         switch key.source {
         case let .url(url):
-            data = await Self.downloadData(key.variant.requestURL(for: url))
+            data = await remoteDataLoader(key.variant.requestURL(for: url))
         case let .network(reference):
-            data = await networkData(for: reference, variant: key.variant, background: load.foregroundWaiterCount == 0)
+            data = await networkData(for: reference, variant: key.variant, background: background)
         }
         guard let data, !Task.isCancelled else { return nil }
         let image = await decodeImageOffPool(
@@ -853,7 +916,7 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
         }
         let limiter = background ? Self.networkBackgroundLimiter : Self.networkForegroundLimiter
         do {
-            let data = try await limiter.run {
+            let data = try await limiter.runUnlessCancelled {
                 try await service.loader.loadArtwork(reference, maximumBytes: 32 * 1024 * 1024)
             }
             guard !data.isEmpty else {
@@ -877,23 +940,45 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
         }
     }
 
-    private func finishLoad(_ load: ImageLoad, for key: CacheKey, with image: UIImage?) {
+    @discardableResult
+    private func finishLoad(
+        _ load: ImageLoad, for key: CacheKey, with image: UIImage?, expiring: Bool = false
+    ) -> Bool {
         var continuations: [CheckedContinuation<UIImage?, Never>] = []
+        var deadline: DispatchWorkItem?
+        var workToCancel: Task<Void, Never>?
+        var decodeToCancel: DecodeJob?
+        var deliveredImage = image
         lock.lock()
-        if case .pending = load.state {
-            load.state = .finished(image)
-            continuations = Array(load.continuations.values)
-            load.continuations.removeAll()
-            load.waiterIsForeground.removeAll()
-            load.foregroundWaiterCount = 0
-            if inFlight[key] === load {
-                inFlight[key] = nil
-            }
+        guard case .pending = load.state, !expiring || inFlight[key] === load else {
+            lock.unlock()
+            return false
+        }
+        // Optional disk persistence must not discard pixels already decoded under this lease.
+        if expiring { deliveredImage = load.decodedImage }
+        load.decodedImage = nil
+        load.state = .finished(deliveredImage)
+        continuations = Array(load.continuations.values)
+        load.continuations.removeAll()
+        load.waiterIsForeground.removeAll()
+        load.foregroundWaiterCount = 0
+        deadline = load.deadline
+        load.deadline = nil
+        if expiring {
+            workToCancel = load.task
+            decodeToCancel = load.decodeJob
+        }
+        if inFlight[key] === load {
+            inFlight[key] = nil
         }
         lock.unlock()
+        deadline?.cancel()
+        workToCancel?.cancel()
+        decodeToCancel?.cancel()
         for continuation in continuations {
-            continuation.resume(returning: image)
+            continuation.resume(returning: deliveredImage)
         }
+        return true
     }
 
     @discardableResult
@@ -921,6 +1006,7 @@ public final class ArtworkImageCache: NSObject, @unchecked Sendable {
             forKey: key.cacheKey,
             cost: cost
         )
+        load.decodedImage = image
         lock.unlock()
         Self.noteStored(cost: cost)
         return true

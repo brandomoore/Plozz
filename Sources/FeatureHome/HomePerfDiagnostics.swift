@@ -1,4 +1,5 @@
 import Foundation
+import CoreModels
 #if canImport(OSLog)
 import OSLog
 #endif
@@ -32,6 +33,7 @@ public enum HomePerfDiagnostics {
     #endif
 
     private static let store = Store()
+    private static let outputQueue = DispatchQueue(label: "com.plozz.homeperf.output", qos: .utility)
 
     /// When the process is launched with `PLZPERF_STDOUT=1`, the sampler mirrors a
     /// compact perf line to stdout each tick so `devicectl device process launch
@@ -85,7 +87,15 @@ public enum HomePerfDiagnostics {
         #if canImport(OSLog)
         logger.notice("\(text, privacy: .public)")
         #endif
-        try? FileHandle.standardOutput.write(contentsOf: Data((text + "\n").utf8))
+        outputQueue.async {
+            if BrowseDiagnostics.isEnabled {
+                // Preserve frame samples in the existing per-launch diagnostic file
+                // when XCTest does not forward the application's console.
+                BrowseDiagnostics.emit(text)
+            } else {
+                try? FileHandle.standardOutput.write(contentsOf: Data((text + "\n").utf8))
+            }
+        }
     }
 
     /// Milliseconds the most recent hero curation took, or `nil` if none yet.

@@ -16,10 +16,10 @@ import Foundation
 /// is *not* serialized onto this actor's executor. Only the cheap permit
 /// bookkeeping (`acquire`/`release`) touches the actor.
 ///
-/// Operations should be cancellation-tolerant: a permit always handed to the
-/// next waiter on `release`, so a cancelled waiter still resumes (and runs its —
-/// idempotent — operation) rather than leaking the permit. Use only for
-/// best-effort background work, never to gate a user-blocking path.
+/// `run` preserves queued work even after cancellation. Use `runUnlessCancelled`
+/// when cancelled waiters must leave the queue without starting their operation.
+/// Admitted operations retain their permit until they return, so cancellation
+/// cannot overbook work that is still draining.
 public actor ConcurrencyLimiter {
     private struct Waiter {
         let id: UUID
@@ -28,6 +28,8 @@ public actor ConcurrencyLimiter {
 
     private var available: Int
     private var waiters: [Waiter] = []
+
+    var pendingWaiterCount: Int { waiters.count }
 
     /// - Parameter limit: maximum number of concurrent operations (clamped to ≥1).
     public init(limit: Int) {
@@ -111,5 +113,22 @@ public actor ConcurrencyLimiter {
         await operation()
         await release()
         return true
+    }
+
+    /// Removes cancelled queued work immediately. Once admitted, the operation
+    /// remains responsible for observing cancellation before its permit is released.
+    public nonisolated func runUnlessCancelled<T: Sendable>(
+        _ operation: @Sendable () async throws -> T
+    ) async throws -> T {
+        guard await acquire(cancellable: true) else { throw CancellationError() }
+        do {
+            try Task.checkCancellation()
+            let result = try await operation()
+            await release()
+            return result
+        } catch {
+            await release()
+            throw error
+        }
     }
 }

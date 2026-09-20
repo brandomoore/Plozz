@@ -579,6 +579,7 @@ public actor IdentityIndex {
     /// only re-adds an account by re-selecting it into `accountsToWarm`, which
     /// happens after this prune, not concurrently with it.
     public func retainAccounts(_ accountIDs: Set<String>) {
+        guard !Task.isCancelled else { return }
         let known = Set(byAccount.keys).union(pendingRebuild.keys)
         for accountID in known where !accountIDs.contains(accountID) {
             removeAccount(accountID)
@@ -620,6 +621,7 @@ public actor IdentityIndex {
     ///   publish a snapshot immediately.
     @discardableResult
     public func restore(from persisted: PersistedIdentityIndex, retaining accountIDs: Set<String>) -> Bool {
+        guard !Task.isCancelled else { return false }
         var restoredAny = false
         for (accountID, entries) in persisted.entriesByAccount {
             guard accountIDs.contains(accountID) else { continue }
@@ -928,14 +930,33 @@ public final class FileIdentityIndexStore: IdentityIndexStoring, @unchecked Send
     }
 
     public func load() -> PersistedIdentityIndex {
-        lock.lock(); defer { lock.unlock() }
-        guard let data = try? Data(contentsOf: url) else { return .empty }
-        return (try? JSONDecoder().decode(PersistedIdentityIndex.self, from: data)) ?? .empty
+        IOTimingDiagnostics.measure(.identityStoreLoad) {
+            lock.lock(); defer { lock.unlock() }
+            guard let data = try? IOTimingDiagnostics.measure(
+                .identityStoreRead, metrics: { .init(bytes: $0.count) },
+                { try Data(contentsOf: url) }
+            ) else { return .empty }
+            return (try? IOTimingDiagnostics.measure(
+                .identityStoreDecode, metrics: { _ in .init(bytes: data.count) }
+            ) {
+                try JSONDecoder().decode(PersistedIdentityIndex.self, from: data)
+            }) ?? .empty
+        }
     }
 
     public func save(_ snapshot: PersistedIdentityIndex) throws {
-        lock.lock(); defer { lock.unlock() }
-        let data = try JSONEncoder().encode(snapshot)
-        try data.write(to: url, options: .atomic)
+        try IOTimingDiagnostics.measure(.identityStoreSave) {
+            lock.lock(); defer { lock.unlock() }
+            let data = try IOTimingDiagnostics.measure(
+                .identityStoreEncode, metrics: { .init(bytes: $0.count) }
+            ) {
+                try JSONEncoder().encode(snapshot)
+            }
+            try IOTimingDiagnostics.measure(
+                .identityStoreWrite, metrics: { _ in .init(bytes: data.count) }
+            ) {
+                try data.write(to: url, options: .atomic)
+            }
+        }
     }
 }

@@ -565,10 +565,19 @@ struct MainTabView: View {
 
     /// Destination currently visible under native sidebar or custom rail.
     private var activeLibraryNavigationDestination: NavigationRailDestination {
-        let current = libraryNavigationEntryOverride ?? resolvedRailSelection
+        activeLibraryNavigationDestination(in: activeNavigationDestinations)
+    }
+
+    private func activeLibraryNavigationDestination(
+        in destinations: [NavigationRailDestination]
+    ) -> NavigationRailDestination {
+        let current = libraryNavigationEntryOverride ?? NavigationRailPlan.resolvedSelection(
+            storedRailSelection,
+            destinations: destinations
+        )
         return standaloneStartupDestination(
             current: current,
-            destinations: activeNavigationDestinations
+            destinations: destinations
         ) ?? current
     }
 
@@ -658,8 +667,11 @@ struct MainTabView: View {
     /// raw value, and `railShell` persists the resolved one when they diverge —
     /// otherwise a library returning later could silently yank the viewer away.
     private var libraryNavigationSelection: Binding<NavigationRailDestination> {
-        Binding(
-            get: { activeLibraryNavigationDestination },
+        // Every rail item reads this binding repeatedly during focus updates.
+        // Resolve its library layout once, while retaining live selection reads.
+        let destinations = activeNavigationDestinations
+        return Binding(
+            get: { activeLibraryNavigationDestination(in: destinations) },
             set: { destination in
                 recordedProcessLaunch = Self.processLaunch
                 releaseExplicitLiveTVEntry(ifLeavingFor: destination)
@@ -671,8 +683,9 @@ struct MainTabView: View {
     }
 
     private var nativeSidebarSelection: Binding<NativeSidebarDestination> {
-        Binding(
-            get: { .content(activeLibraryNavigationDestination) },
+        let destinations = activeNavigationDestinations
+        return Binding(
+            get: { .content(activeLibraryNavigationDestination(in: destinations)) },
             set: { destination in
                 switch destination {
                 case .profile:
@@ -1376,7 +1389,7 @@ struct MainTabView: View {
         .environment(navigationChrome)
     }
 
-    /// Keeps the Live TV destination mounted while another custom-rail
+    /// Keeps Live TV mounted after its first visit while another custom-rail
     /// route is selected. Native TabView already retains visited tabs; matching that
     /// lifetime here preserves in-memory source, Favorites, and filter choices while
     /// `isActive = false` still tears down playback and pending tune work.
@@ -1390,19 +1403,22 @@ struct MainTabView: View {
                 .allowsHitTesting(!showsLiveTV)
                 .accessibilityHidden(showsLiveTV)
 
-            LiveTVShellDestination(
-                isActive: showsLiveTV,
-                profileID: activeProfile.id,
-                preferencesNamespace: liveTVPreferencesNamespace,
-                accountsProviders: accountsProviders,
-                authenticatedHTTPResolver: authenticatedHTTPResolver,
-                connectServer: onAddAccount,
-                didConfigurePlaylist: onConfiguredIPTVPlaylist,
-                completeLibraryChannelPlayback: completeLibraryChannelPlayback,
-                isProfileAuthorized: isLiveTVProfileAuthorized,
-                onExpandedChange: updateLiveTVChrome,
-                onOpenTitle: openTitleFromLiveTV
-            )
+            RetainedLiveTVDestination(isActive: showsLiveTV) {
+                LiveTVShellDestination(
+                    isActive: showsLiveTV,
+                    profileID: activeProfile.id,
+                    preferencesNamespace: liveTVPreferencesNamespace,
+                    accountsProviders: accountsProviders,
+                    authenticatedHTTPResolver: authenticatedHTTPResolver,
+                    connectServer: onAddAccount,
+                    didConfigurePlaylist: onConfiguredIPTVPlaylist,
+                    completeLibraryChannelPlayback: completeLibraryChannelPlayback,
+                    isProfileAuthorized: isLiveTVProfileAuthorized,
+                    onExpandedChange: updateLiveTVChrome,
+                    onOpenTitle: openTitleFromLiveTV
+                )
+            }
+            .id(activeProfile.id)
             .opacity(showsLiveTV ? 1 : 0)
             .disabled(!showsLiveTV)
             .allowsHitTesting(showsLiveTV)

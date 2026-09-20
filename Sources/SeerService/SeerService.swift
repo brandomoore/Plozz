@@ -48,6 +48,7 @@ public final class SeerService {
     /// contexts with nothing to migrate (tests/previews).
     @ObservationIgnored private let legacyCredentialStore: SeerCredentialStoring?
     @ObservationIgnored private let http: HTTPClient
+    @ObservationIgnored let discoveryStatusCoordinator: SeerDiscoveryStatusCoordinator
     /// Invalidates in-flight lifecycle work without changing the revision of the
     /// last successfully adopted connection.
     @ObservationIgnored private var connectionAttemptGeneration: UInt64 = 0
@@ -67,12 +68,18 @@ public final class SeerService {
     public init(
         connectionStore: SeerConnectionStoring,
         legacyCredentialStore: SeerCredentialStoring? = nil,
-        http: HTTPClient = URLSessionHTTPClient()
+        http: HTTPClient = URLSessionHTTPClient(),
+        discoveryStatusResponseBudget: Duration = .seconds(5)
     ) {
         self.connectionStore = connectionStore
         self.legacyCredentialStore = legacyCredentialStore
         self.http = http
-        self.config = Self.loadConfig(from: connectionStore)
+        let config = Self.loadConfig(from: connectionStore)
+        self.config = config
+        self.discoveryStatusCoordinator = SeerDiscoveryStatusCoordinator(
+            client: SeerClient(config: config, http: http),
+            responseBudget: discoveryStatusResponseBudget
+        )
     }
 
     /// Whether a server URL + API key are saved (feature is set up). The hero
@@ -292,6 +299,7 @@ public final class SeerService {
         cachedRadarr = nil
         cachedSonarr = nil
         connectionRevision = UUID()
+        discoveryStatusCoordinator.replaceClient(with: client)
     }
 
     private static func summary(from status: SeerStatus) -> LocalizedStringResource {
@@ -308,13 +316,51 @@ public final class SeerService {
 
     // MARK: - Discovery
 
-    /// Featured hero content: trending titles (movies + TV) from the Seerr
-    /// instance, mapped to `MediaItem`s and capped at `limit`. Returns `[]` when
-    /// unconfigured so the hero seam is inert until a server is connected.
+    /// Featured hero content in upstream order, deduplicated by title identity.
+    /// Fetches up to five pages to backfill unmappable/duplicate entries, returning
+    /// at most `min(limit, 100)` titles. Empty/repeated content or the reported last
+    /// page ends the pool early. Returns `[]` when unconfigured or `limit <= 0`.
+    /// Request/decoding failures propagate; cancellation or a replaced connection
+    /// discards the whole in-flight pool instead of returning stale partial data.
     public func trending(limit: Int) async throws -> [MediaItem] {
-        guard Self.hasUsableEndpoint(config), limit > 0 else { return [] }
-        let page = try await client.trending()
-        return SeerMapper.mediaItems(from: page, limit: limit)
+        let activeConfig = config
+        let activeRevision = connectionRevision
+        guard Self.hasUsableEndpoint(activeConfig), limit > 0 else { return [] }
+        let activeClient = SeerClient(config: activeConfig, http: http)
+        let candidateLimit = min(limit, 100)
+        let maximumPages = 5
+        var collected: [MediaItem] = []
+        var seenItemIDs: Set<String> = []
+        var seenResultIDs: Set<String> = []
+
+        for pageNumber in 1...maximumPages {
+            try Task.checkCancellation()
+            let page = try await activeClient.trending(page: pageNumber)
+            try Task.checkCancellation()
+            guard connectionRevision == activeRevision else { throw CancellationError() }
+            guard page.page == pageNumber, page.totalPages >= 0, page.totalResults >= 0 else {
+                throw AppError.invalidResponse
+            }
+            guard !page.results.isEmpty else { break }
+            guard page.totalPages >= pageNumber else { throw AppError.invalidResponse }
+
+            var madeProgress = false
+            for result in page.results {
+                try Task.checkCancellation()
+                // Rejected titles/people still count as page progress, allowing
+                // a wholly unmappable page to backfill from the next one.
+                if seenResultIDs.insert("\(result.mediaType.lowercased()):\(result.id)").inserted {
+                    madeProgress = true
+                }
+                guard let item = SeerMapper.mediaItem(from: result),
+                      seenItemIDs.insert(item.id).inserted else { continue }
+                madeProgress = true
+                collected.append(item)
+                if collected.count == candidateLimit { return collected }
+            }
+            guard madeProgress, pageNumber < page.totalPages else { break }
+        }
+        return collected
     }
 
     /// Multi-search for movies/TV via Seerr's discovery backend.

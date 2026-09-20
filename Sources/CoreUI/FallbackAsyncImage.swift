@@ -102,7 +102,7 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
             onResolveReference: onResolveReference,
             pinIdentity: pinIdentity,
             sharedResolutionIdentity: sharedResolutionIdentity,
-            content: content,
+            content: .image(content),
             placeholder: placeholder
         )
         #else
@@ -117,6 +117,29 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
         #endif
     }
 
+    #if canImport(UIKit)
+    /// Supplies the resolver's initial cached bitmap directly to native artwork,
+    /// retaining one content identity while an uncached image arrives.
+    func resolvedBitmap<ResolvedContent: View>(
+        @ViewBuilder content: @escaping (UIImage?) -> ResolvedContent
+    ) -> some View {
+        FilteredArtworkImage(
+            references: references,
+            maxAspectRatio: maxAspectRatio,
+            variant: variant,
+            previewVariant: previewVariant,
+            asyncFallbackURL: asyncFallbackURL,
+            preferredArtworkWait: preferredArtworkWait,
+            prefersOnlineArtwork: prefersOnlineArtwork,
+            providerPolicyIdentity: providerPolicyIdentity,
+            onResolveReference: onResolveReference,
+            pinIdentity: pinIdentity,
+            sharedResolutionIdentity: sharedResolutionIdentity,
+            content: .bitmap(content),
+            placeholder: { EmptyView() }
+        )
+    }
+    #endif
 }
 
 /// The layout every card wants for its artwork: resized to **fill** its slot,
@@ -348,6 +371,11 @@ enum ArtworkSeedMemo {
     }
 }
 
+private enum ResolvedArtworkContent<Content: View> {
+    case image((Image) -> Content)
+    case bitmap((UIImage?) -> Content)
+}
+
 private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
     let references: [ArtworkReference]
     let maxAspectRatio: CGFloat?
@@ -381,7 +409,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
     /// the previous show's art showing under the new one's title.
     let pinIdentity: String?
     let sharedResolutionIdentity: String?
-    let content: (Image) -> Content
+    let content: ResolvedArtworkContent<Content>
     let placeholder: () -> Placeholder
 
     @State private var image: UIImage?
@@ -416,7 +444,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         onResolveReference: ((ArtworkReference?) -> Void)? = nil,
         pinIdentity: String? = nil,
         sharedResolutionIdentity: String? = nil,
-        @ViewBuilder content: @escaping (Image) -> Content,
+        content: ResolvedArtworkContent<Content>,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
         self.references = references
@@ -517,19 +545,26 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
 
     var body: some View {
         Group {
-            if let image {
-                content(Image(uiImage: image))
-            } else if resolved {
-                placeholder()
-            } else {
-                palette.fill
+            switch content {
+            case .bitmap(let render):
+                render(image)
+            case .image(let render):
+                if let image {
+                    render(Image(uiImage: image))
+                } else if resolved {
+                    placeholder()
+                } else {
+                    palette.fill
+                }
             }
         }
         #if os(tvOS)
         .onChange(of: image, initial: true) { _, value in
+            guard case .image = content else { return }
             artworkResolution?.image = value
         }
         .onChange(of: resolved, initial: true) { _, value in
+            guard case .image = content else { return }
             artworkResolution?.isResolved = value
         }
         #endif
