@@ -75,6 +75,9 @@ public struct PosterCardView: View {
     /// resting surface on focus (no glass lift, so no glowing frame) and reads as
     /// focused through movement and light instead — see `plozzCardFocusLift`.
     @Environment(\.plozzCardFocusStyle) private var focusStyle
+    @Environment(\.plozzNativeGridFocus) private var nativeGridFocus
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.locale) private var locale
 
     public init(
         item: MediaItem,
@@ -253,20 +256,8 @@ public struct PosterCardView: View {
 
     private var nativePosterCard: some View {
         VStack(spacing: metrics.nativePosterCaptionSpacing) {
-            NativeTVPoster(
-                image: nativePosterArtwork.image,
-                treatment: nativePosterTreatment,
-                aspectRatio: borderlessAspectRatio,
-                fallbackWidth: size.width,
-                title: showsSeriesArtwork ? nil : nativePosterTitle,
-                subtitle: showsSeriesArtwork ? nil : subtitleText,
-                overlay: nativePosterOverlay,
-                focus: $isFocused,
-                source: detailTransitionSource,
-                action: selectCard
-            )
-            .focused($isFocused.focusState)
-            .frame(maxWidth: .infinity)
+            nativePosterSurface
+                .frame(maxWidth: .infinity)
             if !showsSeriesArtwork {
                 SystemPosterCaption(
                     title: nativePosterTitle, subtitle: subtitleText,
@@ -293,6 +284,43 @@ public struct PosterCardView: View {
             .environment(\.artworkResolutionState, nativePosterArtwork)
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private var nativePosterSurface: some View {
+        if nativeGridFocus {
+            NativeTVGridPoster(
+                image: nativePosterArtwork.image,
+                aspectRatio: borderlessAspectRatio,
+                fallbackWidth: size.width,
+                overlay: nativePosterOverlay,
+                isFocused: isFocused,
+                source: detailTransitionSource
+            )
+            .focusableCard(
+                isFocused: $isFocused.focusState,
+                cornerRadius: borderlessCornerRadius,
+                isEnabled: isEnabled,
+                action: selectCard
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: nativePosterTitle.resolve(locale: locale)))
+            .accessibilityValue(Text(verbatim: subtitleText ?? ""))
+        } else {
+            NativeTVPoster(
+                image: nativePosterArtwork.image,
+                treatment: nativePosterTreatment,
+                aspectRatio: borderlessAspectRatio,
+                fallbackWidth: size.width,
+                title: showsSeriesArtwork ? nil : nativePosterTitle,
+                subtitle: showsSeriesArtwork ? nil : subtitleText,
+                overlay: nativePosterOverlay,
+                focus: $isFocused,
+                source: detailTransitionSource,
+                action: selectCard
+            )
+            .focused($isFocused.focusState)
         }
     }
 
@@ -1562,10 +1590,19 @@ private struct CardFocusOwner: ViewModifier {
     let action: () -> Void
     @Environment(\.plozzCardFocusStyle) private var style
     @Environment(\.isEnabled) private var parentEnabled
+    @Environment(\.plozzNativeGridFocus) private var nativeGridFocus
 
     func body(content: Content) -> some View {
         if style.usesSystemEffect {
-            if nativeFocusInContent {
+            if nativeGridFocus {
+                NativeTVGridCard(content: content, isFocused: isFocused.focusState.wrappedValue)
+                    .focusableCard(
+                        isFocused: isFocused.focusState,
+                        cornerRadius: cornerRadius,
+                        isEnabled: isEnabled && parentEnabled,
+                        action: action
+                    )
+            } else if nativeFocusInContent {
                 content.disabled(!isEnabled || !parentEnabled)
             } else {
                 NativeTVCard(

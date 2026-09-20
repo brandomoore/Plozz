@@ -69,9 +69,8 @@ public struct LibraryBrowseView: View {
     public var body: some View {
         // Shared dense "Browse" wall — flexible columns from the live density
         // metrics so each glass tile stretches to fill its column and the wall
-        // scales with the UI-density setting. Search reuses the same spec so the
-        // two surfaces match.
-        let columns = metrics.posterColumns
+        // scales with the UI-density setting, with six columns at default density.
+        let columns = metrics.libraryPosterColumns
         let generation = viewModel.contentGeneration
         return ContentStateView(
             state: viewModel.state,
@@ -105,6 +104,7 @@ public struct LibraryBrowseView: View {
                                     },
                                     onDisappear: { viewModel.itemDisappeared(at: $0, generation: generation) }
                                 )
+                                .environment(\.plozzNativeGridFocus, true)
                                 // Explicit scroll identity so the rail's
                                 // `scrollTo(startIndex)` lands on the right row.
                                 .id(index)
@@ -251,7 +251,7 @@ public struct LibraryBrowseView: View {
     /// How far down (in grid indices) the top of the list must scroll before the
     /// rail reveals — a couple of poster rows, so it only shows up once you're
     /// actually flying through the library rather than sitting at the top.
-    private var railRevealThreshold: Int { max(1, metrics.posterColumns.count) * 2 }
+    private var railRevealThreshold: Int { max(1, metrics.libraryPosterColumns.count) * 2 }
 
     /// The library title and controls scroll with the loaded grid.
     private var header: some View {

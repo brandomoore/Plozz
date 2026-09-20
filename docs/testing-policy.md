@@ -620,6 +620,30 @@ fresh-account resolution and stale-credential rejection. On a Jellyfin server
 with legacy authorization disabled, a selected Music track must start and advance
 past 0:00 rather than fail with `NSURLErrorDomain -1013`.
 
+## Library held-direction navigation
+
+tvOS library grids retain lazy, paged rendering and use six columns at Default
+density; other density presets and Search's column count are unchanged. The
+existing bounded metadata-fetch budgets remain independent of this layout change.
+
+On tvOS, virtualized grid cards keep directional input on SwiftUI's focus owner
+while `TVMediaItemContentConfiguration` supplies native TVUIKit presentation.
+Recycling a focused-control-origin `TVCardView`/`TVPosterView` ended a held Down
+gesture after three or four rows even with all 500 items loaded. Reassigning
+enabled state, adding focus sections and forwarding presses did not correct it.
+Retaining every card corrected the symptom but is not acceptable for large
+libraries. The content-configuration path preserves lazy rendering and permits
+the platform's native fast-scroll index to take focus normally.
+
+`LibraryHeldScrollTests` drives real remote holds through the production grid,
+measures the actual scroll view's offset, checks both framed/borderless native
+presentations with preloaded and paged data, and verifies selecting a real item
+after fast scrolling. Pending metadata must not prevent the native index from
+continuing to scroll. A focused native fast-scroll index is not a lost-focus
+failure; requested focus or loaded-slot counts alone do not prove traversal.
+`NativeGridMediaHostedTests` checks the native presentation and borderless caption
+separation. Ordinary non-grid native lockup controls are unchanged.
+
 ## Extras artwork
 
 Extras rails on tvOS and iOS opt into the shared `CardArtworkPolicy.extra`.

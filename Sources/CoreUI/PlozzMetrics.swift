@@ -169,12 +169,19 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// (see `PlozzTheme.Metrics.headerScaleDamping`) so headers stay anchored.
     public let sectionHeaderFontSize: CGFloat
 
-    /// The poster wall's columns, carrying the scaled gutter. Library and Search
-    /// both use this so they share an identical column count and spacing.
+    /// The general poster wall's columns, carrying the scaled gutter.
     public var posterColumns: [GridItem] {
         Array(
             repeating: GridItem(.flexible(), spacing: gridSpacing, alignment: .top),
             count: posterGridColumns
+        )
+    }
+
+    /// Library grids use a roomier default without changing the other density presets.
+    public var libraryPosterColumns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: gridSpacing, alignment: .top),
+            count: density == .standard ? 6 : posterGridColumns
         )
     }
 

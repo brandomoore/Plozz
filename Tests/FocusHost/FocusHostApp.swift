@@ -7,7 +7,9 @@ import CoreModels
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--family-guidance-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--library-held-scroll-fixture") {
+                LibraryHeldScrollFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--family-guidance-fixture") {
                 FamilyGuidanceFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--native-sidebar-handoff-fixture") {
                 NativeSidebarHandoffFixture()

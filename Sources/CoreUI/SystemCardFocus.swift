@@ -5,6 +5,19 @@ private struct NativeFocusSurfaceKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct NativeGridFocusKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+public extension EnvironmentValues {
+    /// Virtualized grids keep directional holds on SwiftUI's stable focus owner;
+    /// TVUIKit content configurations still provide the native presentation.
+    var plozzNativeGridFocus: Bool {
+        get { self[NativeGridFocusKey.self] }
+        set { self[NativeGridFocusKey.self] = newValue }
+    }
+}
+
 extension EnvironmentValues {
     var plozzNativeFocusSurface: Bool {
         get { self[NativeFocusSurfaceKey.self] }
@@ -18,13 +31,14 @@ public struct PlozzCardFocus: DynamicProperty {
     @State private var observed = false
     @State private var request = Request()
     @Environment(\.plozzCardFocusStyle) private var style
+    @Environment(\.plozzNativeGridFocus) private var nativeGridFocus
 
     public init() {}
 
     public var wrappedValue: Bool {
         get {
             #if os(tvOS)
-            style.usesSystemEffect ? observed : focused
+            usesNativeFocus ? observed : focused
             #else
             focused
             #endif
@@ -41,7 +55,7 @@ public struct PlozzCardFocus: DynamicProperty {
 
     private var usesNativeFocus: Bool {
         #if os(tvOS)
-        style.usesSystemEffect
+        style.usesSystemEffect && !nativeGridFocus
         #else
         false
         #endif
@@ -185,14 +199,19 @@ private struct RestingCardShadow: ViewModifier {
 }
 
 #if os(tvOS)
+import TVUIKit
 import UIKit
 
 /// Geometry only: retain Z until ancestor perspective is applied when capturing
 /// a native focused image for the separate detail-page transition.
 enum NativeFocusProjection {
+    @MainActor
     static func artworkFrame(of view: UIView, in window: UIWindow) -> CGRect? {
         var bounds: CGRect?
-        if let image = view as? UIImageView, image.adjustsImageWhenAncestorFocused {
+        if let media = view as? TVMediaItemContentView,
+           (media.superview as? any NativeGridFocusContainer)?.isMediaFocused == true {
+            bounds = media.focusedFrameGuide.layoutFrame
+        } else if let image = view as? UIImageView, image.adjustsImageWhenAncestorFocused {
             var ancestor: UIView? = image
             while let current = ancestor {
                 if current.isFocused {

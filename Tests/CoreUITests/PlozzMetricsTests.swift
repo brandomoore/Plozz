@@ -53,6 +53,14 @@ final class PlozzMetricsTests: XCTestCase {
         }
     }
 
+    func testLibraryDefaultUsesSixColumnsWithoutChangingOtherDensityPresets() {
+        for density in UIDensity.allCases {
+            let metrics = PlozzMetrics(density: density)
+            XCTAssertEqual(metrics.libraryPosterColumns.count, density == .standard ? 6 : density.posterGridColumns)
+            XCTAssertEqual(metrics.posterColumns.count, density.posterGridColumns)
+        }
+    }
+
     func testNativeCaptionHasNoExtraRestingGapWithoutChangingFocusTravel() {
         XCTAssertEqual(PlozzMetrics.standard.nativePosterCaptionSpacing, 0)
         for density in UIDensity.allCases {
