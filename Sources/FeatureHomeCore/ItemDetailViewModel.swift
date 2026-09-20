@@ -688,7 +688,7 @@ public final class ItemDetailViewModel {
             // Immutable snapshot so the concurrent async-lets below capture a
             // Sendable value (Swift 6 strict-concurrency forbids capturing
             // mutated `var`s into concurrently-executing code).
-            let item = Self.preservingConfirmedAtmos(
+            let item = Self.preservingConfirmedStreamFacts(
                 in: redirected.item,
                 from: state.value?.item
             )
@@ -1626,7 +1626,7 @@ public final class ItemDetailViewModel {
         let redirected = await redirectingSeasonToSeries(fetched, using: provider)
         guard !Task.isCancelled, isCurrent() else { return }
         preselectedSeasonID = redirected.preselectedSeasonID
-        let item = Self.preservingConfirmedAtmos(
+        let item = Self.preservingConfirmedStreamFacts(
             in: redirected.item,
             from: state.value?.item
         )
@@ -2252,7 +2252,7 @@ public final class ItemDetailViewModel {
     /// on the current value being empty/thinner).
     private func adoptSnapshotEnrichments(_ snapshot: DetailSnapshotCache.Snapshot) {
         if case var .loaded(detail) = state {
-            let enriched = Self.preservingConfirmedAtmos(
+            let enriched = Self.preservingConfirmedStreamFacts(
                 in: detail.item,
                 from: snapshot.item
             )
@@ -2357,17 +2357,21 @@ public final class ItemDetailViewModel {
         state = .loaded(detail)
     }
 
-    /// Confirms E-AC-3 JOC by decoding one bounded audio frame in the background.
+    /// Confirms missing source facts with a bounded background probe.
     /// Initial detail rendering and playback never await this; a confirmed result
-    /// only upgrades the already-visible audio badge and persisted snapshot.
+    /// only upgrades the already-visible technical badges and persisted snapshot.
     private func enrichSupplementalStreamFacts(
         for item: MediaItem,
         provider: any MediaProvider,
         sourceGeneration: UInt64
     ) async {
-        guard item.mediaInfo?.audio?.profile?
-                  .localizedCaseInsensitiveContains("atmos") != true,
-              let provider = provider as? any SupplementalStreamFactsProviding else {
+        let providerKind = provider.kind
+        guard let provider = provider as? any SupplementalStreamFactsProviding else {
+            return
+        }
+        if item.mediaInfo?.audio?.profile?.localizedCaseInsensitiveContains("atmos") == true,
+           !(providerKind == .emby
+                && SupplementalStreamProbeRequirements.missingEmbyFacts(in: item.mediaInfo).contains(.hdr10Plus)) {
             return
         }
         guard let facts = await provider.supplementalStreamFacts(for: item),
@@ -2418,22 +2422,28 @@ public final class ItemDetailViewModel {
         }
     }
 
-    /// Retains a previously confirmed Atmos result only for the exact same
+    /// Retains previously confirmed source facts only for the exact same
     /// provider source revision; a replaced file automatically loses the cached
     /// enrichment and is probed again.
-    private static func preservingConfirmedAtmos(
+    private static func preservingConfirmedStreamFacts(
         in fresh: MediaItem,
         from cached: MediaItem?
     ) -> MediaItem {
         guard let cached,
               fresh.id == cached.id,
               let revision = fresh.mediaInfo?.sourceRevision,
-              revision == cached.mediaInfo?.sourceRevision,
-              fresh.mediaInfo?.audio?.codec?.lowercased() == "eac3",
-              cached.mediaInfo?.audio?.profile?.localizedCaseInsensitiveContains("atmos") == true else {
+              revision == cached.mediaInfo?.sourceRevision else {
             return fresh
         }
-        return fresh.confirmingAtmos()
+        var result = fresh
+        if fresh.mediaInfo?.audio?.codec?.lowercased() == "eac3",
+           cached.mediaInfo?.audio?.profile?.localizedCaseInsensitiveContains("atmos") == true {
+            result = result.confirmingAtmos()
+        }
+        if SourceDynamicRange.providerHint(from: cached.mediaInfo) == .hdr10Plus {
+            result = result.confirmingHDR10Plus()
+        }
+        return result
     }
 
     /// Seeds ``sources`` from the merged card's references, stamping the *primary*

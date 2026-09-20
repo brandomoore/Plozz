@@ -1047,6 +1047,10 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
                 audio[targetIndex].isAtmos = true
             }
         }
+        if cachedProbe.completed, cachedProbe.facts?.videoRangeType == "HDR10Plus" {
+            mappedItem = mappedItem.confirmingHDR10Plus()
+            mappedSourceMetadata = mappedSourceMetadata?.confirmingHDR10Plus()
+        }
         let sourceID = source.Id ?? itemID
         let subs = try streams.filter { $0.`Type` == "Subtitle" }.map { stream in
             try map(subtitleStream: stream, itemID: itemID, sourceID: sourceID)
@@ -2229,11 +2233,8 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
 extension JellyfinProvider: SupplementalStreamFactsProviding {
     public func supplementalStreamFacts(for item: MediaItem) async -> ProbedStreamFacts? {
         guard kind == .emby else { return nil }
-        guard item.mediaInfo?.audio?.codec?.lowercased() == "eac3" else { return nil }
-        guard item.mediaInfo?.audio?.profile?
-            .localizedCaseInsensitiveContains("atmos") != true else {
-            return nil
-        }
+        let requirements = SupplementalStreamProbeRequirements.missingEmbyFacts(in: item.mediaInfo)
+        guard !requirements.isEmpty, !Task.isCancelled else { return nil }
         guard let authenticatedStreamProber else { return nil }
 
         var descriptor = await probeDescriptors.descriptor(for: item.id)
@@ -2243,11 +2244,12 @@ extension JellyfinProvider: SupplementalStreamFactsProviding {
             descriptor = await probeDescriptors.descriptor(for: item.id)
         }
         guard let descriptor else { return nil }
+        guard item.selectedVersionID == nil || item.selectedVersionID == descriptor.sourceID else { return nil }
         guard item.mediaInfo?.sourceRevision == nil
                 || item.mediaInfo?.sourceRevision == descriptor.revision else { return nil }
 
-        let cached = await probeDescriptors.cachedResult(for: descriptor.revision)
-        if cached.completed { return cached.facts }
+        let cached = await probeDescriptors.cachedResult(for: descriptor.revision, requirements: requirements)
+        if cached.completed { return Self.supplementalConfirmations(cached.facts, for: item) }
 
         var queryItems = [
             try? AuthenticatedHTTPQueryItem(name: "static", value: "true"),
@@ -2276,9 +2278,20 @@ extension JellyfinProvider: SupplementalStreamFactsProviding {
             resource: resource
         ) else { return nil }
 
-        let facts = await authenticatedStreamProber.probe(locator: locator)
-        await probeDescriptors.store(facts, for: descriptor.revision)
-        return facts
+        let facts = await authenticatedStreamProber.probe(locator: locator, requirements: requirements)
+        guard !Task.isCancelled,
+              await probeDescriptors.descriptor(for: item.id)?.revision == descriptor.revision else { return nil }
+        await probeDescriptors.store(facts, for: descriptor.revision, requirements: requirements)
+        let stored = await probeDescriptors.cachedResult(for: descriptor.revision).facts
+        return Self.supplementalConfirmations(stored, for: item)
+    }
+
+    private static func supplementalConfirmations(_ facts: ProbedStreamFacts?, for item: MediaItem) -> ProbedStreamFacts? {
+        guard var facts else { return nil }
+        if SourceDynamicRange.providerHint(from: item.mediaInfo) == .dolbyVision {
+            facts.videoRangeType = nil
+        }
+        return facts.audioIsAtmos || facts.videoRangeType != nil ? facts : nil
     }
 }
 
