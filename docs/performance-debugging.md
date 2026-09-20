@@ -366,8 +366,9 @@ The visible carousel and its cached candidate pool have separate limits. The
 carousel still defaults to eight slides (configurable from one to twenty).
 Featured and Random request up to 48 raw candidates; each discovery source keeps
 `min(40, max(12, displayedCount * 2))` validated alternatives. Seerr trending
-retrieval paginates with a five-request/100-candidate ceiling instead of silently
-truncating page one. Watched, artwork, library visibility, and deduplication
+retrieval retains its five-request/100-candidate ceiling for legacy callers.
+Production Featured instead blends the profile's enabled metadata discovery
+feeds; Seerr is optional for requests and status. Watched, artwork, library visibility, and deduplication
 rules still apply before a title can become a slide.
 
 `HeroFreshnessSnapshot` ranks discovery candidates by never shown, then least
@@ -394,6 +395,30 @@ eligibility changes override that protection and invalidate stale selections,
 including memoized startup choices. Featured status polling
 refreshes the displayed titles directly, including titles outside trending's
 first page. These policies are shared by tvOS and iOS.
+
+#### Broader Featured discovery
+
+`HeroDiscoveryRuntime` binds public feed candidates to the active profile's
+library copies only after bounded live identity and eligibility checks.
+Cached index hints must not upgrade rejected discovery records back to Play
+through metadata enrichment, CTA classification, or playback selection.
+Discovery-tagged records use only their verified source set; explicit library
+disablement also prunes cached ownership. A failed provider lookup preserves an
+external title, not an invented playable copy.
+
+`HeroDiscoveryService` caches only public, unowned provider results, separately
+from profile watch state and hero exposure. It coalesces identical requests,
+returns completed sources within a 15-second response budget, and retires a
+shared producer after 20 seconds without renewing its lifetime for new callers.
+The admission count includes retired producers until they actually return.
+Transient errors and rate limits retain cached data with bounded backoff; a
+failure must not be presented as an authoritative empty catalog.
+
+Provider selection is part of `HeroConfigurationKey`. In particular, switching
+from one feed to another must not allow a failed refresh to relabel and persist
+the previous feed's candidates under the new selection. Attribution source
+names and per-item URLs remain separate from playable server identity.
+See `Sources/MetadataKit/README.md` for the individual feed and attribution rules.
 
 #### Library-channel identifier validation during Home paging
 

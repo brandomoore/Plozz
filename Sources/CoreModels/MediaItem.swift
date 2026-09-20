@@ -259,6 +259,9 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// External database identifiers (e.g. `["Imdb": "tt0111161", "Tmdb": "278"]`),
     /// used by enrichment services to look up additional ratings/metadata.
     public var providerIDs: [String: String]
+    /// Discovery-feed attribution, independent of playable server ownership.
+    public var discoverySources: [HeroDiscoverySource]
+    public var discoveryURLs: [String: URL]
     /// Whether metadata services may identify this item by a fuzzy title search.
     ///
     /// Exact provider-id lookups remain allowed. Direct-share folders and
@@ -463,6 +466,8 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         logoURL: URL? = nil,
         ratings: [ExternalRating] = [],
         providerIDs: [String: String] = [:],
+        discoverySources: [HeroDiscoverySource] = [],
+        discoveryURLs: [String: URL] = [:],
         allowsTitleBasedMetadataMatching: Bool = true,
         metadataProvenance: MetadataProvenance = MetadataProvenance(),
         artworkSelections: [ArtworkSelection] = [],
@@ -524,6 +529,8 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         self.logoURL = logoURL
         self.ratings = ratings
         self.providerIDs = providerIDs
+        self.discoverySources = HeroDiscoverySource.normalized(discoverySources)
+        self.discoveryURLs = HeroDiscoverySource.validatedURLs(discoveryURLs)
         self.allowsTitleBasedMetadataMatching = allowsTitleBasedMetadataMatching
         self.metadataProvenance = metadataProvenance
         self.artworkSelections = artworkSelections
@@ -568,6 +575,8 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         case seriesID, seasonID, runtime, resumePosition, playedPercentage, isPlayed, hasBeenPlayed
         case posterURL, seriesPosterURL, backdropURL, heroBackdropURL
         case fallbackArtworkURL, logoURL, ratings, providerIDs, metadataProvenance
+        case discoverySources
+        case discoveryURLs
         case allowsTitleBasedMetadataMatching
         case artworkSelections, mediaInfo
         case availability, locallyValidatedPlayableSource
@@ -624,6 +633,13 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         logoURL = try container.decodeIfPresent(URL.self, forKey: .logoURL)
         ratings = try container.decodeIfPresent([ExternalRating].self, forKey: .ratings) ?? []
         providerIDs = try container.decodeIfPresent([String: String].self, forKey: .providerIDs) ?? [:]
+        discoverySources = HeroDiscoverySource.normalized(
+            (try container.decodeIfPresent([String].self, forKey: .discoverySources) ?? [])
+                .compactMap(HeroDiscoverySource.init(rawValue:))
+        )
+        discoveryURLs = HeroDiscoverySource.validatedURLs(
+            try container.decodeIfPresent([String: URL].self, forKey: .discoveryURLs) ?? [:]
+        )
         allowsTitleBasedMetadataMatching = try container.decodeIfPresent(
             Bool.self,
             forKey: .allowsTitleBasedMetadataMatching

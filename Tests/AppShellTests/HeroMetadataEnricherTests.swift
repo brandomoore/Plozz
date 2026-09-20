@@ -91,6 +91,8 @@ final class HeroMetadataEnricherTests: XCTestCase {
             kind: .episode,
             seriesID: "plex-series",
             providerIDs: ["SeriesTmdb": "125988"],
+            discoverySources: [.simkl],
+            discoveryURLs: ["simkl": URL(string: "https://simkl.com/tv/42/show")!],
             sourceAccountID: "plex-account",
             sources: [
                 MediaSourceRef(
@@ -139,6 +141,8 @@ final class HeroMetadataEnricherTests: XCTestCase {
         XCTAssertEqual(result[0].providerID(.tmdb), "episode-4")
         XCTAssertEqual(result[0].providerID(.seriesTmdb), "125988")
         XCTAssertEqual(result[0].providerID(.seriesTvdb), "403245")
+        XCTAssertEqual(result[0].discoverySources, [.simkl])
+        XCTAssertEqual(result[0].discoveryURLs, original.discoveryURLs)
         XCTAssertEqual(result[0].familyGuidance, series.familyGuidance,
                        "The Home slide represents the series while retaining the episode play target.")
     }

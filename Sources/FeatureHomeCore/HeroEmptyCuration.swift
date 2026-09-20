@@ -28,7 +28,8 @@ public enum HeroEmptyCuration {
         watchlist: [MediaItem],
         recentlyAdded: [MediaItem],
         randomLibraries: [HeroRandomLibrary],
-        seerConnected: Bool
+        seerConnected: Bool,
+        featuredDiscoveryEnabled: Bool? = nil
     ) -> Bool {
         guard settings.isActive else { return true }
         for source in settings.sources {
@@ -42,14 +43,10 @@ public enum HeroEmptyCuration {
             case .randomFromLibrary:
                 if !randomLibraries.isEmpty { return false }
             case .featured:
-                // A connected Seerr answering nothing is ambiguous — it may be
-                // reachable and empty, or failing — so it blocks authority rather
-                // than granting it. That distinction is load-bearing for a
-                // Featured-only hero, where featured is the ONLY vote: treating it
-                // as authoritative would let a Seerr outage blank the carousel.
-                // With no Seerr configured there is genuinely no pool, so it
-                // abstains and the other sources decide.
-                if seerConnected { return false }
+                // An enabled external feed may be empty or temporarily failing.
+                // Only an explicitly empty feed selection grants authority.
+                // Legacy callers still use their Seerr connection as that signal.
+                if featuredDiscoveryEnabled ?? seerConnected { return false }
             }
         }
         return true

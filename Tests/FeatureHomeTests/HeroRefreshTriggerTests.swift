@@ -5,6 +5,41 @@ import XCTest
 @testable import FeatureHome
 
 final class HeroRefreshTriggerTests: XCTestCase {
+    func testFeaturedRecommendationsTrackSeedsWhenWatchlistRowIsNotAHeroSource() {
+        var settings = HeroSettings.default
+        settings.sources = [.featured]
+        settings.discoverySources = [.tmdb]
+        let before = HeroRecomputeKey(
+            content: .init(watchlist: [
+                MediaItem(id: "saved", title: "Saved", kind: .movie, providerIDs: ["Tmdb": "1"])
+            ]),
+            settings: settings, randomLibraries: [], discoveryUsesWatchlist: true
+        )
+        let after = HeroRecomputeKey(
+            content: .init(watchlist: [
+                MediaItem(id: "saved", title: "Saved", kind: .movie, providerIDs: ["Tmdb": "2"])
+            ]),
+            settings: settings, randomLibraries: [], discoveryUsesWatchlist: true
+        )
+        XCTAssertNotEqual(before, after)
+        XCTAssertFalse(before.matchesIgnoringExternalRefresh(after))
+        XCTAssertTrue(before.matchesConfiguration(after))
+    }
+
+    func testUnseededDiscoveryDoesNotDependOnWatchlist() {
+        var settings = HeroSettings.default
+        settings.sources = [.featured]
+        settings.discoverySources = [.tvmaze]
+        let before = HeroRecomputeKey(
+            content: .init(), settings: settings, randomLibraries: [], discoveryUsesWatchlist: true
+        )
+        let after = HeroRecomputeKey(
+            content: .init(watchlist: [MediaItem(id: "saved", title: "Saved", kind: .movie)]),
+            settings: settings, randomLibraries: [], discoveryUsesWatchlist: true
+        )
+        XCTAssertEqual(before, after)
+    }
+
     @MainActor
     func testDisabledLibraryRetiresLoadedAndCachedPinsBeforeFreshCuration() {
         var settings = HeroSettings.default

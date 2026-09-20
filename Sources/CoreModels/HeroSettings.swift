@@ -37,6 +37,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
 
     /// Uses unseen/least-recently-shown picks instead of the established Watchlist order.
     public var watchlistDiscoveryEnabled: Bool
+    public var discoverySources: [HeroDiscoverySource]
 
     /// Scores are optional Home chrome, independent of detail-page rating preferences.
     public var showsRatings: Bool
@@ -53,9 +54,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// Seconds between auto-advances (clamped to ``autoAdvanceRange``).
     public var autoAdvanceSeconds: Int
 
-    /// Sensible defaults: hero on, all sources enabled (Featured is inert until
-    /// Seerr exists, so it's safe to list first), a modest rotation, trailers
-    /// off (opt-in), all libraries for Random, gentle auto-advance.
+    /// Hero on, all content categories enabled, a modest rotation, all libraries
+    /// for Random, and gentle auto-advance. Anime discovery remains opt-in.
     public static let `default` = HeroSettings(
         isEnabled: true,
         sources: HeroSourceKind.allCases,
@@ -79,6 +79,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         trailersEnabled: Bool,
         hideWatched: Bool = true,
         watchlistDiscoveryEnabled: Bool = false,
+        discoverySources: [HeroDiscoverySource] = HeroDiscoverySource.defaultSelection,
         showsRatings: Bool = false,
         ratingPreferences: DetailPageSettings = .default,
         randomLibraryKeys: Set<String>,
@@ -94,6 +95,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         self.trailersEnabled = trailersEnabled
         self.hideWatched = hideWatched
         self.watchlistDiscoveryEnabled = watchlistDiscoveryEnabled
+        self.discoverySources = HeroDiscoverySource.normalized(discoverySources)
         self.showsRatings = showsRatings
         self.ratingPreferences = ratingPreferences
         self.randomLibraryKeys = randomLibraryKeys
@@ -104,6 +106,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case isEnabled, sources, maxItems, trailersEnabled, hideWatched, showsRatings
         case watchlistDiscoveryEnabled
+        case discoverySources
         case ratingPreferences
         case randomLibraryKeys, autoAdvance, autoAdvanceSeconds
         case offeredSourcesVersion
@@ -131,6 +134,9 @@ public struct HeroSettings: Codable, Equatable, Sendable {
             watchlistDiscoveryEnabled: value(
                 Bool.self, .watchlistDiscoveryEnabled, d.watchlistDiscoveryEnabled
             ),
+            discoverySources: value(
+                [String].self, .discoverySources, d.discoverySources.map(\.rawValue)
+            ).compactMap(HeroDiscoverySource.init(rawValue:)),
             showsRatings: value(Bool.self, .showsRatings, d.showsRatings),
             ratingPreferences: value(DetailPageSettings.self, .ratingPreferences, d.ratingPreferences),
             randomLibraryKeys: value(Set<String>.self, .randomLibraryKeys, d.randomLibraryKeys),
@@ -185,6 +191,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         try c.encode(trailersEnabled, forKey: .trailersEnabled)
         try c.encode(hideWatched, forKey: .hideWatched)
         try c.encode(watchlistDiscoveryEnabled, forKey: .watchlistDiscoveryEnabled)
+        try c.encode(discoverySources, forKey: .discoverySources)
         try c.encode(showsRatings, forKey: .showsRatings)
         try c.encode(ratingPreferences, forKey: .ratingPreferences)
         try c.encode(randomLibraryKeys, forKey: .randomLibraryKeys)
@@ -202,6 +209,10 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// one enabled source.
     public var isActive: Bool {
         isEnabled && !sources.isEmpty
+    }
+
+    public var usesDiscoveryWatchlistSeeds: Bool {
+        isActive && isEnabled(.featured) && discoverySources.contains(where: \.usesTitleSeeds)
     }
 
     public func shouldShowRatings(for item: MediaItem, spoilerSettings: SpoilerSettings) -> Bool {

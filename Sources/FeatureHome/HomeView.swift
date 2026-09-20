@@ -146,6 +146,8 @@ public struct HomeView: View {
     private let heroIsFrontmost: Bool
     private let heroCurator: HeroCurator
     private let heroFeaturedProvider: FeaturedContentProviding
+    private let heroDiscoveryProvider: HeroDiscoveryContentProviding?
+    private let heroRequestIdentity: @MainActor (MediaItem) -> Bool
     /// Lightweight Seerr-only status polling. Kept separate from the curated
     /// provider so the 30-second CTA refresh never repeats live watch-state lookups.
     private let heroFeaturedStatusProvider: HeroFeaturedStatusProviding
@@ -227,6 +229,7 @@ public struct HomeView: View {
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     @Environment(\.mediaItemActionHandler) private var mediaItemActionHandler
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.locale) private var locale
 
     public init(
         viewModel: HomeViewModel,
@@ -240,6 +243,8 @@ public struct HomeView: View {
         heroRuntime: HomeHeroRuntimeState,
         heroCurator: HeroCurator = HeroCurator(),
         heroFeaturedProvider: @escaping FeaturedContentProviding = HeroFeaturedProvider.none,
+        heroDiscoveryProvider: HeroDiscoveryContentProviding? = nil,
+        heroRequestIdentity: @escaping @MainActor (MediaItem) -> Bool = { _ in true },
         heroFeaturedStatusProvider: HeroFeaturedStatusProviding? = nil,
         heroRandomProvider: @escaping RandomLibraryContentProviding = HeroRandomProvider.none,
         heroArtworkProvider: @escaping HeroArtworkProviding = { item in
@@ -278,6 +283,8 @@ public struct HomeView: View {
         self.heroRuntime = heroRuntime
         self.heroCurator = heroCurator
         self.heroFeaturedProvider = heroFeaturedProvider
+        self.heroDiscoveryProvider = heroDiscoveryProvider
+        self.heroRequestIdentity = heroRequestIdentity
         self.heroFeaturedStatusProvider = heroFeaturedStatusProvider ?? { items in
             await heroFeaturedProvider(items.count)
         }
@@ -368,6 +375,7 @@ public struct HomeView: View {
                 externalRefreshRevision: heroRuntime.externalRefreshRevision,
                 freshnessRevision: heroRuntime.freshnessRefresh.revision,
                 disabledLibraryKeys: visibility.visibility.disabledKeys,
+                discoveryUsesWatchlist: heroDiscoveryProvider != nil,
                 awaitingLiveHome: viewModel.isShowingCachedSnapshot
             )
             // Seed the hero synchronously from the already-loaded sources
@@ -452,6 +460,7 @@ public struct HomeView: View {
                                 onSelect: onSelectItem,
                                 onPlay: onPlayItem,
                                 seerConnected: heroSeerConnected,
+                                canRequestDiscoveryItem: heroRequestIdentity,
                                 onRequest: onRequestItem,
                                 requestAvailability: onRequestAvailability,
                                 onRequestSeasons: onRequestSeasonsItem,
@@ -889,7 +898,7 @@ public struct HomeView: View {
             heroRuntime.cachedKey == HeroConfigurationKey(settings: settings)
             && heroRuntime.cachedDisabledLibraryKeys == key.disabledLibraryKeys
         let cachedFeatured = seedMatchesConfiguration
-            ? heroRuntime.cachedItems.filter { $0.availability != nil }
+            ? heroRuntime.cachedItems.filter { $0.availability != nil || !$0.discoverySources.isEmpty }
             : []
         // Reuse the Random source's retained draw. Recomputation is triggered by
         // things the viewer never asked for, and re-shuffling every visible library
@@ -913,7 +922,21 @@ public struct HomeView: View {
                 watchMutations: durableWatchMutations + heroRuntime.watchMutations,
                 freshness: viewModel.heroFreshnessSnapshot(),
                 featuredProvider: { limit in
-                    let fresh = await heroFeaturedProvider(limit)
+                    let fresh: [MediaItem]
+                    if let heroDiscoveryProvider {
+                        guard !settings.discoverySources.isEmpty else { return [] }
+                        fresh = await heroDiscoveryProvider(
+                            HeroDiscoveryRequest(
+                                limit: limit,
+                                language: locale.language.languageCode?.identifier ?? "en",
+                                region: locale.region?.identifier ?? "US",
+                                seeds: content.watchlist
+                            ),
+                            settings.discoverySources
+                        )
+                    } else {
+                        fresh = await heroFeaturedProvider(limit)
+                    }
                     return fresh.isEmpty
                         ? Array(cachedFeatured.prefix(limit))
                         : fresh
@@ -927,7 +950,7 @@ public struct HomeView: View {
                 artworkValidator: heroArtworkValidator
             )
         }
-        let items = result.items
+        var items = result.items
         guard !Task.isCancelled else {
             let elapsedMS = Int(Date().timeIntervalSince(started) * 1_000)
             PlozzLog.boot("HomeHero.curate CANCEL ms=\(elapsedMS)")
@@ -939,7 +962,9 @@ public struct HomeView: View {
             watchlist: content.watchlist,
             recentlyAdded: content.latest,
             randomLibraries: randomLibraries,
-            seerConnected: heroSeerConnected
+            seerConnected: heroSeerConnected,
+            featuredDiscoveryEnabled: heroDiscoveryProvider == nil
+                ? nil : !settings.discoverySources.isEmpty
         )
         if items.isEmpty,
            !freshIsAuthoritative,
@@ -959,6 +984,11 @@ public struct HomeView: View {
         // Mixed/local heroes stay on their fixed placeholder until presentation
         // metadata—including shared cached ratings—is complete, then publish once.
         // This prevents badges and labels changing underneath the viewer.
+        if heroSeerConnected {
+            let statuses = await heroFeaturedStatusProvider(items)
+            guard !Task.isCancelled else { return }
+            items = HeroDiscoveryStatus.merging(statuses, into: items)
+        }
         let enriched = await heroMetadataEnricher(items)
         guard !Task.isCancelled else { return }
         let stableItems = heroCurator.deduplicating(enriched)
@@ -1235,6 +1265,7 @@ struct HeroRecomputeKey: Equatable {
     let externalRefreshRevision: Int
     let freshnessRevision: Int
     let disabledLibraryKeys: Set<String>
+    let discoverySeeds: [HeroDiscoveryRequest.SeedIdentity]
     let awaitingLiveHome: Bool
 
     init(
@@ -1244,6 +1275,7 @@ struct HeroRecomputeKey: Equatable {
         externalRefreshRevision: Int = 0,
         freshnessRevision: Int = 0,
         disabledLibraryKeys: Set<String> = [],
+        discoveryUsesWatchlist: Bool = false,
         awaitingLiveHome: Bool = false
     ) {
         let activeSources = settings?.isActive == true ? settings?.sources ?? [] : []
@@ -1274,6 +1306,8 @@ struct HeroRecomputeKey: Equatable {
             ? externalRefreshRevision : 0
         self.freshnessRevision = activeSources.isEmpty ? 0 : freshnessRevision
         self.disabledLibraryKeys = activeSources.isEmpty ? [] : disabledLibraryKeys
+        discoverySeeds = discoveryUsesWatchlist && settings?.usesDiscoveryWatchlistSeeds == true
+            ? HeroDiscoveryRequest(seeds: content.watchlist).seedIdentities : []
         self.awaitingLiveHome = activeSources == [.featured]
             ? false
             : awaitingLiveHome
@@ -1292,6 +1326,7 @@ struct HeroRecomputeKey: Equatable {
             && configuration == other.configuration
             && freshnessRevision == other.freshnessRevision
             && disabledLibraryKeys == other.disabledLibraryKeys
+            && discoverySeeds == other.discoverySeeds
             && awaitingLiveHome == other.awaitingLiveHome
     }
 

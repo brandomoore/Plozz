@@ -1,16 +1,13 @@
 import Foundation
 import CryptoKit
 
-/// How the optional TMDb tier is reached. TMDb's terms forbid embedding an API key
-/// in an open-source/client app, so Plozz never ships one. Instead it supports three
-/// *maintainer-controlled* (never user-facing) modes, the user-supplied BYOK mode,
-/// plus "off":
+/// How the optional TMDb tier is reached. Maintainer builds include the app's
+/// configured read token; a proxy or the user's own key can override that path.
 ///
 ///  - ``proxy``: point at a self-hostable caching proxy that holds ONE TMDb key
-///    server-side (terms-compliant) and caches responses at the edge. This is the
-///    scalable, no-BYOK default for movie/western-TV backdrops, logos and stills.
-///  - ``directToken``: a raw v4 read token, used only for the maintainer's own
-///    local/TestFlight builds (never committed). Convenient, not for distribution.
+///    server-side and caches responses at the edge.
+///  - ``directToken``: the configured app-level v4 read token, supplied at build
+///    time rather than committed to source.
 ///  - ``userToken``: the **Step 9 bring-your-own-key** mode — a v4 read token the
 ///    *user* entered in Settings, held in the Keychain. Reached exactly like
 ///    ``directToken`` (direct to TMDb with a bearer), but distinguished as its own
@@ -54,9 +51,8 @@ public enum TMDbAccess: Sendable, Equatable {
 
 /// Resolves how external metadata providers are reached, from the app bundle.
 ///
-/// Everything here is keyless *to the user*: the only configurable values are
-/// maintainer infrastructure (a proxy URL) or a local-only token, both optional
-/// and absent from the public build — which still gets the full keyless backbone.
+/// The user need not supply a key: configured app credentials are bundled at
+/// build time. Every external provider remains optional and has fallbacks.
 public struct MetadataProviderConfig: Sendable {
     public var tmdb: TMDbAccess
 
@@ -65,7 +61,7 @@ public struct MetadataProviderConfig: Sendable {
     }
 
     /// Reads configuration from the app's Info.plist. A `TMDBProxyBaseURL` wins
-    /// (scalable, compliant); otherwise a local `TMDBBearerToken` is honored; with
+    /// when configured; otherwise the bundled `TMDBBearerToken` is honored; with
     /// neither, the TMDb tier is disabled and the keyless providers carry the app.
     public static func resolved(bundle: Bundle = .main) -> MetadataProviderConfig {
         if let proxy = sanitized(bundle.object(forInfoDictionaryKey: "TMDBProxyBaseURL") as? String),

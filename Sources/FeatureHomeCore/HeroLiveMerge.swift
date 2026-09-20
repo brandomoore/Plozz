@@ -284,6 +284,21 @@ public enum HeroLiveMerge {
     ) -> MediaItem {
         guard fresh.id == showing.id || !isPinned else {
             var kept = showing
+            if !fresh.discoverySources.isEmpty {
+                if fresh.locallyValidatedPlayableSource,
+                   let retained = fresh.sources.first(where: {
+                       $0.accountID == showing.sourceAccountID && $0.itemID == showing.id
+                   }) {
+                    kept.sources = fresh.sources
+                    kept = kept.selectingSource(retained)
+                    kept.availability = nil
+                    kept.downloadProgress = nil
+                } else {
+                    kept = kept.removingDiscoveryOwnership()
+                    kept.availability = fresh.availability ?? .unknown
+                    kept.downloadProgress = fresh.downloadProgress
+                }
+            }
             kept.fillingMissingPresentation(from: fresh)
             return kept
         }

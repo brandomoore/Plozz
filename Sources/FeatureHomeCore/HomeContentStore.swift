@@ -114,6 +114,7 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
     public var maxItems: Int
     public var hideWatched: Bool
     public var watchlistDiscoveryEnabled: Bool
+    public var discoverySources: [HeroDiscoverySource]
     /// The libraries the viewer restricted the Random source to. Empty means "all
     /// currently-visible libraries". Included because narrowing it is a request
     /// for different titles — unlike the *resolved* library list, which changes
@@ -126,6 +127,7 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
             maxItems = 0
             hideWatched = false
             watchlistDiscoveryEnabled = false
+            discoverySources = []
             randomLibraryKeys = []
             return
         }
@@ -134,13 +136,14 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
         hideWatched = settings.hideWatched
         watchlistDiscoveryEnabled = settings.isEnabled(.watchlist)
             && settings.watchlistDiscoveryEnabled
+        discoverySources = settings.isEnabled(.featured) ? settings.discoverySources : []
         randomLibraryKeys = settings.isEnabled(.randomFromLibrary)
             ? settings.randomLibraryKeys
             : []
     }
 
     private enum CodingKeys: String, CodingKey {
-        case sources, maxItems, hideWatched, randomLibraryKeys, watchlistDiscoveryEnabled
+        case sources, maxItems, hideWatched, randomLibraryKeys, watchlistDiscoveryEnabled, discoverySources
     }
 
     /// Lenient, like ``HeroSettings``: a persisted key written before a field
@@ -154,6 +157,11 @@ public struct HeroConfigurationKey: Codable, Hashable, Sendable {
         watchlistDiscoveryEnabled = try container.decodeIfPresent(
             Bool.self, forKey: .watchlistDiscoveryEnabled
         ) ?? false
+        let discoveryNames = try container.decodeIfPresent([String].self, forKey: .discoverySources)
+            ?? HeroDiscoverySource.defaultSelection.map(\.rawValue)
+        discoverySources = sources.contains(.featured)
+            ? HeroDiscoverySource.normalized(discoveryNames.compactMap(HeroDiscoverySource.init(rawValue:)))
+            : []
         randomLibraryKeys =
             ((try? container.decodeIfPresent(
                 Set<String>.self,

@@ -27,6 +27,7 @@ public extension MediaItem {
         indexedSources: (MediaItem) -> [MediaSourceRef],
         capabilities: MediaCapabilities? = nil
     ) -> MediaItem? {
+        guard discoverySources.isEmpty else { return nil }
         // Only a discovery row is a candidate: an ordinary library item is already
         // pointed at its own server, and `availability` is what marks the difference.
         guard isNotInLibraryDiscovery else { return nil }

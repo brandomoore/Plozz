@@ -35,6 +35,9 @@ public struct HeroMetadataEnricher: Sendable {
         let targets = Dictionary(
             uniqueKeysWithValues: items.indices.compactMap { index -> (Int, MediaItem)? in
                 let item = items[index]
+                guard item.discoverySources.isEmpty || item.locallyValidatedPlayableSource else {
+                    return nil
+                }
                 let target = targetSelector(item)
                 guard let accountID = target.sourceAccountID,
                       let provider = providersByAccount[accountID] else {
@@ -123,8 +126,16 @@ public struct HeroMetadataEnricher: Sendable {
         var enriched = items
         for (index, detail) in details {
             let originalProviderIDs = enriched[index].providerIDs
+            let discoverySources = enriched[index].discoverySources
+            let discoveryURLs = enriched[index].discoveryURLs
             let originalCarriesSeriesIDs = enriched[index].kind == .series
             if var playTarget = detail.playTarget {
+                playTarget.discoverySources = HeroDiscoverySource.normalized(
+                    playTarget.discoverySources + discoverySources
+                )
+                playTarget.discoveryURLs = HeroDiscoverySource.validatedURLs(
+                    playTarget.discoveryURLs.merging(discoveryURLs) { existing, _ in existing }
+                )
                 if playTarget.sourceAccountID == nil,
                    let sourceAccountID = detail.root.sourceAccountID {
                     playTarget = playTarget.taggingSource(sourceAccountID)

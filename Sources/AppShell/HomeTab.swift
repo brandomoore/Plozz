@@ -241,12 +241,13 @@ struct HomeTab: View {
                 heroIsFrontmost: isActiveTab && path.isEmpty
                     && playRequest == nil && resumePrompt == nil,
                 heroRuntime: heroRuntime,
-                heroFeaturedProvider: makeHeroFeaturedProvider(
-                    seer: seer,
+                heroDiscoveryProvider: makeHeroDiscoveryProvider(
                     accounts: accounts,
                     hideWatched: heroSettings.settings.hideWatched,
+                    visibility: homeVisibility,
                     identitySources: identitySources
                 ),
+                heroRequestIdentity: { seer.hasRequestIdentity(for: $0) },
                 heroFeaturedStatusProvider: makeHeroFeaturedStatusProvider(
                     seer: seer
                 ),

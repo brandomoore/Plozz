@@ -53,7 +53,8 @@ func resolveOptionalProvider(_ accountID: String, in accounts: [ResolvedAccount]
     accounts.first(where: { $0.account.id == accountID })?.provider
 }
 
-/// Builds the Home hero's **featured** provider from the Seerr service: trending
+/// Legacy Seerr-only provider. Production Featured uses `makeHeroDiscoveryProvider`.
+/// Builds trending
 /// titles (movies + TV) that may live outside the user's library. Returns `[]`
 /// when Seerr is unconfigured or the fetch fails, so the `.featured` hero source
 /// stays inert until a server is connected — exactly the seam `HeroCurator`
@@ -92,16 +93,23 @@ func makeHeroFeaturedStatusProvider(
     seer: SeerService
 ) -> HeroFeaturedStatusProviding {
     { items in
-        var refreshed: [MediaItem] = []
-        for item in items {
-            guard !Task.isCancelled else { return [] }
-            guard let (status, progress) = await seer.availability(for: item) else { continue }
-            var updated = item
-            updated.availability = status
-            updated.downloadProgress = progress
-            refreshed.append(updated)
-        }
-        return refreshed
+        await seer.availabilityUpdates(for: items)
+    }
+}
+
+func makeHeroDiscoveryProvider(
+    accounts: [ResolvedAccount],
+    hideWatched: Bool,
+    visibility: HomeLibraryVisibilityModel,
+    identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef]
+) -> HeroDiscoveryContentProviding {
+    let runtime = HeroDiscoveryRuntime(accounts: accounts, identitySources: identitySources)
+    return { request, sources in
+        let currentVisibility = await visibility.visibility
+        return await runtime.candidates(
+            request, sources: sources, hideWatched: hideWatched,
+            visibility: currentVisibility
+        )
     }
 }
 

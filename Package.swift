@@ -378,7 +378,8 @@ let package = Package(
         ),
         .target(
             name: "HeroUI",
-            dependencies: ["CoreModels", "CoreUI", "FeatureHomeCore", "MetadataKit"]
+            dependencies: ["CoreModels", "CoreUI", "FeatureHomeCore", "MetadataKit"],
+            resources: [.process("Resources")]
         ),
         .target(
             name: "FeatureHome",
@@ -651,6 +652,7 @@ let package = Package(
                 "CoreModels",
                 "CoreNetworking",
                 "CoreUI",
+                "MetadataKit",
                 "FeatureAuthCore",
                 // The universal watchlist runtime lives here so tvOS and iOS share
                 // one implementation instead of two 560-line copies.

@@ -1316,8 +1316,12 @@ public final class HomeViewModel {
         }
         let stored: [MediaItem]
         if let pool = contentStore.loadHeroCandidatePool(for: key) {
+            let activeAccounts = Set(accounts.map(\.account.id))
             let rehydratedPool = pool.durable().mapItems { item in
-                mediaItemActionHandler?.rehydratePersistedArtwork([item]).first ?? item
+                let rehydrated = mediaItemActionHandler?.rehydratePersistedArtwork([item]).first ?? item
+                return Self.scopedCachedDiscovery(
+                    rehydrated, activeAccounts: activeAccounts, visibility: visibility
+                )
             }
             stored = rehydratedPool.select(
                 settings: settings,
@@ -1348,6 +1352,35 @@ public final class HomeViewModel {
         if cachedHeroSelections.count >= 8 { cachedHeroSelections.removeAll() }
         cachedHeroSelections[selectionKey] = rehydrated
         return rehydrated.isEmpty ? nil : rehydrated
+    }
+
+    private static func scopedCachedDiscovery(
+        _ item: MediaItem, activeAccounts: Set<String>, visibility: HomeLibraryVisibility
+    ) -> MediaItem {
+        guard !item.discoverySources.isEmpty, item.locallyValidatedPlayableSource else { return item }
+        let references: [MediaSourceRef]
+        if item.sources.isEmpty, let accountID = item.sourceAccountID {
+            references = [.init(
+                accountID: accountID, itemID: item.id, libraryID: item.libraryID, kind: item.kind
+            )]
+        } else {
+            references = item.sources
+        }
+        let eligible = references.filter { source in
+            guard activeAccounts.contains(source.accountID),
+                  source.kind == nil || source.kind == item.kind else { return false }
+            let libraryID = source.libraryID
+                ?? (source.accountID == item.sourceAccountID && source.itemID == item.id ? item.libraryID : nil)
+            if let libraryID { return visibility.isEnabled("\(source.accountID):\(libraryID)") }
+            return !visibility.disabledKeys.contains { $0.hasPrefix("\(source.accountID):") }
+        }
+        guard let first = eligible.first else { return item.removingDiscoveryOwnership() }
+        var scoped = item
+        scoped.sources = eligible
+        if !eligible.contains(where: { $0.accountID == item.sourceAccountID && $0.itemID == item.id }) {
+            scoped = scoped.selectingSource(first)
+        }
+        return scoped
     }
 
     public func heroFreshnessSnapshot() -> HeroFreshnessSnapshot {
