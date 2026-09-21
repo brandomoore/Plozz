@@ -1,18 +1,17 @@
 import Foundation
 
 public enum HeroDiscoverySource: String, CaseIterable, Codable, Hashable, Sendable, Identifiable {
-    case tmdb, simkl, anilist, tvdb, tvmaze
+    case tmdb, anilist, tvdb, tvmaze
 
     public var id: String { rawValue }
     public var usesTitleSeeds: Bool { false }
 
-    /// Anime and Simkl's visibly credited trends are explicit choices.
+    /// Anime discovery is an explicit choice.
     public static let defaultSelection: [HeroDiscoverySource] = [.tmdb, .tvdb, .tvmaze]
 
     public var displayName: String {
         switch self {
         case .tmdb: return "TMDB"
-        case .simkl: return "Simkl"
         case .anilist: return "AniList"
         case .tvdb: return "TheTVDB"
         case .tvmaze: return "TVmaze"
@@ -22,7 +21,6 @@ public enum HeroDiscoverySource: String, CaseIterable, Codable, Hashable, Sendab
     public var detail: LocalizedStringResource {
         switch self {
         case .tmdb: return "Recent popular movies and shows, weekly trends, and currently airing TV."
-        case .simkl: return "Movies and shows people are watching this week."
         case .anilist: return "Trending and seasonal anime."
         case .tvdb: return "Movies and shows from TheTVDB's catalog."
         case .tvmaze: return "TV premieres and returning shows."
@@ -32,7 +30,6 @@ public enum HeroDiscoverySource: String, CaseIterable, Codable, Hashable, Sendab
     public var attributionURL: URL {
         switch self {
         case .tmdb: return URL(string: "https://www.themoviedb.org")!
-        case .simkl: return URL(string: "https://simkl.com")!
         case .anilist: return URL(string: "https://anilist.co")!
         case .tvdb: return URL(string: "https://thetvdb.com")!
         case .tvmaze: return URL(string: "https://www.tvmaze.com")!
@@ -67,9 +64,8 @@ public enum HeroDiscoverySource: String, CaseIterable, Codable, Hashable, Sendab
 /// Providers may additionally admit older series with verified current airings.
 public struct HeroDiscoveryRecency: Hashable, Sendable {
     public static let `default` = HeroDiscoveryRecency()
-    /// Retires older feed policies and pools that inferred Featured provenance
-    /// from availability alone.
-    public static let contentVersion = 2
+    /// Retires cached pools containing removed feeds or older eligibility policies.
+    public static let contentVersion = 3
     public let years: Int
 
     public init(years: Int = 2) {

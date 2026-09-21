@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 import RatingsService
 
@@ -20,11 +21,13 @@ public struct HeroMetadataEnricher: Sendable {
     private let providersByAccount: [String: any MediaProvider]
     private let targetSelector: @Sendable (MediaItem) -> MediaItem
     private let ratingsProvider: any ExternalRatingsProviding
+    private let requestIdentityResolver: (@Sendable (MediaItem) async -> String?)?
 
     public init(
         accounts: [ResolvedAccount],
         targetSelector: @escaping @Sendable (MediaItem) -> MediaItem,
-        ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider()
+        ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider(),
+        requestIdentityResolver: (@Sendable (MediaItem) async -> String?)? = nil
     ) {
         providersByAccount = Dictionary(
             accounts.map { ($0.account.id, $0.provider) },
@@ -32,6 +35,7 @@ public struct HeroMetadataEnricher: Sendable {
         )
         self.targetSelector = targetSelector
         self.ratingsProvider = ratingsProvider
+        self.requestIdentityResolver = requestIdentityResolver
     }
 
     /// Scoped adapter for callers whose injected enrichment closure predates the
@@ -45,9 +49,11 @@ public struct HeroMetadataEnricher: Sendable {
     }
 
     public func enrich(
-        _ items: [MediaItem],
+        _ originalItems: [MediaItem],
         preservingPinnedSeries: PinnedSeriesProvider? = nil
     ) async -> [MediaItem] {
+        let items = await resolvingRequestIdentities(in: originalItems)
+        guard !Task.isCancelled else { return originalItems }
         let targets = Dictionary(
             uniqueKeysWithValues: items.indices.compactMap { index -> (Int, MediaItem)? in
                 let item = items[index]
@@ -227,6 +233,46 @@ public struct HeroMetadataEnricher: Sendable {
             }
         }
         return await applyingCachedRatings(to: enriched)
+    }
+
+    private func resolvingRequestIdentities(in items: [MediaItem]) async -> [MediaItem] {
+        guard let resolver = requestIdentityResolver, !Task.isCancelled else { return items }
+        let candidates = items.indices.filter { index in
+            let item = items[index]
+            return !item.locallyValidatedPlayableSource
+                && (item.availability != nil || !item.discoverySources.isEmpty)
+                && (item.kind == .movie || item.kind == .series)
+                && item.allowsTitleBasedMetadataMatching
+                && item.providerID(.tmdb) == nil
+        }
+        guard !candidates.isEmpty, !Task.isCancelled else { return items }
+        return await withTaskGroup(of: (Int, String?).self) { group in
+            var next = 0
+            func enqueue(_ index: Int) {
+                group.addTask { (index, await resolver(items[index])) }
+            }
+            while next < min(4, candidates.count) {
+                enqueue(candidates[next])
+                next += 1
+            }
+            var enriched = items
+            while let (index, resolvedID) = await group.next() {
+                guard !Task.isCancelled else {
+                    group.cancelAll()
+                    return items
+                }
+                if let resolvedID, let numericID = Int(resolvedID), numericID > 0 {
+                    enriched[index].providerIDs[ProviderIDNamespace.tmdb.canonicalKey] = resolvedID
+                } else {
+                    PlozzLog.app.debug("Hero discovery: request identity could not be resolved.")
+                }
+                if next < candidates.count {
+                    enqueue(candidates[next])
+                    next += 1
+                }
+            }
+            return enriched
+        }
     }
 
     private static func preservesVerifiedSeries(

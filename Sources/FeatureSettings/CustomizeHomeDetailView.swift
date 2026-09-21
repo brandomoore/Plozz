@@ -265,7 +265,7 @@ struct CustomizeHomeDetailView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("Show discovery sources", isOn: $hero.settings.showsDiscoverySources)
                         .toggleStyle(SettingsSwitchToggleStyle())
-                    Text("Show the catalogs behind each title. Titles from Simkl always show its required credit, even when this is off.")
+                    Text("Show the catalogs behind each title.")
                         .settingsHelperText()
                         .fixedSize(horizontal: false, vertical: true)
                 }

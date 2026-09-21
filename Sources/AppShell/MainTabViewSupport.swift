@@ -262,7 +262,8 @@ func makeHeroWatchStateRefresher(
 func makeHeroMetadataEnricher(
     accounts: [ResolvedAccount],
     identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef],
-    ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider()
+    ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider(),
+    seer: SeerService? = nil
 ) -> @Sendable ([MediaItem]) async -> [MediaItem] {
     let enricher = HeroMetadataEnricher(
         accounts: accounts,
@@ -273,7 +274,11 @@ func makeHeroMetadataEnricher(
                 identitySources: identitySources
             )
         },
-        ratingsProvider: ratingsProvider
+        ratingsProvider: ratingsProvider,
+        requestIdentityResolver: { item in
+            guard await seer?.isConfigured == true else { return nil }
+            return await ExternalTitleMetadataResolver.shared.tmdbID(for: item)
+        }
     )
     return { await enricher.enrich($0) }
 }

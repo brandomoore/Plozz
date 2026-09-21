@@ -11,7 +11,6 @@ public enum ProductionHeroDiscovery {
         let tvdb = await tvdbProviders.provider(config: tvdbConfig)
         return [
             TMDbDiscoveryProvider(access: providerConfig.tmdb),
-            SimklDiscoveryProvider(),
             AniListDiscoveryProvider(),
             tvdb,
             TVmazeDiscoveryProvider()

@@ -264,7 +264,8 @@ struct HomeTab: View {
                 heroMetadataEnricher: makeHeroMetadataEnricher(
                     accounts: accounts,
                     identitySources: identitySources,
-                    ratingsProvider: ratingsProvider
+                    ratingsProvider: ratingsProvider,
+                    seer: seer
                 ),
                 heroTrailerResolver: makeHeroTrailerResolver(),
                 homePerfOverlayEnabled: homePerfOverlayEnabled,

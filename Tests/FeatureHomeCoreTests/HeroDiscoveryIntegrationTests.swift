@@ -171,7 +171,7 @@ final class HeroDiscoveryIntegrationTests: XCTestCase {
         let original = MediaItem(
             id: "discovery", title: "Original", kind: .movie,
             posterURL: URL(string: "https://images.example.test/poster.jpg"),
-            providerIDs: ["Tmdb": "42"], discoverySources: [.simkl],
+            providerIDs: ["Tmdb": "42"], discoverySources: [.tvdb],
             availability: .unknown, locallyValidatedPlayableSource: false
         )
         let status = MediaItem(
@@ -185,7 +185,7 @@ final class HeroDiscoveryIntegrationTests: XCTestCase {
         XCTAssertEqual(result.kind, .movie)
         XCTAssertEqual(result.providerIDs, original.providerIDs)
         XCTAssertEqual(result.posterURL, original.posterURL)
-        XCTAssertEqual(result.discoverySources, [.simkl])
+        XCTAssertEqual(result.discoverySources, [.tvdb])
         XCTAssertEqual(result.availability, .processing)
         XCTAssertEqual(result.downloadProgress, 0.4)
         XCTAssertFalse(result.locallyValidatedPlayableSource)

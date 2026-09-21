@@ -32,7 +32,7 @@ load-bearing.
   library is enriched with a one-time burst of calls, then effectively
   none.
 - `MetadataHTTP` — internal lightweight `URLSession` transport for enrichment.
-- `HeroDiscoveryProviding` — separate candidate-feed seam for TMDB, Simkl,
+- `HeroDiscoveryProviding` — separate candidate-feed seam for TMDB,
   AniList, TheTVDB, and TVmaze. It does not call Trakt.
 - `HeroDiscoveryService` — bounded, coalesced public-feed reads, provider-level
   caching/backoff, and interleaved deduplication. Per-profile watch state and
@@ -52,30 +52,37 @@ currently airing series in five requests. All-time top-rated and watchlist-based
 recommendation feeds are not used. Older series qualify only with current airing
 evidence: TMDB's next-seven-day feed, AniList's next episode, or TVmaze's
 today/tomorrow season premieres. Their original release years remain unchanged.
-Simkl supplies weekly watcher trends filtered to recent releases and is opt-in.
-AniList supplies seasonal/trending anime and is also opt-in. TheTVDB supplies
+AniList supplies seasonal/trending anime and is opt-in. TheTVDB supplies
 current-year catalog browsing, with response dates checked against the same
 release policy. No provider adds per-title detail requests to establish recency.
 
 Discovery provenance is retained on `MediaItem.discoverySources`. Hero source
-labels are a per-profile option, off by default, while Simkl's required
-"Simkl Trending" credit always appears when its optional feed contributes.
+labels are a per-profile option, off by default.
 General provider credits remain in Attributions & Licenses.
 Per-source item links in `MediaItem.discoveryURLs` survive
 deduplication independently of the title's single metadata-provenance entry.
 iOS exposes those links through visible attribution badges; tvOS shows enabled
-credits without adding a focus stop. The Simkl mark is the official
-[provided PNG](https://us.simkl.in/img_favicon/v2/favicon-192x192.png).
+credits without adding a focus stop.
 Keep credits and links when binding a result to a library copy or merging
-duplicates. TVmaze data is CC BY-SA; Simkl's feed attribution, registered app
-parameters, and existing login/sync integration requirements apply. See the providers' current
-terms before changing their use:
+duplicates. TVmaze data is CC BY-SA. See the providers' current terms before
+changing their use:
 
 - [TMDB API FAQ](https://developer.themoviedb.org/docs/faq)
-- [Simkl API and feed terms](https://api.simkl.org/api-rules)
 - [AniList API terms](https://docs.anilist.co/guide/terms-of-use)
 - [TheTVDB API licensing](https://thetvdb.com/api-information)
 - [TVmaze API and licensing](https://www.tvmaze.com/api)
+
+SIMKL Trending is not a discovery source. Older profile selections discard its
+retired identifier without resetting other settings, and the discovery content
+version invalidates previously cached hero pools. SIMKL watchlist and
+watch-history integrations remain independent and unchanged.
+
+When Seerr is configured, before publishing external hero titles,
+`HeroMetadataEnricher` resolves missing
+TMDB request identities through the same cached metadata pipeline as detail
+pages. This requests only the identity field, with at most four concurrent
+lookups, and never promotes an external title to a playable library item.
+Already identified, owned, unsupported, and personal-media items skip this work.
 
 ## Invariants
 

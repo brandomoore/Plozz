@@ -648,6 +648,30 @@ final class HomeContentStoreTests: XCTestCase {
         XCTAssertEqual(store.loadHeroExposureHistory(), history)
     }
 
+    func testStoredSimklPoolCannotBeRestoredAfterSourceRetirement() throws {
+        let oldKey = try JSONDecoder().decode(
+            HeroConfigurationKey.self,
+            from: Data(#"""
+            {"sources":["featured"],"maxItems":8,"hideWatched":true,
+             "discoverySources":["tmdb","simkl"],"discoveryContentVersion":2}
+            """#.utf8)
+        )
+        var settings = HeroSettings.default
+        settings.sources = [.featured]
+        settings.discoverySources = [.tmdb]
+        let current = HeroConfigurationKey(settings: settings)
+        XCTAssertEqual(oldKey.discoverySources, current.discoverySources)
+        XCTAssertNotEqual(oldKey, current)
+
+        let store = HomeContentStore(namespace: "retired-simkl", directory: tempDir)
+        store.saveHeroCandidatePool(
+            .init(buckets: [.init(source: .featured, items: makeItems(2))]),
+            for: oldKey
+        )
+        XCTAssertNil(store.loadHeroCandidatePool(for: current))
+        XCTAssertNil(store.loadHero(for: current))
+    }
+
     func testLegacyFeaturedSeedCannotRestoreTheRetiredAllTimeFeed() throws {
         try writeLegacyHeroFile(
             namespace: "legacy-featured",

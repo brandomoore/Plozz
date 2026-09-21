@@ -144,7 +144,7 @@ final class HeroDiscoveryRuntimeTests: XCTestCase {
             availability: .unknown,
             locallyValidatedPlayableSource: false
         )
-        item.discoverySources = [.tmdb, .simkl]
+        item.discoverySources = [.tmdb, .tvdb]
         return item
     }
 
@@ -204,7 +204,7 @@ final class HeroDiscoveryRuntimeTests: XCTestCase {
         XCTAssertNil(result.resumePosition)
         XCTAssertNil(result.sourceAccountID)
         XCTAssertTrue(result.sources.isEmpty)
-        XCTAssertEqual(result.discoverySources, [.tmdb, .simkl])
+        XCTAssertEqual(result.discoverySources, [.tmdb, .tvdb])
         XCTAssertTrue(stale.isPlayed, "Binding must not mutate shared public candidates.")
     }
 
@@ -408,7 +408,7 @@ final class HeroDiscoveryRuntimeTests: XCTestCase {
                 identitySources: { _ in [.init(accountID: "active", itemID: "library-42", kind: .movie)] },
                 discovery: { [raw] _, _ in [raw] }
             )
-            let items = await runtime.candidates(.init(), sources: [.tmdb, .simkl], hideWatched: false)
+            let items = await runtime.candidates(.init(), sources: [.tmdb, .tvdb], hideWatched: false)
             let result = try XCTUnwrap(items.first)
             XCTAssertEqual(result.id, server.id)
             XCTAssertEqual(result.title, server.title)
@@ -420,7 +420,7 @@ final class HeroDiscoveryRuntimeTests: XCTestCase {
             XCTAssertEqual(result.providerID(.tmdb), "42")
             XCTAssertEqual(result.providerID(.tvdb), "900")
             XCTAssertEqual(result.providerID(.imdb), "tt0042")
-            XCTAssertEqual(result.discoverySources, [.tmdb, .simkl])
+            XCTAssertEqual(result.discoverySources, [.tmdb, .tvdb])
             XCTAssertEqual(result.discoveryURLs, raw.discoveryURLs)
             XCTAssertTrue(result.locallyValidatedPlayableSource)
             XCTAssertNil(result.availability)
@@ -596,7 +596,7 @@ final class HeroDiscoveryRuntimeTests: XCTestCase {
         XCTAssertTrue(result.isPlayed)
         XCTAssertNil(result.resumePosition)
         XCTAssertEqual(Set(result.sources.map(\.id)), ["plex:plex-item", "jellyfin:jellyfin-item"])
-        XCTAssertEqual(result.discoverySources, [.tmdb, .simkl])
+        XCTAssertEqual(result.discoverySources, [.tmdb, .tvdb])
     }
 
     func testStaleForeignRefsCarriedByLiveRecordCannotMarkCurrentProfileWatched() async throws {
@@ -766,10 +766,10 @@ final class HeroDiscoveryRuntimeTests: XCTestCase {
         let emptyCalls = await probe.sources
         XCTAssertTrue(emptyCalls.isEmpty)
         _ = await runtime.candidates(
-            .init(), sources: [.simkl, .tmdb, .anilist, .tvdb, .tvmaze, .tmdb], hideWatched: true
+            .init(), sources: [.tvdb, .tmdb, .anilist, .tvdb, .tvmaze, .tmdb], hideWatched: true
         )
         let calls = await probe.sources
-        XCTAssertEqual(calls, [[.simkl, .tmdb, .anilist, .tvdb, .tvmaze]])
+        XCTAssertEqual(calls, [[.tvdb, .tmdb, .anilist, .tvmaze]])
     }
 
     func testInjectedFeedIsBoundedByRequestLimit() async {

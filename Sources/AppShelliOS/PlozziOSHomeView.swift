@@ -6,6 +6,7 @@ import CoreUI
 import FeatureHomeCore
 import HeroUI
 import MediaDownloads
+import MetadataKit
 import Observation
 import RatingsService
 import SwiftUI
@@ -146,7 +147,11 @@ struct PlozziOSHomeView: View {
                     identitySources: identitySources
                 )
             },
-            ratingsProvider: RatingsServiceFactory.make()
+            ratingsProvider: RatingsServiceFactory.make(),
+            requestIdentityResolver: { [seer = appModel.seerService] item in
+                guard await seer.isConfigured else { return nil }
+                return await ExternalTitleMetadataResolver.shared.tmdbID(for: item)
+            }
         )
         self.viewModel = viewModel
         _discoveryIdentityRevision = State(initialValue: appModel.identityIndex.identityRevisionProvider())

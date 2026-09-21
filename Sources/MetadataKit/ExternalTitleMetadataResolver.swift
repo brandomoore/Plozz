@@ -46,6 +46,32 @@ public actor ExternalTitleMetadataResolver {
         tmdb = TMDbMetadataProvider(access: providerConfig.tmdb)
     }
 
+    init(pipeline: MetadataEnrichmentPipeline) {
+        self.pipeline = pipeline
+        tmdb = TMDbMetadataProvider(access: .disabled)
+    }
+
+    /// Home needs the same request identity as detail, not a second artwork or
+    /// regional-availability load just to decide its primary action.
+    public func tmdbID(for item: MediaItem) async -> String? {
+        guard !Task.isCancelled,
+              item.kind == .movie || item.kind == .series else { return nil }
+        if let existing = item.providerID(.tmdb) {
+            return Int(existing).map { $0 > 0 } == true ? existing : nil
+        }
+        guard item.allowsTitleBasedMetadataMatching else { return nil }
+        let result = await pipeline.enrich(
+            MetadataQuery(item).seriesScoped,
+            present: Self.presentFields(in: item),
+            requesting: [.providerID(ProviderIDNamespace.tmdb.canonicalKey)],
+            tier: .foregroundFill
+        )
+        guard !Task.isCancelled,
+              let value = result.externalIDs[ProviderIDNamespace.tmdb.canonicalKey]?.value,
+              let numericID = Int(value), numericID > 0 else { return nil }
+        return value
+    }
+
     public func resolve(
         item: MediaItem,
         regionCode: String

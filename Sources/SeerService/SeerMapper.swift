@@ -268,7 +268,7 @@ enum SeerMapper {
     /// parses either a current `seer:<kind>:<id>` or legacy `seer:<id>` synthetic
     /// id. `nil` when neither yields an integer.
     static func tmdbID(for item: MediaItem) -> Int? {
-        if let raw = item.providerIDs["Tmdb"], let value = Int(raw) {
+        if let raw = item.providerID(.tmdb), let value = Int(raw) {
             return value
         }
         if item.id.hasPrefix("seer:"),

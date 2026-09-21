@@ -159,7 +159,7 @@ final class HeroSettingsTests: XCTestCase {
         }
     }
 
-    func testDiscoveryCreditsDefaultOffForLegacyOrMalformedSettingsWithoutChangingFeedOptIns() throws {
+    func testDiscoveryCreditsDefaultOffAndRetiredSourceDoesNotResetOtherSettings() throws {
         for field in [
             "",
             #","showsDiscoverySources":null"#,
@@ -173,14 +173,14 @@ final class HeroSettingsTests: XCTestCase {
             XCTAssertFalse(settings.showsDiscoverySources)
             XCTAssertEqual(settings.maxItems, 4)
             XCTAssertFalse(settings.hideWatched)
-            XCTAssertEqual(settings.discoverySources, [.simkl, .anilist])
+            XCTAssertEqual(settings.discoverySources, [.anilist])
         }
     }
 
     func testDiscoveryCreditPreferenceRoundTripsAndTransfersPerProfile() {
         var settings = HeroSettings.default
         settings.showsDiscoverySources = true
-        settings.discoverySources = [.simkl, .anilist]
+        settings.discoverySources = [.tvdb, .anilist]
         let first = HeroSettingsStore(defaults: defaults, namespace: "first")
         let second = HeroSettingsStore(defaults: defaults, namespace: "second")
         first.save(settings)
@@ -195,17 +195,14 @@ final class HeroSettingsTests: XCTestCase {
         first.save(settings)
         XCTAssertEqual(first.load(), settings)
         XCTAssertTrue(second.load().showsDiscoverySources)
-        XCTAssertEqual(first.load().discoverySources, [.simkl, .anilist])
-        XCTAssertEqual(second.load().discoverySources, [.simkl, .anilist])
+        XCTAssertEqual(first.load().discoverySources, [.tvdb, .anilist])
+        XCTAssertEqual(second.load().discoverySources, [.tvdb, .anilist])
     }
 
     func testDiscoveryCreditsHideOptionalSourcesByDefault() {
         var item = MediaItem(id: "title", title: "A title", kind: .movie)
         item.discoverySources = [.tmdb, .tvmaze, .anilist, .tvdb, .tmdb]
         XCTAssertEqual(HeroSettings.default.discoveryAttributionSources(for: item), [])
-
-        item.discoverySources = [.tmdb, .simkl, .tvmaze, .simkl]
-        XCTAssertEqual(HeroSettings.default.discoveryAttributionSources(for: item), [.simkl])
     }
 
     func testDiscoveryCreditsOptInNormalizesActualContributorsInOrder() {
@@ -213,21 +210,22 @@ final class HeroSettingsTests: XCTestCase {
         settings.showsDiscoverySources = true
         settings.discoverySources = [.tmdb]
         var item = MediaItem(id: "title", title: "A title", kind: .series)
-        item.discoverySources = [.tvmaze, .tmdb, .tvmaze, .simkl, .anilist, .simkl, .tvdb]
+        item.discoverySources = [.tvmaze, .tmdb, .tvmaze, .tvdb, .anilist, .tvdb]
         XCTAssertEqual(
             settings.discoveryAttributionSources(for: item),
-            [.tvmaze, .tmdb, .simkl, .anilist, .tvdb]
+            [.tvmaze, .tmdb, .tvdb, .anilist]
         )
     }
 
-    func testMandatoryDiscoveryCreditFollowsTheDisplayedItemNotCurrentFeedSelection() {
+    func testOptedInDiscoveryCreditFollowsTheDisplayedItemNotCurrentFeedSelection() {
         var settings = HeroSettings.default
         settings.discoverySources = []
+        settings.showsDiscoverySources = true
         let item = MediaItem(
             id: "cached-title", title: "A cached title", kind: .movie,
-            discoverySources: [.simkl, .tmdb]
+            discoverySources: [.tvdb, .tmdb]
         )
-        XCTAssertEqual(settings.discoveryAttributionSources(for: item), [.simkl])
+        XCTAssertEqual(settings.discoveryAttributionSources(for: item), [.tvdb, .tmdb])
     }
 
     func testDiscoveryCreditsDoNotInventContributorsForOrdinaryLibraryItems() {
@@ -246,9 +244,9 @@ final class HeroSettingsTests: XCTestCase {
         )
         let discoveryItem = MediaItem(
             id: "discovery-title", title: "A discovered title", kind: .series,
-            discoverySources: [.simkl, .tvmaze],
+            discoverySources: [.tvdb, .tvmaze],
             discoveryURLs: [
-                "simkl": try XCTUnwrap(URL(string: "https://simkl.com/tv/123/example")),
+                "tvdb": try XCTUnwrap(URL(string: "https://thetvdb.com/series/example")),
                 "tvmaze": try XCTUnwrap(URL(string: "https://www.tvmaze.com/shows/123/example"))
             ],
             locallyValidatedPlayableSource: false
@@ -263,9 +261,9 @@ final class HeroSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.discoveryURLs, discoveryItem.discoveryURLs)
 
         var settings = HeroSettings.default
-        XCTAssertEqual(settings.discoveryAttributionSources(for: decoded), [.simkl])
+        XCTAssertEqual(settings.discoveryAttributionSources(for: decoded), [])
         settings.showsDiscoverySources = true
-        XCTAssertEqual(settings.discoveryAttributionSources(for: decoded), [.simkl, .tvmaze])
+        XCTAssertEqual(settings.discoveryAttributionSources(for: decoded), [.tvdb, .tvmaze])
     }
 
     @MainActor

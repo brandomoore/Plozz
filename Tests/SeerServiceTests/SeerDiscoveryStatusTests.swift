@@ -24,7 +24,7 @@ final class SeerDiscoveryStatusTests: XCTestCase {
             MediaItem(
                 id: "candidate-\(id)", title: "Title \(id)",
                 kind: id.isMultiple(of: 2) ? .series : .movie,
-                providerIDs: ["Tmdb": "\(id)"], discoverySources: [.simkl],
+                providerIDs: ["Tmdb": "\(id)"], discoverySources: [.tvdb],
                 availability: .unknown, locallyValidatedPlayableSource: false
             )
         }
@@ -58,6 +58,11 @@ final class SeerDiscoveryStatusTests: XCTestCase {
         XCTAssertTrue(service.hasRequestIdentity(for: MediaItem(
             id: "tmdb", title: "Movie", kind: .movie, providerIDs: ["Tmdb": "42"]
         )))
+        for key in ["tmdb", "TMDB", "Tmdb"] {
+            XCTAssertTrue(service.hasRequestIdentity(for: MediaItem(
+                id: "external", title: "Show", kind: .series, providerIDs: [key: "42"]
+            )), key)
+        }
         XCTAssertFalse(service.hasRequestIdentity(for: MediaItem(
             id: "anilist", title: "Anime", kind: .series, providerIDs: ["AniList": "42"]
         )))
@@ -75,7 +80,7 @@ final class SeerDiscoveryStatusTests: XCTestCase {
         let items = [
             MediaItem(
                 id: "outside-trending", title: "Movie", kind: .movie,
-                providerIDs: ["Tmdb": "42"], discoverySources: [.simkl],
+                providerIDs: ["Tmdb": "42"], discoverySources: [.tvdb],
                 availability: .unknown, locallyValidatedPlayableSource: false
             ),
             MediaItem(

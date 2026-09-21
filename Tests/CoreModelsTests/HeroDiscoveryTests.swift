@@ -3,16 +3,19 @@ import XCTest
 @testable import CoreModels
 
 final class HeroDiscoveryTests: XCTestCase {
-    func testDefaultSourcesExcludeTraktAndKeepAnimeAndSimklOptIn() {
+    func testDiscoverySourcesExcludeTraktAndSimklAndKeepAnimeOptIn() {
         XCTAssertEqual(HeroDiscoverySource.defaultSelection, [.tmdb, .tvdb, .tvmaze])
-        XCTAssertFalse(HeroDiscoverySource.allCases.map(\.rawValue).contains("trakt"))
+        XCTAssertEqual(HeroDiscoverySource.allCases, [.tmdb, .anilist, .tvdb, .tvmaze])
+        XCTAssertNil(HeroDiscoverySource(rawValue: "simkl"))
+        XCTAssertNil(HeroDiscoverySource(rawValue: "trakt"))
         XCTAssertFalse(HeroSettings.default.discoverySources.contains(.anilist))
-        XCTAssertFalse(HeroSettings.default.discoverySources.contains(.simkl))
     }
 
     func testSourceSettingsPreserveExplicitEmptyAndIgnoreUnknownNames() throws {
         for (json, expected) in [
             (#"{"discoverySources":[]}"#, [HeroDiscoverySource]()),
+            (#"{"discoverySources":["simkl"]}"#, []),
+            (#"{"discoverySources":["simkl","tvdb","tmdb","simkl"]}"#, [.tvdb, .tmdb]),
             (#"{"discoverySources":["tmdb","future","tmdb","anilist"]}"#, [.tmdb, .anilist])
         ] {
             let settings = try JSONDecoder().decode(HeroSettings.self, from: Data(json.utf8))
@@ -102,19 +105,19 @@ final class HeroDiscoveryTests: XCTestCase {
     func testAttributionSurvivesCodingAndPresentationMerge() throws {
         var item = MediaItem(
             id: "title", title: "Title", kind: .movie,
-            discoverySources: [.tmdb, .simkl, .tmdb],
-            discoveryURLs: ["simkl": URL(string: "https://simkl.com/movies/42/title")!]
+            discoverySources: [.tmdb, .tvdb, .tmdb],
+            discoveryURLs: ["tvdb": URL(string: "https://thetvdb.com/movies/title")!]
         )
         item.fillingMissingPresentation(from: MediaItem(
             id: "other", title: "Title", kind: .movie,
-            discoverySources: [.simkl, .tvmaze],
+            discoverySources: [.tvdb, .tvmaze],
             discoveryURLs: ["tvmaze": URL(string: "https://www.tvmaze.com/shows/7/title")!]
         ))
-        XCTAssertEqual(item.discoverySources, [.tmdb, .simkl, .tvmaze])
+        XCTAssertEqual(item.discoverySources, [.tmdb, .tvdb, .tvmaze])
         let decoded = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(item))
         XCTAssertEqual(decoded.discoverySources, item.discoverySources)
         XCTAssertEqual(decoded.discoveryURLs, item.discoveryURLs)
-        XCTAssertEqual(Set(decoded.discoveryURLs.keys), ["simkl", "tvmaze"])
+        XCTAssertEqual(Set(decoded.discoveryURLs.keys), ["tvdb", "tvmaze"])
         let legacy = try JSONDecoder().decode(
             MediaItem.self, from: Data(#"{"id":"legacy","title":"Legacy","kind":"movie"}"#.utf8)
         )
@@ -123,21 +126,34 @@ final class HeroDiscoveryTests: XCTestCase {
     }
 
     func testAttributionLinksAreBrowseOnlyAndBoundToTheirNamedProvider() {
-        let source = HeroDiscoverySource.simkl
-        XCTAssertTrue(source.acceptsAttributionURL(URL(string: "https://simkl.com/movies/42/title")!))
+        let source = HeroDiscoverySource.tvdb
+        XCTAssertTrue(source.acceptsAttributionURL(URL(string: "https://thetvdb.com/movies/title")!))
         for value in [
             "https://example.com/movies/42",
-            "https://simkl.com.evil.test/movies/42",
-            "https://www.www.simkl.com/movies/42",
-            "http://simkl.com/movies/42",
-            "https://user:secret@simkl.com/movies/42",
-            "https://simkl.com/movies/42?mark=watched",
-            "https://simkl.com/movies/42#action",
+            "https://thetvdb.com.evil.test/movies/42",
+            "https://www.www.thetvdb.com/movies/42",
+            "http://thetvdb.com/movies/42",
+            "https://user:secret@thetvdb.com/movies/42",
+            "https://thetvdb.com/movies/42?mark=watched",
+            "https://thetvdb.com/movies/42#action",
         ] {
             XCTAssertFalse(source.acceptsAttributionURL(URL(string: value)!))
         }
         var item = MediaItem(id: "title", title: "Title", kind: .movie)
-        item.discoveryURLs = ["simkl": URL(string: "https://private.test/?token=secret")!]
+        item.discoveryURLs = ["tvdb": URL(string: "https://private.test/?token=secret")!]
         XCTAssertTrue(item.sanitizingArtworkCredentials().discoveryURLs.isEmpty)
+    }
+
+    func testLegacyItemDropsRetiredDiscoveryAttributionWithoutLosingOtherMetadata() throws {
+        let json = #"""
+        {"id":"legacy","title":"A title","kind":"movie","providerIDs":{"Tmdb":"42"},
+         "discoverySources":["simkl","tmdb"],
+         "discoveryURLs":{"simkl":"https://simkl.com/movies/42/title","tmdb":"https://www.themoviedb.org/movie/42"}}
+        """#
+        let item = try JSONDecoder().decode(MediaItem.self, from: Data(json.utf8))
+        XCTAssertEqual(item.discoverySources, [.tmdb])
+        XCTAssertEqual(Set(item.discoveryURLs.keys), ["tmdb"])
+        XCTAssertEqual(item.providerID(.tmdb), "42")
+        XCTAssertEqual(item.title, "A title")
     }
 }

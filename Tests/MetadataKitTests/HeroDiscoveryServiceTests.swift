@@ -4,6 +4,14 @@ import XCTest
 @testable import MetadataKit
 
 final class HeroDiscoveryServiceTests: XCTestCase {
+    func testProductionRegistersOnlySupportedDiscoverySources() async {
+        let providers = await ProductionHeroDiscovery.providers(
+            providerConfig: .init(tmdb: .disabled), tvdbConfig: .init()
+        )
+        XCTAssertEqual(providers.map(\.source), [.tmdb, .anilist, .tvdb, .tvmaze])
+        XCTAssertEqual(Set(providers.map(\.source)), Set(HeroDiscoverySource.allCases))
+    }
+
     private static func item(_ id: String, tmdb: String? = nil) -> MediaItem {
         MediaItem(
             id: id, title: id, kind: .movie, productionYear: 2024,
@@ -40,19 +48,19 @@ final class HeroDiscoveryServiceTests: XCTestCase {
         )
         var second = first
         second.metadataProvenance[.title] = .init(
-            source: .init(rawValue: "simkl"), sourceURL: URL(string: "https://simkl.com/movies/9/shared")
+            source: .init(rawValue: "tvdb"), sourceURL: URL(string: "https://thetvdb.com/movies/9/shared")
         )
         let tmdbTitle = first
-        let simklTitle = second
+        let tvdbTitle = second
         let service = HeroDiscoveryService()
         let providers: [any HeroDiscoveryProviding] = [
             DiscoveryFixtureProvider(source: .tmdb) { _ in [tmdbTitle, Self.item("a")] },
-            DiscoveryFixtureProvider(source: .simkl) { _ in [simklTitle, Self.item("b")] }
+            DiscoveryFixtureProvider(source: .tvdb) { _ in [tvdbTitle, Self.item("b")] }
         ]
-        let items = await service.discover(.init(limit: 4), sources: [.tmdb, .simkl], providers: providers)
+        let items = await service.discover(.init(limit: 4), sources: [.tmdb, .tvdb], providers: providers)
         XCTAssertEqual(items.map(\.id), ["shared", "a", "b"])
-        XCTAssertEqual(Set(items[0].discoverySources), [.tmdb, .simkl])
-        XCTAssertEqual(items[0].discoveryURLs["simkl"]?.absoluteString, "https://simkl.com/movies/9/shared")
+        XCTAssertEqual(Set(items[0].discoverySources), [.tmdb, .tvdb])
+        XCTAssertEqual(items[0].discoveryURLs["tvdb"]?.absoluteString, "https://thetvdb.com/movies/9/shared")
         XCTAssertEqual(items[0].discoveryURLs["tmdb"]?.absoluteString, "https://www.themoviedb.org/movie/42")
         XCTAssertTrue(items.allSatisfy { !$0.locallyValidatedPlayableSource })
         XCTAssertTrue(items.allSatisfy { $0.sourceAccountID == nil && $0.sources.isEmpty })
@@ -65,7 +73,7 @@ final class HeroDiscoveryServiceTests: XCTestCase {
                 await calls.record()
                 return []
             },
-            DiscoveryFixtureProvider(source: .simkl) { _ in
+            DiscoveryFixtureProvider(source: .tvdb) { _ in
                 await calls.record()
                 return []
             }
@@ -84,18 +92,18 @@ final class HeroDiscoveryServiceTests: XCTestCase {
             return [Self.item("1")]
         }
         let tmdb = DiscoveryFixtureProvider(source: .tmdb, cacheIdentifier: "key-a", usesTitleSeeds: true, fetch: fetch)
-        let simkl = DiscoveryFixtureProvider(source: .simkl, fetch: fetch)
+        let tvdb = DiscoveryFixtureProvider(source: .tvdb, fetch: fetch)
         let first = HeroDiscoveryRequest(seeds: [Self.item("seed-a")])
         let second = HeroDiscoveryRequest(seeds: [Self.item("seed-b")])
-        _ = await service.discover(first, sources: [.tmdb, .simkl], providers: [tmdb, simkl])
-        _ = await service.discover(first, sources: [.tmdb, .simkl], providers: [tmdb, simkl])
+        _ = await service.discover(first, sources: [.tmdb, .tvdb], providers: [tmdb, tvdb])
+        _ = await service.discover(first, sources: [.tmdb, .tvdb], providers: [tmdb, tvdb])
         let cachedCount = await calls.count
         XCTAssertEqual(cachedCount, 2)
-        _ = await service.discover(second, sources: [.tmdb, .simkl], providers: [tmdb, simkl])
+        _ = await service.discover(second, sources: [.tmdb, .tvdb], providers: [tmdb, tvdb])
         let reseededCount = await calls.count
         XCTAssertEqual(reseededCount, 3)
         let newCredential = DiscoveryFixtureProvider(source: .tmdb, cacheIdentifier: "key-b", usesTitleSeeds: true, fetch: fetch)
-        _ = await service.discover(second, sources: [.tmdb, .simkl], providers: [newCredential, simkl])
+        _ = await service.discover(second, sources: [.tmdb, .tvdb], providers: [newCredential, tvdb])
         let rotatedCount = await calls.count
         XCTAssertEqual(rotatedCount, 4)
     }
@@ -152,19 +160,19 @@ final class HeroDiscoveryServiceTests: XCTestCase {
     func testSlowSourceDoesNotHoldBackCompletedSources() async {
         let gate = DiscoveryGate()
         let started = expectation(description: "Slow source entered")
-        let slow = DiscoveryFixtureProvider(source: .simkl) { _ in
+        let slow = DiscoveryFixtureProvider(source: .tvdb) { _ in
             started.fulfill()
             await gate.wait()
             return [Self.item("slow")]
         }
         let fast = DiscoveryFixtureProvider(source: .tmdb) { _ in [Self.item("fast")] }
         let service = HeroDiscoveryService(responseBudget: .milliseconds(100), loadBudget: .seconds(3))
-        let result = await service.discover(.init(limit: 2), sources: [.tmdb, .simkl], providers: [fast, slow])
+        let result = await service.discover(.init(limit: 2), sources: [.tmdb, .tvdb], providers: [fast, slow])
         await fulfillment(of: [started], timeout: 1)
         XCTAssertEqual(result.map(\.id), ["fast"])
         await gate.release()
         await waitUntil { await service.activeLoadCount == 0 }
-        let next = await service.discover(.init(limit: 2), sources: [.tmdb, .simkl], providers: [fast, slow])
+        let next = await service.discover(.init(limit: 2), sources: [.tmdb, .tvdb], providers: [fast, slow])
         XCTAssertEqual(next.map(\.id), ["fast", "slow"])
     }
 

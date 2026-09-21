@@ -4,7 +4,58 @@ import CoreModels
 import RatingsService
 import AppRuntime
 import FeatureHomeCore
+import SeerService
 @testable import AppShell
+
+private actor HeroRequestIdentityGate {
+    private var continuation: CheckedContinuation<String?, Never>?
+
+    func resolve(started: XCTestExpectation) async -> String? {
+        await withCheckedContinuation {
+            continuation = $0
+            started.fulfill()
+        }
+    }
+
+    func release() {
+        continuation?.resume(returning: "42")
+        continuation = nil
+    }
+}
+
+private actor HeroRequestIdentityBatchProbe {
+    private let firstWave: XCTestExpectation
+    private var active = 0
+    private var released = false
+    private var pending: [CheckedContinuation<Void, Never>] = []
+    private(set) var calls = 0
+    private(set) var maximumActive = 0
+
+    init(firstWave: XCTestExpectation) {
+        self.firstWave = firstWave
+    }
+
+    func resolve(_ item: MediaItem) async -> String? {
+        calls += 1
+        active += 1
+        maximumActive = max(maximumActive, active)
+        if !released {
+            await withCheckedContinuation {
+                pending.append($0)
+                if pending.count == 4 { firstWave.fulfill() }
+            }
+        }
+        active -= 1
+        return item.id
+    }
+
+    func release() {
+        released = true
+        let waiting = pending
+        pending.removeAll()
+        for continuation in waiting { continuation.resume() }
+    }
+}
 
 private final class PinnedSeriesTestState: @unchecked Sendable {
     private let lock = NSLock()
@@ -14,6 +65,144 @@ private final class PinnedSeriesTestState: @unchecked Sendable {
 }
 
 final class HeroMetadataEnricherTests: XCTestCase {
+    @MainActor
+    func testExternalMoviesAndSeriesHaveARequestCTAWithoutOpeningDetailFirst() async throws {
+        let seer = SeerService(connectionStore: InMemorySeerConnectionStore(connection: .init(
+            baseURL: URL(string: "https://requests.example.test")!, apiKey: "fixture"
+        )))
+        for kind in [MediaItemKind.movie, .series] {
+            let item = MediaItem(
+                id: "external-\(kind.rawValue)", title: "A title", kind: kind,
+                posterURL: URL(string: "https://images.example.test/poster.jpg"),
+                providerIDs: ["Tvdb": "17"], discoverySources: [.tvdb],
+                availability: .unknown, locallyValidatedPlayableSource: false
+            )
+            XCTAssertEqual(item.heroCTA(
+                seerConnected: seer.isConfigured && seer.hasRequestIdentity(for: item)
+            ), .unavailable)
+            let enricher = HeroMetadataEnricher(
+                accounts: [],
+                targetSelector: {
+                    XCTFail("Request identity must not authorize library retargeting.")
+                    return $0
+                },
+                requestIdentityResolver: { source in
+                    XCTAssertEqual(source.providerID(.tvdb), "17")
+                    return "42"
+                }
+            )
+            let result = await enricher.enrich([item])
+            let ready = try XCTUnwrap(result.first)
+            XCTAssertTrue(seer.hasRequestIdentity(for: ready))
+            XCTAssertEqual(ready.heroCTA(
+                seerConnected: seer.isConfigured && seer.hasRequestIdentity(for: ready)
+            ), .request)
+            XCTAssertEqual(ready.id, item.id)
+            XCTAssertEqual(ready.kind, kind)
+            XCTAssertEqual(ready.providerID(.tvdb), "17")
+            XCTAssertEqual(ready.posterURL, item.posterURL)
+            XCTAssertEqual(ready.discoverySources, item.discoverySources)
+            XCTAssertEqual(ready.availability, .unknown)
+            XCTAssertFalse(ready.hasPlayableLibraryTarget())
+            XCTAssertTrue(ready.sources.isEmpty)
+            XCTAssertNil(ready.sourceAccountID)
+        }
+    }
+
+    func testRequestIdentityLookupSkipsOwnedKnownUnsupportedAndPersonalTitles() async {
+        var personal = MediaItem(
+            id: "personal", title: "Personal", kind: .movie,
+            availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        personal.allowsTitleBasedMetadataMatching = false
+        let items = [
+            MediaItem(id: "owned", title: "Owned", kind: .movie),
+            MediaItem(
+                id: "known", title: "Known", kind: .series,
+                providerIDs: ["tmdb": "42"], discoverySources: [.tvdb],
+                availability: .unknown, locallyValidatedPlayableSource: false
+            ),
+            MediaItem(
+                id: "episode", title: "Episode", kind: .episode,
+                availability: .unknown, locallyValidatedPlayableSource: false
+            ),
+            personal
+        ]
+        let enricher = HeroMetadataEnricher(
+            accounts: [], targetSelector: { $0 },
+            requestIdentityResolver: { _ in
+                XCTFail("These records must not start request-identity work.")
+                return "99"
+            }
+        )
+        let result = await enricher.enrich(items)
+        XCTAssertEqual(result, items)
+    }
+
+    func testUnresolvedRequestIdentityDoesNotInventAnIDOrOwnership() async {
+        let item = MediaItem(
+            id: "external", title: "Title", kind: .movie,
+            discoverySources: [.tvdb], availability: .unknown,
+            locallyValidatedPlayableSource: false
+        )
+        for value in [nil, "0", "-1", "invalid"] as [String?] {
+            let enricher = HeroMetadataEnricher(
+                accounts: [], targetSelector: { $0 },
+                requestIdentityResolver: { _ in value }
+            )
+            let result = await enricher.enrich([item])
+            XCTAssertEqual(result, [item])
+        }
+    }
+
+    func testCancelledIdentityResolutionCannotPublishLateResults() async {
+        let started = expectation(description: "Request identity lookup started")
+        let gate = HeroRequestIdentityGate()
+        let item = MediaItem(
+            id: "external", title: "Title", kind: .series,
+            discoverySources: [.tvmaze], availability: .unknown,
+            locallyValidatedPlayableSource: false
+        )
+        let enricher = HeroMetadataEnricher(
+            accounts: [], targetSelector: { $0 },
+            requestIdentityResolver: { _ in await gate.resolve(started: started) }
+        )
+        let task = Task { await enricher.enrich([item]) }
+        await fulfillment(of: [started], timeout: 2)
+        task.cancel()
+        await gate.release()
+        let result = await task.value
+        XCTAssertEqual(result, [item])
+    }
+
+    func testRequestIdentityWorkIsBoundedAndKeepsCarouselOrder() async {
+        let firstWave = expectation(description: "Four identity lookups admitted")
+        let probe = HeroRequestIdentityBatchProbe(firstWave: firstWave)
+        let items = (100..<112).map { id in
+            MediaItem(
+                id: "\(id)", title: "Title \(id)", kind: .movie,
+                discoverySources: [.tvdb], availability: .unknown,
+                locallyValidatedPlayableSource: false
+            )
+        }
+        let enricher = HeroMetadataEnricher(
+            accounts: [], targetSelector: { $0 },
+            requestIdentityResolver: { await probe.resolve($0) }
+        )
+        let task = Task { await enricher.enrich(items) }
+        await fulfillment(of: [firstWave], timeout: 2)
+        let initiallyAdmitted = await probe.calls
+        await probe.release()
+        let result = await task.value
+        let maximumActive = await probe.maximumActive
+        let calls = await probe.calls
+        XCTAssertEqual(initiallyAdmitted, 4)
+        XCTAssertLessThanOrEqual(maximumActive, 4)
+        XCTAssertEqual(calls, items.count)
+        XCTAssertEqual(result.map(\.id), items.map(\.id))
+        XCTAssertEqual(result.compactMap { $0.providerID(.tmdb) }, items.map(\.id))
+    }
+
     func testPinnedExternalSeriesKeepsVerifiedSeriesThroughEnrichmentMergeAndPlaybackResolution() async throws {
         let scenario = pinnedSeriesScenario()
         let accounts = [scenario.account]
@@ -276,8 +465,8 @@ final class HeroMetadataEnricherTests: XCTestCase {
             kind: .episode,
             seriesID: "plex-series",
             providerIDs: ["SeriesTmdb": "125988"],
-            discoverySources: [.simkl],
-            discoveryURLs: ["simkl": URL(string: "https://simkl.com/tv/42/show")!],
+            discoverySources: [.tvdb],
+            discoveryURLs: ["tvdb": URL(string: "https://thetvdb.com/tv/42/show")!],
             sourceAccountID: "plex-account",
             sources: [
                 MediaSourceRef(
@@ -326,7 +515,7 @@ final class HeroMetadataEnricherTests: XCTestCase {
         XCTAssertEqual(result[0].providerID(.tmdb), "episode-4")
         XCTAssertEqual(result[0].providerID(.seriesTmdb), "125988")
         XCTAssertEqual(result[0].providerID(.seriesTvdb), "403245")
-        XCTAssertEqual(result[0].discoverySources, [.simkl])
+        XCTAssertEqual(result[0].discoverySources, [.tvdb])
         XCTAssertEqual(result[0].discoveryURLs, original.discoveryURLs)
         XCTAssertEqual(result[0].familyGuidance, series.familyGuidance,
                        "The Home slide represents the series while retaining the episode play target.")

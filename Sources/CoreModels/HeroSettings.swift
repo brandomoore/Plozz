@@ -39,7 +39,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     public var watchlistDiscoveryEnabled: Bool
     public var discoverySources: [HeroDiscoverySource]
 
-    /// Optional catalog credits on Home. Mandatory Simkl credit remains visible.
+    /// Optional catalog credits on Home.
     public var showsDiscoverySources: Bool
 
     /// Scores are optional Home chrome, independent of detail-page rating preferences.
@@ -230,10 +230,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     }
 
     /// Credit actual contributors, including cached or library-bound titles.
-    /// Simkl requires visible branding even when optional source labels are off.
     public func discoveryAttributionSources(for item: MediaItem) -> [HeroDiscoverySource] {
-        let contributors = HeroDiscoverySource.normalized(item.discoverySources)
-        return showsDiscoverySources ? contributors : contributors.filter { $0 == .simkl }
+        showsDiscoverySources ? HeroDiscoverySource.normalized(item.discoverySources) : []
     }
 
     /// Whether honoring Hide Watched requires live external watch history beyond

@@ -390,8 +390,7 @@ let package = Package(
         ),
         .target(
             name: "HeroUI",
-            dependencies: ["CoreModels", "CoreUI", "FeatureHomeCore", "MetadataKit"],
-            resources: [.process("Resources")]
+            dependencies: ["CoreModels", "CoreUI", "FeatureHomeCore", "MetadataKit"]
         ),
         .target(
             name: "FeatureHome",

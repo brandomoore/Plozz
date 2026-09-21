@@ -43,33 +43,12 @@ public struct HeroDiscoveryAttribution: View {
     }
 
     private var attributionLabel: some View {
-        let includesSimkl = sources.contains(.simkl)
-        let names = sources.filter { $0 != .simkl }.map(\.displayName)
+        let names = sources.map(\.displayName)
             .formatted(.list(type: .and).locale(locale))
-        let leadingName = includesSimkl
-            ? Text(
-                "\(HeroDiscoverySource.simkl.displayName) Trending",
-                comment: "Discovery feed name. The variable is the Simkl brand name; keep it unchanged and translate Trending."
-            )
-            : Text(verbatim: names)
-        return HStack(spacing: 6) {
-            if includesSimkl {
-                Image("SimklDiscoveryMark", bundle: .module)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 18, height: 18)
-                    .accessibilityHidden(true)
-            }
-            Text(
-                "From \(leadingName)",
-                comment: "Hero discovery credit. The variable is a list of catalog brand names or feed names, such as Simkl Trending."
-            )
-            if includesSimkl, !names.isEmpty {
-                Text(verbatim: "\u{00B7}")
-                    .accessibilityHidden(true)
-                Text(verbatim: names)
-            }
-        }
+        return Text(
+            "From \(Text(verbatim: names))",
+            comment: "Hero discovery credit. The variable is a list of catalog brand names, such as TMDB."
+        )
         .font(.caption.weight(.medium))
         .foregroundStyle(.white)
         .fixedSize(horizontal: false, vertical: true)
