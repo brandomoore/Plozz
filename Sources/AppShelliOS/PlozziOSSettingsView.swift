@@ -1893,7 +1893,7 @@ private struct PlozziOSHomeSettingsView: View {
                     Toggle(isOn: $hero.settings.showsDiscoverySources) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Show discovery sources")
-                            Text("Show the catalogs behind each title. Titles from Simkl always show its required credit, even when this is off.")
+                            Text("Show the catalogs behind each title.")
                                 .font(.footnote)
                                 .plozzForeground(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)

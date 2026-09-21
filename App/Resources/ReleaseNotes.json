@@ -2,6 +2,61 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/040",
+      "version": "2026.9.20",
+      "build": 40,
+      "releasedAt": "2026-09-20",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Browse collections inside Plex, Jellyfin, and Emby libraries, with full paged collection grids."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "The Home hero's Featured section now supports TMDB, TheTVDB, TVmaze, and optional AniList anime.",
+            "Reduced repeated artwork, metadata, and sync work while Home loads.",
+            {
+              "text": "Rebuilt library grids for improved performance and scrolling.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "The default library grid now uses six columns.",
+              "platforms": ["tvOS"]
+            },
+            "Updated the playback engine and improved HDR10+ detection for Emby.",
+            {
+              "text": "Improved native HDR and Dolby Vision display matching.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Animated startup logo.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Extras now use their own thumbnails instead of inherited movie artwork.",
+            "Opening a Plex collection now loads its titles correctly.",
+            "Plex edition labels and selected playback versions stay consistent across libraries and servers.",
+            "Artwork loads and network-share connections can recover after stalls or failures.",
+            {
+              "text": "Seek swipes retain movement at the start and end of each gesture.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Settings descriptions remain readable on focused rows.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/039",
       "version": "2026.9.18",
       "build": 39,
