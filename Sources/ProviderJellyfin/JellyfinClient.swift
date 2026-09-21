@@ -922,7 +922,27 @@ public struct JellyfinClient: Sendable {
             EnableTranscoding: true,
             DeviceProfile: capabilityProfile
         ))
-        return try await http.decode(PlaybackInfoResponse.self, from: endpoint, baseURL: baseURL)
+        guard streaming != nil else {
+            return try await http.decode(PlaybackInfoResponse.self, from: endpoint, baseURL: baseURL)
+        }
+        let (data, response) = try await http.sendRaw(endpoint, baseURL: baseURL)
+        switch response.statusCode {
+        case 200..<300: break
+        case 401: throw AppError.unauthorized
+        case 403: throw StreamingQualityError.permissionDenied
+        case 429:
+            throw AppError.rateLimited(retryAfter: response.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init))
+        default:
+            PlozzLog.playback.error("Streaming negotiation failed HTTP \(response.statusCode)")
+            throw StreamingQualityError.serverHTTP(response.statusCode)
+        }
+        let info: PlaybackInfoResponse
+        do { info = try JSONDecoder.plozz.decode(PlaybackInfoResponse.self, from: data) }
+        catch {
+            PlozzLog.playback.error("Unable to decode the server streaming decision.")
+            throw StreamingQualityError.malformedResponse
+        }
+        return info
     }
 
     // MARK: Live TV

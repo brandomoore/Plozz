@@ -178,14 +178,122 @@ public protocol StreamingQualityProviding: MediaProvider {
     func releaseStreamingSession(_ request: PlaybackRequest) async
 }
 
-public enum StreamingQualityError: Error, Sendable {
+public enum StreamingQualityError: Error, Equatable, Sendable {
     case unavailable, unsupported
+    case permissionDenied, noCompatibleStream, sourceUnavailable, malformedResponse, negotiationFailed
+    case serverHTTP(Int)
+    case playback(StreamingPlaybackFailure)
+    case startupTimedOut
+
+    public var allowsCodecFallback: Bool {
+        switch self {
+        case .unavailable, .noCompatibleStream: true
+        case .playback(let failure): failure.allowsCodecFallback
+        default: false
+        }
+    }
+
     public var userMessage: LocalizedStringResource {
         switch self {
         case .unavailable:
-            "The server couldn’t provide this streaming quality. Choose another quality or check the server’s transcoding settings."
+            "The server didn’t offer a converted stream for these settings. It didn’t report a specific reason. Try another quality, or ask the server owner to check the transcoding log."
         case .unsupported:
             "This source plays original files and doesn’t support quality conversion."
+        case .permissionDenied:
+            "The server refused permission to play or convert this title. Ask the server owner to check your account’s playback and transcoding permissions."
+        case .noCompatibleStream:
+            "The server reported that no compatible stream is available. Check its supported encoders and transcoding settings, or choose another quality."
+        case .sourceUnavailable:
+            "The selected version is no longer available on the server. Go back and choose an available version."
+        case .malformedResponse:
+            "The server’s playback response couldn’t be read. Check the server’s logs and try again."
+        case .negotiationFailed:
+            "The server couldn’t prepare playback and didn’t report a specific cause. Check the server’s logs and try again."
+        case .serverHTTP(let status):
+            "The server returned HTTP \(status) while preparing playback. Check its transcoding log for the cause. Changing codec may not resolve a server error."
+        case .playback(let failure):
+            failure.userMessage
+        case .startupTimedOut:
+            "The server supplied a stream, but playback made no progress before the startup timeout. This doesn’t confirm a codec restriction. Check the server’s transcoding activity and network connection, or try another quality."
+        }
+    }
+
+    /// Codes only: never display raw server/AVFoundation descriptions or URLs.
+    public var diagnosticCode: String? {
+        switch self {
+        case .permissionDenied: "NotAllowed"
+        case .noCompatibleStream: "NoCompatibleStream"
+        case .sourceUnavailable: "MediaSourceUnavailable"
+        case .malformedResponse: "InvalidPlaybackResponse"
+        case .negotiationFailed: "PlaybackNegotiationFailed"
+        case .serverHTTP(let status): "HTTP \(status)"
+        case .startupTimedOut: "PlaybackStartupTimeout"
+        case .playback(let failure): failure.diagnosticCode
+        default: nil
+        }
+    }
+}
+
+public struct StreamingPlaybackFailure: Equatable, Sendable {
+    public enum Kind: Sendable { case network, timedOut, accessDenied, unavailable, unsupportedFormat, server, unknown }
+    public enum Domain: String, Sendable { case avFoundation = "AVFoundation", url = "URL", coreMedia = "CoreMedia" }
+    public let kind: Kind
+    public let domain: Domain?
+    public let code: Int?
+    public let httpStatus: Int?
+
+    public init(kind: Kind, domain: Domain? = nil, code: Int? = nil, httpStatus: Int? = nil) {
+        self.kind = kind
+        self.domain = domain
+        self.code = code
+        self.httpStatus = httpStatus
+    }
+
+    public var allowsCodecFallback: Bool { kind == .unsupportedFormat || kind == .unknown }
+    public var diagnosticCode: String? {
+        let components = [
+            domain.flatMap { domain in code.map { "\(domain.rawValue) \($0)" } },
+            httpStatus.map { "HTTP \($0)" }
+        ].compactMap { $0 }
+        return components.isEmpty ? nil : components.joined(separator: " · ")
+    }
+    public var userMessage: LocalizedStringResource {
+        switch kind {
+        case .network:
+            "The connection to the playback stream was lost or couldn’t be established. Check your connection and the server’s availability."
+        case .timedOut:
+            "The playback stream stopped responding. Check the server’s transcoding activity and network connection."
+        case .accessDenied:
+            "Access to the playback stream was denied. Check your sign-in and the server account’s playback permissions."
+        case .unavailable:
+            "The playback stream is no longer available. Retry to create a new playback session."
+        case .unsupportedFormat:
+            "The player couldn’t decode the stream the server returned. Try H.264 or check the server’s encoder settings."
+        case .server:
+            "The server returned an error while serving the playback stream. Its transcoding log can explain why conversion failed."
+        case .unknown:
+            "The server supplied a stream, but the player couldn’t play it. No specific cause was reported. Check the server’s transcoding log or try another quality."
+        }
+    }
+}
+
+public enum StreamingPreparationPhase: Sendable {
+    case requesting, opening, waitingForVideo
+
+    public func message(provider: String, transcoding: Bool, usingH264Fallback: Bool) -> LocalizedStringResource {
+        switch self {
+        case .requesting where usingH264Fallback:
+            "Trying H.264 at the same quality limit…"
+        case .requesting:
+            "Requesting a playback stream from \(provider)…"
+        case .opening where transcoding:
+            "Opening the converted stream from \(provider)…"
+        case .opening:
+            "Opening the playback stream…"
+        case .waitingForVideo where transcoding:
+            "Waiting for video from \(provider)…"
+        case .waitingForVideo:
+            "Buffering video…"
         }
     }
 }

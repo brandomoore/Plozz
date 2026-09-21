@@ -9,6 +9,62 @@ import UIKit
 
 @MainActor
 final class StreamingPlaybackTests: XCTestCase {
+    func testQueuedFailureCannotOverwriteANewerRendition() async {
+        let (model, engine, provider) = make()
+        await model.load()
+        engine.onFailure?(.invalidResponse)
+        model.changeStreamingOptions(.init(quality: .sd480))
+        await wait { engine.positions.count == 2 && model.phase == .ready }
+        let calls = await provider.calls
+        XCTAssertEqual(calls.map { $0.options.quality }, [.hd720, .sd480])
+        XCTAssertEqual(calls.last?.options.codec, .automatic)
+        XCTAssertNil(model.streamingQualityError)
+        await model.stop()
+    }
+
+    func testStartupTimeoutIsNotReportedAsAServerCodecRejection() async {
+        let (model, _, _) = make(options: .init(quality: .hd720, codec: .preferH264))
+        await model.load()
+        XCTAssertFalse(model.handoffHandleStartupTimeout())
+        model.handoffSetPhase(.failed(.invalidResponse))
+        XCTAssertEqual(model.streamingQualityError, .startupTimedOut)
+        XCTAssertEqual(model.streamingQualityError?.diagnosticCode, "PlaybackStartupTimeout")
+        await model.stop()
+    }
+
+    func testTimeoutFallbackStaysBoundedAndReportsItsActualStage() async {
+        let (model, engine, provider) = make()
+        await model.load()
+        XCTAssertTrue(model.handoffHandleStartupTimeout())
+        XCTAssertTrue(model.streamingUsedH264Fallback)
+        await wait { engine.positions.count == 2 && model.phase == .ready }
+        XCTAssertFalse(model.handoffHandleStartupTimeout())
+        let calls = await provider.calls
+        XCTAssertEqual(calls.map { $0.options.quality }, [.hd720, .hd720])
+        XCTAssertEqual(calls.map { $0.options.codec }, [.automatic, .preferH264])
+        XCTAssertEqual(model.streamingQualityError, .startupTimedOut)
+        await model.stop()
+    }
+
+    func testNetworkStreamFailureSkipsCodecRetryAndKeepsItsEvidence() async {
+        let (model, engine, provider) = make()
+        await model.load()
+        let failure = StreamingPlaybackFailure(kind: .network, domain: .url, code: -1009)
+        engine.streamingFailure = failure
+        engine.onFailure?(.invalidResponse)
+        await wait { if case .failed = model.phase { return true }; return false }
+        XCTAssertEqual(model.streamingQualityError, .playback(failure))
+        let calls = await provider.calls
+        XCTAssertEqual(calls.count, 1)
+        await model.stop()
+    }
+
+    func testAuthenticationErrorsRemainAuthenticationErrors() {
+        XCTAssertNil(PlayerViewModel.streamingFailure(.unauthorized))
+        XCTAssertNil(PlayerViewModel.streamingFailure(.serverUnreachable))
+        XCTAssertEqual(PlayerViewModel.streamingFailure(.invalidResponse), .playback(.init(kind: .unknown)))
+        XCTAssertEqual(PlayerViewModel.streamingFailure(.invalidResponse, streamWasSupplied: false), .negotiationFailed)
+    }
     private func make(
         options: StreamingPlaybackOptions? = .init(quality: .hd720),
         provider: QualityPlaybackProvider = QualityPlaybackProvider()
@@ -256,6 +312,7 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
 
 @MainActor
 private final class QualityEngine: VideoEngine {
+    var streamingFailure: StreamingPlaybackFailure?
     let displayName = "Quality fixture"
     var status: VideoEngineStatus = .idle
     var isPaused = false

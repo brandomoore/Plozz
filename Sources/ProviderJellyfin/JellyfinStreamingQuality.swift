@@ -50,6 +50,17 @@ extension JellyfinCapabilityProfile {
     }
 }
 
+extension PlaybackInfoResponse {
+    var streamingError: StreamingQualityError? {
+        switch ErrorCode {
+        case nil: nil
+        case "NotAllowed": .permissionDenied
+        case "NoCompatibleStream": .noCompatibleStream
+        default: .negotiationFailed
+        }
+    }
+}
+
 extension MediaSourceInfo {
     func fits(_ quality: StreamingQuality) -> Bool {
         let video = MediaStreams?.first { $0.Type == "Video" }

@@ -32,11 +32,15 @@ class MobileQualityControlsTests(unittest.TestCase):
         self.assertIn("cancelAutoHide()", callback)
         self.assertIn("case .quality:\n                PlozziOSStreamingQualitySheet(viewModel: viewModel)", source)
 
-    def test_outer_quality_button_only_appears_for_failed_playback(self):
+    def test_failure_recovery_is_central_not_in_the_close_button(self):
         source = (ROOT / "Sources/AppShelliOS/PlozziOSPlayerView.swift").read_text()
         controls = swift_block(source, "private var closeButton:")
-        self.assertIn("case .failed = viewModel.phase, viewModel.streamingQualityAvailable", controls)
-        self.assertIn('accessibilityIdentifier("player-failed-streaming-quality")', controls)
+        self.assertNotIn("Quality", controls)
+        self.assertIn("onChangeQuality: { presentsStreamingQuality = true }", source)
+        feedback = (ROOT / "Sources/FeaturePlayback/StreamingPlaybackFeedback.swift").read_text()
+        self.assertIn('Button("Change quality"', feedback)
+        self.assertIn('accessibilityIdentifier("player-failed-streaming-quality")', feedback)
+        self.assertIn("viewModel.phase == .ready, !viewModel.showBringUpSpinner", source)
 
 
 if __name__ == "__main__":

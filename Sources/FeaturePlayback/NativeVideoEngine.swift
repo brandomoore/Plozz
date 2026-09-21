@@ -204,7 +204,7 @@ public final class NativeVideoEngine: VideoEngine {
                 streamURL = try await authenticatedHTTPResolver?.resolve(locator)
             } catch {
                 guard generation == loadGeneration else { return }
-                let appError = AppError.unknown(String(describing: error))
+                let appError = (error as? AppError) ?? .unknown("")
                 status = .failed(appError)
                 onFailure?(appError)
                 return
@@ -681,7 +681,22 @@ public final class NativeVideoEngine: VideoEngine {
         }
     }
 
+    public var streamingFailure: StreamingPlaybackFailure? {
+        guard let item = player?.currentItem else { return nil }
+        let lastError = item.errorLog()?.events.last
+        guard item.error != nil || lastError != nil else { return nil }
+        let http = lastError.flatMap { (400...599).contains($0.errorStatusCode) ? $0.errorStatusCode : nil }
+        let error = (item.error as NSError?) ?? lastError.map {
+            NSError(domain: $0.errorDomain, code: $0.errorStatusCode)
+        }
+        let failure = NativePlaybackFailure.classify(error, httpStatus: http)
+        return failure
+    }
+
     private func currentPlayerError() -> AppError {
+        if let failure = streamingFailure {
+            HandoffDiagnostics.emit("native STREAM_FAILURE kind=\(failure.kind) code=\(failure.diagnosticCode ?? "unreported")")
+        }
         if player?.currentItem?.error != nil {
             return .invalidResponse
         }

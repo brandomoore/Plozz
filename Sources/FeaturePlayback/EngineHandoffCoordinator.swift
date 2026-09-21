@@ -149,8 +149,13 @@ protocol EngineHandoffCoordinatorHost: AnyObject {
     func handoffSetPhase(_ phase: PlayerViewModel.Phase)
     /// Release any first-frame hand-off gate when playback fails terminally.
     func handoffClearFirstFrameWait()
+    /// Returns true only if the host started its own bounded recovery.
+    func handoffHandleStartupTimeout() -> Bool
 }
 
+extension EngineHandoffCoordinatorHost {
+    func handoffHandleStartupTimeout() -> Bool { false }
+}
 // MARK: - Coordinator
 
 /// Owns the active `VideoEngine` instance and everything about *swapping* it:
@@ -382,7 +387,8 @@ final class EngineHandoffCoordinator {
     private func launchStallRecovery(token: UUID) {
         recoveryTask?.cancel()
         recoveryTask = Task { [weak self] in
-            guard let self else { return }
+            guard let self, self.engineToken == token else { return }
+            if self.host?.handoffHandleStartupTimeout() == true { return }
             await self.handleEngineFailure(.invalidResponse, sourceEngineToken: token)
         }
     }

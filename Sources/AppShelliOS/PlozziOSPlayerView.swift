@@ -57,10 +57,11 @@ struct PlozziOSPlayerView: View {
                 PlayerView(
                     viewModel: viewModel,
                     showDiagnostics: appModel.settings.diagnostics.settings.isEnabled,
-                    showsSharedControls: false
+                    showsSharedControls: false,
+                    onChangeQuality: { presentsStreamingQuality = true }
                 )
                 .id(playerIdentity)
-                if viewModel.phase == .ready {
+                if viewModel.phase == .ready, !viewModel.showBringUpSpinner {
                     PlozziOSPlayerControlsOverlay(
                         viewModel: viewModel,
                         onClose: { dismiss() }
@@ -159,13 +160,6 @@ struct PlozziOSPlayerView: View {
     private var closeButton: some View {
         VStack {
             HStack {
-                if let viewModel, case .failed = viewModel.phase, viewModel.streamingQualityAvailable {
-                    Button("Quality", systemImage: "slider.horizontal.3") {
-                        presentsStreamingQuality = true
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("player-failed-streaming-quality")
-                }
                 Spacer()
                 Button {
                     dismiss()

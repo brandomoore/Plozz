@@ -4,7 +4,68 @@ import Foundation
 import XCTest
 @testable import ProviderJellyfin
 
+private struct StreamingErrorHTTP: HTTPClient {
+    let status: Int
+    func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+        throw AppError.invalidResponse
+    }
+    func sendRaw(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+        (Data("private server error text must not enter UI".utf8),
+         HTTPURLResponse(url: baseURL, statusCode: status, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
 final class JellyfinStreamingQualityTests: XCTestCase {
+    func testHTTPRefusalAndServerErrorsKeepTheirStatusInsteadOfBlamingTheCodec() async {
+        for (status, expected) in [(403, StreamingQualityError.permissionDenied), (500, .serverHTTP(500)), (503, .serverHTTP(503))] {
+            let client = JellyfinClient(
+                baseURL: URL(string: "https://fixture.test")!,
+                deviceProfile: .init(deviceID: "fixture"),
+                providerKind: .emby, http: StreamingErrorHTTP(status: status)
+            )
+            do {
+                _ = try await client.playbackInfo(userID: "user", itemID: "movie", streaming: .init(quality: .hd720))
+                XCTFail("Expected rejection")
+            } catch let error as StreamingQualityError {
+                XCTAssertEqual(error, expected)
+                XCTAssertFalse(error.allowsCodecFallback)
+            } catch { XCTFail("Unexpected error: \(error)") }
+        }
+    }
+    func testBackendDecisionCodesSurviveWithoutMediaSourcesAndReleaseTheSession() async {
+        for kind in [ProviderKind.emby, .jellyfin] {
+            for (code, expected) in [
+                ("NotAllowed", StreamingQualityError.permissionDenied),
+                ("NoCompatibleStream", .noCompatibleStream),
+                ("FutureServerCode", .negotiationFailed)
+            ] {
+                let (provider, http) = fixture(kind: kind, rendition: false)
+                http.stubSequence(pathSuffix: "/Items/movie/PlaybackInfo", jsons: [
+                    #"{"ErrorCode":"\#(code)","PlaySessionId":"rejected-session"}"#
+                ])
+                do {
+                    _ = try await provider.playbackInfo(
+                        for: "movie", mediaSourceID: "version", forceTranscode: false,
+                        streaming: .init(quality: .hd720)
+                    )
+                    XCTFail("Server refusal must not become playable")
+                } catch let error as StreamingQualityError {
+                    XCTAssertEqual(error, expected)
+                } catch { XCTFail("Unexpected error: \(error)") }
+                XCTAssertEqual(http.sentPaths.filter { $0.hasSuffix("/PlaybackInfo") }.count, 1)
+                XCTAssertTrue(http.sentPaths.contains { $0.hasSuffix("/Videos/ActiveEncodings") })
+            }
+
+        }
+    }
+
+    func testMalformedDecisionCannotPretendToBeASourceMissingOrCodecRefusal() throws {
+        XCTAssertThrowsError(try JSONDecoder().decode(PlaybackInfoResponse.self, from: Data("{}".utf8)))
+        let denied = try JSONDecoder().decode(PlaybackInfoResponse.self, from: Data(#"{"ErrorCode":"NotAllowed"}"#.utf8))
+        XCTAssertEqual(denied.streamingError, .permissionDenied)
+        XCTAssertFalse(StreamingQualityError.permissionDenied.allowsCodecFallback)
+    }
+
     private func fixture(kind: ProviderKind, rendition: Bool, bitrate: Int = 30_000_000) -> (JellyfinProvider, StubHTTPClient) {
         let http = StubHTTPClient()
         http.stub(pathSuffix: "/Users/user/Items/movie", json: #"{"Id":"movie","Name":"Movie","Type":"Movie"}"#)

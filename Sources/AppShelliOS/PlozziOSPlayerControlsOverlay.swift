@@ -25,6 +25,7 @@ struct PlozziOSPlayerControlsOverlay: View {
     @State private var isScrubbing = false
     @State private var scrubPreviewCoordinator: ScrubPreviewCoordinator?
     @State private var presentedSheet: PlozziOSPlayerSheet?
+    @State private var showsDiagnosticsAfterSheet = false
     /// Whether the Info / Cast card is expanded. Owned here rather than inside
     /// the strip because dismissing it is this view's job: the tap that closes
     /// it lands on the video, above the card, which the strip does not cover.
@@ -248,10 +249,23 @@ struct PlozziOSPlayerControlsOverlay: View {
                 scheduleAutoHide()
             }
         }
-        .sheet(item: $presentedSheet, onDismiss: scheduleAutoHide) { sheet in
+        .onChange(of: viewModel.controls.diagnosticsEnabled) { _, enabled in
+            if enabled { cancelAutoHide() } else { scheduleAutoHide() }
+        }
+        .sheet(item: $presentedSheet, onDismiss: {
+            if showsDiagnosticsAfterSheet {
+                showsDiagnosticsAfterSheet = false
+                viewModel.controls.diagnosticsEnabled = true
+            } else {
+                scheduleAutoHide()
+            }
+        }) { sheet in
             switch sheet {
             case .info:
-                PlozziOSPlaybackInfoSheet(viewModel: viewModel)
+                PlozziOSPlaybackInfoSheet(viewModel: viewModel) {
+                    showsDiagnosticsAfterSheet = true
+                    presentedSheet = nil
+                }
             case .speed:
                 PlozziOSPlaybackSpeedSheet(viewModel: viewModel)
             case .subtitles:
@@ -1739,6 +1753,7 @@ private struct PlozziOSPlaybackSpeedSheet: View {
 private struct PlozziOSPlaybackInfoSheet: View {
     @Environment(\.dismiss) private var dismiss
     let viewModel: PlayerViewModel
+    let onShowDiagnostics: () -> Void
 
     var body: some View {
         NavigationStack {
@@ -1778,6 +1793,9 @@ private struct PlozziOSPlaybackInfoSheet: View {
                             Text(badge.label)
                         }
                     }
+                }
+                Section {
+                    Button("Playback Diagnostics", systemImage: "waveform.path.ecg", action: onShowDiagnostics)
                 }
             }
             .navigationTitle("Now Playing")

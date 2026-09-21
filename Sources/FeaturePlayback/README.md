@@ -61,7 +61,21 @@ connection changes reapply the relevant saved default. The player Quality sheet
 changes only the current video's rendition, not the saved preferences.
 Its sliders button lives beside speed, audio, and subtitles in the visible
 transport. Loading shows no temporary Quality button; a failed stream offers
-Quality beside Close so the viewer can recover.
+Change quality and Try again with the central error, not beside Close.
+
+Preparation follows real negotiation, stream opening, and first-video stages.
+Live conversion buffers segments as the viewer watches; there is no invented
+whole-title transcode percentage or claim that a timeout means HEVC is disabled.
+Server decision codes, HTTP failures, native player errors, and startup timeouts
+remain distinct. Only allowlisted error domains and numeric codes enter the UI
+and playback journal; raw server messages and authenticated URLs do not.
+Permission, connection, and server errors do not trigger codec retries.
+
+On iPhone/iPad diagnostics use a separate large, scrollable sheet, with stacked
+label/value rows and adaptive columns in wide layouts. Failure details scroll
+with the metrics. It shares the existing sampler and formatting with the
+unchanged tvOS HUD. Original-file video/audio facts remain labelled as source
+facts when the delivered stream is transcoded.
 
 Plex, Jellyfin, and Emby adapters negotiate each request independently. Original
 files can direct-play only when their known bitrate and dimensions fit all

@@ -44,17 +44,20 @@ public struct PlayerView: View {
     private let showDiagnostics: Bool
     private let themePalette: ThemePalette
     private let showsSharedControls: Bool
+    private let onChangeQuality: (() -> Void)?
 
     public init(
         viewModel: PlayerViewModel,
         showDiagnostics: Bool = false,
         themePalette: ThemePalette = .dark,
-        showsSharedControls: Bool = true
+        showsSharedControls: Bool = true,
+        onChangeQuality: (() -> Void)? = nil
     ) {
         _viewModel = State(initialValue: viewModel)
         self.showDiagnostics = showDiagnostics
         self.themePalette = themePalette
         self.showsSharedControls = showsSharedControls
+        self.onChangeQuality = onChangeQuality
     }
 
 
@@ -161,6 +164,28 @@ public struct PlayerView: View {
             // metrics now that there's a player to read.
             if viewModel.controls.diagnosticsEnabled { startSampling() }
         }
+        #if os(iOS)
+        .sheet(isPresented: Binding(
+            get: { viewModel.controls.diagnosticsEnabled },
+            set: { viewModel.controls.diagnosticsEnabled = $0 }
+        )) {
+            NavigationStack {
+                PlaybackDiagnosticsOverlay(
+                    diagnostics: diagnosticsSampler.latest, presentation: .mobile,
+                    streamingError: viewModel.streamingQualityError
+                )
+                    .environment(\.themePalette, themePalette)
+                    .navigationTitle("Playback Diagnostics")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { viewModel.controls.diagnosticsEnabled = false }
+                        }
+                    }
+            }
+            .presentationDetents([.large])
+        }
+        #endif
     }
 
     /// The visual layer stack (base + HDR veil + spinner + diagnostics), split
@@ -201,9 +226,18 @@ public struct PlayerView: View {
     @ViewBuilder
     private var bringUpSpinnerOverlay: some View {
         if viewModel.showBringUpSpinner {
-            LoadingMessagesView(spinnerTint: .white, messageColor: .white.opacity(0.85))
-                .ignoresSafeArea()
+            if let options = viewModel.streamingOptions {
+                StreamingPlaybackLoadingView(
+                    options: options, provider: viewModel.streamingProviderName,
+                    phase: viewModel.streamingPreparation, transcoding: viewModel.streamingIsTranscoding,
+                    h264Fallback: viewModel.streamingUsedH264Fallback
+                )
                 .transition(.opacity)
+            } else {
+                LoadingMessagesView(spinnerTint: .white, messageColor: .white.opacity(0.85))
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+            }
         }
     }
 
@@ -211,6 +245,7 @@ public struct PlayerView: View {
     /// identical gating (only while `.ready` and diagnostics enabled).
     @ViewBuilder
     private var diagnosticsOverlay: some View {
+        #if !os(iOS)
         // Keep diagnostics off during load/failure while Plozzigen is initializing;
         // this avoids extra SwiftUI preference/layout churn on the crash path.
         if viewModel.controls.diagnosticsEnabled, viewModel.phase == .ready {
@@ -220,6 +255,7 @@ public struct PlayerView: View {
                 .ignoresSafeArea()
                 .transition(.opacity)
         }
+        #endif
     }
 
     /// The phase-driven main content, split out of `body` so the type-checker
@@ -242,7 +278,21 @@ public struct PlayerView: View {
             readyPlayerContainer
 
         case let .failed(error):
+            #if os(iOS)
+            MobilePlaybackFailureView(
+                message: viewModel.streamingQualityError?.userMessage ?? error.userMessage,
+                code: viewModel.streamingQualityError?.diagnosticCode,
+                usedH264Fallback: viewModel.streamingUsedH264Fallback,
+                onChangeQuality: viewModel.streamingQualityAvailable ? onChangeQuality : nil,
+                onRetry: viewModel.streamingQualityAvailable ? {
+                    if let options = viewModel.streamingOptions { viewModel.changeStreamingOptions(options) }
+                } : nil,
+                onShowDiagnostics: { viewModel.controls.diagnosticsEnabled = true },
+                onDismiss: { dismiss() }
+            )
+            #else
             PlaybackErrorView(message: viewModel.streamingQualityError?.userMessage ?? error.userMessage) { dismiss() }
+            #endif
         }
     }
 

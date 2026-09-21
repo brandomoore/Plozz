@@ -12,11 +12,32 @@ import CoreUI
 /// by the host (`PlayerView`) so it never steals focus from the transport
 /// controls.
 struct PlaybackDiagnosticsOverlay: View {
+    enum Presentation { case television, mobile }
     let diagnostics: PlaybackDiagnostics?
+    var presentation: Presentation = .television
+    var streamingError: StreamingQualityError?
 
     @Environment(\.themePalette) private var palette
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    @ViewBuilder
     var body: some View {
+        if presentation == .mobile {
+            GeometryReader { geometry in
+                ScrollView {
+                    mobileContent(width: geometry.size.width)
+                        .padding(20)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .accessibilityIdentifier("playback-diagnostics-scroll")
+            }
+            .background(palette.backgroundBase)
+        } else {
+            televisionPanel
+        }
+    }
+
+    private var televisionPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header with provider logo
             header
@@ -41,6 +62,56 @@ struct PlaybackDiagnosticsOverlay: View {
         // safe area so this hugs the corner, not the wider tvOS overscan inset).
         .padding(.leading, 48)
         .padding(.top, 32)
+    }
+
+    func mobileContent(width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            if let streamingError {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(streamingError.userMessage).font(.callout)
+                    if let code = streamingError.diagnosticCode { Text(verbatim: code).font(.caption.monospaced()) }
+                }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                if let provider = diagnostics?.sourceProvider {
+                    Label {
+                        Text("Playing from \(diagnostics?.serverName ?? provider.displayName)")
+                    } icon: {
+                        ProviderBrandMark(provider: provider, size: 20, showsBackground: false)
+                            .frame(width: 20, height: 20)
+                    }
+                    .font(.headline)
+                }
+                if let engine = diagnostics?.engineName { Text(engine).font(.subheadline) }
+                if diagnostics?.mode == .transcode {
+                    Text("Video and audio details describe the original file, not the converted stream.")
+                        .font(.footnote)
+                        .foregroundStyle(palette.secondaryText)
+                }
+            }
+            if let diagnostics {
+                LazyVGrid(
+                    columns: Array(
+                        repeating: GridItem(.flexible(minimum: 0), alignment: .topLeading),
+                        count: width >= 700 && !dynamicTypeSize.isAccessibilitySize ? 2 : 1
+                    ),
+                    alignment: .leading, spacing: 24
+                ) {
+                    sourceSection(diagnostics)
+                    videoSection(diagnostics)
+                    audioSection(diagnostics)
+                    subtitleSection(diagnostics)
+                    playbackSection(diagnostics)
+                    systemSection(diagnostics)
+                }
+            } else {
+                Text("Gathering metrics…").foregroundStyle(palette.secondaryText)
+            }
+        }
+        .foregroundStyle(palette.primaryText)
+        #if os(iOS) || os(macOS)
+        .textSelection(.enabled)
+        #endif
     }
 
     // MARK: - Header
@@ -175,11 +246,14 @@ struct PlaybackDiagnosticsOverlay: View {
     private func section(_ title: String, @ViewBuilder rows: () -> some View) -> some View {   // l10n:content — diagnostic values, developer-facing
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(palette.secondaryText.opacity(0.6))
+                .font(presentation == .mobile ? .caption.weight(.bold) : .system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.secondaryText.opacity(presentation == .mobile ? 1 : 0.6))
                 .padding(.bottom, 1)
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 3) {
-                rows()
+            if presentation == .mobile {
+                VStack(alignment: .leading, spacing: 12) { rows() }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 3) { rows() }
             }
         }
     }
@@ -219,17 +293,39 @@ struct PlaybackDiagnosticsOverlay: View {
         }
     }
 
+    @ViewBuilder
     private func row(_ label: String, _ value: Text) -> some View {   // l10n:content — diagnostic values, developer-facing
-        GridRow {
-            Text(label)
-                .font(.system(size: 14, design: .monospaced))
-                .foregroundStyle(palette.secondaryText)
-                .frame(width: 110, alignment: .leading)
-                .gridColumnAlignment(.leading)
-            value
-                .font(.system(size: 14, design: .monospaced).weight(.semibold))
-                .foregroundStyle(palette.primaryText)
-                .gridColumnAlignment(.leading)
+        if presentation == .mobile {
+            MobileDiagnosticsRow(label: label, value: value)
+        } else {
+            GridRow {
+                Text(label)
+                    .font(.system(size: 14, design: .monospaced))
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(width: 110, alignment: .leading)
+                    .gridColumnAlignment(.leading)
+                value
+                    .font(.system(size: 14, design: .monospaced).weight(.semibold))
+                    .foregroundStyle(palette.primaryText)
+                    .gridColumnAlignment(.leading)
+            }
+        }
+    }
+
+    struct MobileDiagnosticsRow: View {
+        let label: String // l10n:content — diagnostic field label
+        let value: Text
+        @Environment(\.themePalette) private var palette
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label).font(.caption).foregroundStyle(palette.secondaryText)
+                value.font(.callout.monospacedDigit())
+                    .foregroundStyle(palette.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .accessibilityElement(children: .combine)
         }
     }
 

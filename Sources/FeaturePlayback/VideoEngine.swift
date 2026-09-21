@@ -85,6 +85,7 @@ public protocol VideoEngine: AnyObject {
     func setBackgroundAudioEnabled(_ enabled: Bool)
     var needsBackgroundReload: Bool { get }
     var maximumPlaybackSpeed: Double { get }
+    var streamingFailure: StreamingPlaybackFailure? { get }
 
     // MARK: Lifecycle
 
@@ -340,6 +341,7 @@ public protocol VideoEngine: AnyObject {
 }
 
 public extension VideoEngine {
+    var streamingFailure: StreamingPlaybackFailure? { nil }
     var needsBackgroundReload: Bool { true }
     var maximumPlaybackSpeed: Double { 4 }
     var nowPlayingPlayer: AVPlayer? { nil }

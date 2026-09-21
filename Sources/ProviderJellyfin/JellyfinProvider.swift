@@ -946,6 +946,13 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
         try await resolvePlayback(for: itemID, mediaSourceID: mediaSourceID, forceTranscode: forceTranscode)
     }
 
+    private func validateStreamingDecision(_ info: PlaybackInfoResponse) async throws {
+        guard let error = info.streamingError else { return }
+        if let id = info.PlaySessionId { await releaseStreamingEncoding(id) }
+        PlozzLog.playback.error("Server rejected streaming negotiation: \(error.diagnosticCode ?? "unspecified")")
+        throw error
+    }
+
     func resolvePlayback(
         for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
         streaming: StreamingPlaybackOptions? = nil
@@ -966,15 +973,17 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
         let detail = try await detailTask
         var info = try await infoTask
         var streaming = streaming
+        if streaming != nil { try await validateStreamingDecision(info) }
         // Prefer the explicitly chosen source; fall back to the server default.
         guard var source = Self.selectSource(mediaSourceID, in: info.MediaSources) else {
             if streaming != nil, let id = info.PlaySessionId { await releaseStreamingEncoding(id) }
+            if streaming != nil { throw StreamingQualityError.sourceUnavailable }
             throw AppError.notFound
         }
         if streaming != nil, let mediaSourceID, source.Id != mediaSourceID {
             if let id = info.PlaySessionId { await releaseStreamingEncoding(id) }
             PlozzLog.playback.error("Streaming quality negotiation returned a different media source.")
-            throw StreamingQualityError.unavailable
+            throw StreamingQualityError.sourceUnavailable
         }
         if let options = streaming {
             let tracks = (source.MediaStreams ?? detail.MediaStreams ?? []).filter { $0.Type == "Audio" }.map(map(stream:))
@@ -985,6 +994,11 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             streaming?.subtitlesOff = selected == nil
         }
         let mustConvert = streaming.map { $0.forceTranscoding || forceTranscode || !source.fits($0.quality) } ?? false
+        if mustConvert, source.SupportsTranscoding == false {
+            if let id = info.PlaySessionId { await releaseStreamingEncoding(id) }
+            PlozzLog.playback.error("Server marked this source as unavailable for transcoding.")
+            throw StreamingQualityError.noCompatibleStream
+        }
         if streaming != nil, !mustConvert, source.SupportsDirectPlay == true {
             source.TranscodingUrl = nil
         }
@@ -997,12 +1011,14 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
                 userID: session.userID, itemID: itemID, mediaSourceID: source.Id ?? mediaSourceID,
                 mode: .transcode, streaming: streaming
             )
+            try await validateStreamingDecision(info)
             guard let converted = Self.selectSource(source.Id ?? mediaSourceID, in: info.MediaSources),
                   converted.Id == source.Id, converted.TranscodingUrl != nil else {
                 if let id = info.PlaySessionId { await releaseStreamingEncoding(id) }
                 PlozzLog.playback.error("Server did not provide the requested bounded transcode.")
                 throw StreamingQualityError.unavailable
             }
+
             source = converted
         }
         if let streaming, source.TranscodingUrl != nil {

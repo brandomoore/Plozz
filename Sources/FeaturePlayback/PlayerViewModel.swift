@@ -250,6 +250,10 @@ public final class PlayerViewModel {
     private let streamingQuality = StreamingPlaybackState()
     public var streamingOptions: StreamingPlaybackOptions? { streamingQuality.options }
     public var streamingQualityError: StreamingQualityError? { streamingQuality.error }
+    public var streamingPreparation: StreamingPreparationPhase { streamingQuality.preparation }
+    public var streamingUsedH264Fallback: Bool { streamingQuality.usedH264Fallback }
+    public var streamingIsTranscoding: Bool { request?.isTranscoding == true }
+    public var streamingProviderName: String { provider.kind.displayName }
     public var streamingQualityAvailable: Bool {
         streamingOptions != nil && provider is any StreamingQualityProviding
             && request?.streamURL?.isFileURL != true
@@ -624,6 +628,8 @@ public final class PlayerViewModel {
         }
         engine.onFailure = { [weak self] error in
             guard let self, self.engineToken == callbackEngineToken else { return }
+            let failureGeneration = self.streamingLoadGeneration
+            let failureEvidence = self.engine.streamingFailure
             // Re-weaken for the Task. The enclosing closure is [weak self], but
             // `guard let self` makes it strong again, and a bare `Task { self }`
             // then keeps the whole player alive for as long as the task lives —
@@ -633,9 +639,15 @@ public final class PlayerViewModel {
             // can't read, a cancelled connection), so it fires on ordinary
             // playback rather than only in exotic cases.
             Task { [weak self] in
-                if let self, self.engineToken == callbackEngineToken,
-                   self.retryStreamingWithH264IfNeeded() { return }
-                await self?.engineHandoff.handleEngineFailure(
+                guard let self, self.engineToken == callbackEngineToken,
+                      self.streamingLoadGeneration == failureGeneration else { return }
+                if self.streamingOptions != nil {
+                    let facts = failureEvidence
+                    let canRetry = facts?.allowsCodecFallback ?? (error == .invalidResponse)
+                    if canRetry, self.retryStreamingWithH264IfNeeded() { return }
+                    self.streamingQuality.error = Self.streamingFailure(error, evidence: facts)
+                }
+                await self.engineHandoff.handleEngineFailure(
                     error,
                     sourceEngineToken: callbackEngineToken
                 )
@@ -859,6 +871,7 @@ public final class PlayerViewModel {
     private func startPlayback(forceTranscode: Bool, resumeOverride: TimeInterval?) async {
         let streamingGeneration = streamingLoadGeneration
         streamingQuality.error = nil
+        streamingQuality.preparation = .requesting
         phase = .loading
         let bringUpStart = Date()
         bringUpStartedAt = bringUpStart
@@ -900,6 +913,7 @@ public final class PlayerViewModel {
 
             let request = resolved.request
             self.request = request
+            streamingQuality.preparation = .opening
             if streamingOptions != nil, case let .authenticatedHTTP(locator) = request.playbackSource {
                 streamingMediaSourceID = locator.mediaSourceID
             }
@@ -946,8 +960,8 @@ public final class PlayerViewModel {
             phase = .failed(.invalidResponse)
         } catch let error as AppError {
             guard !Task.isCancelled, !didStop, streamingGeneration == streamingLoadGeneration else { return }
-            if streamingOptions != nil, error == .invalidResponse {
-                streamingQuality.error = .unavailable
+            if streamingOptions != nil {
+                streamingQuality.error = Self.streamingFailure(error, streamWasSupplied: false)
             }
             HandoffDiagnostics.emit(
                 "bringup FAILED item=\(itemID) provider=\(provider.kind.rawValue) "
@@ -1047,9 +1061,11 @@ public final class PlayerViewModel {
                     for: itemID, mediaSourceID: source, forceTranscode: forceTranscode, streaming: options
                 )
             } catch {
-                let canRetry = error is StreamingQualityError || (error as? AppError) == .invalidResponse
+                let canRetry = (error as? StreamingQualityError)?.allowsCodecFallback == true
+                    || (error as? AppError) == .invalidResponse
                 guard canRetry, options.codec != .preferH264, !Task.isCancelled else { throw error }
                 options.codec = .preferH264
+                if itemID == self.itemID { streamingQuality.usedH264Fallback = true }
                 PlozzLog.playback.info("Server rejected the preferred rendition; retrying H.264 within the same quality limit.")
                 request = try await provider.playbackInfo(
                     for: itemID, mediaSourceID: source, forceTranscode: forceTranscode, streaming: options
@@ -1154,6 +1170,7 @@ public final class PlayerViewModel {
         guard streamingOptions?.matchesSelection(options) != true || failed else { return }
         streamingQuality.options = options
         hasTriedStreamingH264 = false
+        streamingQuality.usedH264Fallback = false
         restartStreamingRendition()
     }
 
@@ -1205,6 +1222,7 @@ public final class PlayerViewModel {
               request?.streamingOptions?.codec != .preferH264,
               options.codec != .preferH264, !hasTriedStreamingH264, !didStop else { return false }
         hasTriedStreamingH264 = true
+        streamingQuality.usedH264Fallback = true
         options.codec = .preferH264
         streamingQuality.options = options
         PlozzLog.playback.info("Retrying server transcode with H.264 at the same streaming quality.")
@@ -1436,6 +1454,7 @@ public final class PlayerViewModel {
         controls.intendsPause = !intendsPlayback
         configureTracksAfterLoad(for: request)
         phase = .ready
+        streamingQuality.preparation = .waitingForVideo
         restoreStreamingTracks()
         // Hold the bring-up spinner until the engine actually presents its first
         // frame, so `.loading` → `.ready` is one continuous indicator rather than
@@ -2291,12 +2310,32 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
     }
 
     func handoffSetPhase(_ phase: PlayerViewModel.Phase) {
-        if case .failed = phase, streamingOptions != nil {
-            streamingQuality.error = .unavailable
+        if case .failed(let error) = phase, streamingOptions != nil, streamingQuality.error == nil {
+            streamingQuality.error = Self.streamingFailure(error, evidence: engine.streamingFailure)
         }
         self.phase = phase
     }
 
+    func handoffHandleStartupTimeout() -> Bool {
+        guard streamingOptions != nil, !didStop else { return false }
+        HandoffDiagnostics.emit("streaming STARTUP_TIMEOUT provider=\(provider.kind.rawValue) suppliedStream=\(request != nil)")
+        let evidence = engine.streamingFailure
+        if evidence?.allowsCodecFallback != false, retryStreamingWithH264IfNeeded() { return true }
+        streamingQuality.error = evidence.map(StreamingQualityError.playback) ?? .startupTimedOut
+        return false
+    }
+
+    static func streamingFailure(
+        _ error: AppError, evidence: StreamingPlaybackFailure? = nil, streamWasSupplied: Bool = true
+    ) -> StreamingQualityError? {
+        if let evidence { return .playback(evidence) }
+        switch error {
+        case .invalidResponse, .unknown:
+            return streamWasSupplied ? .playback(.init(kind: .unknown)) : .negotiationFailed
+        case .decoding: return .malformedResponse
+        default: return nil
+        }
+    }
     func handoffClearFirstFrameWait() {
         nextEpisodeCoordinator.clearFirstFrameWait()
     }
