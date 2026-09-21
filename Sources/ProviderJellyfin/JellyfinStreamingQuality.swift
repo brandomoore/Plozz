@@ -89,10 +89,14 @@ extension MediaSourceInfo {
         set("AllowVideoStreamCopy", "false")
         set("AllowAudioStreamCopy", "false")
         if let audio = options.audioTrack { set("AudioStreamIndex", String(audio.id)) }
-        if options.subtitlesOff { set("SubtitleStreamIndex", "-1") }
-        else if let subtitle = options.subtitleTrack {
+        if !options.subtitlesOff, let subtitle = options.subtitleTrack, subtitle.isBitmapSubtitle {
             set("SubtitleStreamIndex", String(subtitle.id))
-            if subtitle.isBitmapSubtitle { set("SubtitleMethod", "Encode") }
+            set("SubtitleMethod", "Encode")
+        } else {
+            // Text is delivered through the app's subtitle overlay. A server-
+            // generated Encode method must not survive a text/off selection.
+            set("SubtitleStreamIndex", "-1")
+            query.removeAll { $0.name.caseInsensitiveCompare("SubtitleMethod") == .orderedSame }
         }
         let videoCodec = query.first { $0.name.caseInsensitiveCompare("VideoCodec") == .orderedSame }?.value
         if options.codec == .preferH264 || !["h264", "hevc"].contains(videoCodec?.lowercased() ?? "") {

@@ -59,9 +59,13 @@ The mobile shell waits for the first network-path result before starting managed
 playback. Cellular, expensive, and unclassified paths use the cellular policy;
 connection changes reapply the relevant saved default. The player Quality sheet
 changes only the current video's rendition, not the saved preferences.
-Its sliders button lives beside speed, audio, and subtitles in the visible
-transport. Loading shows no temporary Quality button; a failed stream offers
-Change quality and Try again with the central error, not beside Close.
+The transport keeps subtitles directly accessible and groups quality, version,
+audio, speed, sync, and diagnostics in one playback-options menu. Version choices
+stay on the active account, reuse detail-page edition/file routing, and carry the
+current position, pause intent, speed, quality, and matching tracks to the new
+player. The per-profile version preference also applies to later playback.
+Loading shows no temporary Quality button; recovery lives with the central error,
+not beside Close. Multiple-version failures expose Version and Quality together.
 
 Preparation follows real negotiation, stream opening, and first-video stages.
 Its loading UI contains only a spinner, short status (such as "Transcoding…"),
@@ -100,6 +104,10 @@ Plex hardware transcoding generally requires Plex Pass. Force transcoding is
 an advanced option, not a server hardware-encoder selector. Transcoding may
 change HDR/audio formats. A failed bounded rendition never retries the original
 file or an on-device remux; errors leave the Quality control available.
+For Jellyfin/Emby conversion, only bitmap subtitles request server burn-in.
+Text tracks remain available through the existing subtitle overlay; a stale
+server-generated `SubtitleMethod=Encode` is removed from text/off renditions.
+An engine load that returns after a terminal startup failure cannot publish ready.
 
 Rendition changes stop old media I/O, retain the chosen source/version, current
 position and pause intent, reapply track selections, and retire the old server

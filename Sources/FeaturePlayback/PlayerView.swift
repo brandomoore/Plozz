@@ -45,19 +45,22 @@ public struct PlayerView: View {
     private let themePalette: ThemePalette
     private let showsSharedControls: Bool
     private let onChangeQuality: (() -> Void)?
+    private let onChangeVersion: (() -> Void)?
 
     public init(
         viewModel: PlayerViewModel,
         showDiagnostics: Bool = false,
         themePalette: ThemePalette = .dark,
         showsSharedControls: Bool = true,
-        onChangeQuality: (() -> Void)? = nil
+        onChangeQuality: (() -> Void)? = nil,
+        onChangeVersion: (() -> Void)? = nil
     ) {
         _viewModel = State(initialValue: viewModel)
         self.showDiagnostics = showDiagnostics
         self.themePalette = themePalette
         self.showsSharedControls = showsSharedControls
         self.onChangeQuality = onChangeQuality
+        self.onChangeVersion = onChangeVersion
     }
 
 
@@ -284,6 +287,7 @@ public struct PlayerView: View {
                 code: viewModel.streamingQualityError?.diagnosticCode,
                 usedH264Fallback: viewModel.streamingUsedH264Fallback,
                 onChangeQuality: viewModel.streamingQualityAvailable ? onChangeQuality : nil,
+                onChangeVersion: onChangeVersion,
                 onRetry: viewModel.streamingQualityAvailable ? {
                     if let options = viewModel.streamingOptions { viewModel.changeStreamingOptions(options) }
                 } : nil,

@@ -249,6 +249,23 @@ public final class PlayerViewModel {
     private let playbackSettings: PlaybackSettings
     private let streamingQuality = StreamingPlaybackState()
     public var streamingOptions: StreamingPlaybackOptions? { streamingQuality.options }
+    public var currentPlaybackItem: MediaItem? { request?.item ?? offlineItem }
+    public var currentMediaSourceID: String? {
+        if case .authenticatedHTTP(let locator) = request?.playbackSource { return locator.mediaSourceID }
+        return streamingMediaSourceID ?? mediaSourceID
+    }
+
+    public func continuationForVersionChange() -> PlaybackContinuation {
+        let position = controls.pendingSeekTarget ?? (phase == .ready
+            ? currentResumePosition()
+            : streamingResumePosition ?? startPositionOverride ?? controls.currentSeconds)
+        return PlaybackContinuation(
+            position: max(0, position), streamingOptions: streamingOptions,
+            intendsPlayback: intendsPlayback, speed: controls.playbackSpeed,
+            tracks: phase == .ready ? subtitleController.streamSnapshot()
+                : streamingTrackSnapshot ?? subtitleController.streamSnapshot()
+        )
+    }
     public var streamingQualityError: StreamingQualityError? { streamingQuality.error }
     public var streamingPreparation: StreamingPreparationPhase { streamingQuality.preparation }
     public var streamingUsedH264Fallback: Bool { streamingQuality.usedH264Fallback }
@@ -468,6 +485,7 @@ public final class PlayerViewModel {
         itemID: String,
         mediaSourceID: String? = nil,
         offlineItem: MediaItem? = nil,
+        continuation: PlaybackContinuation? = nil,
         offlinePlaybackResolver: (any OfflinePlaybackResolving)? = nil,
         behavior: SubtitleBehavior = .default,
         style: SubtitleStyle = .default,
@@ -587,6 +605,14 @@ public final class PlayerViewModel {
             host: self, publisher: nowPlayingPublisher ?? NowPlayingSession()
         )
         configureEngineCallbacks()
+        if let continuation {
+            intendsPlayback = continuation.intendsPlayback
+            controls.intendsPause = !continuation.intendsPlayback
+            controls.isPaused = !continuation.intendsPlayback
+            controls.playbackSpeed = continuation.speed
+            streamingQuality.options = continuation.streamingOptions
+            streamingTrackSnapshot = continuation.tracks
+        }
 
         // Kick off bring-up now so playbackInfo + engine warm-up run *during* the
         // navigation transition. `load()` (from the view's `.task`) adopts this
@@ -599,7 +625,7 @@ public final class PlayerViewModel {
                 + "itemKind=\(offlineItem?.kind.rawValue ?? "unknown")"
         )
         prefetchTask = Task { @MainActor [weak self] in
-            await self?.startPlayback(forceTranscode: false, resumeOverride: nil)
+            await self?.startPlayback(forceTranscode: false, resumeOverride: continuation?.position)
         }
         if streamingOptions != nil { streamingInitialLoad = prefetchTask }
         // Resolve next/previous episodes in the background so a clean playthrough
@@ -1428,6 +1454,7 @@ public final class PlayerViewModel {
         guard dynamicRangeLoadGeneration == rangeLoadGeneration, !didStop else {
             return
         }
+        if case .failed = phase { return }
         if engineKind != .native, let facts = engine.probedSourceFacts {
             applyEngineProbedSourceFacts(facts)
         }

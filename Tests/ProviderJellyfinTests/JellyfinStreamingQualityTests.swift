@@ -16,6 +16,54 @@ private struct StreamingErrorHTTP: HTTPClient {
 }
 
 final class JellyfinStreamingQualityTests: XCTestCase {
+    func testEmbyAndJellyfinKeepASSAvailableWithoutBurningItIntoVideo() async throws {
+        for kind in [ProviderKind.emby, .jellyfin] {
+            let (provider, http) = fixture(kind: kind, rendition: true)
+            http.stubSequence(pathSuffix: "/Items/movie/PlaybackInfo", jsons: ["""
+            {"PlaySessionId":"session","MediaSources":[{
+              "Id":"version","Container":"mkv","SupportsDirectPlay":false,"Bitrate":25000000,
+              "TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=h264&SubtitleMethod=Encode&SubtitleStreamIndex=2",
+              "MediaStreams":[
+                {"Index":0,"Type":"Video","Codec":"hevc","Width":3840,"Height":2076},
+                {"Index":1,"Type":"Audio","Codec":"ac3","IsDefault":true},
+                {"Index":2,"Type":"Subtitle","Codec":"ass","IsDefault":true,"IsTextSubtitleStream":true}
+              ]}]}
+            """])
+            var options = StreamingPlaybackOptions(quality: .low, codec: .preferH264)
+            options.subtitleTrack = .init(id: 2, kind: .subtitle, displayTitle: "ASS", codec: "ass")
+            let request = try await provider.playbackInfo(
+                for: "movie", mediaSourceID: "version", forceTranscode: false, streaming: options
+            )
+            guard case .authenticatedHTTP(let locator) = request.playbackSource else {
+                return XCTFail("Expected managed stream")
+            }
+            XCTAssertEqual(locator.resource.queryItems.first { $0.name == "SubtitleStreamIndex" }?.value, "-1")
+            XCTAssertFalse(locator.resource.queryItems.contains { $0.name == "SubtitleMethod" })
+            XCTAssertNotNil(request.subtitleTracks.first { $0.id == 2 }?.deliverySource)
+            XCTAssertEqual(request.streamingOptions?.subtitleTrack?.id, 2)
+            XCTAssertEqual(http.queryItems(forPathSuffix: "/PlaybackInfo")?.first { $0.name == "SubtitleStreamIndex" }?.value, "-1")
+        }
+    }
+
+    func testTextAndDisabledSubtitlesRemoveServerRequestedBurnIn() throws {
+        let source = try JSONDecoder().decode(MediaSourceInfo.self, from: Data(
+            #"{"Id":"version","TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=h264&SubtitleStreamIndex=2&SubtitleMethod=Encode&SegmentContainer=mp4"}"#.utf8
+        ))
+        for codec in ["ass", "ssa", "srt", "webvtt"] {
+            var options = StreamingPlaybackOptions(quality: .low, codec: .preferH264)
+            options.subtitleTrack = .init(id: 2, kind: .subtitle, displayTitle: "Subtitle", codec: codec)
+            for off in [false, true] {
+                options.subtitlesOff = off
+                let url = try XCTUnwrap(URLComponents(string: source.boundedTranscodingURL(options)))
+                let query = url.queryItems ?? []
+                XCTAssertEqual(query.first { $0.name == "SubtitleStreamIndex" }?.value, "-1")
+                XCTAssertFalse(query.contains { $0.name == "SubtitleMethod" })
+                XCTAssertEqual(query.first { $0.name == "VideoBitrate" }?.value, "372000")
+                XCTAssertEqual(query.first { $0.name == "AudioBitrate" }?.value, "128000")
+            }
+        }
+    }
+
     func testHTTPRefusalAndServerErrorsKeepTheirStatusInsteadOfBlamingTheCodec() async {
         for (status, expected) in [(403, StreamingQualityError.permissionDenied), (500, .serverHTTP(500)), (503, .serverHTTP(503))] {
             let client = JellyfinClient(

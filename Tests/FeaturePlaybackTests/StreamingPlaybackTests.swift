@@ -9,6 +9,57 @@ import UIKit
 
 @MainActor
 final class StreamingPlaybackTests: XCTestCase {
+    func testVersionContinuationKeepsCurrentPositionQualityTracksPauseAndSpeed() async {
+        let (outgoing, engine, _) = make(options: .init(quality: .hd720))
+        await outgoing.load()
+        outgoing.selectAudioOption(id: 4)
+        outgoing.selectSubtitleOption(id: 6)
+        engine.currentTime = 120
+        outgoing.changeStreamingOptions(.init(quality: .sd480))
+        await wait { engine.positions.count == 2 && outgoing.phase == .ready }
+        engine.currentTime = 92
+        outgoing.setPaused(true)
+        outgoing.setPlaybackSpeed(1.5)
+        let continuation = outgoing.continuationForVersionChange()
+        XCTAssertEqual(continuation.position, 92, "Do not reuse the older quality-change position")
+        await outgoing.stop()
+
+        let incomingEngine = QualityEngine()
+        let provider = QualityPlaybackProvider()
+        let incoming = PlayerViewModel(
+            provider: provider, itemID: "movie", mediaSourceID: "other-version",
+            continuation: continuation,
+            playbackSettings: .init(resumeRewindInterval: .five, audioLanguagePreference: .device),
+            streamingOptions: .init(quality: .original),
+            engineFactory: .init(makeNative: { _ in incomingEngine })
+        )
+        await incoming.load()
+        XCTAssertEqual(incomingEngine.positions, [92])
+        XCTAssertTrue(incomingEngine.isPaused)
+        XCTAssertEqual(incoming.controls.playbackSpeed, 1.5)
+        XCTAssertEqual(incoming.streamingOptions?.quality, .sd480)
+        XCTAssertEqual(incomingEngine.currentAudioTrackID, 4)
+        XCTAssertEqual(incomingEngine.selectedSubtitleID, 6)
+        let calls = await provider.calls
+        XCTAssertEqual(calls.first?.source, "other-version")
+        await incoming.stop()
+    }
+
+    func testLateEngineLoadCannotReplaceTerminalStartupFailureWithReady() async {
+        let (model, engine, _) = make(options: .init(quality: .low, codec: .preferH264))
+        let gate = QualityDecisionGate()
+        engine.loadGate = gate
+        let loading = Task { await model.load() }
+        await gate.waitUntilEntered()
+        XCTAssertFalse(model.handoffHandleStartupTimeout())
+        model.handoffSetPhase(.failed(.invalidResponse))
+        await gate.release()
+        await loading.value
+        XCTAssertEqual(model.phase, .failed(.invalidResponse))
+        XCTAssertEqual(model.streamingQualityError, .startupTimedOut)
+        await model.stop()
+    }
+
     func testQueuedFailureCannotOverwriteANewerRendition() async {
         let (model, engine, provider) = make()
         await model.load()
@@ -328,6 +379,7 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
 
 @MainActor
 private final class QualityEngine: VideoEngine {
+    var loadGate: QualityDecisionGate?
     var streamingFailure: StreamingPlaybackFailure?
     let displayName = "Quality fixture"
     var status: VideoEngineStatus = .idle
@@ -352,6 +404,7 @@ private final class QualityEngine: VideoEngine {
     var capabilities: PlayerEngineCapabilities { [.playbackSpeed] }
     var maximumPlaybackSpeed: Double { 4 }
     func load(request: PlaybackRequest, startPosition: TimeInterval) async {
+        if let loadGate { self.loadGate = nil; await loadGate.suspend() }
         positions.append(startPosition)
         if let quality = request.streamingOptions?.quality { loadedQualities.append(quality) }
         currentTime = startPosition

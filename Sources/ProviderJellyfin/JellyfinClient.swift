@@ -870,7 +870,7 @@ public struct JellyfinClient: Sendable {
             if streaming.subtitlesOff {
                 queryItems.append(.init(name: "SubtitleStreamIndex", value: "-1"))
             } else if let track = streaming.subtitleTrack {
-                queryItems.append(.init(name: "SubtitleStreamIndex", value: String(track.id)))
+                queryItems.append(.init(name: "SubtitleStreamIndex", value: track.isBitmapSubtitle ? String(track.id) : "-1"))
             }
             if let height = streaming.quality.maximumHeight, let width = streaming.quality.maximumWidth {
                 queryItems.append(.init(name: "MaxHeight", value: String(height)))

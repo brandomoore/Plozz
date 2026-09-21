@@ -44,6 +44,8 @@ struct PlozziOSPlayerView: View {
     @State private var streamingNetwork: StreamingNetwork = .unknown
     @State private var streamingConnection: StreamingConnection?
     @State private var presentsStreamingQuality = false
+    @State private var activeItem: MediaItem?
+    @State private var presentsVersions = false
     /// See the bisect note in `body`.
 
     let request: PlozziOSPlaybackRequest
@@ -58,14 +60,19 @@ struct PlozziOSPlayerView: View {
                     viewModel: viewModel,
                     showDiagnostics: appModel.settings.diagnostics.settings.isEnabled,
                     showsSharedControls: false,
-                    onChangeQuality: { presentsStreamingQuality = true }
+                    onChangeQuality: { presentsStreamingQuality = true },
+                    onChangeVersion: PlayerVersionSelection.versions(for: versionItem).count > 1
+                        ? { presentsVersions = true } : nil
                 )
                 .id(playerIdentity)
                 if viewModel.phase == .ready, !viewModel.showBringUpSpinner {
                     PlozziOSPlayerControlsOverlay(
                         viewModel: viewModel,
+                        hasVersions: PlayerVersionSelection.versions(for: versionItem).count > 1,
+                        onShowVersions: { presentsVersions = true },
                         onClose: { dismiss() }
                     )
+                    .id(playerIdentity)
                 } else {
                     closeButton
                 }
@@ -123,6 +130,12 @@ struct PlozziOSPlayerView: View {
         .sheet(isPresented: $presentsStreamingQuality) {
             if let viewModel { PlozziOSStreamingQualitySheet(viewModel: viewModel) }
         }
+        .sheet(isPresented: $presentsVersions) {
+            PlozziOSPlayerVersionSheet(
+                item: versionItem, mediaSourceID: viewModel?.currentMediaSourceID,
+                onSelect: switchVersion
+            )
+        }
         .onChange(of: viewModel?.phase) { _, phase in
             guard phase == .ready, usesStreamingQuality else { return }
             let actual = StreamingConnection.resolve(network: streamingNetwork, locality: provider.connectionLocality)
@@ -151,6 +164,7 @@ struct PlozziOSPlayerView: View {
                     return
                 }
                 viewModel = incoming
+                activeItem = next
                 playerIdentity = UUID()
                 handoffTask = nil
             }
@@ -181,10 +195,39 @@ struct PlozziOSPlayerView: View {
         provider is any StreamingQualityProviding && [.movie, .episode].contains(request.item.kind)
     }
 
+    private var versionItem: MediaItem {
+        PlayerVersionSelection.item(
+            opened: activeItem ?? request.item, resolved: viewModel?.currentPlaybackItem
+        )
+    }
+
+    private func switchVersion(_ id: String) {
+        guard let outgoing = viewModel, handoffTask == nil,
+              let incomingItem = PlayerVersionSelection.selecting(id, in: versionItem) else { return }
+        let continuation = outgoing.continuationForVersionChange()
+        if let version = PlayerVersionSelection.versions(for: versionItem).first(where: { $0.id == id }) {
+            appModel.versionPreferences.rememberVersion(
+                version, forTitle: DetailPlaybackSelection.versionPreferenceKey(for: versionItem)
+            )
+        }
+        handoffTask = Task { @MainActor in
+            await outgoing.stop()
+            guard !Task.isCancelled, isPresented else { handoffTask = nil; return }
+            let incoming = makeViewModel(
+                item: incomingItem, startPosition: continuation.position, continuation: continuation
+            )
+            activeItem = incomingItem
+            viewModel = incoming
+            playerIdentity = UUID()
+            handoffTask = nil
+        }
+    }
+
     private func makeViewModel(
         item: MediaItem,
         startPosition: TimeInterval,
-        adoptedResolved: PlayerViewModel.PrefetchedPlayback? = nil
+        adoptedResolved: PlayerViewModel.PrefetchedPlayback? = nil,
+        continuation: PlaybackContinuation? = nil
     ) -> PlayerViewModel {
         let resolver = appModel.authenticatedHTTPResolver
         let playbackSettings = appModel.settings.playback.settings
@@ -196,6 +239,7 @@ struct PlozziOSPlayerView: View {
             itemID: item.id,
             mediaSourceID: item.selectedVersionID,
             offlineItem: item,
+            continuation: continuation,
             offlinePlaybackResolver: appModel.downloads.offlineResolver,
             behavior: appModel.settings.subtitleBehavior.settings,
             style: appModel.settings.subtitleStyle.style,

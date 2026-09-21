@@ -18,6 +18,8 @@ private enum PlozziOSPlayerSheet: String, Identifiable {
 
 struct PlozziOSPlayerControlsOverlay: View {
     let viewModel: PlayerViewModel
+    let hasVersions: Bool
+    let onShowVersions: () -> Void
     let onClose: () -> Void
 
     @State private var controlsVisible = true
@@ -185,6 +187,15 @@ struct PlozziOSPlayerControlsOverlay: View {
                     onShowQuality: {
                         presentedSheet = .quality
                         cancelAutoHide()
+                    },
+                    hasVersions: hasVersions,
+                    onShowVersions: {
+                        cancelAutoHide()
+                        onShowVersions()
+                    },
+                    onShowDiagnostics: {
+                        cancelAutoHide()
+                        viewModel.controls.diagnosticsEnabled = true
                     },
                     isCardOpen: $isCardOpen,
                     onInteraction: noteInteraction
@@ -528,12 +539,15 @@ private struct PlozziOSPlaybackOptionsMenu: View, Equatable {
     let supportsDialogEnhance: Bool
     let dialogEnhanceEnabled: Bool
     let supportsQuality: Bool
+    let supportsVersions: Bool
     let onSelectAudio: (PlayerTrackOption.ID) -> Void
     let onSetDialogEnhance: (Bool) -> Void
     let onShowSubtitles: () -> Void
     let onShowSpeed: () -> Void
     let onShowSync: () -> Void
     let onShowQuality: () -> Void
+    let onShowVersions: () -> Void
+    let onShowDiagnostics: () -> Void
 
     /// Compares the VALUES only. The transport's body re-evaluates on every
     /// playback-clock tick (roughly ten a second), which rebuilds this struct with
@@ -551,10 +565,14 @@ private struct PlozziOSPlaybackOptionsMenu: View, Equatable {
             && lhs.supportsDialogEnhance == rhs.supportsDialogEnhance
             && lhs.dialogEnhanceEnabled == rhs.dialogEnhanceEnabled
             && lhs.supportsQuality == rhs.supportsQuality
+            && lhs.supportsVersions == rhs.supportsVersions
     }
 
     var body: some View {
         Menu {
+            if supportsVersions {
+                Button("Version", systemImage: "rectangle.stack", action: onShowVersions)
+            }
             if supportsQuality {
                 Button("Quality", systemImage: "slider.horizontal.3", action: onShowQuality)
             }
@@ -603,11 +621,19 @@ private struct PlozziOSPlaybackOptionsMenu: View, Equatable {
                     onShowSync()
                 }
             }
+            Divider()
+            Button("Playback Diagnostics", systemImage: "waveform.path.ecg", action: onShowDiagnostics)
         } label: {
-            Image(systemName: "ellipsis.circle")
-                .playerTransportGlyph()
+            Image(systemName: "slider.horizontal.3")
+                .font(.title3)
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background { PlayerGlassCircleSurface() }
+                .clipShape(Circle())
+                .contentShape(Circle())
         }
         .accessibilityLabel("Playback options")
+        .accessibilityIdentifier("player-playback-options")
     }
 }
 
@@ -629,6 +655,9 @@ private struct PlozziOSPlayerTransport: View {
     let onShowSubtitles: () -> Void
     let onShowSync: () -> Void
     let onShowQuality: () -> Void
+    let hasVersions: Bool
+    let onShowVersions: () -> Void
+    let onShowDiagnostics: () -> Void
     @Binding var isCardOpen: Bool
     let onInteraction: () -> Void
     /// The player's own bounds, which decide the card's layout — see the
@@ -680,10 +709,7 @@ private struct PlozziOSPlayerTransport: View {
 
                 Spacer(minLength: 12)
 
-                // Quality, speed, audio and subtitles at the trailing
-                // edge, level with the title. They were one "..." menu in the
-                // bottom-right corner, which hid three routine choices behind a
-                // generic glyph and put them nowhere near what they affect.
+                // Keep captions one tap away; secondary choices share one menu.
                 trackControls
             }
             .foregroundStyle(.white)
@@ -751,74 +777,17 @@ private struct PlozziOSPlayerTransport: View {
         }
     }
 
-    /// Quality, speed, audio and subtitles share the same transport styling.
-    ///
-    /// Each opens the thing it names rather than a menu of menus. Audio is a
-    /// `Menu` because its choice is a short list that can be made in place;
-    /// speed and subtitles open sheets because theirs are not.
+    /// Two stable controls leave the title room in portrait.
     @ViewBuilder
     private var trackControls: some View {
         HStack(spacing: 12) {
-            if viewModel.streamingQualityAvailable {
-                Button(action: onShowQuality) {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.title3)
-                }
-                .buttonStyle(PlayerGlassCircleButtonStyle(diameter: 44))
-                .accessibilityLabel("Quality")
-                .accessibilityIdentifier("player-streaming-quality")
-            }
-
-            if viewModel.controls.engineCapabilities.contains(.playbackSpeed) {
-                Button(action: onShowSpeed) {
-                    Image(systemName: "speedometer")
-                        .font(.title3)
-                }
-                .buttonStyle(PlayerGlassCircleButtonStyle(diameter: 44))
-                .accessibilityLabel(Text(
-                    "Playback speed",
-                    comment: "VoiceOver label for the speedometer button beneath the player's scrub bar; opens the playback-speed picker."
-                ))
-            }
-
-            if !viewModel.controls.audioOptions.isEmpty {
-                Menu {
-                    ForEach(viewModel.controls.audioOptions) { option in
-                        Button {
-                            viewModel.selectAudioOption(id: option.id)
-                            onInteraction()
-                        } label: {
-                            if option.isSelected {
-                                Label { option.title } icon: { Image(systemName: "checkmark") }
-                            } else {
-                                option.title
-                            }
-                        }
-                    }
-                } label: {
-                    // A Menu, not a Button, so the shared style cannot apply —
-                    // its surface is used directly instead, which is the point of
-                    // `PlayerGlassCircleSurface` being separate from the style.
-                    Image(systemName: "waveform")
-                        .font(.title3)
-                        .foregroundStyle(.white)
-                        .frame(width: 44, height: 44)
-                        .background { PlayerGlassCircleSurface() }
-                        .clipShape(Circle())
-                        .contentShape(Circle())
-                }
-                .accessibilityLabel(Text(
-                    "Audio track",
-                    comment: "VoiceOver label for the waveform button beneath the player's scrub bar; opens the audio-track menu."
-                ))
-            }
-
             Button(action: onShowSubtitles) {
                 Image(systemName: "captions.bubble")
                     .font(.title3)
             }
             .buttonStyle(PlayerGlassCircleButtonStyle(diameter: 44))
             .accessibilityLabel("Subtitles")
+            playbackOptions
         }
     }
 
@@ -839,6 +808,7 @@ private struct PlozziOSPlayerTransport: View {
             supportsDialogEnhance: supportsDialogEnhance,
             dialogEnhanceEnabled: viewModel.controls.dialogEnhanceEnabled,
             supportsQuality: viewModel.streamingQualityAvailable,
+            supportsVersions: hasVersions,
             onSelectAudio: { id in
                 viewModel.selectAudioOption(id: id)
                 onInteraction()
@@ -850,7 +820,9 @@ private struct PlozziOSPlayerTransport: View {
             onShowSubtitles: onShowSubtitles,
             onShowSpeed: onShowSpeed,
             onShowSync: onShowSync,
-            onShowQuality: onShowQuality
+            onShowQuality: onShowQuality,
+            onShowVersions: onShowVersions,
+            onShowDiagnostics: onShowDiagnostics
         )
         .equatable()
     }

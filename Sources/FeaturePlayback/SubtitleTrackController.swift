@@ -64,7 +64,7 @@ final class SubtitleTrackController {
 
     // MARK: Selection state
 
-    struct StreamSnapshot {
+    struct StreamSnapshot: Sendable {
         var audio: MediaTrack?
         var primary: MediaTrack?
         var secondary: MediaTrack?

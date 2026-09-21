@@ -34,6 +34,7 @@ struct MobilePlaybackFailureView: View {
     let code: String? // l10n:content — allowlisted diagnostic domain and numeric code
     let usedH264Fallback: Bool
     let onChangeQuality: (() -> Void)?
+    let onChangeVersion: (() -> Void)?
     let onRetry: (() -> Void)?
     let onShowDiagnostics: () -> Void
     let onDismiss: () -> Void
@@ -55,7 +56,17 @@ struct MobilePlaybackFailureView: View {
                         Text(verbatim: code).font(.caption.monospaced())
                             .textSelection(.enabled)
                     }
-                    if let onChangeQuality {
+                    if let onChangeVersion {
+                        Menu {
+                            Button("Version", systemImage: "rectangle.stack", action: onChangeVersion)
+                            if let onChangeQuality {
+                                Button("Quality", systemImage: "slider.horizontal.3", action: onChangeQuality)
+                            }
+                        } label: {
+                            Label("Playback options", systemImage: "slider.horizontal.3")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else if let onChangeQuality {
                         Button("Change quality", systemImage: "slider.horizontal.3", action: onChangeQuality)
                             .buttonStyle(.borderedProminent)
                             .accessibilityIdentifier("player-failed-streaming-quality")
