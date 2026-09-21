@@ -59,6 +59,9 @@ The mobile shell waits for the first network-path result before starting managed
 playback. Cellular, expensive, and unclassified paths use the cellular policy;
 connection changes reapply the relevant saved default. The player Quality sheet
 changes only the current video's rendition, not the saved preferences.
+Its sliders button lives beside speed, audio, and subtitles in the visible
+transport. Loading shows no temporary Quality button; a failed stream offers
+Quality beside Close so the viewer can recover.
 
 Plex, Jellyfin, and Emby adapters negotiate each request independently. Original
 files can direct-play only when their known bitrate and dimensions fit all

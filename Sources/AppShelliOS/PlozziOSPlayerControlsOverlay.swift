@@ -666,7 +666,7 @@ private struct PlozziOSPlayerTransport: View {
 
                 Spacer(minLength: 12)
 
-                // Speed, audio and subtitles as three peers at the trailing
+                // Quality, speed, audio and subtitles at the trailing
                 // edge, level with the title. They were one "..." menu in the
                 // bottom-right corner, which hid three routine choices behind a
                 // generic glyph and put them nowhere near what they affect.
@@ -737,7 +737,7 @@ private struct PlozziOSPlayerTransport: View {
         }
     }
 
-    /// Speed · Audio · Subtitles, as three peers.
+    /// Quality, speed, audio and subtitles share the same transport styling.
     ///
     /// Each opens the thing it names rather than a menu of menus. Audio is a
     /// `Menu` because its choice is a short list that can be made in place;
@@ -745,6 +745,16 @@ private struct PlozziOSPlayerTransport: View {
     @ViewBuilder
     private var trackControls: some View {
         HStack(spacing: 12) {
+            if viewModel.streamingQualityAvailable {
+                Button(action: onShowQuality) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.title3)
+                }
+                .buttonStyle(PlayerGlassCircleButtonStyle(diameter: 44))
+                .accessibilityLabel("Quality")
+                .accessibilityIdentifier("player-streaming-quality")
+            }
+
             if viewModel.controls.engineCapabilities.contains(.playbackSpeed) {
                 Button(action: onShowSpeed) {
                     Image(systemName: "speedometer")

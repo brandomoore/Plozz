@@ -159,10 +159,12 @@ struct PlozziOSPlayerView: View {
     private var closeButton: some View {
         VStack {
             HStack {
-                if let viewModel, viewModel.streamingQualityAvailable {
+                if let viewModel, case .failed = viewModel.phase, viewModel.streamingQualityAvailable {
                     Button("Quality", systemImage: "slider.horizontal.3") {
                         presentsStreamingQuality = true
                     }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("player-failed-streaming-quality")
                 }
                 Spacer()
                 Button {
