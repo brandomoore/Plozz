@@ -261,7 +261,7 @@ public struct PosterCardView: View {
                     treatment: nativePosterTreatment,
                     aspectRatio: borderlessAspectRatio,
                     fallbackWidth: size.width,
-                    title: showsSeriesArtwork ? nil : nativePosterTitle,
+                    title: nativePosterTitle,
                     subtitle: showsSeriesArtwork ? nil : subtitleText,
                     overlay: nativePosterOverlay(hasArtwork: image != nil),
                     focus: $isFocused,
