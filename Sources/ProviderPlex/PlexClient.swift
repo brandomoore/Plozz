@@ -1766,6 +1766,7 @@ public struct PlexClient: Sendable {
         do {
             decision = try JSONDecoder.plozz.decode(PlexStreamingDecisionResponse.self, from: data).MediaContainer
         } catch {
+            HandoffDiagnostics.emit("plex STREAM_DECISION decode-failed bytes=\(data.count) json=\(response.mimeType == "application/json")")
             PlozzLog.playback.error("Unable to decode the Plex streaming decision.")
             throw StreamingQualityError.malformedResponse
         }

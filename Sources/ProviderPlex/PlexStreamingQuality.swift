@@ -6,10 +6,21 @@ struct PlexStreamingDecisionResponse: Decodable {
 }
 
 struct PlexStreamingDecision: Decodable {
+    // Decision responses are not library-metadata responses: unrelated fields
+    // such as librarySectionID may use different scalar types.
+    struct Item: Decodable {
+        let Media: [Output]?
+    }
+
+    struct Output: Decodable {
+        let container: String?
+        let videoCodec: String?
+    }
+
     @LenientInt var generalDecisionCode: Int?
     @LenientInt var transcodeDecisionCode: Int?
     @LenientInt var mdeDecisionCode: Int?
-    let Metadata: [PlexMetadata]?
+    let Metadata: [Item]?
 
     func validate(options: StreamingPlaybackOptions) throws {
         let codes = [generalDecisionCode, transcodeDecisionCode, mdeDecisionCode].compactMap { $0 }

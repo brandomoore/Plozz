@@ -74,7 +74,9 @@ and playback journal; raw server messages and authenticated URLs do not.
 Permission, connection, and server errors do not trigger codec retries.
 Plex bounded streams first validate the server's universal-transcoder decision
 with the same session and settings as the start request. HEVC uses fragmented
-MP4 HLS; the one-shot H.264 fallback requests MPEG-TS at the unchanged budget.
+MP4 HLS. Decision parsing reads only status codes and the output format; it must
+not decode unrelated library-item fields, whose wire types can differ here.
+The one-shot H.264 fallback requests MPEG-TS at the unchanged budget.
 A missing converted resource may trigger this fallback too; it never falls back
 to the uncapped original. Decision status and numeric codes are retained without
 copying raw server descriptions into the player.

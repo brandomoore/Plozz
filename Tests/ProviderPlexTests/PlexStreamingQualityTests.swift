@@ -5,6 +5,29 @@ import XCTest
 @testable import ProviderPlex
 
 final class PlexStreamingQualityTests: XCTestCase {
+    func testDecisionDoesNotDecodeUnrelatedLibraryMetadata() async throws {
+        let decision = """
+        {"MediaContainer":{
+          "generalDecisionCode":1001,"transcodeDecisionCode":1001,
+          "Metadata":[{
+            "ratingKey":"movie","librarySectionID":"1","year":"1997",
+            "Media":[{
+              "id":"7","container":"mp4","videoCodec":"h264",
+              "Part":[{"id":"8","duration":"7654000","size":"24200000000",
+                       "Stream":[{"streamType":"1","selected":1}]}]
+            }]
+          }]
+        }}
+        """
+        let request = try await fixture(decision: decision).playbackInfo(
+            for: "movie", mediaSourceID: "7", forceTranscode: false,
+            streaming: .init(quality: .low)
+        )
+        XCTAssertTrue(request.isTranscoding)
+        XCTAssertEqual(try locator(request).mediaSourceID, "7")
+        XCTAssertEqual(request.streamingOptions?.quality, .low)
+    }
+
     private func fixture(
         bitrate: Int? = 30_000, width: Int = 3840, height: Int = 2160,
         decision: String? = nil, status: Int = 200, http: StubHTTPClient = StubHTTPClient()
@@ -111,8 +134,11 @@ final class PlexStreamingQualityTests: XCTestCase {
     func testRejectedDecisionsNeverPublishAStreamAndReleaseOnlyTheOwnedSession() async {
         for (body, status, expected) in [
             (#"{"MediaContainer":{"transcodeDecisionCode":4005,"transcodeDecisionText":"private server details"}}"#, 200, StreamingQualityError.plexDecision(4005)),
+            (#"{"MediaContainer":{"generalDecisionCode":"1001","transcodeDecisionCode":"4005","Metadata":[{"librarySectionID":"1","Media":[{"container":"mp4","videoCodec":"h264","Part":[{"size":"24200000000"}]}]}]}}"#, 200, .plexDecision(4005)),
             (#"{"MediaContainer":{"transcodeDecisionCode":1000}}"#, 200, .noCompatibleStream),
             (#"{"MediaContainer":{"transcodeDecisionCode":1001,"Metadata":[{"Media":[{"container":"mpegts","videoCodec":"hevc"}]}]}}"#, 200, .noCompatibleStream),
+            (#"{"MediaContainer":{"transcodeDecisionCode":1001,"Metadata":[{"Media":[{"container":42,"videoCodec":"h264"}]}]}}"#, 200, .malformedResponse),
+            (#"{"MediaContainer":{"transcodeDecisionCode":1001,"Metadata":[{"Media":[{"container":"mp4","videoCodec":false}]}]}}"#, 200, .malformedResponse),
             ("not-json", 200, .malformedResponse),
             ("private error", 403, .permissionDenied),
             ("private error", 503, .serverHTTP(503))
