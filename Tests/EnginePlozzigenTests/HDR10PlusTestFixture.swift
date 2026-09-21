@@ -9,10 +9,16 @@ enum HDR10PlusTestFixture {
     static var plain: Data { decode(plainBase64) }
 
     /// 160 ordinary HDR10 HEVC keyframes, with real EAC3 packets interleaved
-    /// after three seconds. Delaying audio keeps find_stream_info from confirming
-    /// its JOC flag before the explicit Atmos pass. The old 128-video HDR budget
-    /// exhausted the whole-probe packet budget before that pass could run.
+    /// after three seconds. The first 12 audio packets are non-JOC so the fuller
+    /// 7.10 stream analysis still leaves confirmation to the Atmos decode pass.
+    /// The old 128-video HDR budget exhausted the shared packet budget first.
     static var interleavedHDR10WithLateJOC: Data {
+        interleaved(carriesHDR10Plus: false, plainAudioPacketCount: 12)
+    }
+
+    /// The initial audio packet is JOC-positive; normal stream analysis can
+    /// confirm it despite the delayed audio, without an explicit detail pass.
+    static var interleavedHDR10WithHeaderJOC: Data {
         interleaved(carriesHDR10Plus: false, plainAudioPacketCount: 0)
     }
 

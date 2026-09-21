@@ -5,6 +5,21 @@ import CoreModels
 @testable import EnginePlozzigen
 
 final class PlozzigenHDR10PlusProbeTests: XCTestCase {
+    func testBoundedHeaderProbeRetainsReleasedStreamAnalysisCoverage() async throws {
+        let (reader, source, budget) = makeReader(HDR10PlusTestFixture.interleavedHDR10WithHeaderJOC)
+        let result = await PlozzigenStreamProbeExecutor.runDetailProbe(
+            reader: reader, formatHint: "matroska",
+            requirements: .streamDetails, budget: budget
+        )
+        let probe = try XCTUnwrap(result)
+        XCTAssertEqual(probe.videoFormat, .hdr10)
+        let audio = try XCTUnwrap(probe.audioTracks.first { $0.isDefault })
+        XCTAssertEqual(audio.codec, "eac3")
+        XCTAssertTrue(audio.isAtmos, "Whole-probe controls must not impose a shallower analysis profile")
+        XCTAssertTrue(source.isClosed)
+        XCTAssertLessThanOrEqual(source.bytesRead, 8 * 1024 * 1024)
+    }
+
     func testCombinedProbeKeepsDecodingPastTwelveNonJOCAudioPackets() async throws {
         let bytes = HDR10PlusTestFixture.interleavedHDR10PlusWithJOCOnAudioPacket13
         let (headerReader, headerSource, headerBudget) = makeReader(bytes)
