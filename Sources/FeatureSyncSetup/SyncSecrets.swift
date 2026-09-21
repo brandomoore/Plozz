@@ -85,7 +85,7 @@ public struct SyncSecretsBundle: Codable, Hashable, Sendable {
 
     /// The set of account ids this bundle can sign in on the target device.
     public var authorizedAccountIDs: Set<String> {
-        Set(accounts.map(\.accountID) + shares.map(\.accountID))
+        Set(accounts.filter { $0.provider.permitsCredentialTransfer }.map(\.accountID) + shares.map(\.accountID))
     }
 }
 

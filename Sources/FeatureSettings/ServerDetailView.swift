@@ -185,6 +185,8 @@ struct ServerDetailView: View {
             return "Jellyfin signs in per profile, each with its own credentials. Choose what shows on your Home under Profile › Your Libraries."
         case .emby:
             return "Emby signs in per profile, each with its own credentials. Choose what shows on your Home under Profile › Your Libraries."
+        case .silo:
+            return "Each Silo connection uses the household profile selected during pairing. Its library access and watch history stay on Silo."
         case .mediaShare:
             if transport == .nfs {
                 return "This NFS export connects without a sign-in — anyone on this Apple TV can browse it. Choose what shows on your Home under Profile › Your Libraries."

@@ -41,6 +41,7 @@ public struct ProviderBrandMark: View {
         case .jellyfin: "JellyfinLogo"
         case .plex: "PlexLogo"
         case .emby: "EmbyLogo"
+        case .silo: "SiloLogo"
         case .mediaShare: ""
         }
     }
@@ -61,7 +62,7 @@ public struct ProviderBrandMark: View {
     private var systemSymbolName: String? {
         switch provider {
         case .mediaShare: "externaldrive.connected.to.line.below.fill"
-        case .jellyfin, .plex, .emby: nil
+        case .jellyfin, .plex, .emby, .silo: nil
         }
     }
 
@@ -86,7 +87,7 @@ public struct ProviderBrandMark: View {
                     .offset(y: badgeLabel != nil ? -size * 0.11 : 0)
             } else {
                 Image(assetName, bundle: .module)
-                    .renderingMode(.template)
+                    .renderingMode(provider == .silo ? .original : .template)
                     .resizable()
                     .scaledToFit()
                     .padding(assetPadding)
@@ -159,6 +160,8 @@ public struct ProviderBrandMark: View {
             return Color(red: 0x52 / 255, green: 0xB5 / 255, blue: 0x4B / 255)
         case .plex:
             return Color(red: 0xE5 / 255, green: 0xA0 / 255, blue: 0x0D / 255)
+        case .silo:
+            return Color(red: 0, green: 0x34 / 255, blue: 0xFB / 255)
         case .mediaShare:
             // Neutral teal — reads as "storage/network", clearly not a Plex/
             // Jellyfin brand color, matching its second-class standing.
@@ -177,6 +180,8 @@ public struct ProviderBrandMark: View {
                 return Color(red: 0x2D / 255, green: 0x7D / 255, blue: 0x32 / 255)
             case .plex:
                 return Color(red: 0.60, green: 0.39, blue: 0.00)
+            case .silo:
+                return brandTint(.silo)
             case .mediaShare:
                 return Color(red: 0.08, green: 0.46, blue: 0.43)
             }
@@ -191,6 +196,8 @@ public struct ProviderBrandMark: View {
             return Color(red: 0x64 / 255, green: 0xD2 / 255, blue: 0x5C / 255)
         case .plex:
             return Color(red: 0.96, green: 0.73, blue: 0.18)
+        case .silo:
+            return Color(red: 0.4, green: 0.6, blue: 1)
         case .mediaShare:
             return Color(red: 0.36, green: 0.82, blue: 0.77)
         }

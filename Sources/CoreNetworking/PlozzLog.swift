@@ -74,7 +74,8 @@ public enum PlozzLog {
         "authorization",
         "x-emby-authorization",
         "x-mediabrowser-token",
-        "x-plex-token"
+        "x-plex-token",
+        "x-profile-token"
     ]
 
     /// Returns a copy of `headers` with sensitive values replaced by `<redacted>`.
@@ -95,10 +96,13 @@ public enum PlozzLog {
         }
         let sensitiveQuery: Set<String> = [
             "secret", "api_key", "apikey", "x-plex-token", "token",
-            "opentoken", "livestreamid", "playsessionid", "username", "password"
+            "opentoken", "livestreamid", "playsessionid", "username", "password", "st",
+            "access_token", "refresh_token", "signature", "sig"
         ]
         components.queryItems = components.queryItems?.map { item in
-            sensitiveQuery.contains(item.name.lowercased())
+            (sensitiveQuery.contains(item.name.lowercased())
+                || item.name.lowercased().hasPrefix("x-amz-")
+                || item.name.lowercased().hasPrefix("x-goog-"))
                 ? URLQueryItem(name: item.name, value: "<redacted>")
                 : item
         }

@@ -33,6 +33,7 @@ let package = Package(
         .library(name: "FeatureDiscoveryCore", targets: ["FeatureDiscoveryCore"]),
         .library(name: "FeatureDiscovery", targets: ["FeatureDiscovery"]),
         .library(name: "ProviderJellyfin", targets: ["ProviderJellyfin"]),
+        .library(name: "ProviderSilo", targets: ["ProviderSilo"]),
         .library(name: "ProviderPlex", targets: ["ProviderPlex"]),
         .library(name: "ProviderShare", targets: ["ProviderShare"]),
         .library(name: "ProviderTrailers", targets: ["ProviderTrailers"]),
@@ -293,6 +294,10 @@ let package = Package(
             dependencies: ["CoreModels", "CoreNetworking"]
         ),
         .target(
+            name: "ProviderSilo",
+            dependencies: ["CoreModels", "CoreNetworking"]
+        ),
+        .target(
             name: "ProviderPlex",
             dependencies: ["CoreModels", "CoreNetworking"]
         ),
@@ -368,11 +373,11 @@ let package = Package(
         ),
         .target(
             name: "FeatureAuthCore",
-            dependencies: ["CoreModels", "CoreNetworking", "CoreSecureStore", "ProviderJellyfin", "ProviderPlex"]
+            dependencies: ["CoreModels", "CoreNetworking", "CoreSecureStore", "ProviderJellyfin", "ProviderPlex", "ProviderSilo"]
         ),
         .target(
             name: "FeatureAuth",
-            dependencies: ["CoreModels", "CoreUI", "FeatureAuthCore", "ProviderPlex"]
+            dependencies: ["CoreModels", "CoreUI", "FeatureAuthCore", "ProviderPlex", "ProviderSilo"]
         ),
         .target(
             name: "FeatureHomeCore",
@@ -679,6 +684,7 @@ let package = Package(
                 "MediaTransportSMB",
                 "MediaTransportWebDAV",
                 "ProviderJellyfin",
+                "ProviderSilo",
                 "ProviderPlex",
                 "ProviderShare",
                 "CoreSecureStore"
@@ -727,6 +733,7 @@ let package = Package(
                 "MediaDownloads",
                 "MetadataKit",
                 "ProviderJellyfin",
+                "ProviderSilo",
                 "ProviderPlex",
                 "ProviderShare",
                 "ProviderTrailers",
@@ -780,6 +787,8 @@ let package = Package(
                 "MediaTransportSFTP",
                 "MediaTransportWebDAV",
                 "ProviderJellyfin",
+                "ProviderSilo",
+                "FeatureAuth",
                 "ProviderPlex",
                 "ProviderShare",
                 "RatingsService",
@@ -862,6 +871,10 @@ let package = Package(
         .testTarget(
             name: "ProviderJellyfinTests",
             dependencies: ["ProviderJellyfin", "ProviderPlex", "CoreModels", "CoreNetworking"]
+        ),
+        .testTarget(
+            name: "ProviderSiloTests",
+            dependencies: ["ProviderSilo", "CoreModels", "CoreNetworking"]
         ),
         .testTarget(
             name: "ProviderPlexTests",

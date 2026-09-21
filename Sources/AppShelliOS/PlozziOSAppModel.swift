@@ -19,6 +19,7 @@ import MediaTransportCore
 import MetadataKit
 import Observation
 import ProviderPlex
+import ProviderSilo
 import ProviderShare
 import SeerService
 import SimklService
@@ -211,7 +212,7 @@ final class PlozziOSAppModel {
         for auth in received.application.authorizedAuthorizations
         where restrictToAccountID == nil || auth.id == restrictToAccountID {
             guard let desc = descByID[auth.id] else { continue }
-            if let secret = secretByID[auth.id] {
+            if let secret = secretByID[auth.id], secret.provider.permitsCredentialTransfer {
                 expected += 1
                 let baseURL = desc.candidateBaseURLs.first ?? URL(string: secret.trustedOrigin) ?? URL(string: "https://localhost")!
                 let server = MediaServer(id: desc.serverID, name: desc.serverName, baseURL: baseURL,
@@ -544,7 +545,7 @@ final class PlozziOSAppModel {
         ArtworkImageCache.shared.configure(
             networkFileService: mediaShareRuntime.artworkNetworkFileService
         )
-        let registry = ManagedProviderRegistry.make()
+        let registry = ManagedProviderRegistry.make(siloCredentials: accountStore as? any RotatingCredentialStoring)
         let durableLocalStateStore: DurableLocalStateStore?
         do {
             durableLocalStateStore = try DurableLocalStateStoreFactory.userIndependent()
@@ -769,7 +770,8 @@ final class PlozziOSAppModel {
                 accountID: account.id,
                 credentialRevision: accountsProviders.credentialRevision(account),
                 baseURL: baseURL,
-                token: token
+                token: token,
+                resourceResolver: accountsProviders.provider(forAccountID: account.id) as? any ProviderHTTPResourceResolving
             )
         }
         do {
@@ -1935,6 +1937,14 @@ final class PlozziOSAppModel {
                             reason: "inactive managed download account"
                         )
                     }
+                    if let silo = provider as? SiloProvider {
+                        do {
+                            return try await SiloOfflineDownload.prepare(
+                                provider: silo, source: source, updateSource: updateSource)
+                        } catch let error as AppError {
+                            throw PlozziOSDownloadError.nativeServer(error.userMessage)
+                        }
+                    }
                     let playback = try await provider.playbackInfo(
                         for: source.itemID,
                         mediaSourceID: source.mediaSourceID,
@@ -2076,6 +2086,27 @@ final class PlozziOSAppModel {
                         expectedDuration: playback.item.runtime,
                         cleanupURL: nil
                     )
+                },
+                managedRemoval: { source in
+                    guard source.provider == .silo, let saved = source.preparationReference,
+                          saved.queueIdentifier.hasPrefix("silo:"),
+                          let revision = Int(saved.queueIdentifier.dropFirst(5)) else { throw AppError.invalidResponse }
+                    let provider = await MainActor.run {
+                        accountsProviders.provider(forAccountID: source.accountID) as? SiloProvider
+                    }
+                    guard let provider else { throw AppError.unauthorized }
+                    try await provider.removeDownload(.init(id: saved.itemIdentifier, revision: revision))
+                },
+                managedCompletion: { source, timestamp in
+                    guard source.provider == .silo, let saved = source.preparationReference,
+                          saved.queueIdentifier.hasPrefix("silo:"),
+                          let revision = Int(saved.queueIdentifier.dropFirst(5)) else { throw AppError.invalidResponse }
+                    let provider = await MainActor.run {
+                        accountsProviders.provider(forAccountID: source.accountID) as? SiloProvider
+                    }
+                    guard let provider else { throw AppError.unauthorized }
+                    try await provider.reportDownload(.init(id: saved.itemIdentifier, revision: revision),
+                                                      status: "completed", at: timestamp)
                 }
             )
         } catch {
@@ -2884,7 +2915,7 @@ private enum PlexOfflineDownloadQueue {
                 queueIdentifier: String(queueID),
                 itemIdentifier: String(itemID)
             )
-            await updateSource(
+            try await updateSource(
                 ManagedHTTPDownloadSource(
                     provider: source.provider,
                     accountID: source.accountID,
@@ -3101,20 +3132,24 @@ private enum PlexOfflineDownloadQueue {
             request.httpMethod = "DELETE"
             _ = try? await URLSession.shared.data(for: request)
         }
-        await updateSource(
-            ManagedHTTPDownloadSource(
-                provider: source.provider,
-                accountID: source.accountID,
-                itemID: source.itemID,
-                mediaSourceID: source.mediaSourceID,
-                quality: source.quality,
-                includesAllAudioTracks: source.includesAllAudioTracks,
-                includesTextSubtitleTracks:
-                    source.includesTextSubtitleTracks,
-                preferredAudioLanguages:
-                    source.preferredAudioLanguages
+        do {
+            try await updateSource(
+                ManagedHTTPDownloadSource(
+                    provider: source.provider,
+                    accountID: source.accountID,
+                    itemID: source.itemID,
+                    mediaSourceID: source.mediaSourceID,
+                    quality: source.quality,
+                    includesAllAudioTracks: source.includesAllAudioTracks,
+                    includesTextSubtitleTracks:
+                        source.includesTextSubtitleTracks,
+                    preferredAudioLanguages:
+                        source.preferredAudioLanguages
+                )
             )
-        )
+        } catch {
+            PlozzLog.networking.error("Unable to persist cleared offline preparation")
+        }
     }
 
     private static func endpoint(

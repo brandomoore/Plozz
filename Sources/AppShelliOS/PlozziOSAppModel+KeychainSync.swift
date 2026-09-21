@@ -41,6 +41,7 @@ extension PlozziOSAppModel {
         var accts: [AccountSecret] = []
         var shares: [ShareSecret] = []
         for account in accounts {
+            guard account.server.provider.permitsCredentialTransfer else { continue }
             if account.server.provider == .mediaShare {
                 if let envelope = try? accountStore.mediaShareCredential(for: account.id) {
                     if case .generatedKey = envelope.authentication {
@@ -230,7 +231,9 @@ extension PlozziOSAppModel {
                 continue
             }
             // Token provider (Plex/Jellyfin/Emby): restore from an AccountSecret.
-            guard let secret = try? JSONDecoder().decode(AccountSecret.self, from: data) else { continue }
+            guard desc.provider.permitsCredentialTransfer,
+                  let secret = try? JSONDecoder().decode(AccountSecret.self, from: data),
+                  secret.provider.permitsCredentialTransfer else { continue }
             let baseURL = desc.candidateBaseURLs.first
                 ?? URL(string: secret.trustedOrigin)
                 ?? URL(string: "https://localhost")!

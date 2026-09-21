@@ -38,6 +38,22 @@ public struct ProviderResolutionContext: Equatable, Sendable {
         self.credentialRevision = credentialRevision
         self.localMediaContext = localMediaContext
     }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        guard lhs.accountID == rhs.accountID,
+              lhs.credentialRevision == rhs.credentialRevision,
+              lhs.localMediaContext == rhs.localMediaContext else { return false }
+        if lhs.session.server.provider == .silo, rhs.session.server.provider == .silo {
+            // Silo resolves rotating bearer material through the credential store.
+            // The random revision still fences a different login, not a refresh.
+            var left = lhs.session
+            var right = rhs.session
+            left.accessToken = ""
+            right.accessToken = ""
+            return left == right
+        }
+        return lhs.session == rhs.session
+    }
 }
 
 extension ProviderResolutionContext: CustomStringConvertible {

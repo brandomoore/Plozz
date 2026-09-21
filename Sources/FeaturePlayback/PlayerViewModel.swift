@@ -952,6 +952,12 @@ public final class PlayerViewModel {
                 sourceProvider: provider.kind,
                 sourceFileName: localURL.lastPathComponent
             )
+            request.subtitleTracks = await offlinePlaybackResolver?.localSubtitleTracks(
+                for: offlineItem, versionID: mediaSourceID) ?? []
+            if let metadata = await offlinePlaybackResolver?.localPlaybackMetadata(for: offlineItem, versionID: mediaSourceID) {
+                request.sourceMetadata = metadata
+                request.item.mediaInfo = metadata
+            }
             // The entire point of this path is zero-network local playback. Anime
             // has a trustworthy local answer; other content defers to remembered,
             // explicit, device, or embedded/default track policy rather than waiting
@@ -984,6 +990,14 @@ public final class PlayerViewModel {
         let localURL = await offlinePlaybackResolver?
             .localPlaybackURL(for: request.item, versionID: mediaSourceID)
         request = Self.applyingOfflineRewrite(to: request, localURL: localURL)
+        if localURL != nil {
+            request.subtitleTracks = await offlinePlaybackResolver?.localSubtitleTracks(
+                for: request.item, versionID: mediaSourceID) ?? []
+            if let metadata = await offlinePlaybackResolver?.localPlaybackMetadata(for: request.item, versionID: mediaSourceID) {
+                request.sourceMetadata = metadata
+                request.item.mediaInfo = metadata
+            }
+        }
         // Steer the engine's INITIAL active audio track by language (no reload)
         // from the prefer-original-language policy. Computed here so every
         // playResolved entry (initial, adopted prefetch, and cross-engine

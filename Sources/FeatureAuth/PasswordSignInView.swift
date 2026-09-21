@@ -85,7 +85,9 @@ public struct PasswordSignInView: View {
         .padding(60)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // The remote's Menu/back button returns to the Quick Connect screen.
+        #if os(tvOS)
         .onExitCommand { back() }
+        #endif
         .onAppear { focusedField = .username }
         .onDisappear { viewModel.cancel() }
     }

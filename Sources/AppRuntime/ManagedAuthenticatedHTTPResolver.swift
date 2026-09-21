@@ -12,19 +12,22 @@ public final class ManagedAuthenticatedHTTPResolver: AuthenticatedHTTPResourceRe
         public let credentialRevision: CredentialRevision
         public let baseURL: URL
         public let token: String
+        public let resourceResolver: (any ProviderHTTPResourceResolving)?
 
         public init(
             provider: ProviderKind,
             accountID: String,
             credentialRevision: CredentialRevision,
             baseURL: URL,
-            token: String
+            token: String,
+            resourceResolver: (any ProviderHTTPResourceResolving)? = nil
         ) {
             self.provider = provider
             self.accountID = accountID
             self.credentialRevision = credentialRevision
             self.baseURL = baseURL
             self.token = token
+            self.resourceResolver = resourceResolver
         }
     }
 
@@ -74,6 +77,17 @@ public final class ManagedAuthenticatedHTTPResolver: AuthenticatedHTTPResourceRe
             URLQueryItem(name: $0.name, value: $0.value)
         }
         switch locator.provider {
+        case .silo:
+            guard let resolver = context.resourceResolver else {
+                throw MediaTransportError.authentication(reason: "inactive Silo playback grant")
+            }
+            let url = try await resolver.resolveHTTPResource(locator)
+            let latest = try contextProvider(locator)
+            guard latest.provider == context.provider, latest.accountID == context.accountID,
+                  latest.credentialRevision == context.credentialRevision else {
+                throw MediaTransportError.authentication(reason: "Silo playback identity changed")
+            }
+            return url
         case .jellyfin, .emby:
             // Jellyfin disables legacy api_key authentication by default.
             // Emby retains its existing query-token contract.

@@ -5,6 +5,7 @@ import UIKit
 import CoreNetworking
 import ProviderJellyfin
 import ProviderPlex
+import ProviderSilo
 
 public enum ManagedProviderRegistry {
     /// Whether this build links the on-device decode engine (Plozzigen).
@@ -30,9 +31,14 @@ public enum ManagedProviderRegistry {
     }
 
     public static func make(
-        hybridEngineEnabled: Bool = ManagedProviderRegistry.hybridEngineEnabled
+        hybridEngineEnabled: Bool = ManagedProviderRegistry.hybridEngineEnabled,
+        siloCredentials: (any RotatingCredentialStoring)? = nil
     ) -> ProviderRegistry {
         let registry = ProviderRegistry()
+        registry.register(.silo) { context in
+            guard let siloCredentials else { throw AppError.unauthorized }
+            return try SiloProvider(context: context, credentials: siloCredentials)
+        }
         registry.register(.jellyfin) { context in
             JellyfinProvider(
                 session: context.session,

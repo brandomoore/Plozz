@@ -350,12 +350,43 @@ public actor DownloadedMediaRegistry {
 
     /// Removes a record from the catalog (the caller deletes the file).
     public func remove(identityKey: String) throws {
-        guard state.records[identityKey] != nil else { return }
-        state.records[identityKey] = nil
+        guard let record = state.records[identityKey] else { return }
+        var next = state
+        if let source = record.managedHTTPSource, source.provider == .silo,
+           source.preparationReference != nil, !next.pendingManagedRemovals.contains(source) {
+            next.pendingManagedRemovals.append(source)
+        }
+        next.records[identityKey] = nil
+        next.managedCompletionAcknowledgements[identityKey] = nil
+        try store.save(next)
+        state = next
         lastProgressPersistence[identityKey] = nil
-        try store.save(state)
         emit(.removed(identityKey: identityKey))
         emitAggregates(forGroup: nil)
+    }
+
+    public func pendingManagedRemovals() -> [ManagedHTTPDownloadSource] { state.pendingManagedRemovals }
+
+    public func pendingManagedCompletions() -> [DownloadedMediaRecord] {
+        state.records.values.filter {
+            $0.status == .completed && $0.managedHTTPSource?.provider == .silo
+                && state.managedCompletionAcknowledgements[$0.identityKey] != $0.updatedAt
+        }
+    }
+
+    public func acknowledgeManagedCompletion(identityKey: String, at timestamp: Date) throws {
+        guard state.records[identityKey]?.updatedAt == timestamp else { return }
+        var next = state
+        next.managedCompletionAcknowledgements[identityKey] = timestamp
+        try store.save(next)
+        state = next
+    }
+
+    public func acknowledgeManagedRemoval(_ source: ManagedHTTPDownloadSource) throws {
+        var next = state
+        next.pendingManagedRemovals.removeAll { $0 == source }
+        try store.save(next)
+        state = next
     }
 
     // MARK: - Internals

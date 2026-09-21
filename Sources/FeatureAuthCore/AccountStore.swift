@@ -58,7 +58,7 @@ public enum AccountStoreError: Error, Equatable, Sendable {
 /// a durable active-revision journal. Account metadata is visible only when its
 /// revision matches that journal, preventing a crash from exposing a partially
 /// committed share.
-public final class AccountStore: AccountPersisting, @unchecked Sendable {
+public final class AccountStore: AccountPersisting, RotatingCredentialStoring, @unchecked Sendable {
     private let secureStore: SecureStore
     private let mediaCredentialVault: MediaCredentialVault?
     private let credentialJournal: CredentialMutationJournal?
@@ -351,6 +351,35 @@ public final class AccountStore: AccountPersisting, @unchecked Sendable {
         } else {
             try addManagedAccountLocked(account, token: token)
         }
+    }
+
+    public func credential(accountID: String, revision: CredentialRevision) throws -> String {
+        Self.processMutationLock.lock()
+        defer { Self.processMutationLock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
+        guard let account = try persistedAccountsLockedThrowing().first(where: { $0.id == accountID }),
+              account.server.provider == .silo, account.credentialRevision == revision,
+              let token = try secureStore.readString(for: tokenKey(accountID)) else {
+            throw AppError.unauthorized
+        }
+        return token
+    }
+
+    public func rotateCredential(
+        accountID: String, revision: CredentialRevision, expected: String, replacement: String
+    ) throws {
+        Self.processMutationLock.lock()
+        defer { Self.processMutationLock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
+        guard let account = try persistedAccountsLockedThrowing().first(where: { $0.id == accountID }),
+              account.server.provider == .silo, account.credentialRevision == revision,
+              try secureStore.readString(for: tokenKey(accountID)) == expected else {
+            throw AppError.unauthorized
+        }
+        try secureStore.setString(replacement, for: tokenKey(accountID))
+        invalidateCredentialCacheAfterMutationLocked()
     }
 
     public func addMediaShare(

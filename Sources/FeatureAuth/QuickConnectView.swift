@@ -76,7 +76,9 @@ public struct QuickConnectView: View {
         // press of the remote backs out rather than opening password entry.
         .defaultFocus($focused, .cancel)
         // The remote's Menu/back button should return to the server picker.
+        #if os(tvOS)
         .onExitCommand { cancel() }
+        #endif
         .onAppear { viewModel.start() }
         .onDisappear { viewModel.cancel() }
     }

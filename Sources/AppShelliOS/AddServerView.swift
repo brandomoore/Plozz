@@ -3,6 +3,7 @@ import CoreModels
 import CoreNetworking
 import CoreUI
 import FeatureAuthCore
+import FeatureAuth
 import FeatureDiscoveryCore
 import ProviderPlex
 import SwiftUI
@@ -37,13 +38,16 @@ struct AddServerView: View {
                         providerChoice(.jellyfin)
                         providerChoice(.emby)
                         providerChoice(.plex)
+                        providerChoice(.silo)
                     }
 
                     if provider != .plex {
-                        ManagedServerDiscoverySection(
-                            model: discoveryModel,
-                            onSelect: selectDiscoveredServer
-                        )
+                        if provider != .silo {
+                            ManagedServerDiscoverySection(
+                                model: discoveryModel,
+                                onSelect: selectDiscoveredServer
+                            )
+                        }
 
                         TextField("Server address", text: $address)
                             .textContentType(.URL)
@@ -96,7 +100,7 @@ struct AddServerView: View {
                 )
             }
             .task(id: provider) {
-                guard provider != .plex else { return }
+                guard provider != .plex, provider != .silo else { return }
                 let model = discoveryModel
                 model.startScan()
                 defer { model.stopScan() }
@@ -225,7 +229,12 @@ private struct ManagedServerSignInView: View {
     }
 
     var body: some View {
-        if usesPassword {
+        if server.provider == .silo {
+            SiloSignInView(
+                server: server, deviceID: appModel.deviceID,
+                onAuthenticated: { appModel.persist([$0]); onComplete() },
+                onCancel: onComplete)
+        } else if usesPassword {
             PasswordServerSignInView(
                 server: server,
                 appModel: appModel,

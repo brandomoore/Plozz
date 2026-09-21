@@ -28,7 +28,8 @@ public enum SyncURLSanitizer {
         "x-emby-token", "x-mediabrowser-token", "x-emby-authorization",
         "x-plex-token", "plextoken", "plex-token",
         "auth", "authorization", "authtoken", "auth_token",
-        "password", "passwd", "pwd", "secret", "sig", "signature",
+        "password", "passwd", "pwd", "secret", "sig", "signature", "st",
+        "awsaccesskeyid", "key-pair-id", "policy",
     ]
 
     /// Return a copy of `url` with credential user-info and sensitive query
@@ -47,7 +48,9 @@ public enum SyncURLSanitizer {
             var kept: [URLQueryItem] = []
             kept.reserveCapacity(items.count)
             for item in items {
-                if sensitiveQueryKeys.contains(item.name.lowercased()) {
+                if sensitiveQueryKeys.contains(item.name.lowercased())
+                    || item.name.lowercased().hasPrefix("x-amz-")
+                    || item.name.lowercased().hasPrefix("x-goog-") {
                     changed = true
                     continue
                 }

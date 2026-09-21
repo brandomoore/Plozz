@@ -30,7 +30,9 @@ public struct AuthView: View {
 
 
     public var body: some View {
-        if server.provider == .emby {
+        if server.provider == .silo {
+            SiloSignInView(server: server, deviceID: deviceID, onAuthenticated: onAuthenticated, onCancel: onCancel)
+        } else if server.provider == .emby {
             PasswordSignInView(
                 viewModel: PasswordSignInViewModel(
                     service: PasswordSignInService(server: server, deviceID: deviceID),
