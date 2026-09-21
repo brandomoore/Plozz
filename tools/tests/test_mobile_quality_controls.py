@@ -51,6 +51,22 @@ class MobileQualityControlsTests(unittest.TestCase):
         self.assertIn('accessibilityIdentifier("player-failed-streaming-quality")', feedback)
         self.assertIn("viewModel.phase == .ready, !viewModel.showBringUpSpinner", source)
 
+    def test_sdr_is_offered_not_automatically_selected_and_original_needs_confirmation(self):
+        source = (ROOT / "Sources/AppShelliOS/PlozziOSPlayerView.swift").read_text()
+        self.assertIn("onPlaySDRVersion:", source)
+        self.assertIn("showVersions(onlySDR: true)", source)
+        notice = swift_block(source, "private func presentSDRNoticeIfReady()")
+        self.assertIn("viewModel.phase == .ready", notice)
+        self.assertIn("!viewModel.showBringUpSpinner", notice)
+        self.assertIn("announcedSDRPlayer != playerIdentity", notice)
+        self.assertIn('text: "Playing in SDR"', notice)
+        self.assertIn("TransientStatusView(presenter: playbackStatus)", source)
+        self.assertNotIn("switchVersion", notice)
+        feedback = (ROOT / "Sources/FeaturePlayback/StreamingPlaybackFeedback.swift").read_text()
+        self.assertIn('Button("Play original quality") { confirmsOriginal = true }', feedback)
+        self.assertIn('.confirmationDialog("Play original quality?"', feedback)
+        self.assertIn("substantially more data", feedback)
+
 
 if __name__ == "__main__":
     unittest.main()

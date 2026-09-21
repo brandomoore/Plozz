@@ -46,6 +46,7 @@ public struct PlayerView: View {
     private let showsSharedControls: Bool
     private let onChangeQuality: (() -> Void)?
     private let onChangeVersion: (() -> Void)?
+    private let onPlaySDRVersion: (() -> Void)?
 
     public init(
         viewModel: PlayerViewModel,
@@ -53,7 +54,8 @@ public struct PlayerView: View {
         themePalette: ThemePalette = .dark,
         showsSharedControls: Bool = true,
         onChangeQuality: (() -> Void)? = nil,
-        onChangeVersion: (() -> Void)? = nil
+        onChangeVersion: (() -> Void)? = nil,
+        onPlaySDRVersion: (() -> Void)? = nil
     ) {
         _viewModel = State(initialValue: viewModel)
         self.showDiagnostics = showDiagnostics
@@ -61,6 +63,7 @@ public struct PlayerView: View {
         self.showsSharedControls = showsSharedControls
         self.onChangeQuality = onChangeQuality
         self.onChangeVersion = onChangeVersion
+        self.onPlaySDRVersion = onPlaySDRVersion
     }
 
 
@@ -288,6 +291,11 @@ public struct PlayerView: View {
                 usedH264Fallback: viewModel.streamingUsedH264Fallback,
                 onChangeQuality: viewModel.streamingQualityAvailable ? onChangeQuality : nil,
                 onChangeVersion: onChangeVersion,
+                onPlaySDRVersion: onPlaySDRVersion,
+                onPlayOriginal: viewModel.streamingHasHDRConversionError
+                    && viewModel.streamingOptions?.requiresConversionPolicy == true ? {
+                        viewModel.changeStreamingOptions(.init(quality: .original))
+                    } : nil,
                 onRetry: viewModel.streamingQualityAvailable ? {
                     if let options = viewModel.streamingOptions { viewModel.changeStreamingOptions(options) }
                 } : nil,

@@ -9,6 +9,23 @@ import UIKit
 
 @MainActor
 final class StreamingPlaybackTests: XCTestCase {
+    func testSDRConversionNoticeNeedsRealOutputEvidenceAndLeavesPlaybackAlone() async {
+        let provider = QualityPlaybackProvider()
+        await provider.setSourceRange("HDR10")
+        let (model, engine, _) = make(provider: provider)
+        await model.load()
+        XCTAssertFalse(model.streamingUsesSDRConversion)
+        engine.streamingOutputDynamicRange = .hdr10
+        XCTAssertFalse(model.streamingUsesSDRConversion)
+        engine.streamingOutputDynamicRange = .sdr
+        XCTAssertTrue(model.streamingUsesSDRConversion)
+        XCTAssertEqual(model.phase, .ready)
+        XCTAssertEqual(model.streamingOptions?.quality, .hd720)
+        let calls = await provider.calls
+        XCTAssertEqual(calls.count, 1, "A valid tone-mapped stream must not be re-resolved or rejected")
+        await model.stop()
+    }
+
     func testVersionContinuationKeepsCurrentPositionQualityTracksPauseAndSpeed() async {
         let (outgoing, engine, _) = make(options: .init(quality: .hd720))
         await outgoing.load()
@@ -363,10 +380,12 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
     private(set) var ordinaryCalls = 0
     private(set) var released: [String] = []
     private var refusesQuality = false
+    private var sourceRange: String?
     private var gate: QualityDecisionGate?
     init(gate: QualityDecisionGate? = nil) { self.gate = gate }
     func installGate(_ gate: QualityDecisionGate) { self.gate = gate }
     func setRefusesQuality() { refusesQuality = true }
+    func setSourceRange(_ range: String) { sourceRange = range }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest {
         ordinaryCalls += 1
         return baseRequest()
@@ -394,7 +413,8 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
                             .init(id: 4, kind: .audio, displayTitle: "Japanese", language: "jpn")
                         ],
                         subtitleTracks: [.init(id: 6, kind: .subtitle, displayTitle: "English", language: "eng")],
-                        isTranscoding: true)
+                        isTranscoding: true,
+                        sourceMetadata: sourceRange.map { .init(video: .init(videoRangeType: $0)) })
     }
     func libraries() async throws -> [MediaLibrary] { [] }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
@@ -413,6 +433,7 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
 private final class QualityEngine: VideoEngine {
     var loadGate: QualityDecisionGate?
     var streamingFailure: StreamingPlaybackFailure?
+    var streamingOutputDynamicRange: SourceDynamicRange?
     let displayName = "Quality fixture"
     var status: VideoEngineStatus = .idle
     var isPaused = false

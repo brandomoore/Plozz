@@ -35,9 +35,12 @@ struct MobilePlaybackFailureView: View {
     let usedH264Fallback: Bool
     let onChangeQuality: (() -> Void)?
     let onChangeVersion: (() -> Void)?
+    let onPlaySDRVersion: (() -> Void)?
+    let onPlayOriginal: (() -> Void)?
     let onRetry: (() -> Void)?
     let onShowDiagnostics: () -> Void
     let onDismiss: () -> Void
+    @State private var confirmsOriginal = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -55,6 +58,18 @@ struct MobilePlaybackFailureView: View {
                     if let code {
                         Text(verbatim: code).font(.caption.monospaced())
                             .textSelection(.enabled)
+                    }
+                    if let onPlaySDRVersion {
+                        Button("Play an SDR version", systemImage: "rectangle.stack", action: onPlaySDRVersion)
+                            .buttonStyle(.borderedProminent)
+                    } else if onPlayOriginal != nil {
+                        Text("No SDR version found on this server.")
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                    if onPlayOriginal != nil {
+                        Button("Play original quality") { confirmsOriginal = true }
+                            .buttonStyle(.bordered)
                     }
                     if let onChangeVersion {
                         Menu {
@@ -83,6 +98,14 @@ struct MobilePlaybackFailureView: View {
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: geometry.size.height)
             }
+        }
+        .confirmationDialog("Play original quality?", isPresented: $confirmsOriginal, titleVisibility: .visible) {
+            if let onPlayOriginal {
+                Button("Play original quality", action: onPlayOriginal)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This keeps your selected version but removes the streaming quality limit. It may use substantially more data, especially on cellular.")
         }
     }
 }

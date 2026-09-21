@@ -240,7 +240,8 @@ public enum StreamingQualityError: Error, Equatable, Sendable {
 
 public struct StreamingPlaybackFailure: Equatable, Sendable {
     public enum Kind: Sendable {
-        case network, timedOut, accessDenied, unavailable, unsupportedFormat, hdrConversion, server, unknown
+        case network, timedOut, accessDenied, unavailable, unsupportedFormat
+        case hdrConversion, hdrConversionUnconfirmed, server, unknown
     }
     public enum Domain: String, Sendable { case avFoundation = "AVFoundation", url = "URL", coreMedia = "CoreMedia" }
     public let kind: Kind
@@ -261,7 +262,7 @@ public struct StreamingPlaybackFailure: Equatable, Sendable {
     }
 
     public var allowsCodecFallback: Bool {
-        kind == .unsupportedFormat || kind == .unknown || kind == .unavailable
+        kind == .unsupportedFormat || kind == .unknown || kind == .unavailable || kind == .hdrConversionUnconfirmed
     }
     public var diagnosticCode: String? {
         let components = [
@@ -286,6 +287,10 @@ public struct StreamingPlaybackFailure: Equatable, Sendable {
             "Emby returned incompatible HDR video. Enable HDR-to-SDR tone mapping in the server’s transcoding settings (requires Emby Premiere), or choose an SDR version."
         case .hdrConversion:
             "The server returned incompatible HDR video. Enable HDR-to-SDR tone mapping in the server’s transcoding settings, or choose an SDR version."
+        case .hdrConversionUnconfirmed where provider == .emby:
+            "This HDR conversion couldn’t be played. HDR-to-SDR tone mapping may be needed; Emby requires Premiere for it. Check the server’s transcoding settings or choose an SDR version."
+        case .hdrConversionUnconfirmed:
+            "This HDR conversion couldn’t be played. Check HDR-to-SDR tone mapping in the server’s transcoding settings or choose an SDR version."
         case .server:
             "The server returned an error while serving the playback stream. Its transcoding log can explain why conversion failed."
         case .unknown:

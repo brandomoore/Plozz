@@ -3,6 +3,21 @@ import XCTest
 @testable import FeatureHomeCore
 
 final class PlayerVersionSelectionTests: XCTestCase {
+    func testSDRAlternativesRequireKnownRangeAndExplicitSelection() throws {
+        var item = movie("one", edition: "Theatrical").selectingVersion("file-2")
+        item.versions[0].videoRange = "SDR"
+        item.versions[1].videoRange = "HDR10"
+        item.versions.append(.init(id: "unknown", height: 720))
+        item.versions.append(.init(id: "foreign", videoRange: "SDR", sourceAccountID: "other"))
+        let alternatives = PlayerVersionSelection.sdrAlternatives(for: item, mediaSourceID: "file-2")
+        XCTAssertEqual(alternatives.map(\.id), ["file-1"])
+        XCTAssertEqual(item.selectedVersionID, "file-2", "Finding an alternative must not change the selected version")
+        XCTAssertEqual(PlayerVersionSelection.selecting("file-1", in: item)?.selectedVersionID, "file-1")
+        XCTAssertTrue(PlayerVersionSelection.sdrAlternatives(for: item, mediaSourceID: "file-1").isEmpty)
+        item.versions[0].sourceMetadata = .init(video: .init(videoRangeType: "HDR10"))
+        XCTAssertTrue(PlayerVersionSelection.sdrAlternatives(for: item, mediaSourceID: "file-2").isEmpty)
+    }
+
     private func movie(_ id: String, account: String = "server", edition: String) -> MediaItem {
         MediaItem(
             id: id, title: "Fixture", kind: .movie, providerIDs: ["Tmdb": "1"],

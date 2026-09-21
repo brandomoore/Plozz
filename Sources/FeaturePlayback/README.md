@@ -119,6 +119,14 @@ file's HDR badge nor a numeric error alone establishes this condition. Emby advi
 notes the documented Premiere requirement for HDR tone mapping; it does not
 claim to have read the server's license or global settings. Compatible HEVC HDR,
 properly tone-mapped H.264, and transport failures retain their own handling.
+If the decoder rejects an HDR conversion before publishing its format, the
+message offers conditional tone-mapping advice, not a claim that it is disabled.
+An SDR alternative is offered only when a known SDR file exists on the current
+account, and switching always requires selection. Original quality requires
+confirmation that it removes the data limit. Neither happens automatically.
+The existing transient-status component shows "Playing in SDR" once playback
+starts, for an explicitly chosen SDR alternative or a confirmed HDR-to-SDR
+server conversion; unknown output format and failed/loading streams never toast.
 
 Rendition changes stop old media I/O, retain the chosen source/version, current
 position and pause intent, reapply track selections, and retire the old server

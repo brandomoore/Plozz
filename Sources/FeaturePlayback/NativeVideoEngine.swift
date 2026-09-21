@@ -108,7 +108,7 @@ public final class NativeVideoEngine: VideoEngine {
     /// with playback start) so a known AVPlayer-hostile codec can swap instantly
     /// instead of waiting out the no-frames probe.
     @ObservationIgnored private var formatInspectTask: Task<Void, Never>?
-    @ObservationIgnored private var convertedVideoFormat: NativePlaybackFailure.VideoFormat?
+    private var convertedVideoFormat: NativePlaybackFailure.VideoFormat?
     @ObservationIgnored private var audioSessionConfigured = false
     /// Retains the resource-loader delegate that serves injected subtitle
     /// playlists; `AVAssetResourceLoader` holds it only weakly.
@@ -684,6 +684,8 @@ public final class NativeVideoEngine: VideoEngine {
         }
     }
 
+    public var streamingOutputDynamicRange: SourceDynamicRange? { convertedVideoFormat?.dynamicRange }
+
     public var streamingFailure: StreamingPlaybackFailure? {
         guard let item = player?.currentItem else { return nil }
         let lastError = item.errorLog()?.events.last
@@ -694,7 +696,9 @@ public final class NativeVideoEngine: VideoEngine {
         }
         let failure = NativePlaybackFailure.classify(
             error, httpStatus: http, convertedFormat: convertedVideoFormat,
-            provider: request?.sourceProvider
+            provider: request?.sourceProvider,
+            convertingHDRSource: request?.isTranscoding == true && request?.streamingOptions != nil
+                && SourceDynamicRange.providerHint(from: request?.sourceMetadata)?.isHDR == true
         )
         return failure
     }
@@ -740,6 +744,7 @@ public final class NativeVideoEngine: VideoEngine {
                     guard let format else { return }
                     guard let self, !Task.isCancelled, generation == self.loadGeneration else { return }
                     self.convertedVideoFormat = format
+                    HandoffDiagnostics.emit("native STREAM_FORMAT codec=\(format.codec) range=\(format.dynamicRange?.rawValue ?? "unknown")")
                     if format.isHDRH264 {
                         HandoffDiagnostics.emit("native STREAM_FORMAT hdr-h264=true")
                     }

@@ -1,5 +1,6 @@
 #if os(iOS)
 import CoreModels
+import CoreUI
 import FeatureHomeCore
 import FeaturePlayback
 import SwiftUI
@@ -46,6 +47,10 @@ struct PlozziOSPlayerView: View {
     @State private var presentsStreamingQuality = false
     @State private var activeItem: MediaItem?
     @State private var presentsVersions = false
+    @State private var showsSDRVersions = false
+    @State private var selectedSDRAlternative = false
+    @State private var announcedSDRPlayer: UUID?
+    @State private var playbackStatus = TransientStatusPresenter()
     /// See the bisect note in `body`.
 
     let request: PlozziOSPlaybackRequest
@@ -62,14 +67,18 @@ struct PlozziOSPlayerView: View {
                     showsSharedControls: false,
                     onChangeQuality: { presentsStreamingQuality = true },
                     onChangeVersion: PlayerVersionSelection.versions(for: versionItem).count > 1
-                        ? { presentsVersions = true } : nil
+                        ? { showVersions(onlySDR: false) } : nil,
+                    onPlaySDRVersion: viewModel.streamingHasHDRConversionError
+                        && !PlayerVersionSelection.sdrAlternatives(
+                            for: versionItem, mediaSourceID: viewModel.currentMediaSourceID
+                        ).isEmpty ? { showVersions(onlySDR: true) } : nil
                 )
                 .id(playerIdentity)
                 if viewModel.phase == .ready, !viewModel.showBringUpSpinner {
                     PlozziOSPlayerControlsOverlay(
                         viewModel: viewModel,
                         hasVersions: PlayerVersionSelection.versions(for: versionItem).count > 1,
-                        onShowVersions: { presentsVersions = true },
+                        onShowVersions: { showVersions(onlySDR: false) },
                         onClose: { dismiss() }
                     )
                     .id(playerIdentity)
@@ -84,12 +93,16 @@ struct PlozziOSPlayerView: View {
             }
         }
         .statusBarHidden()
+        .overlay(alignment: .top) {
+            TransientStatusView(presenter: playbackStatus).padding(.top, 60)
+        }
         .onAppear {
             trailerController.stop()
             isPresented = true
         }
         .onDisappear {
             isPresented = false
+            playbackStatus.dismiss()
             handoffTask?.cancel()
             handoffTask = nil
             // Explicitly drop the player once the cover is gone. A
@@ -133,9 +146,12 @@ struct PlozziOSPlayerView: View {
         .sheet(isPresented: $presentsVersions) {
             PlozziOSPlayerVersionSheet(
                 item: versionItem, mediaSourceID: viewModel?.currentMediaSourceID,
+                onlySDR: showsSDRVersions,
                 onSelect: switchVersion
             )
         }
+        .onChange(of: viewModel?.showBringUpSpinner) { _, _ in presentSDRNoticeIfReady() }
+        .onChange(of: viewModel?.streamingUsesSDRConversion) { _, _ in presentSDRNoticeIfReady() }
         .onChange(of: viewModel?.phase) { _, phase in
             guard phase == .ready, usesStreamingQuality else { return }
             let actual = StreamingConnection.resolve(network: streamingNetwork, locality: provider.connectionLocality)
@@ -165,6 +181,7 @@ struct PlozziOSPlayerView: View {
                 }
                 viewModel = incoming
                 activeItem = next
+                selectedSDRAlternative = false
                 playerIdentity = UUID()
                 handoffTask = nil
             }
@@ -201,10 +218,26 @@ struct PlozziOSPlayerView: View {
         )
     }
 
+    private func showVersions(onlySDR: Bool) {
+        showsSDRVersions = onlySDR
+        presentsVersions = true
+    }
+
+    private func presentSDRNoticeIfReady() {
+        guard let viewModel, viewModel.phase == .ready, !viewModel.showBringUpSpinner,
+              announcedSDRPlayer != playerIdentity,
+              selectedSDRAlternative || viewModel.streamingUsesSDRConversion else { return }
+        announcedSDRPlayer = playerIdentity
+        playbackStatus.present(icon: "display", text: "Playing in SDR")
+    }
+
     private func switchVersion(_ id: String) {
         guard let outgoing = viewModel, handoffTask == nil,
               let incomingItem = PlayerVersionSelection.selecting(id, in: versionItem) else { return }
         let continuation = outgoing.continuationForVersionChange()
+        let choseSDR = showsSDRVersions && PlayerVersionSelection.sdrAlternatives(
+            for: versionItem, mediaSourceID: outgoing.currentMediaSourceID
+        ).contains { $0.id == id }
         if let version = PlayerVersionSelection.versions(for: versionItem).first(where: { $0.id == id }) {
             appModel.versionPreferences.rememberVersion(
                 version, forTitle: DetailPlaybackSelection.versionPreferenceKey(for: versionItem)
@@ -217,6 +250,7 @@ struct PlozziOSPlayerView: View {
                 item: incomingItem, startPosition: continuation.position, continuation: continuation
             )
             activeItem = incomingItem
+            selectedSDRAlternative = choseSDR
             viewModel = incoming
             playerIdentity = UUID()
             handoffTask = nil

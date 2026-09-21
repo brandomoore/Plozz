@@ -6,6 +6,7 @@ import SwiftUI
 struct PlozziOSPlayerVersionSheet: View {
     let item: MediaItem
     let mediaSourceID: String?
+    var onlySDR = false
     let onSelect: (String) -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -13,7 +14,9 @@ struct PlozziOSPlayerVersionSheet: View {
         NavigationStack {
             List {
                 Section {
-                    ForEach(PlayerVersionSelection.versions(for: item)) { version in
+                    ForEach(onlySDR
+                        ? PlayerVersionSelection.sdrAlternatives(for: item, mediaSourceID: mediaSourceID)
+                        : PlayerVersionSelection.versions(for: item)) { version in
                         let selected = PlayerVersionSelection.isSelected(version, item: item, mediaSourceID: mediaSourceID)
                         Button {
                             dismiss()
@@ -41,7 +44,7 @@ struct PlozziOSPlayerVersionSheet: View {
                     Text("Resumes at the current position. Different cuts may have different timing.")
                 }
             }
-            .navigationTitle("Version")
+            .navigationTitle(onlySDR ? "SDR versions" : "Version")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }

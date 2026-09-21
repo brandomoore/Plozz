@@ -29,4 +29,12 @@ public enum PlayerVersionSelection {
             versionID: id, explicit: true
         )
     }
+
+    public static func sdrAlternatives(for item: MediaItem, mediaSourceID: String?) -> [MediaVersion] {
+        versions(for: item).filter {
+            !isSelected($0, item: item, mediaSourceID: mediaSourceID)
+                && (SourceDynamicRange.providerHint(from: $0.sourceMetadata)
+                    ?? SourceDynamicRange.classify(videoRangeType: $0.videoRange)) == .sdr
+        }
+    }
 }

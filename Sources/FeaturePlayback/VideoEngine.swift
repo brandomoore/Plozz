@@ -86,6 +86,7 @@ public protocol VideoEngine: AnyObject {
     var needsBackgroundReload: Bool { get }
     var maximumPlaybackSpeed: Double { get }
     var streamingFailure: StreamingPlaybackFailure? { get }
+    var streamingOutputDynamicRange: SourceDynamicRange? { get }
 
     // MARK: Lifecycle
 
@@ -342,6 +343,7 @@ public protocol VideoEngine: AnyObject {
 
 public extension VideoEngine {
     var streamingFailure: StreamingPlaybackFailure? { nil }
+    var streamingOutputDynamicRange: SourceDynamicRange? { nil }
     var needsBackgroundReload: Bool { true }
     var maximumPlaybackSpeed: Double { 4 }
     var nowPlayingPlayer: AVPlayer? { nil }

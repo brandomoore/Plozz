@@ -270,6 +270,15 @@ public final class PlayerViewModel {
     public var streamingPreparation: StreamingPreparationPhase { streamingQuality.preparation }
     public var streamingUsedH264Fallback: Bool { streamingQuality.usedH264Fallback }
     public var streamingIsTranscoding: Bool { request?.isTranscoding == true }
+    public var streamingUsesSDRConversion: Bool {
+        request?.isTranscoding == true && streamingOptions != nil
+            && SourceDynamicRange.providerHint(from: request?.sourceMetadata)?.isHDR == true
+            && engine.streamingOutputDynamicRange == .sdr
+    }
+    public var streamingHasHDRConversionError: Bool {
+        guard case .playback(let failure) = streamingQuality.error else { return false }
+        return failure.kind == .hdrConversion || failure.kind == .hdrConversionUnconfirmed
+    }
     public var streamingProviderName: String { provider.kind.displayName }
     public var streamingQualityAvailable: Bool {
         streamingOptions != nil && provider is any StreamingQualityProviding

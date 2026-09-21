@@ -85,6 +85,46 @@ final class NativePlaybackFailureTests: XCTestCase {
         }
     }
 
+    func testHDRContextGivesConditionalAdviceWhenDecoderFailsBeforeFormatArrives() throws {
+        let failure = NativePlaybackFailure.classify(
+            NSError(domain: "CoreMediaErrorDomain", code: -12927),
+            provider: .emby, convertingHDRSource: true
+        )
+        XCTAssertEqual(failure.kind, .hdrConversionUnconfirmed)
+        XCTAssertTrue(failure.allowsCodecFallback)
+        var message = failure.userMessage
+        message.locale = Locale(identifier: "en_US")
+        let text = String(localized: message)
+        XCTAssertTrue(text.contains("may be needed"))
+        XCTAssertFalse(text.contains("disabled"))
+        XCTAssertEqual(NativePlaybackFailure.classify(
+            NSError(domain: "CoreMediaErrorDomain", code: -12927), provider: .emby
+        ).kind, .unknown)
+        let sdr = try format(codec: kCMVideoCodecType_H264, transfer: kCMFormatDescriptionTransferFunction_ITU_R_709_2)
+        XCTAssertEqual(NativePlaybackFailure.classify(
+            NSError(domain: "CoreMediaErrorDomain", code: -12927),
+            convertedFormat: sdr, provider: .emby, convertingHDRSource: true
+        ).kind, .unknown)
+        XCTAssertEqual(NativePlaybackFailure.classify(
+            NSError(domain: NSURLErrorDomain, code: URLError.timedOut.rawValue),
+            provider: .emby, convertingHDRSource: true
+        ).kind, .timedOut)
+    }
+
+    @MainActor
+    func testProbeWaitsForColorMetadataRatherThanAssumingTheFirstTrackIsSDR() async throws {
+        let incomplete = try format(codec: kCMVideoCodecType_H264, transfer: nil)
+        let sdr = try format(codec: kCMVideoCodecType_H264, transfer: kCMFormatDescriptionTransferFunction_ITU_R_709_2)
+        var reads = 0
+        let actual = try await NativePlaybackFailure.probeConvertedFormat(
+            read: { reads += 1; return reads < 3 ? incomplete : sdr },
+            isCurrent: { true }, pause: {}
+        )
+        XCTAssertEqual(reads, 3)
+        XCTAssertEqual(actual?.dynamicRange, .sdr)
+        XCTAssertNil(incomplete.dynamicRange)
+    }
+
     @MainActor
     func testHLSTrackProbeWaitsForTheInitializationSegment() async throws {
         let expected = try format(codec: kCMVideoCodecType_H264, transfer: kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ)
