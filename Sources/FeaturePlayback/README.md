@@ -106,8 +106,13 @@ change HDR/audio formats. A failed bounded rendition never retries the original
 file or an on-device remux; errors leave the Quality control available.
 For Jellyfin/Emby conversion, only bitmap subtitles request server burn-in.
 Text tracks remain available through the existing subtitle overlay; a stale
-server-generated `SubtitleMethod=Encode` is removed from text/off renditions.
+server-generated `SubtitleMethod=Encode` is replaced by explicit `External`
+delivery for text/off renditions. Both singular and Emby's plural track selectors
+are disabled, and manifest-subtitle requests are removed from that video URL.
+Omitting the delivery method alone can still trigger Emby's default burn-in.
 An engine load that returns after a terminal startup failure cannot publish ready.
+Terminal managed-stream failures stop the decoder so audio cannot continue
+behind the error screen.
 
 Rendition changes stop old media I/O, retain the chosen source/version, current
 position and pause intent, reapply track selections, and retire the old server

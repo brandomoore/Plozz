@@ -91,12 +91,19 @@ extension MediaSourceInfo {
         if let audio = options.audioTrack { set("AudioStreamIndex", String(audio.id)) }
         if !options.subtitlesOff, let subtitle = options.subtitleTrack, subtitle.isBitmapSubtitle {
             set("SubtitleStreamIndex", String(subtitle.id))
+            if query.contains(where: { $0.name.caseInsensitiveCompare("SubtitleStreamIndexes") == .orderedSame }) {
+                set("SubtitleStreamIndexes", String(subtitle.id))
+            }
             set("SubtitleMethod", "Encode")
         } else {
-            // Text is delivered through the app's subtitle overlay. A server-
-            // generated Encode method must not survive a text/off selection.
+            // Emby can still burn its default track when the index is -1 but
+            // the delivery method is omitted. Explicitly keep subtitles out of HLS.
             set("SubtitleStreamIndex", "-1")
-            query.removeAll { $0.name.caseInsensitiveCompare("SubtitleMethod") == .orderedSame }
+            if query.contains(where: { $0.name.caseInsensitiveCompare("SubtitleStreamIndexes") == .orderedSame }) {
+                set("SubtitleStreamIndexes", "-1")
+            }
+            set("SubtitleMethod", "External")
+            query.removeAll { $0.name.caseInsensitiveCompare("ManifestSubtitles") == .orderedSame }
         }
         let videoCodec = query.first { $0.name.caseInsensitiveCompare("VideoCodec") == .orderedSame }?.value
         if options.codec == .preferH264 || !["h264", "hevc"].contains(videoCodec?.lowercased() ?? "") {

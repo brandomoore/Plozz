@@ -105,8 +105,25 @@ final class StreamingPlaybackTests: XCTestCase {
         engine.onFailure?(.invalidResponse)
         await wait { if case .failed = model.phase { return true }; return false }
         XCTAssertEqual(model.streamingQualityError, .playback(failure))
+        XCTAssertEqual(engine.status, .idle, "No failed stream should keep playing behind its error")
         let calls = await provider.calls
         XCTAssertEqual(calls.count, 1)
+        await model.stop()
+    }
+
+    func testTerminalFailureRetainsResumeAfterStoppingTheDecoder() async {
+        let (model, engine, _) = make(options: .init(quality: .hd720, codec: .preferH264))
+        await model.load()
+        engine.currentTime = 142
+        engine.streamingFailure = .init(kind: .network, domain: .url, code: -1009)
+        engine.onFailure?(.invalidResponse)
+        await wait { if case .failed = model.phase { return true }; return false }
+        XCTAssertEqual(engine.status, .idle)
+        XCTAssertEqual(engine.currentTime, 0)
+        XCTAssertEqual(model.continuationForVersionChange().position, 142)
+        model.changeStreamingOptions(.init(quality: .hd720, codec: .preferH264))
+        await wait { model.phase == .ready && engine.positions.count == 2 }
+        XCTAssertEqual(engine.positions.last, 142)
         await model.stop()
     }
 
@@ -417,7 +434,7 @@ private final class QualityEngine: VideoEngine {
     func play() { isPaused = false }
     func pause() { isPaused = true }
     func seek(to seconds: TimeInterval) async { currentTime = seconds }
-    func stop() { status = .idle }
+    func stop() { status = .idle; currentTime = 0; isPaused = true }
     func selectAudioTrack(_ track: MediaTrack?) { currentAudioTrackID = track?.id }
     func selectSubtitleTrack(_ track: MediaTrack?) { selectedSubtitleID = track?.id }
     #if canImport(UIKit)

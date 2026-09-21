@@ -22,7 +22,7 @@ final class JellyfinStreamingQualityTests: XCTestCase {
             http.stubSequence(pathSuffix: "/Items/movie/PlaybackInfo", jsons: ["""
             {"PlaySessionId":"session","MediaSources":[{
               "Id":"version","Container":"mkv","SupportsDirectPlay":false,"Bitrate":25000000,
-              "TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=h264&SubtitleMethod=Encode&SubtitleStreamIndex=2",
+              "TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=h264&SubtitleMethod=Encode&SubtitleStreamIndex=2&SubtitleStreamIndexes=2&ManifestSubtitles=vtt",
               "MediaStreams":[
                 {"Index":0,"Type":"Video","Codec":"hevc","Width":3840,"Height":2076},
                 {"Index":1,"Type":"Audio","Codec":"ac3","IsDefault":true},
@@ -38,16 +38,22 @@ final class JellyfinStreamingQualityTests: XCTestCase {
                 return XCTFail("Expected managed stream")
             }
             XCTAssertEqual(locator.resource.queryItems.first { $0.name == "SubtitleStreamIndex" }?.value, "-1")
-            XCTAssertFalse(locator.resource.queryItems.contains { $0.name == "SubtitleMethod" })
+            XCTAssertEqual(locator.resource.queryItems.first { $0.name == "SubtitleMethod" }?.value, "External")
+            XCTAssertEqual(locator.resource.queryItems.first { $0.name == "SubtitleStreamIndexes" }?.value, "-1")
+            XCTAssertFalse(locator.resource.queryItems.contains { $0.name == "ManifestSubtitles" })
             XCTAssertNotNil(request.subtitleTracks.first { $0.id == 2 }?.deliverySource)
             XCTAssertEqual(request.streamingOptions?.subtitleTrack?.id, 2)
             XCTAssertEqual(http.queryItems(forPathSuffix: "/PlaybackInfo")?.first { $0.name == "SubtitleStreamIndex" }?.value, "-1")
+            XCTAssertEqual(http.queryItems(forPathSuffix: "/PlaybackInfo")?.first { $0.name == "SubtitleMethod" }?.value, "External")
+            if kind == .emby {
+                XCTAssertEqual(http.queryItems(forPathSuffix: "/PlaybackInfo")?.first { $0.name == "SubtitleStreamIndexes" }?.value, "-1")
+            }
         }
     }
 
     func testTextAndDisabledSubtitlesRemoveServerRequestedBurnIn() throws {
         let source = try JSONDecoder().decode(MediaSourceInfo.self, from: Data(
-            #"{"Id":"version","TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=h264&SubtitleStreamIndex=2&SubtitleMethod=Encode&SegmentContainer=mp4"}"#.utf8
+            #"{"Id":"version","TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=h264&SubtitleStreamIndex=2&SubtitleStreamIndexes=2&ManifestSubtitles=vtt&SubtitleMethod=Encode&SegmentContainer=mp4"}"#.utf8
         ))
         for codec in ["ass", "ssa", "srt", "webvtt"] {
             var options = StreamingPlaybackOptions(quality: .low, codec: .preferH264)
@@ -57,7 +63,9 @@ final class JellyfinStreamingQualityTests: XCTestCase {
                 let url = try XCTUnwrap(URLComponents(string: source.boundedTranscodingURL(options)))
                 let query = url.queryItems ?? []
                 XCTAssertEqual(query.first { $0.name == "SubtitleStreamIndex" }?.value, "-1")
-                XCTAssertFalse(query.contains { $0.name == "SubtitleMethod" })
+                XCTAssertEqual(query.first { $0.name == "SubtitleMethod" }?.value, "External")
+                XCTAssertEqual(query.first { $0.name == "SubtitleStreamIndexes" }?.value, "-1")
+                XCTAssertFalse(query.contains { $0.name == "ManifestSubtitles" })
                 XCTAssertEqual(query.first { $0.name == "VideoBitrate" }?.value, "372000")
                 XCTAssertEqual(query.first { $0.name == "AudioBitrate" }?.value, "128000")
             }

@@ -1806,6 +1806,7 @@ public final class PlayerViewModel {
     private var didReachNaturalEnd = false
 
     private func currentResumePosition() -> TimeInterval {
+        if case .failed = phase, let position = streamingResumePosition { return position }
         let current = engine.currentTime
         if current.isFinite, current >= 0 {
             return current
@@ -2337,8 +2338,21 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
     }
 
     func handoffSetPhase(_ phase: PlayerViewModel.Phase) {
-        if case .failed(let error) = phase, streamingOptions != nil, streamingQuality.error == nil {
-            streamingQuality.error = Self.streamingFailure(error, evidence: engine.streamingFailure)
+        if case .failed(let error) = phase, streamingOptions != nil {
+            if streamingQuality.error == nil {
+                streamingQuality.error = Self.streamingFailure(error, evidence: engine.streamingFailure)
+            }
+            if self.phase == .ready {
+                streamingResumePosition = controls.pendingSeekTarget ?? currentResumePosition()
+                streamingTrackSnapshot = subtitleController.streamSnapshot()
+            } else if streamingResumePosition == nil {
+                streamingResumePosition = startPositionOverride ?? request?.startPosition ?? 0
+            }
+            engineHandoff.cancelWatchdog()
+            progressReporter.cancel()
+            seekCoordinator.cancelAll()
+            subtitleOverlay.cancelAll()
+            engine.stop()
         }
         self.phase = phase
     }

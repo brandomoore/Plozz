@@ -867,10 +867,12 @@ public struct JellyfinClient: Sendable {
             if let track = streaming.audioTrack {
                 queryItems.append(.init(name: "AudioStreamIndex", value: String(track.id)))
             }
-            if streaming.subtitlesOff {
-                queryItems.append(.init(name: "SubtitleStreamIndex", value: "-1"))
-            } else if let track = streaming.subtitleTrack {
-                queryItems.append(.init(name: "SubtitleStreamIndex", value: track.isBitmapSubtitle ? String(track.id) : "-1"))
+            let burnedSubtitle = streaming.subtitlesOff ? nil : streaming.subtitleTrack.flatMap { $0.isBitmapSubtitle ? $0 : nil }
+            let subtitleIndex = burnedSubtitle.map { String($0.id) } ?? "-1"
+            queryItems.append(.init(name: "SubtitleStreamIndex", value: subtitleIndex))
+            queryItems.append(.init(name: "SubtitleMethod", value: burnedSubtitle == nil ? "External" : "Encode"))
+            if providerKind == .emby {
+                queryItems.append(.init(name: "SubtitleStreamIndexes", value: subtitleIndex))
             }
             if let height = streaming.quality.maximumHeight, let width = streaming.quality.maximumWidth {
                 queryItems.append(.init(name: "MaxHeight", value: String(height)))
