@@ -271,7 +271,7 @@ public final class NativeVideoEngine: VideoEngine {
         #endif
 
         let inspectsConvertedFormat = request.isTranscoding && request.streamingOptions != nil
-        if inspectsConvertedFormat { inspectVideoFormat(asset: asset, request: request) }
+        if inspectsConvertedFormat { inspectVideoFormat(asset: asset, item: item, request: request) }
         furthestObservedPosition = max(furthestObservedPosition, startPosition)
         if startPosition > 1 {
             await seekWhenReady(player: player, to: startPosition)
@@ -296,7 +296,7 @@ public final class NativeVideoEngine: VideoEngine {
         // Inspect the *real* container video format as soon as it loads (in
         // parallel — adds no startup delay) so a known AVPlayer-hostile codec can
         // swap to the on-device engine near-instantly, before the no-frames probe.
-        if !inspectsConvertedFormat { inspectVideoFormat(asset: asset, request: request) }
+        if !inspectsConvertedFormat { inspectVideoFormat(asset: asset, item: item, request: request) }
 
         installTimeObserver(on: player)
         status = .ready
@@ -720,15 +720,24 @@ public final class NativeVideoEngine: VideoEngine {
     /// This asks the container itself rather than trusting server metadata.
     /// Managed conversions retain actual codec/transfer evidence for error advice;
     /// the original-file compatibility fallback remains scoped to SDR.
-    private func inspectVideoFormat(asset: AVAsset, request: PlaybackRequest) {
+    private func inspectVideoFormat(asset: AVAsset, item: AVPlayerItem, request: PlaybackRequest) {
         formatInspectTask?.cancel()
         if request.isTranscoding, request.streamingOptions != nil {
             let generation = loadGeneration
             formatInspectTask = Task { [weak self] in
                 do {
-                    guard let track = try await asset.loadTracks(withMediaType: .video).first,
-                          let description = try await track.load(.formatDescriptions).first else { return }
-                    let format = NativePlaybackFailure.VideoFormat(description)
+                    let format = try await NativePlaybackFailure.probeConvertedFormat(
+                        read: {
+                            let loadedTrack = item.tracks.compactMap(\.assetTrack).first { $0.mediaType == .video }
+                            let track: AVAssetTrack?
+                            if let loadedTrack { track = loadedTrack }
+                            else { track = try await asset.loadTracks(withMediaType: .video).first }
+                            guard let track, let description = try await track.load(.formatDescriptions).first else { return nil }
+                            return NativePlaybackFailure.VideoFormat(description)
+                        },
+                        isCurrent: { [weak self] in self?.loadGeneration == generation }
+                    )
+                    guard let format else { return }
                     guard let self, !Task.isCancelled, generation == self.loadGeneration else { return }
                     self.convertedVideoFormat = format
                     if format.isHDRH264 {

@@ -86,6 +86,38 @@ final class NativePlaybackFailureTests: XCTestCase {
     }
 
     @MainActor
+    func testHLSTrackProbeWaitsForTheInitializationSegment() async throws {
+        let expected = try format(codec: kCMVideoCodecType_H264, transfer: kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ)
+        var reads = 0
+        let observed = try await NativePlaybackFailure.probeConvertedFormat(
+            read: { reads += 1; return reads < 3 ? nil : expected },
+            isCurrent: { true }, pause: {}
+        )
+        XCTAssertEqual(reads, 3)
+        XCTAssertTrue(observed?.isHDRH264 == true)
+    }
+
+    @MainActor
+    func testLateFormatFromReplacedStreamIsDiscarded() async throws {
+        let expected = try format(codec: kCMVideoCodecType_H264, transfer: kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ)
+        var current = true
+        let observed = try await NativePlaybackFailure.probeConvertedFormat(
+            read: { current = false; return expected }, isCurrent: { current }, pause: {}
+        )
+        XCTAssertNil(observed)
+    }
+
+    @MainActor
+    func testMissingHLSMetadataHasABoundedGenericFallback() async throws {
+        var reads = 0
+        let observed = try await NativePlaybackFailure.probeConvertedFormat(
+            read: { reads += 1; return nil }, isCurrent: { true }, pause: {}
+        )
+        XCTAssertNil(observed)
+        XCTAssertEqual(reads, 50)
+    }
+
+    @MainActor
     func testAuthenticationFailureIsPreservedBeforeAnAVPlayerItemExists() async throws {
         let locator = try AuthenticatedHTTPPlaybackLocator(
             provider: .emby, accountID: "fixture", credentialRevision: CredentialRevision(),

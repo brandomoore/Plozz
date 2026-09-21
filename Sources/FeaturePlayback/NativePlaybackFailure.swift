@@ -23,6 +23,25 @@ enum NativePlaybackFailure {
         }
     }
 
+    @MainActor
+    static func probeConvertedFormat(
+        read: @MainActor () async throws -> VideoFormat?,
+        isCurrent: @MainActor () -> Bool,
+        pause: @MainActor () async throws -> Void = { try await Task.sleep(for: .milliseconds(100)) }
+    ) async throws -> VideoFormat? {
+        // HLS assets can initially report zero tracks while their init segment loads.
+        for _ in 0..<50 {
+            try Task.checkCancellation()
+            guard isCurrent() else { return nil }
+            if let format = try await read() {
+                try Task.checkCancellation()
+                return isCurrent() ? format : nil
+            }
+            try await pause()
+        }
+        return nil
+    }
+
     static func classify(
         _ error: NSError?, httpStatus: Int? = nil, convertedFormat: VideoFormat? = nil,
         provider: ProviderKind? = nil
