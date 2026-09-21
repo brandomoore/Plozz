@@ -57,7 +57,7 @@ final class NativePlaybackFailureTests: XCTestCase {
             let result = NativePlaybackFailure.classify(nil, httpStatus: status)
             XCTAssertEqual(result.kind, kind)
             XCTAssertEqual(result.diagnosticCode, "HTTP \(status)")
-            XCTAssertFalse(result.allowsCodecFallback)
+            XCTAssertEqual(result.allowsCodecFallback, kind == .unavailable)
         }
         let error = NSError(domain: AVFoundationErrorDomain, code: AVError.Code.decodeFailed.rawValue)
         let result = NativePlaybackFailure.classify(error)

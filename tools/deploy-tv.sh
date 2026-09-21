@@ -294,9 +294,7 @@ echo "▸ Installing $BUNDLE_ID → Apple TV (verified)…"
 # matching build number (which the git-commit-count versioning can't distinguish
 # from changed-but-uncommitted code). --no-launch so we can apply the first-run
 # reset env on launch below.
-"${BOUNDED[@]}" "${PLOZZ_DEPLOY_INSTALL_DEADLINE:-150}" \
-  "Apple TV install + verification" -- \
-  "$(dirname "$0")/install-verified.sh" "$DEVICE_ID" "$APP_PATH" --force --no-launch
+"$(dirname "$0")/install-verified.sh" "$DEVICE_ID" "$APP_PATH" --force --no-launch
 
 # Launch is best-effort and silent on failure — install is what matters; a launch
 # can fail for benign reasons (device asleep/locked) and isn't worth reporting.

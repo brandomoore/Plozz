@@ -814,19 +814,15 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
         streaming: StreamingPlaybackOptions? = nil
     ) async throws -> PlaybackRequest {
-        // Single round-trip: Plex's `metadata` response already carries the
-        // Media/Part (version) elements and the stream URL is then built locally,
-        // so — unlike Jellyfin's separate item + playback-decision calls — there's
-        // nothing here to parallelize for time-to-first-frame. This is the Plex
-        // mirror of Jellyfin's concurrent playbackInfo: fetch the one decision as
-        // early as possible.
+        // Original playback needs only metadata. Bounded conversion additionally
+        // validates Plex's decision before handing a transcode URL to the player.
         let detail = try await client.metadata(ratingKey: itemID)
         // Pick the chosen Media element (version) by id, else Plex's first.
         let mediaList = detail.Media ?? []
         if streaming != nil, let mediaSourceID,
            !mediaList.contains(where: { $0.id.map(String.init) == mediaSourceID }) {
             PlozzLog.playback.error("Selected streaming media source is no longer available.")
-            throw StreamingQualityError.unavailable
+            throw StreamingQualityError.sourceUnavailable
         }
         let mediaIndex = mediaSourceID.flatMap { id in
             mediaList.firstIndex { $0.id.map(String.init) == id }
@@ -867,6 +863,16 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             streaming: streaming
         ) else {
             throw AppError.notFound
+        }
+        if let streaming, resolved.isTranscoding {
+            do {
+                try await client.validateStreamingTranscode(url: resolved.url, options: streaming)
+                try Task.checkCancellation()
+            } catch {
+                do { try await client.stopStreamingTranscode(sessionID: transcodeSessionID) }
+                catch { PlozzLog.playback.error("Unable to release the rejected Plex streaming decision.") }
+                throw error
+            }
         }
         let mappedItem = map(metadata: detail)
         let streams = part.Stream ?? []

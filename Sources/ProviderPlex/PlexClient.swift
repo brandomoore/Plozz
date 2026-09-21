@@ -1712,9 +1712,16 @@ public struct PlexClient: Sendable {
             }
             set("directStream", "0")
             set("directStreamAudio", "0")
+            set("hasMDE", "1")
+            set("context", "streaming")
+            set("transcodeSessionId", sessionID)
+            set("X-Plex-Client-Profile-Name", "Generic")
             set("location", SourceLocalityClassifier.classify(url: baseURL) == .local ? "lan" : "wan")
             let codecs = streaming.codec.codecs(supportsHEVC: capabilities.allowedDirectPlayVideoCodecs.contains(.hevc))
-            var profile = "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mp4&videoCodec=\(codecs.joined(separator: ","))&audioCodec=aac&replace=true)"
+            let container = streaming.codec == .preferH264 ? "mpegts" : "mp4"
+            // The profile has its own query grammar inside the outer URL query.
+            let codecList = codecs.joined(separator: "%2C")
+            var profile = "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=\(container)&videoCodec=\(codecList)&audioCodec=aac)"
             if let bitrate = streaming.quality.videoBitrate,
                let width = streaming.quality.maximumWidth, let height = streaming.quality.maximumHeight {
                 set("maxVideoBitrate", String(bitrate / 1_000))
@@ -1723,6 +1730,7 @@ public struct PlexClient: Sendable {
                 set("audioChannels", "2")
                 profile += "+add-limitation(scope=videoCodec&scopeName=*&type=upperBound&name=video.width&value=\(width)&replace=true)"
                 profile += "+add-limitation(scope=videoCodec&scopeName=*&type=upperBound&name=video.height&value=\(height)&replace=true)"
+                profile += "+add-limitation(scope=videoCodec&scopeName=*&type=upperBound&name=video.bitrate&value=\(bitrate / 1_000)&replace=true)"
             }
             set("X-Plex-Client-Profile-Extra", profile)
             if let audio = streaming.audioTrack { set("audioStreamID", String(audio.id)) }
@@ -1735,6 +1743,33 @@ public struct PlexClient: Sendable {
             }
         }
         return absoluteURL(serverPath: "/video/:/transcode/universal/start.m3u8", extraQuery: query)
+    }
+
+    func validateStreamingTranscode(url: URL, options: StreamingPlaybackOptions) async throws {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw StreamingQualityError.malformedResponse
+        }
+        let endpoint = Endpoint(
+            path: "/video/:/transcode/universal/decision",
+            queryItems: components.queryItems ?? [], headers: headers
+        )
+        let (data, response) = try await send(endpoint, preservingStatus: true)
+        HandoffDiagnostics.emit("plex STREAM_DECISION http=\(response.statusCode)")
+        switch response.statusCode {
+        case 200..<300: break
+        case 401: throw AppError.unauthorized
+        case 403: throw StreamingQualityError.permissionDenied
+        case 429: throw AppError.rateLimited(retryAfter: response.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init))
+        default: throw StreamingQualityError.serverHTTP(response.statusCode)
+        }
+        let decision: PlexStreamingDecision
+        do {
+            decision = try JSONDecoder.plozz.decode(PlexStreamingDecisionResponse.self, from: data).MediaContainer
+        } catch {
+            PlozzLog.playback.error("Unable to decode the Plex streaming decision.")
+            throw StreamingQualityError.malformedResponse
+        }
+        try decision.validate(options: options)
     }
 
     func stopStreamingTranscode(sessionID: String) async throws {

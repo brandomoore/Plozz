@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # One-command incremental build, install, and launch for Plozz on iPhone/iPad.
-# Installation uses ios-deploy/MobileDevice instead of CoreDevice's RSD tunnel,
-# which is substantially more reliable on this machine.
+# Installation uses the shared bounded CoreDevice installer with verification
+# and retries for transient device-connection failures.
 #
 # Usage:
 #   tools/deploy-ios.sh                 # deploy to both configured devices
@@ -359,12 +359,9 @@ install_device() {
   echo "▸ Installing build $BUILD on $name (verified)…"
   # --force: we just built fresh code; always (re)install rather than skip on a
   # matching build number (git-commit-count versioning can't tell it apart from
-  # changed-but-uncommitted code). The verified installer warms the tunnel, uses
-  # a generous timeout, and confirms success by querying the device instead of
-  # trusting the install command's exit code (which lies on wireless links).
-  "${BOUNDED[@]}" "${PLOZZ_DEPLOY_INSTALL_DEADLINE:-150}" \
-    "$name install + verification" -- \
-    "$(dirname "$0")/install-verified.sh" "$core_id" "$APP_PATH" --force
+  # changed-but-uncommitted code). The installer owns bounded attempts and any
+  # explicit overall deadline; an outer timeout must not truncate recovery.
+  "$(dirname "$0")/install-verified.sh" "$core_id" "$APP_PATH" --force
 }
 
 STATUS=0

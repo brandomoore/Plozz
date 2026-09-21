@@ -16,6 +16,13 @@ def swift_block(source, declaration):
 
 
 class MobileQualityControlsTests(unittest.TestCase):
+    def test_loading_has_only_a_spinner_status_and_quality(self):
+        source = (ROOT / "Sources/FeaturePlayback/StreamingPlaybackFeedback.swift").read_text()
+        loading = swift_block(source, "struct StreamingPlaybackLoadingView:")
+        self.assertIn("ProgressView()", loading)
+        self.assertEqual(loading.count("Text("), 2)
+        self.assertNotIn(".footnote", loading)
+
     def test_quality_is_wired_into_the_rendered_transport_not_only_the_unused_menu(self):
         source = (ROOT / "Sources/AppShelliOS/PlozziOSPlayerControlsOverlay.swift").read_text()
         transport = swift_block(source, "private struct PlozziOSPlayerTransport:")

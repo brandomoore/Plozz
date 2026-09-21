@@ -3,6 +3,21 @@ import XCTest
 @testable import CoreModels
 
 final class StreamingQualityTests: XCTestCase {
+    func testPreparationCopyIsAShortStatusNotAnExplanation() {
+        let cases: [(StreamingPreparationPhase, Bool, Bool, String)] = [
+            (.requesting, false, false, "Connecting to Plex…"),
+            (.requesting, true, true, "Trying H.264…"),
+            (.opening, true, false, "Transcoding…"),
+            (.opening, false, false, "Opening video…"),
+            (.waitingForVideo, true, false, "Buffering…")
+        ]
+        for (phase, transcoding, fallback, expected) in cases {
+            var message = phase.message(provider: "Plex", transcoding: transcoding, usingH264Fallback: fallback)
+            message.locale = Locale(identifier: "en_US")
+            XCTAssertEqual(String(localized: message), expected)
+        }
+    }
+
     func testDefaultsAndLegacyPlaybackSettingsUseBalancedCellularOnly() throws {
         let old = try JSONDecoder().decode(PlaybackSettings.self, from: Data(#"{"backgroundAudio":true}"#.utf8))
         XCTAssertTrue(old.backgroundAudio)

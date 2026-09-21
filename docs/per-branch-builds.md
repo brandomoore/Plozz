@@ -86,9 +86,23 @@ throws until proven otherwise.
 
 ### It builds but doesn't install
 
-`--build-only` skips installing. Also check the device is awake and unlocked;
-`install-verified.sh` retries and confirms by querying the device, since the
-install command's exit code is unreliable over wireless.
+`--build-only` skips installing. Both device deployment wrappers use
+`install-verified.sh`: up to three 180-second install attempts, bounded version
+queries, and short backoff. A stale availability probe never gates installation.
+There is no shorter outer timeout truncating the retry budget.
+
+The installer preserves a signed-app check, all command logs, structured replies,
+and a receipt under `.build/device-installs/`. It verifies after an error before
+retrying: a newly observed target build confirms a completed install, but an
+unchanged build number does **not** prove a `--force` replacement. A clean install
+completion remains success if a follow-up connection or optional launch fails.
+Package/signature rejection remains a failure, not device unavailability.
+Recovery never resets shared device services, changes pairing, or deletes caches;
+cancellation terminates only the installer’s current owned command.
+
+`PLOZZ_INSTALL_TIMEOUT` (1–600 seconds) and `PLOZZ_INSTALL_ATTEMPTS` (1–5) override
+the defaults. `PLOZZ_DEPLOY_INSTALL_DEADLINE`, if explicitly set, is an overall
+deadline owned by the installer, not a second independently timed wrapper.
 
 ## Cleaning up
 

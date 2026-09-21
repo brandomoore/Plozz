@@ -64,12 +64,20 @@ transport. Loading shows no temporary Quality button; a failed stream offers
 Change quality and Try again with the central error, not beside Close.
 
 Preparation follows real negotiation, stream opening, and first-video stages.
+Its loading UI contains only a spinner, short status (such as "Transcoding…"),
+and selected quality.
 Live conversion buffers segments as the viewer watches; there is no invented
 whole-title transcode percentage or claim that a timeout means HEVC is disabled.
 Server decision codes, HTTP failures, native player errors, and startup timeouts
 remain distinct. Only allowlisted error domains and numeric codes enter the UI
 and playback journal; raw server messages and authenticated URLs do not.
 Permission, connection, and server errors do not trigger codec retries.
+Plex bounded streams first validate the server's universal-transcoder decision
+with the same session and settings as the start request. HEVC uses fragmented
+MP4 HLS; the one-shot H.264 fallback requests MPEG-TS at the unchanged budget.
+A missing converted resource may trigger this fallback too; it never falls back
+to the uncapped original. Decision status and numeric codes are retained without
+copying raw server descriptions into the player.
 
 On iPhone/iPad diagnostics use a separate large, scrollable sheet, with stacked
 label/value rows and adaptive columns in wide layouts. Failure details scroll

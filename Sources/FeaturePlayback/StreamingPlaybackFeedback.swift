@@ -16,11 +16,6 @@ struct StreamingPlaybackLoadingView: View {
             Text(phase.message(provider: provider, transcoding: transcoding, usingH264Fallback: h264Fallback))
                 .font(.headline)
             Text(options.quality.title).font(.subheadline)
-            if transcoding {
-                Text("Converted as you watch. Playback starts when enough video is buffered; the whole movie doesn’t need to finish converting.")
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.75))
-            }
         }
         .multilineTextAlignment(.center)
         .foregroundStyle(.white)

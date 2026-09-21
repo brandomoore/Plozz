@@ -182,6 +182,7 @@ public enum StreamingQualityError: Error, Equatable, Sendable {
     case unavailable, unsupported
     case permissionDenied, noCompatibleStream, sourceUnavailable, malformedResponse, negotiationFailed
     case serverHTTP(Int)
+    case plexDecision(Int)
     case playback(StreamingPlaybackFailure)
     case startupTimedOut
 
@@ -211,6 +212,8 @@ public enum StreamingQualityError: Error, Equatable, Sendable {
             "The server couldn’t prepare playback and didn’t report a specific cause. Check the server’s logs and try again."
         case .serverHTTP(let status):
             "The server returned HTTP \(status) while preparing playback. Check its transcoding log for the cause. Changing codec may not resolve a server error."
+        case .plexDecision:
+            "Plex refused the conversion. Check the server’s transcoding settings and log."
         case .playback(let failure):
             failure.userMessage
         case .startupTimedOut:
@@ -227,6 +230,7 @@ public enum StreamingQualityError: Error, Equatable, Sendable {
         case .malformedResponse: "InvalidPlaybackResponse"
         case .negotiationFailed: "PlaybackNegotiationFailed"
         case .serverHTTP(let status): "HTTP \(status)"
+        case .plexDecision(let code): "Plex decision \(code)"
         case .startupTimedOut: "PlaybackStartupTimeout"
         case .playback(let failure): failure.diagnosticCode
         default: nil
@@ -249,7 +253,9 @@ public struct StreamingPlaybackFailure: Equatable, Sendable {
         self.httpStatus = httpStatus
     }
 
-    public var allowsCodecFallback: Bool { kind == .unsupportedFormat || kind == .unknown }
+    public var allowsCodecFallback: Bool {
+        kind == .unsupportedFormat || kind == .unknown || kind == .unavailable
+    }
     public var diagnosticCode: String? {
         let components = [
             domain.flatMap { domain in code.map { "\(domain.rawValue) \($0)" } },
@@ -283,17 +289,15 @@ public enum StreamingPreparationPhase: Sendable {
     public func message(provider: String, transcoding: Bool, usingH264Fallback: Bool) -> LocalizedStringResource {
         switch self {
         case .requesting where usingH264Fallback:
-            "Trying H.264 at the same quality limit…"
+            "Trying H.264…"
         case .requesting:
-            "Requesting a playback stream from \(provider)…"
+            "Connecting to \(provider)…"
         case .opening where transcoding:
-            "Opening the converted stream from \(provider)…"
+            "Transcoding…"
         case .opening:
-            "Opening the playback stream…"
-        case .waitingForVideo where transcoding:
-            "Waiting for video from \(provider)…"
+            "Opening video…"
         case .waitingForVideo:
-            "Buffering video…"
+            "Buffering…"
         }
     }
 }

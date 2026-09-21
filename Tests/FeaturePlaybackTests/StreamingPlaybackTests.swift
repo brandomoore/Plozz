@@ -122,6 +122,22 @@ final class StreamingPlaybackTests: XCTestCase {
         await model.stop()
     }
 
+    func testMissingConvertedResourceRetriesAFreshH264SessionOnce() async {
+        let (model, engine, provider) = make(options: .init(quality: .low, codec: .preferHEVC))
+        await model.load()
+        engine.streamingFailure = .init(kind: .unavailable, domain: .url, code: -1100)
+        engine.onFailure?(.invalidResponse)
+        await wait { engine.positions.count == 2 && model.phase == .ready }
+        let calls = await provider.calls
+        XCTAssertEqual(calls.map { $0.options.quality }, [.low, .low])
+        XCTAssertEqual(calls.last?.options.codec, .preferH264)
+        engine.onFailure?(.invalidResponse)
+        await wait { if case .failed = model.phase { return true }; return false }
+        let final = await provider.calls
+        XCTAssertEqual(final.count, 2)
+        await model.stop()
+    }
+
     func testStreamingPolicyIsOptInAndLeavesTVStyleCallersUnchanged() async {
         let (model, _, provider) = make(options: nil)
         await model.load()
