@@ -242,7 +242,7 @@ public struct PlayerView: View {
             readyPlayerContainer
 
         case let .failed(error):
-            PlaybackErrorView(message: error.userMessage) { dismiss() }
+            PlaybackErrorView(message: viewModel.streamingQualityError?.userMessage ?? error.userMessage) { dismiss() }
         }
     }
 

@@ -41,6 +41,9 @@ struct PlozziOSPlayerView: View {
     @State private var playerIdentity = UUID()
     @State private var handoffTask: Task<Void, Never>?
     @State private var isPresented = false
+    @State private var streamingNetwork: StreamingNetwork = .unknown
+    @State private var streamingConnection: StreamingConnection?
+    @State private var presentsStreamingQuality = false
     /// See the bisect note in `body`.
 
     let request: PlozziOSPlaybackRequest
@@ -95,12 +98,37 @@ struct PlozziOSPlayerView: View {
             }
         }
         .task {
-            guard viewModel == nil else { return }
-            viewModel = makeViewModel(
-                item: request.item,
-                startPosition: request.startPosition
-            )
-            PlozziOSScreenshotSeed.freezeIfRequested(viewModel)
+            guard usesStreamingQuality else {
+                if viewModel == nil {
+                    viewModel = makeViewModel(item: request.item, startPosition: request.startPosition)
+                    PlozziOSScreenshotSeed.freezeIfRequested(viewModel)
+                }
+                return
+            }
+            for await network in PlozziOSStreamingNetwork.updates() {
+                guard !Task.isCancelled else { return }
+                streamingNetwork = network
+                let connection = StreamingConnection.resolve(network: network, locality: provider.connectionLocality)
+                if viewModel == nil {
+                    streamingConnection = connection
+                    viewModel = makeViewModel(item: request.item, startPosition: request.startPosition)
+                    PlozziOSScreenshotSeed.freezeIfRequested(viewModel)
+                } else if streamingConnection != connection {
+                    streamingConnection = connection
+                    viewModel?.changeStreamingOptions(appModel.settings.playback.settings.streaming.options(for: connection))
+                }
+            }
+        }
+        .sheet(isPresented: $presentsStreamingQuality) {
+            if let viewModel { PlozziOSStreamingQualitySheet(viewModel: viewModel) }
+        }
+        .onChange(of: viewModel?.phase) { _, phase in
+            guard phase == .ready, usesStreamingQuality else { return }
+            let actual = StreamingConnection.resolve(network: streamingNetwork, locality: provider.connectionLocality)
+            if actual != streamingConnection {
+                streamingConnection = actual
+                viewModel?.changeStreamingOptions(appModel.settings.playback.settings.streaming.options(for: actual))
+            }
         }
         .onChange(of: viewModel?.pendingNextEpisode?.id) { _, nextID in
             guard nextID != nil,
@@ -131,6 +159,11 @@ struct PlozziOSPlayerView: View {
     private var closeButton: some View {
         VStack {
             HStack {
+                if let viewModel, viewModel.streamingQualityAvailable {
+                    Button("Quality", systemImage: "slider.horizontal.3") {
+                        presentsStreamingQuality = true
+                    }
+                }
                 Spacer()
                 Button {
                     dismiss()
@@ -146,6 +179,10 @@ struct PlozziOSPlayerView: View {
         }
         .foregroundStyle(.white)
         .padding()
+    }
+
+    private var usesStreamingQuality: Bool {
+        provider is any StreamingQualityProviding && [.movie, .episode].contains(request.item.kind)
     }
 
     private func makeViewModel(
@@ -173,6 +210,9 @@ struct PlozziOSPlayerView: View {
                 settings: playbackSettings
             ),
             playbackSettings: playbackSettings,
+            streamingOptions: usesStreamingQuality ? playbackSettings.streaming.options(
+                for: StreamingConnection.resolve(network: streamingNetwork, locality: provider.connectionLocality)
+            ) : nil,
             spoilerSettings: appModel.settings.spoilers.settings,
             seriesTrackStore: appModel.seriesTrackStore,
             seriesAccountFallbackID: item.sourceAccountID,

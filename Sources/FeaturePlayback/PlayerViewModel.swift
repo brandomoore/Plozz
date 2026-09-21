@@ -247,6 +247,20 @@ public final class PlayerViewModel {
     /// Per-profile playback prefs. Today: whether to offer the Skip Intro/Credits
     /// button. When `skipIntros` is off, segments are never fetched or shown.
     private let playbackSettings: PlaybackSettings
+    private let streamingQuality = StreamingPlaybackState()
+    public var streamingOptions: StreamingPlaybackOptions? { streamingQuality.options }
+    public var streamingQualityError: StreamingQualityError? { streamingQuality.error }
+    public var streamingQualityAvailable: Bool {
+        streamingOptions != nil && provider is any StreamingQualityProviding
+            && request?.streamURL?.isFileURL != true
+    }
+    @ObservationIgnored private var streamingSwitchTask: Task<Void, Never>?
+    @ObservationIgnored private var streamingInitialLoad: Task<Void, Never>?
+    @ObservationIgnored private var streamingLoadGeneration = 0
+    @ObservationIgnored private var streamingResumePosition: TimeInterval?
+    @ObservationIgnored private var streamingTrackSnapshot: SubtitleTrackController.StreamSnapshot?
+    @ObservationIgnored private var hasTriedStreamingH264 = false
+    @ObservationIgnored private var streamingMediaSourceID: String?
     /// Per-profile spoiler protection, used to mask the Up Next card's thumbnail
     /// and title for an unwatched next episode (the common case). Pure value type.
     private let spoilerSettings: SpoilerSettings
@@ -456,6 +470,7 @@ public final class PlayerViewModel {
         subtitlePolicy: SubtitlePolicy? = nil,
         audioPolicy: AudioPolicy? = nil,
         playbackSettings: PlaybackSettings = .default,
+        streamingOptions: StreamingPlaybackOptions? = nil,
         spoilerSettings: SpoilerSettings = .default,
         seriesTrackStore: (any SeriesTrackPreferenceStoring)? = nil,
         seriesAccountFallbackID: String? = nil,
@@ -486,6 +501,7 @@ public final class PlayerViewModel {
         self.subtitlePolicy = subtitlePolicy ?? .inheriting(from: behavior)
         self.audioPolicy = audioPolicy ?? .inheriting(from: playbackSettings)
         self.playbackSettings = playbackSettings
+        self.streamingQuality.options = provider is any StreamingQualityProviding ? streamingOptions : nil
         self.spoilerSettings = spoilerSettings
         self.seriesMemory = SeriesTrackMemory(
             store: seriesTrackStore,
@@ -581,6 +597,7 @@ public final class PlayerViewModel {
         prefetchTask = Task { @MainActor [weak self] in
             await self?.startPlayback(forceTranscode: false, resumeOverride: nil)
         }
+        if streamingOptions != nil { streamingInitialLoad = prefetchTask }
         // Resolve next/previous episodes in the background so a clean playthrough
         // auto-advances and controls can offer a mid-play jump. Never blocks bring-up.
         if neighborResolver != nil {
@@ -616,6 +633,8 @@ public final class PlayerViewModel {
             // can't read, a cancelled connection), so it fires on ordinary
             // playback rather than only in exotic cases.
             Task { [weak self] in
+                if let self, self.engineToken == callbackEngineToken,
+                   self.retryStreamingWithH264IfNeeded() { return }
                 await self?.engineHandoff.handleEngineFailure(
                     error,
                     sourceEngineToken: callbackEngineToken
@@ -638,6 +657,7 @@ public final class PlayerViewModel {
             if let request = self.request {
                 self.subtitleController.applyInitialSubtitleSelectionIfReady(for: request)
             }
+            self.restoreStreamingTracks()
         }
         // Engines that decode subtitles themselves (Plozzigen) push their active
         // cues here; the live overlay model draws them on the same SDR renderer as
@@ -837,6 +857,8 @@ public final class PlayerViewModel {
     /// `resumeOverride` carries the position the failed attempt reached so the
     /// retry resumes there instead of the provider's stale resume point.
     private func startPlayback(forceTranscode: Bool, resumeOverride: TimeInterval?) async {
+        let streamingGeneration = streamingLoadGeneration
+        streamingQuality.error = nil
         phase = .loading
         let bringUpStart = Date()
         bringUpStartedAt = bringUpStart
@@ -846,6 +868,11 @@ public final class PlayerViewModel {
         )
         do {
             let resolved: PrefetchedPlayback
+            if let adopted = adoptedResolved,
+               !Self.streamingSelectionMatches(streamingOptions, adopted.request.streamingOptions) {
+                adoptedResolved = nil
+                await nextEpisodeCoordinator.releaseSession(adopted.request)
+            }
             if !forceTranscode, let adopted = adoptedResolved, adopted.itemID == itemID {
                 // Adopt the request the previous episode prefetched for us. Skips
                 // the network `playbackInfo` resolve entirely (near-instant
@@ -866,10 +893,16 @@ public final class PlayerViewModel {
             // A user-initiated Back during playbackInfo resolution should NOT
             // proceed to bring up an engine that will immediately be torn down —
             // short-circuit cleanly without going through the failure path.
-            try Task.checkCancellation()
+            if Task.isCancelled || didStop || streamingGeneration != streamingLoadGeneration {
+                await (provider as? any StreamingQualityProviding)?.releaseStreamingSession(resolved.request)
+                throw CancellationError()
+            }
 
             let request = resolved.request
             self.request = request
+            if streamingOptions != nil, case let .authenticatedHTTP(locator) = request.playbackSource {
+                streamingMediaSourceID = locator.mediaSourceID
+            }
             configureControls(for: request)
 
             // Enrich the episode with its series-level ids in the background so the
@@ -905,7 +938,17 @@ public final class PlayerViewModel {
         } catch is CancellationError {
             // Leave `phase` as `.loading`; the view is dismissing.
             return
+        } catch let error as StreamingQualityError {
+            guard !didStop, streamingGeneration == streamingLoadGeneration else { return }
+            PlozzLog.playback.error("Selected streaming quality could not be delivered.")
+            streamingQuality.error = error
+            nextEpisodeCoordinator.clearFirstFrameWait()
+            phase = .failed(.invalidResponse)
         } catch let error as AppError {
+            guard !Task.isCancelled, !didStop, streamingGeneration == streamingLoadGeneration else { return }
+            if streamingOptions != nil, error == .invalidResponse {
+                streamingQuality.error = .unavailable
+            }
             HandoffDiagnostics.emit(
                 "bringup FAILED item=\(itemID) provider=\(provider.kind.rawValue) "
                     + "error=\(HandoffDiagnostics.errorCode(error))"
@@ -913,6 +956,7 @@ public final class PlayerViewModel {
             nextEpisodeCoordinator.clearFirstFrameWait()
             phase = .failed(error)
         } catch {
+            guard !Task.isCancelled, !didStop, streamingGeneration == streamingLoadGeneration else { return }
             HandoffDiagnostics.emit(
                 "bringup FAILED item=\(itemID) provider=\(provider.kind.rawValue) "
                     + "error=nonAppError"
@@ -974,8 +1018,51 @@ public final class PlayerViewModel {
                 engineKind: kind
             )
         }
-        var request = try await provider.playbackInfo(
-            for: itemID, mediaSourceID: mediaSourceID, forceTranscode: forceTranscode)
+        var request: PlaybackRequest
+        if var options = streamingOptions, let provider = provider as? any StreamingQualityProviding {
+            let source = itemID == self.itemID ? (streamingMediaSourceID ?? mediaSourceID) : mediaSourceID
+            if let item = offlineItem {
+                options.preferredAudioLanguages = preferredAudioLanguages(
+                    for: item, originalLanguage: await resolvedOriginalAudioLanguage(for: item)
+                )
+                let rule = effectiveSubtitleRule(for: item)
+                options.subtitleMode = rule.mode
+                options.subtitleLanguage = rule.preferredLanguage
+                if let remembered = rememberedSubtitle(for: item) {
+                    switch remembered {
+                    case .off: options.subtitlesOff = true
+                    case .language(let language):
+                        options.subtitleMode = .all
+                        options.subtitleLanguage = language
+                    }
+                }
+            }
+            if let snapshot = streamingTrackSnapshot, itemID == self.itemID {
+                options.audioTrack = snapshot.audio
+                options.subtitleTrack = snapshot.primary
+                options.subtitlesOff = snapshot.primary == nil
+            }
+            do {
+                request = try await provider.playbackInfo(
+                    for: itemID, mediaSourceID: source, forceTranscode: forceTranscode, streaming: options
+                )
+            } catch {
+                let canRetry = error is StreamingQualityError || (error as? AppError) == .invalidResponse
+                guard canRetry, options.codec != .preferH264, !Task.isCancelled else { throw error }
+                options.codec = .preferH264
+                PlozzLog.playback.info("Server rejected the preferred rendition; retrying H.264 within the same quality limit.")
+                request = try await provider.playbackInfo(
+                    for: itemID, mediaSourceID: source, forceTranscode: forceTranscode, streaming: options
+                )
+            }
+        } else {
+            request = try await provider.playbackInfo(
+                for: itemID, mediaSourceID: mediaSourceID, forceTranscode: forceTranscode)
+        }
+        if Task.isCancelled {
+            await (provider as? any StreamingQualityProviding)?.releaseStreamingSession(request)
+            throw CancellationError()
+        }
         // Offline choke point: if a completed download exists for this item,
         // rewrite the request to play the local `file://` asset so BOTH engines
         // play it with zero engine changes. Strictly additive — a no-op when no
@@ -983,6 +1070,9 @@ public final class PlayerViewModel {
         // `OfflineRequestRewriteTests`).
         let localURL = await offlinePlaybackResolver?
             .localPlaybackURL(for: request.item, versionID: mediaSourceID)
+        if localURL != nil {
+            await (provider as? any StreamingQualityProviding)?.releaseStreamingSession(request)
+        }
         request = Self.applyingOfflineRewrite(to: request, localURL: localURL)
         // Steer the engine's INITIAL active audio track by language (no reload)
         // from the prefer-original-language policy. Computed here so every
@@ -1040,10 +1130,91 @@ public final class PlayerViewModel {
         rewritten.originalFileSource = nil
         rewritten.externalAudioURL = nil
         rewritten.localRemuxSource = nil
+        rewritten.streamingOptions = nil
+        rewritten.streamingSessionID = nil
         rewritten.isManifestStream = false
         rewritten.isTranscoding = false
         rewritten.deliveryMode = .directPlay
         return rewritten
+    }
+
+    static func streamingSelectionMatches(_ requested: StreamingPlaybackOptions?, _ resolved: StreamingPlaybackOptions?) -> Bool {
+        switch (requested, resolved) {
+        case (nil, nil): true
+        case let (requested?, resolved?): requested.matchesSelection(resolved)
+        default: false
+        }
+    }
+
+    /// Replaces only the rendition, not the title, account, file, or playback intent.
+    public func changeStreamingOptions(_ options: StreamingPlaybackOptions) {
+        guard streamingQualityAvailable, !didStop else { return }
+        let failed: Bool
+        if case .failed = phase { failed = true } else { failed = false }
+        guard streamingOptions?.matchesSelection(options) != true || failed else { return }
+        streamingQuality.options = options
+        hasTriedStreamingH264 = false
+        restartStreamingRendition()
+    }
+
+    private func restartStreamingRendition(tracks: SubtitleTrackController.StreamSnapshot? = nil) {
+        streamingLoadGeneration += 1
+        dynamicRangeLoadGeneration &+= 1
+        let generation = streamingLoadGeneration
+        let previous = streamingSwitchTask
+        previous?.cancel()
+        let initialLoad = streamingInitialLoad
+        initialLoad?.cancel()
+        if phase == .ready {
+            streamingResumePosition = max(0, controls.pendingSeekTarget ?? currentResumePosition())
+            streamingTrackSnapshot = tracks ?? subtitleController.streamSnapshot()
+        }
+        let position = streamingResumePosition ?? startPositionOverride ?? controls.currentSeconds
+        let outgoing = request
+        request = nil
+        phase = .loading
+        engineHandoff.cancelWatchdogAndRecovery()
+        nextEpisodeCoordinator.cancelPrefetch()
+        progressReporter.cancel()
+        seekCoordinator.cancelAll()
+        subtitleOverlay.cancelAll()
+        // Stop the old byte stream immediately, especially when leaving Wi-Fi.
+        engine.stop()
+        streamingSwitchTask = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self else { return }
+            await initialLoad?.value
+            await self.engine.drainTransport()
+            if let outgoing {
+                do {
+                    try await self.provider.reportPlayback(.init(
+                        itemID: self.itemID, playSessionID: outgoing.playSessionID,
+                        positionSeconds: position, isPaused: true, durationSeconds: outgoing.item.runtime
+                    ), event: .stop)
+                } catch { PlozzLog.playback.error("Unable to report the ended streaming rendition.") }
+                await (self.provider as? any StreamingQualityProviding)?.releaseStreamingSession(outgoing)
+            }
+            await self.nextEpisodeCoordinator.releaseOrphanedPrefetchIfNeeded()
+            guard !Task.isCancelled, !self.didStop, generation == self.streamingLoadGeneration else { return }
+            await self.startPlayback(forceTranscode: false, resumeOverride: position)
+        }
+    }
+
+    private func retryStreamingWithH264IfNeeded() -> Bool {
+        guard request?.isTranscoding == true, var options = streamingOptions,
+              request?.streamingOptions?.codec != .preferH264,
+              options.codec != .preferH264, !hasTriedStreamingH264, !didStop else { return false }
+        hasTriedStreamingH264 = true
+        options.codec = .preferH264
+        streamingQuality.options = options
+        PlozzLog.playback.info("Retrying server transcode with H.264 at the same streaming quality.")
+        restartStreamingRendition()
+        return true
+    }
+
+    private func restoreStreamingTracks() {
+        guard let snapshot = streamingTrackSnapshot, phase == .ready else { return }
+        if subtitleController.restoreStreamSnapshot(snapshot) { streamingTrackSnapshot = nil }
     }
 
     /// Picks the engine for a resolved request — the pure routing decision, no
@@ -1199,7 +1370,7 @@ public final class PlayerViewModel {
             engineKind != .native ? pendingPreservedDynamicRange : nil
         pendingPreservedDynamicRange = nil
         effectiveDynamicRange = engineKind == .native
-            ? .native(metadata: request.sourceMetadata)
+            ? .native(metadata: request.streamingOptions != nil && request.isTranscoding ? nil : request.sourceMetadata)
             : .awaitingEngineProbe(metadata: request.sourceMetadata)
         dynamicRangeTransitionToken = UUID()
         let hintedHDR = effectiveDynamicRange.bestAvailable?.isHDR ?? false
@@ -1263,7 +1434,9 @@ public final class PlayerViewModel {
         }
         controls.isPaused = !intendsPlayback
         controls.intendsPause = !intendsPlayback
+        configureTracksAfterLoad(for: request)
         phase = .ready
+        restoreStreamingTracks()
         // Hold the bring-up spinner until the engine actually presents its first
         // frame, so `.loading` → `.ready` is one continuous indicator rather than
         // a spinner that vanishes here (before the picture is up) and then a black
@@ -1281,6 +1454,7 @@ public final class PlayerViewModel {
             isPaused: startWasPaused,
             positionOverride: startPosition > 0 ? startPosition : nil
         )
+        guard !didStop, dynamicRangeLoadGeneration == rangeLoadGeneration, !Task.isCancelled else { return }
         // Register the live session (idempotent) now that the server has a real
         // now-playing session, so convergence writes against this server defer
         // until stop() ends it.
@@ -1290,6 +1464,11 @@ public final class PlayerViewModel {
         // first checkpoint only fires after real forward progress past the resume.
         progressReporter.startCheckpointLoop(seedPosition: startPosition)
 
+        // Load skip markers once playback is live (opt-in, best-effort).
+        loadSkipSegmentsIfEnabled()
+    }
+
+    private func configureTracksAfterLoad(for request: PlaybackRequest) {
         // Seed the in-player track menu from the engine's track lists (the
         // engine has already applied the user's default subtitle selection).
         subtitleController.loadTrackOptions()
@@ -1326,9 +1505,6 @@ public final class PlayerViewModel {
         // after `engine.load` (here) and never fires `onTracksChanged`, so this is
         // its retry point; a no-op when nothing is pending or already correct.
         subtitleController.applyImportedAudioIfPossible()
-
-        // Load skip markers once playback is live (opt-in, best-effort).
-        loadSkipSegmentsIfEnabled()
     }
 
     // MARK: - Skip intros/credits
@@ -1601,6 +1777,9 @@ public final class PlayerViewModel {
         // shows happening on iOS.
         PlaybackTrace.note("stop() teardown curr=\(String(format: "%.2f", engine.currentTime)) shouldDismiss=\(shouldDismiss) pendingNext=\(pendingNextEpisode != nil) isSeeking=\(controls.isSeeking)")
         didStop = true
+        streamingLoadGeneration += 1
+        streamingSwitchTask?.cancel()
+        streamingInitialLoad?.cancel()
         nowPlaying?.end()
         systemResumeTask?.cancel()
         systemResumeTask = nil
@@ -1664,6 +1843,7 @@ public final class PlayerViewModel {
             positionOverride: finalPosition,
             durationOverride: finalDuration
         )
+        if let request { await (provider as? any StreamingQualityProviding)?.releaseStreamingSession(request) }
         onPlaybackStopped(finalPosition, percent)
     }
 
@@ -1826,6 +2006,14 @@ public final class PlayerViewModel {
 
     /// Selects an audio track from the menu. Owned by ``SubtitleTrackController``.
     public func selectAudioOption(id: Int) {
+        if streamingOptions != nil, request?.isTranscoding == true,
+           let track = request?.audioTracks.first(where: { $0.id == id }) {
+            var snapshot = subtitleController.streamSnapshot()
+            snapshot.audio = track
+            recordSeriesAudioSelection(language: track.language)
+            restartStreamingRendition(tracks: snapshot)
+            return
+        }
         subtitleController.selectAudioOption(id: id)
     }
 
@@ -1834,6 +2022,18 @@ public final class PlayerViewModel {
     /// and `false` for the programmatic load-time default. Owned by
     /// ``SubtitleTrackController``.
     public func selectSubtitleOption(id: Int, userInitiated: Bool = true) {
+        if streamingOptions != nil, request?.isTranscoding == true {
+            var snapshot = subtitleController.streamSnapshot()
+            let chosen = request?.subtitleTracks.first { $0.id == id }
+            if snapshot.primary?.isBitmapSubtitle == true || chosen?.isBitmapSubtitle == true {
+                snapshot.primary = chosen
+                if userInitiated {
+                    recordSeriesSubtitleSelection(chosen?.language.map(RememberedSubtitleSelection.language) ?? .off)
+                }
+                restartStreamingRendition(tracks: snapshot)
+                return
+            }
+        }
         subtitleController.selectSubtitleOption(id: id, userInitiated: userInitiated)
     }
 
@@ -2091,6 +2291,9 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
     }
 
     func handoffSetPhase(_ phase: PlayerViewModel.Phase) {
+        if case .failed = phase, streamingOptions != nil {
+            streamingQuality.error = .unavailable
+        }
         self.phase = phase
     }
 

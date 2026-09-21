@@ -857,8 +857,26 @@ public struct JellyfinClient: Sendable {
         case transcode
     }
 
-    func playbackInfo(userID: String, itemID: String, mediaSourceID: String? = nil, mode: PlaybackStreamMode = .auto) async throws -> PlaybackInfoResponse {
+    func playbackInfo(
+        userID: String, itemID: String, mediaSourceID: String? = nil,
+        mode: PlaybackStreamMode = .auto, streaming: StreamingPlaybackOptions? = nil
+    ) async throws -> PlaybackInfoResponse {
+        let capabilityProfile = streaming.map { self.capabilityProfile.applying($0) } ?? self.capabilityProfile
         var queryItems = [URLQueryItem(name: "UserId", value: userID)]
+        if let streaming {
+            if let track = streaming.audioTrack {
+                queryItems.append(.init(name: "AudioStreamIndex", value: String(track.id)))
+            }
+            if streaming.subtitlesOff {
+                queryItems.append(.init(name: "SubtitleStreamIndex", value: "-1"))
+            } else if let track = streaming.subtitleTrack {
+                queryItems.append(.init(name: "SubtitleStreamIndex", value: String(track.id)))
+            }
+            if let height = streaming.quality.maximumHeight, let width = streaming.quality.maximumWidth {
+                queryItems.append(.init(name: "MaxHeight", value: String(height)))
+                queryItems.append(.init(name: "MaxWidth", value: String(width)))
+            }
+        }
         let enableDirectPlay: Bool?
         let enableDirectStream: Bool?
         // Target a specific version when one was chosen; otherwise the server

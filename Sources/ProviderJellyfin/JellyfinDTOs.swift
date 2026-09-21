@@ -236,7 +236,7 @@ struct PlaybackInfoResponse: Decodable {
 struct MediaSourceInfo: Decodable {
     let Id: String?
     let ETag: String?
-    let TranscodingUrl: String?
+    var TranscodingUrl: String?
     let TranscodingSubProtocol: String?
     let SupportsDirectPlay: Bool?
     let SupportsDirectStream: Bool?

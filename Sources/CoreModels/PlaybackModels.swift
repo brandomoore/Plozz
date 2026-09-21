@@ -288,6 +288,10 @@ public struct PlaybackRequest: Hashable, Sendable {
     /// Library channels own a separate interval-based reporting path; accidental
     /// use in the ordinary reporter must still fail closed.
     public var suppressOrdinaryWatchReporting: Bool = false
+    /// Set only for opt-in mobile streaming. Never reinterpret a constrained
+    /// server rendition through an original-file or local-remux fallback.
+    public var streamingOptions: StreamingPlaybackOptions?
+    public var streamingSessionID: String?
     public var item: MediaItem
     /// Credential-free source resolved at the engine boundary. Network files
     /// use this path and never carry a diagnostic or placeholder URL.

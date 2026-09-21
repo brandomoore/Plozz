@@ -943,6 +943,13 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
     }
 
     public func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool) async throws -> PlaybackRequest {
+        try await resolvePlayback(for: itemID, mediaSourceID: mediaSourceID, forceTranscode: forceTranscode)
+    }
+
+    func resolvePlayback(
+        for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
+        streaming: StreamingPlaybackOptions? = nil
+    ) async throws -> PlaybackRequest {
         // Jellyfin needs two independent round-trips here — the item detail and
         // the playback decision (media sources). They don't depend on each other,
         // so issue them concurrently to halve the time-to-first-frame latency
@@ -953,12 +960,58 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             userID: session.userID,
             itemID: itemID,
             mediaSourceID: mediaSourceID,
-            mode: forceTranscode ? .transcode : .auto
+            mode: forceTranscode || streaming?.forceTranscoding == true ? .transcode : .auto,
+            streaming: streaming
         )
         let detail = try await detailTask
         var info = try await infoTask
+        var streaming = streaming
         // Prefer the explicitly chosen source; fall back to the server default.
-        guard var source = Self.selectSource(mediaSourceID, in: info.MediaSources) else { throw AppError.notFound }
+        guard var source = Self.selectSource(mediaSourceID, in: info.MediaSources) else {
+            if streaming != nil, let id = info.PlaySessionId { await releaseStreamingEncoding(id) }
+            throw AppError.notFound
+        }
+        if streaming != nil, let mediaSourceID, source.Id != mediaSourceID {
+            if let id = info.PlaySessionId { await releaseStreamingEncoding(id) }
+            PlozzLog.playback.error("Streaming quality negotiation returned a different media source.")
+            throw StreamingQualityError.unavailable
+        }
+        if let options = streaming {
+            let tracks = (source.MediaStreams ?? detail.MediaStreams ?? []).filter { $0.Type == "Audio" }.map(map(stream:))
+            streaming?.audioTrack = options.selectedAudio(in: tracks)
+            let subtitles = (source.MediaStreams ?? detail.MediaStreams ?? []).filter { $0.Type == "Subtitle" }.map(map(stream:))
+            let selected = options.selectedSubtitle(in: subtitles)
+            streaming?.subtitleTrack = selected
+            streaming?.subtitlesOff = selected == nil
+        }
+        let mustConvert = streaming.map { $0.forceTranscoding || forceTranscode || !source.fits($0.quality) } ?? false
+        if streaming != nil, !mustConvert, source.SupportsDirectPlay == true {
+            source.TranscodingUrl = nil
+        }
+        if let streaming, mustConvert, source.TranscodingUrl == nil {
+            if let oldSession = info.PlaySessionId {
+                do { try await client.stopActiveEncoding(playSessionID: oldSession) }
+                catch { PlozzLog.playback.error("Unable to release a rejected streaming decision.") }
+            }
+            info = try await client.playbackInfo(
+                userID: session.userID, itemID: itemID, mediaSourceID: source.Id ?? mediaSourceID,
+                mode: .transcode, streaming: streaming
+            )
+            guard let converted = Self.selectSource(source.Id ?? mediaSourceID, in: info.MediaSources),
+                  converted.Id == source.Id, converted.TranscodingUrl != nil else {
+                if let id = info.PlaySessionId { await releaseStreamingEncoding(id) }
+                PlozzLog.playback.error("Server did not provide the requested bounded transcode.")
+                throw StreamingQualityError.unavailable
+            }
+            source = converted
+        }
+        if let streaming, source.TranscodingUrl != nil {
+            do { source.TranscodingUrl = try source.boundedTranscodingURL(streaming) }
+            catch {
+                if let id = info.PlaySessionId { await releaseStreamingEncoding(id) }
+                throw error
+            }
+        }
 
         // Surface the server's direct-play-vs-transcode decision and, when it
         // transcodes, *why* (e.g. `SubtitleCodecNotSupported`). Logged before any
@@ -997,7 +1050,7 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
         // Both route to AVPlayer automatically via `isTranscoding`. Best-effort: if
         // the remux fails or the server offers no stream URL, fall back to direct
         // play (the router then sends `hev1` to the on-device engine as a net).
-        if !forceTranscode, Self.shouldRequestDoViRemux(source) || Self.shouldRequestHvc1Remux(source) {
+        if streaming == nil, !forceTranscode, Self.shouldRequestDoViRemux(source) || Self.shouldRequestHvc1Remux(source) {
             if let remuxInfo = try? await client.playbackInfo(
                 userID: session.userID,
                 itemID: itemID,
@@ -1073,7 +1126,7 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             purpose: .originalFile
         )
 
-        return PlaybackRequest(
+        var request = PlaybackRequest(
             item: mappedItem,
             playbackSource: .authenticatedHTTP(playbackLocator),
             playSessionID: info.PlaySessionId,
@@ -1093,6 +1146,15 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             sourceFileName: PlaybackRequest.sourceFileName(from: originalSource.Path)
                 ?? PlaybackRequest.sourceFileName(from: originalSource.Name)
         )
+        if let streaming {
+            request.streamingOptions = streaming
+            request.streamingSessionID = info.PlaySessionId
+            if request.isTranscoding {
+                request.originalFileSource = nil
+                request.localRemuxSource = nil
+            }
+        }
+        return request
     }
 
     private func scrubPreview(

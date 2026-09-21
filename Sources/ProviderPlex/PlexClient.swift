@@ -1623,8 +1623,25 @@ public struct PlexClient: Sendable {
         sessionID: String,
         mediaIndex: Int = 0,
         partIndex: Int = 0,
-        forceTranscode: Bool = false
+        forceTranscode: Bool = false,
+        streaming: StreamingPlaybackOptions? = nil
     ) -> (url: URL, isTranscoding: Bool)? {
+        if let streaming {
+            let bitrate = media.bitrate.flatMap { value -> Int? in
+                let (bits, overflow) = value.multipliedReportingOverflow(by: 1_000)
+                return overflow ? nil : bits
+            }
+            let fits = streaming.quality.permitsOriginal(
+                bitrate: bitrate, width: media.width, height: media.height
+            )
+            if !forceTranscode, !streaming.forceTranscoding, fits,
+               canDirectPlay(media: media, part: part), let key = part.key,
+               let direct = streamURL(forPartKey: key) { return (direct, false) }
+            return transcodeURL(
+                ratingKey: ratingKey, sessionID: sessionID, mediaIndex: mediaIndex,
+                partIndex: partIndex, streaming: streaming
+            ).map { ($0, true) }
+        }
         // Forcing a transcode (player fallback after a failed direct play): skip
         // the direct-play path entirely and go straight to the universal
         // transcoder. If even that can't be built, fail rather than silently
@@ -1666,7 +1683,8 @@ public struct PlexClient: Sendable {
         ratingKey: String,
         sessionID: String,
         mediaIndex: Int = 0,
-        partIndex: Int = 0
+        partIndex: Int = 0,
+        streaming: StreamingPlaybackOptions? = nil
     ) -> URL? {
         var query: [URLQueryItem] = [
             URLQueryItem(name: "path", value: "/library/metadata/\(ratingKey)"),
@@ -1687,7 +1705,44 @@ public struct PlexClient: Sendable {
         for (name, value) in deviceProfile.headers(token: token) where name.hasPrefix("X-Plex-") {
             query.append(URLQueryItem(name: name, value: value))
         }
+        if let streaming {
+            func set(_ name: String, _ value: String) {
+                query.removeAll { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+                query.append(.init(name: name, value: value))
+            }
+            set("directStream", "0")
+            set("directStreamAudio", "0")
+            set("location", SourceLocalityClassifier.classify(url: baseURL) == .local ? "lan" : "wan")
+            let codecs = streaming.codec.codecs(supportsHEVC: capabilities.allowedDirectPlayVideoCodecs.contains(.hevc))
+            var profile = "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mp4&videoCodec=\(codecs.joined(separator: ","))&audioCodec=aac&replace=true)"
+            if let bitrate = streaming.quality.videoBitrate,
+               let width = streaming.quality.maximumWidth, let height = streaming.quality.maximumHeight {
+                set("maxVideoBitrate", String(bitrate / 1_000))
+                set("videoResolution", "\(width)x\(height)")
+                set("audioBitrate", String(streaming.quality.audioBitrate / 1_000))
+                set("audioChannels", "2")
+                profile += "+add-limitation(scope=videoCodec&scopeName=*&type=upperBound&name=video.width&value=\(width)&replace=true)"
+                profile += "+add-limitation(scope=videoCodec&scopeName=*&type=upperBound&name=video.height&value=\(height)&replace=true)"
+            }
+            set("X-Plex-Client-Profile-Extra", profile)
+            if let audio = streaming.audioTrack { set("audioStreamID", String(audio.id)) }
+            if streaming.subtitlesOff {
+                set("subtitleStreamID", "-1")
+                set("subtitles", "none")
+            } else if let subtitle = streaming.subtitleTrack {
+                set("subtitleStreamID", String(subtitle.id))
+                set("subtitles", subtitle.isBitmapSubtitle ? "burn" : "auto")
+            }
+        }
         return absoluteURL(serverPath: "/video/:/transcode/universal/start.m3u8", extraQuery: query)
+    }
+
+    func stopStreamingTranscode(sessionID: String) async throws {
+        _ = try await send(Endpoint(
+            path: "/video/:/transcode/universal/stop",
+            queryItems: [.init(name: "session", value: sessionID)],
+            headers: headers
+        ))
     }
 
     /// Builds an absolute, token-bearing image URL for a server-relative art

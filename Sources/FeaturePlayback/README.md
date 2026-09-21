@@ -50,6 +50,37 @@ and the diagnostics overlay.
 - **No secrets in URLs logged.** Stream URLs frequently embed tokens —
   `PlayerViewModel` redacts before logging.
 
+## Mobile streaming quality
+
+iPhone/iPad movie and episode playback opts into `StreamingQualityProviding`.
+The shared `PlaybackSettings.streaming` value is profile-scoped: local network
+and remote Wi-Fi/Ethernet default to Maximum; cellular defaults to 720p / 2 Mbps.
+The mobile shell waits for the first network-path result before starting managed
+playback. Cellular, expensive, and unclassified paths use the cellular policy;
+connection changes reapply the relevant saved default. The player Quality sheet
+changes only the current video's rendition, not the saved preferences.
+
+Plex, Jellyfin, and Emby adapters negotiate each request independently. Original
+files can direct-play only when their known bitrate and dimensions fit all
+selected bounds; unknown facts require conversion. Server HLS requests constrain
+video plus a 128 Kbps audio budget and maximum dimensions. These are encoder
+targets, not a metered-byte guarantee: variable bitrate, buffering, protocol
+overhead, and artwork mean hourly estimates are approximate.
+
+Automatic and Prefer HEVC allow H.264 fallback at the same quality. HEVC output
+depends on server version, encoder support, permissions, and configuration;
+Plex hardware transcoding generally requires Plex Pass. Force transcoding is
+an advanced option, not a server hardware-encoder selector. Transcoding may
+change HDR/audio formats. A failed bounded rendition never retries the original
+file or an on-device remux; errors leave the Quality control available.
+
+Rendition changes stop old media I/O, retain the chosen source/version, current
+position and pause intent, reapply track selections, and retire the old server
+session. Prefetched episodes must match the current quality policy before
+adoption. A downloaded local file bypasses this policy. Plain network shares
+do not implement the conversion protocol and have no player quality control.
+Existing Apple TV callers and Live TV never opt in.
+
 ## Siri Remote input
 
 `ScrubGestureInterpreter` routes upward and downward swipes through the same

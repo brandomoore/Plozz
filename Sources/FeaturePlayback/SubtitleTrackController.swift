@@ -64,6 +64,48 @@ final class SubtitleTrackController {
 
     // MARK: Selection state
 
+    struct StreamSnapshot {
+        var audio: MediaTrack?
+        var primary: MediaTrack?
+        var secondary: MediaTrack?
+    }
+
+    func streamSnapshot() -> StreamSnapshot {
+        let subtitles = (host?.trackEngine.subtitleTracks ?? []) + hotLoadedSubtitleTracks
+        return StreamSnapshot(
+            audio: host?.trackEngine.audioTracks.first { $0.id == selectedAudioTrackID },
+            primary: subtitles.first { $0.id == selectedSubtitleTrackID },
+            secondary: subtitles.first { $0.id == selectedSecondarySubtitleTrackID }
+        )
+    }
+
+    func restoreStreamSnapshot(_ snapshot: StreamSnapshot) -> Bool {
+        guard let host else { return false }
+        func match(_ track: MediaTrack?, in tracks: [MediaTrack]) -> MediaTrack? {
+            guard let track else { return nil }
+            return tracks.first { $0.id == track.id && $0.language == track.language }
+                ?? tracks.first { LanguageMatch.matches($0.language, track.language) && $0.isForced == track.isForced }
+        }
+        let engine = host.trackEngine
+        if let audio = match(snapshot.audio, in: engine.audioTracks), engine.currentAudioTrackID != audio.id {
+            engine.selectAudioTrack(audio)
+            selectedAudioTrackID = audio.id
+        }
+        let subs = engine.subtitleTracks + hotLoadedSubtitleTracks
+        if snapshot.primary == nil {
+            selectSubtitleOption(id: PlayerTrackOption.offID, userInitiated: false)
+        } else if let track = match(snapshot.primary, in: subs) {
+            selectSubtitleOption(id: track.id, userInitiated: false)
+        }
+        if let track = match(snapshot.secondary, in: eligibleSecondarySubtitleTracks()),
+           track.id != selectedSecondarySubtitleTrackID {
+            selectSecondarySubtitleOption(id: track.id)
+        }
+        return (snapshot.audio == nil || match(snapshot.audio, in: engine.audioTracks) != nil)
+            && (snapshot.primary == nil || match(snapshot.primary, in: subs) != nil)
+            && (snapshot.secondary == nil || match(snapshot.secondary, in: eligibleSecondarySubtitleTracks()) != nil)
+    }
+
     /// Server sidecars and subtitles downloaded during this session, kept
     /// separate from the engine's embedded tracks. Rendered through the overlay.
     private var hotLoadedSubtitleTracks: [MediaTrack] = []

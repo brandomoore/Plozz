@@ -22,6 +22,7 @@ enum EngineSelection {
         capabilities: MediaCapabilities,
         subtitleRule: SubtitlePolicy.Rule
     ) -> PlaybackEngineKind {
+        if request.streamingOptions != nil, request.isTranscoding { return .native }
         if let streamURL = request.streamURL, streamURL.isFileURL {
             if streamURL.pathExtension.lowercased() == "movpkg" {
                 // Legacy failed Plex rendition records can retain this filename

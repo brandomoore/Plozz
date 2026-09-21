@@ -25,6 +25,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     /// iOS only. Keep video audio playing on lock/app background without PiP.
     /// Opt-in so existing profiles retain pause-on-lock behavior.
     public var backgroundAudio: Bool
+    public var streaming: StreamingQualitySettings
 
     /// Whether finishing/resuming/marking a title converges your watch state on
     /// **every** server that holds it (the default), or only the server you
@@ -132,7 +133,8 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         rememberSubtitleTrackPerSeries: Bool = true,
         fadeOnDynamicRangeChange: Bool = true,
         fadeOnFrameRateChange: Bool = true,
-        backgroundAudio: Bool = false
+        backgroundAudio: Bool = false,
+        streaming: StreamingQualitySettings = .default
     ) {
         self.skipIntros = skipIntros
         self.skipBackwardInterval = skipBackwardInterval
@@ -149,6 +151,7 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         self.fadeOnDynamicRangeChange = fadeOnDynamicRangeChange
         self.fadeOnFrameRateChange = fadeOnFrameRateChange
         self.backgroundAudio = backgroundAudio
+        self.streaming = streaming
     }
 
     public static let `default` = PlaybackSettings()
@@ -168,6 +171,7 @@ public extension PlaybackSettings {
         case skipForwardInterval
         case resumeRewindInterval
         case backgroundAudio
+        case streaming
         case syncWatchAcrossServers
         case seekWithoutPausing
         case autoPlayNextEpisode
@@ -217,6 +221,7 @@ public extension PlaybackSettings {
             (try? container.decodeIfPresent(ResumeRewindInterval.self, forKey: .resumeRewindInterval))
             .flatMap { $0 } ?? defaults.resumeRewindInterval
         self.backgroundAudio = try container.decodeIfPresent(Bool.self, forKey: .backgroundAudio) ?? false
+        self.streaming = (try? container.decode(StreamingQualitySettings.self, forKey: .streaming)) ?? .default
         self.syncWatchAcrossServers =
             (try? container.decodeIfPresent(Bool.self, forKey: .syncWatchAcrossServers))
             .flatMap { $0 } ?? defaults.syncWatchAcrossServers
@@ -271,6 +276,7 @@ public extension PlaybackSettings {
         try container.encode(skipForwardInterval, forKey: .skipForwardInterval)
         try container.encode(resumeRewindInterval, forKey: .resumeRewindInterval)
         try container.encode(backgroundAudio, forKey: .backgroundAudio)
+        try container.encode(streaming, forKey: .streaming)
         try container.encode(syncWatchAcrossServers, forKey: .syncWatchAcrossServers)
         try container.encode(seekWithoutPausing, forKey: .seekWithoutPausing)
         try container.encode(autoPlayNextEpisode, forKey: .autoPlayNextEpisode)

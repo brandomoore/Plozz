@@ -671,7 +671,10 @@ private struct PlozziOSSettingsSplitView: View {
         case .playback:
             PlozziOSPlaybackSettingsView(
                 model: appModel.settings.playback,
-                audioPolicy: appModel.settings.audioPolicy
+                audioPolicy: appModel.settings.audioPolicy,
+                hasStreamingServer: appModel.accountsProviders.resolvedActiveAccounts.contains {
+                    $0.provider is any StreamingQualityProviding
+                }
             )
         case .downloads:
             PlozziOSDownloadSettingsView(model: appModel.downloads)
@@ -974,7 +977,10 @@ private struct PlozziOSSettingsCompactMenu: View {
                 NavigationLink {
                     PlozziOSPlaybackSettingsView(
                         model: appModel.settings.playback,
-                        audioPolicy: appModel.settings.audioPolicy
+                        audioPolicy: appModel.settings.audioPolicy,
+                        hasStreamingServer: appModel.accountsProviders.resolvedActiveAccounts.contains {
+                            $0.provider is any StreamingQualityProviding
+                        }
                     )
                 } label: {
                     Label("Playback", systemImage: "play.rectangle")
@@ -2271,6 +2277,7 @@ private struct PlozziOSPlaybackSettingsView: View {
     @Environment(\.locale) private var locale
     @Bindable var model: PlaybackSettingsModel
     @Bindable var audioPolicy: AudioPolicyModel
+    let hasStreamingServer: Bool
 
     private static let policyCategories: [ContentCategory] = [.movie, .tvShow, .anime]
     private static let audioOptions: [AudioLanguagePreference] =
@@ -2280,6 +2287,9 @@ private struct PlozziOSPlaybackSettingsView: View {
 
     var body: some View {
         List {
+            PlozziOSStreamingSettings(
+                settings: $model.settings.streaming, hasCompatibleServer: hasStreamingServer
+            )
             SettingsSectionGroup("Skipping") {
                 Picker("Intros and credits", selection: $model.settings.skipIntros) {
                     ForEach(SkipIntrosMode.allCases, id: \.self) {

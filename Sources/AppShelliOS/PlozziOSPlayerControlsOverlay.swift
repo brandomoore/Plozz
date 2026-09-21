@@ -11,6 +11,7 @@ private enum PlozziOSPlayerSheet: String, Identifiable {
     case speed
     case subtitles
     case sync
+    case quality
 
     var id: Self { self }
 }
@@ -180,6 +181,10 @@ struct PlozziOSPlayerControlsOverlay: View {
                         presentedSheet = .sync
                         cancelAutoHide()
                     },
+                    onShowQuality: {
+                        presentedSheet = .quality
+                        cancelAutoHide()
+                    },
                     isCardOpen: $isCardOpen,
                     onInteraction: noteInteraction
                 )
@@ -253,6 +258,8 @@ struct PlozziOSPlayerControlsOverlay: View {
                 PlozziOSSubtitleOptionsSheet(viewModel: viewModel)
             case .sync:
                 PlozziOSPlaybackSyncSheet(viewModel: viewModel)
+            case .quality:
+                PlozziOSStreamingQualitySheet(viewModel: viewModel)
             }
         }
     }
@@ -506,11 +513,13 @@ private struct PlozziOSPlaybackOptionsMenu: View, Equatable {
     let supportsSync: Bool
     let supportsDialogEnhance: Bool
     let dialogEnhanceEnabled: Bool
+    let supportsQuality: Bool
     let onSelectAudio: (PlayerTrackOption.ID) -> Void
     let onSetDialogEnhance: (Bool) -> Void
     let onShowSubtitles: () -> Void
     let onShowSpeed: () -> Void
     let onShowSync: () -> Void
+    let onShowQuality: () -> Void
 
     /// Compares the VALUES only. The transport's body re-evaluates on every
     /// playback-clock tick (roughly ten a second), which rebuilds this struct with
@@ -527,10 +536,14 @@ private struct PlozziOSPlaybackOptionsMenu: View, Equatable {
             && lhs.supportsSync == rhs.supportsSync
             && lhs.supportsDialogEnhance == rhs.supportsDialogEnhance
             && lhs.dialogEnhanceEnabled == rhs.dialogEnhanceEnabled
+            && lhs.supportsQuality == rhs.supportsQuality
     }
 
     var body: some View {
         Menu {
+            if supportsQuality {
+                Button("Quality", systemImage: "slider.horizontal.3", action: onShowQuality)
+            }
             if !audioOptions.isEmpty || supportsDialogEnhance {
                 Menu("Audio") {
                     ForEach(audioOptions) { option in
@@ -580,7 +593,7 @@ private struct PlozziOSPlaybackOptionsMenu: View, Equatable {
             Image(systemName: "ellipsis.circle")
                 .playerTransportGlyph()
         }
-        .accessibilityLabel("Audio, subtitles, and speed")
+        .accessibilityLabel("Playback options")
     }
 }
 
@@ -601,6 +614,7 @@ private struct PlozziOSPlayerTransport: View {
     let onShowSpeed: () -> Void
     let onShowSubtitles: () -> Void
     let onShowSync: () -> Void
+    let onShowQuality: () -> Void
     @Binding var isCardOpen: Bool
     let onInteraction: () -> Void
     /// The player's own bounds, which decide the card's layout — see the
@@ -800,6 +814,7 @@ private struct PlozziOSPlayerTransport: View {
             supportsSync: supportsSync,
             supportsDialogEnhance: supportsDialogEnhance,
             dialogEnhanceEnabled: viewModel.controls.dialogEnhanceEnabled,
+            supportsQuality: viewModel.streamingQualityAvailable,
             onSelectAudio: { id in
                 viewModel.selectAudioOption(id: id)
                 onInteraction()
@@ -810,7 +825,8 @@ private struct PlozziOSPlayerTransport: View {
             },
             onShowSubtitles: onShowSubtitles,
             onShowSpeed: onShowSpeed,
-            onShowSync: onShowSync
+            onShowSync: onShowSync,
+            onShowQuality: onShowQuality
         )
         .equatable()
     }

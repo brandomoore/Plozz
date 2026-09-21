@@ -807,6 +807,13 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
     }
 
     public func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool) async throws -> PlaybackRequest {
+        try await resolvePlayback(for: itemID, mediaSourceID: mediaSourceID, forceTranscode: forceTranscode)
+    }
+
+    func resolvePlayback(
+        for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
+        streaming: StreamingPlaybackOptions? = nil
+    ) async throws -> PlaybackRequest {
         // Single round-trip: Plex's `metadata` response already carries the
         // Media/Part (version) elements and the stream URL is then built locally,
         // so — unlike Jellyfin's separate item + playback-decision calls — there's
@@ -816,6 +823,11 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         let detail = try await client.metadata(ratingKey: itemID)
         // Pick the chosen Media element (version) by id, else Plex's first.
         let mediaList = detail.Media ?? []
+        if streaming != nil, let mediaSourceID,
+           !mediaList.contains(where: { $0.id.map(String.init) == mediaSourceID }) {
+            PlozzLog.playback.error("Selected streaming media source is no longer available.")
+            throw StreamingQualityError.unavailable
+        }
         let mediaIndex = mediaSourceID.flatMap { id in
             mediaList.firstIndex { $0.id.map(String.init) == id }
         } ?? mediaList.indices.first
@@ -831,6 +843,19 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         // rendition another request is still fetching.
         let transcodeSessionID =
             "plozz-\(session.deviceID)-\(itemID)-\(UUID().uuidString)"
+        var streaming = streaming
+        if let options = streaming {
+            let audio = try (part.Stream ?? []).filter { $0.streamType == 2 }.map {
+                try map(stream: $0, itemID: itemID, mediaSourceID: media.id.map(String.init))
+            }
+            streaming?.audioTrack = options.selectedAudio(in: audio)
+            let subtitles = try (part.Stream ?? []).filter { $0.streamType == 3 }.map {
+                try map(stream: $0, itemID: itemID, mediaSourceID: media.id.map(String.init))
+            }
+            let selected = options.selectedSubtitle(in: subtitles)
+            streaming?.subtitleTrack = selected
+            streaming?.subtitlesOff = selected == nil
+        }
         guard let resolved = client.playbackURL(
             ratingKey: itemID,
             media: media,
@@ -838,7 +863,8 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             sessionID: transcodeSessionID,
             mediaIndex: mediaIndex,
             partIndex: partIndex,
-            forceTranscode: forceTranscode
+            forceTranscode: forceTranscode,
+            streaming: streaming
         ) else {
             throw AppError.notFound
         }
@@ -894,7 +920,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             mediaVideoDisplayTitle: media.videoStreamDisplayTitle
         )
 
-        return PlaybackRequest(
+        var request = PlaybackRequest(
             item: mappedItem,
             playbackSource: .authenticatedHTTP(playbackLocator),
             // Plex correlates timeline reports by ratingKey; a per-play session
@@ -924,6 +950,15 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             sourceFileName: PlaybackRequest.sourceFileName(from: part.file)
                 ?? PlaybackRequest.sourceFileName(from: part.key)
         )
+        if let streaming {
+            request.streamingOptions = streaming
+            request.streamingSessionID = resolved.isTranscoding ? transcodeSessionID : nil
+            if resolved.isTranscoding {
+                request.localRemuxSource = nil
+                request.originalFileSource = nil
+            }
+        }
+        return request
     }
 
     /// Builds a Plex scrubbing-preview source from a part's BIF index, when the
