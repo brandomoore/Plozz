@@ -4,7 +4,29 @@ import CoreModels
 import Foundation
 
 enum NativePlaybackFailure {
-    static func classify(_ error: NSError?, httpStatus: Int? = nil) -> StreamingPlaybackFailure {
+    struct VideoFormat: Sendable {
+        let codec: FourCharCode
+        let transfer: String?
+
+        init(_ description: CMFormatDescription) {
+            codec = CMFormatDescriptionGetMediaSubType(description)
+            transfer = CMFormatDescriptionGetExtension(
+                description, extensionKey: kCMFormatDescriptionExtension_TransferFunction
+            ) as? String
+        }
+
+        var isHDRH264: Bool {
+            codec == kCMVideoCodecType_H264 && [
+                kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ as String,
+                kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG as String
+            ].contains(transfer ?? "")
+        }
+    }
+
+    static func classify(
+        _ error: NSError?, httpStatus: Int? = nil, convertedFormat: VideoFormat? = nil,
+        provider: ProviderKind? = nil
+    ) -> StreamingPlaybackFailure {
         var errors: [NSError] = []
         var current = error
         var visited = Set<ObjectIdentifier>()
@@ -18,7 +40,7 @@ enum NativePlaybackFailure {
         let evidence = network ?? av ?? media
         let domain: StreamingPlaybackFailure.Domain? = network != nil ? .url : av != nil ? .avFoundation : media != nil ? .coreMedia : nil
         let http = httpStatus.flatMap { (400...599).contains($0) ? $0 : nil }
-        let kind: StreamingPlaybackFailure.Kind
+        var kind: StreamingPlaybackFailure.Kind
         if http == 401 || http == 403 { kind = .accessDenied }
         else if http == 404 || http == 410 { kind = .unavailable }
         else if http == 408 || http == 504 { kind = .timedOut }
@@ -39,7 +61,14 @@ enum NativePlaybackFailure {
         } else {
             kind = .unknown
         }
-        return .init(kind: kind, domain: domain, code: evidence?.code, httpStatus: http)
+        if http == nil, (kind == .unsupportedFormat || (kind == .unknown && media?.code == -12927)),
+           convertedFormat?.isHDRH264 == true {
+            kind = .hdrConversion
+        }
+        return .init(
+            kind: kind, domain: domain, code: evidence?.code, httpStatus: http,
+            provider: kind == .hdrConversion ? provider : nil
+        )
     }
 }
 #endif

@@ -239,18 +239,25 @@ public enum StreamingQualityError: Error, Equatable, Sendable {
 }
 
 public struct StreamingPlaybackFailure: Equatable, Sendable {
-    public enum Kind: Sendable { case network, timedOut, accessDenied, unavailable, unsupportedFormat, server, unknown }
+    public enum Kind: Sendable {
+        case network, timedOut, accessDenied, unavailable, unsupportedFormat, hdrConversion, server, unknown
+    }
     public enum Domain: String, Sendable { case avFoundation = "AVFoundation", url = "URL", coreMedia = "CoreMedia" }
     public let kind: Kind
     public let domain: Domain?
     public let code: Int?
     public let httpStatus: Int?
+    public let provider: ProviderKind?
 
-    public init(kind: Kind, domain: Domain? = nil, code: Int? = nil, httpStatus: Int? = nil) {
+    public init(
+        kind: Kind, domain: Domain? = nil, code: Int? = nil, httpStatus: Int? = nil,
+        provider: ProviderKind? = nil
+    ) {
         self.kind = kind
         self.domain = domain
         self.code = code
         self.httpStatus = httpStatus
+        self.provider = provider
     }
 
     public var allowsCodecFallback: Bool {
@@ -275,6 +282,10 @@ public struct StreamingPlaybackFailure: Equatable, Sendable {
             "The playback stream is no longer available. Retry to create a new playback session."
         case .unsupportedFormat:
             "The player couldn’t decode the stream the server returned. Try H.264 or check the server’s encoder settings."
+        case .hdrConversion where provider == .emby:
+            "Emby returned incompatible HDR video. Enable HDR-to-SDR tone mapping in the server’s transcoding settings (requires Emby Premiere), or choose an SDR version."
+        case .hdrConversion:
+            "The server returned incompatible HDR video. Enable HDR-to-SDR tone mapping in the server’s transcoding settings, or choose an SDR version."
         case .server:
             "The server returned an error while serving the playback stream. Its transcoding log can explain why conversion failed."
         case .unknown:

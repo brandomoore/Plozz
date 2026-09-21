@@ -108,6 +108,7 @@ public final class NativeVideoEngine: VideoEngine {
     /// with playback start) so a known AVPlayer-hostile codec can swap instantly
     /// instead of waiting out the no-frames probe.
     @ObservationIgnored private var formatInspectTask: Task<Void, Never>?
+    @ObservationIgnored private var convertedVideoFormat: NativePlaybackFailure.VideoFormat?
     @ObservationIgnored private var audioSessionConfigured = false
     /// Retains the resource-loader delegate that serves injected subtitle
     /// playlists; `AVAssetResourceLoader` holds it only weakly.
@@ -269,6 +270,8 @@ public final class NativeVideoEngine: VideoEngine {
         videoOutputView?.player = player
         #endif
 
+        let inspectsConvertedFormat = request.isTranscoding && request.streamingOptions != nil
+        if inspectsConvertedFormat { inspectVideoFormat(asset: asset, request: request) }
         furthestObservedPosition = max(furthestObservedPosition, startPosition)
         if startPosition > 1 {
             await seekWhenReady(player: player, to: startPosition)
@@ -293,7 +296,7 @@ public final class NativeVideoEngine: VideoEngine {
         // Inspect the *real* container video format as soon as it loads (in
         // parallel — adds no startup delay) so a known AVPlayer-hostile codec can
         // swap to the on-device engine near-instantly, before the no-frames probe.
-        inspectVideoFormat(asset: asset, request: request)
+        if !inspectsConvertedFormat { inspectVideoFormat(asset: asset, request: request) }
 
         installTimeObserver(on: player)
         status = .ready
@@ -689,7 +692,10 @@ public final class NativeVideoEngine: VideoEngine {
         let error = (item.error as NSError?) ?? lastError.map {
             NSError(domain: $0.errorDomain, code: $0.errorStatusCode)
         }
-        let failure = NativePlaybackFailure.classify(error, httpStatus: http)
+        let failure = NativePlaybackFailure.classify(
+            error, httpStatus: http, convertedFormat: convertedVideoFormat,
+            provider: request?.sourceProvider
+        )
         return failure
     }
 
@@ -711,11 +717,30 @@ public final class NativeVideoEngine: VideoEngine {
     /// sub-second, before the first frame paints), and a hostile codec swaps
     /// near-instantly rather than after the slower no-frames probe.
     ///
-    /// This asks the container itself rather than trusting server metadata (which
-    /// for some files reports no codec tag at all). Scoped to **SDR** so the
-    /// validated AVPlayer Dolby Vision/HDR path is left untouched.
+    /// This asks the container itself rather than trusting server metadata.
+    /// Managed conversions retain actual codec/transfer evidence for error advice;
+    /// the original-file compatibility fallback remains scoped to SDR.
     private func inspectVideoFormat(asset: AVAsset, request: PlaybackRequest) {
         formatInspectTask?.cancel()
+        if request.isTranscoding, request.streamingOptions != nil {
+            let generation = loadGeneration
+            formatInspectTask = Task { [weak self] in
+                do {
+                    guard let track = try await asset.loadTracks(withMediaType: .video).first,
+                          let description = try await track.load(.formatDescriptions).first else { return }
+                    let format = NativePlaybackFailure.VideoFormat(description)
+                    guard let self, !Task.isCancelled, generation == self.loadGeneration else { return }
+                    self.convertedVideoFormat = format
+                    if format.isHDRH264 {
+                        HandoffDiagnostics.emit("native STREAM_FORMAT hdr-h264=true")
+                    }
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    PlozzLog.playback.debug("Converted stream format could not be inspected; retaining generic failure classification.")
+                }
+            }
+            return
+        }
         guard HDRDisplayMode(request.sourceMetadata) == .sdr else { return }
         let expectsVideo = request.sourceMetadata?.video != nil
 
@@ -874,6 +899,7 @@ public final class NativeVideoEngine: VideoEngine {
         missingVideoProbeTask = nil
         formatInspectTask?.cancel()
         formatInspectTask = nil
+        convertedVideoFormat = nil
         defaultSubtitleSelectionTask?.cancel()
         defaultSubtitleSelectionTask = nil
         preferredAudioSelectionTask?.cancel()

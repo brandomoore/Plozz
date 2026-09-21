@@ -127,6 +127,21 @@ final class StreamingPlaybackTests: XCTestCase {
         await model.stop()
     }
 
+    func testConfirmedHDRConversionFailureDoesNotRepeatAnIdenticalH264Attempt() async {
+        let (model, engine, provider) = make()
+        await model.load()
+        let failure = StreamingPlaybackFailure(kind: .hdrConversion, domain: .coreMedia, code: -12927, provider: .emby)
+        engine.streamingFailure = failure
+        engine.onFailure?(.invalidResponse)
+        await wait { if case .failed = model.phase { return true }; return false }
+        XCTAssertEqual(model.streamingQualityError, .playback(failure))
+        let calls = await provider.calls
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(model.streamingOptions?.quality, .hd720)
+        XCTAssertEqual(engine.status, .idle)
+        await model.stop()
+    }
+
     func testAuthenticationErrorsRemainAuthenticationErrors() {
         XCTAssertNil(PlayerViewModel.streamingFailure(.unauthorized))
         XCTAssertNil(PlayerViewModel.streamingFailure(.serverUnreachable))

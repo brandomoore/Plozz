@@ -113,6 +113,12 @@ Omitting the delivery method alone can still trigger Emby's default burn-in.
 An engine load that returns after a terminal startup failure cannot publish ready.
 Terminal managed-stream failures stop the decoder so audio cannot continue
 behind the error screen.
+Tone-mapping advice requires the returned stream's actual H.264 codec and PQ/HLG
+transfer metadata, combined with a decoder-format failure. Neither the original
+file's HDR badge nor a numeric error alone establishes this condition. Emby advice
+notes the documented Premiere requirement for HDR tone mapping; it does not
+claim to have read the server's license or global settings. Compatible HEVC HDR,
+properly tone-mapped H.264, and transport failures retain their own handling.
 
 Rendition changes stop old media I/O, retain the chosen source/version, current
 position and pause intent, reapply track selections, and retire the old server

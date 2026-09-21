@@ -12,6 +12,79 @@ private struct RefusingPlaybackResolver: AuthenticatedHTTPResourceResolving {
 }
 
 final class NativePlaybackFailureTests: XCTestCase {
+    private func format(codec: CMVideoCodecType, transfer: CFString?) throws -> NativePlaybackFailure.VideoFormat {
+        var description: CMVideoFormatDescription?
+        var extensions: [CFString: Any] = [:]
+        if let transfer { extensions[kCMFormatDescriptionExtension_TransferFunction] = transfer }
+        XCTAssertEqual(CMVideoFormatDescriptionCreate(
+            allocator: kCFAllocatorDefault, codecType: codec, width: 1280, height: 720,
+            extensions: extensions as CFDictionary, formatDescriptionOut: &description
+        ), noErr)
+        return NativePlaybackFailure.VideoFormat(try XCTUnwrap(description))
+    }
+
+    func testHDRH264FailureGivesSpecificAdviceWithoutClaimingToReadServerSettings() throws {
+        for transfer in [
+            kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ,
+            kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG
+        ] {
+            let observed = try format(codec: kCMVideoCodecType_H264, transfer: transfer)
+            let error = NSError(domain: "CoreMediaErrorDomain", code: -12927)
+            let result = NativePlaybackFailure.classify(error, convertedFormat: observed, provider: .emby)
+            XCTAssertEqual(result.kind, .hdrConversion)
+            XCTAssertEqual(result.diagnosticCode, "CoreMedia -12927")
+            XCTAssertFalse(result.allowsCodecFallback, "Retrying H.264 cannot fix HDR H.264")
+            var message = result.userMessage
+            message.locale = Locale(identifier: "en_US")
+            let text = String(localized: message)
+            XCTAssertTrue(text.contains("requires Emby Premiere"))
+            XCTAssertTrue(text.contains("SDR version"))
+            XCTAssertFalse(text.contains("disabled"))
+        }
+    }
+
+    func testErrorCodeOrOriginalHDRHintsAloneNeverClaimMissingToneMapping() throws {
+        let error = NSError(domain: "CoreMediaErrorDomain", code: -12927)
+        XCTAssertEqual(NativePlaybackFailure.classify(error, provider: .emby).kind, .unknown)
+        let cases: [(CMVideoCodecType, CFString?)] = [
+            (kCMVideoCodecType_H264, kCMFormatDescriptionTransferFunction_ITU_R_709_2),
+            (kCMVideoCodecType_HEVC, kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ),
+            (kCMVideoCodecType_H264, nil)
+        ]
+        for (codec, transfer) in cases {
+            let observed = try format(codec: codec, transfer: transfer)
+            XCTAssertNotEqual(NativePlaybackFailure.classify(error, convertedFormat: observed).kind, .hdrConversion)
+        }
+    }
+
+    func testTransportErrorsTakePriorityOverFormatRemediation() throws {
+        let observed = try format(codec: kCMVideoCodecType_H264, transfer: kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ)
+        XCTAssertEqual(NativePlaybackFailure.classify(
+            NSError(domain: NSURLErrorDomain, code: URLError.timedOut.rawValue),
+            convertedFormat: observed, provider: .emby
+        ).kind, .timedOut)
+        XCTAssertEqual(NativePlaybackFailure.classify(
+            nil, httpStatus: 403, convertedFormat: observed, provider: .emby
+        ).kind, .accessDenied)
+        XCTAssertEqual(NativePlaybackFailure.classify(
+            NSError(domain: "CoreMediaErrorDomain", code: -12889), convertedFormat: observed
+        ).kind, .unknown)
+    }
+
+    func testOtherServersDoNotGetEmbyLicensingAdvice() throws {
+        let observed = try format(codec: kCMVideoCodecType_H264, transfer: kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ)
+        for provider in [ProviderKind.jellyfin, .plex] {
+            let result = NativePlaybackFailure.classify(
+                NSError(domain: "CoreMediaErrorDomain", code: -12927),
+                convertedFormat: observed, provider: provider
+            )
+            XCTAssertEqual(result.kind, .hdrConversion)
+            var message = result.userMessage
+            message.locale = Locale(identifier: "en_US")
+            XCTAssertFalse(String(localized: message).contains("Premiere"))
+        }
+    }
+
     @MainActor
     func testAuthenticationFailureIsPreservedBeforeAnAVPlayerItemExists() async throws {
         let locator = try AuthenticatedHTTPPlaybackLocator(
