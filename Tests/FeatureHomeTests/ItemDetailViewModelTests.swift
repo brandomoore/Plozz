@@ -809,6 +809,122 @@ final class ItemDetailViewModelTests: XCTestCase {
         XCTAssertEqual(vm.state.value?.item.mediaInfo?.audio?.profile, "Dolby Atmos")
     }
 
+    func testShareHDRProbeRunsDespiteKnownAtmosAndUpdatesSelectedVersionAfterFirstPaint() async {
+        let metadata = MediaSourceMetadata(
+            sourceRevision: "share-r1",
+            video: .init(codec: "av1", width: 3840, height: 2160, videoRangeType: "HDR10"),
+            audio: .init(codec: "eac3", profile: "Dolby Atmos", channels: 6))
+        let item = MediaItem(
+            id: "share-hdr", title: "Share HDR", kind: .movie, mediaInfo: metadata,
+            versions: [
+                .init(id: "movie.mkv", isDefault: true, videoRange: "HDR10",
+                      audioProfile: "Dolby Atmos", sourceMetadata: metadata),
+                .init(id: "alternate.mkv", videoRange: "SDR")
+            ])
+        let provider = FakeMediaProvider(allItems: [item], kind: .mediaShare)
+        let gate = AsyncGate()
+        provider.supplementalFactsGate = { await gate.wait() }
+        provider.supplementalFactsByItem[item.id] = .init(videoRangeType: "HDR10Plus")
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: item.id,
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache())
+        await vm.load()
+        XCTAssertEqual(vm.state.value?.item.mediaInfo?.video?.videoRangeType, "HDR10")
+        await waitUntil { provider.supplementalProbeCount == 1 }
+        gate.open()
+        await waitUntil { vm.state.value?.item.mediaInfo?.video?.videoRangeType == "HDR10Plus" }
+        XCTAssertEqual(vm.state.value?.item.mediaInfo?.audio?.profile, "Dolby Atmos")
+        XCTAssertEqual(vm.state.value?.item.mediaInfo?.sourceRevision, "share-r1")
+        XCTAssertEqual(vm.state.value?.item.versions.first?.videoRange, "HDR10Plus")
+        XCTAssertEqual(vm.state.value?.item.versions.first?.audioProfile, "Dolby Atmos")
+        XCTAssertEqual(vm.state.value?.item.versions.last?.videoRange, "SDR")
+        vm.suspendEnrichment()
+    }
+
+    func testShareAtmosProbeCannotDemoteKnownDolbyVision() async {
+        let item = MediaItem(
+            id: "share-dv", title: "Share DV", kind: .movie,
+            mediaInfo: .init(
+                video: .init(codec: "hevc", width: 3840, height: 2160, videoRangeType: "DOVI"),
+                audio: .init(codec: "eac3", channels: 6)),
+            versions: [.init(id: "movie.mkv", videoRange: "DOVI")])
+        let provider = FakeMediaProvider(allItems: [item], kind: .mediaShare)
+        provider.supplementalFactsByItem[item.id] = .init(videoRangeType: "HDR10Plus", audioIsAtmos: true)
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: item.id,
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache())
+        await vm.load()
+        await waitUntil { vm.state.value?.item.mediaInfo?.audio?.profile == "Dolby Atmos" }
+        XCTAssertEqual(vm.state.value?.item.mediaInfo?.video?.videoRangeType, "DOVI")
+        XCTAssertEqual(vm.state.value?.item.versions.first?.videoRange, "DOVI")
+        XCTAssertEqual(vm.state.value?.item.versions.first?.sourceMetadata?.video?.videoRangeType, "DOVI")
+        vm.suspendEnrichment()
+    }
+
+    func testLateShareProbeCannotEnrichAnotherAccountWithTheSameItemID() async {
+        let oldItem = MediaItem(id: "movie", title: "Old", kind: .movie, sourceAccountID: "old")
+        let newItem = MediaItem(
+            id: "movie", title: "New", kind: .movie,
+            mediaInfo: .init(
+                video: .init(codec: "h264", width: 1920, height: 1080, videoRangeType: "SDR"),
+                audio: .init(codec: "eac3", profile: "Dolby Atmos", channels: 6)),
+            sourceAccountID: "new")
+        let old = FakeMediaProvider(allItems: [oldItem], kind: .mediaShare, accountID: "old")
+        let new = FakeMediaProvider(allItems: [newItem], kind: .mediaShare, accountID: "new")
+        let gate = AsyncGate()
+        let returned = LockedFlag()
+        old.supplementalFactsGate = {
+            await gate.wait()
+            returned.set()
+        }
+        old.supplementalFactsByItem[oldItem.id] = .init(
+            videoWidth: 3840, videoHeight: 2160, videoRangeType: "HDR10Plus", audioIsAtmos: true)
+        let vm = ItemDetailViewModel(
+            provider: old, itemID: oldItem.id, sourceAccountID: "old",
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache(),
+            initialSources: [
+                MediaSourceRef(accountID: "old", itemID: oldItem.id),
+                MediaSourceRef(accountID: "new", itemID: newItem.id)
+            ],
+            alternateProviderResolver: { $0 == "new" ? new : old })
+        await vm.load()
+        await waitUntil { old.supplementalProbeCount == 1 }
+        await vm.switchToSource(accountID: "new")
+        gate.open()
+        await waitUntil { returned.value }
+        XCTAssertEqual(vm.state.value?.item.sourceAccountID, "new")
+        XCTAssertEqual(vm.state.value?.item.mediaInfo?.video?.videoRangeType, "SDR")
+        XCTAssertEqual(vm.state.value?.item.mediaInfo?.video?.width, 1920)
+        XCTAssertEqual(new.supplementalProbeCount, 0)
+        vm.suspendEnrichment()
+    }
+
+    func testShareDolbyVisionProofSurvivesOnlyTheSameSourceRevision() async {
+        for sameRevision in [true, false] {
+            let fresh = MediaItem(
+                id: "dv-movie", title: "DV", kind: .movie,
+                mediaInfo: .init(
+                    sourceRevision: sameRevision ? "share-r1" : "share-r2",
+                    video: .init(codec: "hevc", width: 3840, height: 2160, videoRangeType: "HDR10"),
+                    audio: .init(codec: "aac", channels: 2)))
+            var cached = fresh
+            cached.mediaInfo?.sourceRevision = "share-r1"
+            cached.mediaInfo?.video?.videoRangeType = "DOVI"
+            let provider = FakeMediaProvider(allItems: [fresh], kind: .mediaShare)
+            let vm = ItemDetailViewModel(
+                provider: provider, itemID: fresh.id, initialItem: cached,
+                onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+                trailerCache: TrailerResolutionCache())
+            await vm.load()
+            XCTAssertEqual(
+                vm.state.value?.item.mediaInfo?.video?.videoRangeType, sameRevision ? "DOVI" : "HDR10")
+            vm.suspendEnrichment()
+        }
+    }
+
     func testHDR10PlusConfirmationSurvivesOnlyTheSameSourceRevision() async {
         for sameRevision in [true, false] {
             let fresh = MediaItem(

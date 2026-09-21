@@ -17,14 +17,8 @@ actor MediaBrowserProbeDescriptorStore {
     private var lruItemIDs: [String] = []
 
     func remember(itemID: String, sources: [MediaSourceInfo]?) {
-        guard let source = sources?.first,
-              let container = source.Container,
-              !container.isEmpty else {
-            if let previous = descriptors.removeValue(forKey: itemID) {
-                completedRevisions[previous.revision] = nil
-                factsByRevision[previous.revision] = nil
-            }
-            lruItemIDs.removeAll { $0 == itemID }
+        guard let source = sources?.first else {
+            forget(itemID: itemID)
             return
         }
         let sourceID = source.Id ?? itemID
@@ -34,6 +28,14 @@ actor MediaBrowserProbeDescriptorStore {
             etag: source.ETag,
             size: source.Size
         )
+        let previous = descriptors[itemID]
+        // PlaybackInfo can omit headers without changing the file identity.
+        let container = source.Container.flatMap { $0.isEmpty ? nil : $0 }
+            ?? (previous?.revision == revision ? previous?.container : nil)
+        guard let container else {
+            forget(itemID: itemID)
+            return
+        }
         if let previous = descriptors[itemID], previous.revision != revision {
             completedRevisions[previous.revision] = nil
             factsByRevision[previous.revision] = nil
@@ -65,12 +67,26 @@ actor MediaBrowserProbeDescriptorStore {
     ) {
         guard descriptors.values.contains(where: { $0.revision == revision }) else { return }
         completedRevisions[revision, default: []].formUnion(requirements)
-        var confirmed = factsByRevision[revision] ?? ProbedStreamFacts()
-        if requirements.contains(.atmos), facts?.audioIsAtmos == true { confirmed.audioIsAtmos = true }
-        if requirements.contains(.hdr10Plus), facts?.videoRangeType == "HDR10Plus" {
-            confirmed.videoRangeType = "HDR10Plus"
+        var positive = ProbedStreamFacts()
+        if requirements.contains(.atmos), facts?.audioIsAtmos == true { positive.audioIsAtmos = true }
+        if requirements.contains(.hdr10Plus),
+           facts?.carriesHDR10PlusMetadata == true
+            || SourceDynamicRange.classify(videoRangeType: facts?.videoRangeType) == .hdr10Plus {
+            positive.carriesHDR10PlusMetadata = true
+            positive.videoRangeType = SourceDynamicRange.classify(videoRangeType: facts?.videoRangeType) == .dolbyVision
+                ? facts?.videoRangeType : "HDR10Plus"
         }
-        factsByRevision[revision] = confirmed.audioIsAtmos || confirmed.videoRangeType != nil ? confirmed : nil
+        let confirmed = factsByRevision[revision]?.merging(positive) ?? positive
+        factsByRevision[revision] = confirmed.audioIsAtmos || confirmed.videoRangeType != nil
+            || confirmed.carriesHDR10PlusMetadata == true ? confirmed : nil
+    }
+
+    private func forget(itemID: String) {
+        if let previous = descriptors.removeValue(forKey: itemID) {
+            completedRevisions[previous.revision] = nil
+            factsByRevision[previous.revision] = nil
+        }
+        lruItemIDs.removeAll { $0 == itemID }
     }
 
     private func touch(_ itemID: String) {

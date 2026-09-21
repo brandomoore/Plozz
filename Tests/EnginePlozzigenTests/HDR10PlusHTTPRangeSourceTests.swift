@@ -1,8 +1,77 @@
 import Foundation
 import XCTest
+import AetherEngine
 @testable import EnginePlozzigen
 
 final class HDR10PlusHTTPRangeSourceTests: XCTestCase {
+    func testCombinedPublicEngineProbeUsesStrictHTTPReader() async {
+        let fixture = HDR10PlusHTTPStub.Scenario(payload: HDR10PlusTestFixture.positive)
+        let (source, budget) = makeSource(fixture, bytes: 8 * 1024 * 1024)
+        let result = await PlozzigenStreamProbeExecutor.runDetailProbe(
+            reader: HDR10PlusAVIOReader(source: source, budget: budget),
+            formatHint: "mp4",
+            requirements: [.hdr10Plus, .atmos],
+            limits: budget.limits,
+            budget: budget
+        )
+        XCTAssertEqual(result?.carriesHDR10PlusMetadata, true)
+        XCTAssertEqual(result?.videoFormat, .hdr10Plus)
+        XCTAssertGreaterThan(fixture.snapshot.requests, 0)
+        XCTAssertLessThanOrEqual(fixture.snapshot.delivered, budget.limits.networkBytes)
+        XCTAssertNil(source.read(at: 0, count: 1), "Native return must close the caller-owned HTTP source")
+    }
+
+    func testCombinedProbeRejectsIgnoredRangeEvenForPositiveMedia() async {
+        let fixture = HDR10PlusHTTPStub.Scenario(status: 200, payload: HDR10PlusTestFixture.positive)
+        let (source, budget) = makeSource(fixture, bytes: 8 * 1024 * 1024)
+        let result = await PlozzigenStreamProbeExecutor.runDetailProbe(
+            reader: HDR10PlusAVIOReader(source: source, budget: budget),
+            requirements: [.hdr10Plus, .atmos],
+            limits: budget.limits,
+            budget: budget
+        )
+        XCTAssertNil(result)
+        XCTAssertEqual(fixture.snapshot.requests, 1)
+        XCTAssertFalse(budget.isActive)
+        XCTAssertNil(source.read(at: 0, count: 1))
+    }
+
+    func testCombinedProbeCancellationClosesStalledHTTPSource() async {
+        let fixture = HDR10PlusHTTPStub.Scenario(stall: true)
+        let (source, budget) = makeSource(fixture)
+        let task = Task {
+            await PlozzigenStreamProbeExecutor.runDetailProbe(
+                reader: HDR10PlusAVIOReader(source: source, budget: budget),
+                requirements: [.hdr10Plus, .atmos],
+                limits: budget.limits,
+                budget: budget
+            )
+        }
+        await waitForRequest(fixture)
+        task.cancel()
+        let result = await task.value
+        XCTAssertNil(result)
+        XCTAssertFalse(budget.isActive)
+        XCTAssertNil(source.read(at: 0, count: 1))
+    }
+
+    func testTransportNeverUsesSharedCookiesCredentialsOrCache() {
+        let configuration = URLSessionConfiguration.default
+        let budget = HDR10PlusProbeBudget(limits: .init())
+        let source = HDR10PlusHTTPRangeSource(
+            url: URL(string: "https://example.invalid/video")!,
+            budget: budget, configuration: configuration
+        )
+        defer { source.close() }
+        XCTAssertNil(configuration.httpCookieStorage)
+        XCTAssertNil(configuration.urlCredentialStorage)
+        XCTAssertNil(configuration.urlCache)
+        XCTAssertFalse(configuration.httpShouldSetCookies)
+        XCTAssertEqual(configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
+        XCTAssertEqual(configuration.timeoutIntervalForRequest, 2)
+        XCTAssertEqual(configuration.timeoutIntervalForResource, 5)
+    }
+
     func testValidRangesRespectCumulativeBudgetAcrossSeeks() async {
         let fixture = HDR10PlusHTTPStub.Scenario()
         let (source, budget) = makeSource(fixture, bytes: 27)
@@ -146,16 +215,21 @@ private final class HDR10PlusHTTPStub: URLProtocol, @unchecked Sendable {
         let bodyDelta: Int
         let stall: Bool
         let redirect: URL?
+        let payload: Data?
         let lock = NSLock()
         var requests = 0
         var delivered = 0
         var stops = 0
 
-        init(status: Int = 206, bodyDelta: Int = 0, stall: Bool = false, redirect: URL? = nil) {
+        init(
+            status: Int = 206, bodyDelta: Int = 0, stall: Bool = false,
+            redirect: URL? = nil, payload: Data? = nil
+        ) {
             self.status = status
             self.bodyDelta = bodyDelta
             self.stall = stall
             self.redirect = redirect
+            self.payload = payload
         }
 
         var snapshot: (requests: Int, delivered: Int, stops: Int) {
@@ -202,11 +276,13 @@ private final class HDR10PlusHTTPStub: URLProtocol, @unchecked Sendable {
         }
         let endpoints = request.value(forHTTPHeaderField: "Range")!
             .dropFirst(6).split(separator: "-").compactMap { Int($0) }
-        let count = endpoints[1] - endpoints[0] + 1
+        let total = scenario.payload?.count ?? 1024
+        let upper = min(endpoints[1], total - 1)
+        let count = upper - endpoints[0] + 1
         let response = HTTPURLResponse(
             url: url, statusCode: scenario.status, httpVersion: nil,
             headerFields: [
-                "Content-Range": "bytes \(endpoints[0])-\(endpoints[1])/1024",
+                "Content-Range": "bytes \(endpoints[0])-\(upper)/\(total)",
                 "Content-Length": scenario.status == 200 ? "3000000000" : "\(count)"
             ]
         )!
@@ -216,7 +292,8 @@ private final class HDR10PlusHTTPStub: URLProtocol, @unchecked Sendable {
             if scenario.status == 200 {
                 sendIgnoredRangeChunk(remaining: 256)
             } else {
-                let body = Data(repeating: 7, count: max(0, count + scenario.bodyDelta))
+                let body = scenario.payload.map { $0.subdata(in: endpoints[0]..<(upper + 1)) }
+                    ?? Data(repeating: 7, count: max(0, count + scenario.bodyDelta))
                 scenario.lock.withLock { scenario.delivered += body.count }
                 client?.urlProtocol(self, didLoad: body)
                 client?.urlProtocolDidFinishLoading(self)

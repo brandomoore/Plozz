@@ -471,6 +471,283 @@ final class EmbyProviderParityTests: XCTestCase {
         }
     }
 
+    func testDualFormatProbeIsReusedForExactRevisionAndSurvivesIncompletePlaybackMetadata() async throws {
+        let stub = StubHTTPClient()
+        let advertisedStreams = """
+        [{"Index":0,"Type":"Video","Codec":"hevc","ExtendedVideoType":"Hdr10","ColorTransfer":"smpte2084"},
+         {"Index":1,"Type":"Audio","Codec":"aac","Channels":2,"IsDefault":true}]
+        """
+        let incompleteStreams = """
+        [{"Index":0,"Type":"Video","Codec":"hevc"},
+         {"Index":1,"Type":"Audio","Codec":"aac","Channels":2,"IsDefault":true}]
+        """
+        func itemJSON(revision: String) -> String {
+            """
+            {"Id":"dual","Name":"Dual format","Type":"Movie","MediaStreams":\(advertisedStreams),
+             "MediaSources":[{"Id":"dual-source","ETag":"\(revision)","Container":"mkv","Size":123456,
+               "SupportsDirectPlay":true,"MediaStreams":\(advertisedStreams)}]}
+            """
+        }
+        stub.stubSequence(pathSuffix: "/Users/u1/Items/dual", jsons: [
+            itemJSON(revision: "r1"), itemJSON(revision: "r1"), itemJSON(revision: "r2")
+        ])
+        stub.stub(pathSuffix: "/Users/u1/Items/dual", json: itemJSON(revision: "r2"))
+        stub.stubSequence(pathSuffix: "/Items/dual/PlaybackInfo", jsons: [
+            """
+            {"MediaSources":[{"Id":"dual-source","ETag":"r1","Size":123456,
+              "SupportsDirectPlay":true,"MediaStreams":\(incompleteStreams)}],"PlaySessionId":"play-r1"}
+            """,
+            """
+            {"MediaSources":[{"Id":"dual-source","ETag":"r2","Container":"mkv","Size":123456,
+              "SupportsDirectPlay":true,"MediaStreams":\(incompleteStreams)}],"PlaySessionId":"play-r2"}
+            """
+        ])
+        let prober = StubAuthenticatedStreamProber(
+            facts: .init(videoRangeType: "DOVI", carriesHDR10PlusMetadata: true))
+        let provider = JellyfinProvider(session: makeSession(), http: stub, authenticatedStreamProber: prober)
+        let item = try await provider.item(id: "dual")
+        XCTAssertEqual(item.mediaInfo?.video?.videoRangeType, "HDR10")
+        let facts = await provider.supplementalStreamFacts(for: item)
+        XCTAssertEqual(facts?.videoRangeType, "DOVI")
+        XCTAssertEqual(facts?.carriesHDR10PlusMetadata, true)
+        let reused = await provider.supplementalStreamFacts(for: item)
+        XCTAssertEqual(reused, facts)
+        let requested = await prober.requirements
+        XCTAssertEqual(requested, [.hdr10Plus])
+
+        let playback = try await provider.playbackInfo(for: "dual", mediaSourceID: "dual-source", forceTranscode: false)
+        XCTAssertEqual(playback.item.mediaInfo?.video?.videoRangeType, "DOVI")
+        XCTAssertTrue(playback.item.versions.isEmpty, "A lone source does not create a version picker")
+        XCTAssertEqual(playback.item.mediaInfo?.sourceRevision, item.mediaInfo?.sourceRevision)
+        XCTAssertEqual(playback.sourceMetadata?.video?.videoRangeType, "DOVI")
+        XCTAssertEqual(playback.sourceMetadata?.sourceRevision, item.mediaInfo?.sourceRevision)
+        XCTAssertNil(playback.item.mediaInfo?.video?.dolbyVisionProfile)
+        XCTAssertNil(playback.sourceMetadata?.video?.dolbyVisionProfile)
+        let remux = try XCTUnwrap(playback.localRemuxSource)
+        XCTAssertNil(remux.sourceMetadata.video?.dolbyVisionProfile)
+        XCTAssertNil(remux.normalizedDolbyVisionProfile, "Display-only DOVI cannot imply Profile 5 compatibility")
+        let afterPlayback = await provider.supplementalStreamFacts(for: item)
+        XCTAssertEqual(afterPlayback, facts, "Incomplete same-revision headers cannot discard dual-format proof")
+        let sameRevisionCalls = await prober.locators
+        XCTAssertEqual(sameRevisionCalls.count, 1)
+
+        let replacement = try await provider.playbackInfo(for: "dual", mediaSourceID: "dual-source", forceTranscode: false)
+        XCTAssertNotEqual(replacement.sourceMetadata?.sourceRevision, playback.sourceMetadata?.sourceRevision)
+        XCTAssertNil(replacement.sourceMetadata?.video?.videoRangeType)
+        XCTAssertEqual(replacement.item.mediaInfo?.video?.videoRangeType, "HDR10")
+        let stale = await provider.supplementalStreamFacts(for: item)
+        XCTAssertNil(stale, "An old item must not reuse the old revision after PlaybackInfo discovers replacement")
+        let replacementItem = try await provider.item(id: "dual")
+        let reprobed = await provider.supplementalStreamFacts(for: replacementItem)
+        XCTAssertEqual(reprobed?.carriesHDR10PlusMetadata, true)
+        let allCalls = await prober.locators
+        XCTAssertEqual(allCalls.count, 2)
+        XCTAssertTrue(allCalls.last?.resource.queryItems.contains { $0.name == "tag" && $0.value == "r2" } == true)
+    }
+
+    func testCachedDualFormatProofPreservesRevisionWithoutInventingSingleSourceVersion() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/Users/u1/Items/sparse", json: """
+        {"Id":"sparse","Name":"Sparse","Type":"Movie",
+         "MediaStreams":[{"Index":0,"Type":"Video","Codec":"hevc","ExtendedVideoType":"Hdr10"}],
+         "MediaSources":[{"Id":"sparse-source","Container":"mkv","ETag":"r1","Size":100}]}
+        """)
+        stub.stub(pathSuffix: "/Items/sparse/PlaybackInfo", json: """
+        {"MediaSources":[{"Id":"sparse-source","ETag":"r1","Size":100,
+          "SupportsDirectPlay":true,"MediaStreams":[]}],"PlaySessionId":"play-sparse"}
+        """)
+        let prober = StubAuthenticatedStreamProber(
+            facts: .init(videoRangeType: "DOVI", carriesHDR10PlusMetadata: true))
+        let provider = JellyfinProvider(session: makeSession(), http: stub, authenticatedStreamProber: prober)
+        let item = try await provider.item(id: "sparse")
+        let revision = try XCTUnwrap(item.mediaInfo?.sourceRevision)
+        _ = await provider.supplementalStreamFacts(for: item)
+        let playback = try await provider.playbackInfo(
+            for: item.id, mediaSourceID: "sparse-source", forceTranscode: false)
+        XCTAssertTrue(playback.item.versions.isEmpty)
+        XCTAssertEqual(playback.item.mediaInfo?.video?.videoRangeType, "DOVI")
+        XCTAssertEqual(playback.item.mediaInfo?.sourceRevision, revision)
+        XCTAssertEqual(playback.sourceMetadata?.sourceRevision, revision)
+        XCTAssertEqual(playback.sourceMetadata?.video?.videoRangeType, "DOVI")
+        XCTAssertNil(playback.item.mediaInfo?.video?.dolbyVisionProfile)
+        XCTAssertNil(playback.sourceMetadata?.video?.dolbyVisionProfile)
+        XCTAssertNil(playback.localRemuxSource, "Missing provider headers cannot establish remux compatibility")
+    }
+
+    func testCachedProbeProjectionTargetsExplicitPlaybackVersionNotDefaultVersion() async throws {
+        let stub = StubHTTPClient()
+        let defaultStreams = """
+        [{"Index":0,"Type":"Video","Codec":"hevc","VideoRangeType":"DOVI"},
+         {"Index":1,"Type":"Audio","Codec":"aac"}]
+        """
+        let selectedStreams = """
+        [{"Index":0,"Type":"Video","Codec":"hevc","ExtendedVideoType":"Hdr10"},
+         {"Index":1,"Type":"Audio","Codec":"aac"}]
+        """
+        let selectedSource = """
+        {"Id":"selected","Container":"mp4","ETag":"selected-r1","Size":200,
+         "SupportsDirectPlay":true,"MediaStreams":\(selectedStreams)}
+        """
+        stub.stub(pathSuffix: "/Users/u1/Items/multiple", json: """
+        {"Id":"multiple","Name":"Multiple","Type":"Movie","MediaStreams":\(defaultStreams),
+         "MediaSources":[
+           {"Id":"default","Container":"mp4","ETag":"default-r1","Size":100,"MediaStreams":\(defaultStreams)},
+           \(selectedSource)]}
+        """)
+        stub.stub(pathSuffix: "/Items/multiple/PlaybackInfo", json: """
+        {"MediaSources":[\(selectedSource)],"PlaySessionId":"selected-play"}
+        """)
+        let prober = StubAuthenticatedStreamProber(
+            facts: .init(videoRangeType: "HDR10Plus", carriesHDR10PlusMetadata: true))
+        let provider = JellyfinProvider(session: makeSession(), http: stub, authenticatedStreamProber: prober)
+        let firstPlayback = try await provider.playbackInfo(
+            for: "multiple", mediaSourceID: "selected", forceTranscode: false)
+        var probeItem = firstPlayback.item.selectingVersion("selected")
+        probeItem.mediaInfo = firstPlayback.sourceMetadata
+        _ = await provider.supplementalStreamFacts(for: probeItem)
+
+        let playback = try await provider.playbackInfo(
+            for: "multiple", mediaSourceID: "selected", forceTranscode: false)
+        let selected = try XCTUnwrap(playback.item.selectedVersion)
+        XCTAssertEqual(selected.id, "selected")
+        XCTAssertEqual(selected.videoRange, "HDR10Plus")
+        XCTAssertEqual(selected.sourceMetadata?.sourceRevision, firstPlayback.sourceMetadata?.sourceRevision)
+        XCTAssertEqual(playback.item.mediaInfo?.video?.videoRangeType, "HDR10Plus")
+        XCTAssertEqual(playback.item.mediaInfo?.sourceRevision, firstPlayback.sourceMetadata?.sourceRevision)
+        XCTAssertEqual(playback.item.versions.first { $0.id == "default" }?.videoRange, "DOVI")
+        XCTAssertEqual(playback.sourceMetadata?.video?.videoRangeType, "HDR10Plus")
+        XCTAssertNil(playback.sourceMetadata?.video?.dolbyVisionProfile)
+        XCTAssertNil(selected.sourceMetadata?.video?.dolbyVisionProfile)
+    }
+
+    func testNewRevisionProbeCannotPromoteStaleVersionFactsFromDetail() async throws {
+        for sparsePlaybackHeaders in [false, true] {
+            let stub = StubHTTPClient()
+            let oldStreams = """
+            [{"Index":0,"Type":"Video","Codec":"hevc","VideoRangeType":"DOVI","Width":3840,"Height":2160},
+             {"Index":1,"Type":"Audio","Codec":"eac3","Channels":8,"Profile":"Dolby Atmos"}]
+            """
+            let newStreams = """
+            [{"Index":0,"Type":"Video","Codec":"hevc","ExtendedVideoType":"Hdr10","Width":1920,"Height":1080},
+             {"Index":1,"Type":"Audio","Codec":"aac","Channels":2}]
+            """
+            stub.stub(pathSuffix: "/Users/u1/Items/replaced", json: """
+            {"Id":"replaced","Name":"Replaced","Type":"Movie","MediaStreams":\(oldStreams),
+             "MediaSources":[
+               {"Id":"selected","Name":"Feature cut","Path":"/movies/feature.mkv","Container":"mkv",
+                "ETag":"r1","Size":100,"Bitrate":9000,"RunTimeTicks":900000000,
+                "MediaStreams":\(oldStreams)},
+               {"Id":"other","Name":"Other cut","Container":"mp4","ETag":"other-r1","Size":50,
+                "MediaStreams":[{"Index":0,"Type":"Video","Codec":"h264","VideoRangeType":"SDR","Height":720}]}]}
+            """)
+            let newSource = """
+            {"Id":"selected","Container":"mp4","ETag":"r2","Size":200,
+             "SupportsDirectPlay":true,"MediaStreams":\(newStreams)}
+            """
+            let sparseSource = """
+            {"Id":"selected","Container":"mp4","ETag":"r2","Size":200,"SupportsDirectPlay":true}
+            """
+            stub.stubSequence(pathSuffix: "/Items/replaced/PlaybackInfo", jsons: [
+                """
+                {"MediaSources":[\(newSource)],"PlaySessionId":"new-first"}
+                """,
+                """
+                {"MediaSources":[\(sparsePlaybackHeaders ? sparseSource : newSource)],"PlaySessionId":"new-second"}
+                """
+            ])
+            let prober = StubAuthenticatedStreamProber(
+                facts: .init(videoRangeType: "HDR10Plus", carriesHDR10PlusMetadata: true))
+            let provider = JellyfinProvider(session: makeSession(), http: stub, authenticatedStreamProber: prober)
+            let firstPlayback = try await provider.playbackInfo(
+                for: "replaced", mediaSourceID: "selected", forceTranscode: false)
+            let oldSelected = try XCTUnwrap(firstPlayback.item.versions.first { $0.id == "selected" })
+            let unrelated = try XCTUnwrap(firstPlayback.item.versions.first { $0.id == "other" })
+            XCTAssertEqual(oldSelected.videoRange, "DOVI")
+            let revision = try XCTUnwrap(firstPlayback.sourceMetadata?.sourceRevision)
+            XCTAssertNotEqual(revision, firstPlayback.item.mediaInfo?.sourceRevision)
+            var probeItem = firstPlayback.item.selectingVersion("selected")
+            probeItem.mediaInfo = firstPlayback.sourceMetadata
+            _ = await provider.supplementalStreamFacts(for: probeItem)
+
+            let playback = try await provider.playbackInfo(
+                for: "replaced", mediaSourceID: "selected", forceTranscode: false)
+            let selected = try XCTUnwrap(playback.item.selectedVersion)
+            XCTAssertEqual(playback.item.mediaInfo?.video?.videoRangeType, "HDR10Plus")
+            XCTAssertEqual(playback.item.mediaInfo?.sourceRevision, revision)
+            XCTAssertEqual(playback.sourceMetadata?.video?.videoRangeType, "HDR10Plus")
+            XCTAssertEqual(playback.sourceMetadata?.sourceRevision, revision)
+            XCTAssertEqual(selected.videoRange, "HDR10Plus")
+            XCTAssertEqual(selected.sourceMetadata?.video?.videoRangeType, "HDR10Plus")
+            XCTAssertEqual(selected.sourceMetadata?.sourceRevision, revision)
+            XCTAssertEqual(selected.width, sparsePlaybackHeaders ? nil : 1920)
+            XCTAssertEqual(selected.height, sparsePlaybackHeaders ? nil : 1080)
+            XCTAssertEqual(selected.videoCodec, sparsePlaybackHeaders ? nil : "hevc")
+            XCTAssertEqual(selected.audioCodec, sparsePlaybackHeaders ? nil : "aac")
+            XCTAssertEqual(selected.audioChannels, sparsePlaybackHeaders ? nil : 2)
+            XCTAssertNil(selected.audioProfile)
+            XCTAssertNil(selected.bitrate)
+            XCTAssertNil(selected.duration)
+            XCTAssertEqual(selected.sizeBytes, 200)
+            XCTAssertEqual(selected.container, "mp4")
+            XCTAssertEqual(selected.id, oldSelected.id)
+            XCTAssertEqual(selected.name, oldSelected.name)
+            XCTAssertEqual(selected.fileName, oldSelected.fileName)
+            XCTAssertEqual(selected.isDefault, oldSelected.isDefault)
+            XCTAssertEqual(playback.item.versions.first { $0.id == "other" }, unrelated)
+            XCTAssertNil(playback.item.mediaInfo?.video?.dolbyVisionProfile)
+            XCTAssertNil(selected.sourceMetadata?.video?.dolbyVisionProfile)
+            XCTAssertNil(playback.sourceMetadata?.video?.dolbyVisionProfile)
+            XCTAssertNil(playback.localRemuxSource?.normalizedDolbyVisionProfile)
+        }
+    }
+
+    func testKnownDolbyVisionDoesNotFilterOutCachedHDR10PlusCarriage() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/Users/u1/Items/dual", json: """
+        {"Id":"dual","Name":"Dual format","Type":"Movie",
+         "MediaStreams":[{"Index":0,"Type":"Video","Codec":"hevc","ExtendedVideoType":"Hdr10"},
+                         {"Index":1,"Type":"Audio","Codec":"eac3"}],
+         "MediaSources":[{"Id":"source","Container":"mkv","ETag":"r1","Size":100}]}
+        """)
+        let prober = StubAuthenticatedStreamProber(
+            facts: .init(videoRangeType: "HDR10Plus", carriesHDR10PlusMetadata: true))
+        let provider = JellyfinProvider(session: makeSession(), http: stub, authenticatedStreamProber: prober)
+        var item = try await provider.item(id: "dual")
+        _ = await provider.supplementalStreamFacts(for: item)
+        item.mediaInfo?.video?.videoRangeType = "DOVI"
+        let cached = await provider.supplementalStreamFacts(for: item)
+        XCTAssertNil(cached?.videoRangeType, "Do not replace the already-known primary Dolby Vision range")
+        XCTAssertEqual(cached?.carriesHDR10PlusMetadata, true)
+        let applied = item.applyingSupplementalStreamFacts(try XCTUnwrap(cached))
+        XCTAssertEqual(applied.mediaInfo?.video?.videoRangeType, "DOVI")
+        let calls = await prober.locators
+        XCTAssertEqual(calls.count, 1)
+    }
+
+    func testProbeCacheRetainsDualFormatProofAcrossIndependentAndUnknownResults() async throws {
+        let store = MediaBrowserProbeDescriptorStore()
+        let sources = try JSONDecoder().decode([MediaSourceInfo].self, from: Data("""
+        [{"Id":"source","Container":"mkv","ETag":"r1","Size":100}]
+        """.utf8))
+        await store.remember(itemID: "movie", sources: sources)
+        let descriptor = await store.descriptor(for: "movie")
+        let revision = try XCTUnwrap(descriptor).revision
+        await store.store(
+            .init(videoRangeType: "DOVI", carriesHDR10PlusMetadata: true),
+            for: revision, requirements: .hdr10Plus)
+        await store.store(.init(audioIsAtmos: true), for: revision, requirements: .atmos)
+        await store.store(.init(videoRangeType: "HDR10Plus"), for: revision, requirements: .hdr10Plus)
+        await store.store(nil, for: revision, requirements: .hdr10Plus)
+        await store.store(
+            .init(videoRangeType: "SDR", carriesHDR10PlusMetadata: false),
+            for: revision, requirements: .hdr10Plus)
+        let cached = await store.cachedResult(for: revision, requirements: [.atmos, .hdr10Plus])
+        XCTAssertTrue(cached.completed)
+        XCTAssertEqual(cached.facts?.videoRangeType, "DOVI")
+        XCTAssertEqual(cached.facts?.carriesHDR10PlusMetadata, true)
+        XCTAssertEqual(cached.facts?.audioIsAtmos, true)
+    }
+
     func testUnconfirmedHDRProbeCannotDowngradeTheSource() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/Users/u1/Items/hdr", json: """

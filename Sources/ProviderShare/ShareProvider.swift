@@ -2,6 +2,7 @@ import Foundation
 import CoreModels
 import CoreNetworking
 import MediaTransportCore
+import os
 
 /// Transport-neutral local media-share provider. Conforms to `MediaProvider`
 /// so Home / browse / search / playback treat a share like any other backend —
@@ -802,14 +803,16 @@ extension ShareProvider: InteractiveBrowseActivityReporting {
 
 extension ShareProvider: SupplementalStreamFactsProviding {
     public func supplementalStreamFacts(for item: MediaItem) async -> ProbedStreamFacts? {
-        guard item.kind == .movie || item.kind == .episode || item.kind == .video,
+        guard !Task.isCancelled,
+              item.kind == .movie || item.kind == .episode || item.kind == .video,
               let streamProber,
               let relativePath = await probeRelativePath(for: item),
               let locator = try? await networkFileLocator(for: relativePath) else {
             return nil
         }
-        return await streamProbeCache.facts(for: locator) {
-            await streamProber.probe(locator: locator)
+        let requirements = SupplementalStreamProbeRequirements.missingNetworkFileFacts(in: item.mediaInfo)
+        return await streamProbeCache.facts(for: locator, requirements: requirements) { missing in
+            await streamProber.probe(locator: locator, requirements: missing)
         }
     }
 
@@ -874,28 +877,104 @@ extension ShareProvider: ResumeStateWriting {
     }
 }
 
-private actor ShareStreamProbeCache {
-    private var completed: Set<NetworkFileLocator> = []
+actor ShareStreamProbeCache {
+    private struct Waiter {
+        let continuation: CheckedContinuation<Bool, Never>
+        let cancelled: OSAllocatedUnfairLock<Bool>
+    }
+
+    private struct Flight {
+        let id: UUID
+        let requirements: SupplementalStreamProbeRequirements
+        let task: Task<Void, Never>
+        var waiters: [UUID: Waiter]
+    }
+
+    private var completed: [NetworkFileLocator: SupplementalStreamProbeRequirements] = [:]
     private var results: [NetworkFileLocator: ProbedStreamFacts] = [:]
-    private var inFlight: [NetworkFileLocator: Task<ProbedStreamFacts?, Never>] = [:]
+    private var inFlight: [NetworkFileLocator: Flight] = [:]
+
+    var pendingWaiterCount: Int { inFlight.values.reduce(0) { $0 + $1.waiters.count } }
+
+    func pendingTask(for locator: NetworkFileLocator) -> Task<Void, Never>? {
+        inFlight[locator]?.task
+    }
 
     func facts(
         for locator: NetworkFileLocator,
-        loader: @escaping @Sendable () async -> ProbedStreamFacts?
+        requirements: SupplementalStreamProbeRequirements,
+        loader: @escaping @Sendable (SupplementalStreamProbeRequirements) async -> ProbedStreamFacts?
     ) async -> ProbedStreamFacts? {
-        if completed.contains(locator) { return results[locator] }
-        if let existing = inFlight[locator] { return await existing.value }
-        let task = Task(priority: .utility) { await loader() }
-        inFlight[locator] = task
-        let facts = await task.value
+        while !Task.isCancelled {
+            let missing = requirements.subtracting(completed[locator, default: []])
+            guard !missing.isEmpty else { return results[locator] }
+            let waiterID = UUID()
+            let cancelled = OSAllocatedUnfairLock(initialState: false)
+            let finished = await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    guard !Task.isCancelled else {
+                        continuation.resume(returning: false)
+                        return
+                    }
+                    let waiter = Waiter(continuation: continuation, cancelled: cancelled)
+                    if inFlight[locator] != nil {
+                        inFlight[locator]?.waiters[waiterID] = waiter
+                    } else {
+                        let flightID = UUID()
+                        let task = Task(priority: .utility) {
+                            let facts = await loader(missing)
+                            self.finish(
+                                locator: locator, flightID: flightID,
+                                facts: facts, cancelled: Task.isCancelled
+                            )
+                        }
+                        inFlight[locator] = Flight(
+                            id: flightID, requirements: missing, task: task,
+                            waiters: [waiterID: waiter]
+                        )
+                    }
+                }
+            } onCancel: {
+                // Record synchronously so a finishing loader cannot cache a
+                // result while this cancellation is queued on the actor.
+                cancelled.withLock { $0 = true }
+                Task { await self.cancelWaiter(waiterID, for: locator) }
+            }
+            guard finished else { return nil }
+            // A coalesced request may need coverage beyond the running scan.
+        }
+        return nil
+    }
+
+    private func cancelWaiter(_ id: UUID, for locator: NetworkFileLocator) {
+        guard let waiter = inFlight[locator]?.waiters.removeValue(forKey: id) else { return }
+        waiter.continuation.resume(returning: false)
+        if inFlight[locator]?.waiters.isEmpty == true {
+            let flight = inFlight.removeValue(forKey: locator)
+            flight?.task.cancel()
+        }
+    }
+
+    private func finish(
+        locator: NetworkFileLocator, flightID: UUID,
+        facts: ProbedStreamFacts?, cancelled: Bool
+    ) {
+        guard let flight = inFlight[locator], flight.id == flightID else { return }
         inFlight[locator] = nil
-        completed.insert(locator)
-        if let facts { results[locator] = facts }
-        return facts
+        let active = flight.waiters.values.filter { !$0.cancelled.withLock { $0 } }
+        let accepted = !cancelled && !active.isEmpty
+        if accepted {
+            completed[locator, default: []].formUnion(flight.requirements.union(.streamDetails))
+            if let facts {
+                results[locator] = results[locator]?.merging(facts) ?? facts
+            }
+        }
+        for waiter in flight.waiters.values {
+            waiter.continuation.resume(returning: accepted && !waiter.cancelled.withLock { $0 })
+        }
     }
 
     func completedFacts(for locator: NetworkFileLocator) -> ProbedStreamFacts? {
-        guard completed.contains(locator) else { return nil }
         return results[locator]
     }
 }

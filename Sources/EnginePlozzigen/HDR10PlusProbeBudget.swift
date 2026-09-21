@@ -1,8 +1,10 @@
 import Foundation
+import AetherEngine
 
 struct HDR10PlusProbeLimits: Sendable {
     var networkBytes = 8 * 1024 * 1024
     var packets = 128
+    /// Inspection threshold after demuxing, not a native allocation ceiling.
     var packetBytes = 2 * 1024 * 1024
     var rangeBytes = 128 * 1024
     var requestTimeout: TimeInterval = 2
@@ -12,6 +14,17 @@ struct HDR10PlusProbeLimits: Sendable {
         networkBytes > 0 && packets > 0 && packetBytes > 0 && rangeBytes > 0
             && requestTimeout.isFinite && requestTimeout > 0
             && wallTimeout.isFinite && wallTimeout > 0 && wallTimeout <= 60
+    }
+
+    /// Engine-delivered input includes rereads, not transport prefetch or wire
+    /// traffic. The HTTP range source independently reserves its request budget.
+    func engineLimits(remainingTime: TimeInterval) -> ProbeLimits {
+        ProbeLimits(
+            maxInputBytes: Int64(networkBytes),
+            maxPackets: packets,
+            maxPacketBytes: packetBytes,
+            timeBudget: remainingTime
+        )
     }
 }
 
@@ -67,68 +80,5 @@ final class HDR10PlusProbeBudget: @unchecked Sendable {
             return action
         }
         action?()
-    }
-}
-
-enum HDR10PlusProbeExecutor {
-    private static let queue = DispatchQueue(label: "com.thatcube.Plozz.hdr10plus-probe", qos: .utility)
-
-    static func run(
-        limits: HDR10PlusProbeLimits = HDR10PlusProbeLimits(),
-        queue: DispatchQueue = queue,
-        operation: @escaping @Sendable (HDR10PlusProbeBudget) -> Bool?
-    ) async -> Bool? {
-        guard limits.isValid else { return nil }
-        let budget = HDR10PlusProbeBudget(limits: limits)
-        let completion = Completion(budget: budget)
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                completion.attach(continuation)
-                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + limits.wallTimeout) {
-                    completion.finish(nil)
-                }
-                queue.async {
-                    guard budget.isActive else {
-                        completion.finish(nil)
-                        return
-                    }
-                    let result = operation(budget)
-                    completion.finish(budget.isActive && result == true ? true : nil)
-                }
-            }
-        } onCancel: {
-            completion.finish(nil)
-        }
-    }
-
-    private final class Completion: @unchecked Sendable {
-        let budget: HDR10PlusProbeBudget
-        private let lock = NSLock()
-        private var continuation: CheckedContinuation<Bool?, Never>?
-        private var finished = false
-        private var result: Bool?
-
-        init(budget: HDR10PlusProbeBudget) { self.budget = budget }
-
-        func attach(_ continuation: CheckedContinuation<Bool?, Never>) {
-            let alreadyFinished = lock.withLock {
-                if !finished { self.continuation = continuation }
-                return finished
-            }
-            if alreadyFinished { continuation.resume(returning: result) }
-        }
-
-        func finish(_ result: Bool?) {
-            let continuation = lock.withLock { () -> CheckedContinuation<Bool?, Never>? in
-                guard !finished else { return nil }
-                finished = true
-                self.result = result == true ? true : nil
-                let value = self.continuation
-                self.continuation = nil
-                return value
-            }
-            budget.cancel()
-            continuation?.resume(returning: result == true ? true : nil)
-        }
     }
 }
