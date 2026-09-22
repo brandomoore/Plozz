@@ -212,7 +212,7 @@ extension SiloProvider {
         let result: SiloDownloadEntry = try await client.request(
             "/downloads/\(try SiloAPI.pathComponent(reference.id))", method: .patch,
             body: JSONEncoder().encode(Body(status: status, revision: reference.revision,
-                                            updated_at: date.ISO8601Format(.iso8601(timeZone: .gmt, includingFractionalSeconds: true)))),
+                                            updated_at: date.ISO8601Format(.init(includingFractionalSeconds: true)))),
             deviceID: session.deviceID)
         guard result.id == reference.id, result.revision == reference.revision else { throw AppError.conflict }
     }

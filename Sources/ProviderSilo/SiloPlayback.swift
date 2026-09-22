@@ -3,10 +3,12 @@ import CoreModels
 import CoreNetworking
 
 struct SiloPlaybackDecision: Decodable, Sendable {
+    struct Terminal: Decodable, Sendable { let reason: String }
     let protocol_version: Int
     let outcome: String
     let session_id: String?
     let playback_plan: SiloPlaybackPlan?
+    let terminal: Terminal?
 }
 
 struct SiloPlaybackPlan: Decodable, Sendable {
@@ -99,16 +101,27 @@ extension SiloProvider: ProviderHTTPResourceResolving {
     public func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool) async throws -> PlaybackRequest {
         let dto: SiloItem = try await client.request("/catalog/items/\(try SiloAPI.pathComponent(itemID))")
         let files = dto.versions ?? []
+        HandoffDiagnostics.emit("silo playback metadata versions=\(files.count) explicitVersion=\(mediaSourceID != nil)")
         let selected = mediaSourceID.flatMap { id in files.first { $0.file_id == id } } ?? files.first
         guard let selected, mediaSourceID == nil || selected.file_id == mediaSourceID else { throw AppError.notFound }
+        func technicalValue(_ value: String) -> String {
+            guard value.count <= 32, value.utf8.allSatisfy({
+                (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0)
+                    || [UInt8(43), 45, 46, 95].contains($0)
+            }) else { return "unrecognized" }
+            return value
+        }
+        HandoffDiagnostics.emit("silo playback source container=\(technicalValue(selected.container)) video=\(technicalValue(selected.codec_video)) audio=\(technicalValue(selected.codec_audio))")
         let capability: SiloPlaybackCapabilities = try await client.request("/playback/capabilities")
+        let fixedSourceSupported = capability.features.contains("fixed_media_file_v1")
+        HandoffDiagnostics.emit("silo playback capabilities available=\(capability.state == "available") allowed=\(capability.allowed) protocol3=\(capability.protocol_versions.contains(3)) fixedSource=\(fixedSourceSupported) installation=\(capability.installation_id != nil)")
         guard capability.state == "available", capability.allowed, capability.protocol_versions.contains(3),
-              let installationID = capability.installation_id,
-              capability.features.contains("fixed_media_file_v1") else { throw AppError.invalidResponse }
+              let installationID = capability.installation_id, !installationID.isEmpty else { throw AppError.invalidResponse }
         let credential = try SiloCredential.decode(session.accessToken)
         let body = SiloPlaybackStart(
             installation_id: installationID, file_id: selected.file_id, profile_id: credential.profileID,
-            capabilities: capabilitiesSnapshot, forceTranscode: forceTranscode)
+            capabilities: capabilitiesSnapshot, forceTranscode: forceTranscode,
+            fixedSourceSupported: fixedSourceSupported)
         let encodedBody = try JSONEncoder().encode(body)
         // Finish an admitted negotiation even if the view disappears, so its
         // session ID can be released rather than lost to cancellation.
@@ -116,11 +129,18 @@ extension SiloProvider: ProviderHTTPResourceResolving {
             try await client.request("/playback/start", method: .post, body: encodedBody)
         }
         let decision = try await negotiation.value
+        let terminalReason = decision.terminal?.reason
+        let safeReason = terminalReason.flatMap { value -> String? in
+            guard value.count <= 80, value.utf8.allSatisfy({ (97...122).contains($0) || $0 == 95 }) else { return nil }
+            return value
+        } ?? "none"
+        HandoffDiagnostics.emit("silo playback decision protocol=\(decision.protocol_version) playable=\(decision.outcome == "playable") plan=\(decision.playback_plan != nil) terminal=\(safeReason)")
         guard decision.protocol_version == 3, decision.outcome == "playable",
               let plan = decision.playback_plan, plan.protocol_version == 3,
               let sessionID = decision.session_id ?? plan.session_id, !sessionID.isEmpty else { throw AppError.invalidResponse }
         do {
             try Task.checkCancellation()
+            HandoffDiagnostics.emit("silo playback plan sameFile=\(plan.effective_media_file_id == selected.file_id) headers=\(plan.stream.headers.count) refreshNone=\(plan.stream.header_refresh == "none") offset=\(plan.timeline.timeline_offset_seconds) seekable=\(plan.timeline.can_seek_anywhere) original=\(plan.delivery == "original_http") hls=\(plan.delivery == "server_remux_hls" || plan.delivery == "server_transcode_hls")")
             guard plan.effective_media_file_id == selected.file_id,
                   plan.stream.headers.isEmpty, plan.stream.header_refresh == "none",
                   plan.timeline.timeline_offset_seconds == 0,
@@ -216,7 +236,9 @@ extension SiloProvider: ProviderHTTPResourceResolving {
         guard locator.provider == .silo, locator.accountID == accountID,
               locator.credentialRevision == credentialRevision else { throw AppError.unauthorized }
         try await client.validateLogin()
-        return try await playback.resource(locator)
+        let url = try await playback.resource(locator)
+        guard let sessionID = locator.playSessionID else { throw AppError.unauthorized }
+        return try await client.authorizedMediaURL(url, sessionID: sessionID)
     }
 }
 
@@ -270,29 +292,34 @@ struct SiloPlaybackStart: Encodable {
     }
     let installation_id: String
     let protocol_version = 3
-    let client_features = ["fixed_media_file_v1", "sequenced_progress_v1"]
+    let client_features: [String]
     let file_id: String
     let profile_id: String
     let playback_attempt_id = UUID().uuidString.lowercased()
     let quality_preference: String
     let subtitle_fidelity_preference = "compatible"
     let metered = false
-    let allow_alternate_versions = false
+    let allow_alternate_versions: Bool?
     let start_position = 0
     let client_capabilities: Codecs
     let client_playback_context: Context
 
-    init(installation_id: String, file_id: String, profile_id: String, capabilities: MediaCapabilities, forceTranscode: Bool) {
+    init(installation_id: String, file_id: String, profile_id: String, capabilities: MediaCapabilities,
+         forceTranscode: Bool, fixedSourceSupported: Bool = true) {
         self.installation_id = installation_id
         self.file_id = file_id
         self.profile_id = profile_id
+        allow_alternate_versions = fixedSourceSupported ? false : nil
+        client_features = ["playback_plan_v3", "sequenced_progress_v1"]
+            + (fixedSourceSupported ? ["fixed_media_file_v1"] : [])
         quality_preference = forceTranscode ? "1080p" : "original"
-        let video = capabilities.allowedDirectPlayVideoCodecs.map(\.rawValue)
+        let hardwareVideo = capabilities.allowedDirectPlayVideoCodecs.map(\.rawValue)
+        let video = MediaCapabilities.plozzigenVideoCodecs
         let audio = ["aac", "ac3", "eac3", "mp3", "alac", "flac", "opus", "vorbis", "dts", "truehd", "pcm_s16le", "pcm_s24le"]
         let containers = ["mp4", "mkv", "mov", "m4v", "mpegts", "ts"]
         let hdr = HDR(hdr10: capabilities.supportsHDR10, hlg: capabilities.supportsHLG,
                       dolby_vision_profiles: capabilities.supportsDolbyVision ? [5, 8] : [])
-        client_capabilities = Codecs(codecs_video: video, codecs_video_hardware: video, codecs_audio: audio,
+        client_capabilities = Codecs(codecs_video: video, codecs_video_hardware: hardwareVideo, codecs_audio: audio,
                                      containers: containers, hdr: capabilities.supportsHDR10 || capabilities.supportsHLG,
                                      hdr_details: hdr)
         #if os(tvOS)
@@ -307,7 +334,7 @@ struct SiloPlaybackStart: Encodable {
             device: .init(platform: platform), output: .init(hdr_details: hdr),
             deliveries: [
                 "original_http": Delivery(enabled: !forceTranscode, containers: containers, video_codecs: video, audio_decode_codecs: audio),
-                "hls": Delivery(enabled: true, containers: ["mp4", "mpegts"], video_codecs: video,
+                "hls": Delivery(enabled: true, containers: ["mp4", "mpegts"], video_codecs: hardwareVideo,
                                 audio_decode_codecs: ["aac", "ac3", "eac3", "alac"])
             ])
     }

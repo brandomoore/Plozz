@@ -306,16 +306,22 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         for (key, value) in [("Imdb", dto.imdb_id), ("Tmdb", dto.tmdb_id), ("Tvdb", dto.tvdb_id)] {
             if let value, !value.isEmpty { ids[key] = value }
         }
+        let itemKind = kind ?? MediaItemKind(rawValue: dto.type ?? "") ?? .unknown
+        let anchor = SiloCatalogIdentity.parse(dto.content_id, kind: itemKind)
+        if let anchor, dto.series_id == nil || dto.series_id == anchor.seriesID {
+            ids.merge(anchor.providerIDs) { declared, _ in declared }
+        }
         return MediaItem(
             id: dto.content_id, title: dto.title, originalTitle: dto.original_title,
-            kind: kind ?? MediaItemKind(rawValue: dto.type ?? "") ?? .unknown,
+            kind: itemKind,
             overview: dto.overview, parentTitle: dto.series_title,
-            seasonNumber: dto.season_number, episodeNumber: dto.episode_number,
+            seasonNumber: dto.season_number ?? anchor?.seasonNumber,
+            episodeNumber: dto.episode_number ?? anchor?.episodeNumber,
             productionYear: dto.year, officialRating: dto.content_rating,
             genres: dto.genres ?? [], people: (dto.cast ?? []).map {
                 MediaPerson(id: $0.person_id ?? $0.name, name: $0.name, role: $0.character,
                             imageURL: resourceURL($0.photo_url))
-            }, studios: dto.studios ?? [], seriesID: dto.series_id,
+            }, studios: dto.studios ?? [], seriesID: dto.series_id ?? anchor?.seriesID,
             runtime: dto.duration_seconds ?? dto.user_data?.duration_seconds ?? dto.runtime.map { $0 * 60 },
             resumePosition: dto.position_seconds ?? dto.user_data?.position_seconds,
             isPlayed: dto.user_state?.played ?? dto.user_data?.played ?? false,
@@ -338,12 +344,18 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         let audio = file.audio_tracks?.first(where: { $0.default }) ?? file.audio_tracks?.first
         let range = (video?.dv_profile ?? 0) > 0 ? "DOVI"
             : video?.hdr10_plus == true ? "HDR10Plus" : video?.video_range_type
+        let resolution = file.resolution.lowercased()
+        let summaryHeight = (resolution.hasSuffix("p") || resolution.hasSuffix("i"))
+            ? Int(resolution.dropLast()).flatMap { (100...16384).contains($0) ? $0 : nil } : nil
         return MediaSourceMetadata(
             container: file.container, fileSizeBytes: file.file_size,
-            video: .init(codec: video?.codec ?? file.codec_video, width: video?.width, height: video?.height,
+            video: .init(codec: video?.codec ?? file.codec_video, width: video?.width,
+                         height: video?.height ?? summaryHeight,
                          bitrate: file.bitrate.multipliedReportingOverflow(by: 1000).overflow ? nil : file.bitrate * 1000,
+                         videoRange: video?.video_range ?? file.hdr.map { $0 ? "HDR" : "SDR" },
                          videoRangeType: range, dolbyVisionProfile: video?.dv_profile),
-            audio: .init(codec: audio?.codec ?? file.codec_audio, profile: audio?.profile, channels: audio?.channels))
+            audio: .init(codec: audio?.codec ?? file.codec_audio, profile: audio?.profile,
+                         channels: audio?.channels, channelLayout: audio?.layout))
     }
 }
 
@@ -384,7 +396,7 @@ extension SiloProvider: WatchStateProviding, ResumeStateWriting, WatchlistProvid
         struct Body: Encodable { let items: [Item] }
         let data = try JSONEncoder().encode(Body(items: [
             Item(media_item_id: itemID, position_ms: Int64(seconds * 1000),
-                 updated_at: capturedAt.ISO8601Format(.iso8601(timeZone: .gmt, includingFractionalSeconds: true)))
+                 updated_at: capturedAt.ISO8601Format(.init(includingFractionalSeconds: true)))
         ]))
         struct Receipt: Decodable, Sendable {
             struct Result: Decodable, Sendable { let media_item_id: String; let status: String; let index: Int }

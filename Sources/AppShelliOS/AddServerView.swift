@@ -15,6 +15,7 @@ struct AddServerView: View {
     @State private var server: MediaServer?
     @State private var jellyfinDiscovery = ServerPickerViewModel(provider: .jellyfin)
     @State private var embyDiscovery = ServerPickerViewModel(provider: .emby)
+    @State private var siloDiscovery = ServerPickerViewModel(provider: .silo)
     @State private var showingPlexSignIn = false
     @State private var validationMessage: String?
 
@@ -42,12 +43,10 @@ struct AddServerView: View {
                     }
 
                     if provider != .plex {
-                        if provider != .silo {
-                            ManagedServerDiscoverySection(
-                                model: discoveryModel,
-                                onSelect: selectDiscoveredServer
-                            )
-                        }
+                        ManagedServerDiscoverySection(
+                            model: discoveryModel,
+                            onSelect: selectDiscoveredServer
+                        )
 
                         TextField("Server address", text: $address)
                             .textContentType(.URL)
@@ -60,6 +59,8 @@ struct AddServerView: View {
                 } footer: {
                     if provider == .plex {
                         Text("Plex sign-in finds every server linked to your account.")
+                    } else if provider == .silo {
+                        Text("Choose a nearby Silo server, or enter its address. Automatic search checks port 8090.")
                     } else {
                         Text("Use a hostname, IP address, or full URL.")
                     }
@@ -100,7 +101,7 @@ struct AddServerView: View {
                 )
             }
             .task(id: provider) {
-                guard provider != .plex, provider != .silo else { return }
+                guard provider != .plex else { return }
                 let model = discoveryModel
                 model.startScan()
                 defer { model.stopScan() }
@@ -115,7 +116,7 @@ struct AddServerView: View {
             showingPlexSignIn = true
             return
         }
-        guard let url = ServerURLNormalizer.normalize(address) else {
+        guard let url = ServerURLNormalizer.normalize(address, defaultPort: provider == .silo ? 8090 : 8096) else {
             validationMessage = "Enter a valid server address."
             return
         }
@@ -128,12 +129,20 @@ struct AddServerView: View {
     }
 
     private var discoveryModel: ServerPickerViewModel {
-        provider == .emby ? embyDiscovery : jellyfinDiscovery
+        switch provider {
+        case .silo: siloDiscovery
+        case .emby: embyDiscovery
+        default: jellyfinDiscovery
+        }
     }
 
     private func selectDiscoveredServer(_ selectedServer: MediaServer) {
         address = selectedServer.baseURL.absoluteString
         validationMessage = nil
+        if provider == .silo {
+            siloDiscovery.select(selectedServer)
+            server = selectedServer
+        }
     }
 
     private func providerChoice(_ provider: ProviderKind) -> some View {
@@ -232,7 +241,12 @@ private struct ManagedServerSignInView: View {
         if server.provider == .silo {
             SiloSignInView(
                 server: server, deviceID: appModel.deviceID,
-                onAuthenticated: { appModel.persist([$0]); onComplete() },
+                onAuthenticated: { session in
+                    var store = UserDefaultsLastServerStore()
+                    store.remember(session.server)
+                    appModel.persist([session])
+                    onComplete()
+                },
                 onCancel: onComplete)
         } else if usesPassword {
             PasswordServerSignInView(

@@ -115,7 +115,12 @@ struct AddAccountView: View {
                 onCancel: navigateBackToChooser
             )
         case .silo:
-            SiloServerAddressView(onContinue: onMediaBrowserServerSelected, onBack: navigateBackToChooser)
+            ServerPickerView(
+                provider: .silo,
+                isPageReady: pageIsReady,
+                signedInServers: signedInServers.filter { $0.server.provider == .silo },
+                onBack: navigateBackToChooser
+            ) { onMediaBrowserServerSelected($0) }
         case .mediaShare:
             AddMediaShareView(
                 isPageReady: pageIsReady,

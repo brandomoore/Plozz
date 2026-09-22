@@ -36,6 +36,12 @@ public struct ProviderBrandMark: View {
         return Self.focusedBrandTint(provider, colorScheme: colorScheme)
     }
 
+    private var badgeBackground: Color {
+        provider == .silo
+            ? Color(red: 0xD6 / 255, green: 0xE5 / 255, blue: 1)
+            : tint.opacity(0.18)
+    }
+
     private var assetName: String {
         switch provider {
         case .jellyfin: "JellyfinLogo"
@@ -77,7 +83,7 @@ public struct ProviderBrandMark: View {
     public var body: some View {
         ZStack {
             if showsBackground {
-                Circle().fill(tint.opacity(0.18))
+                Circle().fill(badgeBackground)
             }
             if let systemSymbolName {
                 glyph(systemSymbolName)

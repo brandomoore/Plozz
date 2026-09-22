@@ -41,6 +41,37 @@ actor SiloClient {
 
     func validateLogin() throws { _ = try currentCredential() }
 
+    func authorizedMediaURL(_ url: URL, sessionID: String) async throws -> URL {
+        let credential = try await authorizedCredential()
+        _ = try currentCredential()
+        guard url.user == nil, url.password == nil else { throw AppError.unauthorized }
+        guard let path = MediaProviderURLIdentity.relativeResourcePath(of: url, under: baseURL) else {
+            // Distributed nodes retain their issued signed transport. Never
+            // send this server's account bearer to another origin.
+            return url
+        }
+        let stream = "/api/v2/stream/\(try SiloAPI.pathComponent(sessionID))"
+        let hls = "/api/v2/playback/transcode/\(sessionID)/"
+        guard path == stream || path.hasPrefix(stream + "/") || path.hasPrefix(hls),
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.fragment == nil else { throw AppError.unauthorized }
+        let unreserved = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+        guard let token = credential.accessToken.addingPercentEncoding(withAllowedCharacters: unreserved) else {
+            throw AppError.unauthorized
+        }
+        // Preserve the exact signed query bytes; only the account-token slot is
+        // replaced. The immutable issued session keeps the chosen Silo profile.
+        var fields = (components.percentEncodedQuery ?? "").split(separator: "&").map(String.init)
+        fields.removeAll {
+            guard let name = $0.split(separator: "=", maxSplits: 1).first else { return false }
+            return String(name).removingPercentEncoding?.lowercased() == "token"
+        }
+        fields.append("token=" + token)
+        components.percentEncodedQuery = fields.joined(separator: "&")
+        guard let authorized = components.url else { throw AppError.invalidResponse }
+        return authorized
+    }
+
     func downloadHeaders(deviceID: String) async throws -> [String: String] {
         let credential = try await authorizedCredential()
         _ = try currentCredential()
@@ -121,6 +152,33 @@ actor SiloClient {
             let refreshed = try await authorizedCredential(rejectedToken: credential.accessToken)
             endpoint.headers["Authorization"] = "Bearer \(refreshed.accessToken)"
             result = try await http.sendRaw(endpoint, baseURL: baseURL)
+        }
+        if !(200...299).contains(result.1.statusCode) {
+            let operation = path.hasPrefix("/catalog/items/") ? "catalog/item"
+                : path.hasPrefix("/playback/") && path != "/playback/start" && path != "/playback/capabilities"
+                    ? "playback/session" : path
+            struct Problem: Decodable {
+                struct Field: Decodable { let location: String; let code: String }
+                let type: String?
+                let errors: [Field]?
+            }
+            let problem = try? JSONDecoder().decode(Problem.self, from: result.0)
+            let code = problem?.type.flatMap { URL(string: $0)?.lastPathComponent }
+            let safeCode = code.flatMap { value -> String? in
+                guard value.count <= 80, value.utf8.allSatisfy({
+                    (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 || $0 == 95
+                }) else { return nil }
+                return value
+            } ?? "unclassified"
+            let fields = (problem?.errors ?? []).prefix(6).compactMap { field -> String? in
+                let value = field.location + ":" + field.code
+                guard value.count <= 180, value.utf8.allSatisfy({
+                    (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0)
+                        || [UInt8(45), 46, 58, 91, 93, 95].contains($0)
+                }) else { return nil }
+                return value
+            }.joined(separator: ",")
+            HandoffDiagnostics.emit("silo api rejected operation=\(operation) status=\(result.1.statusCode) problem=\(safeCode) fields=\(fields)")
         }
         switch result.1.statusCode {
         case 200...299: break

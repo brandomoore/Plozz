@@ -62,7 +62,9 @@ public final class ServerPickerViewModel {
         store: LastServerStoring = UserDefaultsLastServerStore()
     ) {
         self.provider = provider
-        self.discovery = discovery ?? UDPServerDiscovery(provider: provider)
+        self.discovery = discovery ?? (provider == .silo
+            ? SiloServerDiscovery() as any ServerDiscovering
+            : UDPServerDiscovery(provider: provider) as any ServerDiscovering)
         self.validator = validator ?? ServerValidator(provider: provider)
         self.store = store
     }
@@ -131,7 +133,7 @@ public final class ServerPickerViewModel {
     /// Starts a LAN scan, appending servers as they answer. In parallel, probes
     /// every recent server directly so we can tell the user whether each is
     /// online even when broadcast discovery comes back empty.
-    public func startScan(timeout: TimeInterval = 6) {
+    public func startScan(timeout: TimeInterval? = nil) {
         scanTask?.cancel()
         reachabilityTask?.cancel()
         discoveredServers = []
@@ -144,7 +146,7 @@ public final class ServerPickerViewModel {
 
         scanTask = Task { [weak self] in
             guard let self else { return }
-            for await server in discovery.discover(timeout: timeout) {
+            for await server in discovery.discover(timeout: timeout ?? (provider == .silo ? 12 : 6)) {
                 if Task.isCancelled { break }
                 self.merge(server)
             }
@@ -197,6 +199,12 @@ public final class ServerPickerViewModel {
         // Hearing from a server on the LAN is definitive: mark it present and
         // reachable so its row (recent or discovered) reads "On your network".
         lanKeys.insert(key)
+        if let known = (signedInServers.map(\.server) + recentServers).first(where: {
+            ServerIdentity.isSame($0, server)
+        }) {
+            lanKeys.insert(ServerIdentity.key(for: known))
+            return
+        }
         // A server we already have an account on is shown in the signed-in
         // group — don't also list it under discovered.
         if signedInKeys.contains(key) { return }

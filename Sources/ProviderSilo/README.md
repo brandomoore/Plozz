@@ -7,6 +7,13 @@ require server verification. Each connection retains that server profile's
 library restrictions and watch history; Plozz profiles choose which connections
 they use.
 
+Nearby-server search probes Silo's standard HTTP port 8090 on directly connected
+private IPv4 LANs. It validates the native v2 system identity and pairing
+capability before displaying a result. The scan is bounded and stops when the
+picker closes; it never signs in automatically. Saved servers remain one-tap
+choices. Custom ports, remote/Tailscale addresses, IPv6-only hosts and reverse
+proxy paths remain available through manual URL entry.
+
 ## Contracts
 
 - Native device-pairing protocol 2 and playback protocol 3. Check capability
@@ -20,12 +27,28 @@ they use.
   token. Silo logins are not cloned through device-to-device credential transfer
   or iCloud Keychain; another device pairs independently.
 - Catalog requests use native cursor pagination and explicit `seek` windows.
+  Lightweight cards inherit missing external identities from Silo's frozen
+  provider-anchored content-ID scheme, so the identity index can match owned
+  copies before a detail page is opened. Explicit detail fields win; an
+  episode's embedded series anchor is never treated as its own episode ID.
+  Episode file resolution and coarse HDR/SDR fields fill missing track-level
+  metadata for hero badges; detailed track facts take precedence. Unknown audio
+  channels never imply stereo or surround.
   Progress is read through the paged, library-scoped progress endpoint; Home's
   native next-up selections are corroborated before inclusion in a restricted
   library view. Versions use the original Silo file ID.
-- Playback advertises the capabilities of Plozz's existing players and requests
-  a fixed source file. Signed stream and subtitle URLs stay behind in-memory,
-  account/revision-bound locators. The provider accepts original HTTP or HLS
+- Playback requests a fixed file when the server advertises that optional
+  extension. Older protocol-3 servers remain supported, but a returned plan
+  naming a different file is always rejected and released. Signed stream and
+  subtitle URLs stay behind in-memory,
+  account/revision-bound locators. A signed `st` reference is not account
+  authentication: the current login bearer is added through Silo's documented
+  media-element `token` query fallback only at I/O resolution, only for the
+  configured origin and the exact issued native session path. Signed query
+  bytes are preserved and foreign origins never receive the account bearer.
+  Original-file delivery advertises Plozzigen's software codecs (including VP9),
+  separately from hardware decode and native remote-HLS capabilities.
+  The provider accepts original HTTP or HLS
   plans with a source-aligned seekable timeline; incompatible plans are released,
   not played with an incorrect clock. Progress samples are sequenced and stop
   requests carry an idempotent stop identifier.

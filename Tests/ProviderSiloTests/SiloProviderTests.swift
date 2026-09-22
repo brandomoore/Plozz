@@ -68,6 +68,8 @@ extension SiloProviderTests {
     XCTAssertFalse(locator.resource.path.contains("stream-secret"))
     let url = try await provider.resolveHTTPResource(locator)
     XCTAssertTrue(url.absoluteString.contains("st=stream-secret"))
+    XCTAssertTrue(url.absoluteString.contains("token=access-secret"))
+    XCTAssertTrue(locator.resource.queryItems.isEmpty)
     let progress = PlaybackProgress(
       itemID: "movie:1", playSessionID: "session1", positionSeconds: 140, isPaused: false)
     try await provider.reportPlayback(progress, event: .start)
@@ -397,7 +399,7 @@ final class SiloProviderTests: XCTestCase {
     let raw = try credential().encoded()
     let http = SiloHTTPStub([
       "/api/v2/catalog": """
-      {"items":[{"content_id":"movie:1","type":"movie","title":"Example","runtime":100}],
+      {"items":[{"content_id":"movie-tmdb-9799","type":"movie","title":"Example","runtime":100}],
       "total":301,"total_exact":true,"window_cursor":"window"}
       """
     ])
@@ -407,7 +409,8 @@ final class SiloProviderTests: XCTestCase {
       in: "library1", kind: .movie, page: .init(startIndex: 240, limit: 60))
     XCTAssertEqual(page.startIndex, 240)
     XCTAssertEqual(page.totalCount, 301)
-    XCTAssertEqual(page.items.first?.id, "movie:1")
+    XCTAssertEqual(page.items.first?.id, "movie-tmdb-9799")
+    XCTAssertEqual(page.items.first?.providerID(.tmdb), "9799")
     XCTAssertEqual(page.items.first?.runtime, 6000)
     XCTAssertEqual(page.items.first?.libraryID, "library1")
     let requests = await http.requests
@@ -415,11 +418,183 @@ final class SiloProviderTests: XCTestCase {
       requests.first?.queryItems.contains(URLQueryItem(name: "seek", value: "240")) == true)
   }
 
+  func testProtocolThreePlaybackWorksWithoutOptionalFixedFileExtension() async throws {
+    let raw = try credential().encoded()
+    var responses = playbackResponses()
+    responses["/api/v2/playback/capabilities"] = responses["/api/v2/playback/capabilities"]?
+      .replacingOccurrences(
+        of: #""features":["fixed_media_file_v1"]"#, with: #""features":["playback_plan_v3"]"#)
+    let http = SiloHTTPStub(responses)
+    let provider = try SiloProvider(
+      context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    let request = try await provider.playbackInfo(for: "movie:1")
+    XCTAssertEqual(request.playSessionID, "session1")
+    let requests = await http.requests
+    let sent = try XCTUnwrap(requests.first { $0.path == "/api/v2/playback/start" }?.body)
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: sent) as? [String: Any])
+    XCTAssertNil(body["allow_alternate_versions"])
+  }
+
+  func testOlderServerCannotSubstituteAnUnrequestedVersion() async throws {
+    let raw = try credential().encoded()
+    var responses = playbackResponses()
+    responses["/api/v2/playback/capabilities"] = responses["/api/v2/playback/capabilities"]?
+      .replacingOccurrences(
+        of: #""features":["fixed_media_file_v1"]"#, with: #""features":["playback_plan_v3"]"#)
+    responses["/api/v2/playback/start"] = responses["/api/v2/playback/start"]?
+      .replacingOccurrences(
+        of: #""effective_media_file_id":"42""#, with: #""effective_media_file_id":"43""#)
+    let http = SiloHTTPStub(responses)
+    let provider = try SiloProvider(
+      context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    do {
+      _ = try await provider.playbackInfo(for: "movie:1")
+      XCTFail("A different returned file must not play")
+    } catch { XCTAssertEqual(error as? AppError, .invalidResponse) }
+    let requests = await http.requests
+    XCTAssertTrue(
+      requests.contains { $0.method == .delete && $0.path == "/api/v2/playback/session1" })
+  }
+
+  func testExplicitItemMetadataWinsOverEncodedCatalogAnchor() async throws {
+    let raw = try credential().encoded()
+    let http = SiloHTTPStub([
+      "/api/v2/catalog/items/movie-tmdb-9799":
+        #"{"content_id":"movie-tmdb-9799","type":"movie","title":"Example","tmdb_id":"1234"}"#
+    ])
+    let provider = try SiloProvider(
+      context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    let item = try await provider.item(id: "movie-tmdb-9799")
+    XCTAssertEqual(item.providerID(.tmdb), "1234")
+  }
+
   func testMalformedPathIsRejected() {
     for value in ["", "..", "a/b", "a\\b", "a\nb"] {
       XCTAssertThrowsError(try SiloAPI.pathComponent(value))
     }
     XCTAssertEqual(try SiloAPI.pathComponent("movie:1"), "movie:1")
+  }
+
+  func testMediaBearerPreservesSignatureAndNeverLeavesIssuedOriginAndSession() async throws {
+    let raw = try credential().encoded()
+    let client = try SiloClient(
+      context: context(raw), store: SiloCredentialStub(raw), http: SiloHTTPStub([:]))
+    let original = URL(
+      string: "https://silo.test/base/api/v2/stream/session1?st=a%2Bb%2Fc%3D&token=stale&x=1")!
+    let resolved = try await client.authorizedMediaURL(original, sessionID: "session1")
+    let query = try XCTUnwrap(
+      URLComponents(url: resolved, resolvingAgainstBaseURL: false)?.percentEncodedQuery)
+    XCTAssertTrue(query.contains("st=a%2Bb%2Fc%3D"))
+    XCTAssertTrue(query.contains("token=access-secret"))
+    XCTAssertFalse(query.contains("stale"))
+    let foreign = URL(string: "https://node.test/stream/session1?st=node-grant")!
+    let delegated = try await client.authorizedMediaURL(foreign, sessionID: "session1")
+    XCTAssertEqual(delegated, foreign)
+    for path in [
+      "/api/v2/stream/other-session", "/api/v2/stream/session1suffix", "/api/v2/auth/login",
+    ] {
+      do {
+        _ = try await client.authorizedMediaURL(
+          URL(string: "https://silo.test/base" + path)!, sessionID: "session1")
+        XCTFail("Account bearer must not authorize an unrelated resource")
+      } catch { XCTAssertEqual(error as? AppError, .unauthorized) }
+    }
+  }
+
+  func testPlaybackAdvertisesSoftwareDecodeWithoutClaimingHardwareOrHLS() throws {
+    let body = SiloPlaybackStart(
+      installation_id: "instance", file_id: "file1", profile_id: "profile1",
+      capabilities: .init(supportsHEVC: false, supportsAV1: false), forceTranscode: false)
+    let encoded = try JSONEncoder().encode(body)
+    let data = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let codecs = try XCTUnwrap(data["client_capabilities"] as? [String: Any])
+    let context = try XCTUnwrap(data["client_playback_context"] as? [String: Any])
+    let deliveries = try XCTUnwrap(context["deliveries"] as? [String: [String: Any]])
+    let original = try XCTUnwrap(deliveries["original_http"]?["video_codecs"] as? [String])
+    XCTAssertEqual(codecs["codecs_video"] as? [String], MediaCapabilities.plozzigenVideoCodecs)
+    for codec in ["vp9", "vp8", "av1", "hevc", "mpeg4", "mpeg2video", "vc1"] {
+      XCTAssertTrue(original.contains(codec))
+    }
+    XCTAssertEqual(codecs["codecs_video_hardware"] as? [String], ["h264"])
+    XCTAssertEqual(deliveries["hls"]?["video_codecs"] as? [String], ["h264"])
+  }
+
+  func testResumeWriteCarriesRFC3339TimezoneAndOriginalEventTime() async throws {
+    let raw = try credential().encoded()
+    let http = SiloHTTPStub([
+      "/api/v2/sync/progress":
+        #"{"items":[{"media_item_id":"movie:1","status":"success","index":0}]}"#
+    ])
+    let provider = try SiloProvider(
+      context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    try await provider.setResumePosition(
+      42.125, itemID: "movie:1", capturedAt: Date(timeIntervalSince1970: 1767323045.25))
+    let requests = await http.requests
+    let data = try XCTUnwrap(requests.first?.body)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let item = try XCTUnwrap((object["items"] as? [[String: Any]])?.first)
+    XCTAssertEqual(item["position_ms"] as? Int64, 42125)
+    XCTAssertEqual(item["updated_at"] as? String, "2026-01-02T03:04:05.250Z")
+  }
+
+  func testEpisodeBadgesUseFileSummaryWhenDetailedTracksAreMissing() async throws {
+    let raw = try credential().encoded()
+    let http = SiloHTTPStub([
+      "/api/v2/catalog/items/episode-tvdb-353367-1-1": """
+      {"content_id":"episode-tvdb-353367-1-1","type":"episode","title":"Episode",
+       "versions":[{"file_id":"vp9-file","resolution":"1080p","hdr":false,
+       "codec_video":"vp9","codec_audio":"aac","container":"mkv",
+       "file_size":100,"duration":2100,"bitrate":2000}]}
+      """
+    ])
+    let provider = try SiloProvider(
+      context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    let item = try await provider.item(id: "episode-tvdb-353367-1-1")
+    XCTAssertEqual(item.mediaInfo?.video?.height, 1080)
+    XCTAssertNil(item.mediaInfo?.video?.width, "A resolution tier does not supply the actual width")
+    XCTAssertEqual(item.mediaInfo?.video?.videoRange, "SDR")
+    XCTAssertEqual(item.technicalBadges.map(\.label), ["1080p", "SDR"])
+    XCTAssertEqual(item.versions.first?.technicalBadges, item.technicalBadges)
+    XCTAssertTrue(
+      item.mediaInfo?.audioBadges.isEmpty == true, "Unknown channel count must not invent surround")
+  }
+
+  func testDownloadStatusCarriesRFC3339TimezoneAndOriginalEventTime() async throws {
+    let raw = try credential().encoded()
+    let http = SiloHTTPStub(["PATCH /api/v2/downloads/download1": downloadEntry])
+    let provider = try SiloProvider(
+      context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    try await provider.reportDownload(
+      .init(id: "download1", revision: 2), status: "completed",
+      at: Date(timeIntervalSince1970: 1767323045.25))
+    let requests = await http.requests
+    let data = try XCTUnwrap(requests.first?.body)
+    let item = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(item["updated_at"] as? String, "2026-01-02T03:04:05.250Z")
+    XCTAssertEqual(item["revision"] as? Int, 2)
+  }
+
+  func testEpisodeBadgesKeepDetailedHDRAndAudioFactsPerVersion() async throws {
+    let raw = try credential().encoded()
+    let http = SiloHTTPStub([
+      "/api/v2/catalog/items/episode-tvdb-353367-1-1": """
+      {"content_id":"episode-tvdb-353367-1-1","type":"episode","title":"Episode",
+       "versions":[{"file_id":"hdr-file","resolution":"1080p","hdr":true,
+       "codec_video":"hevc","codec_audio":"eac3","container":"mkv",
+       "file_size":100,"duration":2100,"bitrate":12000,
+       "video_tracks":[{"width":3840,"height":2160,"video_range_type":"HDR10"}],
+       "audio_tracks":[{"codec":"eac3","channels":6,"layout":"5.1","default":true}]}]}
+      """
+    ])
+    let provider = try SiloProvider(
+      context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    let item = try await provider.item(id: "episode-tvdb-353367-1-1")
+    XCTAssertEqual(
+      item.mediaInfo?.video?.height, 2160, "Detailed track dimensions outrank summary labels")
+    XCTAssertTrue(item.technicalBadges.map(\.label).contains("HDR10"))
+    XCTAssertTrue(item.technicalBadges.map(\.label).contains("4K"))
+    XCTAssertTrue(item.technicalBadges.map(\.accessibilityText).contains("Dolby Digital+ 5.1"))
+    XCTAssertEqual(item.versions.first?.technicalBadges, item.technicalBadges)
   }
 
   func testPlaybackClaimsDoNotInventHeaderRefreshOrHDR10PlusOutput() throws {

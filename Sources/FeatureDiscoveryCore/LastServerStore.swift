@@ -32,6 +32,9 @@ public enum ServerIdentity {
     public static func isSame(_ a: MediaServer, _ b: MediaServer) -> Bool {
         guard a.provider == b.provider else { return false }
         if !a.id.isEmpty, !b.id.isEmpty, a.id == b.id { return true }
+        if a.provider == .silo {
+            return MediaProviderURLIdentity.relativeResourcePath(of: a.baseURL, under: b.baseURL) == "/"
+        }
         return a.baseURL.host == b.baseURL.host && a.baseURL.port == b.baseURL.port
     }
 

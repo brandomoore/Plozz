@@ -105,6 +105,11 @@ public struct MediaCapabilities: Sendable, Equatable {
     /// (true of every Apple TV 4K); AV1, Dolby Vision, Atmos, DTS passthrough and
     /// multichannel output are **not** assumed.
     public static let `default` = MediaCapabilities()
+
+    /// Decodable by the bundled Plozzigen pipeline, including software fallbacks.
+    public static let plozzigenVideoCodecs = [
+        "h264", "hevc", "mpeg4", "vc1", "mpeg2video", "vp8", "vp9", "av1"
+    ]
 }
 
 // MARK: - Supporting value types

@@ -51,6 +51,16 @@ public struct ServerPickerView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 header
+                if provider == .silo {
+                    HStack(spacing: 18) {
+                        ProviderBrandMark(provider: .silo, size: 60)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Connect to Silo").font(.title2.bold())
+                            Text("Choose a nearby or saved server, then approve the pairing.")
+                                .font(.callout).plozzForeground(.secondary)
+                        }
+                    }
+                }
 
                 // One combined card: recently-used servers (reconnect targets,
                 // including manual/Tailscale entries) first, then anything new
@@ -101,7 +111,7 @@ public struct ServerPickerView: View {
 
                 PickerPanel(
                     title: "Enter address",
-                    footer: "Enter an IP address or full URL, e.g. 192.168.1.10 or \(provider == .emby ? "emby.example.com" : "jelly.example.com")"
+                    footer: manualEntryFooter
                 ) {
                     VStack(alignment: .leading, spacing: 18) {
                         TextField("Server address", text: $viewModel.manualURLText)
@@ -152,6 +162,13 @@ public struct ServerPickerView: View {
     }
 
     // MARK: - Header (in-bounds Back + Rescan)
+
+    private var manualEntryFooter: LocalizedStringResource {
+        if provider == .silo {
+            return "Automatic search checks nearby servers on port 8090. For a custom port, remote server or reverse proxy, enter the address you use in a browser."
+        }
+        return "Enter an IP address or full URL, e.g. 192.168.1.10 or \(provider == .emby ? "emby.example.com" : "jelly.example.com")"
+    }
 
     private var header: some View {
         HStack {
@@ -328,13 +345,13 @@ public struct ServerPickerView: View {
 /// to FeatureDiscovery so the picker reads as Settings without depending on it.
 private struct PickerPanel<Content: View, Accessory: View>: View {
     var title: LocalizedStringResource? = nil
-    var footer: String? = nil   // l10n:content — server-supplied footer detail
+    var footer: LocalizedStringResource? = nil
     var titleAccessory: () -> Accessory
     var content: () -> Content
 
     init(
         title: LocalizedStringResource? = nil,
-        footer: String? = nil,   // l10n:content — server-supplied footer detail
+        footer: LocalizedStringResource? = nil,
         @ViewBuilder titleAccessory: @escaping () -> Accessory = { EmptyView() },
         @ViewBuilder content: @escaping () -> Content
     ) {

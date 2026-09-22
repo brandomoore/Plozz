@@ -242,7 +242,7 @@ public final class UDPServerDiscovery: ServerDiscovering, @unchecked Sendable {
             if seen.insert(addr).inserted { targets.append(addr) }
         }
 
-        for iface in localIPv4Interfaces() {
+        for iface in LANIPv4Interface.active() {
             let host = UInt32(bigEndian: iface.address)
             let mask = UInt32(bigEndian: iface.netmask)
             guard mask != 0 else { continue }
@@ -274,36 +274,6 @@ public final class UDPServerDiscovery: ServerDiscovering, @unchecked Sendable {
 
         append(INADDR_BROADCAST)  // 255.255.255.255 (byte-order agnostic)
         return targets
-    }
-
-    private struct Interface { let address: in_addr_t; let netmask: in_addr_t }
-
-    /// Active, broadcast-capable, non-loopback IPv4 LAN interfaces and their
-    /// netmasks. Point-to-point links (VPN tunnels, cellular) are skipped: a
-    /// unicast LAN sweep over them is meaningless and a broadcast is undeliverable.
-    private static func localIPv4Interfaces() -> [Interface] {
-        var result: [Interface] = []
-        var head: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&head) == 0, let first = head else { return result }
-        defer { freeifaddrs(head) }
-
-        var ptr: UnsafeMutablePointer<ifaddrs>? = first
-        while let cur = ptr {
-            defer { ptr = cur.pointee.ifa_next }
-            let flags = Int32(cur.pointee.ifa_flags)
-            guard let sa = cur.pointee.ifa_addr,
-                  sa.pointee.sa_family == sa_family_t(AF_INET),
-                  (flags & IFF_UP) != 0,
-                  (flags & IFF_LOOPBACK) == 0,
-                  (flags & IFF_POINTOPOINT) == 0,
-                  (flags & IFF_BROADCAST) != 0,
-                  let nm = cur.pointee.ifa_netmask else { continue }
-
-            let address = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr.s_addr }
-            let netmask = nm.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr.s_addr }
-            result.append(Interface(address: address, netmask: netmask))
-        }
-        return result
     }
 
     private static func ipString(from addr: sockaddr_in) -> String {

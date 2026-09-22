@@ -78,6 +78,7 @@ struct SiloFileVersion: Decodable, Sendable {
     let file_name: String?
     let edition_raw: String?
     let resolution: String
+    let hdr: Bool?
     let codec_video: String
     let codec_audio: String
     let container: String
@@ -93,6 +94,7 @@ struct SiloVideoTrack: Decodable, Sendable {
     let codec: String?
     let width: Int?
     let height: Int?
+    let video_range: String?
     let video_range_type: String?
     let hdr10_plus: Bool?
     let dv_profile: Int?
@@ -101,6 +103,7 @@ struct SiloVideoTrack: Decodable, Sendable {
 struct SiloAudioTrack: Decodable, Sendable {
     let codec: String?
     let channels: Int?
+    let layout: String?
     let profile: String?
     let language: String?
     let title: String?
