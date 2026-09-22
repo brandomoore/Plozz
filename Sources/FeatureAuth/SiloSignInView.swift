@@ -6,56 +6,59 @@ import FeatureAuthCore
 import ProviderSilo
 
 private enum SiloSignInFocus: Hashable {
-    case profile(String), pin, confirm, retry, cancel
+    case profile(String), pin, confirm, retry, profiles, cancel
 }
 
 public struct SiloSignInView: View {
     @State private var model: SiloAuthViewModel
     @FocusState private var focused: SiloSignInFocus?
+    @Environment(\.scenePhase) private var scenePhase
+    private let server: MediaServer
     private let onCancel: () -> Void
 
     public init(server: MediaServer, deviceID: String,
                 onAuthenticated: @escaping (UserSession) -> Void, onCancel: @escaping () -> Void) {
-        _model = State(initialValue: SiloAuthViewModel(server: server, deviceID: deviceID, onAuthenticated: onAuthenticated))
+        self.init(viewModel: SiloAuthViewModel(server: server, deviceID: deviceID, onAuthenticated: onAuthenticated),
+                  server: server, onCancel: onCancel)
+    }
+
+    public init(viewModel: SiloAuthViewModel, server: MediaServer, onCancel: @escaping () -> Void) {
+        _model = State(initialValue: viewModel)
+        self.server = server
         self.onCancel = onCancel
     }
 
     public var body: some View {
         GeometryReader { geometry in
             ScrollView {
-                VStack(spacing: 32) {
-                    Spacer(minLength: 24)
-                    VStack(spacing: 18) {
-                        HStack(spacing: 12) {
-                            ProviderBrandMark(provider: .silo, size: 52)
-                            Text(verbatim: "Silo").font(.headline).foregroundStyle(.secondary)
-                        }
-                        Text(title).font(.largeTitle.bold()).multilineTextAlignment(.center)
-                        if case .profiles = model.phase {
-                            Text("Your library access and watch history follow this profile.")
-                                .font(.body).foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                    }
+                VStack(spacing: 28) {
+                    SiloSignInHeader(title: title, address: server.baseURL.absoluteString,
+                                     choosingProfile: isChoosingProfile)
                     content
-                    Button("Cancel", action: cancel)
+                    Button("Back", action: cancel)
+                        .buttonStyle(.bordered)
                         .focused($focused, equals: .cancel)
                         .padding(.top, 12)
-                    Spacer(minLength: 24)
                 }
-                .frame(maxWidth: 960)
-                .padding(.horizontal, 32)
-                .padding(.vertical, 24)
+                .frame(maxWidth: 1040)
+                .padding(.horizontal, 28)
+                .padding(.vertical, 32)
                 .frame(maxWidth: .infinity, minHeight: geometry.size.height)
             }
             .scrollClipDisabled()
         }
         .defaultFocus($focused, preferredFocus)
         #if os(tvOS)
-        .onExitCommand(perform: cancel)
+        .onExitCommand {
+            if case .pin = model.phase { model.chooseAnotherProfile() }
+            else { cancel() }
+        }
         #endif
         .task { if model.phase == .idle { model.start() } }
         .onChange(of: model.phase) { _, _ in focused = preferredFocus }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { model.checkPairingExpiry() }
+        }
         .onDisappear { model.cancel() }
     }
 
@@ -63,15 +66,23 @@ public struct SiloSignInView: View {
         switch model.phase {
         case .profiles: "Choose your Silo profile"
         case .pin: "Unlock your profile"
+        case .pairing: "Approve this device"
+        case .expired: "Your code has expired"
+        case .error: "Let's get you connected"
         default: "Connect to Silo"
         }
+    }
+
+    private var isChoosingProfile: Bool {
+        if case .profiles = model.phase { return true }
+        return false
     }
 
     private var preferredFocus: SiloSignInFocus {
         switch model.phase {
         case let .profiles(profiles): profiles.first.map { .profile($0.id) } ?? .cancel
         case .pin: .pin
-        case .error: .retry
+        case .error, .expired: .retry
         default: .cancel
         }
     }
@@ -85,40 +96,203 @@ public struct SiloSignInView: View {
     private var content: some View {
         switch model.phase {
         case .idle, .loading:
-            ProgressView("Connecting…")
+            ProgressView(model.operation.message)
+                .padding(.vertical, 44)
         case let .pairing(code, match, url, expiresAt):
-            VStack(spacing: 20) {
-                Text("Scan this code and approve Plozz in your Silo account.")
-                    .multilineTextAlignment(.center)
-                BrandQRCodeView(payload: url.absoluteString, size: 240)
-                Text(url.absoluteString).font(.callout).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Text(code).font(.largeTitle.monospaced().bold())
-                Text("Check that the confirmation code is \(match).")
-                Text(expiresAt, style: .timer).monospacedDigit().foregroundStyle(.secondary)
-            }
+            SiloPairingCard(code: code, match: match, approvalURL: url,
+                            verificationURL: model.verificationURL, expiresAt: expiresAt)
         case let .profiles(profiles):
             SiloProfileChoices(profiles: profiles, focused: $focused, select: model.select)
         case let .pin(profile):
             VStack(spacing: 20) {
-                Text(profile.name).font(.title2.weight(.semibold))
+                Label(profile.name, systemImage: "lock.fill")
+                    .font(.title2.weight(.semibold))
+                Text("Enter the PIN you use for this profile in Silo.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
                 SecureField("Profile PIN", text: $model.pin)
-                    .textContentType(.oneTimeCode)
+                    .textContentType(.password)
                     .focused($focused, equals: .pin)
                     .frame(maxWidth: 400)
                     .onSubmit { model.submitPIN(profile) }
                 if let error = model.pinError { Text(error).foregroundStyle(.red) }
                 Button("Continue") { model.submitPIN(profile) }
+                    .buttonStyle(.borderedProminent)
                     .focused($focused, equals: .confirm)
-                    .disabled(model.pin.isEmpty)
+                    .disabled(model.pin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Choose another profile") { model.chooseAnotherProfile() }
+                    .buttonStyle(.bordered)
+                    .focused($focused, equals: .profiles)
+            }
+        case .expired:
+            VStack(spacing: 20) {
+                Image(systemName: "clock.arrow.circlepath").font(.largeTitle)
+                    .foregroundStyle(.secondary)
+                Text("Get a new code to continue. No server has been added.")
+                    .multilineTextAlignment(.center)
+                Button("Get a new code") { model.start() }
+                    .buttonStyle(.borderedProminent)
+                    .focused($focused, equals: .retry)
             }
         case let .error(message):
             VStack(spacing: 20) {
                 Text(message).multilineTextAlignment(.center)
-                Button("Try Again") { model.start() }
+                Button("Try Again") { model.retry() }
+                    .buttonStyle(.borderedProminent)
                     .focused($focused, equals: .retry)
             }
         }
+    }
+}
+
+private struct SiloSignInHeader: View {
+    let title: LocalizedStringResource
+    let address: String
+    let choosingProfile: Bool
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ProviderBrandMark(provider: .silo, size: 60)
+            OnboardingHeader(Text(title), subtitle: Text(verbatim: address))
+            if choosingProfile {
+                Label("Device approved", systemImage: "checkmark.circle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text("Your library access and watch history follow this profile.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+    }
+}
+
+private struct SiloPairingCard: View {
+    let code: String
+    let match: String
+    let approvalURL: URL
+    let verificationURL: URL?
+    let expiresAt: Date
+    @Environment(\.openURL) private var openURL
+    @State private var browserFailed = false
+
+    var body: some View {
+        VStack(spacing: 24) {
+            #if os(tvOS)
+            HStack(alignment: .center, spacing: 44) {
+                SiloPairingQRCode(url: approvalURL, size: 300)
+                SiloPairingInstructions(code: code, match: match, verificationURL: verificationURL)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            #else
+            VStack(spacing: 16) {
+                Text("Approve Plozz in your browser, then return here. We'll continue automatically.")
+                    .multilineTextAlignment(.center)
+                Button {
+                    browserFailed = false
+                    openURL(approvalURL) { accepted in browserFailed = !accepted }
+                } label: {
+                    Label("Open Silo to approve", systemImage: "arrow.up.forward.app")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                if browserFailed {
+                    Text("The browser couldn't open. Use the address below or scan the code with another device.")
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                }
+                SiloPairingInstructions(code: code, match: match, verificationURL: verificationURL)
+                DisclosureGroup("Use another device") {
+                    SiloPairingQRCode(url: approvalURL, size: 220)
+                        .padding(.vertical, 12)
+                }
+            }
+            .frame(maxWidth: 520)
+            #endif
+            SiloPairingStatus(expiresAt: expiresAt)
+        }
+        .onChange(of: approvalURL) { _, _ in browserFailed = false }
+    }
+}
+
+private struct SiloPairingQRCode: View {
+    let url: URL
+    let size: CGFloat
+
+    var body: some View {
+        VStack(spacing: 14) {
+            BrandQRCodeView(payload: url.absoluteString,
+                            moduleColor: Color(red: 0.08, green: 0.22, blue: 0.50), size: size)
+                .padding(20)
+                .background(Color(red: 0xD6 / 255, green: 0xE5 / 255, blue: 1),
+                            in: RoundedRectangle(cornerRadius: 24))
+                .accessibilityLabel("Scan to approve Plozz")
+            Text("Scan with your phone").font(.headline)
+        }
+    }
+}
+
+private struct SiloPairingInstructions: View {
+    let code: String
+    let match: String
+    let verificationURL: URL?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if let verificationURL {
+                Text("Or open this address and enter the sign-in code:")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(verificationURL.absoluteString)
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+                    #if os(iOS)
+                    .textSelection(.enabled)
+                    #endif
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Sign-in code").font(.caption).foregroundStyle(.secondary)
+                Text(code)
+                    #if os(tvOS)
+                    .font(.plozzCode(size: 72))
+                    #else
+                    .font(.largeTitle.monospaced().bold())
+                    #endif
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .accessibilityLabel("Sign-in code: \(code)")
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+            Label {
+                Text("Before approving, check that Silo shows \(match).")
+            } icon: {
+                Image(systemName: "checkmark.shield")
+            }
+            .font(.callout)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct SiloPairingStatus: View {
+    let expiresAt: Date
+
+    var body: some View {
+        let now = Date()
+        VStack(spacing: 10) {
+            ProgressView("Waiting for approval…")
+            HStack(spacing: 6) {
+                Text("Code expires in")
+                Text(timerInterval: now...max(now, expiresAt), countsDown: true)
+                    .monospacedDigit()
+                    .fixedSize()
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -150,6 +324,7 @@ private struct SiloProfileChoices: View {
                 .focused(focused, equals: .profile(profile.id))
                 .accessibilityLabel(Text(profile.name))
                 .accessibilityValue(profile.has_pin ? Text("PIN required") : Text(""))
+                .accessibilityIdentifier("silo-profile-\(profile.id)")
             }
         }
         .frame(maxWidth: CGFloat(columnCount) * 220 + CGFloat(columnCount - 1) * 28)

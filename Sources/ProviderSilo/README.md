@@ -14,6 +14,14 @@ picker closes; it never signs in automatically. Saved servers remain one-tap
 choices. Custom ports, remote/Tailscale addresses, IPv6-only hosts and reverse
 proxy paths remain available through manual URL entry.
 
+Silo uses the shared server picker, authentication handoff and library/profile
+setup, not a separate onboarding flow. Pairing shows the selected server, a
+phone-scannable code on TV and an "Open Silo to approve" action on iPhone/iPad.
+Approval continues automatically to the profile picker. PIN entry can return to
+that picker without repeating approval; retrying a failed profile lookup reuses
+the approved login while it remains valid. Expired codes have an explicit renewal
+action. Leaving the flow cancels pending work and clears in-memory PINs/tokens.
+
 ## Contracts
 
 - Native device-pairing protocol 2 and playback protocol 3. Check capability

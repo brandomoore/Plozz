@@ -12,9 +12,23 @@ public final class SiloAuthViewModel {
         case pairing(code: String, match: String, url: URL, expiresAt: Date)
         case profiles([SiloProfile])
         case pin(SiloProfile)
+        case expired
         case error(LocalizedStringResource)
     }
+    public enum Operation: Equatable {
+        case preparing, loadingProfiles, signingIn(String)
+
+        public var message: LocalizedStringResource {
+            switch self {
+            case .preparing: "Getting your sign-in code…"
+            case .loadingProfiles: "Approved. Loading your profiles…"
+            case .signingIn(let name): "Connecting as \(name)…"
+            }
+        }
+    }
     public private(set) var phase: Phase = .idle
+    public private(set) var operation: Operation = .preparing
+    public private(set) var verificationURL: URL?
     public var pin = ""
     public private(set) var pinError: LocalizedStringResource?
     private let server: MediaServer
@@ -24,17 +38,20 @@ public final class SiloAuthViewModel {
     private var flow: Task<Void, Never>?
     private var generation = UUID()
     private var tokens: SiloTokenPair?
+    @ObservationIgnored private var availableProfiles: [SiloProfile] = []
 
-    public init(server: MediaServer, deviceID: String, onAuthenticated: @escaping (UserSession) -> Void) {
+    public init(server: MediaServer, deviceID: String, service: SiloAuthentication? = nil,
+                onAuthenticated: @escaping (UserSession) -> Void) {
         self.server = server
         self.deviceID = deviceID
-        service = SiloAuthentication(baseURL: server.baseURL)
+        self.service = service ?? SiloAuthentication(baseURL: server.baseURL)
         self.onAuthenticated = onAuthenticated
     }
 
     public func start() {
         cancel()
         let current = generation
+        operation = .preparing
         phase = .loading
         flow = Task { [weak self] in
             guard let self else { return }
@@ -47,15 +64,19 @@ public final class SiloAuthViewModel {
                 #endif
                 let challenge = try await service.beginPairing(platform: platform)
                 guard let url = URL(string: challenge.verification_uri_complete, relativeTo: server.baseURL)?.absoluteURL,
+                      let manualURL = URL(string: challenge.verification_uri, relativeTo: server.baseURL)?.absoluteURL,
                       Self.sameOrigin(url, server.baseURL),
+                      Self.sameOrigin(manualURL, server.baseURL),
+                      !challenge.user_code.isEmpty, !challenge.match_code.isEmpty,
                       challenge.expires_in > 0, challenge.interval > 0 else { throw AppError.invalidResponse }
                 let deadline = Date().addingTimeInterval(TimeInterval(challenge.expires_in))
                 try Task.checkCancellation()
                 guard generation == current else { return }
+                verificationURL = manualURL
                 phase = .pairing(code: challenge.user_code, match: challenge.match_code, url: url, expiresAt: deadline)
                 var interval = challenge.interval
                 while Date() < deadline {
-                    try await Task.sleep(for: .seconds(interval))
+                    try await Task.sleep(for: .seconds(min(Double(interval), max(0, deadline.timeIntervalSinceNow))))
                     try Task.checkCancellation()
                     guard Date() < deadline else { break }
                     let result = try await service.poll(challenge)
@@ -66,12 +87,8 @@ public final class SiloAuthViewModel {
                     case "approved":
                         guard !result.temporary, let received = result.tokens else { throw AppError.invalidResponse }
                         tokens = received
-                        phase = .loading
-                        let profiles = try await service.profiles(token: received.access_token)
-                        try Task.checkCancellation()
-                        guard generation == current else { return }
-                        guard !profiles.isEmpty else { throw AppError.notFound }
-                        phase = .profiles(profiles)
+                        verificationURL = nil
+                        try await loadProfiles(tokens: received, generation: current)
                         return
                     case "expired", "consumed": throw AppError.quickConnectExpired
                     case "denied": throw SiloAuthenticationError.pairingDenied
@@ -86,6 +103,7 @@ public final class SiloAuthViewModel {
     }
 
     public func select(_ profile: SiloProfile) {
+        guard case let .profiles(profiles) = phase, profiles.contains(profile) else { return }
         pin = ""
         pinError = nil
         if profile.has_pin { phase = .pin(profile) }
@@ -93,16 +111,74 @@ public final class SiloAuthViewModel {
     }
 
     public func submitPIN(_ profile: SiloProfile) {
-        let value = pin
+        guard case let .pin(selected) = phase, selected == profile,
+              !pin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let value = pin.trimmingCharacters(in: .whitespacesAndNewlines)
         pin = ""
         pinError = nil
         finish(profile, pin: value)
+    }
+
+    public func chooseAnotherProfile() {
+        guard case .pin = phase, !availableProfiles.isEmpty else { return }
+        generation = UUID()
+        flow?.cancel()
+        flow = nil
+        pin = ""
+        pinError = nil
+        phase = .profiles(availableProfiles)
+    }
+
+    public func retry() {
+        guard case .error = phase else {
+            if phase == .expired { start() }
+            return
+        }
+        guard let tokens, tokens.receivedAt.addingTimeInterval(TimeInterval(tokens.expires_in)) > Date() else {
+            start()
+            return
+        }
+        if !availableProfiles.isEmpty {
+            pin = ""
+            pinError = nil
+            phase = .profiles(availableProfiles)
+            return
+        }
+        let current = generation
+        operation = .loadingProfiles
+        phase = .loading
+        flow = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await loadProfiles(tokens: tokens, generation: current)
+            } catch {
+                show(error, generation: current)
+            }
+        }
+    }
+
+    private func loadProfiles(tokens: SiloTokenPair, generation current: UUID) async throws {
+        operation = .loadingProfiles
+        phase = .loading
+        let profiles = try await service.profiles(token: tokens.access_token)
+        try Task.checkCancellation()
+        guard generation == current else { return }
+        guard !profiles.isEmpty else { throw AppError.notFound }
+        availableProfiles = profiles
+        phase = .profiles(profiles)
+    }
+
+    public func checkPairingExpiry() {
+        guard case let .pairing(_, _, _, expiresAt) = phase, expiresAt <= Date() else { return }
+        cancel()
+        phase = .expired
     }
 
     private func finish(_ profile: SiloProfile, pin: String?) {
         guard let tokens else { return }
         flow?.cancel()
         let current = generation
+        operation = .signingIn(profile.name)
         phase = .loading
         flow = Task { [weak self] in
             guard let self else { return }
@@ -114,6 +190,7 @@ public final class SiloAuthViewModel {
                 try Task.checkCancellation()
                 guard generation == current else { return }
                 self.tokens = nil
+                availableProfiles = []
                 onAuthenticated(session)
             } catch SiloAuthenticationError.incorrectPIN {
                 guard generation == current, !Task.isCancelled else { return }
@@ -140,6 +217,15 @@ public final class SiloAuthViewModel {
             }
         } else if let error = error as? AppError {
             if error == .cancelled { return }
+            if error == .quickConnectExpired {
+                verificationURL = nil
+                phase = .expired
+                return
+            }
+            if error == .unauthorized {
+                tokens = nil
+                availableProfiles = []
+            }
             phase = .error(error.userMessage)
         } else if !(error is CancellationError) {
             phase = .error(AppError.invalidResponse.userMessage)
@@ -151,7 +237,11 @@ public final class SiloAuthViewModel {
         flow?.cancel()
         flow = nil
         tokens = nil
+        availableProfiles = []
+        verificationURL = nil
         pin = ""
+        pinError = nil
+        phase = .idle
     }
 
     static func sameOrigin(_ url: URL, _ base: URL) -> Bool {

@@ -55,8 +55,8 @@ public struct ServerPickerView: View {
                     HStack(spacing: 18) {
                         ProviderBrandMark(provider: .silo, size: 60)
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Connect to Silo").font(.title2.bold())
-                            Text("Choose a nearby or saved server, then approve the pairing.")
+                            Text("Choose your Silo server").font(.title2.bold())
+                            Text("Select a server below. You'll approve Plozz in your browser, then choose a profile.")
                                 .font(.callout).plozzForeground(.secondary)
                         }
                     }
@@ -118,8 +118,18 @@ public struct ServerPickerView: View {
                             .focused($focusedControl, equals: .manualField)
                             .textContentType(.URL)
                             .autocorrectionDisabled()
-                        Button("Connect") { Task { await connectManually() } }
-                            .disabled(viewModel.manualURLText.isEmpty)
+                            .disabled(viewModel.phase == .validating)
+                            .onSubmit { Task { await connectManually() } }
+                        Button {
+                            Task { await connectManually() }
+                        } label: {
+                            if viewModel.phase == .validating {
+                                ProgressView("Checking server…")
+                            } else {
+                                Text("Connect")
+                            }
+                        }
+                            .disabled(!viewModel.canSubmitManualURL)
                             .focused($focusedControl, equals: .connect)
                     }
                 }
@@ -165,7 +175,7 @@ public struct ServerPickerView: View {
 
     private var manualEntryFooter: LocalizedStringResource {
         if provider == .silo {
-            return "Automatic search checks nearby servers on port 8090. For a custom port, remote server or reverse proxy, enter the address you use in a browser."
+            return "Use the address you open Silo with in a browser. An IP address alone uses port 8090; include a different port or path if your server needs it."
         }
         return "Enter an IP address or full URL, e.g. 192.168.1.10 or \(provider == .emby ? "emby.example.com" : "jelly.example.com")"
     }
@@ -184,6 +194,7 @@ public struct ServerPickerView: View {
                 Label("Rescan", systemImage: "arrow.clockwise")
             }
             .buttonStyle(.bordered)
+            .disabled(viewModel.phase == .validating)
             .focused($focusedControl, equals: .rescan)
         }
         .padding(.top, PlozzTheme.Spacing.large)
@@ -267,6 +278,7 @@ public struct ServerPickerView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(SettingsFocusButtonStyle(size: .prominent))
+        .disabled(viewModel.phase == .validating)
         .focused($focusedControl, equals: .server(ServerIdentity.key(for: server)))
     }
 

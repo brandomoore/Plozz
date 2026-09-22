@@ -1540,7 +1540,7 @@ public final class AppState {
         isFirstRun: Bool
     ) {
         let completesAdditionalIdentity =
-            account.server.provider.usesMediaBrowserAPI
+            (account.server.provider.usesMediaBrowserAPI || account.server.provider == .silo)
                 && pendingAdditionalUser?.serverKey == account.server.identityKey
         // Tear down the OLD credential revision's transport sessions only when the
         // store actually moved to a new revision (a real credential change). An

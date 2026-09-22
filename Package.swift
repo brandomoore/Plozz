@@ -910,7 +910,7 @@ let package = Package(
         ),
         .testTarget(
             name: "FeatureAuthTests",
-            dependencies: ["FeatureAuthCore", "CoreModels"]
+            dependencies: ["FeatureAuthCore", "CoreModels", "CoreNetworking", "ProviderSilo"]
         ),
         .testTarget(
             name: "FeatureHomeTests",

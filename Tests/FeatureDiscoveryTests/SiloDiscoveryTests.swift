@@ -92,12 +92,64 @@ final class SiloDiscoveryTests: XCTestCase {
         } catch { XCTAssertEqual(error as? AppError, .invalidResponse) }
     }
 
+    @MainActor
+    func testManualSubmissionBlocksDuplicateAndRejectsLateResultAfterBack() async {
+        let http = SiloDiscoveryHTTP(delay: .milliseconds(100))
+        let store = SiloRecentStore()
+        let model = ServerPickerViewModel(
+            provider: .silo, discovery: EmptySiloDiscovery(),
+            validator: ServerValidator(provider: .silo, http: http), store: store
+        )
+        model.manualURLText = " \n "
+        XCTAssertFalse(model.canSubmitManualURL)
+        let blank = await model.submitManualURL()
+        XCTAssertNil(blank)
+        model.manualURLText = " 192.168.1.71 \n"
+        let request = Task { await model.submitManualURL() }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while model.phase != .validating, ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertEqual(model.phase, .validating)
+        XCTAssertFalse(model.canSubmitManualURL)
+        let duplicate = await model.submitManualURL()
+        XCTAssertNil(duplicate)
+        model.stopScan()
+        let stale = await request.value
+        XCTAssertNil(stale)
+        XCTAssertEqual(model.phase, .idle)
+        XCTAssertTrue(store.recentServers.isEmpty)
+    }
+
+    @MainActor
+    func testSharedPickerValidatesAndRemembersSiloManualAddress() async {
+        let http = SiloDiscoveryHTTP()
+        let store = SiloRecentStore()
+        let model = ServerPickerViewModel(
+            provider: .silo, discovery: EmptySiloDiscovery(),
+            validator: ServerValidator(provider: .silo, http: http), store: store
+        )
+        model.manualURLText = "192.168.1.71"
+        let server = await model.submitManualURL()
+        XCTAssertEqual(server?.baseURL.absoluteString, "http://192.168.1.71:8090")
+        XCTAssertEqual(model.phase, .idle)
+        XCTAssertEqual(store.recentServers.first, server)
+    }
+
     func testSiloIdentityKeepsSeparateReverseProxyPaths() {
         let first = MediaServer(id: "http://host/one", name: "Silo", baseURL: URL(string: "http://host/one")!, provider: .silo)
         let second = MediaServer(id: "two", name: "Silo", baseURL: URL(string: "http://host/two")!, provider: .silo)
         let authenticated = MediaServer(id: "installation-id", name: "Silo", baseURL: first.baseURL, provider: .silo)
         XCTAssertFalse(ServerIdentity.isSame(first, second))
         XCTAssertTrue(ServerIdentity.isSame(first, authenticated))
+    }
+
+    private final class SiloRecentStore: LastServerStoring, @unchecked Sendable {
+        var recentServers: [MediaServer] = []
+    }
+
+    private struct EmptySiloDiscovery: ServerDiscovering {
+        func discover(timeout: TimeInterval) -> AsyncStream<MediaServer> {
+            AsyncStream { $0.finish() }
+        }
     }
 
     #if canImport(Darwin)
