@@ -10,6 +10,52 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testWatchlistAndJumpToastsShareOpaqueThemeSurfaceAndHeight() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for (name, palette) in [("dark", ThemePalette.dark), ("light", .light), ("black", .pureBlack)] {
+            let presenter = TransientStatusPresenter(announcement: { _ in })
+            var frame = CGRect.zero
+            func fixture(background: Color) -> some View {
+                TransientStatusView(presenter: presenter, palette: palette)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(background)
+                    .environment(\.colorScheme, palette.isLight ? .light : .dark)
+            }
+            let host = UIHostingController(rootView: fixture(background: .red))
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            presenter.present(icon: "bookmark.fill", text: "Added to Watchlist")
+            try await Task.sleep(for: .milliseconds(300))
+            window.layoutIfNeeded()
+            let watchlistFrame = frame
+            XCTAssertGreaterThan(watchlistFrame.width, 200)
+            let watchlistImage = capture(window, name: "watchlist-toast-\(name)")
+            let surfacePoint = CGPoint(x: frame.midX, y: frame.minY + 6)
+            let watchlistSurface = try pixel(watchlistImage, at: surfacePoint)
+
+            host.rootView = fixture(background: .blue)
+            presenter.present(icon: "magnifyingglass", text: "Jumping to U…", isProgress: true)
+            try await Task.sleep(for: .milliseconds(300))
+            window.layoutIfNeeded()
+            XCTAssertEqual(frame.height, watchlistFrame.height, accuracy: 1,
+                           "The spinner must not enlarge the shared capsule")
+            let progressImage = capture(window, name: "jump-toast-\(name)")
+            let progressSurface = try pixel(progressImage, at: CGPoint(x: frame.midX, y: frame.minY + 6))
+            XCTAssertEqual(progressSurface, watchlistSurface,
+                           "The same opaque theme surface must ignore different artwork behind it")
+            presenter.dismiss()
+        }
+    }
+
     func testJumpUsesSharedToastBeforeMenuDismissalWithoutAddingFocusTargets() async throws {
         for light in [false, true] {
             let provider = RefreshLibraryProvider()
@@ -37,7 +83,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 await waitForHeldPage(provider)
                 try await Task.sleep(for: .milliseconds(40))
                 XCTAssertEqual(presenter.message?.isProgress, true, "Status is available while the menu is still presented")
-                XCTAssertEqual(presenter.message.map { String(localized: $0.text) }, "Finding U…")
+                XCTAssertEqual(presenter.message.map { String(localized: $0.text) }, "Jumping to U…")
                 XCTAssertNil(model.alphabet.destination)
                 await withCheckedContinuation { continuation in
                     menu.dismiss(animated: true) { continuation.resume() }
@@ -445,7 +491,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 .environment(\.plozzCardStyle, .borderless)
                 .environment(\.themePalette, palette)
                 .preferredColorScheme(palette.isLight ? .light : .dark)
-                .transientStatusOverlay(presenter: presenter, isLightSurface: palette.isLight)
+                .transientStatusOverlay(presenter: presenter, palette: palette)
         )
         let container = LibraryFocusFixtureController()
         container.addChild(host)
@@ -504,7 +550,8 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         return result
     }
 
-    private func capture(_ window: UIWindow, name: String) {
+    @discardableResult
+    private func capture(_ window: UIWindow, name: String) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image {
@@ -514,6 +561,21 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+        return image
+    }
+
+    private func pixel(_ image: UIImage, at point: CGPoint) throws -> [UInt8] {
+        let image = try XCTUnwrap(image.cgImage)
+        let rect = CGRect(x: floor(point.x), y: floor(point.y), width: 1, height: 1)
+        let cropped = try XCTUnwrap(image.cropping(to: rect))
+        var bytes = [UInt8](repeating: 0, count: 4)
+        try bytes.withUnsafeMutableBytes { buffer in
+            let context = try XCTUnwrap(CGContext(
+                data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        return bytes
     }
 }
 

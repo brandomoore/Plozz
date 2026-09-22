@@ -270,7 +270,7 @@ public struct PlozziOSRootView: View {
         .transientStatusOverlay(
             presenter: appModel.transientStatusPresenter,
             bottomPadding: 72,
-            isLightSurface: resolvedPalette.isLight
+            palette: resolvedPalette
         )
         .environment(appModel)
         .environment(heroTrailerController)

@@ -63,7 +63,7 @@ struct PlozziOSSettingsView: View {
         .transientStatusOverlay(
             presenter: appModel.transientStatusPresenter,
             bottomPadding: 24,
-            isLightSurface: palette.isLight
+            palette: palette
         )
         .environment(\.themePalette, palette)
         .environment(\.colorScheme, palette.isLight ? .light : .dark)

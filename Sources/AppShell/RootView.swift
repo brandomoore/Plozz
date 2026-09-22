@@ -604,7 +604,7 @@ public struct RootView: View {
         .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
         .transientStatusOverlay(
             presenter: appState.transientStatusPresenter,
-            isLightSurface: resolvedPalette.isLight
+            palette: resolvedPalette
         )
         // One cover for the whole access gate. Two separate covers dismissed the
         // profile PIN to Home, then presented the Plex PIN — flashing Home as if

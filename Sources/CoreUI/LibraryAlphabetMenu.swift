@@ -178,7 +178,7 @@ public struct LibraryAlphabetFeedback: View {
             return .init(icon: "exclamationmark.circle", text: message)
         }
         guard let letter else { return nil }
-        return .init(icon: "magnifyingglass", text: "Finding \(letter)…", isProgress: true)
+        return .init(icon: "magnifyingglass", text: "Jumping to \(letter)…", isProgress: true)
     }
 
     private func update() {

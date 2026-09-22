@@ -7,7 +7,7 @@ final class TransientStatusPresenterTests: XCTestCase {
         let sleeper = ControlledTransientStatusSleeper()
         let presenter = TransientStatusPresenter(
             sleeper: { duration in await sleeper.sleep(for: duration) }, announcement: { _ in })
-        let token = presenter.present(icon: "magnifyingglass", text: "Finding U…", isProgress: true)
+        let token = presenter.present(icon: "magnifyingglass", text: "Jumping to U…", isProgress: true)
         XCTAssertEqual(presenter.message?.isProgress, true)
         let count = await sleeper.requestCount
         XCTAssertEqual(count, 0, "Progress must not disappear on the normal 1.6 second timer")
@@ -17,7 +17,7 @@ final class TransientStatusPresenterTests: XCTestCase {
 
     func testFinishedJumpCannotDismissNewerWatchlistFeedback() {
         let presenter = TransientStatusPresenter(announcement: { _ in })
-        let token = presenter.present(icon: "magnifyingglass", text: "Finding U…", isProgress: true)
+        let token = presenter.present(icon: "magnifyingglass", text: "Jumping to U…", isProgress: true)
         presenter.present(icon: "bookmark", text: "Added to watchlist")
         presenter.dismiss(expectedGeneration: token)
         XCTAssertEqual(presenter.message?.icon, "bookmark")
