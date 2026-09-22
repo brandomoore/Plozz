@@ -1942,7 +1942,7 @@ struct PlayerControls: View {
     }
 
     /// Audio menu rows: selectable tracks followed by the Dialog Enhance toggle
-    /// when supported. A single track is read-only information in the Info card.
+    /// when supported. A single track is not an actionable menu row.
     private var audioRows: [TrackRow] {
         var rows: [TrackRow] = []
         var index = 0

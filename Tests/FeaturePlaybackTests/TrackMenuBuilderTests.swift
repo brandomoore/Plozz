@@ -95,7 +95,7 @@ final class AudioMenuAvailabilityTests: XCTestCase {
         XCTAssertFalse(model.hasSelectableAudio)
         XCTAssertFalse(model.hasAudioControls)
         XCTAssertEqual(model.trackControlCategories, [.speed])
-        XCTAssertEqual(model.audioOptions.count, 1, "Info must retain the nonadjustable track")
+        XCTAssertEqual(model.audioOptions.count, 1, "Hiding the control must not discard track metadata")
     }
 
     func testAlternateTrackAndDialogEnhanceEachKeepAudioReachable() {

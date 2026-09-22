@@ -9,34 +9,41 @@ import XCTest
 
 @MainActor
 final class MobileDiagnosticsLayoutTests: XCTestCase {
-    func testInfoRetainsReadOnlyAudioWithSourceLabelDuringConversion() throws {
+    func testInfoKeepsAudioBadgeWithoutDuplicateTrackDescription() throws {
         let model = PlayerControlsModel()
         model.infoCard.headline = "Fixture Movie"
         model.infoCard.overview = "A movie with a single audio track."
+        model.infoCard.badges = [.init("Dolby Digital", style: .dolby, detail: "5.1")]
         model.audioOptions = TrackMenuBuilder.audioOptions(tracks: [
             .init(id: 1, kind: .audio, displayTitle: "AC3 5.1 (Default)", codec: "ac3", channels: 6)
         ], selectedID: 1, preferred: [], locale: .init(identifier: "en_US"))
+        let audioOptions = model.audioOptions
         XCTAssertFalse(model.hasAudioControls)
-        for transcoding in [false, true] {
-            model.infoCard.audioIsSourceTrack = transcoding
-            for width in [CGFloat(390), 1024, 1920] {
-                let renderer = ImageRenderer(content:
-                    InfoAudioFixture(model: model)
-                        .environment(\.playerCardMetrics, width == 1920 ? .tv : .resolved(forWidth: width, height: 844))
-                        .environment(\.themePalette, .dark)
-                        .environment(\.locale, Locale(identifier: "en_US"))
-                        .frame(width: width)
-                        .background(.black)
-                )
-                renderer.scale = 2
-                let image = try XCTUnwrap(renderer.cgImage)
-                let text = try recognizedText(image)
-                XCTAssertTrue(text.contains("Dolby Digital 5.1"), text)
-                XCTAssertEqual(text.contains("Source audio"), transcoding, text)
-                XCTAssertFalse(text.contains("AC3"), text)
-                XCTAssertFalse(text.contains("Default"), text)
-                attach(image, name: "Info audio \(Int(width)) converted \(transcoding)")
-            }
+        for width in [CGFloat(390), 1024, 1920] {
+            let metrics: PlayerCardMetrics = width == 1920 ? .tv : .resolved(forWidth: width, height: 844)
+            let renderer = ImageRenderer(content:
+                InfoAudioFixture(model: model)
+                    .environment(\.playerCardMetrics, metrics)
+                    .environment(\.mediaBadgeScale, metrics.badgeScale)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+                    .frame(width: width)
+                    .background(.black)
+            )
+            renderer.scale = 2
+            model.audioOptions = audioOptions
+            let image = try XCTUnwrap(renderer.cgImage)
+            let text = try recognizedText(image)
+            XCTAssertTrue(text.contains("Fixture Movie"), text)
+            XCTAssertFalse(text.lowercased().contains("audio:"), text)
+            XCTAssertFalse(text.contains("AC3"), text)
+            XCTAssertFalse(text.contains("Default"), text)
+            model.audioOptions = []
+            let withoutTrack = try XCTUnwrap(renderer.cgImage)
+            XCTAssertEqual(UIImage(cgImage: image).pngData(), UIImage(cgImage: withoutTrack).pngData(),
+                           "Track options must not add another description beneath the unchanged badge row")
+            XCTAssertEqual(model.infoCard.badges, [.init("Dolby Digital", style: .dolby, detail: "5.1")])
+            attach(image, name: "Info audio badge \(Int(width))")
         }
     }
 

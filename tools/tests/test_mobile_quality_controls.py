@@ -80,16 +80,19 @@ class MobileQualityControlsTests(unittest.TestCase):
         self.assertIn("cancelAutoHide()", callback)
         self.assertIn("case .quality:\n                PlozziOSStreamingQualitySheet(viewModel: viewModel)", source)
 
-    def test_tv_audio_uses_same_availability_and_info_labels_source_tracks(self):
+    def test_tv_audio_uses_same_availability_without_duplicate_info_audio(self):
         source = (ROOT / "Sources/FeaturePlayback/PlayerControls.swift").read_text()
         self.assertIn("if hasAudioControls", swift_block(source, "var trackControlCategories:"))
         self.assertIn("where model.hasSelectableAudio", swift_block(source, "private var audioRows:"))
         info = (ROOT / "Sources/FeaturePlayback/InfoPanelView.swift").read_text()
-        self.assertIn("audioDetails", swift_block(info, "private func compactStack"))
-        self.assertIn("audioDetails", swift_block(info, "private func regularBody"))
-        self.assertIn('Text("Source audio: \\(option.title)")', info)
+        self.assertNotIn("audioDetails", info)
+        self.assertNotIn("Source audio:", info)
+        self.assertNotIn('Text("Audio:', info)
+        self.assertIn("adaptiveMetaRow", swift_block(info, "private func compactStack"))
+        self.assertIn("adaptiveMetaRow", swift_block(info, "private func regularBody"))
+        self.assertIn("MediaBadgeRow(badges: model.infoCard.badges)", info)
         vm = (ROOT / "Sources/FeaturePlayback/PlayerViewModel.swift").read_text()
-        self.assertIn("controls.infoCard.audioIsSourceTrack = request.isTranscoding", vm)
+        self.assertNotIn("audioIsSourceTrack", vm)
 
     def test_auto_hide_waits_for_native_menu_and_all_player_sheets(self):
         source = (ROOT / "Sources/AppShelliOS/PlozziOSPlayerControlsOverlay.swift").read_text()
