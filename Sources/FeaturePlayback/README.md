@@ -35,8 +35,10 @@ and the diagnostics overlay.
   `PlaybackDiagnosticsOverlay`: opt-in HUD with engine, codec, bitrate,
   dropped frames, etc.
 - **Display matching** — `DolbyVisionDisplayCriteria` /
-  `IdleSleepGuard`: AVKit display-criteria match + keep-awake while
-  playing.
+  `IdleSleepGuard`: AVKit display-criteria match + platform-specific keep-awake.
+  Mobile playback owns a foreground presentation lease through startup and
+  buffering; pause, failure, EOF, backgrounding, and dismissal release it.
+  tvOS continues to follow actual engine playback.
 
 ## Invariants
 
@@ -141,6 +143,12 @@ delivery for text/off renditions. Both singular and Emby's plural track selector
 are disabled, and manifest-subtitle requests are removed from that video URL.
 Omitting the delivery method alone can still trigger Emby's default burn-in.
 An engine load that returns after a terminal startup failure cannot publish ready.
+Managed native resume waits for actual item readiness rather than seeking an
+unknown HLS item after five seconds. The existing startup watchdog bounds that
+wait; cancellation releases the exact old item's pending seek immediately.
+Same-item user seeks replace the pending resume target without failing the load,
+and stale seek completions cannot finish a newer target. A failed/cancelled load
+cannot report playback started while its failure callback is still queued.
 Terminal managed-stream failures stop the decoder so audio cannot continue
 behind the error screen and immediately release the owned server rendition.
 Retry/dismiss joins that same cleanup instead of issuing duplicate stop requests.

@@ -200,9 +200,11 @@ public protocol VideoEngine: AnyObject {
     /// suppressed). This is stricter than `!isPaused`: it is `true` only while
     /// frames are genuinely advancing, so a paused, ended, or stalled stream
     /// returns `false` and lets the screensaver/sleep resume. Driving the idle
-    /// timer off this (rather than user intent) keeps the behaviour identical
-    /// across every engine/decoder. Defaulted to `!isPaused` (see the protocol
-    /// extension) for engines that can't report a finer-grained state.
+    /// timer off this keeps tvOS behaviour identical across every engine/decoder.
+    /// The iOS full-screen presentation instead follows playback intent while
+    /// foregrounded, so startup and buffering do not allow the phone to sleep.
+    /// Defaulted to `!isPaused` (see the protocol extension) for engines that
+    /// can't report a finer-grained state.
     var preventsDisplaySleep: Bool { get }
 
     /// Current playback position in seconds (`0` when unknown).

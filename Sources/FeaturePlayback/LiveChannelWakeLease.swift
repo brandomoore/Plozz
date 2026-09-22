@@ -17,6 +17,8 @@ final class LiveChannelWakeGroup {
     }
 }
 
+/// Shared by Live TV panes and the iOS full-screen player: an outgoing surface
+/// must release only its own assertion, never the incoming player's wake lock.
 @MainActor
 final class LiveChannelWakeLease {
     private static let guardOwner = IdleSleepGuard()

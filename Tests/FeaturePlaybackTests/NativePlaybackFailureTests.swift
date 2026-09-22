@@ -39,7 +39,291 @@ private final class LifecycleDiagnosticItem: AVPlayerItem {
     }
 }
 
+final class NativeStartupResumeTests: XCTestCase {
+    @MainActor
+    func testCancellingAUserWaiterDoesNotCancelStartupOrAnotherWaiter() async {
+        let seeking = expectation(description: "startup seek pending")
+        let waiterReturned = expectation(description: "cancelled user waiter returned")
+        let loadReturned = expectation(description: "startup load completed")
+        let otherReturned = expectation(description: "other waiter completed")
+        var callback: (@Sendable (Bool) -> Void)?
+        var cancellationCount = 0
+        let resume = NativeStartupResume(
+            itemStatus: { .readyToPlay }, isCurrent: { true },
+            beginSeek: { callback = $0; seeking.fulfill() },
+            cancelSeek: { cancellationCount += 1 }
+        )
+        let load = Task {
+            let result = await resume.run()
+            XCTAssertEqual(result, .ready)
+            loadReturned.fulfill()
+        }
+        await fulfillment(of: [seeking], timeout: 1)
+        let waiter = Task {
+            let result = await resume.waitForCompletion()
+            XCTAssertEqual(result, .cancelled)
+            waiterReturned.fulfill()
+        }
+        defer { load.cancel(); waiter.cancel(); resume.cancel() }
+        await Task.yield()
+        waiter.cancel()
+        await fulfillment(of: [waiterReturned], timeout: 1)
+        XCTAssertEqual(cancellationCount, 0)
+        let other = Task {
+            let result = await resume.waitForCompletion()
+            XCTAssertEqual(result, .ready)
+            otherReturned.fulfill()
+        }
+        defer { other.cancel() }
+        callback?(true)
+        await fulfillment(of: [loadReturned, otherReturned], timeout: 1)
+    }
+
+    @MainActor
+    func testUnknownPastFiveSecondsNeverSeeksUntilActuallyReady() async {
+        var status = AVPlayerItem.Status.unknown
+        var seeks = 0
+        let earlySeek = expectation(description: "no seek while unknown for 5.2 seconds")
+        earlySeek.isInverted = true
+        let returned = expectation(description: "ready seek completed")
+        let resume = NativeStartupResume(
+            itemStatus: { status }, isCurrent: { true },
+            beginSeek: { completion in
+                if status != .readyToPlay { earlySeek.fulfill() }
+                XCTAssertEqual(status, .readyToPlay)
+                seeks += 1
+                completion(true)
+            },
+            cancelSeek: { XCTFail("Healthy startup must not cancel the item") }
+        )
+        let task = Task {
+            let result = await resume.run()
+            XCTAssertEqual(result, .ready)
+            returned.fulfill()
+        }
+        defer { task.cancel(); resume.cancel() }
+        await fulfillment(of: [earlySeek], timeout: 5.2)
+        XCTAssertEqual(seeks, 0)
+        status = .readyToPlay
+        await fulfillment(of: [returned], timeout: 1)
+        XCTAssertEqual(seeks, 1)
+    }
+
+    @MainActor
+    func testSameItemUserSeekReplacesPendingResumeWithoutCancellingLoad() async {
+        let initialSeek = expectation(description: "initial resume seek")
+        let replacementSeek = expectation(description: "user replacement seek")
+        let loadReturned = expectation(description: "load readied")
+        let userReturned = expectation(description: "user seek completed")
+        var initialCallback: (@Sendable (Bool) -> Void)?
+        var replacementCallback: (@Sendable (Bool) -> Void)?
+        var cancellations = 0
+        var ready = false
+        let resume = NativeStartupResume(
+            itemStatus: { .readyToPlay }, isCurrent: { true },
+            beginSeek: { initialCallback = $0; initialSeek.fulfill() },
+            cancelSeek: { cancellations += 1 }
+        )
+        let load = Task {
+            let result = await resume.run()
+            XCTAssertEqual(result, .ready)
+            ready = true
+            loadReturned.fulfill()
+        }
+        await fulfillment(of: [initialSeek], timeout: 1)
+        XCTAssertTrue(resume.replaceSeek {
+            replacementCallback = $0
+            replacementSeek.fulfill()
+        })
+        let userSeek = Task {
+            let result = await resume.waitForCompletion()
+            XCTAssertEqual(result, .ready)
+            userReturned.fulfill()
+        }
+        defer { load.cancel(); userSeek.cancel(); resume.cancel() }
+        await fulfillment(of: [replacementSeek], timeout: 1)
+        XCTAssertEqual(cancellations, 1)
+        initialCallback?(false)
+        initialCallback?(true)
+        await Task.yield()
+        XCTAssertFalse(ready, "Late startup completions cannot finish the replacement seek")
+        XCTAssertEqual(cancellations, 1, "The new same-item seek must not be cancelled")
+        replacementCallback?(true)
+        await fulfillment(of: [loadReturned, userReturned], timeout: 1)
+        resume.cancel()
+        XCTAssertEqual(cancellations, 1)
+    }
+
+    @MainActor
+    func testSameItemUserTargetWhileUnknownStillWaitsForReadiness() async {
+        var status = AVPlayerItem.Status.unknown
+        var seeks = 0
+        let waiting = expectation(description: "readiness checked")
+        let returned = expectation(description: "latest target completed")
+        var announcedWaiting = false
+        let resume = NativeStartupResume(
+            itemStatus: {
+                if !announcedWaiting { announcedWaiting = true; waiting.fulfill() }
+                return status
+            },
+            isCurrent: { true },
+            beginSeek: { _ in XCTFail("Superseded initial target must never seek") },
+            cancelSeek: { XCTFail("No seek exists before readiness") }
+        )
+        let load = Task {
+            let result = await resume.run()
+            XCTAssertEqual(result, .ready)
+            returned.fulfill()
+        }
+        defer { load.cancel(); resume.cancel() }
+        await fulfillment(of: [waiting], timeout: 1)
+        XCTAssertTrue(resume.replaceSeek { completion in
+            XCTAssertEqual(status, .readyToPlay)
+            seeks += 1
+            completion(true)
+        })
+        XCTAssertEqual(seeks, 0)
+        status = .readyToPlay
+        await fulfillment(of: [returned], timeout: 1)
+        XCTAssertEqual(seeks, 1)
+    }
+
+    @MainActor
+    func testCancellationDuringReadinessReturnsWithoutSeeking() async {
+        let waiting = expectation(description: "waiting for readiness")
+        let returned = expectation(description: "cancelled startup returned")
+        var seeks = 0
+        let resume = NativeStartupResume(
+            itemStatus: { .unknown }, isCurrent: { true },
+            beginSeek: { _ in seeks += 1 },
+            cancelSeek: { XCTFail("No seek exists while waiting for readiness") },
+            pause: {
+                waiting.fulfill()
+                try await Task.sleep(nanoseconds: 60_000_000_000)
+            }
+        )
+        let task = Task {
+            let result = await resume.run()
+            XCTAssertEqual(result, .cancelled)
+            returned.fulfill()
+        }
+        defer { task.cancel(); resume.cancel() }
+        await fulfillment(of: [waiting], timeout: 1)
+        task.cancel()
+        await fulfillment(of: [returned], timeout: 1)
+        XCTAssertEqual(seeks, 0)
+    }
+
+    @MainActor
+    func testCancellationDuringPendingSeekDoesNotWaitForAVFoundationCallback() async {
+        let seeking = expectation(description: "seek started")
+        let returned = expectation(description: "cancelled seek returned")
+        var callback: (@Sendable (Bool) -> Void)?
+        var cancellations = 0
+        let resume = NativeStartupResume(
+            itemStatus: { .readyToPlay }, isCurrent: { true },
+            beginSeek: { completion in callback = completion; seeking.fulfill() },
+            cancelSeek: { cancellations += 1 }
+        )
+        let task = Task {
+            let result = await resume.run()
+            XCTAssertEqual(result, .cancelled)
+            returned.fulfill()
+        }
+        defer { task.cancel(); resume.cancel() }
+        await fulfillment(of: [seeking], timeout: 1)
+        task.cancel()
+        await fulfillment(of: [returned], timeout: 1)
+        XCTAssertEqual(cancellations, 1)
+        callback?(true)
+        await Task.yield()
+        XCTAssertEqual(cancellations, 1, "A late completion must not finish/cancel another operation")
+    }
+
+    @MainActor
+    func testFailedItemNeverSeeksOrPublishesReady() async {
+        let failed = NativeStartupResume(
+            itemStatus: { .failed }, isCurrent: { true },
+            beginSeek: { _ in XCTFail("Failed items cannot seek") },
+            cancelSeek: {}
+        )
+        let initialResult = await failed.run()
+        XCTAssertEqual(initialResult, .failed)
+
+        var status = AVPlayerItem.Status.readyToPlay
+        let failsDuringSeek = NativeStartupResume(
+            itemStatus: { status }, isCurrent: { true },
+            beginSeek: { completion in status = .failed; completion(true) },
+            cancelSeek: {}
+        )
+        let seekResult = await failsDuringSeek.run()
+        XCTAssertEqual(seekResult, .failed)
+    }
+
+    @MainActor
+    func testCancellingOldLoadCannotCancelNewerPendingSeek() async {
+        let oldSeeking = expectation(description: "old seek")
+        let newSeeking = expectation(description: "new seek")
+        let oldReturned = expectation(description: "old returned")
+        let newReturned = expectation(description: "new returned")
+        var oldCallback: (@Sendable (Bool) -> Void)?
+        var newCallback: (@Sendable (Bool) -> Void)?
+        var oldCancellations = 0
+        var newCancellations = 0
+        var newFinished = false
+        let old = NativeStartupResume(
+            itemStatus: { .readyToPlay }, isCurrent: { true },
+            beginSeek: { oldCallback = $0; oldSeeking.fulfill() },
+            cancelSeek: { oldCancellations += 1 }
+        )
+        let newer = NativeStartupResume(
+            itemStatus: { .readyToPlay }, isCurrent: { true },
+            beginSeek: { newCallback = $0; newSeeking.fulfill() },
+            cancelSeek: { newCancellations += 1 }
+        )
+        let oldTask = Task {
+            let result = await old.run()
+            XCTAssertEqual(result, .cancelled)
+            oldReturned.fulfill()
+        }
+        await fulfillment(of: [oldSeeking], timeout: 1)
+        old.cancel() // The old item's teardown precedes installing the new item.
+        let newTask = Task {
+            let result = await newer.run()
+            XCTAssertEqual(result, .ready)
+            newFinished = true
+            newReturned.fulfill()
+        }
+        defer { oldTask.cancel(); newTask.cancel(); old.cancel(); newer.cancel() }
+        await fulfillment(of: [newSeeking, oldReturned], timeout: 1)
+        oldTask.cancel()
+        oldCallback?(true)
+        await Task.yield()
+        XCTAssertEqual(oldCancellations, 1)
+        XCTAssertEqual(newCancellations, 0)
+        XCTAssertFalse(newFinished)
+        newCallback?(true)
+        await fulfillment(of: [newReturned], timeout: 1)
+        old.cancel()
+        XCTAssertEqual(newCancellations, 0)
+    }
+}
+
 final class NativePlaybackFailureTests: XCTestCase {
+    func testErrorChainKeepsUnderlyingNumericCauseWithoutDescriptionsOrUnknownDomains() {
+        let media = NSError(domain: "CoreMediaErrorDomain", code: -12642, userInfo: [
+            NSLocalizedDescriptionKey: "https://private.example/?api_key=secret"
+        ])
+        let privateWrapper = NSError(domain: "https://private.example/token", code: 123, userInfo: [
+            NSUnderlyingErrorKey: media
+        ])
+        let error = NSError(domain: AVFoundationErrorDomain, code: -11829, userInfo: [
+            NSUnderlyingErrorKey: privateWrapper
+        ])
+        XCTAssertEqual(NativePlaybackLifecycleDiagnostics.errorChain(error), "AV:-11829>CoreMedia:-12642")
+        XCTAssertEqual(NativePlaybackLifecycleDiagnostics.errorChain(nil), "none")
+    }
+
     @MainActor
     func testLifetimeEvidenceContinuesAfterReadyAndRemovesObserversOnTeardown() throws {
         let item = LifecycleDiagnosticItem(asset: AVMutableComposition())

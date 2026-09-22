@@ -10,6 +10,91 @@ import UIKit
 
 @MainActor
 final class PlayerViewModelEOFTests: XCTestCase {
+    func testMobileWakeIntentCoversStartupAndBufferingButRespectsPause() async {
+        let (viewModel, engine, _) = makeViewModel()
+        XCTAssertEqual(viewModel.phase, .loading)
+        XCTAssertFalse(engine.preventsDisplaySleep)
+        XCTAssertTrue(viewModel.wantsForegroundDisplayAwake)
+
+        viewModel.setPaused(true)
+        XCTAssertFalse(viewModel.wantsForegroundDisplayAwake)
+        viewModel.setPaused(false)
+        XCTAssertTrue(viewModel.wantsForegroundDisplayAwake)
+
+        await viewModel.load()
+        XCTAssertEqual(viewModel.phase, .ready)
+        engine.isPaused = true
+        viewModel.controls.isPaused = true
+        XCTAssertFalse(engine.preventsDisplaySleep)
+        XCTAssertTrue(viewModel.wantsForegroundDisplayAwake,
+                      "Waiting for frames is not a user pause")
+        viewModel.setPaused(true)
+        XCTAssertFalse(viewModel.wantsForegroundDisplayAwake)
+        viewModel.setPaused(false)
+        XCTAssertTrue(viewModel.wantsForegroundDisplayAwake)
+        await viewModel.stop()
+        XCTAssertFalse(viewModel.wantsForegroundDisplayAwake)
+    }
+
+    func testMobileWakeIntentEndsOnFailureAndReturnsForRetry() async {
+        let (viewModel, _, _) = makeViewModel()
+        await viewModel.load()
+        XCTAssertTrue(viewModel.wantsForegroundDisplayAwake)
+        viewModel.handoffSetPhase(.failed(.serverUnreachable))
+        XCTAssertFalse(viewModel.wantsForegroundDisplayAwake)
+        viewModel.handoffSetPhase(.loading)
+        XCTAssertTrue(viewModel.wantsForegroundDisplayAwake)
+        await viewModel.stop()
+        XCTAssertFalse(viewModel.wantsForegroundDisplayAwake)
+    }
+
+    func testMobileWakeIntentEndsAtEOFEvenBeforePresentationDismisses() async {
+        let (viewModel, engine, _) = makeViewModel()
+        await viewModel.load()
+        XCTAssertTrue(viewModel.wantsForegroundDisplayAwake)
+        engine.onEnded?()
+        XCTAssertFalse(viewModel.wantsForegroundDisplayAwake)
+        await viewModel.stop()
+    }
+
+    func testDecoderPausedDuringStartupDoesNotBecomePausedPlaybackIntent() async {
+        let (viewModel, engine, provider) = makeViewModel()
+        engine.isPaused = true
+        viewModel.controls.isPaused = true
+        XCTAssertTrue(viewModel.wantsForegroundDisplayAwake)
+        await viewModel.load()
+        XCTAssertFalse(engine.isPaused)
+        XCTAssertFalse(viewModel.controls.intendsPause)
+        XCTAssertTrue(viewModel.wantsForegroundDisplayAwake)
+        let reports = await provider.reports
+        XCTAssertEqual(reports.first?.event.rawValue, "start")
+        XCTAssertEqual(reports.first?.progress.isPaused, false)
+        await viewModel.stop()
+    }
+
+    func testFailedEngineLoadDoesNotPublishReadyBeforeItsFailureCallbackRuns() async {
+        let (viewModel, engine, provider) = makeViewModel()
+        engine.failureDuringLoad = .invalidResponse
+        await viewModel.load()
+        XCTAssertEqual(engine.status, .failed(.invalidResponse))
+        XCTAssertNotEqual(viewModel.phase, .ready)
+        let reports = await provider.reports
+        XCTAssertFalse(reports.contains { $0.event == .start })
+        await viewModel.stop()
+    }
+
+    func testCancelledEngineLoadDoesNotPublishReadyOrPlaybackStart() async {
+        let (viewModel, engine, provider) = makeViewModel()
+        engine.cancelDuringLoad = true
+        await viewModel.load()
+        XCTAssertEqual(engine.status, .ready,
+                       "Cancellation must win even if an engine returns a ready status")
+        XCTAssertNotEqual(viewModel.phase, .ready)
+        let reports = await provider.reports
+        XCTAssertFalse(reports.contains { $0.event == .start })
+        await viewModel.stop()
+    }
+
     func testNowPlayingFollowsPauseSpeedAndEndsBeforeTransportDrain() async {
         let publisher = VideoNowPlayingPublisherSpy()
         let (viewModel, engine, _) = makeViewModel(nowPlayingPublisher: publisher)
@@ -26,6 +111,8 @@ final class PlayerViewModelEOFTests: XCTestCase {
         publisher.command?(.pause)
         XCTAssertTrue(engine.isPaused)
         XCTAssertEqual(publisher.info[MPNowPlayingInfoPropertyPlaybackRate] as? Double, 0)
+        publisher.command?(.play)
+        XCTAssertTrue(viewModel.wantsForegroundDisplayAwake)
 
         let drain = PreCommitYieldGate()
         engine.drainGate = drain
@@ -33,6 +120,8 @@ final class PlayerViewModelEOFTests: XCTestCase {
         await waitForGate(drain, entries: 1)
         XCTAssertFalse(publisher.isActive)
         XCTAssertTrue(publisher.info.isEmpty)
+        XCTAssertFalse(viewModel.wantsForegroundDisplayAwake,
+                       "A stopped player must release its lease before transport cleanup finishes")
         drain.releaseNext()
         await stop.value
     }
@@ -193,7 +282,9 @@ final class PlayerViewModelEOFTests: XCTestCase {
     func testBackgroundDuringBringUpReportsPausedStartBeforeRecovery() async {
         let (viewModel, engine, provider) = makeViewModel()
 
+        XCTAssertTrue(viewModel.wantsForegroundDisplayAwake)
         viewModel.didEnterBackground()
+        XCTAssertFalse(viewModel.wantsForegroundDisplayAwake)
         await viewModel.load()
         await viewModel.resumeAfterBackground()
         for _ in 0..<10 { await Task.yield() }
@@ -203,6 +294,12 @@ final class PlayerViewModelEOFTests: XCTestCase {
         let reports = await provider.reports
         XCTAssertEqual(reports.map(\.event.rawValue), ["start"])
         XCTAssertEqual(reports.first?.progress.isPaused, true)
+        XCTAssertFalse(viewModel.wantsForegroundDisplayAwake,
+                       "Foreground recovery must not invent an explicit resume")
+        viewModel.setPaused(false)
+        XCTAssertFalse(engine.isPaused)
+        XCTAssertTrue(viewModel.wantsForegroundDisplayAwake)
+        await viewModel.stop()
     }
 
     func testStopAfterRewindUsesCurrentPositionInsteadOfFurthest() async {
@@ -1228,12 +1325,16 @@ private final class SpyVideoEngine: VideoEngine {
     var drainTransportCount = 0
     var reloadAfterForegroundCount = 0
     var drainGate: PreCommitYieldGate?
+    var failureDuringLoad: AppError?
+    var cancelDuringLoad = false
 
     func load(request: PlaybackRequest, startPosition: TimeInterval) async {
         loadCount += 1
-        status = .ready
+        if let failureDuringLoad { status = .failed(failureDuringLoad) }
+        else { status = .ready }
         currentTime = startPosition
         furthestObservedPosition = max(furthestObservedPosition, startPosition)
+        if cancelDuringLoad { withUnsafeCurrentTask { $0?.cancel() } }
     }
 
     func play() { isPaused = false }

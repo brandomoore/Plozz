@@ -213,11 +213,14 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     private var surfacePan: PlayerSurfacePanGestureRecognizer?
     private var selectRecognizer: UIGestureRecognizer?
 
+    #if !os(iOS)
     /// Suppresses the tvOS screensaver / Apple TV sleep while video is actively
     /// playing, and releases it the instant playback pauses, ends, or this host
     /// goes away. Driven every refresh tick off `engine.preventsDisplaySleep`, so
     /// it behaves identically for every engine/decoder (AVPlayer *and* Plozzigen).
+    /// iOS owns its lease at the presentation level, including startup/buffering.
     private let idleSleepGuard = IdleSleepGuard()
+    #endif
 
     /// Whether the Siri Remote currently drives the scrub surface or the bottom
     /// control bar. In `.controlBar` the surface gesture recognizers are disabled
@@ -326,8 +329,10 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         if ScrubDiagnostics.forceScrubRefresh { engine.setScrubRefreshBoost(false) }
         subtitleClock?.invalidate()
         subtitleClock = nil
+        #if !os(iOS)
         // Leaving playback: let the screensaver / Apple TV sleep resume.
         idleSleepGuard.allowSleep()
+        #endif
 #if os(tvOS)
         remoteTouchInput.stop()
 #endif
@@ -546,10 +551,12 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     }
 
     private func refreshFromEngine() {
+        #if !os(iOS)
         // Keep the display awake only while frames are actually advancing.
         // Evaluated every tick, before any early-return, so a pause, end-of-
         // stream, or stall promptly releases the wake lock for every engine.
         idleSleepGuard.keepAwake(engine.preventsDisplaySleep)
+        #endif
         let resolution = PlaybackClockReconciler.reconcile(
             snapshot: .init(
                 currentTime: engine.currentTime,

@@ -129,6 +129,17 @@ public final class PlayerViewModel {
         }
     }
 
+    /// Mobile presentation keeps the screen awake while playback is requested,
+    /// including startup and buffering when the engine is not advancing frames.
+    /// Visibility and scene activity are separate gates owned by the view.
+    var wantsForegroundDisplayAwake: Bool {
+        guard intendsPlayback, !didStop, !didReachNaturalEnd else { return false }
+        switch phase {
+        case .loading, .ready: return true
+        case .failed: return false
+        }
+    }
+
     /// Set to `true` when playback reaches its natural end *and* this player was
     /// configured to auto-dismiss on completion (currently trailers). The view
     /// observes this and dismisses itself. Ignored for regular library playback,
@@ -389,7 +400,7 @@ public final class PlayerViewModel {
     private var seekCoordinator: SeekScrubCoordinator!
 
     /// The single source of truth for "should the video be playing right now",
-    /// driven ONLY by genuine play/pause commands via `setPaused`. Unlike
+    /// driven by transport commands and scene suspension through `applyPaused`. Unlike
     /// `engine.isPaused` / `controls.isPaused`, it is never written by the engine
     /// state mirror, so it stays correct even while the engine transiently
     /// settles to rate-0 after a seek. All post-seek resume and transport
@@ -1533,9 +1544,12 @@ public final class PlayerViewModel {
             position: startPosition
         )
         await engine.load(request: request, startPosition: startPosition)
-        guard dynamicRangeLoadGeneration == rangeLoadGeneration, !didStop else {
+        guard !Task.isCancelled, dynamicRangeLoadGeneration == rangeLoadGeneration, !didStop else {
             return
         }
+        // The engine's failure callback is reconciled asynchronously; its status
+        // can already be failed before that task updates the view-model phase.
+        if case .failed = engine.status { return }
         if case .failed = phase { return }
         if engineKind != .native, let facts = engine.probedSourceFacts {
             applyEngineProbedSourceFacts(facts)
@@ -1734,6 +1748,11 @@ public final class PlayerViewModel {
         // resume position stays correct either way.
         if (playbackSettings.backgroundAudio && phase == .ready)
             || pictureInPictureEngine?.continuesPlaybackInBackground == true {
+            HandoffDiagnostics.emit(
+                "session SUSPEND_CONTINUING vm=\(instanceID) pausedIntent=\(!intendsPlayback)"
+                    + " backgroundAudio=\(playbackSettings.backgroundAudio)"
+                    + " external=\(pictureInPictureEngine?.continuesPlaybackInBackground == true)"
+            )
             return
         }
         #endif
@@ -1742,7 +1761,7 @@ public final class PlayerViewModel {
         // routes through `cancelResumeConfirm()` so a recovery loop can't wake the
         // engine back up as the app suspends.
         if intendsPlayback {
-            setPaused(true)
+            applyPaused(true, origin: "scene-suspension")
         }
     }
 
@@ -1764,6 +1783,9 @@ public final class PlayerViewModel {
     /// ``ForegroundReloadCoordinator``.
     public func resumeAfterBackground() async {
         isInBackground = false
+        HandoffDiagnostics.emit(
+            "session FOREGROUND vm=\(instanceID) pausedIntent=\(!intendsPlayback) loading=\(phase == .loading)"
+        )
         await foregroundReload.resume()
         nowPlaying?.refresh()
     }
@@ -1852,7 +1874,16 @@ public final class PlayerViewModel {
     }
 
     public func setPaused(_ paused: Bool) {
+        applyPaused(paused, origin: "transport")
+    }
+
+    private func applyPaused(_ paused: Bool, origin: String) {
         guard !didStop, !didReachNaturalEnd else { return }
+        HandoffDiagnostics.emit(
+            "session PLAYBACK_INTENT vm=\(instanceID) origin=\(origin)"
+                + " fromPaused=\(!intendsPlayback) paused=\(paused) loading=\(phase == .loading)"
+                + " engineReady=\(engine.status == .ready) enginePaused=\(engine.isPaused)"
+        )
         // This is the one funnel for genuine play/pause intent — record it before
         // anything else so every resume/transport decision has a truthful signal
         // that the engine's transient post-seek pause can't corrupt.
@@ -2242,7 +2273,7 @@ extension PlayerViewModel: SeekScrubCoordinatorHost {
     var seekEngine: any VideoEngine { engine }
     var seekIntendsPlayback: Bool { intendsPlayback }
     var seekDidStop: Bool { didStop }
-    func seekApplyPaused(_ paused: Bool) { setPaused(paused) }
+    func seekApplyPaused(_ paused: Bool) { applyPaused(paused, origin: "seek") }
 }
 
 extension PlayerViewModel: WatchProgressReporterHost {
@@ -2532,7 +2563,7 @@ extension PlayerViewModel: VideoNowPlayingHost {
     }
 
     func nowPlayingSetPaused(_ paused: Bool) {
-        setPaused(paused)
+        applyPaused(paused, origin: "system-command")
         #if os(iOS)
         if !paused, isInBackground, systemResumeTask == nil {
             systemResumeTask = Task { [weak self] in
@@ -2549,7 +2580,7 @@ extension PlayerViewModel: VideoNowPlayingHost {
     func nowPlayingPlayEpisode(_ item: MediaItem) { playEpisode(item) }
     func nowPlayingStop() {
         nowPlaying?.end()
-        setPaused(true)
+        applyPaused(true, origin: "system-stop")
         shouldDismiss = true
     }
 }

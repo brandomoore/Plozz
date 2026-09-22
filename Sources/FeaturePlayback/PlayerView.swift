@@ -69,6 +69,11 @@ public struct PlayerView: View {
 
     public var body: some View {
         configuredPlayerStack
+        #if os(iOS)
+        .modifier(MobilePlaybackDisplaySleepModifier(
+            playbackActive: viewModel.wantsForegroundDisplayAwake
+        ))
+        #endif
         .onChange(of: viewModel.shouldDismiss) { _, shouldDismiss in
             // Playback finished; close the player so it never freezes on the final
             // frame. Use the HDR-aware path so finishing a Dolby Vision/HDR title
