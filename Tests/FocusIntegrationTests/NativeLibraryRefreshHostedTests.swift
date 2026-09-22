@@ -10,6 +10,56 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testJumpProgressPanelIsReadableAboveArtworkInBothThemes() async throws {
+        for light in [false, true] {
+            let provider = RefreshLibraryProvider()
+            await provider.enableAlphabet(letters: ["A", "Q"])
+            let model = LibraryBrowseViewModel(
+                provider: provider, containerID: "library", containerKind: .movie,
+                defaults: UserDefaults(suiteName: UUID().uuidString)!)
+            await model.loadFirstPage()
+            await provider.holdNextPage(at: 112)
+            try await withLibrary(model: model, palette: light ? .light : .dark) { root, window in
+                let jump = Task { await model.jumpToLetter("Q") }
+                defer {
+                    model.cancelLetterJump()
+                    Task { await provider.releasePage() }
+                }
+                await waitForHeldPage(provider)
+                try await Task.sleep(for: .milliseconds(200))
+                window.layoutIfNeeded()
+                XCTAssertEqual(model.alphabet.jumpingTo, "Q")
+                let candidates = focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                    guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                          window.bounds.contains(frame),
+                          frame.midY > window.bounds.height * 0.75,
+                          frame.midX > window.bounds.width * 0.5 else { return nil }
+                    return (item, frame)
+                }
+                let cancel = try XCTUnwrap(candidates.max { $0.1.midY < $1.1.midY })
+                let labelWidth = ("Cancel" as NSString).size(withAttributes: [
+                    .font: UIFont.preferredFont(forTextStyle: .body)
+                ]).width
+                XCTAssertGreaterThan(cancel.1.width, labelWidth + 40, "Cancel must not compress to Can...")
+                XCTAssertTrue(window.bounds.contains(cancel.1))
+                capture(window, name: light ? "alphabet-progress-light" : "alphabet-progress-dark")
+                let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
+                controller.target = cancel.0
+                let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                focus.requestFocusUpdate(to: controller)
+                focus.updateFocusIfNeeded()
+                try await Task.sleep(for: .milliseconds(200))
+                XCTAssertTrue(focus.focusedItem === cancel.0, "Cancel must remain usable during resolution")
+                capture(window, name: light ? "alphabet-cancel-light" : "alphabet-cancel-dark")
+                controller.target = nil
+                model.cancelLetterJump()
+                await provider.releasePage()
+                _ = await jump.value
+                XCTAssertNil(model.alphabet.destination)
+            }
+        }
+    }
+
     func testMenuSelectionCommitsOnlyAfterPresentedControllerDismisses() async throws {
         let provider = RefreshLibraryProvider()
         let model = LibraryBrowseViewModel(provider: provider, containerID: "library", containerKind: .movie)
@@ -45,6 +95,41 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             await fulfillment(of: [finished], timeout: 2)
             XCTAssertEqual(committed, ["M"])
             completion.update(selection: nil, onCommit: nil)
+        }
+    }
+
+    func testManualScrollingKeepsViewportAndFocusWhenPendingRowsArrive() async throws {
+        let provider = RefreshLibraryProvider()
+        await provider.enableAlphabet(letters: LibraryLetterIndex.railLetters)
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie,
+            defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await model.loadFirstPage()
+        await provider.holdNextPage(at: 112)
+        defer { Task { await provider.releasePage() } }
+        try await withGrid(model: model) { collection in
+            let path = IndexPath(item: 140, section: 0)
+            collection.scrollToItem(at: path, at: .centeredVertically, animated: false)
+            collection.layoutIfNeeded()
+            await waitForHeldPage(provider)
+            let cell = try XCTUnwrap(collection.cellForItem(at: path) as? NativeTVLibraryCell)
+            XCTAssertNil(cell.item)
+            XCTAssertTrue(cell.onRequestFocus?() == true)
+            try await Task.sleep(for: .milliseconds(250))
+            let offset = collection.contentOffset
+            XCTAssertNil(model.alphabet.positionLetter,
+                         "A pending viewport must not claim an earlier letter: top=\(String(describing: model.topVisibleIndex)) visible=\(collection.indexPathsForVisibleItems.sorted()) offset=\(offset)")
+            XCTAssertTrue(model.alphabet.isPositionLoading)
+            capture(try XCTUnwrap(collection.window), name: "alphabet-manual-pending")
+            await provider.releasePage()
+            try await Task.sleep(for: .milliseconds(300))
+            XCTAssertEqual(collection.contentOffset.x, offset.x, accuracy: 2)
+            XCTAssertEqual(collection.contentOffset.y, offset.y, accuracy: 2)
+            XCTAssertTrue(cell.isFocused)
+            XCTAssertTrue(UIFocusSystem(for: cell)?.focusedItem === cell)
+            XCTAssertEqual(cell.item?.title, "Movie 140")
+            XCTAssertNil(model.alphabet.destination)
+            capture(try XCTUnwrap(collection.window), name: "alphabet-manual-loaded")
         }
     }
 
@@ -339,6 +424,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
     private func withLibrary(
         model: LibraryBrowseViewModel,
         focusStyle: CardFocusStyle = .system,
+        palette: ThemePalette = .dark,
         onSelect: @escaping (MediaItem) -> Void = { _ in },
         body: (UIView, UIWindow) async throws -> Void
     ) async throws {
@@ -352,6 +438,8 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 LibraryBrowseView(viewModel: model, title: Text("Library"), onSelect: onSelect)
                 .environment(\.plozzCardFocusStyle, focusStyle)
                 .environment(\.plozzCardStyle, .borderless)
+                .environment(\.themePalette, palette)
+                .preferredColorScheme(palette.isLight ? .light : .dark)
         )
         let container = LibraryFocusFixtureController()
         container.addChild(host)
@@ -393,6 +481,34 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         if let result = controller as? T { return result }
         return controller.children.lazy.compactMap { self.findController(type, in: $0) }.first
     }
+
+    private func focusItems(in window: UIWindow) -> [any UIFocusItem] {
+        var containers: [any UIFocusItemContainer] = [window]
+        var seen = Set<ObjectIdentifier>()
+        var result: [any UIFocusItem] = []
+        while let container = containers.popLast() {
+            guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
+            let frame = container.coordinateSpace.convert(window.bounds, from: window)
+            for item in container.focusItems(in: frame) {
+                if let children = item.focusItemContainer { containers.append(children) }
+                if let view = item as? UIView { containers.append(view) }
+                if item.canBecomeFocused, !(item is UIScrollView) { result.append(item) }
+            }
+        }
+        return result
+    }
+
+    private func capture(_ window: UIWindow, name: String) {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image {
+            window.layer.render(in: $0.cgContext)
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
 }
 
 private final class LibraryFocusFixtureController: UIViewController {
@@ -413,18 +529,22 @@ private actor RefreshLibraryProvider: MediaProvider {
     private var fails = false
     private var pageCap: Int?
     private var alphabetEnabled = false
+    private var alphabetLetters = ["A", "M"]
     private var heldStart: Int?
     private var heldPage: CheckedContinuation<Void, Never>?
     var isHoldingPage: Bool { heldPage != nil }
 
-    func enableAlphabet() { alphabetEnabled = true }
+    func enableAlphabet(letters: [String] = ["A", "M"]) {
+        alphabetEnabled = true
+        alphabetLetters = letters
+    }
     func letterIndex(in containerID: String, kind: MediaItemKind,
                      sort: CoreModels.SortDescriptor) async throws -> [LibraryLetterIndexEntry] {
-        alphabetEnabled && sort.field == .name ? [.init(letter: "A"), .init(letter: "M")] : []
+        alphabetEnabled && sort.field == .name ? alphabetLetters.map { .init(letter: $0) } : []
     }
     func letterPosition(in containerID: String, kind: MediaItemKind, letter: String,
                         sort: CoreModels.SortDescriptor) async throws -> Int? {
-        letter == "M" ? 140 : 0
+        letter == "A" ? 0 : 140
     }
 
     func change(total: Int, prefix: String) {

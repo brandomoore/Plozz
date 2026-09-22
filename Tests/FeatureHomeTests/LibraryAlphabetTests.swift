@@ -51,7 +51,7 @@ final class LibraryAlphabetTests: XCTestCase {
         XCTAssertTrue(vm.showsLetterRail)
     }
 
-    func testUnloadedViewportRetainsLastLetterUntilItsPageArrives() async {
+    func testUnloadedViewportRetainsLayoutButNotAStalePositionLetter() async {
         let source = provider()
         source.allItems = (0..<100).map {
             MediaItem(id: "\($0)", title: "\($0 < 70 ? "Alpha" : "Zulu") \($0)", kind: .movie)
@@ -69,13 +69,15 @@ final class LibraryAlphabetTests: XCTestCase {
         let paging = Task { await vm.itemAppeared(at: 70) }
         await fulfillment(of: [started], timeout: 1)
         XCTAssertNil(vm.letter(forIndex: 70))
-        XCTAssertEqual(vm.alphabet.positionLetter, "A")
+        XCTAssertNil(vm.alphabet.positionLetter)
+        XCTAssertEqual(vm.alphabet.lastKnownPositionLetter, "A")
         XCTAssertTrue(vm.alphabet.isPositionLoading)
         await paging.value
         XCTAssertEqual(vm.alphabet.positionLetter, "Z")
         XCTAssertFalse(vm.alphabet.isPositionLoading)
         await vm.setSort(.init(field: .dateAdded, direction: .descending))
         XCTAssertNil(vm.alphabet.positionLetter)
+        XCTAssertNil(vm.alphabet.lastKnownPositionLetter)
         XCTAssertFalse(vm.alphabet.isPositionLoading)
     }
 
@@ -90,6 +92,73 @@ final class LibraryAlphabetTests: XCTestCase {
         XCTAssertEqual(vm.alphabet.destination?.focusesItem, true)
     }
 
+    func testNativeViewportOverridesOffscreenFocusedCellUntilItsPageLoads() async {
+        let source = provider()
+        source.alphabetEntries = LibraryLetterIndex.deferredEntries(direction: .ascending)
+        let vm = model(source)
+        await vm.loadFirstPage()
+        await waitForIndex(vm)
+        await vm.itemAppeared(at: 0)
+        vm.reportViewport(firstIndex: 70, generation: vm.contentGeneration)
+        XCTAssertEqual(vm.topVisibleIndex, 70)
+        XCTAssertNil(vm.alphabet.positionLetter)
+        XCTAssertTrue(vm.alphabet.isPositionLoading)
+        await vm.itemAppeared(at: 0)
+        XCTAssertEqual(vm.topVisibleIndex, 70, "Retained off-screen cell callbacks cannot replace the viewport")
+        await vm.itemAppeared(at: 70)
+        XCTAssertEqual(vm.alphabet.positionLetter, "M")
+        XCTAssertFalse(vm.alphabet.isPositionLoading)
+        let oldGeneration = vm.contentGeneration
+        await vm.loadFirstPage()
+        vm.reportViewport(firstIndex: 70, generation: oldGeneration)
+        XCTAssertNotEqual(vm.topVisibleIndex, 70, "Old-layout callbacks cannot affect a new browse generation")
+    }
+
+    func testCombinedSiloManualScrollNeverLabelsUnloadedZRowsAsT() async {
+        func items(parity: Int, kind: MediaItemKind) -> [MediaItem] {
+            stride(from: parity, to: 600, by: 2).map { index in
+                let letter = index < 380 ? "A" : index < 480 ? "T" : "Z"
+                return MediaItem(id: "\(index)", title: "\(letter) \(index)", kind: kind)
+            }
+        }
+        let movies = FakeMediaProvider(allItems: items(parity: 0, kind: .movie), kind: .silo)
+        let shows = FakeMediaProvider(allItems: items(parity: 1, kind: .series), kind: .silo)
+        let gate = AlphabetPageGate()
+        let started = expectation(description: "Library page beyond T is pending")
+        movies.pageHooks[260] = {
+            started.fulfill()
+            await gate.wait()
+        }
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "silo", containerID: "movies", provider: movies, kind: .movie),
+            .init(accountID: "silo", containerID: "shows", provider: shows, kind: .series)
+        ])
+        let vm = LibraryBrowseViewModel(
+            provider: provider, containerID: "all", containerKind: .unknown, pageSize: 20,
+            defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await vm.loadFirstPage()
+        await waitForIndex(vm)
+        await vm.itemAppeared(at: 400)
+        XCTAssertEqual(vm.alphabet.positionLetter, "T")
+        vm.itemDisappeared(at: 400)
+        let paging = Task { await vm.itemAppeared(at: 540) }
+        await fulfillment(of: [started], timeout: 2)
+        XCTAssertEqual(vm.totalCount, 600)
+        XCTAssertEqual(vm.topVisibleIndex, 540)
+        XCTAssertNil(vm.item(at: 540))
+        XCTAssertTrue(vm.alphabet.isPositionLoading)
+        XCTAssertNil(vm.alphabet.positionLetter, "T is old content, not the current unloaded viewport")
+        XCTAssertNil(vm.alphabet.destination, "Manual scrolling must not publish an alphabet jump")
+        await gate.release()
+        await paging.value
+        XCTAssertEqual(vm.totalCount, 600, "No total correction or deduplication is needed to reproduce this")
+        XCTAssertEqual(vm.topVisibleIndex, 540, "Loading must keep the user's slot rather than seek elsewhere")
+        XCTAssertEqual(vm.item(at: 540)?.title, "Z 540")
+        XCTAssertEqual(vm.alphabet.positionLetter, "Z")
+        XCTAssertNil(vm.alphabet.destination)
+        vm.itemDisappeared(at: 540)
+    }
+
     func testViewportCallbacksDoNotPruneThePendingLandingPage() async {
         let source = provider()
         let started = expectation(description: "Landing page requested")
@@ -97,6 +166,7 @@ final class LibraryAlphabetTests: XCTestCase {
             started.fulfill()
             try await Task.sleep(for: .milliseconds(100))
         }
+
         let vm = model(source)
         await vm.loadFirstPage()
         await waitForIndex(vm)
@@ -196,6 +266,22 @@ final class LibraryAlphabetTests: XCTestCase {
         XCTAssertNil(retry)
         XCTAssertEqual(vm.alphabet.destination, destination)
         XCTAssertNotNil(vm.alphabet.message)
+    }
+}
+
+private actor AlphabetPageGate {
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !released else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        for waiter in waiters { waiter.resume() }
+        waiters.removeAll()
     }
 }
 

@@ -288,6 +288,7 @@ public final class LibraryBrowseViewModel {
         visibleCellCountsByPage = [:]
         visibleIndices = []
         topVisibleIndex = nil
+        reportedViewportIndex = nil
         lastAppearedIndex = nil
         letterIndexTask?.cancel()
         alphabet.reset()
@@ -561,12 +562,26 @@ public final class LibraryBrowseViewModel {
     /// visible cell, so the highlight doesn't flash back to the first letter
     /// mid-library.
     public private(set) var topVisibleIndex: Int?
+    @ObservationIgnored private var reportedViewportIndex: Int?
+
+    /// UIKit may retain an off-screen focused cell among its visible items.
+    /// Native grids report their intersecting layout frames instead of that cache.
+    public func reportViewport(firstIndex: Int, generation: Int) {
+        guard generation == contentGeneration, firstIndex >= 0, firstIndex < totalCount else { return }
+        reportedViewportIndex = firstIndex
+        updateTopVisibleIndex()
+    }
+
+    public func clearReportedViewport() {
+        reportedViewportIndex = nil
+        updateTopVisibleIndex()
+    }
 
     /// Recompute `topVisibleIndex` from the live visible set, publishing only a
     /// genuine change and never nil-ing out during a transient empty frame, so the
     /// rail highlight stays put and observers aren't churned needlessly.
     private func updateTopVisibleIndex() {
-        guard let newTop = visibleIndices.min() else { return }
+        guard let newTop = reportedViewportIndex ?? visibleIndices.min() else { return }
         if topVisibleIndex != newTop {
             topVisibleIndex = newTop
             updateAlphabetPosition()

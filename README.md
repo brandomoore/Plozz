@@ -90,7 +90,8 @@ presents them as a single library rather than a set of tabs you switch between.
   libraries resolve exact positions on demand; a deep first jump may take time,
   can be cancelled, and leaves the current view in place until its titles load.
   TV menu selections move focus to the destination card; rail navigation keeps
-  focus on the letters. The rail retains its last known letter while titles load.
+  focus on the letters. While rows load, the rail stays visible without claiming
+  an unverified current letter. Jump progress and Cancel use a readable status panel.
   Other sorts and collection-member lists keep their own ordering.
 - **Common Sense Media in Ratings** — Plex movie and show details can display
   a prominent recommended age, separate from review scores. When header ratings

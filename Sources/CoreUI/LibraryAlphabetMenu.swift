@@ -139,6 +139,7 @@ struct LibraryAlphabetMenuCompletion: UIViewControllerRepresentable {
 #endif
 
 public struct LibraryAlphabetStatus: View {
+    @Environment(\.themePalette) private var palette
     let letter: String?
     let message: LocalizedStringResource?
     let onCancel: () -> Void
@@ -150,17 +151,38 @@ public struct LibraryAlphabetStatus: View {
     }
 
     public var body: some View {
-        if let letter {
-            HStack(spacing: 18) {
-                ProgressView("Finding \(letter)…")
-                Button("Cancel", action: onCancel)
+        if letter != nil || message != nil {
+            HStack(spacing: PlozzTheme.Spacing.large) {
+                if let letter {
+                    ProgressView()
+                        .tint(palette.primaryText)
+                        .fixedSize()
+                        .accessibilityHidden(true)
+                    Text("Finding \(letter)…")
+                        .font(.headline)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
+                        .accessibilityIdentifier("library-alphabet-status-message")
+                    Spacer(minLength: PlozzTheme.Spacing.large)
+                    Button("Cancel", action: onCancel)
+                        .plozzActionButton(role: .secondary)
+                        .fixedSize(horizontal: true, vertical: true)
+                        .accessibilityIdentifier("library-alphabet-status-cancel")
+                } else if let message {
+                    Text(message)
+                        .font(.headline)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("library-alphabet-status-message")
+                }
             }
-            .padding()
-        } else if let message {
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .padding()
+            .foregroundStyle(palette.primaryText)
+            .padding(.horizontal, PlozzTheme.Spacing.large)
+            .padding(.vertical, PlozzTheme.Spacing.medium)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .plozzSurface(.overlay, cornerRadius: 20)
+            .accessibilityIdentifier("library-alphabet-status-panel")
+            .padding(.horizontal, PlozzTheme.Spacing.medium)
+            .padding(.vertical, PlozzTheme.Spacing.small)
         }
     }
 }

@@ -71,6 +71,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     private var requestedFocusIndex: IndexPath?
     private var measuredHeaderHeight: CGFloat = 0
     private var hidesScrollIndicator = false
+    private var viewportReport: Task<Void, Never>?
 
     override var preferredFocusEnvironments: [any UIFocusEnvironment] {
         requestedFocusIndex == nil ? super.preferredFocusEnvironments : [collection]
@@ -201,6 +202,27 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
             layout.invalidateLayout()
         }
         headerHost.view.frame = CGRect(origin: .zero, size: headerSize)
+        scheduleViewportReport()
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        scheduleViewportReport()
+    }
+
+    private func scheduleViewportReport() {
+        guard viewportReport == nil, viewIfLoaded?.window != nil else { return }
+        let generation = generation
+        viewportReport = Task { @MainActor [weak self] in
+            // Publish outside UIKit/SwiftUI's layout update, coalescing a scroll frame.
+            await Task.yield()
+            guard !Task.isCancelled, let self else { return }
+            self.viewportReport = nil
+            guard self.generation == generation, self.viewIfLoaded?.window != nil,
+                  let first = self.layout.layoutAttributesForElements(in: self.collection.bounds)?
+                    .filter({ $0.representedElementCategory == .cell && $0.frame.intersects(self.collection.bounds) })
+                    .map(\.indexPath.item).min() else { return }
+            self.model?.reportViewport(firstIndex: first, generation: generation)
+        }
     }
 
     func scroll(to index: Int, focusesItem: Bool = false) {
@@ -288,12 +310,15 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     }
 
     func stopObserving() {
+        viewportReport?.cancel()
+        viewportReport = nil
         for binding in bindings.values {
             binding.load?.cancel()
             model?.itemDisappeared(at: binding.index, generation: binding.generation)
         }
 
         bindings.removeAll()
+        model?.clearReportedViewport()
         if isViewLoaded {
             for cell in collection.visibleCells { (cell as? NativeTVLibraryCell)?.cancelArtwork() }
         }

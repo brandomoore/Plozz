@@ -655,6 +655,7 @@ private struct LibraryRailLayer: View {
                 LibraryLetterRail(
                     entries: viewModel.letterEntries,
                     currentLetter: currentLetter,
+                    layoutLetter: currentLetter ?? viewModel.alphabet.lastKnownPositionLetter,
                     isLoading: viewModel.alphabet.isPositionLoading || viewModel.alphabet.jumpingTo != nil,
                     focusedLetter: $railFocusedLetter,
                     onScrollToLetter: { entry in
@@ -706,6 +707,7 @@ private struct LibraryRailLayer: View {
 private struct LibraryLetterRail: View, Equatable {
     let entries: [LibraryLetterIndexEntry]
     let currentLetter: String?
+    let layoutLetter: String?
     let isLoading: Bool
     @Binding var focusedLetter: String?
     let onScrollToLetter: (LibraryLetterIndexEntry) -> Void
@@ -717,7 +719,8 @@ private struct LibraryLetterRail: View, Equatable {
     // scroll closure are excluded (they can't be compared and don't change the
     // rail's appearance). Internal @FocusState changes still re-render as usual.
     static func == (lhs: LibraryLetterRail, rhs: LibraryLetterRail) -> Bool {
-        lhs.currentLetter == rhs.currentLetter && lhs.entries == rhs.entries && lhs.isLoading == rhs.isLoading
+        lhs.currentLetter == rhs.currentLetter && lhs.layoutLetter == rhs.layoutLetter
+            && lhs.entries == rhs.entries && lhs.isLoading == rhs.isLoading
     }
 
     var body: some View {
@@ -736,7 +739,8 @@ private struct LibraryLetterRail: View, Equatable {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(
-                    LetterRailButtonStyle(isCurrent: isActive, magnification: magnification)
+                    LetterRailButtonStyle(isCurrent: isActive, magnification: magnification,
+                                          showsMagnification: currentLetter != nil)
                 )
                 // A single liquid-glass pill lives behind whichever letter is active
                 // and rides `matchedGeometryEffect`, so changing the active letter
@@ -757,7 +761,7 @@ private struct LibraryLetterRail: View, Equatable {
                 }
                 // Fade with distance from the active letter (brightest at the
                 // "cursor", dimmer further out) but never below a legible floor.
-                .opacity(opacity(forMagnification: magnification))
+                .opacity(currentLetter == nil ? 1 : opacity(forMagnification: magnification))
                 .overlay(alignment: .trailing) {
                     if isActive, isLoading {
                         ProgressView()
@@ -777,6 +781,17 @@ private struct LibraryLetterRail: View, Equatable {
         // already inset from the bezel by overscan) rather than pushing content.
         // Wide enough to give the enlarged active bubble room without clipping.
         .frame(width: 64)
+        .overlay(alignment: .leading) {
+            if isLoading, currentLetter == nil {
+                ProgressView()
+                    .accessibilityLabel("Loading titles")
+                    .frame(width: 24, height: 24)
+                    .padding(10)
+                    .plozzSurface(.overlay, cornerRadius: 22)
+                    .offset(x: -48)
+                    .allowsHitTesting(false)
+            }
+        }
         // Morph + magnify the letters between slots as the active letter changes —
         // whether that's the focused rail letter or the top-of-grid position marker.
         // A gentle spring makes the dock-style ripple feel slick rather than abrupt.
@@ -807,8 +822,8 @@ private struct LibraryLetterRail: View, Equatable {
     /// Index of the currently-active letter (focused rail letter, or the top-of-grid
     /// position marker), used as the "cursor" the dock-style magnification centres on.
     private var activeIndex: Int? {
-        guard let currentLetter else { return nil }
-        return entries.firstIndex { $0.letter == currentLetter }
+        guard let layoutLetter else { return nil }
+        return entries.firstIndex { $0.letter == layoutLetter }
     }
 
     /// Resting scale of the letters far from the cursor. Below 1 so the inactive
@@ -850,15 +865,18 @@ private struct LibraryLetterRail: View, Equatable {
 private struct LetterRailButtonStyle: ButtonStyle {
     let isCurrent: Bool
     let magnification: CGFloat
+    let showsMagnification: Bool
 
     func makeBody(configuration: Configuration) -> some View {
-        RailLetterBody(configuration: configuration, isCurrent: isCurrent, magnification: magnification)
+        RailLetterBody(configuration: configuration, isCurrent: isCurrent,
+                       magnification: magnification, showsMagnification: showsMagnification)
     }
 
     private struct RailLetterBody: View {
         let configuration: ButtonStyle.Configuration
         let isCurrent: Bool
         let magnification: CGFloat
+        let showsMagnification: Bool
         @Environment(\.isFocused) private var isFocused
         @Environment(\.themePalette) private var palette
 
@@ -873,7 +891,7 @@ private struct LetterRailButtonStyle: ButtonStyle {
                 .foregroundStyle(foreground)
                 // Scale the glyph itself (smooth) but reserve the magnified height so
                 // the stack reflows and neighbours slide away, like the macOS Dock.
-                .scaleEffect(magnification)
+                .scaleEffect(showsMagnification ? magnification : 1)
                 .frame(width: 56, height: 37 * magnification)
         }
     }

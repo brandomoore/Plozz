@@ -17,6 +17,7 @@ public final class LibraryAlphabetState {
     public internal(set) var message: LocalizedStringResource?
     public internal(set) var destination: LibraryAlphabetDestination?
     public private(set) var positionLetter: String?
+    public private(set) var lastKnownPositionLetter: String?
     public private(set) var isPositionLoading = false
     @ObservationIgnored var jumpTask: Task<Int?, Never>?
     @ObservationIgnored var jumpID = UUID()
@@ -24,7 +25,8 @@ public final class LibraryAlphabetState {
     @ObservationIgnored var focusesItem = true
 
     func updatePosition(_ letter: String?) {
-        if let letter { positionLetter = letter }
+        positionLetter = letter
+        if let letter { lastKnownPositionLetter = letter }
         isPositionLoading = letter == nil
     }
 
@@ -50,6 +52,7 @@ public final class LibraryAlphabetState {
         message = nil
         destination = nil
         positionLetter = nil
+        lastKnownPositionLetter = nil
         isPositionLoading = false
     }
 }
