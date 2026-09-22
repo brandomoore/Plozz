@@ -75,7 +75,7 @@ whole-title transcode percentage or claim that a timeout means HEVC is disabled.
 Server decision codes, HTTP failures, native player errors, and startup timeouts
 remain distinct. Only allowlisted error domains and numeric codes enter the UI
 and playback journal; raw server messages and authenticated URLs do not.
-Permission, connection, and server errors do not trigger codec retries.
+Transport failures and explicit authorization errors are not treated as codec incompatibility.
 Plex bounded streams first validate the server's universal-transcoder decision
 with the same session and settings as the start request. HEVC uses fragmented
 MP4 HLS. Decision parsing reads only status codes and the output format; it must
@@ -98,7 +98,16 @@ video plus a 128 Kbps audio budget and maximum dimensions. These are encoder
 targets, not a metered-byte guarantee: variable bitrate, buffering, protocol
 overhead, and artwork mean hourly estimates are approximate.
 
-Automatic and Prefer HEVC allow H.264 fallback at the same quality. HEVC output
+Automatic offers both HEVC and H.264 to the server. Prefer HEVC makes an HEVC-only
+conversion request first on capable devices; a refused codec/decision or failed
+rendition can retry H.264 once at the same quality. An HEVC-only request rejected
+as an invalid/unsupported request (HTTP 400/415/422) gets that same bounded retry.
+Authentication, permission, rate-limit, network and HTTP 5xx failures do not.
+The selected preference is retained during fallback; the player's quality sheet
+shows the observed stream codec when available, never the original file's codec
+or the requested preference as proof of output. Direct play remains preferred
+when the original fits the limit; the codec preference does not force conversion.
+HEVC output
 depends on server version, encoder support, permissions, and configuration;
 Plex hardware transcoding generally requires Plex Pass. Force transcoding is
 an advanced option, not a server hardware-encoder selector. Transcoding may

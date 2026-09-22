@@ -85,8 +85,10 @@ final class StreamingQualityTests: XCTestCase {
     }
 
     func testHEVCIsAPreferenceWithCompatibleFallback() {
-        XCTAssertEqual(StreamingCodecPreference.preferHEVC.codecs(supportsHEVC: true), ["hevc", "h264"])
+        XCTAssertEqual(StreamingCodecPreference.automatic.codecs(supportsHEVC: true), ["hevc", "h264"])
+        XCTAssertEqual(StreamingCodecPreference.preferHEVC.codecs(supportsHEVC: true), ["hevc"])
         XCTAssertEqual(StreamingCodecPreference.preferHEVC.codecs(supportsHEVC: false), ["h264"])
         XCTAssertEqual(StreamingCodecPreference.preferH264.codecs(supportsHEVC: true), ["h264"])
+        XCTAssertEqual(StreamingCodecPreference.automatic.codecs(supportsHEVC: false), ["h264"])
     }
 }

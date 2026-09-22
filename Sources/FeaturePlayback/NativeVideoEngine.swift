@@ -685,6 +685,7 @@ public final class NativeVideoEngine: VideoEngine {
     }
 
     public var streamingOutputDynamicRange: SourceDynamicRange? { convertedVideoFormat?.dynamicRange }
+    public var streamingOutputVideoCodec: DirectPlayVideoCodec? { convertedVideoFormat?.videoCodec }
 
     public var streamingFailure: StreamingPlaybackFailure? {
         guard let item = player?.currentItem else { return nil }

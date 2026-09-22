@@ -12,6 +12,11 @@ private struct RefusingPlaybackResolver: AuthenticatedHTTPResourceResolving {
 }
 
 final class NativePlaybackFailureTests: XCTestCase {
+    func testObservedCodecComesFromTheReturnedFormatDescription() throws {
+        XCTAssertEqual(try format(codec: kCMVideoCodecType_H264, transfer: nil).videoCodec, .h264)
+        XCTAssertEqual(try format(codec: kCMVideoCodecType_HEVC, transfer: nil).videoCodec, .hevc)
+    }
+
     private func format(codec: CMVideoCodecType, transfer: CFString?) throws -> NativePlaybackFailure.VideoFormat {
         var description: CMVideoFormatDescription?
         var extensions: [CFString: Any] = [:]

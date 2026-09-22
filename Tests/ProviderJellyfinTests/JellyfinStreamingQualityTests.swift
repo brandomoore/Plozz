@@ -16,6 +16,48 @@ private struct StreamingErrorHTTP: HTTPClient {
 }
 
 final class JellyfinStreamingQualityTests: XCTestCase {
+    func testHEVCAndAutomaticSendDifferentProfilesToJellyfinAndEmby() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            for capable in [true, false] {
+                for (preference, capableCodecs) in [
+                    (StreamingCodecPreference.automatic, "hevc,h264"),
+                    (.preferHEVC, "hevc"), (.preferH264, "h264")
+                ] {
+                    let http = StubHTTPClient()
+                    http.stub(pathSuffix: "/Items/movie/PlaybackInfo", json: #"{"MediaSources":[]}"#)
+                    let client = JellyfinClient(
+                        baseURL: URL(string: "https://fixture.test")!,
+                        deviceProfile: .init(deviceID: "device"), providerKind: kind, http: http,
+                        capabilityProfile: .appleTV(capabilities: .init(supportsHEVC: capable))
+                    )
+                    _ = try await client.playbackInfo(
+                        userID: "user", itemID: "movie", mediaSourceID: "version",
+                        streaming: .init(quality: .hd720, codec: preference)
+                    )
+                    let body = try XCTUnwrap(http.sentBodies.first { $0.key.hasSuffix("/PlaybackInfo") }?.value)
+                    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+                    let profile = try XCTUnwrap(object["DeviceProfile"] as? [String: Any])
+                    let targets = try XCTUnwrap(profile["TranscodingProfiles"] as? [[String: Any]])
+                    XCTAssertEqual(targets.first?["VideoCodec"] as? String, capable ? capableCodecs : "h264")
+                    XCTAssertEqual(object["MaxStreamingBitrate"] as? Int, 2_000_000)
+                    XCTAssertEqual(object["MediaSourceId"] as? String, "version")
+                }
+            }
+        }
+    }
+
+    func testHEVCPreferenceSelectsHEVCFromServerOfferedCodecList() throws {
+        let source = try JSONDecoder().decode(MediaSourceInfo.self, from: Data(
+            #"{"Id":"version","TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=hevc,h264&SegmentContainer=mp4"}"#.utf8
+        ))
+        let query = try XCTUnwrap(URLComponents(string: source.boundedTranscodingURL(
+            .init(quality: .hd720, codec: .preferHEVC)
+        ))?.queryItems)
+        XCTAssertEqual(query.first { $0.name == "VideoCodec" }?.value, "hevc")
+        XCTAssertEqual(query.first { $0.name == "VideoBitrate" }?.value, "1872000")
+        XCTAssertEqual(query.first { $0.name == "MaxHeight" }?.value, "720")
+    }
+
     func testEmbyAndJellyfinKeepASSAvailableWithoutBurningItIntoVideo() async throws {
         for kind in [ProviderKind.emby, .jellyfin] {
             let (provider, http) = fixture(kind: kind, rendition: true)
@@ -174,7 +216,8 @@ final class JellyfinStreamingQualityTests: XCTestCase {
         for kind in [ProviderKind.jellyfin, .emby] {
             let (small, _) = fixture(kind: kind, rendition: false, bitrate: 1_500_000)
             let direct = try await small.playbackInfo(
-                for: "movie", mediaSourceID: "version", forceTranscode: false, streaming: .init(quality: .hd720)
+                for: "movie", mediaSourceID: "version", forceTranscode: false,
+                streaming: .init(quality: .hd720, codec: .preferHEVC)
             )
             XCTAssertFalse(direct.isTranscoding)
             let (large, http) = fixture(kind: kind, rendition: false)

@@ -106,7 +106,11 @@ extension MediaSourceInfo {
             query.removeAll { $0.name.caseInsensitiveCompare("ManifestSubtitles") == .orderedSame }
         }
         let videoCodec = query.first { $0.name.caseInsensitiveCompare("VideoCodec") == .orderedSame }?.value
-        if options.codec == .preferH264 || !["h264", "hevc"].contains(videoCodec?.lowercased() ?? "") {
+        let offeredCodecs = (videoCodec ?? "").lowercased().split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        if options.codec == .preferHEVC, offeredCodecs.contains("hevc") {
+            set("VideoCodec", "hevc")
+        } else if options.codec == .preferH264 || !["h264", "hevc"].contains(videoCodec?.lowercased() ?? "") {
             set("VideoCodec", "h264")
         }
         set("AudioCodec", "aac")

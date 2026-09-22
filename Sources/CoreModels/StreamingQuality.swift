@@ -60,8 +60,20 @@ public enum StreamingCodecPreference: String, CaseIterable, Codable, Sendable, I
         }
     }
     public func codecs(supportsHEVC: Bool) -> [String] {
-        if supportsHEVC && self != .preferH264 { return ["hevc", "h264"] }
-        return ["h264"]
+        guard supportsHEVC else { return ["h264"] }
+        switch self {
+        case .automatic: return ["hevc", "h264"]
+        case .preferHEVC: return ["hevc"]
+        case .preferH264: return ["h264"]
+        }
+    }
+
+    public var explanation: LocalizedStringResource {
+        switch self {
+        case .automatic: "Lets the server choose HEVC or H.264 when converting video."
+        case .preferHEVC: "Tries HEVC first when supported, with H.264 fallback at the same quality limit."
+        case .preferH264: "Requests H.264 when converting video."
+        }
     }
 }
 

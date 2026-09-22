@@ -40,6 +40,7 @@ struct PlozziOSStreamingSettings: View {
                 Picker("Transcoding codec", selection: $settings.codec) {
                     ForEach(StreamingCodecPreference.allCases) { Text($0.title).tag($0) }
                 }
+                Text(settings.codec.explanation).font(.footnote).foregroundStyle(.secondary)
                 DisclosureGroup("Advanced") {
                     Toggle("Force transcoding", isOn: $settings.forceTranscoding)
                     Text("Uses your server to convert video even when the original can play. HDR and audio formats may change.")
@@ -95,6 +96,7 @@ struct PlozziOSStreamingQualitySheet: View {
                     Picker("Transcoding codec", selection: $selection.codec) {
                         ForEach(StreamingCodecPreference.allCases) { Text($0.title).tag($0) }
                     }
+                    Text(selection.codec.explanation).font(.footnote).foregroundStyle(.secondary)
                     DisclosureGroup("Advanced") {
                         Toggle("Force transcoding", isOn: $selection.forceTranscoding)
                         Text("Uses your server to convert video even when the original can play. HDR and audio formats may change.")
@@ -102,6 +104,17 @@ struct PlozziOSStreamingQualitySheet: View {
                     }
                 } footer: {
                     Text("Applies to this video. Changing quality briefly reloads playback at the current position. Your server may use another codec within the selected limit. Data use is approximate.")
+                }
+                if let codec = viewModel.streamingOutputVideoCodec, viewModel.phase == .ready {
+                    Section {
+                        LabeledContent("Stream codec") {
+                            Text(verbatim: PlaybackDiagnostics.friendlyCodecName(codec.rawValue) ?? codec.rawValue)
+                        }
+                        if codec == .h264, viewModel.streamingOptions?.codec == .preferHEVC {
+                            Text("Using H.264 for this stream; HEVC remains your preference.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 if let error = viewModel.streamingQualityError {
                     Section { Text(error.userMessage).foregroundStyle(.secondary) }

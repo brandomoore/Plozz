@@ -160,11 +160,15 @@ final class PlexStreamingQualityTests: XCTestCase {
     }
 
     func testOriginalPlaybackDoesNotNegotiateATranscode() async throws {
-        let http = StubHTTPClient()
-        _ = try await fixture(bitrate: 1_000, width: 640, height: 360, http: http).playbackInfo(
-            for: "movie", mediaSourceID: "7", forceTranscode: false, streaming: .init(quality: .original)
-        )
-        XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/decision") })
+        for preference in StreamingCodecPreference.allCases {
+            let http = StubHTTPClient()
+            let request = try await fixture(bitrate: 1_000, width: 640, height: 360, http: http).playbackInfo(
+                for: "movie", mediaSourceID: "7", forceTranscode: false,
+                streaming: .init(quality: .original, codec: preference)
+            )
+            XCTAssertFalse(request.isTranscoding)
+            XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/decision") })
+        }
     }
 
     func testCodecListsAreEncodedForBothNestedQueryLayers() throws {
@@ -174,7 +178,7 @@ final class PlexStreamingQualityTests: XCTestCase {
             http: StubHTTPClient(), capabilities: .init(supportsHEVC: true)
         )
         let url = try XCTUnwrap(client.transcodeURL(
-            ratingKey: "movie", sessionID: "fixture", streaming: .init(quality: .low, codec: .preferHEVC)
+            ratingKey: "movie", sessionID: "fixture", streaming: .init(quality: .low, codec: .automatic)
         ))
         let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
         let profile = try XCTUnwrap(components.queryItems?.first { $0.name == "X-Plex-Client-Profile-Extra" }?.value)
@@ -182,5 +186,31 @@ final class PlexStreamingQualityTests: XCTestCase {
         XCTAssertTrue(url.absoluteString.contains("hevc%252Ch264"))
         XCTAssertTrue(profile.contains("container=mp4&"))
         XCTAssertTrue(profile.contains("video.bitrate&value=372&"))
+    }
+
+    func testHEVCPreferenceRequestsHEVCOnlyWhileAutomaticAllowsBoth() throws {
+        for capable in [true, false] {
+            let client = PlexClient(
+                baseURL: URL(string: "https://fixture.test")!,
+                deviceProfile: .init(clientIdentifier: "fixture"), token: "fixture",
+                http: StubHTTPClient(), capabilities: .init(supportsHEVC: capable)
+            )
+            for (preference, capableCodecs) in [
+                (StreamingCodecPreference.automatic, "hevc%2Ch264"),
+                (.preferHEVC, "hevc"), (.preferH264, "h264")
+            ] {
+                let url = try XCTUnwrap(client.transcodeURL(
+                    ratingKey: "movie", sessionID: "fixture",
+                    streaming: .init(quality: .hd720, codec: preference)
+                ))
+                let query = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+                let profile = try XCTUnwrap(query.first { $0.name == "X-Plex-Client-Profile-Extra" }?.value)
+                XCTAssertTrue(profile.contains("videoCodec=\(capable ? capableCodecs : "h264")&"), profile)
+                XCTAssertEqual(query.first { $0.name == "maxVideoBitrate" }?.value, "1872")
+                XCTAssertEqual(query.first { $0.name == "videoResolution" }?.value, "1280x720")
+                XCTAssertEqual(query.first { $0.name == "path" }?.value, "/library/metadata/movie")
+                XCTAssertEqual(query.first { $0.name == "session" }?.value, "fixture")
+            }
+        }
     }
 }

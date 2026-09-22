@@ -27,6 +27,15 @@ enum NativePlaybackFailure {
             codec == kCMVideoCodecType_H264 && dynamicRange?.isHDR == true
         }
 
+        var videoCodec: DirectPlayVideoCodec? {
+            switch codec {
+            case kCMVideoCodecType_H264, 0x61766333: .h264 // avc3
+            case kCMVideoCodecType_HEVC, 0x68657631: .hevc // hev1
+            case 0x61763031: .av1
+            default: nil
+            }
+        }
+
         var dynamicRange: SourceDynamicRange? {
             if transfer == kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ as String { return .hdr10 }
             if transfer == kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG as String { return .hlg }

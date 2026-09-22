@@ -270,6 +270,10 @@ public final class PlayerViewModel {
     public var streamingPreparation: StreamingPreparationPhase { streamingQuality.preparation }
     public var streamingUsedH264Fallback: Bool { streamingQuality.usedH264Fallback }
     public var streamingIsTranscoding: Bool { request?.isTranscoding == true }
+    public var streamingOutputVideoCodec: DirectPlayVideoCodec? {
+        guard request?.isTranscoding == true, streamingOptions != nil else { return nil }
+        return engine.streamingOutputVideoCodec
+    }
     public var streamingUsesSDRConversion: Bool {
         request?.isTranscoding == true && streamingOptions != nil
             && SourceDynamicRange.providerHint(from: request?.sourceMetadata)?.isHDR == true
@@ -1026,6 +1030,7 @@ public final class PlayerViewModel {
         mediaSourceID: String?,
         forceTranscode: Bool
     ) async throws -> PrefetchedPlayback {
+        let streamingGeneration = streamingLoadGeneration
         if let offlineItem,
            Self.shouldUseOfflineFastPath(
                offlineItem: offlineItem,
@@ -1069,6 +1074,7 @@ public final class PlayerViewModel {
         }
         var request: PlaybackRequest
         if var options = streamingOptions, let provider = provider as? any StreamingQualityProviding {
+            if itemID == self.itemID, hasTriedStreamingH264 { options.codec = .preferH264 }
             let source = itemID == self.itemID ? (streamingMediaSourceID ?? mediaSourceID) : mediaSourceID
             if let item = offlineItem {
                 options.preferredAudioLanguages = preferredAudioLanguages(
@@ -1096,11 +1102,21 @@ public final class PlayerViewModel {
                     for: itemID, mediaSourceID: source, forceTranscode: forceTranscode, streaming: options
                 )
             } catch {
+                let declinedHEVCAttempt: Bool
+                switch error as? StreamingQualityError {
+                case .plexDecision, .serverHTTP(400), .serverHTTP(415), .serverHTTP(422):
+                    declinedHEVCAttempt = options.codec == .preferHEVC
+                default:
+                    declinedHEVCAttempt = false
+                }
                 let canRetry = (error as? StreamingQualityError)?.allowsCodecFallback == true
-                    || (error as? AppError) == .invalidResponse
+                    || (error as? AppError) == .invalidResponse || declinedHEVCAttempt
                 guard canRetry, options.codec != .preferH264, !Task.isCancelled else { throw error }
                 options.codec = .preferH264
-                if itemID == self.itemID { streamingQuality.usedH264Fallback = true }
+                if itemID == self.itemID, streamingGeneration == streamingLoadGeneration {
+                    streamingQuality.usedH264Fallback = true
+                    hasTriedStreamingH264 = true
+                }
                 PlozzLog.playback.info("Server rejected the preferred rendition; retrying H.264 within the same quality limit.")
                 request = try await provider.playbackInfo(
                     for: itemID, mediaSourceID: source, forceTranscode: forceTranscode, streaming: options
@@ -1253,13 +1269,11 @@ public final class PlayerViewModel {
     }
 
     private func retryStreamingWithH264IfNeeded() -> Bool {
-        guard request?.isTranscoding == true, var options = streamingOptions,
+        guard request?.isTranscoding == true, let options = streamingOptions,
               request?.streamingOptions?.codec != .preferH264,
               options.codec != .preferH264, !hasTriedStreamingH264, !didStop else { return false }
         hasTriedStreamingH264 = true
         streamingQuality.usedH264Fallback = true
-        options.codec = .preferH264
-        streamingQuality.options = options
         PlozzLog.playback.info("Retrying server transcode with H.264 at the same streaming quality.")
         restartStreamingRendition()
         return true
