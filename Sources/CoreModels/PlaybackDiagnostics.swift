@@ -126,6 +126,8 @@ public struct PlaybackDiagnostics: Equatable, Sendable {
     }
 
     public var resolution: VideoResolution?
+    /// Kept separate when primary VIDEO/AUDIO fields describe a converted stream.
+    public var originalSource: MediaSourceMetadata?
     /// Bitrate the playlist *declares* for the current variant, in bits/sec.
     public var indicatedBitrate: Double?
     /// Bitrate actually *observed* over the network, in bits/sec.
@@ -133,7 +135,7 @@ public struct PlaybackDiagnostics: Equatable, Sendable {
     public var videoCodec: String?
     /// Video codec profile, e.g. `Main 10`.
     public var videoProfile: String?
-    /// Source-declared video bitrate, in bits/sec.
+    /// Metadata video bitrate, in bits/sec; active-track estimate for transcodes.
     public var videoBitrate: Double?
     public var audioCodec: String?
     /// Audio codec profile / spatial format, e.g. `Dolby Atmos`.
@@ -143,7 +145,7 @@ public struct PlaybackDiagnostics: Equatable, Sendable {
     public var audioChannelLayout: String?
     /// Audio sample rate, in Hz.
     public var audioSampleRate: Int?
-    /// Source-declared audio bitrate, in bits/sec.
+    /// Metadata audio bitrate, in bits/sec; active-track estimate for transcodes.
     public var audioBitrate: Double?
     /// Expected output handling for the current audio route, e.g. Atmos passthrough
     /// vs. a route that may collapse to channel-bed audio.
@@ -367,8 +369,8 @@ public extension PlaybackDiagnostics {
 
     /// Classifies HDR from the provider's own range tokens (Jellyfin
     /// `VideoRange`/`VideoRangeType`, Plex `colorTrc`/Dolby-Vision flags). This
-    /// is preferred over the AVFoundation path when the stream is transcoded,
-    /// because the source facts survive even though the played asset is SDR.
+    /// describes the original file even when a converted rendition has different
+    /// characteristics; diagnostics keeps those original facts separate.
     ///
     /// - Parameters:
     ///   - videoRange: coarse token, e.g. `HDR`, `SDR`.

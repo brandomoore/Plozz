@@ -134,7 +134,7 @@ public struct PlayerView: View {
         .task {
             viewModel.controls.diagnosticsEnabled = showDiagnostics
             await viewModel.load()
-            if viewModel.controls.diagnosticsEnabled { startSampling() }
+            if needsStreamSampling { startSampling() }
         }
         // The track controller isn't a View, so it can't read the environment.
         // Push the app's language in and keep it current: track menus name
@@ -144,9 +144,13 @@ public struct PlayerView: View {
             viewModel.appLocale = newLocale
             viewModel.refreshTrackMenusForLanguageChange()
         }
-        .onChange(of: viewModel.controls.diagnosticsEnabled) { _, enabled in
-            if enabled {
-                startSampling()
+        .onChange(of: viewModel.controls.diagnosticsEnabled) { _, _ in
+            if needsStreamSampling {
+                if diagnosticsSampler.isSampling {
+                    diagnosticsSampler.setSystemMetricsEnabled(viewModel.controls.diagnosticsEnabled)
+                } else {
+                    startSampling()
+                }
             } else {
                 diagnosticsSampler.stop()
             }
@@ -167,13 +171,16 @@ public struct PlayerView: View {
             // A request resolved (initial load, cross-engine swap, or transcode
             // retry) and the engine is committed — seed the overlay with the
             // engine + source facts now, even before/if load() reaches ready.
-            if viewModel.controls.diagnosticsEnabled { startSampling() }
+            if needsStreamSampling { startSampling() } else { diagnosticsSampler.stop() }
         }
         .onChange(of: viewModel.playerInstanceID) { _, _ in
             // The native engine created its live AVPlayer (initial load or
             // transcode fallback); restart sampling to pick up live per-tick
             // metrics now that there's a player to read.
-            if viewModel.controls.diagnosticsEnabled { startSampling() }
+            if needsStreamSampling { startSampling() } else { diagnosticsSampler.stop() }
+        }
+        .onChange(of: viewModel.phase) { _, phase in
+            if case .failed = phase, !viewModel.controls.diagnosticsEnabled { diagnosticsSampler.stop() }
         }
         #if os(iOS)
         .sheet(isPresented: Binding(
@@ -472,7 +479,16 @@ public struct PlayerView: View {
         suspendedGlassWasHDR = false
     }
 
+    private var needsStreamSampling: Bool {
+        if viewModel.controls.diagnosticsEnabled { return true }
+        if case .failed = viewModel.phase { return false }
+        return viewModel.deliveryMode == .transcode
+    }
+
     private func startSampling() {
+        let model = viewModel
+        let token = model.diagnosticsToken
+        let playerID = model.playerInstanceID
         diagnosticsSampler.start(
             player: viewModel.player,
             mode: viewModel.deliveryMode,
@@ -484,7 +500,11 @@ public struct PlayerView: View {
             sourceFileName: viewModel.diagnosticsSourceFileName,
             streamURL: viewModel.diagnosticsStreamURL,
             engineTelemetry: { viewModel.engineLiveTelemetry },
-            probedFacts: { viewModel.engineProbedFacts }
+            probedFacts: { viewModel.engineProbedFacts },
+            includesSystemMetrics: viewModel.controls.diagnosticsEnabled,
+            onStreamDetails: { [weak model] details in
+                model?.updateCurrentStreamDetails(details, token: token, playerID: playerID)
+            }
         )
     }
 }

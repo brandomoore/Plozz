@@ -226,10 +226,29 @@ struct InfoPanelView: View {
     /// the line that says where you are — as the one thing that always survives.
     @ViewBuilder
     private var adaptiveMetaRow: some View {
-        ViewThatFits(in: .horizontal) {
-            metaRow(includingBadges: true)
-            metaRow(includingBadges: false)
-            metaRow(includingBadges: false, includingRelease: false)
+        if model.infoCard.isTranscoding {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    metaRow(includingBadges: false, includingRelease: false)
+                    Text("Transcoding").font(metrics.captionFont).foregroundStyle(.white.opacity(0.6))
+                }
+                if model.infoCard.badges.isEmpty {
+                    Text("Reading stream details…")
+                        .font(metrics.captionFont).foregroundStyle(.white.opacity(0.6))
+                } else {
+                    WrappingHStackLayout(spacing: 10 * metrics.badgeScale, lineSpacing: 6) {
+                        ForEach(model.infoCard.badges) { badge in
+                            MediaBadgeChip(badge: badge)
+                        }
+                    }
+                }
+            }
+        } else {
+            ViewThatFits(in: .horizontal) {
+                metaRow(includingBadges: true)
+                metaRow(includingBadges: false)
+                metaRow(includingBadges: false, includingRelease: false)
+            }
         }
     }
 

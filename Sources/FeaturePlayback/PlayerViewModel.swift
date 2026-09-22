@@ -290,6 +290,14 @@ public final class PlayerViewModel {
     }
     public var streamingNegotiatedVideoCodec: DirectPlayVideoCodec? { request?.negotiatedStreamingVideoCodec }
     public var streamingIsTranscoding: Bool { request?.isTranscoding == true }
+    public var currentStreamDetails: PlaybackStreamDetails { streamingQuality.currentStream }
+
+    func updateCurrentStreamDetails(_ details: PlaybackStreamDetails, token: UUID, playerID: ObjectIdentifier?) {
+        guard !didStop, request != nil, deliveryMode == .transcode,
+              diagnosticsToken == token, playerInstanceID == playerID else { return }
+        streamingQuality.currentStream = details
+        controls.infoCard.badges = details.technicalBadges
+    }
     public var streamingOutputVideoCodec: DirectPlayVideoCodec? {
         guard request?.isTranscoding == true, streamingOptions != nil else { return nil }
         return engine.streamingOutputVideoCodec
@@ -1288,6 +1296,8 @@ public final class PlayerViewModel {
         let position = streamingResumePosition ?? startPositionOverride ?? controls.currentSeconds
         let outgoing = request
         request = nil
+        streamingQuality.currentStream = .init()
+        controls.infoCard.badges = []
         phase = .loading
         engineHandoff.cancelWatchdogAndRecovery()
         nextEpisodeCoordinator.cancelPrefetch()
@@ -2116,7 +2126,9 @@ public final class PlayerViewModel {
         controls.infoCard.sourceItemID = request.item.id
         controls.infoCard.episodeTag = Self.episodeTag(for: request.item)
         controls.infoCard.releaseLabel = request.item.releaseDateLabel ?? ""
-        controls.infoCard.badges = request.item.technicalBadges
+        streamingQuality.currentStream = .init()
+        controls.infoCard.isTranscoding = request.deliveryMode == .transcode
+        controls.infoCard.badges = controls.infoCard.isTranscoding ? [] : request.item.technicalBadges
         controls.infoCard.artworkURLs = [request.item.backdropURL, request.item.heroBackdropURL, request.item.fallbackArtworkURL, request.item.posterURL].compactMap { $0 }
         controls.infoCard.runtimeLabel = request.item.runtime?.runtimeBadgeText ?? ""
         controls.hasTrickplay = request.scrubPreview?.isUsable ?? false

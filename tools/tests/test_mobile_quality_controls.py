@@ -16,6 +16,17 @@ def swift_block(source, declaration):
 
 
 class MobileQualityControlsTests(unittest.TestCase):
+    def test_transcodes_share_measured_details_without_changing_menu_ownership(self):
+        player = (ROOT / "Sources/FeaturePlayback/PlayerView.swift").read_text()
+        self.assertIn("viewModel.deliveryMode == .transcode", player)
+        self.assertIn("onStreamDetails:", player)
+        quality = (ROOT / "Sources/AppShelliOS/PlozziOSStreamingQuality.swift").read_text()
+        self.assertIn('title: "Quality limit"', quality)
+        self.assertIn("CurrentStreamDetailsSection(details: viewModel.currentStreamDetails)", quality)
+        info = (ROOT / "Sources/FeaturePlayback/InfoPanelView.swift").read_text()
+        self.assertIn('Text("Transcoding")', info)
+        self.assertNotIn("Source audio:", info)
+
     def test_network_cost_does_not_replace_wifi_with_the_cellular_preset(self):
         source = (ROOT / "Sources/AppShelliOS/PlozziOSStreamingQuality.swift").read_text()
         monitor = swift_block(source, "enum PlozziOSStreamingNetwork")

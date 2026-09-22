@@ -15,8 +15,8 @@ import os
 ///    suspend rather than block. Per-tick reads (`presentationSize`,
 ///    `accessLog()`, `loadedTimeRanges`) are cheap synchronous property
 ///    accesses that don't stall playback.
-///  * Dynamic values are re-sampled ~1s; immutable track facts are loaded once
-///    and cached, so the timer does minimal work.
+///  * Dynamic values are re-sampled ~1s. Original-file facts are loaded once;
+///    converted tracks are re-read asynchronously for late/changed formats.
 ///  * The pure classification/formatting lives in `PlaybackDiagnostics`
 ///    (CoreModels) so it can be unit-tested without a player.
 @MainActor
@@ -26,8 +26,7 @@ public final class PlaybackDiagnosticsSampler {
     public private(set) var latest: PlaybackDiagnostics?
 
     private weak var player: AVPlayer?
-    /// Immutable per-stream facts (codec/HDR/fps/mode/container/device) merged
-    /// into every dynamic sample.
+    /// Original-playback baseline and immutable session/device facts.
     private var staticDiagnostics = PlaybackDiagnostics()
     /// Live engine telemetry source (dropped frames / FPS / bitrate). Used to fill
     /// the per-tick metrics on engines with no `AVPlayer` access log (Plozzigen).
@@ -36,6 +35,14 @@ public final class PlaybackDiagnosticsSampler {
     /// The probed range corrects provider hints for original-source playback.
     private var probedFacts: (@MainActor () -> EngineProbedSourceFacts?)?
     private var timerTask: Task<Void, Never>?
+    private var staticInfoTask: Task<Void, Never>?
+    private var streamInfoTask: Task<Void, Never>?
+    private var generation: UInt = 0
+    private weak var sampledItem: AVPlayerItem?
+    private var streamMetadata = MediaSourceMetadata()
+    private var onStreamDetails: (@MainActor (PlaybackStreamDetails) -> Void)?
+    private var streamDetailsReader: @MainActor (AVPlayerItem) async -> MediaSourceMetadata
+    private var includesSystemMetrics = true
 
     /// Last AVPlayer access-log stall count we logged, so a `remux-stall:` marker
     /// is emitted once per NEW stall (the direct stutter signal correlated, in the
@@ -49,7 +56,13 @@ public final class PlaybackDiagnosticsSampler {
     private static let mirrorsStandardOut: Bool =
         ProcessInfo.processInfo.environment["REMUX_STDOUT"] == "1"
 
-    public init() {}
+    public init() {
+        streamDetailsReader = NativeStreamDetailsReader.read
+    }
+
+    init(streamDetailsReader: @escaping @MainActor (AVPlayerItem) async -> MediaSourceMetadata) {
+        self.streamDetailsReader = streamDetailsReader
+    }
 
     /// Begins sampling `player`. Idempotent — restarts cleanly if called again.
     ///
@@ -59,8 +72,8 @@ public final class PlaybackDiagnosticsSampler {
     ///     transcode), shown verbatim in the overlay's Source row.
     ///   - metadata: provider source facts (codec/HDR/channels/…). These are the
     ///     baseline, corrected by engine-probed source range when available.
-    ///     For server transcodes, retain the original-source metadata instead of
-    ///     replacing it with facts about the re-encoded asset.
+    ///     For transcodes these live only in `originalSource`; primary video and
+    ///     audio fields come from the active rendition.
     ///   - engineName: the engine decoding the stream (e.g. `AVPlayer`, `VLCKit`),
     ///     shown in the overlay so the user can see which engine is active.
     ///
@@ -80,24 +93,33 @@ public final class PlaybackDiagnosticsSampler {
         sourceFileName: String? = nil,
         streamURL: URL? = nil,
         engineTelemetry: (@MainActor () -> EngineLiveTelemetry?)? = nil,
-        probedFacts: (@MainActor () -> EngineProbedSourceFacts?)? = nil
+        probedFacts: (@MainActor () -> EngineProbedSourceFacts?)? = nil,
+        includesSystemMetrics: Bool = true,
+        onStreamDetails: (@MainActor (PlaybackStreamDetails) -> Void)? = nil
     ) {
         stop()
         self.player = player
         self.engineTelemetry = engineTelemetry
         self.probedFacts = probedFacts
+        self.onStreamDetails = onStreamDetails
+        self.includesSystemMetrics = includesSystemMetrics
         self.lastLoggedStallCount = 0
         var base = PlaybackDiagnostics.base(
-            from: metadata,
+            from: mode == .transcode ? nil : metadata,
             mode: mode,
             capabilities: capabilities,
             sourceProvider: sourceProvider,
             serverName: serverName
         )
         base.engineName = engineName
+        if mode == .transcode {
+            base.originalSource = metadata
+            base.sourceFileSizeBytes = metadata?.fileSizeBytes
+            base.subtitleDescription = PlaybackDiagnostics.base(from: metadata, mode: mode).subtitleDescription
+        }
         base.sourceFileName = sourceFileName
         base.streamTransport = PlaybackDiagnostics.streamTransportFacts(url: streamURL)
-        Self.fillDeviceInfo(into: &base)
+        if includesSystemMetrics { Self.fillDeviceInfo(into: &base) }
         staticDiagnostics = base
         latest = staticDiagnostics
 
@@ -105,9 +127,11 @@ public final class PlaybackDiagnosticsSampler {
         // the system metrics (memory / thermal / live-instance counts) refresh
         // ~1s on *every* engine — that's what surfaces a leak on the HDR/DoVi
         // (Plozzigen) path, which otherwise published a single static snapshot.
-        if player != nil {
-            Task { await loadStaticInfo() }
+        if let item = player?.currentItem, mode != .transcode {
+            let generation = generation
+            staticInfoTask = Task { await loadStaticInfo(item: item, generation: generation) }
         }
+        onStreamDetails?(.init())
 
         timerTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -118,11 +142,26 @@ public final class PlaybackDiagnosticsSampler {
     }
 
     public func stop() {
+        generation &+= 1
         timerTask?.cancel()
         timerTask = nil
+        staticInfoTask?.cancel()
+        staticInfoTask = nil
+        streamInfoTask?.cancel()
+        streamInfoTask = nil
+        sampledItem = nil
+        streamMetadata = .init()
+        onStreamDetails = nil
         player = nil
         engineTelemetry = nil
         probedFacts = nil
+    }
+
+    var isSampling: Bool { timerTask != nil }
+
+    func setSystemMetricsEnabled(_ enabled: Bool) {
+        includesSystemMetrics = enabled
+        if enabled { Self.fillDeviceInfo(into: &staticDiagnostics) }
     }
 
     // MARK: Dynamic (per-tick) sampling
@@ -158,12 +197,34 @@ public final class PlaybackDiagnosticsSampler {
 
     func sampleTick() {
         var diagnostics = staticDiagnostics
+        if diagnostics.mode == .transcode, player?.currentItem == nil {
+            streamInfoTask?.cancel()
+            streamInfoTask = nil
+            sampledItem = nil
+            streamMetadata = .init()
+        }
 
         // Per-tick AVFoundation metrics (native engine only; Plozzigen has no item).
         if let item = player?.currentItem {
+            if diagnostics.mode == .transcode {
+                updateStreamInfo(item: item)
+                let stream = PlaybackDiagnostics.base(from: streamMetadata, mode: .transcode)
+                diagnostics.resolution = stream.resolution
+                diagnostics.videoCodec = stream.videoCodec
+                diagnostics.videoCodecTag = stream.videoCodecTag
+                diagnostics.videoBitrate = stream.videoBitrate
+                diagnostics.frameRate = stream.frameRate
+                diagnostics.hdr = stream.hdr
+                diagnostics.videoRangeType = stream.videoRangeType
+                diagnostics.colorTransfer = stream.colorTransfer
+                diagnostics.audioCodec = stream.audioCodec
+                diagnostics.audioChannels = stream.audioChannels
+                diagnostics.audioSampleRate = stream.audioSampleRate
+                diagnostics.audioBitrate = stream.audioBitrate
+            }
             // Source metadata resolution wins; only fall back to the rendered
             // presentation size when the provider didn't report dimensions.
-            if diagnostics.resolution == nil {
+            if diagnostics.mode != .transcode, diagnostics.resolution == nil {
                 let size = item.presentationSize
                 if size.width > 0, size.height > 0 {
                     diagnostics.resolution = .init(width: Int(size.width.rounded()), height: Int(size.height.rounded()))
@@ -218,11 +279,10 @@ public final class PlaybackDiagnosticsSampler {
             }
         }
 
-        // An actual source probe outranks a provider's range hint. For a server
-        // transcode the engine sees the re-encoded input, not the original source
-        // described here. Neither source tells us what the HDMI output is.
-        if let f = probedFacts?() {
-            if diagnostics.mode != .transcode, let range = f.range {
+        // Original-source probes are not evidence of a converted rendition.
+        // Neither input range tells us the display's actual output mode.
+        if diagnostics.mode != .transcode, let f = probedFacts?() {
+            if let range = f.range {
                 Self.applySourceRange(range, to: &diagnostics)
             }
             if diagnostics.resolution == nil, let w = f.videoWidth, let h = f.videoHeight, w > 0, h > 0 {
@@ -240,8 +300,30 @@ public final class PlaybackDiagnosticsSampler {
 
         // System metrics refresh on every engine so a leak is visible on the
         // Plozzigen (HDR/DoVi) path too.
-        Self.fillSystemMetrics(into: &diagnostics)
+        if includesSystemMetrics { Self.fillSystemMetrics(into: &diagnostics) }
         latest = diagnostics
+        if diagnostics.mode == .transcode {
+            onStreamDetails?(.init(metadata: streamMetadata, declaredBitrate: diagnostics.indicatedBitrate))
+        }
+    }
+
+    private func updateStreamInfo(item: AVPlayerItem) {
+        if sampledItem !== item {
+            streamInfoTask?.cancel()
+            streamInfoTask = nil
+            sampledItem = item
+            streamMetadata = .init()
+        }
+        guard streamInfoTask == nil else { return }
+        let generation = generation
+        let reader = streamDetailsReader
+        streamInfoTask = Task { [weak self] in
+            let metadata = await reader(item)
+            guard let self, !Task.isCancelled, self.generation == generation,
+                  self.player?.currentItem === item, self.sampledItem === item else { return }
+            self.streamMetadata = metadata
+            self.streamInfoTask = nil
+        }
     }
 
     /// Live process memory, thermal pressure, and leak-counter snapshot. These
@@ -347,8 +429,8 @@ public final class PlaybackDiagnosticsSampler {
 
     // MARK: Static (one-shot) track info
 
-    private func loadStaticInfo() async {
-        guard let asset = player?.currentItem?.asset else { return }
+    private func loadStaticInfo(item: AVPlayerItem, generation: UInt) async {
+        let asset = item.asset
         var info = staticDiagnostics
 
         if info.container == nil, let urlAsset = asset as? AVURLAsset {
@@ -402,6 +484,7 @@ public final class PlaybackDiagnosticsSampler {
             }
         }
 
+        guard !Task.isCancelled, self.generation == generation, player?.currentItem === item else { return }
         staticDiagnostics = info
     }
 

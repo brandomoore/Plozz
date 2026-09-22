@@ -9,6 +9,30 @@ import UIKit
 
 @MainActor
 final class StreamingPlaybackTests: XCTestCase {
+    func testCurrentStreamBadgesResetAndRejectPriorRenditionCallbacks() async {
+        let (model, engine, _) = make()
+        await model.load()
+        XCTAssertTrue(model.controls.infoCard.isTranscoding)
+        XCTAssertTrue(model.controls.infoCard.badges.isEmpty)
+        let token = model.diagnosticsToken
+        let details = PlaybackStreamDetails(metadata: .init(
+            video: .init(codec: "h264", width: 426, height: 230, videoRangeType: "SDR"),
+            audio: .init(codec: "aac", channels: 2)
+        ))
+        model.updateCurrentStreamDetails(details, token: token, playerID: model.playerInstanceID)
+        XCTAssertEqual(model.controls.infoCard.badges, details.technicalBadges)
+        XCTAssertEqual(model.currentStreamDetails, details)
+        model.changeStreamingOptions(.init(quality: .low))
+        XCTAssertTrue(model.currentStreamDetails.technicalBadges.isEmpty)
+        XCTAssertTrue(model.controls.infoCard.badges.isEmpty)
+        await wait { model.phase == .ready && engine.positions.count == 2 }
+        model.updateCurrentStreamDetails(details, token: token, playerID: model.playerInstanceID)
+        XCTAssertTrue(model.currentStreamDetails.technicalBadges.isEmpty)
+        await model.stop()
+        model.updateCurrentStreamDetails(details, token: model.diagnosticsToken, playerID: model.playerInstanceID)
+        XCTAssertTrue(model.currentStreamDetails.technicalBadges.isEmpty)
+    }
+
     func testAutomaticH264FailureRequestsHEVCWithoutChangingBudgetOrVersion() async throws {
         let provider = QualityPlaybackProvider()
         await provider.setNegotiatedCodec(.h264)

@@ -9,6 +9,85 @@ import XCTest
 
 @MainActor
 final class MobileDiagnosticsLayoutTests: XCTestCase {
+    func testTranscodeInfoAndQualityUseMeasuredStreamInsteadOfOriginalBadges() throws {
+        let details = PlaybackStreamDetails(metadata: .init(
+            video: .init(codec: "h264", width: 426, height: 230, videoRangeType: "SDR"),
+            audio: .init(codec: "aac", channels: 2)
+        ), declaredBitrate: 500_000)
+        let model = PlayerControlsModel()
+        model.infoCard.headline = "Converted Movie"
+        model.infoCard.overview = String(repeating: "A long synopsis about a movie with a converted stream. ", count: 8)
+        model.infoCard.runtimeLabel = "2h 9m"
+        model.infoCard.isTranscoding = true
+        model.infoCard.badges = details.technicalBadges
+        for width in [CGFloat(390), 844, 1920] {
+            let metrics: PlayerCardMetrics = width == 1920 ? .tv : .resolved(forWidth: width, height: 844)
+            let renderer = ImageRenderer(content:
+                InfoAudioFixture(model: model)
+                    .environment(\.playerCardMetrics, metrics)
+                    .environment(\.mediaBadgeScale, metrics.badgeScale)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+                    .frame(width: width)
+                    .background(.black)
+            )
+            renderer.scale = 2
+            let image = try XCTUnwrap(renderer.cgImage)
+            let text = try recognizedText(image)
+            XCTAssertTrue(text.contains("Transcoding"), text)
+            XCTAssertTrue(text.contains("426"), text)
+            XCTAssertTrue(text.contains("230"), text)
+            XCTAssertFalse(text.contains("4K"), text)
+            XCTAssertFalse(text.contains("5.1"), text)
+            XCTAssertFalse(text.contains("Source audio"), text)
+            attach(image, name: "Measured Info \(Int(width))")
+        }
+        let quality = ImageRenderer(content:
+            VStack(alignment: .leading, spacing: 12) {
+                CurrentStreamDetailsSection(details: details)
+            }
+            .environment(\.locale, Locale(identifier: "en_US"))
+            .frame(width: 390)
+            .padding(20)
+            .background(.black)
+            .foregroundStyle(.white)
+        )
+        quality.scale = 2
+        let text = try recognizedText(try XCTUnwrap(quality.cgImage))
+        XCTAssertTrue(text.contains("426"), text)
+        XCTAssertTrue(text.contains("230"), text)
+        XCTAssertTrue(text.contains("AAC"), text)
+        XCTAssertFalse(text.contains("4K"), text)
+    }
+
+    func testDiagnosticsClearlySeparateCurrentStreamOriginalFileAndNetworkRate() throws {
+        var diagnostics = PlaybackDiagnostics.base(from: .init(
+            video: .init(codec: "h264", width: 426, height: 230, videoRangeType: "SDR"),
+            audio: .init(codec: "aac", channels: 2)
+        ), mode: .transcode)
+        diagnostics.originalSource = .init(
+            video: .init(codec: "hevc", width: 3840, height: 2076, videoRangeType: "HDR10Plus"),
+            audio: .init(codec: "ac3", channels: 6)
+        )
+        diagnostics.indicatedBitrate = 500_000
+        diagnostics.observedBitrate = 8_000_000
+        let renderer = ImageRenderer(content:
+            PlaybackDiagnosticsOverlay(diagnostics: diagnostics, presentation: .mobile)
+                .mobileContent(width: 390)
+                .environment(\.themePalette, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .frame(width: 390)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(.black)
+        )
+        renderer.scale = 2
+        let text = try recognizedText(try XCTUnwrap(renderer.cgImage))
+        for label in ["CURRENT VIDEO", "CURRENT AUDIO", "ORIGINAL FILE", "426", "230",
+                      "AAC", "3840", "Declared stream bitrate", "Network throughput"] {
+            XCTAssertTrue(text.contains(label), text)
+        }
+    }
+
     func testInfoKeepsAudioBadgeWithoutDuplicateTrackDescription() throws {
         let model = PlayerControlsModel()
         model.infoCard.headline = "Fixture Movie"
@@ -129,11 +208,17 @@ final class MobileDiagnosticsLayoutTests: XCTestCase {
             XCTAssertLessThanOrEqual(scroll.bounds.height, size.height)
             XCTAssertGreaterThan(scroll.contentSize.height + scroll.adjustedContentInset.top + scroll.adjustedContentInset.bottom,
                                  scroll.bounds.height)
-            scroll.setContentOffset(CGPoint(
-                x: 0, y: scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
-            ), animated: false)
-            host.view.layoutIfNeeded()
-            try await Task.sleep(for: .milliseconds(100))
+            // Lazy grid rows resolve their final heights as they enter view.
+            for _ in 0..<5 {
+                scroll.setContentOffset(CGPoint(
+                    x: 0, y: scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+                ), animated: false)
+                host.view.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(100))
+                if scroll.contentOffset.y + scroll.bounds.height - scroll.adjustedContentInset.bottom >= scroll.contentSize.height - 1 {
+                    break
+                }
+            }
             XCTAssertGreaterThan(scroll.contentOffset.y, -scroll.adjustedContentInset.top,
                                  "viewport=\(size) bounds=\(scroll.bounds) content=\(scroll.contentSize) inset=\(scroll.adjustedContentInset)")
             XCTAssertGreaterThanOrEqual(scroll.contentOffset.y + scroll.bounds.height - scroll.adjustedContentInset.bottom,

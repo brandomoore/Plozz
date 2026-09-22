@@ -91,7 +91,7 @@ struct PlozziOSStreamingQualitySheet: View {
         NavigationStack {
             Form {
                 Section {
-                    StreamingQualityPicker(title: "Quality", selection: $selection.quality)
+                    StreamingQualityPicker(title: "Quality limit", selection: $selection.quality)
                     if let bytes = selection.quality.estimatedBytesPerHour {
                         Text("About \(bytes.formatted(.byteCount(style: .file))) per hour")
                             .foregroundStyle(.secondary)
@@ -108,12 +108,11 @@ struct PlozziOSStreamingQualitySheet: View {
                 } footer: {
                     Text("Applies to this video. Changing quality briefly reloads playback at the current position. Your server may use another codec within the selected limit. Data use is approximate.")
                 }
-                if let codec = viewModel.streamingOutputVideoCodec, viewModel.phase == .ready {
-                    Section {
-                        LabeledContent("Stream codec") {
-                            Text(verbatim: PlaybackDiagnostics.friendlyCodecName(codec.rawValue) ?? codec.rawValue)
-                        }
-                        if codec == .h264, viewModel.streamingOptions?.codec == .preferHEVC {
+                if viewModel.deliveryMode == .transcode {
+                    CurrentStreamDetailsSection(details: viewModel.currentStreamDetails)
+                    if let codec = viewModel.streamingOutputVideoCodec,
+                       codec == .h264, viewModel.streamingOptions?.codec == .preferHEVC {
+                        Section {
                             Text("Using H.264 for this stream; HEVC remains your preference.")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }

@@ -78,6 +78,19 @@ builder with the SwiftUI controls. Version choices
 stay on the active account, reuse detail-page edition/file routing, and carry the
 current position, pause intent, speed, quality, and matching tracks to the new
 player. The per-profile version preference also applies to later playback.
+For a server conversion, Info's existing badge row describes the active rendition
+and is labelled Transcoding: exact encoded dimensions, video codec, known range,
+and actual audio format/channels. No original-file badges are substituted while
+the stream is unknown. Quality shows the selected limit separately from Current
+stream. Diagnostics likewise separates CURRENT VIDEO/AUDIO from ORIGINAL FILE;
+declared stream bitrate and network throughput have distinct rows.
+The shared diagnostics sampler reads enabled AVPlayer tracks and their format
+descriptions even when diagnostics is closed, with system metrics disabled in
+that lightweight mode. Only changed stream facts update Info/Quality. Reads are
+fenced to the item and sampling generation; retries and version changes clear
+the prior snapshot. PQ establishes HDR10, not HDR10+; missing color metadata
+does not establish SDR, and AAC stereo never inherits the source's surround or
+Atmos flags. These are media facts, not a claim about display/HDMI output.
 Loading shows no temporary Quality button; recovery lives with the central error,
 not beside Close. Multiple-version failures expose Version and Quality together.
 

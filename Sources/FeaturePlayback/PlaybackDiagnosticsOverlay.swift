@@ -84,7 +84,7 @@ struct PlaybackDiagnosticsOverlay: View {
                 }
                 if let engine = diagnostics?.engineName { Text(engine).font(.subheadline) }
                 if diagnostics?.mode == .transcode {
-                    Text("Video and audio details describe the original file, not the converted stream.")
+                    Text("Video and audio details describe the current stream. Original-file details are shown separately.")
                         .font(.footnote)
                         .foregroundStyle(palette.secondaryText)
                 }
@@ -100,6 +100,7 @@ struct PlaybackDiagnosticsOverlay: View {
                     sourceSection(diagnostics)
                     videoSection(diagnostics)
                     audioSection(diagnostics)
+                    if diagnostics.mode == .transcode { originalFileSection(diagnostics) }
                     subtitleSection(diagnostics)
                     playbackSection(diagnostics)
                     systemSection(diagnostics)
@@ -160,6 +161,7 @@ struct PlaybackDiagnosticsOverlay: View {
                 sourceSection(d)
                 videoSection(d)
                 audioSection(d)
+                if d.mode == .transcode { originalFileSection(d) }
             }
             VStack(alignment: .leading, spacing: 12) {
                 subtitleSection(d)
@@ -176,19 +178,29 @@ struct PlaybackDiagnosticsOverlay: View {
             optionalRow("Size", d.sourceFileSizeText)
             row("Delivery", d.mode.displayName)
             optionalRow("Stream", streamTransportText(d.streamTransport))
-            optionalRow("Container", d.containerText)
+            if d.mode != .transcode { optionalRow("Container", d.containerText) }
         }
     }
 
     @ViewBuilder
     private func videoSection(_ d: PlaybackDiagnostics) -> some View {
-        section("VIDEO") {
-            optionalRow("Codec", d.videoCodecText)
-            optionalRow("Resolution", d.resolutionWithQualityText)
+        section(d.mode == .transcode ? "CURRENT VIDEO" : "VIDEO") {
+            if d.mode == .transcode {
+                row("Codec", d.videoCodecText)
+                row("Resolution", d.resolutionWithQualityText)
+            } else {
+                optionalRow("Codec", d.videoCodecText)
+                optionalRow("Resolution", d.resolutionWithQualityText)
+            }
             // Nominal frame rate + live observed FPS folded into one row.
             optionalRow("Frame Rate", frameRateCombined(d))
-            // Indicated (source) bitrate + live network bitrate folded together.
-            optionalRow("Bitrate", videoBitrateCombined(d))
+            if d.mode == .transcode {
+                if let bitrate = d.videoBitrate {
+                    row("Estimated bitrate", PlaybackDiagnostics.formatBitrate(bitrate))
+                }
+            } else {
+                optionalRow("Bitrate", videoBitrateCombined(d))
+            }
             // HDR format + Dolby Vision profile folded into a single HDR row.
             optionalRow("HDR", hdrCombined(d))
             optionalRow("Color", d.colorText)
@@ -198,12 +210,26 @@ struct PlaybackDiagnosticsOverlay: View {
 
     @ViewBuilder
     private func audioSection(_ d: PlaybackDiagnostics) -> some View {
-        section("AUDIO") {
-            optionalRow("Codec", d.audioCodecText)
-            optionalRow("Channels", d.audioChannelsText)
+        section(d.mode == .transcode ? "CURRENT AUDIO" : "AUDIO") {
+            if d.mode == .transcode {
+                row("Codec", d.audioCodecText)
+                row("Channels", d.audioChannelsText)
+            } else {
+                optionalRow("Codec", d.audioCodecText)
+                optionalRow("Channels", d.audioChannelsText)
+            }
             optionalRow("Sample Rate", d.audioSampleRateText)
             optionalRow("Bitrate", d.audioBitrateText)
             optionalRow("Output", d.audioOutputDescription)
+        }
+    }
+
+    private func originalFileSection(_ d: PlaybackDiagnostics) -> some View {
+        let source = PlaybackDiagnostics.base(from: d.originalSource, mode: .directPlay)
+        return section("ORIGINAL FILE") {
+            optionalRow("Container", source.containerText)
+            optionalRow("Video", source.videoLineText)
+            optionalRow("Audio", source.audioLineText)
         }
     }
 
@@ -226,6 +252,10 @@ struct PlaybackDiagnosticsOverlay: View {
             optionalRow("State", d.playbackStateText)
             row("Buffer", bufferStatusText(d.bufferStatusFacts))
             row("Dropped", "\(d.droppedFramesText) frames")
+            if d.mode == .transcode {
+                optionalRow("Declared stream bitrate", d.indicatedBitrateText)
+                optionalRow("Network throughput", d.observedBitrateText)
+            }
         }
     }
 
@@ -243,7 +273,7 @@ struct PlaybackDiagnosticsOverlay: View {
     // MARK: - Section builder
 
     @ViewBuilder
-    private func section(_ title: String, @ViewBuilder rows: () -> some View) -> some View {   // l10n:content — diagnostic values, developer-facing
+    private func section(_ title: LocalizedStringResource, @ViewBuilder rows: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(presentation == .mobile ? .caption.weight(.bold) : .system(size: 11, weight: .bold, design: .monospaced))

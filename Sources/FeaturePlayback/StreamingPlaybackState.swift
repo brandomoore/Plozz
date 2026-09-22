@@ -9,4 +9,5 @@ final class StreamingPlaybackState {
     var preparation: StreamingPreparationPhase = .requesting
     var fallbackCodec: StreamingCodecPreference?
     var sourceWasHDR = false
+    var currentStream = PlaybackStreamDetails()
 }

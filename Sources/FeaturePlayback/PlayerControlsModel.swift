@@ -176,6 +176,7 @@ public final class InfoCardModel {
     public var overview: String = ""   // l10n:content — media metadata from the server
     /// Technical badges (resolution/codec/HDR/etc.).
     public var badges: [MediaBadge] = []
+    public var isTranscoding = false
     /// On-screen talent for what is playing, driving the in-player Cast tab.
     ///
     /// Arrives with the item, so it needs no request of its own — and the tab
