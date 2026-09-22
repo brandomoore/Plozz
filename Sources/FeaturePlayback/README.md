@@ -133,6 +133,16 @@ behind the error screen and immediately release the owned server rendition.
 Retry/dismiss joins that same cleanup instead of issuing duplicate stop requests.
 Retry copy names the codec requested, not an encoder we cannot prove ran; the
 negotiated codec is shown separately and all attempts are journaled.
+For managed conversion, native playback inspects an HLS master once and opens
+its exact media playlist when there is only one self-contained rendition on the
+same origin. This avoids master codec/range declarations rejecting otherwise
+decodable samples. It does not rewrite color metadata, change the conversion
+parameters, select another version, or restart the server session. Adaptive
+masters, external audio/subtitle renditions, session keys, and variable-based
+URIs retain their original manifest. Inspection has a five-second deadline,
+same-origin-only redirects, cancellation/load fencing, and secret-safe logging.
+Original playback, TV callers without mobile streaming options, and Live TV
+retain their existing path.
 Tone-mapping advice requires the returned stream's actual H.264 codec and PQ/HLG
 transfer metadata, combined with a decoder-format failure. Neither the original
 file's HDR badge nor a numeric error alone establishes this condition. Emby advice

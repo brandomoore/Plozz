@@ -94,6 +94,7 @@ public final class NativeVideoEngine: VideoEngine {
     @ObservationIgnored private var request: PlaybackRequest?
     @ObservationIgnored private let authenticatedHTTPResolver:
         (any AuthenticatedHTTPResourceResolving)?
+    @ObservationIgnored private let streamingPlaylistClient: (any HTTPClient)?
     @ObservationIgnored private var timeObserver: (owner: AVPlayer, token: Any)?
     /// Fences reentrant async loads. A newer load or stop invalidates every older
     /// continuation before it can publish or start a stale player.
@@ -140,10 +141,12 @@ public final class NativeVideoEngine: VideoEngine {
 
     public init(
         style: SubtitleStyle = .default,
-        authenticatedHTTPResolver: (any AuthenticatedHTTPResourceResolving)? = nil
+        authenticatedHTTPResolver: (any AuthenticatedHTTPResourceResolving)? = nil,
+        streamingPlaylistClient: (any HTTPClient)? = nil
     ) {
         self.style = style
         self.authenticatedHTTPResolver = authenticatedHTTPResolver
+        self.streamingPlaylistClient = streamingPlaylistClient
         PlaybackInstrumentation.increment(.nativeEngine)
     }
 
@@ -214,11 +217,30 @@ public final class NativeVideoEngine: VideoEngine {
             streamURL = request.streamURL ?? request.playbackSource?.publicURL
         }
         guard generation == loadGeneration else { return }
-        guard let streamURL else {
+        guard var streamURL else {
             let error = AppError.unknown("Native playback requires a URL source")
             status = .failed(error)
             onFailure?(error)
             return
+        }
+
+        if request.streamingOptions != nil, request.isTranscoding, request.isManifestStream {
+            do {
+                let mediaURL = try await StreamingMediaPlaylist.resolve(streamURL, using: streamingPlaylistClient)
+                guard generation == loadGeneration, !Task.isCancelled else { return }
+                if let mediaURL {
+                    streamURL = mediaURL
+                    HandoffDiagnostics.emit("native STREAM_PLAYLIST single-rendition-media=true")
+                } else {
+                    HandoffDiagnostics.emit("native STREAM_PLAYLIST original-manifest=true")
+                }
+            } catch {
+                guard generation == loadGeneration, !Task.isCancelled else { return }
+                // Inspection is optional; let AVPlayer report the original
+                // stream's authoritative transport/format failure if it persists.
+                PlozzLog.playback.error("Could not inspect the converted HLS playlist; retaining the original manifest.")
+            }
+            guard generation == loadGeneration, !Task.isCancelled else { return }
         }
 
         let injectableSubtitles = await resolveInjectableSubtitles(for: request)
