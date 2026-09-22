@@ -2191,13 +2191,9 @@ private struct PlozziOSDetailPageSettingsView: View {
                 } label: {
                     Text("Rating sources & order")
                 }
-            } footer: {
-                Text("Show up to this many scores in your chosen order. Missing scores are skipped. Tap the compact header for anything that doesn't fit.")
             }
             SettingsSectionGroup("Age recommendation") {
                 Toggle("Show Common Sense age", isOn: $detailPage.settings.showsHeaderFamilyGuidance)
-            } footer: {
-                Text("Separate from review scores and not included in their count. Spoiler settings still apply.")
             }
             SettingsSectionGroup("Behind the hero") {
                 Picker(

@@ -274,15 +274,13 @@ struct DetailPageDetailView: View {
         if let detailHeaderSettings {
             rows.append(SettingsSplitRow(
                 id: "detail-page-header-ratings",
-                title: "Review scores",
-                description: "Show up to this many review scores. Full ratings remain in title information. Spoiler settings still apply."
+                title: "Review scores"
             ) {
                 DetailHeaderRatingsSettingsForm(model: detailHeaderSettings)
             })
             rows.append(SettingsSplitRow(
                 id: "detail-page-age-recommendation",
-                title: "Age recommendation",
-                description: "Separate from review scores and not included in their count. Spoiler settings still apply."
+                title: "Age recommendation"
             ) {
                 DetailHeaderAgeSettingsForm(model: detailHeaderSettings)
             })
