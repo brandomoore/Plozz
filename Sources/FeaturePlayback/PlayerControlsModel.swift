@@ -62,7 +62,7 @@ public enum SecondarySubtitleStatus: Equatable, Sendable {
 }
 
 /// State of the in-player subtitle **search + download** screen (server-proxied
-/// on Jellyfin/Plex). Drives the results list, spinner, and empty/error copy.
+/// by supported media servers). Drives the results list, spinner, and empty/error copy.
 public enum SubtitleDownloadState: Equatable, Sendable {
     /// Nothing searched yet.
     case idle
@@ -78,6 +78,8 @@ public enum SubtitleDownloadState: Equatable, Sendable {
     case added
     /// The search or download failed.
     case failed
+    /// The provider gave an actionable reason rather than an empty result.
+    case unavailable(LocalizedStringResource)
 }
 
 /// The hand-off that decides where Siri-Remote focus lands when the player's

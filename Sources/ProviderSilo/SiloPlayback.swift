@@ -57,7 +57,10 @@ actor SiloPlaybackSessions {
         let sourceID: String
         let installationID: String
         let expiry: Date?
+        let streamURL: URL
         var resources: [String: URL]
+        var subtitleCandidates: [String: SiloRemoteSubtitle] = [:]
+        var downloadedTracks: [String: MediaTrack] = [:]
         var sequence: Int64 = 0
         var stopID: String?
     }
@@ -71,9 +74,65 @@ actor SiloPlaybackSessions {
     func resource(_ locator: AuthenticatedHTTPPlaybackLocator) throws -> URL {
         guard let id = locator.playSessionID, let session = sessions[id],
               session.itemID == locator.itemID, session.sourceID == locator.mediaSourceID,
+              session.stopID == nil,
               session.expiry.map({ $0 > Date() }) != false,
               let url = session.resources[locator.resource.path] else { throw AppError.notFound }
         return url
+    }
+
+    func subtitleSession(_ context: RemoteSubtitleContext) throws -> (id: String, session: Session) {
+        guard let id = context.playSessionID, let session = sessions[id],
+              session.itemID == context.itemID, session.sourceID == context.mediaSourceID,
+              session.stopID == nil, session.expiry.map({ $0 > Date() }) != false else {
+            throw RemoteSubtitleError.unsupportedPlayback
+        }
+        return (id, session)
+    }
+
+    func subtitleContext(itemID: String) throws -> RemoteSubtitleContext {
+        let matches = sessions.filter {
+            $0.value.itemID == itemID && $0.value.stopID == nil
+                && $0.value.expiry.map({ $0 > Date() }) != false
+        }
+        guard matches.count == 1, let match = matches.first else { throw RemoteSubtitleError.unsupportedPlayback }
+        return RemoteSubtitleContext(itemID: itemID, mediaSourceID: match.value.sourceID, playSessionID: match.key)
+    }
+
+    func cacheSubtitleCandidates(_ candidates: [SiloRemoteSubtitle], context: RemoteSubtitleContext) throws -> [RemoteSubtitle] {
+        var (id, session) = try subtitleSession(context)
+        guard candidates.count <= 512 else { throw AppError.invalidResponse }
+        if session.subtitleCandidates.count + candidates.count > 512 {
+            session.subtitleCandidates.removeAll()
+        }
+        let results = candidates.map { candidate in
+            let key = UUID().uuidString
+            session.subtitleCandidates[key] = candidate
+            return candidate.presentation(id: key)
+        }
+        sessions[id] = session
+        return results
+    }
+
+    func takeSubtitleCandidate(_ key: String, context: RemoteSubtitleContext) throws -> SiloRemoteSubtitle {
+        var (id, session) = try subtitleSession(context)
+        guard let candidate = session.subtitleCandidates.removeValue(forKey: key) else {
+            throw RemoteSubtitleError.expiredSearch
+        }
+        sessions[id] = session
+        return candidate
+    }
+
+    func registerSubtitle(_ track: MediaTrack, storedID: String, url: URL,
+                          context: RemoteSubtitleContext) throws -> MediaTrack {
+        var (id, session) = try subtitleSession(context)
+        if let existing = session.downloadedTracks[storedID] { return existing }
+        guard session.resources.count < 512, case .authenticatedHTTP(let locator) = track.deliverySource else {
+            throw AppError.invalidResponse
+        }
+        session.resources[locator.resource.path] = url
+        session.downloadedTracks[storedID] = track
+        sessions[id] = session
+        return track
     }
 
     func report(id: String, itemID: String, stopping: Bool) throws -> (String, Int64, String?) {
@@ -166,6 +225,7 @@ extension SiloProvider: ProviderHTTPResourceResolving {
             }
             let stream = try locator(url: streamURL, key: "stream", purpose: .mediaStream)
             var subtitles: [MediaTrack] = []
+            var downloadedTracks: [String: MediaTrack] = [:]
             for entry in plan.subtitle.inventory {
                 guard let url = resourceURL(entry.url), entry.delivery != "burn_in_only" else { continue }
                 let source = try locator(url: url, key: "subtitle", purpose: .subtitle)
@@ -176,11 +236,17 @@ extension SiloProvider: ProviderHTTPResourceResolving {
                     isDefault: plan.subtitle.track_id == entry.track_id && plan.subtitle.mode == "render",
                     isForced: entry.forced, isHearingImpaired: entry.hearing_impaired,
                     deliverySource: .authenticatedHTTP(source), isExternal: true))
+                if let storedID = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+                    .first(where: { $0.name == "downloaded_subtitle_id" })?.value,
+                   let track = subtitles.last {
+                    downloadedTracks[storedID] = track
+                }
             }
             let expiry = plan.expires_at.flatMap(Self.date)
             guard plan.expires_at == nil || expiry != nil else { throw AppError.invalidResponse }
             try await playback.insert(.init(itemID: itemID, sourceID: selected.file_id, installationID: installationID,
-                                            expiry: expiry, resources: resources), id: sessionID)
+                                            expiry: expiry, streamURL: streamURL, resources: resources,
+                                            downloadedTracks: downloadedTracks), id: sessionID)
             var item = map(dto)
             item.selectedVersionID = selected.file_id
             item.mediaInfo = metadata(selected)

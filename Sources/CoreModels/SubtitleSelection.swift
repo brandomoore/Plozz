@@ -233,6 +233,8 @@ public struct RemoteSubtitle: Equatable, Sendable, Identifiable {
     public var language: String?
     public var format: String?
     public var communityRating: Double?
+    /// Provider match confidence, not a community rating or proof of a file hash match.
+    public var matchScore: Double?
     public var downloadCount: Int?
     public var isForced: Bool
     public var isHearingImpaired: Bool
@@ -250,7 +252,8 @@ public struct RemoteSubtitle: Equatable, Sendable, Identifiable {
         downloadCount: Int? = nil,
         isForced: Bool = false,
         isHearingImpaired: Bool = false,
-        isHashMatch: Bool = false
+        isHashMatch: Bool = false,
+        matchScore: Double? = nil
     ) {
         self.id = id
         self.name = name
@@ -258,6 +261,7 @@ public struct RemoteSubtitle: Equatable, Sendable, Identifiable {
         self.language = language
         self.format = format
         self.communityRating = communityRating
+        self.matchScore = matchScore
         self.downloadCount = downloadCount
         self.isForced = isForced
         self.isHearingImpaired = isHearingImpaired
@@ -294,7 +298,7 @@ public extension Array where Element == RemoteSubtitle {
 
     /// Picks the best remote subtitle to download for `language` and the SDH/Forced
     /// `preference`. Precedence (highest first): forced-ness under the preference →
-    /// SDH-ness under the preference → community rating → download count.
+    /// SDH-ness under the preference → provider match score → community rating → download count.
     ///
     /// - Parameters:
     ///   - language: preferred language (ISO code); `nil` matches any.
@@ -349,13 +353,14 @@ public extension Array where Element == RemoteSubtitle {
     }
 
     /// The ordering key (higher = better) combining the preference ranks with the
-    /// popularity signals. Forced-ness dominates, then SDH-ness, then rating, then
+    /// popularity signals. Forced-ness dominates, then SDH-ness, match score, rating, then
     /// downloads — so the accessibility preference always outranks a merely
     /// more-downloaded candidate.
-    private static func rankKey(_ s: RemoteSubtitle, _ preference: SubtitleSearchPreference) -> (Int, Int, Double, Double) {
+    private static func rankKey(_ s: RemoteSubtitle, _ preference: SubtitleSearchPreference) -> (Int, Int, Double, Double, Double) {
         (
             preference.forced.rank(isForced: s.isForced),
             preference.hearingImpaired.rank(isHearingImpaired: s.isHearingImpaired),
+            s.matchScore ?? -1,
             s.communityRating ?? -1,
             Double(s.downloadCount ?? -1)
         )

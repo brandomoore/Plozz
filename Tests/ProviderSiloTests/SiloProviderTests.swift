@@ -28,7 +28,7 @@ private actor SiloHTTPStub: HTTPClient {
 }
 
 extension SiloProviderTests {
-  private func playbackResponses() -> [String: String] {
+  func playbackResponses() -> [String: String] {
     [
       "/api/v2/catalog/items/movie:1": """
       {"content_id":"movie:1","type":"movie","title":"Test movie","position_seconds":125,
@@ -254,7 +254,7 @@ extension SiloProviderTests {
   }
 }
 
-private final class SiloCredentialStub: RotatingCredentialStoring, @unchecked Sendable {
+final class SiloCredentialStub: RotatingCredentialStoring, @unchecked Sendable {
   private let lock = NSLock()
   private var value: String?
   init(_ value: String) { self.value = value }
@@ -282,7 +282,7 @@ private final class SiloCredentialStub: RotatingCredentialStoring, @unchecked Se
 final class SiloProviderTests: XCTestCase {
   private let base = URL(string: "https://silo.test/base")!
 
-  private func credential() throws -> SiloCredential {
+  func credential() throws -> SiloCredential {
     let tokens = try JSONDecoder().decode(
       SiloTokenPair.self,
       from: Data(
@@ -298,7 +298,7 @@ final class SiloProviderTests: XCTestCase {
     return SiloCredential(tokens: tokens, profile: profile, profileToken: nil)
   }
 
-  private func context(_ token: String) -> ProviderResolutionContext {
+  func context(_ token: String) -> ProviderResolutionContext {
     .init(
       session: UserSession(
         server: MediaServer(id: "server1", name: "Silo", baseURL: base, provider: .silo),
@@ -350,7 +350,7 @@ final class SiloProviderTests: XCTestCase {
     XCTAssertEqual(requests.first?.headers["Authorization"], "Bearer access-secret")
     XCTAssertEqual(requests.first?.headers["X-Profile-Id"], "profile1")
     XCTAssertFalse(provider.capabilities.contains(.music))
-    XCTAssertFalse(provider.capabilities.contains(.remoteSubtitles))
+    XCTAssertTrue(provider.capabilities.contains(.remoteSubtitles))
   }
 
   func testConcurrentExpiredCredentialRefreshesOnlyOnce() async throws {

@@ -23,19 +23,35 @@ private actor FakeSubtitleProvider: MediaProvider, CapabilityReporting {
     private(set) var searchCallCount = 0
     private(set) var downloadedIDs: [String] = []
     private var didDownload = false
+    private let receiptTrack: MediaTrack?
+    private let requiredContext: RemoteSubtitleContext?
+    private let holdDownload: Bool
+    private let searchFailure: RemoteSubtitleError?
+    private var downloadContinuation: CheckedContinuation<Void, Never>?
+    private(set) var receivedContexts: [RemoteSubtitleContext] = []
+    var isDownloadHeld: Bool { downloadContinuation != nil }
 
     init(
         capabilities: ProviderCapability = [.video, .remoteSubtitles],
         searchResults: [RemoteSubtitle] = [],
-        tracksAfterDownload: [MediaTrack] = []
+        tracksAfterDownload: [MediaTrack] = [],
+        receiptTrack: MediaTrack? = nil,
+        requiredContext: RemoteSubtitleContext? = nil,
+        holdDownload: Bool = false,
+        searchFailure: RemoteSubtitleError? = nil
     ) {
         self.capabilities = capabilities
         self.searchResults = searchResults
         self.tracksAfterDownload = tracksAfterDownload
+        self.receiptTrack = receiptTrack
+        self.requiredContext = requiredContext
+        self.holdDownload = holdDownload
+        self.searchFailure = searchFailure
     }
 
     func remoteSubtitleSearch(itemID: String, language: String, preference: SubtitleSearchPreference) async throws -> [RemoteSubtitle] {
         searchCallCount += 1
+        if let searchFailure { throw searchFailure }
         return searchResults
     }
     func downloadRemoteSubtitle(itemID: String, subtitleID: String) async throws {
@@ -44,6 +60,31 @@ private actor FakeSubtitleProvider: MediaProvider, CapabilityReporting {
     }
     func subtitleTracks(forItemID itemID: String) async throws -> [MediaTrack] {
         didDownload ? tracksAfterDownload : []
+    }
+
+    func remoteSubtitleSearch(context: RemoteSubtitleContext, language: String, preference: SubtitleSearchPreference) async throws -> [RemoteSubtitle] {
+        if let requiredContext { XCTAssertEqual(context, requiredContext) }
+        receivedContexts.append(context)
+        return try await remoteSubtitleSearch(itemID: context.itemID, language: language, preference: preference)
+    }
+
+    func downloadRemoteSubtitle(context: RemoteSubtitleContext, subtitleID: String) async throws -> MediaTrack? {
+        if let requiredContext { XCTAssertEqual(context, requiredContext) }
+        receivedContexts.append(context)
+        try await downloadRemoteSubtitle(itemID: context.itemID, subtitleID: subtitleID)
+        if holdDownload { await withCheckedContinuation { downloadContinuation = $0 } }
+        return receiptTrack
+    }
+
+    func subtitleTracks(context: RemoteSubtitleContext) async throws -> [MediaTrack] {
+        if let requiredContext { XCTAssertEqual(context, requiredContext) }
+        receivedContexts.append(context)
+        return try await subtitleTracks(forItemID: context.itemID)
+    }
+
+    func releaseDownload() {
+        downloadContinuation?.resume()
+        downloadContinuation = nil
     }
 
     // Unused MediaProvider surface.
@@ -68,6 +109,7 @@ private actor FakeSubtitleProvider: MediaProvider, CapabilityReporting {
 
 @MainActor
 private final class SpyAcquisitionHost: RemoteSubtitleAcquisitionHost {
+    var subtitlePlaybackContext: RemoteSubtitleContext?
     var downloadStates: [SubtitleDownloadState] = []
     var hotLoaded: [(track: MediaTrack, language: String?, forced: Bool)] = []
     var selected: [(id: Int, userInitiated: Bool)] = []
@@ -172,6 +214,15 @@ final class RemoteSubtitleAcquisitionTests: XCTestCase {
         XCTAssertEqual(acq.lastSearchLanguage, "eng")
     }
 
+    func testUnconfiguredProviderPublishesActionableMessageThroughSharedState() async {
+        let provider = FakeSubtitleProvider(searchFailure: .unavailable)
+        let host = SpyAcquisitionHost()
+        let acquisition = makeAcquisition(provider: provider, host: host)
+        acquisition.search(requestedLanguage: "en", defaultLanguage: nil, preference: .default)
+        await waitUntil { host.downloadStates.count == 2 }
+        XCTAssertEqual(host.downloadStates.last, .unavailable(RemoteSubtitleError.unavailable.userMessage))
+    }
+
     func testSearchWithEmptyResultsReportsEmpty() async {
         let provider = FakeSubtitleProvider(searchResults: [])
         let host = SpyAcquisitionHost()
@@ -243,6 +294,68 @@ final class RemoteSubtitleAcquisitionTests: XCTestCase {
 
     // MARK: auto-download
 
+    func testReceiptHotLoadsExactTrackWithFileAndSessionContext() async {
+        let context = RemoteSubtitleContext(itemID: "i", mediaSourceID: "edition-2", playSessionID: "session")
+        let host = SpyAcquisitionHost()
+        host.subtitlePlaybackContext = context
+        let provider = FakeSubtitleProvider(
+            searchResults: [RemoteSubtitle(id: "receipt", name: "English", language: "en")],
+            receiptTrack: textSidecar(id: 90, language: "en"), requiredContext: context
+        )
+        let acquisition = makeAcquisition(provider: provider, host: host)
+        acquisition.search(requestedLanguage: "en", defaultLanguage: nil, preference: .default)
+        await waitUntil { if case .results = host.downloadStates.last { return true }; return false }
+        acquisition.download(RemoteSubtitle(id: "receipt", name: "English", language: "en"), preference: .default)
+        await waitUntil { host.downloadStates.last == .added }
+        XCTAssertEqual(host.hotLoaded.first?.track.id, 90)
+        let contexts = await provider.receivedContexts
+        XCTAssertEqual(contexts, [context, context, context], "A precise receipt avoids unrelated track polling")
+        XCTAssertEqual(host.selected.count, 1)
+    }
+
+    func testDuplicateDownloadClickDoesNotRepeatTheMutation() async {
+        let provider = FakeSubtitleProvider(receiptTrack: textSidecar(id: 90, language: "en"), holdDownload: true)
+        let host = SpyAcquisitionHost()
+        let acquisition = makeAcquisition(provider: provider, host: host)
+        let subtitle = RemoteSubtitle(id: "receipt", name: "English", language: "en")
+        acquisition.download(subtitle, preference: .default)
+        await waitUntil { await provider.isDownloadHeld }
+        acquisition.download(subtitle, preference: .default)
+        await provider.releaseDownload()
+        await waitUntil { host.downloadStates.last == .added }
+        let ids = await provider.downloadedIDs
+        XCTAssertEqual(ids, ["receipt"])
+        XCTAssertEqual(host.hotLoaded.count, 1)
+    }
+
+    func testReceiptFromReplacedPlaybackDoesNotSelectInNewSession() async {
+        let host = SpyAcquisitionHost()
+        host.subtitlePlaybackContext = .init(itemID: "i", mediaSourceID: "file", playSessionID: "old")
+        let provider = FakeSubtitleProvider(receiptTrack: textSidecar(id: 90, language: "en"), holdDownload: true)
+        let acquisition = makeAcquisition(provider: provider, host: host)
+        acquisition.download(RemoteSubtitle(id: "receipt", name: "English", language: "en"), preference: .default)
+        await waitUntil { await provider.isDownloadHeld }
+        host.subtitlePlaybackContext = .init(itemID: "i", mediaSourceID: "file", playSessionID: "new")
+        await provider.releaseDownload()
+        await settle()
+        XCTAssertTrue(host.hotLoaded.isEmpty)
+        XCTAssertTrue(host.selected.isEmpty)
+        XCTAssertFalse(host.downloadStates.contains(.added))
+    }
+
+    func testCancelledReceiptNeverSelectsAfterPlaybackStops() async {
+        let host = SpyAcquisitionHost()
+        let provider = FakeSubtitleProvider(receiptTrack: textSidecar(id: 90, language: "en"), holdDownload: true)
+        let acquisition = makeAcquisition(provider: provider, host: host)
+        acquisition.download(RemoteSubtitle(id: "receipt", name: "English", language: "en"), preference: .default)
+        await waitUntil { await provider.isDownloadHeld }
+        acquisition.cancelAll()
+        await provider.releaseDownload()
+        await settle()
+        XCTAssertTrue(host.hotLoaded.isEmpty)
+        XCTAssertFalse(host.downloadStates.contains(.added))
+    }
+
     func testAutoDownloadHotLoadsAndSelectsWhenSubtitleOff() async {
         let sidecar = textSidecar(id: 7, language: "eng")
         let provider = FakeSubtitleProvider(
@@ -278,6 +391,19 @@ final class RemoteSubtitleAcquisitionTests: XCTestCase {
 
         XCTAssertEqual(host.hotLoaded.count, 1)
         XCTAssertTrue(host.selected.isEmpty)
+    }
+
+    func testForcedOnlyAutoDownloadDoesNotInventAForcedResult() async {
+        let provider = FakeSubtitleProvider(
+            searchResults: [RemoteSubtitle(id: "full", name: "English", language: "en")])
+        let host = SpyAcquisitionHost()
+        let acquisition = makeAcquisition(provider: provider, host: host)
+        acquisition.autoDownload(language: "en", mode: .forcedOnly, preference: .default)
+        await waitUntil { await provider.searchCallCount == 1 }
+        await settle()
+        let downloads = await provider.downloadedIDs
+        XCTAssertTrue(downloads.isEmpty)
+        XCTAssertTrue(host.hotLoaded.isEmpty)
     }
 
     func testAutoDownloadRequiresLanguageMatch() async {

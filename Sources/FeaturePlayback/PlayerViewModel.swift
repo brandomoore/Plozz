@@ -309,7 +309,14 @@ public final class PlayerViewModel {
     /// stuck instead of an opaque spinner.
     public private(set) var diagnosticsToken = UUID()
 
-    private var request: PlaybackRequest?
+    private var request: PlaybackRequest? {
+        didSet {
+            guard oldValue.map({ RemoteSubtitleContext(request: $0) })
+                != request.map({ RemoteSubtitleContext(request: $0) }) else { return }
+            subtitleAcquisition?.cancelAll()
+            controls.subtitleDownload.state = .idle
+        }
+    }
     @ObservationIgnored private var nowPlaying: VideoNowPlayingCoordinator?
     @ObservationIgnored private var systemResumeTask: Task<Void, Never>?
     @ObservationIgnored private var isInBackground = false
@@ -1952,6 +1959,10 @@ extension PlayerViewModel: NextEpisodeCoordinatorHost {
 }
 
 extension PlayerViewModel: RemoteSubtitleAcquisitionHost {
+    var subtitlePlaybackContext: RemoteSubtitleContext? {
+        request.map { RemoteSubtitleContext(request: $0) }
+    }
+
     func setSubtitleDownloadState(_ state: SubtitleDownloadState) {
         controls.subtitleDownload.state = state
     }

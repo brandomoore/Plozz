@@ -25,7 +25,7 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         capabilitiesSnapshot = capabilities
     }
 
-    public var capabilities: ProviderCapability { [.video, .libraryCollections] }
+    public var capabilities: ProviderCapability { [.video, .libraryCollections, .remoteSubtitles] }
     public var catalogIdentityRequiresEnrichment: Bool { true }
 
     public func libraries() async throws -> [MediaLibrary] {

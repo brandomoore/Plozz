@@ -1,5 +1,6 @@
 import CoreModels
 import CoreNetworking
+import Foundation
 
 /// Menu/host side effects that ``RemoteSubtitleAcquisition`` drives after a
 /// search or download. Kept as a weak-referenced protocol so the acquisition
@@ -10,6 +11,7 @@ import CoreNetworking
 /// network fetch/poll runs off-actor inside the detached tasks.
 @MainActor
 protocol RemoteSubtitleAcquisitionHost: AnyObject {
+    var subtitlePlaybackContext: RemoteSubtitleContext? { get }
     /// Publishes the manual search/download UI state (→ `controls.subtitleDownload.state`).
     func setSubtitleDownloadState(_ state: SubtitleDownloadState)
     /// Registers a freshly downloaded sidecar in the track menu, returning its
@@ -20,6 +22,10 @@ protocol RemoteSubtitleAcquisitionHost: AnyObject {
     /// Whether the primary subtitle is currently "Off" — auto-download only
     /// auto-selects the fetched track when nothing is already shown.
     var isPrimarySubtitleOff: Bool { get }
+}
+
+extension RemoteSubtitleAcquisitionHost {
+    var subtitlePlaybackContext: RemoteSubtitleContext? { nil }
 }
 
 /// Owns manual + automatic remote-subtitle **acquisition** for a single playback
@@ -47,6 +53,12 @@ final class RemoteSubtitleAcquisition {
     /// In-flight download — shared by the manual and automatic download paths so a
     /// newer download always supersedes an older one.
     private var downloadTask: Task<Void, Never>?
+    private var downloadingID: String?
+    private var downloadGeneration = UUID()
+
+    private var context: RemoteSubtitleContext {
+        host?.subtitlePlaybackContext ?? RemoteSubtitleContext(itemID: itemID)
+    }
 
     init(
         provider: any MediaProvider,
@@ -86,23 +98,26 @@ final class RemoteSubtitleAcquisition {
         }
         lastSearchLanguage = language
         let provider = self.provider
-        let itemID = self.itemID
+        let context = self.context
         host?.setSubtitleDownloadState(.searching)
         searchTask?.cancel()
         searchTask = Task { [weak self] in
             do {
-                let raw = try await provider.remoteSubtitleSearch(itemID: itemID, language: language, preference: preference)
+                let raw = try await provider.remoteSubtitleSearch(context: context, language: language, preference: preference)
                 let ranked = raw.applying(preference)
                 try Task.checkCancellation()
                 await MainActor.run { [weak self] in
-                    self?.host?.setSubtitleDownloadState(ranked.isEmpty ? .empty : .results(ranked))
+                    guard !Task.isCancelled, let self, self.context == context else { return }
+                    self.host?.setSubtitleDownloadState(ranked.isEmpty ? .empty : .results(ranked))
                 }
             } catch is CancellationError {
                 return
             } catch {
+                guard !Task.isCancelled else { return }
                 PlozzLog.playback.debug("Manual subtitle search failed (non-fatal)")
                 await MainActor.run { [weak self] in
-                    self?.host?.setSubtitleDownloadState(.failed)
+                    guard !Task.isCancelled, let self, self.context == context else { return }
+                    self.host?.setSubtitleDownloadState(Self.failureState(error))
                 }
             }
         }
@@ -117,28 +132,31 @@ final class RemoteSubtitleAcquisition {
     /// Downloads the chosen remote subtitle onto the server, then hot-loads it into
     /// the running player so it appears immediately (no replay needed).
     func download(_ subtitle: RemoteSubtitle, preference: SubtitleSearchPreference) {
-        guard !subtitle.id.isEmpty else { return }
+        guard !subtitle.id.isEmpty, downloadingID != subtitle.id else { return }
         let provider = self.provider
-        let itemID = self.itemID
+        let context = self.context
         let language = subtitle.language ?? lastSearchLanguage
         host?.setSubtitleDownloadState(.downloading(subtitle.id))
         downloadTask?.cancel()
+        downloadingID = subtitle.id
+        downloadGeneration = UUID()
+        let generation = downloadGeneration
         let pollRetryDelay = self.pollRetryDelay
         downloadTask = Task { [weak self] in
+            defer {
+                if self?.downloadGeneration == generation { self?.downloadingID = nil }
+            }
             do {
                 // Snapshot the item's existing server-side subtitle ids first, so the
                 // poll can tell the *newly downloaded* sidecar apart from ones that
                 // were already attached (which would otherwise be mistaken for the
                 // download and duplicated in the menu).
-                let baseline = await Self.existingSubtitleTrackIDs(provider: provider, itemID: itemID)
-                try await provider.downloadRemoteSubtitle(itemID: itemID, subtitleID: subtitle.id)
-                let track = try await Self.pollForNewSubtitleTrack(
-                    provider: provider, itemID: itemID, language: language, knownIDs: baseline,
-                    retryDelay: pollRetryDelay
-                )
+                let track = try await Self.downloadAndResolveTrack(
+                    provider: provider, context: context, subtitleID: subtitle.id,
+                    language: language, retryDelay: pollRetryDelay)
                 try Task.checkCancellation()
                 await MainActor.run { [weak self] in
-                    guard let self, let host = self.host else { return }
+                    guard !Task.isCancelled, let self, self.context == context, let host = self.host else { return }
                     if let track {
                         let id = host.hotLoadDownloadedSubtitle(track, preferredLanguage: language, forced: subtitle.isForced)
                         host.selectDownloadedSubtitle(id: id, userInitiated: true)
@@ -152,9 +170,11 @@ final class RemoteSubtitleAcquisition {
             } catch is CancellationError {
                 return
             } catch {
+                guard !Task.isCancelled else { return }
                 PlozzLog.playback.debug("Subtitle download failed (non-fatal)")
                 await MainActor.run { [weak self] in
-                    self?.host?.setSubtitleDownloadState(.failed)
+                    guard !Task.isCancelled, let self, self.context == context else { return }
+                    self.host?.setSubtitleDownloadState(Self.failureState(error))
                 }
             }
         }
@@ -167,29 +187,29 @@ final class RemoteSubtitleAcquisition {
     /// subtitle, and only auto-selects the result when nothing is currently shown.
     func autoDownload(language: String, mode: SubtitleMode, preference: SubtitleSearchPreference) {
         let provider = self.provider
-        let itemID = self.itemID
+        let context = self.context
         let pollRetryDelay = self.pollRetryDelay
+        guard downloadingID == nil else { return }
+        downloadTask?.cancel()
         downloadTask = Task { [weak self] in
             do {
-                let results = try await provider.remoteSubtitleSearch(itemID: itemID, language: language, preference: preference)
+                let results = try await provider.remoteSubtitleSearch(context: context, language: language, preference: preference)
                 // Require a genuine language match so auto-download can never attach
                 // a wrong-language subtitle.
                 guard let best = results.bestMatch(
                     forLanguage: language, mode: mode,
                     preference: preference, requireLanguageMatch: true
                 ), !best.id.isEmpty else { return }
+                guard mode != .forcedOnly || best.isForced else { return }
                 // Baseline of already-attached subtitle ids so the poll only picks up
                 // the newly-downloaded one.
-                let baseline = await Self.existingSubtitleTrackIDs(provider: provider, itemID: itemID)
-                try await provider.downloadRemoteSubtitle(itemID: itemID, subtitleID: best.id)
+                let track = try await Self.downloadAndResolveTrack(
+                    provider: provider, context: context, subtitleID: best.id,
+                    language: language, retryDelay: pollRetryDelay)
                 PlozzLog.playback.info("Auto-downloaded subtitle for item")
-                let track = try await Self.pollForNewSubtitleTrack(
-                    provider: provider, itemID: itemID, language: language, knownIDs: baseline,
-                    retryDelay: pollRetryDelay
-                )
                 try Task.checkCancellation()
                 await MainActor.run { [weak self] in
-                    guard let self, let host = self.host, let track else { return }
+                    guard !Task.isCancelled, let self, self.context == context, let host = self.host, let track else { return }
                     // Only hot-load; don't yank the viewer's current selection —
                     // register the row so they can pick it, and select it only if
                     // nothing is currently shown.
@@ -208,6 +228,8 @@ final class RemoteSubtitleAcquisition {
 
     /// Cancels any in-flight search and download (playback teardown).
     func cancelAll() {
+        downloadGeneration = UUID()
+        downloadingID = nil
         searchTask?.cancel()
         searchTask = nil
         downloadTask?.cancel()
@@ -217,8 +239,26 @@ final class RemoteSubtitleAcquisition {
     /// The item's current server-side subtitle-track ids (best-effort, empty on
     /// failure), used as the "already attached" baseline for ``pollForNewSubtitleTrack``.
     nonisolated static func existingSubtitleTrackIDs(provider: any MediaProvider, itemID: String) async -> Set<Int> {
-        let tracks = (try? await provider.subtitleTracks(forItemID: itemID)) ?? []
+        await existingSubtitleTrackIDs(provider: provider, context: .init(itemID: itemID))
+    }
+
+    nonisolated private static func existingSubtitleTrackIDs(provider: any MediaProvider, context: RemoteSubtitleContext) async -> Set<Int> {
+        let tracks = (try? await provider.subtitleTracks(context: context)) ?? []
         return Set(tracks.map(\.id))
+    }
+
+    nonisolated private static func downloadAndResolveTrack(
+        provider: any MediaProvider, context: RemoteSubtitleContext, subtitleID: String,
+        language: String?, retryDelay: Duration
+    ) async throws -> MediaTrack? {
+        let baseline = await existingSubtitleTrackIDs(provider: provider, context: context)
+        try Task.checkCancellation()
+        if let track = try await provider.downloadRemoteSubtitle(context: context, subtitleID: subtitleID) {
+            return track
+        }
+        return try await pollForNewSubtitleTrack(
+            provider: provider, itemID: context.itemID, language: language, knownIDs: baseline,
+            retryDelay: retryDelay, context: context)
     }
 
     /// Polls the item's subtitle tracks (the server attaches asynchronously) for a
@@ -230,14 +270,15 @@ final class RemoteSubtitleAcquisition {
         itemID: String,
         language: String?,
         knownIDs: Set<Int> = [],
-        retryDelay: Duration = RemoteSubtitleAcquisition.defaultPollRetryDelay
+        retryDelay: Duration = RemoteSubtitleAcquisition.defaultPollRetryDelay,
+        context: RemoteSubtitleContext? = nil
     ) async throws -> MediaTrack? {
         for attempt in 0..<4 {
             if attempt > 0 {
                 try await Task.sleep(for: retryDelay)
             }
             try Task.checkCancellation()
-            let tracks = (try? await provider.subtitleTracks(forItemID: itemID)) ?? []
+            let tracks = (try? await provider.subtitleTracks(context: context ?? .init(itemID: itemID))) ?? []
             // Only consider text sidecars that appeared *after* the download.
             let newTextSubs = tracks.filter {
                 $0.deliverySource != nil
@@ -252,5 +293,10 @@ final class RemoteSubtitleAcquisition {
             if let any = newTextSubs.last { return any }
         }
         return nil
+    }
+
+    private static func failureState(_ error: Error) -> SubtitleDownloadState {
+        if let error = error as? RemoteSubtitleError { return .unavailable(error.userMessage) }
+        return .failed
     }
 }

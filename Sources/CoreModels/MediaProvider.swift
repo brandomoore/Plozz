@@ -198,6 +198,14 @@ public protocol MediaProvider: Sendable {
     /// it can be hot-loaded into the running player. Default: none.
     func subtitleTracks(forItemID itemID: String) async throws -> [MediaTrack]
 
+    /// Session-aware counterparts. Defaults preserve existing item-scoped providers.
+    func remoteSubtitleSearch(context: RemoteSubtitleContext, language: String,
+                              preference: SubtitleSearchPreference) async throws -> [RemoteSubtitle]
+    /// A provider receipt may identify the exact attached sidecar. Returning nil
+    /// uses the shared refresh/poll path; it never requires another playback start.
+    func downloadRemoteSubtitle(context: RemoteSubtitleContext, subtitleID: String) async throws -> MediaTrack?
+    func subtitleTracks(context: RemoteSubtitleContext) async throws -> [MediaTrack]
+
     // MARK: Skip segments
 
     /// Server-detected structural segments (intro, credits, …) for an item, used
@@ -448,6 +456,20 @@ public extension MediaProvider {
     func remoteSubtitleSearch(itemID: String, language: String, preference: SubtitleSearchPreference) async throws -> [RemoteSubtitle] { [] }
     func downloadRemoteSubtitle(itemID: String, subtitleID: String) async throws {}
     func subtitleTracks(forItemID itemID: String) async throws -> [MediaTrack] { [] }
+
+    func remoteSubtitleSearch(context: RemoteSubtitleContext, language: String,
+                              preference: SubtitleSearchPreference) async throws -> [RemoteSubtitle] {
+        try await remoteSubtitleSearch(itemID: context.itemID, language: language, preference: preference)
+    }
+
+    func downloadRemoteSubtitle(context: RemoteSubtitleContext, subtitleID: String) async throws -> MediaTrack? {
+        try await downloadRemoteSubtitle(itemID: context.itemID, subtitleID: subtitleID)
+        return nil
+    }
+
+    func subtitleTracks(context: RemoteSubtitleContext) async throws -> [MediaTrack] {
+        try await subtitleTracks(forItemID: context.itemID)
+    }
 
     /// Convenience: search with the default (no-op) preference. Keeps existing
     /// callers/tests that don't care about the SDH/Forced knobs working.

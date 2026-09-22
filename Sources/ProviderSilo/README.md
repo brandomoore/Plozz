@@ -68,6 +68,29 @@ action. Leaving the flow cancels pending work and clears in-memory PINs/tokens.
 - Watched state and the native Silo watchlist write back to Silo. Batched resume
   synchronization checks each result, not only HTTP success.
 
+## Subtitle search and download
+
+Silo uses the shared TV/iOS subtitle search, accessibility preference ranking,
+automatic download policy and hot-load pipeline. Search and download are scoped
+to the exact playing file and session, never the item's first/default version.
+Provider availability is checked at runtime; unconfigured/unauthorized sources
+produce actionable errors rather than an empty successful search.
+
+Search results are opaque, session-bound handles for the complete native result.
+The server's match score is not a community rating or a verified file-hash match.
+SDH is preserved; Silo does not report a forced flag, so none is invented and
+forced-only automatic download does not select an unconfirmed full subtitle.
+
+The download receipt identifies the exact stored sidecar, including one already
+present, so it can be added without guessing from mutable track indices or opening
+another playback session. Native delivery pins `file_id` and
+`downloaded_subtitle_id` to the authorized session. Supported text formats are
+served as WebVTT through the existing authenticated resource resolver and subtitle
+overlay. Bearers and signed reconstruction references never enter track locators.
+Uncertain download POSTs are not automatically replayed. Newly downloaded
+sidecars use the configured native API even when a distributed node serves the
+movie; account credentials are never attached to that node's URL.
+
 ## Offline downloads
 
 On iOS/iPadOS, downloads use Silo's managed device registry, native capability
