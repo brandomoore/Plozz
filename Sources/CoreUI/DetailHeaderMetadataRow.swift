@@ -29,7 +29,7 @@ public struct HeaderReviewScoreCountPicker: View {
 }
 
 /// One line at every width; formats yield individually before lower-priority ratings.
-/// The disclosure always retains the full metadata without shrinking its text.
+/// Only an overflowing row opens a disclosure; fully visible metadata is static.
 public struct DetailHeaderMetadataRow: View {
     private let ratings: [ExternalRating]
     private let badges: [MediaBadge]
@@ -44,18 +44,24 @@ public struct DetailHeaderMetadataRow: View {
 
     public var body: some View {
         if !ratings.isEmpty || !badges.isEmpty || familyGuidanceAge != nil {
-            Button { showsDetails = true } label: {
-                ViewThatFits(in: .horizontal) {
-                    ForEach(previews, id: \.self) { preview in
-                        metadataLine(ratingCount: preview.ratingCount, badgeCount: preview.badgeCount)
+            ViewThatFits(in: .horizontal) {
+                metadataLine(ratingCount: ratings.count, badgeCount: badges.count, showsDisclosure: false)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("detail-header-metadata-inline")
+
+                Button { showsDetails = true } label: {
+                    ViewThatFits(in: .horizontal) {
+                        ForEach(previews, id: \.self) { preview in
+                            metadataLine(ratingCount: preview.ratingCount, badgeCount: preview.badgeCount)
+                        }
+                        disclosureChevron
                     }
-                    disclosureChevron
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
                 }
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Rectangle())
+                .accessibilityHint(Text(detailsTitle))
+                .accessibilityIdentifier("detail-header-metadata")
             }
-            .accessibilityHint(Text(detailsTitle))
-            .accessibilityIdentifier("detail-header-metadata")
             .lineLimit(1)
             .buttonStyle(.plain)
             .plozzForeground(.primary)
@@ -115,7 +121,9 @@ public struct DetailHeaderMetadataRow: View {
         }
     }
 
-    private func metadataLine(ratingCount: Int, badgeCount: Int) -> some View {
+    private func metadataLine(
+        ratingCount: Int, badgeCount: Int, showsDisclosure: Bool = true
+    ) -> some View {
         HStack(spacing: 12) {
             if let familyGuidanceAge {
                 FamilyGuidanceAgeBadge(age: familyGuidanceAge)
@@ -126,9 +134,11 @@ public struct DetailHeaderMetadataRow: View {
                     ForEach(Array(badges.prefix(badgeCount))) { MetadataMediaBadgeChip(badge: $0) }
                 }
             }
-            disclosureChevron.accessibilityHidden(
-                familyGuidanceAge != nil || ratingCount > 0 || badgeCount > 0
-            )
+            if showsDisclosure {
+                disclosureChevron.accessibilityHidden(
+                    familyGuidanceAge != nil || ratingCount > 0 || badgeCount > 0
+                )
+            }
         }
         .fixedSize(horizontal: true, vertical: true)
     }

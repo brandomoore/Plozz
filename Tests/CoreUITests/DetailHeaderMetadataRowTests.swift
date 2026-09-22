@@ -48,7 +48,9 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
             .plozzForeground(.secondary)
     }
 
-    private func inline(ratings: [ExternalRating], badges: [MediaBadge], age: Double?) -> some View {
+    private func inline(
+        ratings: [ExternalRating], badges: [MediaBadge], age: Double?, showsDisclosure: Bool = true
+    ) -> some View {
         HStack(spacing: 12) {
             if let age { FamilyGuidanceAgeBadge(age: age) }
             ForEach(ratings) { RatingBadge(rating: $0) }
@@ -57,7 +59,7 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
                     ForEach(badges) { MetadataMediaBadgeChip(badge: $0) }
                 }
             }
-            chevron
+            if showsDisclosure { chevron }
         }
         .fixedSize()
     }
@@ -72,23 +74,34 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
+    private func referenceStaticRow(_ line: some View) -> some View {
+        line.frame(minHeight: 44)
+            .lineLimit(1)
+            .plozzForeground(.primary)
+            .frame(maxWidth: .infinity, alignment: .center)
+    }
+
     // Deliberately select by independently measured natural widths, not another
     // ViewThatFits/ForEach: the reference must catch a grouped-candidate regression.
-    private func expectedLine(
+    private func expectedRow(
         ratings: [ExternalRating], badges: [MediaBadge], age: Double?,
         width: CGFloat, textSize: DynamicTypeSize
     ) -> AnyView {
+        let complete = inline(ratings: ratings, badges: badges, age: age, showsDisclosure: false)
+        if size(of: complete, width: 4_000, textSize: textSize).width <= width {
+            return AnyView(referenceStaticRow(complete))
+        }
         for count in stride(from: ratings.count, through: 0, by: -1) {
             for badgeCount in stride(from: badges.count, through: 0, by: -1) {
                 let candidate = inline(
                     ratings: Array(ratings.prefix(count)), badges: Array(badges.prefix(badgeCount)), age: age
                 )
                 if size(of: candidate, width: 4_000, textSize: textSize).width <= width {
-                    return AnyView(candidate)
+                    return AnyView(referenceButton(candidate))
                 }
             }
         }
-        return AnyView(chevron)
+        return AnyView(referenceButton(chevron))
     }
 
     private func render(
@@ -184,9 +197,9 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
             MediaBadge("SDR", style: .sdr)
         ]
         let row = DetailHeaderMetadataRow(ratings: [score], badges: formats)
-        let reference = referenceButton(expectedLine(
+        let reference = expectedRow(
             ratings: [score], badges: formats, age: nil, width: 320, textSize: .large
-        ))
+        )
         try assertSameRendering(render(row, width: 320), render(reference, width: 320), context: "Korra")
     }
 
@@ -206,9 +219,9 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
                                 XCTAssertEqual(actualSize.height, 0, accuracy: 0.5, context)
                                 continue
                             }
-                            let expected = referenceButton(expectedLine(
+                            let expected = expectedRow(
                                 ratings: scores, badges: formats, age: age, width: width, textSize: textSize
-                            ))
+                            )
                             let expectedSize = size(of: expected, width: width, textSize: textSize)
                             XCTAssertEqual(actualSize.height, expectedSize.height, accuracy: 0.5, context)
                             XCTAssertGreaterThanOrEqual(actualSize.height, 44, context)
@@ -235,12 +248,38 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
 
     func testWideRowsRetainRealFormatBadgeArtworkWithAndWithoutRatings() throws {
         for scores in [[], jurassicRatings] {
-            let line = inline(ratings: scores, badges: badges, age: 11)
+            let line = inline(ratings: scores, badges: badges, age: 11, showsDisclosure: false)
             let width = ceil(size(of: line, width: 4_000).width) + 1
             try assertSameRendering(
                 render(DetailHeaderMetadataRow(ratings: scores, badges: badges, familyGuidanceAge: 11), width: width),
-                render(referenceButton(line), width: width), context: "wide-real-badges-\(scores.count)"
+                render(referenceStaticRow(line), width: width), context: "wide-real-badges-\(scores.count)"
             )
+        }
+    }
+
+    func testFullyVisibleRowsDoNotReserveSpaceForADisclosure() throws {
+        for (scores, formats, age) in [
+            (jurassicRatings, badges, Double?(11)),
+            (jurassicRatings, [], nil),
+            ([], badges, nil),
+            ([], [], Double?(11))
+        ] {
+            for textSize in [DynamicTypeSize.large, .accessibility3] {
+                let complete = inline(
+                    ratings: scores, badges: formats, age: age, showsDisclosure: false
+                )
+                let width = ceil(size(of: complete, width: 4_000, textSize: textSize).width) + 1
+                let withChevron = inline(ratings: scores, badges: formats, age: age)
+                XCTAssertGreaterThan(size(of: withChevron, width: 4_000, textSize: textSize).width, width)
+                let row = DetailHeaderMetadataRow(ratings: scores, badges: formats, familyGuidanceAge: age)
+                let expected = referenceStaticRow(complete)
+                let actual = try render(row, width: width, textSize: textSize)
+                attach(actual, name: "complete-no-disclosure-\(scores.count)-\(formats.count)-\(textSize)")
+                try assertSameRendering(
+                    actual, render(expected, width: width, textSize: textSize),
+                    context: "complete-no-disclosure-\(scores.count)-\(formats.count)-\(textSize)"
+                )
+            }
         }
     }
 
@@ -284,9 +323,9 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
             let row = DetailHeaderMetadataRow(ratings: scores, badges: badges, familyGuidanceAge: age)
             let oneFormat = inline(ratings: scores, badges: Array(badges.prefix(1)), age: age)
             XCTAssertLessThanOrEqual(size(of: oneFormat, width: 4_000).width, width)
-            let expected = referenceButton(expectedLine(
+            let expected = expectedRow(
                 ratings: scores, badges: badges, age: age, width: width, textSize: .large
-            ))
+            )
             let image = try render(row, width: width)
             attach(image, name: "lost-world-three-reviews-formats-\(Int(width))")
             try assertSameRendering(image, render(expected, width: width), context: "Lost-World-\(width)")
@@ -337,9 +376,9 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
         for width in widths {
             for textSize in [DynamicTypeSize.large, .accessibility3] {
                 let row = DetailHeaderMetadataRow(ratings: jurassicRatings, badges: badges, familyGuidanceAge: 11)
-                let expected = referenceButton(expectedLine(
+                let expected = expectedRow(
                     ratings: jurassicRatings, badges: badges, age: 11, width: width, textSize: textSize
-                ))
+                )
                 let image = try render(row, width: width, textSize: textSize)
                 attach(image, name: "jurassic-\(Int(width))-\(textSize)")
                 try assertSameRendering(image, render(expected, width: width, textSize: textSize), context: "Jurassic-\(width)-\(textSize)")
