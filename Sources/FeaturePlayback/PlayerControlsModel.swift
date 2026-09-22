@@ -22,14 +22,17 @@ public struct PlayerTrackOption: Identifiable, Hashable, Sendable {
     public static let offID = -1
     public var id: Int
     public var title: Text
+    /// Localized plain-text counterpart for native UIKit menus.
+    public var nativeTitle: String
     public var isSelected: Bool
     /// `true` for an external (downloaded / sidecar) subtitle, so the menu can mark
     /// it apart from the media's embedded tracks.
     public var isExternal: Bool
 
-    public init(id: Int, title: Text, isSelected: Bool, isExternal: Bool = false) {
+    public init(id: Int, title: Text, isSelected: Bool, isExternal: Bool = false, nativeTitle: String? = nil) {
         self.id = id
         self.title = title
+        self.nativeTitle = nativeTitle ?? String(localized: "Track \(id)") // l10n:content - legacy UIKit fallback; track builders supply locale-refreshed titles.
         self.isSelected = isSelected
         self.isExternal = isExternal
     }
@@ -37,12 +40,14 @@ public struct PlayerTrackOption: Identifiable, Hashable, Sendable {
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id
             && lhs.title == rhs.title
+            && lhs.nativeTitle == rhs.nativeTitle
             && lhs.isSelected == rhs.isSelected
             && lhs.isExternal == rhs.isExternal
     }
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+        hasher.combine(nativeTitle)
         hasher.combine(isSelected)
         hasher.combine(isExternal)
     }

@@ -32,14 +32,31 @@ class MobileQualityControlsTests(unittest.TestCase):
         self.assertIn("playbackOptions", controls)
         self.assertEqual(controls.count("Button("), 1, "Only captions remain a separate button")
         menu = swift_block(source, "private struct PlozziOSPlaybackOptionsMenu:")
-        self.assertIn('Button("Quality"', menu)
-        self.assertIn('Button("Version"', menu)
-        self.assertIn('Button("Playback Diagnostics"', menu)
-        self.assertIn('accessibilityIdentifier("player-playback-options")', menu)
+        self.assertIn('action("Quality"', menu)
+        self.assertIn('action("Version"', menu)
+        self.assertIn('action("Now Playing"', menu)
+        self.assertNotIn('"Playback Diagnostics"', menu)
+        self.assertNotIn('"Subtitles"', menu)
+        self.assertIn('UIImage(systemName: "speaker.wave.2")', menu)
+        self.assertIn("PlayerOptionsMenuButton(", menu)
+        info = swift_block(source, "private struct PlozziOSPlaybackInfoSheet:")
+        self.assertIn('Button("Playback Diagnostics"', info)
         callback = swift_block(source, "onShowQuality:")
         self.assertIn("presentedSheet = .quality", callback)
         self.assertIn("cancelAutoHide()", callback)
         self.assertIn("case .quality:\n                PlozziOSStreamingQualitySheet(viewModel: viewModel)", source)
+
+    def test_auto_hide_waits_for_native_menu_and_all_player_sheets(self):
+        source = (ROOT / "Sources/AppShelliOS/PlozziOSPlayerControlsOverlay.swift").read_text()
+        timer = swift_block(source, "private func scheduleAutoHide()")
+        for guard in ("!optionsMenuPresented", "!versionsPresented",
+                      "!viewModel.controls.diagnosticsEnabled", "presentedSheet == nil"):
+            self.assertIn(guard, timer)
+        callback = swift_block(source, "onOptionsMenuPresentationChange:")
+        self.assertIn("optionsMenuPresented = presented", callback)
+        self.assertIn("cancelAutoHide()", callback)
+        self.assertIn("scheduleAutoHide()", callback)
+        self.assertIn("guard !optionsMenuPresented", swift_block(source, "private func toggleControls()"))
 
     def test_failure_recovery_is_central_not_in_the_close_button(self):
         source = (ROOT / "Sources/AppShelliOS/PlozziOSPlayerView.swift").read_text()

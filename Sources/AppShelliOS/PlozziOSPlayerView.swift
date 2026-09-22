@@ -78,6 +78,7 @@ struct PlozziOSPlayerView: View {
                     PlozziOSPlayerControlsOverlay(
                         viewModel: viewModel,
                         hasVersions: PlayerVersionSelection.versions(for: versionItem).count > 1,
+                        versionsPresented: presentsVersions,
                         onShowVersions: { showVersions(onlySDR: false) },
                         onClose: { dismiss() }
                     )

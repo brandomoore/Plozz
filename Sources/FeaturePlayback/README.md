@@ -60,7 +60,13 @@ playback. Cellular, expensive, and unclassified paths use the cellular policy;
 connection changes reapply the relevant saved default. The player Quality sheet
 changes only the current video's rendition, not the saved preferences.
 The transport keeps subtitles directly accessible and groups quality, version,
-audio, speed, sync, and diagnostics in one playback-options menu. Version choices
+audio, speed, sync, and Now Playing in one playback-options menu. Diagnostics
+is available inside Now Playing, not in the main options list. Subtitles remain
+one separate button, without a duplicate menu entry. A native button snapshots
+the menu on opening; playback-clock updates never replace its presented rows.
+Its presentation lifecycle suspends control auto-hide until dismissal, including
+time spent in the audio submenu. Audio labels share the localized track-label
+builder with the SwiftUI controls. Version choices
 stay on the active account, reuse detail-page edition/file routing, and carry the
 current position, pause intent, speed, quality, and matching tracks to the new
 player. The per-profile version preference also applies to later playback.

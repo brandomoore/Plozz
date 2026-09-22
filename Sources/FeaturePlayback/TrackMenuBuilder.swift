@@ -52,9 +52,7 @@ enum TrackMenuBuilder {
         locale: Locale = .current
     ) -> [PlayerTrackOption] {
         tracks.sortedByPreferredLanguage(preferred).map { track in
-            PlayerTrackOption(
-                id: track.id,
-                title: text(for: TrackLabeling.audioLabel(
+            let label = presentation(for: TrackLabeling.audioLabel(
                     displayTitle: track.displayTitle,
                     language: track.language,
                     codec: track.codec,
@@ -63,8 +61,10 @@ enum TrackMenuBuilder {
                     isCommentary: track.isCommentary,
                     trackID: track.id,
                     locale: locale
-                )),
-                isSelected: track.id == selectedID
+                ), locale: locale)
+            return PlayerTrackOption(
+                id: track.id, title: label.text,
+                isSelected: track.id == selectedID, nativeTitle: label.nativeTitle
             )
         }
     }
@@ -186,7 +186,7 @@ enum TrackMenuBuilder {
 
     private static func subtitleLabel(_ track: MediaTrack, detectedLanguages: [Int: String],
                                       locale: Locale) -> Text {
-        text(for: TrackLabeling.subtitleLabel(
+        presentation(for: TrackLabeling.subtitleLabel(
             displayTitle: track.displayTitle,
             language: track.language,
             codec: track.codec,
@@ -197,7 +197,7 @@ enum TrackMenuBuilder {
             detectedLanguage: detectedLanguages[track.id],
             trackID: track.id,
             locale: locale
-        ))
+        ), locale: locale).text
     }
 
     /// Composes a structured ``TrackLabel`` (base + qualifiers) into the final
@@ -207,42 +207,70 @@ enum TrackMenuBuilder {
     /// (Plozz's own words) or `Text(verbatim:)` (content — a codec/format
     /// token). `base`/qualifiers are never joined into a plain `String` first,
     /// which is exactly what would hide the copy from the catalog.
-    private static func text(for label: TrackLabel) -> Text {
-        let base: Text
+    private static func presentation(for label: TrackLabel, locale: Locale) -> LabelPresentation {
+        let base: LabelPresentation
         switch label.base {
         case .content(let value):
-            base = Text(verbatim: value)
+            base = .init(content: value)
         case .trackNumber(let number):
-            base = Text(
+            base = .init(resource: LocalizedStringResource(
                 "Track \(number)",
                 comment: "Fallback label for an audio/subtitle track with no resolved language or meaningful provider title, showing its index."
-            )
+            ), locale: locale)
         }
         guard !label.qualifiers.isEmpty else { return base }
-        let qualifierTexts = label.qualifiers.map(qualifierText)
-        let joined = qualifierTexts.dropFirst().reduce(qualifierTexts[0]) { accumulated, next in
-            accumulated + Text(verbatim: ", ") + next
+        let qualifiers = label.qualifiers.map { qualifierPresentation($0, locale: locale) }
+        let joined = qualifiers.dropFirst().reduce(qualifiers[0]) { accumulated, next in
+            accumulated + .init(content: ", ") + next
         }
-        return base + Text(verbatim: " (") + joined + Text(verbatim: ")")
+        return base + .init(content: " (") + joined + .init(content: ")")
     }
 
-    private static func qualifierText(_ qualifier: TrackLabel.Qualifier) -> Text {
+    private static func qualifierPresentation(_ qualifier: TrackLabel.Qualifier, locale: Locale) -> LabelPresentation {
+        let resource: LocalizedStringResource
         switch qualifier {
         case .forced:
-            return Text("Forced", comment: "Subtitle track qualifier — the track only shows forced (foreign-language-passage) lines.")
+            resource = .init("Forced", comment: "Subtitle track qualifier — the track only shows forced (foreign-language-passage) lines.")
         case .hearingImpaired:
-            return Text("SDH", comment: "Subtitle/audio track qualifier for a hearing-impaired (SDH) track.")
+            resource = .init("SDH", comment: "Subtitle/audio track qualifier for a hearing-impaired (SDH) track.")
         case .commentary:
-            return Text("Commentary", comment: "Audio/subtitle track qualifier for a commentary track.")
+            resource = .init("Commentary", comment: "Audio/subtitle track qualifier for a commentary track.")
         case .autoDetected:
-            return Text("auto", comment: "Subtitle track qualifier appended when the shown language was guessed from the file's content rather than tagged by the provider.")
+            resource = .init("auto", comment: "Subtitle track qualifier appended when the shown language was guessed from the file's content rather than tagged by the provider.")
         case .format(let value):
-            return Text(verbatim: value)
+            return .init(content: value)
         case .channelCount(let channels):
-            return Text(
+            resource = .init(
                 "\(channels) channels",
                 comment: "Fallback wording for an audio track's channel count when it doesn't match a named layout convention (e.g. Stereo, 5.1, 7.1)."
             )
+        }
+        return .init(resource: resource, locale: locale)
+    }
+
+    private struct LabelPresentation {
+        var text: Text
+        var nativeTitle: String
+
+        init(content: String) {
+            text = Text(verbatim: content)
+            nativeTitle = content
+        }
+
+        init(resource: LocalizedStringResource, locale: Locale) {
+            var localized = resource
+            localized.locale = locale
+            text = Text(localized)
+            nativeTitle = String(localized: localized) // l10n:content - UIKit track label; rebuilt when the app locale changes.
+        }
+
+        private init(text: Text, nativeTitle: String) {
+            self.text = text
+            self.nativeTitle = nativeTitle
+        }
+
+        static func + (lhs: Self, rhs: Self) -> Self {
+            .init(text: lhs.text + rhs.text, nativeTitle: lhs.nativeTitle + rhs.nativeTitle)
         }
     }
 }

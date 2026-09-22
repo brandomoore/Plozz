@@ -19,6 +19,7 @@ private enum PlozziOSPlayerSheet: String, Identifiable {
 struct PlozziOSPlayerControlsOverlay: View {
     let viewModel: PlayerViewModel
     let hasVersions: Bool
+    let versionsPresented: Bool
     let onShowVersions: () -> Void
     let onClose: () -> Void
 
@@ -28,6 +29,7 @@ struct PlozziOSPlayerControlsOverlay: View {
     @State private var scrubPreviewCoordinator: ScrubPreviewCoordinator?
     @State private var presentedSheet: PlozziOSPlayerSheet?
     @State private var showsDiagnosticsAfterSheet = false
+    @State private var optionsMenuPresented = false
     /// Whether the Info / Cast card is expanded. Owned here rather than inside
     /// the strip because dismissing it is this view's job: the tap that closes
     /// it lands on the video, above the card, which the strip does not cover.
@@ -193,9 +195,9 @@ struct PlozziOSPlayerControlsOverlay: View {
                         cancelAutoHide()
                         onShowVersions()
                     },
-                    onShowDiagnostics: {
-                        cancelAutoHide()
-                        viewModel.controls.diagnosticsEnabled = true
+                    onOptionsMenuPresentationChange: { presented in
+                        optionsMenuPresented = presented
+                        if presented { cancelAutoHide() } else { scheduleAutoHide() }
                     },
                     isCardOpen: $isCardOpen,
                     onInteraction: noteInteraction
@@ -263,6 +265,9 @@ struct PlozziOSPlayerControlsOverlay: View {
         .onChange(of: viewModel.controls.diagnosticsEnabled) { _, enabled in
             if enabled { cancelAutoHide() } else { scheduleAutoHide() }
         }
+        .onChange(of: versionsPresented) { _, presented in
+            if presented { cancelAutoHide() } else { scheduleAutoHide() }
+        }
         .sheet(item: $presentedSheet, onDismiss: {
             if showsDiagnosticsAfterSheet {
                 showsDiagnosticsAfterSheet = false
@@ -299,6 +304,7 @@ struct PlozziOSPlayerControlsOverlay: View {
     }
 
     private func toggleControls() {
+        guard !optionsMenuPresented else { return }
         controlsVisible.toggle()
         if controlsVisible {
             scheduleAutoHide()
@@ -346,6 +352,9 @@ struct PlozziOSPlayerControlsOverlay: View {
         // took the card away mid-read. It resumes when the card closes.
         guard !viewModel.controls.intendsPause,
               presentedSheet == nil,
+              !versionsPresented,
+              !optionsMenuPresented,
+              !viewModel.controls.diagnosticsEnabled,
               !isScrubbing,
               !isCardOpen
         else {
@@ -522,18 +531,9 @@ private extension View {
     }
 }
 
-/// The transport's "..." menu, driven by values rather than by the view model.
-///
-/// Split out so the playback clock cannot reach it: `PlayerControlsModel` is
-/// @Observable, and a `Menu` whose content closure reads it re-evaluates on
-/// every one of the roughly ten position updates a second, which makes an open
-/// menu's rows visibly flash. Holding plain values instead means SwiftUI only
-/// rebuilds the menu when a track list, a capability, or the Dialog Enhance
-/// state actually changes.
-private struct PlozziOSPlaybackOptionsMenu: View, Equatable {
+private struct PlozziOSPlaybackOptionsMenu: View {
+    @Environment(\.locale) private var locale
     let audioOptions: [PlayerTrackOption]
-    let subtitleOptions: [PlayerTrackOption]
-    let canSearchRemoteSubtitles: Bool
     let supportsPlaybackSpeed: Bool
     let supportsSync: Bool
     let supportsDialogEnhance: Bool
@@ -542,98 +542,64 @@ private struct PlozziOSPlaybackOptionsMenu: View, Equatable {
     let supportsVersions: Bool
     let onSelectAudio: (PlayerTrackOption.ID) -> Void
     let onSetDialogEnhance: (Bool) -> Void
-    let onShowSubtitles: () -> Void
     let onShowSpeed: () -> Void
     let onShowSync: () -> Void
     let onShowQuality: () -> Void
     let onShowVersions: () -> Void
-    let onShowDiagnostics: () -> Void
-
-    /// Compares the VALUES only. The transport's body re-evaluates on every
-    /// playback-clock tick (roughly ten a second), which rebuilds this struct with
-    /// freshly allocated closures; closures never compare equal, so without an
-    /// explicit `==` SwiftUI has to assume the view changed and re-runs the `Menu`
-    /// content closure. UIKit then rebuilds every row and submenu of the open
-    /// menu, which is the repeated flashing. Splitting the view out is not enough
-    /// on its own, the equality is what actually stops the work.
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.audioOptions == rhs.audioOptions
-            && lhs.subtitleOptions == rhs.subtitleOptions
-            && lhs.canSearchRemoteSubtitles == rhs.canSearchRemoteSubtitles
-            && lhs.supportsPlaybackSpeed == rhs.supportsPlaybackSpeed
-            && lhs.supportsSync == rhs.supportsSync
-            && lhs.supportsDialogEnhance == rhs.supportsDialogEnhance
-            && lhs.dialogEnhanceEnabled == rhs.dialogEnhanceEnabled
-            && lhs.supportsQuality == rhs.supportsQuality
-            && lhs.supportsVersions == rhs.supportsVersions
-    }
+    let onShowInfo: () -> Void
+    let onPresentationChange: (Bool) -> Void
 
     var body: some View {
-        Menu {
-            if supportsVersions {
-                Button("Version", systemImage: "rectangle.stack", action: onShowVersions)
-            }
-            if supportsQuality {
-                Button("Quality", systemImage: "slider.horizontal.3", action: onShowQuality)
-            }
-            if !audioOptions.isEmpty || supportsDialogEnhance {
-                Menu("Audio") {
-                    ForEach(audioOptions) { option in
-                        Button {
-                            onSelectAudio(option.id)
-                        } label: {
-                            if option.isSelected {
-                                Label { option.title } icon: { Image(systemName: "checkmark") }
-                            } else {
-                                option.title
-                            }
-                        }
-                    }
-                    if !audioOptions.isEmpty, supportsDialogEnhance {
-                        Divider()
-                    }
-                    if supportsDialogEnhance {
-                        Toggle(
-                            "Dialog Enhance",
-                            isOn: Binding(
-                                get: { dialogEnhanceEnabled },
-                                set: { onSetDialogEnhance($0) }
-                            )
-                        )
-                    }
-                }
-            }
+        PlayerOptionsMenuButton(makeMenu: makeMenu, onPresentationChange: onPresentationChange)
+            .frame(width: 44, height: 44)
+            .background { PlayerGlassCircleSurface() }
+            .clipShape(Circle())
+    }
 
-            if !subtitleOptions.isEmpty || canSearchRemoteSubtitles {
-                Button("Subtitles", systemImage: "captions.bubble") {
-                    onShowSubtitles()
-                }
-            }
-
-            if supportsPlaybackSpeed {
-                Button("Playback Speed", systemImage: "speedometer") {
-                    onShowSpeed()
-                }
-            }
-
-            if supportsSync {
-                Button("Playback Sync", systemImage: "slider.horizontal.3") {
-                    onShowSync()
-                }
-            }
-            Divider()
-            Button("Playback Diagnostics", systemImage: "waveform.path.ecg", action: onShowDiagnostics)
-        } label: {
-            Image(systemName: "slider.horizontal.3")
-                .font(.title3)
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .background { PlayerGlassCircleSurface() }
-                .clipShape(Circle())
-                .contentShape(Circle())
+    private func makeMenu() -> UIMenu {
+        var items: [UIMenuElement] = []
+        if supportsVersions {
+            items.append(action("Version", icon: "rectangle.stack", perform: onShowVersions))
         }
-        .accessibilityLabel("Playback options")
-        .accessibilityIdentifier("player-playback-options")
+        if supportsQuality {
+            items.append(action("Quality", icon: "slider.horizontal.3", perform: onShowQuality))
+        }
+        if !audioOptions.isEmpty || supportsDialogEnhance {
+            var audio: [UIMenuElement] = audioOptions.map { option in
+                UIAction(title: option.nativeTitle, state: option.isSelected ? .on : .off) { _ in
+                    onSelectAudio(option.id)
+                }
+            }
+            if supportsDialogEnhance {
+                let enhance = action("Dialog Enhance", icon: "waveform") {
+                    onSetDialogEnhance(!dialogEnhanceEnabled)
+                }
+                enhance.state = dialogEnhanceEnabled ? .on : .off
+                audio.append(UIMenu(options: .displayInline, children: [enhance]))
+            }
+            items.append(UIMenu(title: localized("Audio"), image: UIImage(systemName: "speaker.wave.2"),
+                                children: audio))
+        }
+        if supportsPlaybackSpeed {
+            items.append(action("Playback Speed", icon: "speedometer", perform: onShowSpeed))
+        }
+        if supportsSync {
+            items.append(action("Playback Sync", icon: "slider.horizontal.3", perform: onShowSync))
+        }
+        items.append(action("Now Playing", icon: "info.circle", perform: onShowInfo))
+        return UIMenu(children: items)
+    }
+
+    private func action(
+        _ title: LocalizedStringResource, icon: String, perform: @escaping () -> Void
+    ) -> UIAction {
+        UIAction(title: localized(title), image: UIImage(systemName: icon)) { _ in perform() }
+    }
+
+    private func localized(_ resource: LocalizedStringResource) -> String {
+        var resource = resource
+        resource.locale = locale
+        return String(localized: resource) // l10n:content - UIKit menu boundary; resolved with the current locale on each opening.
     }
 }
 
@@ -657,7 +623,7 @@ private struct PlozziOSPlayerTransport: View {
     let onShowQuality: () -> Void
     let hasVersions: Bool
     let onShowVersions: () -> Void
-    let onShowDiagnostics: () -> Void
+    let onOptionsMenuPresentationChange: (Bool) -> Void
     @Binding var isCardOpen: Bool
     let onInteraction: () -> Void
     /// The player's own bounds, which decide the card's layout — see the
@@ -792,17 +758,8 @@ private struct PlozziOSPlayerTransport: View {
     }
 
     private var playbackOptions: some View {
-        // Passes plain values, not the view model. `PlayerControlsModel` is
-        // @Observable and the playback clock writes `currentSeconds` about ten
-        // times a second, so a menu whose content closure touches
-        // `viewModel.controls` is invalidated on every tick. UIKit then rebuilds
-        // the open menu's rows underneath the user, which reads as the text
-        // flashing. Snapshotting the inputs here means the menu only redraws when
-        // something it actually shows has changed.
         PlozziOSPlaybackOptionsMenu(
             audioOptions: viewModel.controls.audioOptions,
-            subtitleOptions: viewModel.controls.subtitleOptions,
-            canSearchRemoteSubtitles: viewModel.controls.subtitleDownload.canSearch,
             supportsPlaybackSpeed: viewModel.controls.engineCapabilities.contains(.playbackSpeed),
             supportsSync: supportsSync,
             supportsDialogEnhance: supportsDialogEnhance,
@@ -817,14 +774,13 @@ private struct PlozziOSPlayerTransport: View {
                 viewModel.setDialogEnhanceEnabled(enabled)
                 onInteraction()
             },
-            onShowSubtitles: onShowSubtitles,
             onShowSpeed: onShowSpeed,
             onShowSync: onShowSync,
             onShowQuality: onShowQuality,
             onShowVersions: onShowVersions,
-            onShowDiagnostics: onShowDiagnostics
+            onShowInfo: onShowInfo,
+            onPresentationChange: onOptionsMenuPresentationChange
         )
-        .equatable()
     }
 
     private var supportsSync: Bool {
