@@ -42,6 +42,7 @@ struct PlozziOSPlayerView: View {
     @State private var playerIdentity = UUID()
     @State private var handoffTask: Task<Void, Never>?
     @State private var isPresented = false
+    @State private var heroPlaybackOwner: UUID?
     @State private var streamingNetwork: StreamingNetwork = .unknown
     @State private var streamingConnection: StreamingConnection?
     @State private var presentsStreamingQuality = false
@@ -98,7 +99,7 @@ struct PlozziOSPlayerView: View {
             TransientStatusView(presenter: playbackStatus).padding(.top, 60)
         }
         .onAppear {
-            trailerController.stop()
+            suspendHeroPlayback()
             isPresented = true
         }
         .onDisappear {
@@ -115,11 +116,16 @@ struct PlozziOSPlayerView: View {
             // match the presentation.
             let outgoing = viewModel
             viewModel = nil
-            if let outgoing {
-                Task { @MainActor in await outgoing.stop() }
+            let heroOwner = heroPlaybackOwner
+            let heroController = trailerController
+            heroPlaybackOwner = nil
+            Task { @MainActor in
+                if let outgoing { await outgoing.stop() }
+                if let heroOwner { heroController.resumeAfterPlayback(owner: heroOwner) }
             }
         }
         .task {
+            suspendHeroPlayback()
             guard usesStreamingQuality else {
                 if viewModel == nil {
                     viewModel = makeViewModel(item: request.item, startPosition: request.startPosition)
@@ -130,7 +136,7 @@ struct PlozziOSPlayerView: View {
             for await network in PlozziOSStreamingNetwork.updates() {
                 guard !Task.isCancelled else { return }
                 streamingNetwork = network
-                let connection = StreamingConnection.resolve(network: network, locality: provider.connectionLocality)
+                let connection = resolvedStreamingConnection()
                 if viewModel == nil {
                     streamingConnection = connection
                     viewModel = makeViewModel(item: request.item, startPosition: request.startPosition)
@@ -155,7 +161,7 @@ struct PlozziOSPlayerView: View {
         .onChange(of: viewModel?.streamingUsesSDRConversion) { _, _ in presentSDRNoticeIfReady() }
         .onChange(of: viewModel?.phase) { _, phase in
             guard phase == .ready, usesStreamingQuality else { return }
-            let actual = StreamingConnection.resolve(network: streamingNetwork, locality: provider.connectionLocality)
+            let actual = resolvedStreamingConnection()
             if actual != streamingConnection {
                 streamingConnection = actual
                 viewModel?.changeStreamingOptions(appModel.settings.playback.settings.streaming.options(for: actual))
@@ -211,6 +217,26 @@ struct PlozziOSPlayerView: View {
 
     private var usesStreamingQuality: Bool {
         provider is any StreamingQualityProviding && [.movie, .episode].contains(request.item.kind)
+    }
+
+    private func resolvedStreamingConnection() -> StreamingConnection {
+        let locality = provider.connectionLocality
+        let connection = StreamingConnection.resolve(network: streamingNetwork, locality: locality)
+        let settings = appModel.settings.playback.settings.streaming
+        HandoffDiagnostics.emit(
+            "streaming DEFAULTS network=\(streamingNetwork) locality=\(locality) connection=\(connection.rawValue) "
+                + "profileScope=\(appModel.profiles.activeNamespace == nil ? "default" : "named") "
+                + "quality=\(settings.options(for: connection).quality.rawValue) "
+                + "local=\(settings.local.rawValue) remote=\(settings.remote.rawValue) cellular=\(settings.cellular.rawValue)"
+        )
+        return connection
+    }
+
+    private func suspendHeroPlayback() {
+        guard heroPlaybackOwner == nil else { return }
+        let owner = UUID()
+        heroPlaybackOwner = owner
+        trailerController.suspendForPlayback(owner: owner)
     }
 
     private var versionItem: MediaItem {
@@ -286,7 +312,7 @@ struct PlozziOSPlayerView: View {
             ),
             playbackSettings: playbackSettings,
             streamingOptions: usesStreamingQuality ? playbackSettings.streaming.options(
-                for: StreamingConnection.resolve(network: streamingNetwork, locality: provider.connectionLocality)
+                for: resolvedStreamingConnection()
             ) : nil,
             spoilerSettings: appModel.settings.spoilers.settings,
             seriesTrackStore: appModel.seriesTrackStore,

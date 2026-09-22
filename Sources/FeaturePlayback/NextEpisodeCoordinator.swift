@@ -231,6 +231,12 @@ final class NextEpisodeCoordinator {
     /// orphan a Jellyfin play/transcode session. A no-op for idempotent providers
     /// (Plex/SMB create no server-side state). Best-effort.
     private func releasePrefetchedSession(_ request: PlaybackRequest) async {
+        HandoffDiagnostics.emit(
+            "session RELEASE_INTENT origin=orphaned-prefetch"
+                + " item=\(HandoffDiagnostics.correlationID(request.item.id))"
+                + " session=\(HandoffDiagnostics.correlationID(request.playSessionID))"
+                + " encoding=\(HandoffDiagnostics.correlationID(request.streamingSessionID))"
+        )
         if request.streamingOptions != nil, let provider = host?.upNextProvider as? any StreamingQualityProviding {
             await provider.releaseStreamingSession(request)
             return

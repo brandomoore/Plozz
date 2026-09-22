@@ -56,8 +56,9 @@ iPhone/iPad movie and episode playback opts into `StreamingQualityProviding`.
 The shared `PlaybackSettings.streaming` value is profile-scoped: local network
 and remote Wi-Fi/Ethernet default to Maximum; cellular defaults to 720p / 2 Mbps.
 The mobile shell waits for the first network-path result before starting managed
-playback. Cellular, expensive, and unclassified paths use the cellular policy;
-connection changes reapply the relevant saved default. The player Quality sheet
+playback. Cellular and unclassified paths use the cellular policy; Wi-Fi and
+Ethernet retain their local/remote classification even when marked expensive.
+Connection changes reapply the relevant saved default. The player Quality sheet
 changes only the current video's rendition, not the saved preferences.
 The transport keeps subtitles directly accessible and groups quality, version,
 audio, speed, sync, and Now Playing in one playback-options menu. Diagnostics
@@ -75,7 +76,13 @@ not beside Close. Multiple-version failures expose Version and Quality together.
 
 Preparation follows real negotiation, stream opening, and first-video stages.
 Its loading UI contains only a spinner, short status (such as "Transcoding…"),
-and selected quality.
+and selected quality for a bounded quality preset. Maximum uses the original
+loading indicator rather than the streaming-quality status panel.
+The mobile full-screen player holds the shared hero trailer paused for its whole
+presentation, including loading, errors, and version changes. Late trailer
+resolution, readiness callbacks, and background scrolling cannot restart it.
+The hold is released only after the outgoing player's media I/O has stopped;
+other playback owners and surface pause intent still take precedence.
 Live conversion buffers segments as the viewer watches; there is no invented
 whole-title transcode percentage or claim that a timeout means HEVC is disabled.
 Server decision codes, HTTP failures, native player errors, and startup timeouts

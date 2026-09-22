@@ -83,6 +83,40 @@ Notes:
 
 ## 2. On-device instrumentation (temporary, by design)
 
+### Server-issued transcode stop or post-start playback freeze
+
+An ffmpeg `[q] command received` proves a stop command reached the encoder, not
+who requested it. Correlate the server request/session log with `PLZXHAND session`
+events in the persistent playback journal. `REPORT_BEGIN/ACK/FAILED` bracket
+playback reporting; `ENCODING_STOP_BEGIN/ACK/FAILED` bracket encoding deletion.
+`STOP_INTENT`, `RELEASE_INTENT`, `RELEASE_JOIN`, and `RESTART` identify the local
+owner/call path, including orphaned prefetch and rendition replacement. A
+`resume-convergence-fallback` report is the older-Jellyfin session-less resume
+write, not a user stop. Emby resume writes use the documented
+[`POST /Users/{UserId}/Items/{ItemId}/UserData`](https://dev.emby.media/reference/RestAPI/PlaystateService/postUsersByUseridItemsByItemidUserdata.html);
+the Jellyfin `/UserItems/{ItemId}/UserData` route is not interchangeable.
+`RESUME_WRITE_BEGIN/ACK/FAILED` records that operation. Emby failures, including
+404, propagate to the durable watch outbox for retry instead of issuing
+`/Sessions/Playing/Stopped`.
+
+The ordinary checkpoint interval is 60 seconds after the start report; app
+backgrounding can also request a checkpoint. The reconciler defers the exact
+live `(accountID, itemID)`, not all writes to that server. Older queued writes
+and writes for another item therefore need a truly session-less provider API.
+This is a contract hazard, not proof that a particular observed encoder quit
+came from a checkpoint.
+
+Server, device, item and play-session correlation fields are the first eight
+bytes of SHA-256 in hexadecimal; match them to server-side IDs without copying
+credentials or authenticated URLs into diagnostics. Native `LIFECYCLE` events
+retain item-status, time-control, stall and error evidence after `readyToPlay`.
+These observers only collect evidence; they never stop or retry playback.
+Absence of the older `streaming RELEASE_ACK` message alone cannot rule out a
+playback-stop report. Server logs are still needed to establish the origin of
+an encoder stop and whether a session-scoped request affected another session.
+
+### Temporary measurement scaffolding
+
 While chasing a perf bug it is worth adding a **temporary** file-logger that
 writes to the app container so you can pull it over USB/Wi-Fi with `devicectl`.
 Any such scaffold **must be stripped before merging to `main`** — it is a

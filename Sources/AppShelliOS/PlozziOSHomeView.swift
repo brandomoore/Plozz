@@ -321,6 +321,8 @@ struct PlozziOSHomeView: View {
                     "Server unavailable",
                     systemImage: "server.rack"
                 )
+                .onAppear { trailerController.suspendForPlayback(owner: request.id) }
+                .onDisappear { trailerController.resumeAfterPlayback(owner: request.id) }
             }
         }
         .modifier(PlozziOSScreenshotPlaybackRegistration(
@@ -752,7 +754,6 @@ struct PlozziOSHomeView: View {
     }
 
     private func play(_ item: MediaItem) {
-        trailerController.stop()
         // A series or season can't be played directly (see `playbackTarget`), so
         // resolve the next-up episode first. Every other kind plays as-is.
         guard item.kind.needsPlaybackTargetResolution else {
@@ -785,7 +786,6 @@ struct PlozziOSHomeView: View {
     /// prompt a resume position would raise. A series still resolves to its
     /// next-up episode first, the same as every other play path.
     private func playForScreenshot(_ item: MediaItem, seconds: Double) {
-        trailerController.stop()
         guard item.kind.needsPlaybackTargetResolution else {
             playbackRequest = PlozziOSPlaybackRequest(
                 item: item,
@@ -1558,7 +1558,7 @@ private struct PlozziOSHomeHeroCarousel: View {
             // see this trailer, so it should not keep streaming and decoding.
             // Scoped to the item this hero was showing so a stale disappear
             // can't stop a trailer the detail page has taken over.
-            if let currentItem {
+            if !trailerController.isPlaybackSuppressed, let currentItem {
                 trailerController.stop(ifShowing: currentItem.id)
             }
         }

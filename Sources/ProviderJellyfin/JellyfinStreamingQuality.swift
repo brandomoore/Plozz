@@ -18,9 +18,9 @@ extension JellyfinProvider: StreamingQualityProviding {
         await releaseStreamingEncoding(id)
     }
 
-    func releaseStreamingEncoding(_ id: String) async {
+    func releaseStreamingEncoding(_ id: String, origin: String = #function) async {
         do {
-            try await client.stopActiveEncoding(playSessionID: id)
+            try await client.stopActiveEncoding(playSessionID: id, origin: origin)
             HandoffDiagnostics.emit("streaming RELEASE_ACK provider=\(kind.rawValue)")
         } catch {
             HandoffDiagnostics.emit("streaming RELEASE_FAILED provider=\(kind.rawValue)")

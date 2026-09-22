@@ -91,6 +91,63 @@ final class StreamingQualityTests: XCTestCase {
         XCTAssertEqual(StreamingConnection.resolve(network: .wifi, locality: .unknown), .remote)
     }
 
+    func testStreamingNetworkClassifiesActualInterfacesInsteadOfPathCost() {
+        XCTAssertEqual(StreamingNetwork.classify(
+            isSatisfied: true, usesCellular: false, usesWiFi: true, usesEthernet: false
+        ), .wifi)
+        XCTAssertEqual(StreamingNetwork.classify(
+            isSatisfied: true, usesCellular: false, usesWiFi: false, usesEthernet: true
+        ), .wired)
+        XCTAssertEqual(StreamingNetwork.classify(
+            isSatisfied: true, usesCellular: true, usesWiFi: true, usesEthernet: false
+        ), .cellular, "An explicitly cellular path must not evade the cellular limit")
+        XCTAssertEqual(StreamingNetwork.classify(
+            isSatisfied: true, usesCellular: false, usesWiFi: false, usesEthernet: false
+        ), .unknown, "Do not guess a tunneled path's underlying interface")
+        XCTAssertEqual(StreamingNetwork.classify(
+            isSatisfied: false, usesCellular: false, usesWiFi: true, usesEthernet: false
+        ), .offline)
+    }
+
+    @MainActor
+    func testSavedLocalDefaultSurvivesModelRecreationAndProfileSwitching() throws {
+        let name = "streaming-local-default-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let primary = PlaybackSettingsStore(defaults: defaults)
+        let guest = PlaybackSettingsStore(defaults: defaults, namespace: "guest")
+        let model = PlaybackSettingsModel(store: primary)
+        model.settings.streaming.local = .low
+        model.settings.streaming.codec = .preferHEVC
+        model.settings.streaming.forceTranscoding = true
+        let guestModel = PlaybackSettingsModel(store: guest)
+        guestModel.settings.streaming.local = .sd480
+
+        let restored = PlaybackSettingsModel(store: primary).settings.streaming
+        XCTAssertEqual(restored.local, .low)
+        XCTAssertEqual(restored.remote, .original)
+        XCTAssertEqual(restored.cellular, .hd720)
+        XCTAssertEqual(PlaybackSettingsModel(store: guest).settings.streaming.local, .sd480)
+
+        let network = StreamingNetwork.classify(
+            isSatisfied: true, usesCellular: false, usesWiFi: true, usesEthernet: false
+        )
+        let locality = SourceLocalityClassifier.classify(host: "192.168.68.71")
+        let connection = StreamingConnection.resolve(network: network, locality: locality)
+        XCTAssertEqual(connection, .local)
+        let options = restored.options(for: connection)
+        XCTAssertEqual(options.quality, .low)
+        XCTAssertEqual(options.quality.maximumBitrate, 500_000)
+        XCTAssertEqual(options.codec, .preferHEVC)
+        XCTAssertTrue(options.forceTranscoding)
+
+        var videoOverride = options
+        videoOverride.quality = .hd720
+        XCTAssertEqual(videoOverride.quality, .hd720)
+        XCTAssertEqual(primary.load().streaming.local, .low,
+                       "A current-video option value must not replace the saved profile default")
+    }
+
     func testEveryPresetKeepsAudioInsideItsTotalBudgetAndShowsAnHonestEstimate() throws {
         for quality in StreamingQuality.allCases where quality != .original {
             let total = try XCTUnwrap(quality.maximumBitrate)

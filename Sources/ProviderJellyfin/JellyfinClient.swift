@@ -1062,7 +1062,11 @@ public struct JellyfinClient: Sendable {
         ))
     }
 
-    func reportPlaybackProgress(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {
+    func reportPlaybackProgress(
+        _ progress: PlaybackProgress,
+        event: PlaybackEvent,
+        origin: String = "provider-report"
+    ) async throws {
         let path: String
         switch event {
         case .start: path = "/Sessions/Playing"
@@ -1076,31 +1080,54 @@ public struct JellyfinClient: Sendable {
             PositionTicks: JellyfinTicks.ticks(fromSeconds: progress.positionSeconds),
             IsPaused: progress.isPaused
         ))
-        _ = try await http.send(endpoint, baseURL: baseURL)
+        let context = playbackLifecycleContext(
+            sessionID: progress.playSessionID,
+            origin: origin
+        ) + " item=\(HandoffDiagnostics.correlationID(progress.itemID)) event=\(event)"
+            + " position=\(String(format: "%.2f", progress.positionSeconds)) paused=\(progress.isPaused)"
+        HandoffDiagnostics.emit("session REPORT_BEGIN \(context)")
+        do {
+            _ = try await http.send(endpoint, baseURL: baseURL)
+            HandoffDiagnostics.emit("session REPORT_ACK \(context)")
+        } catch {
+            HandoffDiagnostics.emit("session REPORT_FAILED \(context) error=\(HandoffDiagnostics.errorCode((error as? AppError) ?? .unknown("")))")
+            throw error
+        }
     }
 
-    /// `POST /UserItems/{itemId}/UserData?userId={userId}` — updates **only** the
-    /// user's saved playback position, session-lessly. Unlike
+    /// Updates position and recency through the provider's session-less user-data
+    /// endpoint: Emby `/Users/{userId}/Items/{itemId}/UserData`, or Jellyfin 10.9+
+    /// `/UserItems/{itemId}/UserData?userId={userId}`. Unlike
     /// `/Sessions/Playing/Stopped`, this never opens or terminates a live
     /// now-playing session, so an out-of-band convergence write can't zero a
-    /// dashboard that is currently streaming the title. Sending only
-    /// `PlaybackPositionTicks` leaves every other user-data field (played,
+    /// dashboard that is currently streaming the title. Sending only position
+    /// and recency leaves unrelated user-data fields (played,
     /// favorite, play count) untouched — the server merges field-by-field.
     ///
-    /// Available on Jellyfin **10.9+**. Older servers (10.8) lack this endpoint
-    /// and return `404`/``AppError/notFound``; the caller handles that fallback.
+    /// Emby's PlaystateService documents the user-scoped route and nullable
+    /// UserItemDataDto fields. Never reinterpret its 404 as playback stopping.
     func updatePlaybackPosition(_ seconds: TimeInterval, userID: String, itemID: String, lastPlayedAt: Date = Date()) async throws {
+        let isEmby = providerKind == .emby
         var endpoint = Endpoint(
             method: .post,
-            path: "/UserItems/\(itemID)/UserData",
-            queryItems: [URLQueryItem(name: "userId", value: userID)],
+            path: isEmby ? "/Users/\(userID)/Items/\(itemID)/UserData" : "/UserItems/\(itemID)/UserData",
+            queryItems: isEmby ? [] : [URLQueryItem(name: "userId", value: userID)],
             headers: authHeaders
         )
         endpoint = try endpoint.jsonBody(UpdateUserItemDataBody(
             PlaybackPositionTicks: JellyfinTicks.ticks(fromSeconds: max(seconds, 0)),
             LastPlayedDate: JellyfinDate.iso8601(from: lastPlayedAt)
         ))
-        _ = try await http.send(endpoint, baseURL: baseURL)
+        let context = playbackLifecycleContext(sessionID: nil, origin: "resume-convergence")
+            + " item=\(HandoffDiagnostics.correlationID(itemID)) route=\(isEmby ? "emby-user-data" : "jellyfin-user-data")"
+        HandoffDiagnostics.emit("session RESUME_WRITE_BEGIN \(context)")
+        do {
+            _ = try await http.send(endpoint, baseURL: baseURL)
+            HandoffDiagnostics.emit("session RESUME_WRITE_ACK \(context)")
+        } catch {
+            HandoffDiagnostics.emit("session RESUME_WRITE_FAILED \(context) error=\(HandoffDiagnostics.errorCode((error as? AppError) ?? .unknown("")))")
+            throw error
+        }
     }
 
     /// `POST`/`DELETE /Users/{userId}/PlayedItems/{itemId}` — marks an item
@@ -1216,7 +1243,7 @@ public struct JellyfinClient: Sendable {
     /// play session. Harmless for direct-play sessions (no encoding exists), but
     /// essential for transcoded HLS so an ffmpeg job isn't left running on the
     /// server until it times out.
-    func stopActiveEncoding(playSessionID: String) async throws {
+    func stopActiveEncoding(playSessionID: String, origin: String = #function) async throws {
         let endpoint = Endpoint(
             method: .delete,
             path: "/Videos/ActiveEncodings",
@@ -1226,7 +1253,22 @@ public struct JellyfinClient: Sendable {
             ],
             headers: authHeaders
         )
-        _ = try await http.send(endpoint, baseURL: baseURL)
+        let context = playbackLifecycleContext(sessionID: playSessionID, origin: origin)
+        HandoffDiagnostics.emit("session ENCODING_STOP_BEGIN \(context)")
+        do {
+            _ = try await http.send(endpoint, baseURL: baseURL)
+            HandoffDiagnostics.emit("session ENCODING_STOP_ACK \(context)")
+        } catch {
+            HandoffDiagnostics.emit("session ENCODING_STOP_FAILED \(context) error=\(HandoffDiagnostics.errorCode((error as? AppError) ?? .unknown("")))")
+            throw error
+        }
+    }
+
+    private func playbackLifecycleContext(sessionID: String?, origin: String) -> String {
+        "operation=\(UUID().uuidString) provider=\(providerKind.rawValue)"
+            + " server=\(HandoffDiagnostics.correlationID(baseURL.absoluteString))"
+            + " device=\(HandoffDiagnostics.correlationID(deviceProfile.deviceID))"
+            + " session=\(HandoffDiagnostics.correlationID(sessionID)) origin=\(origin)"
     }
 
     // MARK: Remote subtitles
@@ -1465,7 +1507,7 @@ private struct PlaybackProgressBody: Encodable {
     let IsPaused: Bool
 }
 
-/// Body for `POST /UserItems/{itemId}/UserData`. Sends the position **and** a
+/// Partial user-data update for Jellyfin and Emby. Sends the position **and** a
 /// `LastPlayedDate` recency stamp so the item surfaces in Jellyfin's "Continue
 /// Watching" / Resume home row — that row is ordered/filtered by `LastPlayedDate`,
 /// so a position-only write (the previous behaviour) made the title *resumable*

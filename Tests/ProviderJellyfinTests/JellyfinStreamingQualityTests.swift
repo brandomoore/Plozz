@@ -15,7 +15,129 @@ private struct StreamingErrorHTTP: HTTPClient {
     }
 }
 
+private struct ResumeMutationApplier: WatchMutationApplying {
+    let provider: JellyfinProvider
+
+    func setPlayed(_ played: Bool, on target: WatchMutationTarget) async throws {
+        try await provider.setPlayed(played, itemID: target.itemID)
+    }
+
+    func setResumePosition(_ seconds: TimeInterval, on target: WatchMutationTarget, capturedAt: Date) async throws {
+        try await provider.setResumePosition(seconds, itemID: target.itemID, capturedAt: capturedAt)
+    }
+
+    func scrobbleTrakt(_ intent: TraktScrobbleIntent) async throws {}
+}
+
 final class JellyfinStreamingQualityTests: XCTestCase {
+    func testEmbyResumeWritesUseDocumentedUserScopedEndpointWithoutStoppingPlayback() async throws {
+        let (provider, http) = fixture(kind: .emby, rendition: true)
+        let path = "/Users/user/Items/movie/UserData"
+        http.stub(pathSuffix: path, json: "{}")
+        http.stub(pathSuffix: "/Sessions/Playing", json: "{}")
+        try await provider.reportPlayback(.init(
+            itemID: "movie", playSessionID: "active-session", positionSeconds: 30, isPaused: false
+        ), event: .start)
+        let capturedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        for position in [120.0, 0.0] {
+            try await provider.setResumePosition(position, itemID: "movie", capturedAt: capturedAt)
+            let body = try XCTUnwrap(http.sentBodies.first { $0.key.hasSuffix(path) }?.value)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual((object["PlaybackPositionTicks"] as? NSNumber)?.int64Value, Int64(position * 10_000_000))
+            XCTAssertEqual(object["LastPlayedDate"] as? String, JellyfinDate.iso8601(from: capturedAt))
+            XCTAssertEqual(Set(object.keys), ["PlaybackPositionTicks", "LastPlayedDate"])
+        }
+        XCTAssertEqual(http.method(forPathSuffix: path), .post)
+        XCTAssertEqual(http.queryItems(forPathSuffix: path), [])
+        XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/UserItems/movie/UserData") })
+        XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/Stopped") || $0.hasSuffix("/ActiveEncodings") })
+    }
+
+    func testEmbyUserData404IsNotReinterpretedAsSessionlessPlaybackStop() async throws {
+        let (provider, http) = fixture(kind: .emby, rendition: true)
+        http.stub(pathSuffix: "/Users/user/Items/movie/UserData", json: "{}", status: 404)
+        http.stub(pathSuffix: "/Sessions/Playing/Stopped", json: "{}")
+        do {
+            try await provider.setResumePosition(120, itemID: "movie")
+            XCTFail("A failed resume write must remain retryable, not appear successful")
+        } catch {
+            XCTAssertEqual(error as? AppError, .notFound)
+        }
+        XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/Stopped") || $0.hasSuffix("/ActiveEncodings") })
+    }
+
+    func testEmbyCheckpointFailureRemainsDurableWhileAnotherItemOnServerIsPlaying() async throws {
+        let (provider, http) = fixture(kind: .emby, rendition: true)
+        http.stub(pathSuffix: "/Sessions/Playing", json: "{}")
+        http.stub(pathSuffix: "/Users/user/Items/other/UserData", json: "{}")
+        try await provider.reportPlayback(.init(
+            itemID: "movie", playSessionID: "active-session", positionSeconds: 30, isPaused: false
+        ), event: .start)
+        let store = InMemoryWatchMutationStore()
+        let reconciler = WatchStateReconciler(store: store, applier: ResumeMutationApplier(provider: provider))
+        await reconciler.beginLiveSession(accountID: "server", itemID: "movie")
+        let target = WatchMutationTarget(accountID: "server", itemID: "other", providerKind: .emby)
+        await reconciler.enqueue(.init(
+            capturedAt: Date(), canonicalMediaID: "other-title", resumePosition: 120, targets: [target]
+        ))
+        http.error = .notFound
+        await reconciler.drain()
+        XCTAssertEqual(store.load().pending.first?.targets, [target], "404 must preserve the durable write")
+        XCTAssertEqual(store.load().pending.first?.resumePosition, 120)
+        XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/Stopped") || $0.hasSuffix("/ActiveEncodings") })
+
+        http.error = nil
+        await reconciler.drain()
+        XCTAssertTrue(store.load().pending.isEmpty, "A successful retry must acknowledge the saved write")
+        let remainsLive = await reconciler.isLiveSession(accountID: "server", itemID: "movie")
+        XCTAssertTrue(remainsLive)
+        XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/Stopped") || $0.hasSuffix("/ActiveEncodings") })
+    }
+
+    func testLifecycleReportsKeepTheExactSessionAndDeviceScope() async throws {
+        for kind in [ProviderKind.emby, .jellyfin] {
+            let (provider, http) = fixture(kind: kind, rendition: true)
+            http.stub(pathSuffix: "/Sessions/Playing", json: "{}")
+            http.stub(pathSuffix: "/Sessions/Playing/Stopped", json: "{}")
+            let old = PlaybackProgress(
+                itemID: "movie", playSessionID: "old-session", positionSeconds: 3, isPaused: true
+            )
+            let new = PlaybackProgress(
+                itemID: "movie", playSessionID: "new-session", positionSeconds: 5, isPaused: false
+            )
+            try await provider.reportPlayback(new, event: .start)
+            try await provider.reportPlayback(old, event: .stop)
+            let query = try XCTUnwrap(http.queryItems(forPathSuffix: "/Videos/ActiveEncodings"))
+            XCTAssertEqual(query.first { $0.name == "deviceId" }?.value, "device")
+            XCTAssertEqual(query.first { $0.name == "playSessionId" }?.value, "old-session")
+            let body = try XCTUnwrap(http.sentBodies.first { $0.key.hasSuffix("/Stopped") }?.value)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(object["PlaySessionId"] as? String, "old-session")
+            XCTAssertEqual(http.sentPaths.filter { $0.hasSuffix("/ActiveEncodings") }.count, 1)
+        }
+    }
+
+    func testProgressReportsNeverIssueStopAndSessionlessStopDoesNotDeleteEncodings() async throws {
+        for kind in [ProviderKind.emby, .jellyfin] {
+            let (provider, http) = fixture(kind: kind, rendition: true)
+            http.stub(pathSuffix: "/Sessions/Playing", json: "{}")
+            http.stub(pathSuffix: "/Sessions/Playing/Progress", json: "{}")
+            http.stub(pathSuffix: "/Sessions/Playing/Stopped", json: "{}")
+            let progress = PlaybackProgress(
+                itemID: "movie", playSessionID: "session", positionSeconds: 3, isPaused: false
+            )
+            for event in [PlaybackEvent.start, .progress, .pause, .unpause] {
+                try await provider.reportPlayback(progress, event: event)
+            }
+            XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/Stopped") || $0.hasSuffix("/ActiveEncodings") })
+            try await provider.reportPlayback(.init(
+                itemID: "movie", playSessionID: nil, positionSeconds: 3, isPaused: true
+            ), event: .stop)
+            XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/ActiveEncodings") })
+            XCTAssertEqual(http.sentPaths.filter { $0.hasSuffix("/Stopped") }.count, 1)
+        }
+    }
+
     func testHEVCConversionRetainsTenBitCapabilityInsteadOfDefaultingToEightBit() throws {
         let profile = JellyfinCapabilityProfile.appleTV(
             capabilities: .init(supportsHEVC: true, supportsHDR10: true)

@@ -90,6 +90,11 @@ final class WatchProgressReporter {
             isPaused: isPaused,
             durationSeconds: knownDuration
         )
+        HandoffDiagnostics.emit(
+            "session REPORT_INTENT origin=watch-progress provider=\(provider.kind.rawValue)"
+                + " item=\(HandoffDiagnostics.correlationID(itemID))"
+                + " session=\(HandoffDiagnostics.correlationID(request.playSessionID)) event=\(event)"
+        )
         do {
             try await provider.reportPlayback(progress, event: event)
         } catch {

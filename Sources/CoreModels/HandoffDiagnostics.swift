@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 #if canImport(OSLog)
 import OSLog
@@ -62,6 +63,14 @@ public enum HandoffDiagnostics {
     /// Milliseconds between two dates, formatted for a log line.
     public static func ms(_ from: Date, _ to: Date = Date()) -> String {
         String(format: "%.0fms", to.timeIntervalSince(from) * 1000)
+    }
+
+    /// Correlates opaque server/device/session identifiers without publishing
+    /// their contents. Stable across launches so a server-side ID can be matched.
+    public static func correlationID(_ value: String?) -> String {
+        guard let value, !value.isEmpty else { return "none" }
+        return SHA256.hash(data: Data(value.utf8)).prefix(8)
+            .map { String(format: "%02x", $0) }.joined()
     }
 
     /// Returns the bounded persistent playback journal after pending writes

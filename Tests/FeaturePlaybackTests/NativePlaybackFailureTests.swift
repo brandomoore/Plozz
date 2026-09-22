@@ -11,7 +11,99 @@ private struct RefusingPlaybackResolver: AuthenticatedHTTPResourceResolving {
     }
 }
 
+private final class LifecycleDiagnosticLines: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+
+    func append(_ line: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        lines.append(line)
+    }
+
+    var snapshot: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return lines
+    }
+}
+
+private final class LifecycleDiagnosticItem: AVPlayerItem {
+    private var diagnosticStatus: AVPlayerItem.Status = .unknown
+    override var status: AVPlayerItem.Status { diagnosticStatus }
+
+    func transition(to status: AVPlayerItem.Status) {
+        willChangeValue(forKey: "status")
+        diagnosticStatus = status
+        didChangeValue(forKey: "status")
+    }
+}
+
 final class NativePlaybackFailureTests: XCTestCase {
+    @MainActor
+    func testLifetimeEvidenceContinuesAfterReadyAndRemovesObserversOnTeardown() throws {
+        let item = LifecycleDiagnosticItem(asset: AVMutableComposition())
+        let player = AVPlayer(playerItem: item)
+        let lines = LifecycleDiagnosticLines()
+        var diagnostics: NativePlaybackLifecycleDiagnostics? = NativePlaybackLifecycleDiagnostics(
+            player: player,
+            request: .init(
+                item: .init(id: "private-item", title: "Private title", kind: .movie),
+                streamURL: URL(fileURLWithPath: "/dev/null"),
+                playSessionID: "private-session"
+            ),
+            emit: { lines.append($0) }
+        )
+        XCTAssertNotNil(diagnostics)
+        item.transition(to: .readyToPlay)
+        let afterReady = lines.snapshot.count
+        item.transition(to: .failed)
+        XCTAssertTrue(lines.snapshot.dropFirst(afterReady).contains {
+            $0.contains("event=ITEM_STATUS") && $0.contains("status=2")
+        })
+        let failure = NSError(domain: NSURLErrorDomain, code: URLError.networkConnectionLost.rawValue, userInfo: [
+            NSLocalizedDescriptionKey: "https://private.example/?api_key=secret"
+        ])
+        NotificationCenter.default.post(
+            name: AVPlayerItem.failedToPlayToEndTimeNotification, object: item,
+            userInfo: [AVPlayerItemFailedToPlayToEndTimeErrorKey: failure]
+        )
+        XCTAssertTrue(lines.snapshot.contains {
+            $0.contains("event=FAILED_TO_END") && $0.contains("code=URL -1005")
+        })
+        NotificationCenter.default.post(name: AVPlayerItem.playbackStalledNotification, object: item)
+        XCTAssertTrue(lines.snapshot.contains { $0.contains("event=STALLED") })
+        XCTAssertFalse(lines.snapshot.joined().contains("private"))
+        XCTAssertFalse(lines.snapshot.joined().contains("secret"))
+
+        diagnostics = nil
+        let afterTeardown = lines.snapshot.count
+        item.transition(to: .unknown)
+        NotificationCenter.default.post(name: AVPlayerItem.playbackStalledNotification, object: item)
+        NotificationCenter.default.post(name: AVPlayerItem.newErrorLogEntryNotification, object: item)
+        XCTAssertEqual(lines.snapshot.count, afterTeardown)
+    }
+
+    @MainActor
+    func testLifetimeEvidenceIgnoresOtherPlayerItems() {
+        let item = AVPlayerItem(asset: AVMutableComposition())
+        let other = AVPlayerItem(asset: AVMutableComposition())
+        let player = AVPlayer(playerItem: item)
+        let lines = LifecycleDiagnosticLines()
+        let diagnostics = NativePlaybackLifecycleDiagnostics(
+            player: player, request: .init(
+                item: .init(id: "item", title: "Fixture", kind: .movie),
+                streamURL: URL(fileURLWithPath: "/dev/null")
+            ),
+            emit: { lines.append($0) }
+        )
+        withExtendedLifetime(diagnostics) {
+            NotificationCenter.default.post(name: AVPlayerItem.playbackStalledNotification, object: other)
+            NotificationCenter.default.post(name: AVPlayerItem.failedToPlayToEndTimeNotification, object: other)
+            XCTAssertFalse(lines.snapshot.contains { $0.contains("event=STALLED") || $0.contains("event=FAILED_TO_END") })
+        }
+    }
+
     func testObservedCodecComesFromTheReturnedFormatDescription() throws {
         XCTAssertEqual(try format(codec: kCMVideoCodecType_H264, transfer: nil).videoCodec, .h264)
         XCTAssertEqual(try format(codec: kCMVideoCodecType_HEVC, transfer: nil).videoCodec, .hevc)

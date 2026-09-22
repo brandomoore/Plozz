@@ -97,6 +97,18 @@ public enum StreamingCodecRetryPolicy {
 
 public enum StreamingNetwork: Sendable, Equatable {
     case unknown, offline, wifi, cellular, wired
+
+    /// Cost is not an interface type: Wi-Fi/Ethernet can be expensive too.
+    /// Keep those paths eligible for the user's local/remote settings.
+    public static func classify(
+        isSatisfied: Bool, usesCellular: Bool, usesWiFi: Bool, usesEthernet: Bool
+    ) -> Self {
+        guard isSatisfied else { return .offline }
+        if usesCellular { return .cellular }
+        if usesWiFi { return .wifi }
+        if usesEthernet { return .wired }
+        return .unknown
+    }
 }
 
 public enum StreamingConnection: String, Sendable, Equatable {

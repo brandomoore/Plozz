@@ -16,6 +16,34 @@ def swift_block(source, declaration):
 
 
 class MobileQualityControlsTests(unittest.TestCase):
+    def test_network_cost_does_not_replace_wifi_with_the_cellular_preset(self):
+        source = (ROOT / "Sources/AppShelliOS/PlozziOSStreamingQuality.swift").read_text()
+        monitor = swift_block(source, "enum PlozziOSStreamingNetwork")
+        self.assertIn("StreamingNetwork.classify(", monitor)
+        self.assertIn("usesCellular: path.usesInterfaceType(.cellular),", monitor)
+        self.assertIn("usesWiFi: path.usesInterfaceType(.wifi),", monitor)
+        self.assertNotIn("|| path.isExpensive", monitor)
+
+    def test_maximum_uses_the_original_loading_indicator(self):
+        source = (ROOT / "Sources/FeaturePlayback/PlayerView.swift").read_text()
+        overlay = swift_block(source, "private var bringUpSpinnerOverlay:")
+        self.assertIn("options.quality != .original", overlay)
+        self.assertIn("StreamingPlaybackLoadingView(", overlay)
+        self.assertIn("LoadingMessagesView(spinnerTint: .white", overlay)
+
+    def test_main_playback_holds_hero_until_media_io_stops(self):
+        source = (ROOT / "Sources/AppShelliOS/PlozziOSPlayerView.swift").read_text()
+        self.assertIn("suspendHeroPlayback()", swift_block(source, ".onAppear"))
+        self.assertIn("trailerController.suspendForPlayback(owner: owner)", source)
+        teardown = swift_block(source, ".onDisappear")
+        self.assertLess(teardown.index("await outgoing.stop()"),
+                        teardown.index("heroController.resumeAfterPlayback"))
+        self.assertIn("heroPlaybackOwner = nil", teardown)
+        hero = (ROOT / "Sources/AppShelliOS/PlozziOSHeroViews.swift").read_text()
+        self.assertIn("isActive: isActive && !trailerController.isPlaybackSuppressed", hero)
+        self.assertIn("guard !trailerController.isPlaybackSuppressed",
+                      swift_block(hero, "private func updateTrailerPlayback()"))
+
     def test_loading_has_only_a_spinner_status_and_quality(self):
         source = (ROOT / "Sources/FeaturePlayback/StreamingPlaybackFeedback.swift").read_text()
         loading = swift_block(source, "struct StreamingPlaybackLoadingView:")

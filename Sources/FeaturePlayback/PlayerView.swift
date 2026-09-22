@@ -232,7 +232,7 @@ public struct PlayerView: View {
     @ViewBuilder
     private var bringUpSpinnerOverlay: some View {
         if viewModel.showBringUpSpinner {
-            if let options = viewModel.streamingOptions {
+            if let options = viewModel.streamingOptions, options.quality != .original {
                 StreamingPlaybackLoadingView(
                     options: options, provider: viewModel.streamingProviderName,
                     phase: viewModel.streamingPreparation, transcoding: viewModel.streamingIsTranscoding,

@@ -98,6 +98,8 @@ public final class HeroTrailerController {
     private var hasStartedPlayback = false
     private var autoplayWhenReady = false
     private var requestedPaused = false
+    private var playbackOwners = Set<UUID>()
+    public var isPlaybackSuppressed: Bool { !playbackOwners.isEmpty }
     private var captionSelectionTask: Task<Void, Never>?
     @ObservationIgnored private var videoOutput: AVPlayerItemVideoOutput?
     @ObservationIgnored private let imageContext = CIContext(options: nil)
@@ -195,6 +197,7 @@ public final class HeroTrailerController {
     /// playing) if the same item is already showing. `muted` follows the profile's
     /// trailer-audio preference.
     public func play(itemID: String, resolvedURL: URL, muted: Bool) {
+        guard !isPlaybackSuppressed else { return }
         prepare(itemID: itemID, resolvedURL: resolvedURL, muted: muted)
         autoplayWhenReady = true
         beginPlaybackIfReady()
@@ -204,6 +207,7 @@ public final class HeroTrailerController {
     /// the item ready behind the still image, then starts one exact 3s+duration
     /// timeline only after readiness is known.
     public func prepare(itemID: String, resolvedURL: URL, muted: Bool) {
+        guard !isPlaybackSuppressed else { return }
         if currentItemID == itemID, player.currentItem != nil {
             player.isMuted = muted
             isMuted = muted
@@ -240,6 +244,7 @@ public final class HeroTrailerController {
 
     /// Starts a previously prepared item (or arms it to start when ready).
     public func startPrepared() {
+        guard !isPlaybackSuppressed else { return }
         autoplayWhenReady = true
         beginPlaybackIfReady()
     }
@@ -307,6 +312,23 @@ public final class HeroTrailerController {
     /// drift apart during remote interaction or recede.
     public func setPaused(_ paused: Bool) {
         requestedPaused = paused
+        applyPauseState()
+    }
+
+    /// A full player owns this hold until its media I/O has stopped. Surface
+    /// timers, scrolling, and late trailer resolution cannot override it.
+    public func suspendForPlayback(owner: UUID) {
+        guard playbackOwners.insert(owner).inserted else { return }
+        applyPauseState()
+    }
+
+    public func resumeAfterPlayback(owner: UUID) {
+        guard playbackOwners.remove(owner) != nil else { return }
+        applyPauseState()
+    }
+
+    private func applyPauseState() {
+        let paused = requestedPaused || isPlaybackSuppressed
         if paused {
             if !isPaused { pauseStartedAt = .now }
             isPaused = true
@@ -354,8 +376,9 @@ public final class HeroTrailerController {
             handoffImage = nil
             isPlaying = false
             isReady = false
-            isPaused = false
-            pauseStartedAt = nil
+            requestedPaused = false
+            isPaused = isPlaybackSuppressed
+            pauseStartedAt = isPaused ? (pauseStartedAt ?? .now) : nil
             currentItemID = nil
             activeSurfaceRole = nil
             duration = 0
@@ -377,7 +400,7 @@ public final class HeroTrailerController {
     }
 
     private func beginPlaybackIfReady() {
-        guard autoplayWhenReady, isReady, !requestedPaused, !hasStartedPlayback else { return }
+        guard autoplayWhenReady, isReady, !requestedPaused, !isPlaybackSuppressed, !hasStartedPlayback else { return }
         hasStartedPlayback = true
         isPlaying = true
         player.seek(to: .zero)
@@ -405,7 +428,7 @@ public final class HeroTrailerController {
         statusObservation?.invalidate()
         statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, self.player.currentItem === item else { return }
                 switch item.status {
                 case .readyToPlay:
                     let seconds = item.duration.seconds

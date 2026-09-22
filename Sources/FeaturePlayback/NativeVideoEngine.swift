@@ -102,6 +102,7 @@ public final class NativeVideoEngine: VideoEngine {
     @ObservationIgnored private let reportInterval: TimeInterval = 10
     @ObservationIgnored private var lastReportedSecond: Int = -1
     @ObservationIgnored private var fallbackMonitorTask: Task<Void, Never>?
+    @ObservationIgnored private var lifecycleDiagnostics: NativePlaybackLifecycleDiagnostics?
     /// Detects an item that decodes audio but renders **no video frames** (e.g.
     /// HEVC AVPlayer can't display) so we can swap to the on-device engine.
     @ObservationIgnored private var missingVideoProbeTask: Task<Void, Never>?
@@ -288,6 +289,9 @@ public final class NativeVideoEngine: VideoEngine {
         #endif
         player.allowsExternalPlayback = true
         self.player = player
+        if HandoffDiagnostics.isEnabled {
+            lifecycleDiagnostics = NativePlaybackLifecycleDiagnostics(player: player, request: request)
+        }
         #if canImport(UIKit)
         videoOutputView?.player = player
         #endif
@@ -930,6 +934,7 @@ public final class NativeVideoEngine: VideoEngine {
     }
 
     private func teardownPlayer() {
+        lifecycleDiagnostics = nil
         fallbackMonitorTask?.cancel()
         fallbackMonitorTask = nil
         missingVideoProbeTask?.cancel()
@@ -1168,6 +1173,77 @@ public final class NativeVideoEngine: VideoEngine {
         return view
     }
     #endif
+}
+
+/// Observes the whole item lifetime, including failures after startup's
+/// readyToPlay gate. Evidence only: notifications never stop, retry or resume.
+final class NativePlaybackLifecycleDiagnostics {
+    private let observations: [NSKeyValueObservation]
+    private let notificationObservers: [NSObjectProtocol]
+
+    init(
+        player: AVPlayer,
+        request: PlaybackRequest,
+        emit: @escaping @Sendable (String) -> Void = { HandoffDiagnostics.emit($0) }
+    ) {
+        guard let item = player.currentItem else {
+            observations = []
+            notificationObservers = []
+            return
+        }
+        let context = "load=\(UUID().uuidString) provider=\(request.sourceProvider?.rawValue ?? "unknown")"
+            + " item=\(HandoffDiagnostics.correlationID(request.item.id))"
+            + " session=\(HandoffDiagnostics.correlationID(request.playSessionID))"
+        observations = [
+            item.observe(\.status, options: [.initial, .new]) { [weak player] item, _ in
+                emit(Self.line(event: "ITEM_STATUS", context: context, item: item, player: player))
+            },
+            player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak item] player, _ in
+                guard let item else { return }
+                emit(Self.line(event: "TIME_CONTROL", context: context, item: item, player: player))
+            }
+        ]
+        notificationObservers = [
+            (AVPlayerItem.playbackStalledNotification, "STALLED"),
+            (AVPlayerItem.failedToPlayToEndTimeNotification, "FAILED_TO_END"),
+            (AVPlayerItem.newErrorLogEntryNotification, "ERROR_LOG")
+        ].map { name, event in
+            NotificationCenter.default.addObserver(
+                forName: name, object: item, queue: nil
+            ) { [weak item, weak player] notification in
+                guard let item else { return }
+                let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? NSError
+                emit(Self.line(event: event, context: context, item: item, player: player, error: error))
+            }
+        }
+    }
+
+    deinit {
+        observations.forEach { $0.invalidate() }
+        notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+
+    private static func line( // l10n:content - structured diagnostic event, never presented as UI copy.
+        event: String, context: String, item: AVPlayerItem, player: AVPlayer?, error: NSError? = nil
+    ) -> String {
+        let lastError = item.errorLog()?.events.last
+        let failure = NativePlaybackFailure.classify(
+            error ?? (item.error as NSError?) ?? lastError.map {
+                NSError(domain: $0.errorDomain, code: $0.errorStatusCode)
+            },
+            httpStatus: lastError?.errorStatusCode
+        )
+        let bufferedThrough = item.loadedTimeRanges.map {
+            CMTimeRangeGetEnd($0.timeRangeValue).seconds
+        }.filter(\.isFinite).max() ?? 0
+        return "native LIFECYCLE event=\(event) \(context)"
+            + " status=\(item.status.rawValue) timeControl=\(player?.timeControlStatus.rawValue ?? -1)"
+            + " position=\(String(format: "%.2f", item.currentTime().seconds))"
+            + " bufferEmpty=\(item.isPlaybackBufferEmpty) likelyToKeepUp=\(item.isPlaybackLikelyToKeepUp)"
+            + " bufferedThrough=\(String(format: "%.2f", bufferedThrough))"
+            + " waiting=\(player?.reasonForWaitingToPlay?.rawValue ?? "none")"
+            + " kind=\(failure.kind) code=\(failure.diagnosticCode ?? "none")"
+    }
 }
 
 #if canImport(UIKit)

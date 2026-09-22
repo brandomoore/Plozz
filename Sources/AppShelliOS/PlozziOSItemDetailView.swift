@@ -412,15 +412,17 @@ private struct PlozziOSCanonicalItemDetailView: View {
             seriesHeroShowsSeries = false
         }
         .modifier(requestPresentation(inDownloadSheet: false))
-        .fullScreenCover(item: $playbackRequest) {
-            if let playbackProvider = appModel.provider(for: $0.item) {
-                PlozziOSPlayerView(request: $0, provider: playbackProvider)
+        .fullScreenCover(item: $playbackRequest) { request in
+            if let playbackProvider = appModel.provider(for: request.item) {
+                PlozziOSPlayerView(request: request, provider: playbackProvider)
             } else {
                 ContentUnavailableView(
                     "Server unavailable",
                     systemImage: "server.rack",
                     description: Text("Reconnect the selected server and try again.")
                 )
+                .onAppear { trailerController.suspendForPlayback(owner: request.id) }
+                .onDisappear { trailerController.resumeAfterPlayback(owner: request.id) }
             }
         }
     }
@@ -905,7 +907,6 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private func play(_ item: MediaItem, fromBeginning: Bool = false) {
-        trailerController.stop()
         // A series can't be played directly (see `playbackTarget`), so resolve
         // its next-up episode first. Every other kind plays as-is.
         guard item.kind == .series else {

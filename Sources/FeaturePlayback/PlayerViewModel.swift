@@ -964,6 +964,12 @@ public final class PlayerViewModel {
 
             let request = resolved.request
             self.request = request
+            HandoffDiagnostics.emit(
+                "session OWNED vm=\(instanceID) provider=\(provider.kind.rawValue)"
+                    + " item=\(HandoffDiagnostics.correlationID(request.item.id))"
+                    + " session=\(HandoffDiagnostics.correlationID(request.playSessionID))"
+                    + " encoding=\(HandoffDiagnostics.correlationID(request.streamingSessionID)) generation=\(streamingGeneration)"
+            )
             streamingQuality.sourceWasHDR = SourceDynamicRange.providerHint(from: request.sourceMetadata)?.isHDR == true
             if let options = request.streamingOptions {
                 HandoffDiagnostics.emit(
@@ -1249,7 +1255,14 @@ public final class PlayerViewModel {
         restartStreamingRendition()
     }
 
-    private func restartStreamingRendition(tracks: SubtitleTrackController.StreamSnapshot? = nil) {
+    private func restartStreamingRendition(
+        tracks: SubtitleTrackController.StreamSnapshot? = nil,
+        origin: String = #function
+    ) {
+        HandoffDiagnostics.emit(
+            "session RESTART vm=\(instanceID) origin=\(origin)"
+                + " session=\(HandoffDiagnostics.correlationID(request?.playSessionID)) generation=\(streamingLoadGeneration)"
+        )
         streamingLoadGeneration += 1
         dynamicRangeLoadGeneration &+= 1
         let generation = streamingLoadGeneration
@@ -1278,6 +1291,10 @@ public final class PlayerViewModel {
             await initialLoad?.value
             await self.engine.drainTransport()
             if let outgoing {
+                HandoffDiagnostics.emit(
+                    "session STOP_INTENT origin=rendition-restart vm=\(self.instanceID)"
+                        + " session=\(HandoffDiagnostics.correlationID(outgoing.playSessionID)) generation=\(generation)"
+                )
                 do {
                     try await self.provider.reportPlayback(.init(
                         itemID: self.itemID, playSessionID: outgoing.playSessionID,
@@ -1307,13 +1324,15 @@ public final class PlayerViewModel {
         return true
     }
 
-    private func releaseStreamingSession(_ request: PlaybackRequest) async {
+    private func releaseStreamingSession(_ request: PlaybackRequest, origin: String = #function) async {
         guard let sessionID = request.streamingSessionID,
               let provider = provider as? any StreamingQualityProviding else { return }
         if let cleanup = streamingSessionCleanups[sessionID] {
+            HandoffDiagnostics.emit("session RELEASE_JOIN vm=\(instanceID) origin=\(origin) session=\(HandoffDiagnostics.correlationID(sessionID))")
             await cleanup.value
             return
         }
+        HandoffDiagnostics.emit("session RELEASE_INTENT vm=\(instanceID) origin=\(origin) session=\(HandoffDiagnostics.correlationID(sessionID))")
         let cleanup = Task { await provider.releaseStreamingSession(request) }
         streamingSessionCleanups[sessionID] = cleanup
         await cleanup.value
@@ -1881,6 +1900,11 @@ public final class PlayerViewModel {
     /// resume point, then tear the engine down.
     public func stop(preserveDisplayMode: Bool = false) async {
         guard !didStop else { return }
+        HandoffDiagnostics.emit(
+            "session STOP_INTENT origin=player-stop vm=\(instanceID)"
+                + " session=\(HandoffDiagnostics.correlationID(request?.playSessionID))"
+                + " naturalEnd=\(didReachNaturalEnd) shouldDismiss=\(shouldDismiss) pendingNext=\(pendingNextEpisode != nil)"
+        )
         // How many references are outstanding as the player shuts down. 1 means
         // only the caller holds it (it will deallocate); a higher number counts
         // the extra owners keeping it alive, which is what the lifecycle log

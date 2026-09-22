@@ -1570,11 +1570,15 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
     }
 
     public func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {
-        try await client.reportPlaybackProgress(progress, event: event)
+        try await reportPlayback(progress, event: event, origin: "provider-report")
+    }
+
+    private func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent, origin: String) async throws {
+        try await client.reportPlaybackProgress(progress, event: event, origin: origin)
         // On stop, also release any server-side transcode job for this session.
         // Best-effort: cleanup failure must not surface as a playback error.
         if event == .stop, let playSessionID = progress.playSessionID, !playSessionID.isEmpty {
-            try? await client.stopActiveEncoding(playSessionID: playSessionID)
+            try? await client.stopActiveEncoding(playSessionID: playSessionID, origin: "playback-stop-report")
         }
     }
 
@@ -2405,17 +2409,21 @@ extension JellyfinProvider: ResumeStateWriting {
     /// silently dropped (durability / never-drop). Documented caveat: on that
     /// older-server fallback only, a convergence write can still disturb a
     /// concurrent live session of the same title.
+    ///
+    /// Emby uses its own user-scoped UserData endpoint. A failed Emby write must
+    /// throw so the durable outbox retries it, never synthesize a stop that could
+    /// terminate a concurrently playing transcode on that device.
     public func setResumePosition(_ seconds: TimeInterval, itemID: String, capturedAt: Date = Date()) async throws {
         do {
             try await client.updatePlaybackPosition(max(seconds, 0), userID: session.userID, itemID: itemID, lastPlayedAt: capturedAt)
-        } catch AppError.notFound {
+        } catch AppError.notFound where kind == .jellyfin {
             let progress = PlaybackProgress(
                 itemID: itemID,
                 playSessionID: nil,
                 positionSeconds: max(seconds, 0),
                 isPaused: true
             )
-            try await reportPlayback(progress, event: .stop)
+            try await reportPlayback(progress, event: .stop, origin: "resume-convergence-fallback")
         }
     }
 }
