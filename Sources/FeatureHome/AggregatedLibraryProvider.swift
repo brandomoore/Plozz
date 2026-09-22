@@ -198,6 +198,11 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
             merger.slice(from: start, limit: limit)
         }
 
+        func bufferedLetterPosition(_ letter: String, sort: CoreModels.SortDescriptor) -> Int? {
+            guard activeSort == sort else { return nil }
+            return merger.mergedItems().firstIndex { MediaItemSortOrder.alphabetBucket(for: $0) == letter }
+        }
+
         // MARK: Ordered k-way merge
 
         /// Fetched-but-not-yet-emitted items per source, in the server's own order.
@@ -459,6 +464,11 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
                                sort: CoreModels.SortDescriptor) async throws -> Int? {
         guard sort.field == .name, LibraryLetterIndex.railLetters.contains(letter) else {
             throw AppError.invalidResponse
+        }
+        try Task.checkCancellation()
+        if let position = await cache.bufferedLetterPosition(letter, sort: sort) {
+            try Task.checkCancellation()
+            return position
         }
         // Resolve against the actual merged stream, not a sum of native counts.
         // Already-browsed pages come from this provider's existing merge cache.

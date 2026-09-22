@@ -10,52 +10,55 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
-    func testJumpProgressPanelIsReadableAboveArtworkInBothThemes() async throws {
+    func testJumpUsesSharedToastBeforeMenuDismissalWithoutAddingFocusTargets() async throws {
         for light in [false, true] {
             let provider = RefreshLibraryProvider()
-            await provider.enableAlphabet(letters: ["A", "Q"])
+            await provider.enableAlphabet(letters: ["A", "U"])
             let model = LibraryBrowseViewModel(
                 provider: provider, containerID: "library", containerKind: .movie,
                 defaults: UserDefaults(suiteName: UUID().uuidString)!)
             await model.loadFirstPage()
             await provider.holdNextPage(at: 112)
-            try await withLibrary(model: model, palette: light ? .light : .dark) { root, window in
-                let jump = Task { await model.jumpToLetter("Q") }
+            let presenter = TransientStatusPresenter(announcement: { _ in })
+            try await withLibrary(model: model, palette: light ? .light : .dark, presenter: presenter) { _, window in
+                let host = try XCTUnwrap(window.rootViewController)
+                let menu = UIAlertController(title: "Letters", message: nil, preferredStyle: .alert)
+                menu.addAction(UIAlertAction(title: "U", style: .default))
+                await withCheckedContinuation { continuation in
+                    host.present(menu, animated: true) { continuation.resume() }
+                }
+                let id = UUID()
+                let jump = try XCTUnwrap(model.beginLetterJump("U", menuPresentationID: id))
+                XCTAssertEqual(model.alphabet.jumpingTo, "U")
                 defer {
                     model.cancelLetterJump()
                     Task { await provider.releasePage() }
                 }
                 await waitForHeldPage(provider)
-                try await Task.sleep(for: .milliseconds(200))
+                try await Task.sleep(for: .milliseconds(40))
+                XCTAssertEqual(presenter.message?.isProgress, true, "Status is available while the menu is still presented")
+                XCTAssertEqual(presenter.message.map { String(localized: $0.text) }, "Finding U…")
+                XCTAssertNil(model.alphabet.destination)
+                await withCheckedContinuation { continuation in
+                    menu.dismiss(animated: true) { continuation.resume() }
+                }
+                model.alphabet.menuDidDismiss(id)
+                try await Task.sleep(for: .milliseconds(250))
                 window.layoutIfNeeded()
-                XCTAssertEqual(model.alphabet.jumpingTo, "Q")
-                let candidates = focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                let footerTargets = focusItems(in: window).compactMap { item -> CGRect? in
                     guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
                           window.bounds.contains(frame),
-                          frame.midY > window.bounds.height * 0.75,
-                          frame.midX > window.bounds.width * 0.5 else { return nil }
-                    return (item, frame)
+                          frame.midY > window.bounds.height * 0.75, frame.height < 100 else { return nil }
+                    return frame
                 }
-                let cancel = try XCTUnwrap(candidates.max { $0.1.midY < $1.1.midY })
-                let labelWidth = ("Cancel" as NSString).size(withAttributes: [
-                    .font: UIFont.preferredFont(forTextStyle: .body)
-                ]).width
-                XCTAssertGreaterThan(cancel.1.width, labelWidth + 40, "Cancel must not compress to Can...")
-                XCTAssertTrue(window.bounds.contains(cancel.1))
-                capture(window, name: light ? "alphabet-progress-light" : "alphabet-progress-dark")
-                let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
-                controller.target = cancel.0
-                let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
-                focus.requestFocusUpdate(to: controller)
-                focus.updateFocusIfNeeded()
-                try await Task.sleep(for: .milliseconds(200))
-                XCTAssertTrue(focus.focusedItem === cancel.0, "Cancel must remain usable during resolution")
-                capture(window, name: light ? "alphabet-cancel-light" : "alphabet-cancel-dark")
-                controller.target = nil
+                XCTAssertTrue(footerTargets.isEmpty, "The toast must not add an inaccessible Cancel focus target")
+                capture(window, name: light ? "alphabet-shared-toast-light" : "alphabet-shared-toast-dark")
                 model.cancelLetterJump()
                 await provider.releasePage()
                 _ = await jump.value
+                try await Task.sleep(for: .milliseconds(50))
                 XCTAssertNil(model.alphabet.destination)
+                XCTAssertNil(presenter.message)
             }
         }
     }
@@ -81,10 +84,11 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             await withCheckedContinuation { continuation in
                 host.present(menu, animated: true) { continuation.resume() }
             }
-            var committed: [String] = []
+            var committed: [UUID] = []
+            let id = UUID()
             let finished = expectation(description: "Menu selection committed after dismissal")
-            completion.update(selection: "M") { letter in
-                committed.append(letter)
+            completion.update(selection: id) { selection in
+                committed.append(selection)
                 finished.fulfill()
             }
             try await Task.sleep(for: .milliseconds(150))
@@ -93,7 +97,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 menu.dismiss(animated: true) { continuation.resume() }
             }
             await fulfillment(of: [finished], timeout: 2)
-            XCTAssertEqual(committed, ["M"])
+            XCTAssertEqual(committed, [id])
             completion.update(selection: nil, onCommit: nil)
         }
     }
@@ -425,6 +429,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         model: LibraryBrowseViewModel,
         focusStyle: CardFocusStyle = .system,
         palette: ThemePalette = .dark,
+        presenter: TransientStatusPresenter = TransientStatusPresenter(announcement: { _ in }),
         onSelect: @escaping (MediaItem) -> Void = { _ in },
         body: (UIView, UIWindow) async throws -> Void
     ) async throws {
@@ -440,6 +445,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 .environment(\.plozzCardStyle, .borderless)
                 .environment(\.themePalette, palette)
                 .preferredColorScheme(palette.isLight ? .light : .dark)
+                .transientStatusOverlay(presenter: presenter, isLightSurface: palette.isLight)
         )
         let container = LibraryFocusFixtureController()
         container.addChild(host)

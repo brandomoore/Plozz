@@ -9,28 +9,41 @@ import UIKit
 public struct LibraryAlphabetMenu: View {
     let entries: [LibraryLetterIndexEntry]
     let isLoading: Bool
-    let onSelect: (String) -> Void
+    let isJumping: Bool
+    let onSelect: (String, UUID?) -> Void
+    let onDismiss: (UUID) -> Void
+    let onCancel: () -> Void
     let onRetry: () -> Void
     #if os(tvOS)
-    @State private var pendingSelection: String?
+    @State private var pendingSelection: UUID?
     #endif
 
-    public init(entries: [LibraryLetterIndexEntry], isLoading: Bool,
-                onSelect: @escaping (String) -> Void, onRetry: @escaping () -> Void) {
+    public init(entries: [LibraryLetterIndexEntry], isLoading: Bool, isJumping: Bool,
+                onSelect: @escaping (String, UUID?) -> Void, onDismiss: @escaping (UUID) -> Void,
+                onCancel: @escaping () -> Void, onRetry: @escaping () -> Void) {
         self.entries = entries
         self.isLoading = isLoading
+        self.isJumping = isJumping
         self.onSelect = onSelect
+        self.onDismiss = onDismiss
+        self.onCancel = onCancel
         self.onRetry = onRetry
     }
 
     public var body: some View {
         Menu {
+            if isJumping {
+                Button("Cancel jump", action: onCancel)
+                Divider()
+            }
             ForEach(entries, id: \.letter) { entry in
                 Button(entry.letter) {
                     #if os(tvOS)
-                    pendingSelection = entry.letter
+                    let id = UUID()
+                    pendingSelection = id
+                    onSelect(entry.letter, id)
                     #else
-                    onSelect(entry.letter)
+                    onSelect(entry.letter, nil)
                     #endif
                 }
                 .accessibilityLabel("Jump to \(entry.letter)")
@@ -45,9 +58,9 @@ public struct LibraryAlphabetMenu: View {
         .accessibilityIdentifier("library-alphabet-menu")
         #if os(tvOS)
         .background {
-            LibraryAlphabetMenuCompletion(selection: pendingSelection) { letter in
+            LibraryAlphabetMenuCompletion(selection: pendingSelection) { id in
                 pendingSelection = nil
-                onSelect(letter)
+                onDismiss(id)
             }
             .allowsHitTesting(false)
         }
@@ -60,8 +73,8 @@ public struct LibraryAlphabetMenu: View {
 /// A Menu action runs before UIKit dismisses its presentation. Let its real
 /// focus restoration finish before scrolling and handing focus to library content.
 struct LibraryAlphabetMenuCompletion: UIViewControllerRepresentable {
-    let selection: String?
-    let onCommit: (String) -> Void
+    let selection: UUID?
+    let onCommit: (UUID) -> Void
 
     func makeUIViewController(context: Context) -> Controller { Controller() }
 
@@ -74,8 +87,8 @@ struct LibraryAlphabetMenuCompletion: UIViewControllerRepresentable {
     }
 
     final class Controller: UIViewController {
-        private var selection: String?
-        private var onCommit: ((String) -> Void)?
+        private var selection: UUID?
+        private var onCommit: ((UUID) -> Void)?
         private var displayLink: CADisplayLink?
         private var crossedFrame = false
 
@@ -85,7 +98,7 @@ struct LibraryAlphabetMenuCompletion: UIViewControllerRepresentable {
             view.isAccessibilityElement = false
         }
 
-        func update(selection: String?, onCommit: ((String) -> Void)?) {
+        func update(selection: UUID?, onCommit: ((UUID) -> Void)?) {
             if self.selection != selection {
                 stop()
                 self.selection = selection
@@ -138,51 +151,48 @@ struct LibraryAlphabetMenuCompletion: UIViewControllerRepresentable {
 }
 #endif
 
-public struct LibraryAlphabetStatus: View {
-    @Environment(\.themePalette) private var palette
+/// Uses the root's existing watchlist/status toast, without adding another host
+/// or focus target. A completed jump can only dismiss its own status generation.
+public struct LibraryAlphabetFeedback: View {
+    @Environment(\.transientStatusPresenter) private var presenter
+    @State private var presentedGeneration: UInt64?
     let letter: String?
     let message: LocalizedStringResource?
-    let onCancel: () -> Void
 
-    public init(letter: String?, message: LocalizedStringResource?, onCancel: @escaping () -> Void) {
+    public init(letter: String?, message: LocalizedStringResource?) {
         self.letter = letter
         self.message = message
-        self.onCancel = onCancel
     }
 
     public var body: some View {
-        if letter != nil || message != nil {
-            HStack(spacing: PlozzTheme.Spacing.large) {
-                if let letter {
-                    ProgressView()
-                        .tint(palette.primaryText)
-                        .fixedSize()
-                        .accessibilityHidden(true)
-                    Text("Finding \(letter)…")
-                        .font(.headline)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .layoutPriority(1)
-                        .accessibilityIdentifier("library-alphabet-status-message")
-                    Spacer(minLength: PlozzTheme.Spacing.large)
-                    Button("Cancel", action: onCancel)
-                        .plozzActionButton(role: .secondary)
-                        .fixedSize(horizontal: true, vertical: true)
-                        .accessibilityIdentifier("library-alphabet-status-cancel")
-                } else if let message {
-                    Text(message)
-                        .font(.headline)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("library-alphabet-status-message")
-                }
-            }
-            .foregroundStyle(palette.primaryText)
-            .padding(.horizontal, PlozzTheme.Spacing.large)
-            .padding(.vertical, PlozzTheme.Spacing.medium)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .plozzSurface(.overlay, cornerRadius: 20)
-            .accessibilityIdentifier("library-alphabet-status-panel")
-            .padding(.horizontal, PlozzTheme.Spacing.medium)
-            .padding(.vertical, PlozzTheme.Spacing.small)
+        Color.clear
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onChange(of: feedback, initial: true) { _, _ in update() }
+            .onDisappear { dismissOwnedStatus() }
+    }
+
+    private var feedback: TransientStatusMessage? {
+        if let message {
+            return .init(icon: "exclamationmark.circle", text: message)
+        }
+        guard let letter else { return nil }
+        return .init(icon: "magnifyingglass", text: "Finding \(letter)…", isProgress: true)
+    }
+
+    private func update() {
+        dismissOwnedStatus()
+        guard let feedback else { return }
+        let generation = presenter?.present(
+            icon: feedback.icon, text: feedback.text, isProgress: feedback.isProgress)
+        if feedback.isProgress { presentedGeneration = generation }
+    }
+
+    private func dismissOwnedStatus() {
+        if let presentedGeneration {
+            presenter?.dismiss(expectedGeneration: presentedGeneration)
+            self.presentedGeneration = nil
         }
     }
 }

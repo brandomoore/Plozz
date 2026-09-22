@@ -472,10 +472,23 @@ public final class LibraryBrowseViewModel {
     }
 
     public func jumpToLetter(_ letter: String, focusesItem: Bool = true) async -> Int? {
+        await beginLetterJump(letter, focusesItem: focusesItem)?.value
+    }
+
+    /// Begin feedback and media I/O immediately; only the eventual focus handoff
+    /// waits for a native menu to finish dismissing.
+    @discardableResult
+    public func beginLetterJump(
+        _ letter: String, focusesItem: Bool = true, menuPresentationID: UUID? = nil
+    ) -> Task<Int?, Never>? {
         guard let entry = letterEntries.first(where: { $0.letter == letter }) else { return nil }
         alphabet.focusesItem = focusesItem
-        if alphabet.jumpingTo == letter, let task = alphabet.jumpTask { return await task.value }
+        if alphabet.jumpingTo == letter, let task = alphabet.jumpTask {
+            alphabet.menuPresentationID = menuPresentationID
+            return task
+        }
         cancelLetterJump()
+        alphabet.menuPresentationID = menuPresentationID
         let id = alphabet.jumpID
         let generation = contentGeneration
         let requestedSort = sort
@@ -518,8 +531,8 @@ public final class LibraryBrowseViewModel {
                     throw AppError.serverUnreachable
                 }
                 self.prepareJump(toIndex: index)
-                self.alphabet.destination = LibraryAlphabetDestination(
-                    index: index, focusesItem: self.alphabet.focusesItem)
+                self.alphabet.publishDestination(LibraryAlphabetDestination(
+                    index: index, focusesItem: self.alphabet.focusesItem))
                 return index
             } catch {
                 guard !Task.isCancelled, self.alphabet.jumpID == id else { return nil }
@@ -529,7 +542,7 @@ public final class LibraryBrowseViewModel {
             }
         }
         alphabet.jumpTask = task
-        return await task.value
+        return task
     }
 
     /// The rail letter whose range currently contains `index` — the last entry

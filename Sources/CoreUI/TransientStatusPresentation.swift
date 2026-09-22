@@ -12,15 +12,18 @@ public struct TransientStatusMessage: Equatable, Sendable {
     public let icon: String
     public let text: LocalizedStringResource
     public let placement: TransientStatusPlacement
+    public let isProgress: Bool
 
     public init(
         icon: String,
         text: LocalizedStringResource,
-        placement: TransientStatusPlacement = .root
+        placement: TransientStatusPlacement = .root,
+        isProgress: Bool = false
     ) {
         self.icon = icon
         self.text = text
         self.placement = placement
+        self.isProgress = isProgress
     }
 }
 
@@ -69,11 +72,13 @@ public final class TransientStatusPresenter {
         dismissalTask?.cancel()
     }
 
+    @discardableResult
     public func present(
         icon: String,
         text: LocalizedStringResource,
-        placement: TransientStatusPlacement = .root
-    ) {
+        placement: TransientStatusPlacement = .root,
+        isProgress: Bool = false
+    ) -> UInt64 {
         generation &+= 1
         let expectedGeneration = generation
         dismissalTask?.cancel()
@@ -83,10 +88,13 @@ public final class TransientStatusPresenter {
             message = TransientStatusMessage(
                 icon: icon,
                 text: text,
-                placement: placement
+                placement: placement,
+                isProgress: isProgress
             )
         }
         announcement(text)
+        dismissalTask = nil
+        guard !isProgress else { return expectedGeneration }
 
         let displayDuration = self.displayDuration
         let sleeper = self.sleeper
@@ -95,6 +103,7 @@ public final class TransientStatusPresenter {
             guard !Task.isCancelled else { return }
             await self?.dismiss(expectedGeneration: expectedGeneration)
         }
+        return expectedGeneration
     }
 
     public func dismiss() {
@@ -108,8 +117,9 @@ public final class TransientStatusPresenter {
         }
     }
 
-    private func dismiss(expectedGeneration: UInt64) {
+    public func dismiss(expectedGeneration: UInt64) {
         guard expectedGeneration == generation else { return }
+        dismissalTask?.cancel()
         dismissalTask = nil
         withAnimation(.easeInOut(
             duration: Self.dismissalAnimationDuration
@@ -139,7 +149,11 @@ public struct TransientStatusView: View {
             if let message = presenter.message,
                message.placement == placement {
                 HStack(spacing: 10) {
-                    Image(systemName: message.icon)
+                    if message.isProgress {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: message.icon)
+                    }
                     Text(message.text)
                 }
                 .font(messageFont)

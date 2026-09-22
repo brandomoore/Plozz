@@ -41,6 +41,36 @@ final class LibraryAlphabetTests: XCTestCase {
         XCTAssertNil(vm.alphabet.jumpingTo)
     }
 
+    func testMenuSelectionStartsImmediatelyButHoldsDestinationUntilDismissed() async throws {
+        let source = provider()
+        let vm = model(source)
+        await vm.loadFirstPage()
+        await waitForIndex(vm)
+        let id = UUID()
+        let task = try XCTUnwrap(vm.beginLetterJump("M", menuPresentationID: id))
+        XCTAssertEqual(vm.alphabet.jumpingTo, "M", "Feedback must publish synchronously on selection")
+        let index = await task.value
+        XCTAssertEqual(index, 75)
+        XCTAssertNotNil(vm.item(at: 75), "Media I/O must not wait for menu dismissal")
+        XCTAssertNil(vm.alphabet.destination, "Only scrolling/focus waits for the presentation")
+        vm.alphabet.menuDidDismiss(UUID())
+        XCTAssertNil(vm.alphabet.destination)
+        vm.alphabet.menuDidDismiss(id)
+        XCTAssertEqual(vm.alphabet.destination?.index, 75)
+    }
+
+    func testCancelledMenuRequestCannotPublishOnLateDismissal() async throws {
+        let vm = model(provider())
+        await vm.loadFirstPage()
+        await waitForIndex(vm)
+        let id = UUID()
+        let task = try XCTUnwrap(vm.beginLetterJump("M", menuPresentationID: id))
+        _ = await task.value
+        vm.cancelLetterJump()
+        vm.alphabet.menuDidDismiss(id)
+        XCTAssertNil(vm.alphabet.destination)
+    }
+
     func testSmallLibraryStillExposesItsAlphabet() async {
         let source = provider(count: 2)
         source.alphabetEntries = [.init(letter: "A", startIndex: 0), .init(letter: "B", startIndex: 1)]
@@ -286,6 +316,21 @@ private actor AlphabetPageGate {
 }
 
 final class AggregatedLibraryAlphabetTests: XCTestCase {
+    func testBufferedLetterDoesNotWaitForUnneededLaterSourcePages() async throws {
+        let source = FakeMediaProvider(allItems: (0..<400).map {
+            MediaItem(id: "\($0)", title: "\($0 < 10 ? "Alpha" : "Movie") \($0)", kind: .movie)
+        })
+        source.pageHooks[20] = { throw AppError.serverUnreachable }
+        let provider = AggregatedLibraryProvider(
+            sources: [.init(accountID: "silo", containerID: "movies", provider: source)])
+        _ = try await provider.items(in: "all", kind: .movie, page: .init(limit: 10))
+        let count = source.requestedPages.count
+        let index = try await provider.letterPosition(in: "all", kind: .movie, letter: "M", sort: .default)
+        XCTAssertEqual(index, 10)
+        XCTAssertEqual(source.requestedPages.count, count,
+                       "Already buffered destinations must not fill a new 200-item window first")
+    }
+
     func testDeepJumpUsesDeduplicatedPositionsAndReusesCache() async throws {
         let movies = (0..<400).map {
             MediaItem(id: "p\($0)", title: "\($0 < 300 ? "Alpha" : "Zulu") \($0)",

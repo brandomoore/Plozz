@@ -23,6 +23,22 @@ public final class LibraryAlphabetState {
     @ObservationIgnored var jumpID = UUID()
     @ObservationIgnored var landingPage: Int?
     @ObservationIgnored var focusesItem = true
+    @ObservationIgnored var menuPresentationID: UUID?
+    @ObservationIgnored var pendingDestination: LibraryAlphabetDestination?
+
+    func publishDestination(_ value: LibraryAlphabetDestination) {
+        if menuPresentationID != nil { pendingDestination = value }
+        else { destination = value }
+    }
+
+    public func menuDidDismiss(_ id: UUID) {
+        guard menuPresentationID == id else { return }
+        menuPresentationID = nil
+        if let pendingDestination {
+            destination = pendingDestination
+            self.pendingDestination = nil
+        }
+    }
 
     func updatePosition(_ letter: String?) {
         positionLetter = letter
@@ -43,6 +59,8 @@ public final class LibraryAlphabetState {
         jumpTask = nil
         jumpingTo = nil
         landingPage = nil
+        menuPresentationID = nil
+        pendingDestination = nil
     }
 
     func reset() {

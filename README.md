@@ -91,7 +91,8 @@ presents them as a single library rather than a set of tabs you switch between.
   can be cancelled, and leaves the current view in place until its titles load.
   TV menu selections move focus to the destination card; rail navigation keeps
   focus on the letters. While rows load, the rail stays visible without claiming
-  an unverified current letter. Jump progress and Cancel use a readable status panel.
+  an unverified current letter. Jump progress appears immediately in the shared
+  status toast; **Cancel jump** remains available in the alphabet menu.
   Other sorts and collection-member lists keep their own ordering.
 - **Common Sense Media in Ratings** — Plex movie and show details can display
   a prominent recommended age, separate from review scores. When header ratings

@@ -289,8 +289,6 @@ struct PlozziOSLibraryGridView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            LibraryAlphabetStatus(letter: viewModel.alphabet.jumpingTo, message: viewModel.alphabet.message,
-                                  onCancel: viewModel.cancelLetterJump)
             if let error = viewModel.pageError {
                 HStack {
                     Text(error.userMessage)
@@ -307,7 +305,10 @@ struct PlozziOSLibraryGridView: View {
             if viewModel.alphabet.isVisible {
                 ToolbarItem(placement: .primaryAction) {
                     LibraryAlphabetMenu(entries: viewModel.letterEntries, isLoading: viewModel.alphabet.isLoading,
-                                        onSelect: { letter in Task { await viewModel.jumpToLetter(letter) } },
+                                        isJumping: viewModel.alphabet.jumpingTo != nil,
+                                        onSelect: { letter, id in viewModel.beginLetterJump(letter, menuPresentationID: id) },
+                                        onDismiss: viewModel.alphabet.menuDidDismiss,
+                                        onCancel: viewModel.cancelLetterJump,
                                         onRetry: viewModel.retryLetterIndex)
                 }
             }
@@ -330,6 +331,9 @@ struct PlozziOSLibraryGridView: View {
             }
         }
         .task { await viewModel.loadFirstPageIfNeeded() }
+        .background {
+            LibraryAlphabetFeedback(letter: viewModel.alphabet.jumpingTo, message: viewModel.alphabet.message)
+        }
         .onDisappear { viewModel.cancelLetterJump() }
         .plozziOSLibraryDestination(appModel: appModel)
         .background {

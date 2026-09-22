@@ -110,8 +110,6 @@ public struct LibraryBrowseView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            LibraryAlphabetStatus(letter: viewModel.alphabet.jumpingTo, message: viewModel.alphabet.message,
-                                  onCancel: viewModel.cancelLetterJump)
             if let error = viewModel.pageError {
                 HStack(spacing: PlozzTheme.Spacing.large) {
                     Text(error.userMessage)
@@ -130,6 +128,9 @@ public struct LibraryBrowseView: View {
             }
         }
         .task { await viewModel.loadFirstPageIfNeeded() }
+        .background {
+            LibraryAlphabetFeedback(letter: viewModel.alphabet.jumpingTo, message: viewModel.alphabet.message)
+        }
         .onDisappear { viewModel.cancelLetterJump() }
         .onChange(of: viewModel.contentMode) { _, _ in
             railFocusedLetter = nil
@@ -328,7 +329,10 @@ public struct LibraryBrowseView: View {
             }
             if viewModel.alphabet.isVisible {
                 LibraryAlphabetMenu(entries: viewModel.letterEntries, isLoading: viewModel.alphabet.isLoading,
-                                    onSelect: { letter in Task { await viewModel.jumpToLetter(letter) } },
+                                    isJumping: viewModel.alphabet.jumpingTo != nil,
+                                    onSelect: { letter, id in viewModel.beginLetterJump(letter, menuPresentationID: id) },
+                                    onDismiss: viewModel.alphabet.menuDidDismiss,
+                                    onCancel: viewModel.cancelLetterJump,
                                     onRetry: viewModel.retryLetterIndex)
             }
             if !viewModel.availableSortFields.isEmpty {
@@ -659,7 +663,7 @@ private struct LibraryRailLayer: View {
                     isLoading: viewModel.alphabet.isPositionLoading || viewModel.alphabet.jumpingTo != nil,
                     focusedLetter: $railFocusedLetter,
                     onScrollToLetter: { entry in
-                        Task { await viewModel.jumpToLetter(entry.letter, focusesItem: false) }
+                        viewModel.beginLetterJump(entry.letter, focusesItem: false)
                     }
                 )
                 // Gate re-renders on the rail's meaningful inputs (entries +
