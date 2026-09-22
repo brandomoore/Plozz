@@ -418,6 +418,51 @@ final class SiloProviderTests: XCTestCase {
       requests.first?.queryItems.contains(URLQueryItem(name: "seek", value: "240")) == true)
   }
 
+  func testPartialCatalogIdentityHydratesForTMDBWatchlistOwnership() async throws {
+    let raw = try credential().encoded()
+    let http = SiloHTTPStub([
+      "/api/v2/catalog": """
+      {"items":[{"content_id":"series-tvdb-420600","type":"series",
+      "title":"Star Wars: Skeleton Crew","year":2024}],
+      "total":1,"total_exact":true,"window_cursor":"window"}
+      """,
+      "/api/v2/catalog/items/series-tvdb-420600": """
+      {"content_id":"series-tvdb-420600","type":"series","title":"Star Wars: Skeleton Crew",
+      "year":2024,"tmdb_id":"202879","tvdb_id":"420600","imdb_id":"tt20600980"}
+      """,
+    ])
+    let provider = try SiloProvider(
+      context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    let page = try await provider.items(in: "shows", kind: .series, page: .init(limit: 200))
+    XCTAssertEqual(page.items.first?.providerID(.tvdb), "420600")
+    XCTAssertNil(page.items.first?.providerID(.tmdb))
+    let prepared = await IdentityEnrichment.prepare(
+      page.items, enrichIdentifiedItems: provider.catalogIdentityRequiresEnrichment
+    ) { item in
+      try? await provider.item(id: item.id)
+    }
+    XCTAssertFalse(prepared.inconclusive)
+    let index = IdentityIndex()
+    await index.ingest(
+      prepared.indexable, accountID: provider.accountID,
+      serverInfo: SourceServerInfo(providerKind: .silo))
+    let snapshot = await index.snapshot()
+    let watchlisted = MediaItem(
+      id: "tmdb:series:202879", title: "Star Wars: Skeleton Crew", kind: .series,
+      productionYear: 2024, providerIDs: ["Tmdb": "202879"], availability: .unknown)
+    let owned = try XCTUnwrap(
+      watchlisted.retargetedToOwnedLibraryCopy(
+        indexedSources: { snapshot.sourceRefs(for: $0) }, capabilities: .default))
+    XCTAssertEqual(owned.id, "series-tvdb-420600")
+    XCTAssertEqual(owned.sourceAccountID, provider.accountID)
+    XCTAssertTrue(owned.locallyValidatedPlayableSource)
+    XCTAssertFalse(owned.isNotInLibraryDiscovery)
+    var unrelated = watchlisted
+    unrelated.providerIDs = ["Tmdb": "999999"]
+    XCTAssertTrue(
+      snapshot.sourceRefs(for: unrelated).isEmpty, "A matching title is not ownership evidence")
+  }
+
   func testProtocolThreePlaybackWorksWithoutOptionalFixedFileExtension() async throws {
     let raw = try credential().encoded()
     var responses = playbackResponses()

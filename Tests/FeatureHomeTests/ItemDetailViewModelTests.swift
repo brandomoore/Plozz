@@ -283,6 +283,44 @@ final class ItemDetailViewModelTests: XCTestCase {
         }
     }
 
+    func testDiscoveryRechecksLibraryAfterExternalMetadataSuppliesMissingIDs() async {
+        let seed = MediaItem(
+            id: "orphan-alias", title: "Star Wars: Skeleton Crew", kind: .series,
+            productionYear: 2024, availability: .unknown, locallyValidatedPlayableSource: false
+        )
+        let owned = MediaItem(
+            id: "series-tvdb-420600", title: seed.title, kind: .series,
+            productionYear: 2024, providerIDs: ["Tmdb": "202879", "Tvdb": "420600"]
+        )
+        let provider = FakeMediaProvider(allItems: [owned], kind: .silo)
+        provider.childrenByParent = [owned.id: [season("s1", "Season 1")]]
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: seed.id, initialItem: seed, isDiscoveryItem: true,
+            externalMetadataResolver: { _, region in
+                ExternalTitleMetadata(
+                    enrichment: MetadataEnrichment(externalIDs: [
+                        "Tmdb": SourcedValue(value: "202879", source: .tmdb)
+                    ]),
+                    availability: ExternalTitleAvailability(regionCode: region)
+                )
+            },
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache(),
+            alternateProviderResolver: { $0 == "silo" ? provider : nil },
+            crossServerSourceResolver: { item in
+                guard item.providerID(.tmdb) == "202879" else { return [] }
+                return [MediaSourceRef(accountID: "silo", itemID: owned.id, kind: .series, providerKind: .silo)]
+            }
+        )
+        await vm.load()
+        XCTAssertFalse(vm.isDiscoveryItem)
+        XCTAssertEqual(vm.state.value?.item.id, owned.id)
+        XCTAssertEqual(vm.state.value?.children.map(\.id), ["s1"])
+        XCTAssertEqual(provider.itemCallCount(for: seed.id), 0)
+        XCTAssertGreaterThan(provider.itemCallCount(for: owned.id), 0)
+        vm.suspendEnrichment()
+    }
+
     func testExternalDetailWithoutMatchingLibraryCopyStaysUnplayable() async {
         let seed = MediaItem(
             id: "external",
@@ -2363,6 +2401,94 @@ final class ItemDetailViewModelTests: XCTestCase {
 
     /// Enrichment is idempotent: a second focus of the same episode returns the
     /// already-rich cached copy without a second provider fetch.
+    func testEpisodeHeroKeepsEnrichedBadgesWhenSparseSeasonArrivesLater() async {
+        let show = series("show")
+        var sparse = episode("e1", number: 1)
+        sparse.runtime = 2100
+        sparse.resumePosition = 600
+        let metadata = MediaSourceMetadata(
+            container: "mkv",
+            video: .init(codec: "vp9", height: 1080, videoRange: "SDR"),
+            audio: .init(codec: "aac", channels: 6)
+        )
+        var rich = sparse
+        rich.resumePosition = 0
+        rich.mediaInfo = metadata
+        rich.versions = [MediaVersion(id: "file42", sourceMetadata: metadata)]
+        let provider = FakeMediaProvider(allItems: [show, rich], kind: .silo)
+        let gate = AsyncGate()
+        provider.childrenByParent = ["show": [season("s1", "Season 1")], "s1": [sparse]]
+        provider.childrenGate = ["s1": { _ in await gate.wait() }]
+        let vm = ItemDetailViewModel(provider: provider, itemID: show.id, sourceAccountID: "silo")
+        await vm.load()
+        let seasonLoad = Task { await vm.loadEpisodes(for: "s1") }
+        await waitUntil { provider.childrenCallCount["s1"] == 1 }
+
+        let changed = LockedFlag()
+        withObservationTracking {
+            _ = vm.episodeWithEnrichedBadges(sparse).technicalBadges
+        } onChange: {
+            changed.set()
+        }
+        _ = await vm.enrichEpisodeBadgesIfNeeded(sparse)
+        XCTAssertTrue(changed.value, "Publishing file facts must invalidate the hero")
+        gate.open()
+        await seasonLoad.value
+
+        guard let lateEpisode = vm.episodes(for: "s1")?.first else {
+            return XCTFail("Missing authoritative season episode")
+        }
+        XCTAssertNil(lateEpisode.mediaInfo, "Enrichment must not rewrite the visible rail")
+        let hero = vm.episodeWithEnrichedBadges(lateEpisode)
+        XCTAssertEqual(Set(hero.technicalBadges.map(\.label)), ["1080p", "SDR", "5.1"])
+        XCTAssertEqual(hero.versions.map(\.id), ["file42"])
+        XCTAssertEqual(hero.resumePosition, 600, "Cached file facts must not restore old watch state")
+        XCTAssertEqual(hero.sourceAccountID, "silo")
+        let cached = await vm.enrichEpisodeBadgesIfNeeded(lateEpisode)
+        XCTAssertEqual(cached?.resumePosition, 600)
+        XCTAssertEqual(provider.itemCallCount(for: "e1"), 1)
+        vm.suspendEnrichment()
+    }
+
+    func testEpisodeBadgeEnrichmentRejectsLateSameIDFromPreviousSource() async {
+        let show = series("show")
+        let sparse = episode("e1", number: 1)
+        var oldEpisode = sparse
+        oldEpisode.mediaInfo = MediaSourceMetadata(video: .init(height: 2160, videoRangeType: "HDR10"))
+        var newEpisode = sparse
+        newEpisode.mediaInfo = MediaSourceMetadata(video: .init(height: 1080, videoRangeType: "SDR"))
+        let oldProvider = FakeMediaProvider(allItems: [show, oldEpisode], kind: .silo)
+        let newProvider = FakeMediaProvider(allItems: [show, newEpisode], kind: .silo)
+        oldProvider.childrenByParent = ["show": []]
+        newProvider.childrenByParent = ["show": []]
+        let gate = AsyncGate()
+        oldProvider.itemGate = ["e1": { await gate.wait() }]
+        let vm = ItemDetailViewModel(
+            provider: oldProvider, itemID: "show", sourceAccountID: "silo-a",
+            initialSources: [
+                MediaSourceRef(accountID: "silo-a", itemID: "show"),
+                MediaSourceRef(accountID: "silo-b", itemID: "show")
+            ],
+            alternateProviderResolver: { $0 == "silo-b" ? newProvider : oldProvider }
+        )
+        await vm.load()
+        let oldKey = vm.episodeBadgeEnrichmentKey(for: sparse)
+        let oldLookup = Task { await vm.enrichEpisodeBadgesIfNeeded(sparse.taggingSource("silo-a")) }
+        await waitUntil { oldProvider.itemCallCount(for: "e1") == 1 }
+        await vm.switchToSource(accountID: "silo-b")
+        XCTAssertNotEqual(vm.episodeBadgeEnrichmentKey(for: sparse), oldKey)
+        _ = await vm.enrichEpisodeBadgesIfNeeded(sparse.taggingSource("silo-b"))
+        gate.open()
+        let stale = await oldLookup.value
+        XCTAssertNil(stale)
+        XCTAssertEqual(
+            vm.episodeWithEnrichedBadges(sparse.taggingSource("silo-b")).technicalBadges.map(\.label),
+            ["1080p", "SDR"]
+        )
+        XCTAssertNil(vm.episodeWithEnrichedBadges(sparse.taggingSource("silo-a")).mediaInfo)
+        vm.suspendEnrichment()
+    }
+
     func testEpisodeBadgeEnrichmentIsCachedPerEpisode() async {
         let rich = MediaItem(
             id: "e1", title: "The End", kind: .episode, episodeNumber: 1,

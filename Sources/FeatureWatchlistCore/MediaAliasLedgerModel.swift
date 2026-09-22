@@ -149,6 +149,21 @@ public final class MediaAliasLedgerModel {
         return ids
     }
 
+    @discardableResult
+    public func restoreMissingLegacyAliases(
+        profileID: String,
+        intents: [WatchlistIntent]
+    ) async throws -> Int {
+        try ensureDeletionStateAvailable()
+        guard !removedProfileIDs.contains(profileID) else {
+            throw MediaAliasLedgerError.profileDeleted(profileID)
+        }
+        let ledger = try await ledger(for: profileID)
+        let count = try await ledger.restoreMissingLegacyAliases(from: intents)
+        if count > 0 { publish(await ledger.snapshot(), profileID: profileID) }
+        return count
+    }
+
     public func enrich(
         profileID: String,
         aliasID: MediaAliasID,

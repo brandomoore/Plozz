@@ -17,6 +17,11 @@ public protocol MediaProvider: Sendable {
     /// The authenticated session this provider is bound to.
     var session: UserSession { get }
 
+    /// Catalog/search cards may expose one external ID but omit the other
+    /// namespaces needed to match a title across providers. Fetch full details
+    /// before publishing those cards as complete identity-index/search evidence.
+    var catalogIdentityRequiresEnrichment: Bool { get }
+
     // MARK: Library browsing
 
     /// Top-level libraries/views available to the user.
@@ -376,6 +381,8 @@ public enum MediaProviderURLIdentity {
 // doubles) inherit safe no-ops, so adding the capability never forces every
 // conformer to implement it.
 public extension MediaProvider {
+    var catalogIdentityRequiresEnrichment: Bool { false }
+
     func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
         throw AppError.notFound
     }

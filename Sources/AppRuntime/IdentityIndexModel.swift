@@ -553,7 +553,10 @@ public final class IdentityIndexModel {
                 // response omitted its Guid array) via its fuller per-item record,
                 // so the store is keyed on real strong ids — origin-agnostic and
                 // complete with Plex as a destination, not just a source.
-                let prepared = await IdentityEnrichment.prepare(page.items) { item in
+                let prepared = await IdentityEnrichment.prepare(
+                    page.items,
+                    enrichIdentifiedItems: provider.catalogIdentityRequiresEnrichment
+                ) { item in
                     try? await provider.item(id: item.id)
                 }
                 inconclusive = inconclusive || prepared.inconclusive

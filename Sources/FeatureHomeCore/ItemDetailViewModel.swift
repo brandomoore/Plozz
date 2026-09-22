@@ -200,7 +200,7 @@ public final class ItemDetailViewModel {
     private let seasonEpisodeRosters = SeasonEpisodeRosterModel()
     /// Full per-item episode facts used by the hero. Deliberately separate from
     /// `seasonEpisodes`: enriching a focused hero must not replace the visible rail.
-    @ObservationIgnored private var enrichedEpisodesByID: [String: MediaItem] = [:]
+    private let episodeBadgeEnrichment = EpisodeBadgeEnrichmentModel()
     /// When this detail is a series, context propagated onto its episodes so each
     /// episode resolves fallback artwork/routing with full series metadata.
     private var seriesEpisodeContext: SeriesEpisodeContext?
@@ -614,8 +614,14 @@ public final class ItemDetailViewModel {
             await resolveDiscoveryLibrarySource()
             guard !Task.isCancelled else { return }
             if isDiscoveryItem {
+                let priorIDs = state.value?.item.providerIDs
+                let generation = sourceGeneration
                 await loadDiscoveryDetail()
-                return
+                guard !Task.isCancelled, sourceGeneration == generation else { return }
+                if priorIDs != state.value?.item.providerIDs {
+                    await resolveDiscoveryLibrarySource()
+                }
+                if isDiscoveryItem { return }
             }
         }
         alternateSourceEnrichmentTask?.cancel()
@@ -2120,31 +2126,48 @@ public final class ItemDetailViewModel {
         }
     }
 
-    /// Refreshes a focused episode's capability badges from a full per-item fetch.
-    ///
-    /// Episode rails are seeded from the season's `/children` listing. On Plex that
-    /// payload can come back with a TRIMMED `<Stream>` (no `DOVIPresent`/`colorTrc`)
-    /// and without the Media-level `audioProfile`, so the parser asserts `SDR` and
-    /// drops Atmos — an episode that is really 4K Dolby Vision / HDR10 / Atmos then
-    /// badges as "SDR · Dolby Digital+ 5.1". (Jellyfin's children payload carries
-    /// the full stream facts, which is why the same title badges correctly there.)
-    /// The full `/library/metadata/{id}` fetch always carries the real stream
-    /// facts, so when an episode is shown in the hero we fetch it once and merge its
-    /// `mediaInfo`/`versions` back into the cached rail entry.
-    ///
-    /// Idempotent per episode id (only the first focus pays a fetch). Returns the
-    /// enriched episode (or the already-rich cached copy) so the caller can refresh
-    /// the hero in place, or `nil` when there is nothing to update.
-    public func enrichEpisodeBadgesIfNeeded(_ episode: MediaItem) async -> MediaItem? {
-        guard episode.kind == .episode else { return nil }
-        if let enriched = enrichedEpisodesByID[episode.id] { return enriched }
-        guard let full = try? await activeProvider.item(id: episode.id),
-              !Task.isCancelled else { return nil }
+    public func episodeBadgeEnrichmentKey(for episode: MediaItem?) -> String? {
+        guard let episode, episode.kind == .episode else { return nil }
+        return "\(sourceGeneration):\(episode.id)"
+    }
+
+    /// Overlay technical facts without replacing current progress, numbering or
+    /// ownership. A later sparse season/resume result must not erase hero badges.
+    public func episodeWithEnrichedBadges(_ episode: MediaItem) -> MediaItem {
+        guard episode.kind == .episode,
+              episode.sourceAccountID == nil || activeSourceAccountID == nil
+                || episode.sourceAccountID == activeSourceAccountID,
+              let full = episodeBadgeEnrichment[episode.id] else { return episode }
         var enriched = episode
         enriched.mediaInfo = full.mediaInfo ?? enriched.mediaInfo
         if !full.versions.isEmpty { enriched.versions = full.versions }
-        enrichedEpisodesByID[episode.id] = enriched
         return enriched
+    }
+
+    /// Fetches full file facts once per episode/source without rewriting the rail.
+    public func enrichEpisodeBadgesIfNeeded(_ episode: MediaItem) async -> MediaItem? {
+        guard episode.kind == .episode,
+              episode.sourceAccountID == nil || activeSourceAccountID == nil
+                || episode.sourceAccountID == activeSourceAccountID else { return nil }
+        if episodeBadgeEnrichment[episode.id] != nil {
+            return episodeWithEnrichedBadges(episode)
+        }
+        let generation = sourceGeneration
+        let itemID = activeItemID
+        let accountID = activeSourceAccountID
+        do {
+            let full = try await activeProvider.item(id: episode.id)
+            guard !Task.isCancelled, full.id == episode.id,
+                  isCurrentSource(generation: generation, itemID: itemID, accountID: accountID) else { return nil }
+            episodeBadgeEnrichment.store(full)
+            HandoffDiagnostics.emit("detail episode metadata versions=\(full.versions.count) badges=\(full.technicalBadges.count)")
+            return episodeWithEnrichedBadges(episode)
+        } catch {
+            guard !Task.isCancelled,
+                  isCurrentSource(generation: generation, itemID: itemID, accountID: accountID) else { return nil }
+            PlozzLog.networking.error("Episode technical metadata lookup failed")
+            return nil
+        }
     }
 
     /// Stamps an item with this detail's owning account (if any) so navigation
@@ -2194,7 +2217,7 @@ public final class ItemDetailViewModel {
         snapshotRestoreTask = nil
         pendingSnapshotWrite?.cancel()
         pendingSnapshotWrite = nil
-        enrichedEpisodesByID.removeAll()
+        episodeBadgeEnrichment.reset()
         seasonEpisodeRosters.reset()
     }
 

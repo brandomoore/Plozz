@@ -31,9 +31,14 @@ proxy paths remain available through manual URL entry.
   provider-anchored content-ID scheme, so the identity index can match owned
   copies before a detail page is opened. Explicit detail fields win; an
   episode's embedded series anchor is never treated as its own episode ID.
+  Those anchors are partial identity, not a complete set of provider IDs. Library
+  indexing and on-demand ownership searches hydrate native item details with
+  bounded concurrency to join TVDB-anchored titles to TMDB/IMDb watchlist entries.
   Episode file resolution and coarse HDR/SDR fields fill missing track-level
   metadata for hero badges; detailed track facts take precedence. Unknown audio
-  channels never imply stereo or surround.
+  channels never imply stereo or surround. Detail heroes observe source-scoped
+  episode metadata separately from the rail, so a later sparse season/resume
+  result cannot erase badges or restore stale progress.
   Progress is read through the paged, library-scoped progress endpoint; Home's
   native next-up selections are corroborated before inclusion in a restricted
   library view. Versions use the original Silo file ID.

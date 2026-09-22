@@ -1639,6 +1639,23 @@ public extension UniversalWatchlistHost {
     ) async {
         guard let reconciler = universalWatchlistReconciler,
               profiles.activeProfileID == profileID else { return }
+        do {
+            let restored = try await mediaAliasLedger.restoreMissingLegacyAliases(
+                profileID: profileID,
+                intents: Array(universalWatchlist.activeSnapshot.intentsByAliasID.values)
+            )
+            guard profiles.activeProfileID == profileID else { return }
+            if restored > 0 {
+                try universalWatchlist.reconcileAliases(
+                    profileID: profileID, aliasSnapshot: mediaAliasLedger.activeSnapshot
+                )
+                HandoffDiagnostics.emit("watchlist legacy identities restored count=\(restored)")
+                scheduleCloudPublish()
+            }
+        } catch {
+            PlozzLog.app.error("Unable to restore missing legacy watchlist identities")
+        }
+        guard profiles.activeProfileID == profileID else { return }
         let intents = Array(
             universalWatchlist.activeSnapshot.intentsByAliasID.values
         )

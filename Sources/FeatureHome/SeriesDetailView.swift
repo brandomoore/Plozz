@@ -165,9 +165,6 @@ struct SeriesDetailView: View {
     /// each card and made scrolling the rail snap back; a stable target keeps it
     /// silky smooth while still re-pointing on open/season-change/switch.
     @State private var railTargetID: String?
-    /// Full per-item media facts for the resting Play target. Kept outside the
-    /// episode rail so badge enrichment never rewrites hundreds of visible cards.
-    @State private var restingPlayTargetEnrichment: MediaItem?
     /// Cosmetic-only series hero recede state. The parent writes it but never reads
     /// it, so episode focus changes do not invalidate this page or its rail.
     @State private var recedeModel = SeriesHeroRecedeModel()
@@ -512,28 +509,9 @@ struct SeriesDetailView: View {
                     // it rebuilt while masked out behind the episode browser.
                     .equatable()
                     .id(Self.topAnchorID)
-                    // Episodes are seeded from the season's `/children` listing,
-                    // which on Plex can omit the per-stream DoVi/HDR facts and the
-                    // Media-level Atmos hint. Enrich whichever episode the hero is
-                    // showing from a full per-item fetch so its badges are accurate
-                    // (cached per id; cancels automatically as focus moves on).
-                    .task(id: heroItem.id) {
-                        guard heroItem.kind == .episode else { return }
-                        if let enriched = await viewModel.enrichEpisodeBadgesIfNeeded(heroItem),
-                           enriched.id == heroItem.id {
-                            heroItem = enriched
-                        }
-                    }
-                    // Proactively enrich the episode Play will run. Browser entry
-                    // may target a different tapped episode, so keying this work to
-                    // the rail would show that card's file badges above a resume
-                    // button that starts another episode.
-                    .task(id: playTarget?.id) {
+                    .task(id: viewModel.episodeBadgeEnrichmentKey(for: playTarget)) {
                         guard let target = playTarget else { return }
-                        let id = target.id
-                        let enriched = await viewModel.enrichEpisodeBadgesIfNeeded(target)
-                        guard playTarget?.id == id else { return }
-                        restingPlayTargetEnrichment = enriched
+                        _ = await viewModel.enrichEpisodeBadgesIfNeeded(target)
                     }
 
                     // The browser and everything beneath it form ONE column that
@@ -1557,17 +1535,14 @@ struct SeriesDetailView: View {
     }
 
     private var playTarget: MediaItem? {
-        if heroItem.kind == .episode { return heroItem }
+        if heroItem.kind == .episode { return viewModel.episodeWithEnrichedBadges(heroItem) }
         // The hero is the show — either nothing is watched or all of it is. Both
         // mean "start from the beginning", so offer the first episode rather than
         // `nextUp`, which returns the *finale* once everything is played.
         let target = SeriesResume.isFinished(seasons: seasons, episodes: currentEpisodes)
             ? currentEpisodes.first
             : SeriesResume.nextUp(in: currentEpisodes)
-        guard let target,
-              let enriched = restingPlayTargetEnrichment,
-              enriched.id == target.id else { return target }
-        return enriched
+        return target.map { viewModel.episodeWithEnrichedBadges($0) }
     }
 
     /// The hero item with its season/episode numbers guaranteed when an episode is

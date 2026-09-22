@@ -8,7 +8,26 @@ private func searchWithDeadline(
     seconds: Double
 ) async -> [MediaItem] {
     let searchTask = Task {
-        (try? await provider.search(query: query, limit: limit)) ?? []
+        let items = (try? await provider.search(query: query, limit: limit)) ?? []
+        guard provider.catalogIdentityRequiresEnrichment else { return items }
+        let prepared = await IdentityEnrichment.prepare(items, enrichIdentifiedItems: true) { item in
+            try? await provider.item(id: item.id)
+        }
+        guard !Task.isCancelled else { return [] }
+        if prepared.inconclusive {
+            FanoutDiagnostics.emit("source.search incomplete identities provider=\(provider.kind.rawValue)")
+        }
+        let fullByID = Dictionary(
+            prepared.indexable.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return items.compactMap { item in
+            guard item.kind == .movie || item.kind == .series else { return item }
+            guard var full = fullByID[item.id] else { return nil }
+            full.libraryID = item.libraryID ?? full.libraryID
+            full.sourceAccountID = item.sourceAccountID ?? full.sourceAccountID
+            return full
+        }
     }
     // Dispatch keeps the deadline responsive even when cooperative tasks are saturated.
     let timeout = DispatchWorkItem { searchTask.cancel() }
