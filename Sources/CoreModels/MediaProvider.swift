@@ -112,10 +112,13 @@ public protocol MediaProvider: Sendable {
     /// Only meaningful for `sort.field == .name`; providers return an empty
     /// array for every other sort (there is no letter to jump to) and callers
     /// hide the rail when it's empty. The default is empty, so the rail is a
-    /// purely additive capability — test doubles and providers that can't
-    /// cheaply compute it (e.g. the cross-server aggregate, whose merged order
-    /// has no stable per-letter offset) simply never show it.
+    /// purely additive capability. Providers without cheap native offsets may
+    /// return deferred entries and resolve them through `letterPosition`.
     func letterIndex(in containerID: String, kind: MediaItemKind, sort: SortDescriptor) async throws -> [LibraryLetterIndexEntry]
+    /// Resolves a deferred letter target in this exact library/order. Nil means
+    /// no matching titles; unavailable or incomplete sources must throw.
+    func letterPosition(in containerID: String, kind: MediaItemKind, letter: String,
+                        sort: SortDescriptor) async throws -> Int?
 
     /// Provider-native "hubs" for a single library — the promoted discovery rows a
     /// backend defines at the library level (Plex `/hubs/sections/{id}`: "More in
@@ -422,6 +425,12 @@ public extension MediaProvider {
     /// facet) override this; test doubles and the cross-server aggregate inherit
     /// the safe empty result.
     func letterIndex(in containerID: String, kind: MediaItemKind, sort: SortDescriptor) async throws -> [LibraryLetterIndexEntry] { [] }
+
+    func letterPosition(in containerID: String, kind: MediaItemKind, letter: String,
+                        sort: SortDescriptor) async throws -> Int? {
+        try await letterIndex(in: containerID, kind: kind, sort: sort)
+            .first { $0.letter == letter }?.startIndex
+    }
 
     /// Default: no native hubs. Only Plex (via `/hubs/sections/{id}`) overrides
     /// this; Jellyfin and test doubles inherit the safe empty result, so unmerged

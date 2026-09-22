@@ -19,6 +19,7 @@ struct SiloItem: Decodable, Sendable {
     let content_id: String
     let type: String?
     let title: String
+    let sort_title: String?
     let original_title: String?
     let overview: String?
     let year: Int?

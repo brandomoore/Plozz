@@ -109,6 +109,8 @@ public struct LibraryBrowseView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
+            LibraryAlphabetStatus(letter: viewModel.alphabet.jumpingTo, message: viewModel.alphabet.message,
+                                  onCancel: viewModel.cancelLetterJump)
             if let error = viewModel.pageError {
                 HStack(spacing: PlozzTheme.Spacing.large) {
                     Text(error.userMessage)
@@ -127,6 +129,7 @@ public struct LibraryBrowseView: View {
             }
         }
         .task { await viewModel.loadFirstPageIfNeeded() }
+        .onDisappear { viewModel.cancelLetterJump() }
         .onChange(of: viewModel.contentMode) { _, _ in
             railFocusedLetter = nil
             railHasRevealed = false
@@ -188,8 +191,7 @@ public struct LibraryBrowseView: View {
         .overlay(alignment: .trailing) {
             LibraryRailLayer(
                 viewModel: viewModel, railFocusedLetter: $railFocusedLetter,
-                railHasRevealed: $railHasRevealed, revealThreshold: railRevealThreshold,
-                scrollTo: { nativeScrollTarget.scroll(to: $0) }
+                railHasRevealed: $railHasRevealed, revealThreshold: railRevealThreshold
             )
         }
         .overlay {
@@ -199,6 +201,9 @@ public struct LibraryBrowseView: View {
         }
         .onChange(of: viewModel.showsLetterRail) { _, shows in
             if !shows { railHasRevealed = false }
+        }
+        .onChange(of: viewModel.alphabet.destination) { _, destination in
+            if let destination { nativeScrollTarget.scroll(to: destination.index) }
         }
     }
     #endif
@@ -261,8 +266,7 @@ public struct LibraryBrowseView: View {
                     viewModel: viewModel,
                     railFocusedLetter: $railFocusedLetter,
                     railHasRevealed: $railHasRevealed,
-                    revealThreshold: railRevealThreshold,
-                    scrollTo: { proxy.scrollTo($0, anchor: .top) }
+                    revealThreshold: railRevealThreshold
                 )
             }
             // A transient jumbo letter that appears while flying the rail so
@@ -279,6 +283,9 @@ public struct LibraryBrowseView: View {
             // switch to a non-name sort), so the next name sort starts hidden.
             .onChange(of: viewModel.showsLetterRail) { _, shows in
                 if !shows { railHasRevealed = false }
+            }
+            .onChange(of: viewModel.alphabet.destination) { _, destination in
+                if let destination { proxy.scrollTo(destination.index, anchor: .top) }
             }
         }
         .id(viewModel.contentMode)
@@ -305,6 +312,11 @@ public struct LibraryBrowseView: View {
             }
             if viewModel.supportsCollections {
                 LibraryContentModeControl(viewModel: viewModel, buttonHeight: sortButtonHeight)
+            }
+            if viewModel.alphabet.isVisible {
+                LibraryAlphabetMenu(entries: viewModel.letterEntries, isLoading: viewModel.alphabet.isLoading,
+                                    onSelect: { letter in Task { await viewModel.jumpToLetter(letter) } },
+                                    onRetry: viewModel.retryLetterIndex)
             }
             if !viewModel.availableSortFields.isEmpty {
                 sortControl
@@ -608,7 +620,6 @@ private struct LibraryRailLayer: View {
     @Binding var railFocusedLetter: String?
     @Binding var railHasRevealed: Bool
     let revealThreshold: Int
-    let scrollTo: (Int) -> Void
 
     private var isRailVisible: Bool { viewModel.showsLetterRail && railHasRevealed }
 
@@ -627,10 +638,7 @@ private struct LibraryRailLayer: View {
                     currentLetter: currentLetter,
                     focusedLetter: $railFocusedLetter,
                     onScrollToLetter: { entry in
-                        viewModel.prepareJump(toIndex: entry.startIndex)
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            scrollTo(entry.startIndex)
-                        }
+                        Task { await viewModel.jumpToLetter(entry.letter) }
                     }
                 )
                 // Gate re-renders on the rail's meaningful inputs (entries +
@@ -753,7 +761,14 @@ private struct LibraryLetterRail: View, Equatable {
         .onChange(of: focus) { _, newValue in
             focusedLetter = newValue
             guard let newValue,
-                  let entry = entries.first(where: { $0.letter == newValue }) else { return }
+                  let entry = entries.first(where: { $0.letter == newValue }),
+                  entry.startIndex != nil else { return }
+            onScrollToLetter(entry)
+        }
+        .task(id: focus) {
+            guard let focus, let entry = entries.first(where: { $0.letter == focus }),
+                  entry.startIndex == nil else { return }
+            do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
             onScrollToLetter(entry)
         }
     }

@@ -37,6 +37,10 @@ import Foundation
 /// If a provider ever starts returning its sort key on list items, carry it on
 /// `MediaItem` and compare that instead; the merge itself needs no change.
 public enum MediaItemSortOrder {
+    public static func alphabetBucket(for item: MediaItem) -> String {
+        LibraryLetterIndex.bucket(forPrefix: sortName(item))
+    }
+
     /// Whether items can be ordered locally for `field` — i.e. whether a combined
     /// browse can merge on it rather than interleave.
     public static func supportsLocalOrdering(_ field: SortField) -> Bool {

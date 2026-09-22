@@ -770,7 +770,8 @@ public struct JellyfinClient: Sendable {
         parentID: String,
         includeItemTypes: [String],
         recursive: Bool,
-        nameLessThan: String? = nil
+        nameLessThan: String? = nil,
+        nameStartsWith: String? = nil
     ) async throws -> Int {
         var queryItems = [
             URLQueryItem(name: "ParentId", value: parentID),
@@ -782,6 +783,9 @@ public struct JellyfinClient: Sendable {
         if let nameLessThan, !nameLessThan.isEmpty {
             queryItems.append(URLQueryItem(name: "NameLessThan", value: nameLessThan))
         }
+        if let nameStartsWith, !nameStartsWith.isEmpty {
+            queryItems.append(URLQueryItem(name: "NameStartsWith", value: nameStartsWith))
+        }
         if recursive {
             queryItems.append(URLQueryItem(name: "Recursive", value: "true"))
         }
@@ -789,7 +793,9 @@ public struct JellyfinClient: Sendable {
             queryItems.append(URLQueryItem(name: "IncludeItemTypes", value: includeItemTypes.joined(separator: ",")))
         }
         let endpoint = Endpoint(path: "/Users/\(userID)/Items", queryItems: queryItems, headers: authHeaders)
-        return try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL).TotalRecordCount ?? 0
+        let response = try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
+        guard let count = response.TotalRecordCount, count >= 0 else { throw AppError.invalidResponse }
+        return count
     }
 
     /// Maps a provider-agnostic `SortField` onto Jellyfin's `SortBy` key.

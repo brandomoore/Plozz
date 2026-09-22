@@ -231,31 +231,37 @@ struct PlozziOSLibraryGridView: View {
                         }
                     }
                 } else {
-                    ScrollView {
-                        if viewModel.supportsCollections {
-                            PlozziOSLibraryContentModeControl(viewModel: viewModel)
-                                .padding(.horizontal)
-                                .padding(.vertical, 8)
-                        }
-                        scanBanner
-                        LazyVGrid(
-                            columns: settings.density.density.iOSPosterGridColumns(
-                                horizontalSizeClass: horizontalSizeClass
-                            ),
-                            spacing: 18
-                        ) {
-                            ForEach(0..<total, id: \.self) { index in
-                                PlozziOSLibraryItemCell(
-                                    slot: viewModel.slot(at: index),
-                                    index: index,
-                                    generation: generation,
-                                    provider: provider,
-                                    onAppear: { await viewModel.itemAppeared(at: index, generation: generation) },
-                                    onDisappear: { viewModel.itemDisappeared(at: index, generation: generation) }
-                                )
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            if viewModel.supportsCollections {
+                                PlozziOSLibraryContentModeControl(viewModel: viewModel)
+                                    .padding(.horizontal)
+                                    .padding(.vertical, 8)
                             }
+                            scanBanner
+                            LazyVGrid(
+                                columns: settings.density.density.iOSPosterGridColumns(
+                                    horizontalSizeClass: horizontalSizeClass
+                                ),
+                                spacing: 18
+                            ) {
+                                ForEach(0..<total, id: \.self) { index in
+                                    PlozziOSLibraryItemCell(
+                                        slot: viewModel.slot(at: index),
+                                        index: index,
+                                        generation: generation,
+                                        provider: provider,
+                                        onAppear: { await viewModel.itemAppeared(at: index, generation: generation) },
+                                        onDisappear: { viewModel.itemDisappeared(at: index, generation: generation) }
+                                    )
+                                    .id(index)
+                                }
+                            }
+                            .padding()
                         }
-                        .padding()
+                        .onChange(of: viewModel.alphabet.destination) { _, destination in
+                            if let destination { proxy.scrollTo(destination.index, anchor: .top) }
+                        }
                     }
                     .id(viewModel.contentMode)
                 }
@@ -283,6 +289,8 @@ struct PlozziOSLibraryGridView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
+            LibraryAlphabetStatus(letter: viewModel.alphabet.jumpingTo, message: viewModel.alphabet.message,
+                                  onCancel: viewModel.cancelLetterJump)
             if let error = viewModel.pageError {
                 HStack {
                     Text(error.userMessage)
@@ -296,6 +304,13 @@ struct PlozziOSLibraryGridView: View {
             }
         }
         .toolbar {
+            if viewModel.alphabet.isVisible {
+                ToolbarItem(placement: .primaryAction) {
+                    LibraryAlphabetMenu(entries: viewModel.letterEntries, isLoading: viewModel.alphabet.isLoading,
+                                        onSelect: { letter in Task { await viewModel.jumpToLetter(letter) } },
+                                        onRetry: viewModel.retryLetterIndex)
+                }
+            }
             if let library = viewModel.fileBrowserLibrary {
                 ToolbarItem(placement: .primaryAction) {
                     NavigationLink(
@@ -315,6 +330,7 @@ struct PlozziOSLibraryGridView: View {
             }
         }
         .task { await viewModel.loadFirstPageIfNeeded() }
+        .onDisappear { viewModel.cancelLetterJump() }
         .plozziOSLibraryDestination(appModel: appModel)
         .background {
             if viewModel.isMediaShare {

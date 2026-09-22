@@ -14,9 +14,11 @@ public struct LibraryLetterIndexEntry: Equatable, Sendable {
     public let letter: String
     /// 0-based index of the first item under `letter`, in the grid's current
     /// sort order. Feeds `ScrollViewReader.scrollTo(_:)`.
-    public let startIndex: Int
+    /// Nil for providers that resolve an exact position on demand (for example,
+    /// a deduplicated cross-server list). Never substitute a guessed offset.
+    public let startIndex: Int?
 
-    public init(letter: String, startIndex: Int) {
+    public init(letter: String, startIndex: Int? = nil) {
         self.letter = letter
         self.startIndex = startIndex
     }
@@ -29,6 +31,48 @@ public struct LibraryLetterIndexEntry: Equatable, Sendable {
 /// tricky ascending-vs-descending index arithmetic is unit-testable without a
 /// network.
 public enum LibraryLetterIndex {
+    public static func deferredEntries(direction: SortDirection) -> [LibraryLetterIndexEntry] {
+        let letters = direction == .ascending ? railLetters : Array(railLetters.reversed())
+        return letters.map { LibraryLetterIndexEntry(letter: $0) }
+    }
+
+    /// Walks only as far as the requested target, reusing the provider's paging
+    /// cache. Cancellation is checked between pages and before returning a target.
+    public static func findPosition(
+        pageSize: Int = 200,
+        fetch: @Sendable (Int, Int) async throws -> MediaPage,
+        matches: @Sendable (MediaItem) async throws -> Bool
+    ) async throws -> Int? {
+        let limit = max(1, min(pageSize, 200))
+        var offset = 0
+        var previousLastIDs = Set<String>()
+        while true {
+            try Task.checkCancellation()
+            let page = try await fetch(offset, limit)
+            try Task.checkCancellation()
+            guard page.startIndex == offset, page.totalCount >= 0,
+                  page.items.count <= limit else { throw AppError.invalidResponse }
+            for (index, item) in page.items.enumerated() {
+                try Task.checkCancellation()
+                if try await matches(item) {
+                    try Task.checkCancellation()
+                    return offset + index
+                }
+            }
+            if page.items.isEmpty {
+                guard offset >= page.totalCount else { throw AppError.serverUnreachable }
+                return nil
+            }
+            let last = page.items[page.items.count - 1]
+            let key = "\(last.sourceAccountID ?? ""):\(last.id)"
+            guard previousLastIDs.insert(key).inserted else { throw AppError.invalidResponse }
+            let (next, overflow) = offset.addingReportingOverflow(page.items.count)
+            guard !overflow else { throw AppError.invalidResponse }
+            offset = next
+            if page.totalCount > 0, offset >= page.totalCount { return nil }
+        }
+    }
+
     /// The canonical rail buckets, in ascending sort order: the `"#"` catch-all
     /// (digits/symbols) first, then `"A"`…`"Z"`. Providers normalise their raw
     /// first-character data onto these buckets.
@@ -64,24 +108,19 @@ public enum LibraryLetterIndex {
         bucketCountsAscending: [(letter: String, count: Int)],
         direction: SortDirection
     ) -> [LibraryLetterIndexEntry] {
-        let total = bucketCountsAscending.reduce(0) { $0 + max(0, $1.count) }
-        guard total > 0 else { return [] }
-
+        let ordered = direction == .ascending ? bucketCountsAscending : Array(bucketCountsAscending.reversed())
         var entries: [LibraryLetterIndexEntry] = []
+        var seen = Set<String>()
         var cumulativeBefore = 0
-        for (letter, rawCount) in bucketCountsAscending {
+        for (letter, rawCount) in ordered {
             let count = max(0, rawCount)
             guard count > 0 else { continue }
-            // Ascending: the letter starts right after everything before it.
-            // Descending: the whole list is reversed, so this letter's first
-            // item is its ascending-last item — total - (items up to & incl it).
-            let start = direction == .ascending
-                ? cumulativeBefore
-                : total - (cumulativeBefore + count)
-            entries.append(LibraryLetterIndexEntry(letter: letter, startIndex: start))
+            if seen.insert(letter).inserted {
+                entries.append(LibraryLetterIndexEntry(letter: letter, startIndex: cumulativeBefore))
+            }
             cumulativeBefore += count
         }
-        return entries.sorted { $0.startIndex < $1.startIndex }
+        return entries
     }
 
     /// Assembles the index from *cumulative* "count of items that sort before
@@ -94,10 +133,13 @@ public enum LibraryLetterIndex {
     ///     `offsetsByLetter["A"]` therefore equals the size of the `"#"` bucket.
     ///   - totalCount: the library's total item count (the upper bound for the
     ///     final, `Z`-and-beyond bucket).
+    ///   - lastLetterCount: when available, separates Z from non-Latin titles
+    ///     sorting after it. The first catch-all range in the active direction wins.
     ///   - direction: the grid's active sort direction.
     public static func entries(
         lessThanOffsetsByLetter offsetsByLetter: [String: Int],
         totalCount: Int,
+        lastLetterCount: Int? = nil,
         direction: SortDirection
     ) -> [LibraryLetterIndexEntry] {
         guard totalCount > 0 else { return [] }
@@ -116,8 +158,12 @@ public enum LibraryLetterIndex {
             let start = offset(before: letter)
             let nextStart: Int = (i + 1 < letters.count)
                 ? max(start, offset(before: letters[i + 1]))
-                : totalCount
+                : lastLetterCount.map { min(totalCount, start + max(0, $0)) } ?? totalCount
             buckets.append((letter: letter, count: nextStart - start))
+        }
+        if let lastLetterCount {
+            let end = min(totalCount, offset(before: "Z") + max(0, lastLetterCount))
+            buckets.append((letter: "#", count: totalCount - end))
         }
         return entries(bucketCountsAscending: buckets, direction: direction)
     }

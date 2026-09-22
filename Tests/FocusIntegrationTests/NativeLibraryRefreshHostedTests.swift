@@ -9,6 +9,33 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testDeferredAlphabetJumpScrollsToLoadedNativeCardAndRetainsUsableFocus() async throws {
+        let provider = RefreshLibraryProvider()
+        await provider.enableAlphabet()
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie,
+            defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await model.loadFirstPage()
+        var selected: MediaItem?
+        try await withGrid(model: model, onSelect: { selected = $0 }) { collection in
+            XCTAssertTrue(model.alphabet.isVisible, "The header entry must be available before scrolling")
+            let index = await model.jumpToLetter("M")
+            XCTAssertEqual(index, 140)
+            try await Task.sleep(for: .milliseconds(700))
+            collection.layoutIfNeeded()
+            let path = IndexPath(item: 140, section: 0)
+            XCTAssertTrue(collection.indexPathsForVisibleItems.contains(path))
+            let cell = try XCTUnwrap(collection.cellForItem(at: path) as? NativeTVLibraryCell)
+            XCTAssertEqual(cell.item?.title, "Movie 140")
+            XCTAssertTrue(cell.onRequestFocus?() == true)
+            try await Task.sleep(for: .milliseconds(300))
+            XCTAssertTrue(cell.isFocused)
+            XCTAssertTrue(UIFocusSystem(for: cell)?.focusedItem === cell)
+            collection.delegate?.collectionView?(collection, didSelectItemAt: path)
+            XCTAssertEqual(selected?.id, "Before-140")
+        }
+    }
+
     func testCorrectedPageTotalsPreserveScrollAndExistingCells() async throws {
         let provider = RefreshLibraryProvider()
         let model = LibraryBrowseViewModel(provider: provider, containerID: "library", containerKind: .movie)
@@ -252,9 +279,20 @@ private actor RefreshLibraryProvider: MediaProvider {
     private var prefix = "Before"
     private var fails = false
     private var pageCap: Int?
+    private var alphabetEnabled = false
     private var heldStart: Int?
     private var heldPage: CheckedContinuation<Void, Never>?
     var isHoldingPage: Bool { heldPage != nil }
+
+    func enableAlphabet() { alphabetEnabled = true }
+    func letterIndex(in containerID: String, kind: MediaItemKind,
+                     sort: CoreModels.SortDescriptor) async throws -> [LibraryLetterIndexEntry] {
+        alphabetEnabled && sort.field == .name ? [.init(letter: "A"), .init(letter: "M")] : []
+    }
+    func letterPosition(in containerID: String, kind: MediaItemKind, letter: String,
+                        sort: CoreModels.SortDescriptor) async throws -> Int? {
+        letter == "M" ? 140 : 0
+    }
 
     func change(total: Int, prefix: String) {
         self.total = total
@@ -273,7 +311,8 @@ private actor RefreshLibraryProvider: MediaProvider {
         let end = min(total, page.startIndex + min(page.limit, pageCap ?? page.limit))
         let response = MediaPage(
             items: (min(page.startIndex, end)..<end).map {
-                MediaItem(id: "\(prefix)-\($0)", title: "\(prefix) \($0)", kind: .movie)
+                MediaItem(id: "\(prefix)-\($0)",
+                          title: "\(alphabetEnabled ? ($0 < 140 ? "Alpha" : "Movie") : prefix) \($0)", kind: .movie)
             }, startIndex: page.startIndex, totalCount: total)
         if heldStart == page.startIndex {
             heldStart = nil

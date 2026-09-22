@@ -827,6 +827,13 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
                 includeItemTypes: includeItemTypes, recursive: recursive
             )
         }
+        async let lastLetterTask: Int = limiter.run {
+            try await client.itemCount(
+                userID: userID, parentID: containerID,
+                includeItemTypes: includeItemTypes, recursive: recursive,
+                nameStartsWith: "Z"
+            )
+        }
 
         var offsets: [String: Int] = [:]
         try await withThrowingTaskGroup(of: (String, Int).self) { group in
@@ -845,9 +852,19 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             for try await (letter, count) in group { offsets[letter] = count }
         }
         let total = try await totalTask
+        let lastLetterCount = try await lastLetterTask
+        var previous = 0
+        for letter in letters {
+            guard let offset = offsets[letter], offset >= previous, offset <= total else {
+                throw AppError.invalidResponse
+            }
+            previous = offset
+        }
+        guard lastLetterCount <= total - previous else { throw AppError.invalidResponse }
 
         let entries = LibraryLetterIndex.entries(
-            lessThanOffsetsByLetter: offsets, totalCount: total, direction: sort.direction
+            lessThanOffsetsByLetter: offsets, totalCount: total, lastLetterCount: lastLetterCount,
+            direction: sort.direction
         )
         PlozzLog.networking.info(
             "Library letter index: container=\(containerID) total=\(total) letters=\(entries.count) dir=\(sort.direction.rawValue)"
