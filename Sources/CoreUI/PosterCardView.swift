@@ -48,6 +48,8 @@ public struct PosterCardView: View {
     private let showsActionsMenu: Bool
     /// Keeps a Watchlist card visibly in flight while its durable row catches up.
     private let isPendingRemoval: Bool
+    private let focusRequest: UUID?
+    private let onFocusRequestHandled: (() -> Void)?
     private let action: () -> Void
 
     @PlozzCardFocus private var isFocused: Bool
@@ -83,6 +85,8 @@ public struct PosterCardView: View {
         downloadState: MediaDownloadBadgeState? = nil,
         showsActionsMenu: Bool = false,
         isPendingRemoval: Bool = false,
+        focusRequest: UUID? = nil,
+        onFocusRequestHandled: (() -> Void)? = nil,
         action: @escaping () -> Void
     ) {
         self.item = item
@@ -98,6 +102,8 @@ public struct PosterCardView: View {
         self.downloadState = downloadState
         self.showsActionsMenu = showsActionsMenu
         self.isPendingRemoval = isPendingRemoval
+        self.focusRequest = focusRequest
+        self.onFocusRequestHandled = onFocusRequestHandled
         self.action = action
     }
 
@@ -174,6 +180,14 @@ public struct PosterCardView: View {
             .plozzChromeFocused(isFocused)
             .mediaItemContextMenu(for: item)
             .preloadDetailBackdropOnFocus(for: item, isFocused: isFocused)
+            .onChange(of: focusRequest, initial: true) { _, request in
+                guard request != nil else { return }
+                $isFocused.requestFocus(animated: false)
+                if isFocused { onFocusRequestHandled?() }
+            }
+            .onChange(of: isFocused) { _, focused in
+                if focused, focusRequest != nil { onFocusRequestHandled?() }
+            }
             #if os(tvOS)
             .coordinateSpace(name: detailTransitionSource.coordinateSpace)
             .background {

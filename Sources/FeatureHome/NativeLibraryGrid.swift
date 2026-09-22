@@ -1,5 +1,6 @@
 #if os(tvOS)
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureHomeCore
 import Observation
@@ -10,8 +11,8 @@ import UIKit
 final class NativeLibraryScrollTarget {
     weak var controller: NativeLibraryGridController?
 
-    func scroll(to index: Int) {
-        controller?.scroll(to: index)
+    func scroll(to index: Int, focusesItem: Bool = false) {
+        controller?.scroll(to: index, focusesItem: focusesItem)
     }
 }
 
@@ -202,9 +203,17 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
         headerHost.view.frame = CGRect(origin: .zero, size: headerSize)
     }
 
-    func scroll(to index: Int) {
+    func scroll(to index: Int, focusesItem: Bool = false) {
         guard index >= 0, index < total else { return }
-        collection.scrollToItem(at: IndexPath(item: index, section: 0), at: .top, animated: true)
+        let path = IndexPath(item: index, section: 0)
+        collection.scrollToItem(at: path, at: .top, animated: !focusesItem)
+        guard focusesItem else { return }
+        collection.layoutIfNeeded()
+        guard let cell = collection.cellForItem(at: path) as? NativeTVLibraryCell,
+              cell.onRequestFocus?() == true else {
+            PlozzLog.app.error("Library alphabet destination did not accept focus at index \(index)")
+            return
+        }
     }
 
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { total }

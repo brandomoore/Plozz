@@ -51,6 +51,45 @@ final class LibraryAlphabetTests: XCTestCase {
         XCTAssertTrue(vm.showsLetterRail)
     }
 
+    func testUnloadedViewportRetainsLastLetterUntilItsPageArrives() async {
+        let source = provider()
+        source.allItems = (0..<100).map {
+            MediaItem(id: "\($0)", title: "\($0 < 70 ? "Alpha" : "Zulu") \($0)", kind: .movie)
+        }
+        source.alphabetEntries = LibraryLetterIndex.deferredEntries(direction: .ascending)
+        let started = expectation(description: "Unloaded viewport requested")
+        source.pageHooks[70] = {
+            started.fulfill()
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let vm = model(source)
+        await vm.loadFirstPage()
+        await waitForIndex(vm)
+        XCTAssertEqual(vm.alphabet.positionLetter, "A")
+        let paging = Task { await vm.itemAppeared(at: 70) }
+        await fulfillment(of: [started], timeout: 1)
+        XCTAssertNil(vm.letter(forIndex: 70))
+        XCTAssertEqual(vm.alphabet.positionLetter, "A")
+        XCTAssertTrue(vm.alphabet.isPositionLoading)
+        await paging.value
+        XCTAssertEqual(vm.alphabet.positionLetter, "Z")
+        XCTAssertFalse(vm.alphabet.isPositionLoading)
+        await vm.setSort(.init(field: .dateAdded, direction: .descending))
+        XCTAssertNil(vm.alphabet.positionLetter)
+        XCTAssertFalse(vm.alphabet.isPositionLoading)
+    }
+
+    func testRailJumpDoesNotRequestFocusButExplicitSelectionDoes() async {
+        let source = provider()
+        let vm = model(source)
+        await vm.loadFirstPage()
+        await waitForIndex(vm)
+        _ = await vm.jumpToLetter("M", focusesItem: false)
+        XCTAssertEqual(vm.alphabet.destination?.focusesItem, false)
+        _ = await vm.jumpToLetter("M")
+        XCTAssertEqual(vm.alphabet.destination?.focusesItem, true)
+    }
+
     func testViewportCallbacksDoNotPruneThePendingLandingPage() async {
         let source = provider()
         let started = expectation(description: "Landing page requested")

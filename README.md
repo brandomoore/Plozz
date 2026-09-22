@@ -89,6 +89,8 @@ presents them as a single library rather than a set of tabs you switch between.
   libraries. Apple TV also keeps its fast-scroll letter rail. Silo and combined
   libraries resolve exact positions on demand; a deep first jump may take time,
   can be cancelled, and leaves the current view in place until its titles load.
+  TV menu selections move focus to the destination card; rail navigation keeps
+  focus on the letters. The rail retains its last known letter while titles load.
   Other sorts and collection-member lists keep their own ordering.
 - **Common Sense Media in Ratings** — Plex movie and show details can display
   a prominent recommended age, separate from review scores. When header ratings

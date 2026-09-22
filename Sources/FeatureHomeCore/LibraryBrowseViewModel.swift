@@ -451,6 +451,7 @@ public final class LibraryBrowseViewModel {
                 }
                 self.alphabet.entries = entries
                 self.alphabet.isLoading = false
+                self.updateAlphabetPosition()
             } catch {
                 guard !Task.isCancelled, generation == self.contentGeneration, sortAtRequest == self.sort else { return }
                 PlozzLog.app.error("Library alphabet index failed: \(String(describing: error))")
@@ -469,8 +470,9 @@ public final class LibraryBrowseViewModel {
         alphabet.cancelJump()
     }
 
-    public func jumpToLetter(_ letter: String) async -> Int? {
+    public func jumpToLetter(_ letter: String, focusesItem: Bool = true) async -> Int? {
         guard let entry = letterEntries.first(where: { $0.letter == letter }) else { return nil }
+        alphabet.focusesItem = focusesItem
         if alphabet.jumpingTo == letter, let task = alphabet.jumpTask { return await task.value }
         cancelLetterJump()
         let id = alphabet.jumpID
@@ -515,7 +517,8 @@ public final class LibraryBrowseViewModel {
                     throw AppError.serverUnreachable
                 }
                 self.prepareJump(toIndex: index)
-                self.alphabet.destination = LibraryAlphabetDestination(index: index)
+                self.alphabet.destination = LibraryAlphabetDestination(
+                    index: index, focusesItem: self.alphabet.focusesItem)
                 return index
             } catch {
                 guard !Task.isCancelled, self.alphabet.jumpID == id else { return nil }
@@ -544,6 +547,11 @@ public final class LibraryBrowseViewModel {
         return match
     }
 
+    private func updateAlphabetPosition() {
+        guard !letterEntries.isEmpty else { return }
+        alphabet.updatePosition(letter(forIndex: topVisibleIndex ?? 0))
+    }
+
     /// The top-most currently-visible grid index (smallest visible index), used
     /// to keep the rail's current-letter highlight in sync with a manual scroll.
     /// Stored — not computed off `visibleIndices` — so the alphabet rail (its only
@@ -559,7 +567,10 @@ public final class LibraryBrowseViewModel {
     /// rail highlight stays put and observers aren't churned needlessly.
     private func updateTopVisibleIndex() {
         guard let newTop = visibleIndices.min() else { return }
-        if topVisibleIndex != newTop { topVisibleIndex = newTop }
+        if topVisibleIndex != newTop {
+            topVisibleIndex = newTop
+            updateAlphabetPosition()
+        }
     }
 
     /// Called when the cell at `index` appears. Loads the page that owns `index`
@@ -910,6 +921,7 @@ public final class LibraryBrowseViewModel {
         for (offset, item) in page.items.enumerated() {
             loaded[page.startIndex + offset].item = tagged(item)
         }
+        updateAlphabetPosition()
     }
 
     /// Stamps an item with this library's owning account (if any).

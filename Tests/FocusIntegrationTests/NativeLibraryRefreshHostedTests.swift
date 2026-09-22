@@ -1,6 +1,7 @@
 #if os(tvOS)
 import CoreModels
-import CoreUI
+@testable import CoreUI
+@testable import AppShell
 @testable import FeatureHome
 import FeatureHomeCore
 import SwiftUI
@@ -9,6 +10,95 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testMenuSelectionCommitsOnlyAfterPresentedControllerDismisses() async throws {
+        let provider = RefreshLibraryProvider()
+        let model = LibraryBrowseViewModel(provider: provider, containerID: "library", containerKind: .movie)
+        await model.loadFirstPage()
+        try await withLibrary(model: model) { root, window in
+            let host = try XCTUnwrap(window.rootViewController)
+            let completion = LibraryAlphabetMenuCompletion.Controller()
+            host.addChild(completion)
+            root.addSubview(completion.view)
+            completion.didMove(toParent: host)
+            defer {
+                completion.update(selection: nil, onCommit: nil)
+                completion.willMove(toParent: nil)
+                completion.view.removeFromSuperview()
+                completion.removeFromParent()
+            }
+            let menu = UIAlertController(title: "Letters", message: nil, preferredStyle: .alert)
+            menu.addAction(UIAlertAction(title: "M", style: .default))
+            await withCheckedContinuation { continuation in
+                host.present(menu, animated: true) { continuation.resume() }
+            }
+            var committed: [String] = []
+            let finished = expectation(description: "Menu selection committed after dismissal")
+            completion.update(selection: "M") { letter in
+                committed.append(letter)
+                finished.fulfill()
+            }
+            try await Task.sleep(for: .milliseconds(150))
+            XCTAssertTrue(committed.isEmpty, "The menu still owns focus")
+            await withCheckedContinuation { continuation in
+                menu.dismiss(animated: true) { continuation.resume() }
+            }
+            await fulfillment(of: [finished], timeout: 2)
+            XCTAssertEqual(committed, ["M"])
+            completion.update(selection: nil, onCommit: nil)
+        }
+    }
+
+    func testCustomGridAlphabetJumpTransfersRealFocus() async throws {
+        let provider = RefreshLibraryProvider()
+        await provider.enableAlphabet()
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie,
+            defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await model.loadFirstPage()
+        try await withLibrary(model: model, focusStyle: .highlight) { root, window in
+            let index = await model.jumpToLetter("M")
+            XCTAssertEqual(index, 140)
+            try await Task.sleep(for: .milliseconds(800))
+            let focused = try XCTUnwrap(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+            let item = try XCTUnwrap(model.item(at: 140))
+            let source = try XCTUnwrap(findSource(item.stablePresentationID, in: root))
+            let frame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: focused, relativeTo: source))
+            XCTAssertTrue(frame.contains(CGPoint(x: source.bounds.midX, y: source.bounds.midY)),
+                          "The real SwiftUI focus item must enclose the destination artwork")
+            XCTAssertTrue(window.bounds.intersects(source.convert(source.bounds, to: window)))
+            XCTAssertEqual(source.reference?.isFocused, true, "The destination must also draw its focus highlight")
+        }
+    }
+
+    func testRailPreviewScrollDoesNotStealFocusFromItsControl() async throws {
+        let provider = RefreshLibraryProvider()
+        await provider.enableAlphabet()
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie,
+            defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await model.loadFirstPage()
+        try await withLibrary(model: model) { root, window in
+            let railControl = UIButton(type: .system)
+            railControl.setTitle("M", for: .normal)
+            railControl.frame = CGRect(x: root.bounds.maxX - 100, y: 400, width: 80, height: 70)
+            root.addSubview(railControl)
+            defer { railControl.removeFromSuperview() }
+            window.layoutIfNeeded()
+            let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
+            controller.target = railControl
+            focus.requestFocusUpdate(to: controller)
+            focus.updateFocusIfNeeded()
+            XCTAssertTrue(focus.focusedItem === railControl)
+            controller.target = nil
+            _ = await model.jumpToLetter("M", focusesItem: false)
+            try await Task.sleep(for: .milliseconds(600))
+            XCTAssertTrue(focus.focusedItem === railControl, "Rail navigation only previews the new window")
+            let collection = try XCTUnwrap(find(UICollectionView.self, in: root))
+            XCTAssertTrue(collection.indexPathsForVisibleItems.contains(IndexPath(item: 140, section: 0)))
+        }
+    }
+
     func testDeferredAlphabetJumpScrollsToLoadedNativeCardAndRetainsUsableFocus() async throws {
         let provider = RefreshLibraryProvider()
         await provider.enableAlphabet()
@@ -19,6 +109,16 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         var selected: MediaItem?
         try await withGrid(model: model, onSelect: { selected = $0 }) { collection in
             XCTAssertTrue(model.alphabet.isVisible, "The header entry must be available before scrolling")
+            let window = try XCTUnwrap(collection.window)
+            let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
+            let menu = try XCTUnwrap(findController(LibraryAlphabetMenuCompletion.Controller.self, in: controller))
+            let headerTarget = try XCTUnwrap(NavigationRowFocusRequester.target(for: menu.view, in: window))
+            let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            controller.target = headerTarget
+            focus.requestFocusUpdate(to: controller)
+            focus.updateFocusIfNeeded()
+            XCTAssertTrue(focus.focusedItem === headerTarget, "Begin with the actual header menu focused")
+            controller.target = nil
             let index = await model.jumpToLetter("M")
             XCTAssertEqual(index, 140)
             try await Task.sleep(for: .milliseconds(700))
@@ -27,9 +127,8 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             XCTAssertTrue(collection.indexPathsForVisibleItems.contains(path))
             let cell = try XCTUnwrap(collection.cellForItem(at: path) as? NativeTVLibraryCell)
             XCTAssertEqual(cell.item?.title, "Movie 140")
-            XCTAssertTrue(cell.onRequestFocus?() == true)
             try await Task.sleep(for: .milliseconds(300))
-            XCTAssertTrue(cell.isFocused)
+            XCTAssertTrue(cell.isFocused, "A committed alphabet jump must transfer actual focus, not just scroll")
             XCTAssertTrue(UIFocusSystem(for: cell)?.focusedItem === cell)
             collection.delegate?.collectionView?(collection, didSelectItemAt: path)
             XCTAssertEqual(selected?.id, "Before-140")
@@ -232,6 +331,17 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         onSelect: @escaping (MediaItem) -> Void = { _ in },
         body: (UICollectionView) async throws -> Void
     ) async throws {
+        try await withLibrary(model: model, onSelect: onSelect) { root, _ in
+            try await body(XCTUnwrap(find(UICollectionView.self, in: root)))
+        }
+    }
+
+    private func withLibrary(
+        model: LibraryBrowseViewModel,
+        focusStyle: CardFocusStyle = .system,
+        onSelect: @escaping (MediaItem) -> Void = { _ in },
+        body: (UIView, UIWindow) async throws -> Void
+    ) async throws {
         let scene = try XCTUnwrap(
             UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
                 .first { $0.activationState == .foregroundActive })
@@ -240,10 +350,16 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         let host = UIHostingController(
             rootView:
                 LibraryBrowseView(viewModel: model, title: Text("Library"), onSelect: onSelect)
-                .environment(\.plozzCardFocusStyle, .system)
+                .environment(\.plozzCardFocusStyle, focusStyle)
                 .environment(\.plozzCardStyle, .borderless)
         )
-        window.rootViewController = host
+        let container = LibraryFocusFixtureController()
+        container.addChild(host)
+        container.view.addSubview(host.view)
+        host.view.frame = window.bounds
+        host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        host.didMove(toParent: container)
+        window.rootViewController = container
         window.makeKeyAndVisible()
         window.layoutIfNeeded()
         defer {
@@ -252,7 +368,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         try await Task.sleep(for: .milliseconds(400))
-        try await body(XCTUnwrap(find(UICollectionView.self, in: host.view)))
+        try await body(container.view, window)
     }
 
     private func waitForHeldPage(_ provider: RefreshLibraryProvider) async {
@@ -266,6 +382,23 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
     private func find<T: UIView>(_ type: T.Type, in view: UIView) -> T? {
         if let result = view as? T { return result }
         return view.subviews.lazy.compactMap { self.find(type, in: $0) }.first
+    }
+
+    private func findSource(_ itemKey: String, in view: UIView) -> DetailTransitionSourceView? {
+        if let source = view as? DetailTransitionSourceView, source.reference?.itemKey == itemKey { return source }
+        return view.subviews.lazy.compactMap { self.findSource(itemKey, in: $0) }.first
+    }
+
+    private func findController<T: UIViewController>(_ type: T.Type, in controller: UIViewController) -> T? {
+        if let result = controller as? T { return result }
+        return controller.children.lazy.compactMap { self.findController(type, in: $0) }.first
+    }
+}
+
+private final class LibraryFocusFixtureController: UIViewController {
+    weak var target: (any UIFocusEnvironment)?
+    override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+        target.map { [$0] } ?? super.preferredFocusEnvironments
     }
 }
 
