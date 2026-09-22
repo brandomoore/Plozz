@@ -2191,7 +2191,7 @@ private struct PlozziOSDetailPageSettingsView: View {
                     Text("Rating sources & order")
                 }
             } footer: {
-                Text("The Common Sense age appears separately from review scores. Missing scores are skipped in your source order, and extra badges can wrap. Full ratings remain in title information. Spoiler settings still apply.")
+                Text("Compact headers stay on one line. Tap the row for more ratings and picture or sound details. Missing scores are skipped in your source order. Spoiler settings still apply.")
             }
             SettingsSectionGroup("Behind the hero") {
                 Picker(
