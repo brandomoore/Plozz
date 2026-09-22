@@ -19,6 +19,8 @@ public struct PendingSyncedServersStore: Sendable {
     public static let ignoredKey = "com.plozz.syncSetup.ignoredServers.v1"
     /// Ids we've already surfaced a prompt for, so a device is nudged only once per server.
     public static let promptedKey = "com.plozz.syncSetup.promptedServers.v1"
+    /// Full-page setup offers deferred to Settings on this device.
+    public static let deferredSetupKey = "com.plozz.syncSetup.deferredSetup.v1"
 
     private let defaults: UserDefaults
     public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
@@ -84,6 +86,7 @@ public struct PendingSyncedServersStore: Sendable {
         all[id] = nil
         store(all.values.sorted { $0.id < $1.id })
         unignore(id)
+        clearSetupDeferral(id)
     }
 
     /// The needs-sign-in list: synced descriptors this device isn't signed into and
@@ -115,11 +118,35 @@ public struct PendingSyncedServersStore: Sendable {
         defaults.set(Array(set), forKey: Self.promptedKey)
     }
 
+    public func setupOffers(from candidates: [SyncedAccountDescriptor]) -> [SyncedAccountDescriptor] {
+        let deferred = deferredSetupIDs
+        return candidates.filter { !deferred.contains($0.id) }
+    }
+
+    /// Keep the servers available in Settings without prompting again on launch.
+    public mutating func deferSetup(_ ids: [String]) {
+        var deferred = deferredSetupIDs
+        deferred.formUnion(ids)
+        defaults.set(Array(deferred), forKey: Self.deferredSetupKey)
+        markPrompted(ids)
+    }
+
+    private var deferredSetupIDs: Set<String> {
+        Set(defaults.stringArray(forKey: Self.deferredSetupKey) ?? [])
+    }
+
+    private mutating func clearSetupDeferral(_ id: String) {
+        var deferred = deferredSetupIDs
+        deferred.remove(id)
+        defaults.set(Array(deferred), forKey: Self.deferredSetupKey)
+    }
+
     /// Forget a descriptor entirely (e.g. the user deleted it). It'll reappear only
     /// if the household re-adds it and it syncs again.
     public mutating func forget(_ id: String) {
         store(storedDescriptors.filter { $0.id != id })
         unignore(id)
+        clearSetupDeferral(id)
     }
 
     /// Forget EVERY synced descriptor and the ignored/prompted bookkeeping — used
@@ -129,6 +156,7 @@ public struct PendingSyncedServersStore: Sendable {
         store([])
         defaults.set([String](), forKey: Self.ignoredKey)
         defaults.set([String](), forKey: Self.promptedKey)
+        defaults.set([String](), forKey: Self.deferredSetupKey)
     }
 
     public var promptedIDs: Set<String> {
@@ -155,5 +183,6 @@ public struct PendingSyncedServersStore: Sendable {
         defaults.set(Array(prunedIgnored), forKey: Self.ignoredKey)
         let prunedPrompted = promptedIDs.intersection(toKeep)
         defaults.set(Array(prunedPrompted), forKey: Self.promptedKey)
+        defaults.set(Array(deferredSetupIDs.intersection(toKeep)), forKey: Self.deferredSetupKey)
     }
 }
