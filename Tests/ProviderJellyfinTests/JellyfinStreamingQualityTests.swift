@@ -16,6 +16,42 @@ private struct StreamingErrorHTTP: HTTPClient {
 }
 
 final class JellyfinStreamingQualityTests: XCTestCase {
+    func testHEVCConversionRetainsTenBitCapabilityInsteadOfDefaultingToEightBit() throws {
+        let profile = JellyfinCapabilityProfile.appleTV(
+            capabilities: .init(supportsHEVC: true, supportsHDR10: true)
+        )
+        let limited = profile.applying(.init(quality: .low, codec: .preferHEVC))
+        let hevc = try XCTUnwrap(limited.codecProfiles.first { $0.codec == "hevc" })
+        XCTAssertTrue(hevc.conditions.contains {
+            $0.property == "VideoBitDepth" && $0.condition == "LessThanEqual" && $0.value == "10"
+        })
+        let h264 = try XCTUnwrap(limited.codecProfiles.first { $0.codec == "h264" })
+        XCTAssertTrue(h264.conditions.contains { $0.property == "VideoBitDepth" && $0.value == "8" })
+        XCTAssertEqual(profile, .appleTV(capabilities: .init(supportsHEVC: true, supportsHDR10: true)),
+                       "Mobile conversion must not mutate the ordinary playback profile")
+
+        let source = try JSONDecoder().decode(MediaSourceInfo.self, from: Data("""
+        {"Id":"version","TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=hevc&hevc-profile=main,main10&MaxVideoBitDepth=8",
+         "MediaStreams":[{"Index":0,"Type":"Video","Codec":"hevc","BitDepth":10,"ExtendedVideoType":"Hdr10"}]}
+        """.utf8))
+        let query = try XCTUnwrap(URLComponents(string: source.boundedTranscodingURL(
+            .init(quality: .low, codec: .preferHEVC), supportsHEVC: true
+        ))?.queryItems)
+        XCTAssertEqual(query.first { $0.name == "MaxVideoBitDepth" }?.value, "10")
+        XCTAssertEqual(query.first { $0.name == "hevc-videobitdepth" }?.value, "10")
+        XCTAssertEqual(query.first { $0.name == "hevc-profile" }?.value, "main10")
+        XCTAssertEqual(query.first { $0.name == "VideoBitrate" }?.value, "372000")
+        XCTAssertEqual(query.first { $0.name == "AudioBitrate" }?.value, "128000")
+        XCTAssertEqual(query.first { $0.name == "MaxHeight" }?.value, "240")
+
+        let fallback = try XCTUnwrap(URLComponents(string: source.boundedTranscodingURL(
+            .init(quality: .low, codec: .preferH264), supportsHEVC: true
+        ))?.queryItems)
+        XCTAssertEqual(fallback.first { $0.name == "VideoCodec" }?.value, "h264")
+        XCTAssertEqual(fallback.first { $0.name == "MaxVideoBitDepth" }?.value, "8")
+        XCTAssertEqual(fallback.first { $0.name == "h264-videobitdepth" }?.value, "8")
+    }
+
     func testHEVCOnlyRetryCannotSilentlyRestartTheRejectedH264Rendition() throws {
         let source = try JSONDecoder().decode(MediaSourceInfo.self, from: Data(
             #"{"Id":"version","TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=h264"}"#.utf8
@@ -54,6 +90,14 @@ final class JellyfinStreamingQualityTests: XCTestCase {
                     let profile = try XCTUnwrap(object["DeviceProfile"] as? [String: Any])
                     let targets = try XCTUnwrap(profile["TranscodingProfiles"] as? [[String: Any]])
                     XCTAssertEqual(targets.first?["VideoCodec"] as? String, capable ? capableCodecs : "h264")
+                    if capable {
+                        let codecProfiles = try XCTUnwrap(profile["CodecProfiles"] as? [[String: Any]])
+                        let hevc = try XCTUnwrap(codecProfiles.first { $0["Codec"] as? String == "hevc" })
+                        let conditions = try XCTUnwrap(hevc["Conditions"] as? [[String: Any]])
+                        XCTAssertTrue(conditions.contains {
+                            $0["Property"] as? String == "VideoBitDepth" && $0["Value"] as? String == "10"
+                        })
+                    }
                     XCTAssertEqual(object["MaxStreamingBitrate"] as? Int, 2_000_000)
                     XCTAssertEqual(object["MediaSourceId"] as? String, "version")
                 }

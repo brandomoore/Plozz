@@ -30,6 +30,9 @@ extension JellyfinProvider: StreamingQualityProviding {
 }
 
 extension JellyfinCapabilityProfile {
+    static let streamingHEVCBitDepth = 10
+    static let streamingH264BitDepth = 8
+
     var canRequestHEVC: Bool {
         transcodingProfiles.contains { $0.videoCodec.split(separator: ",").contains("hevc") }
     }
@@ -45,6 +48,18 @@ extension JellyfinCapabilityProfile {
                 .joined(separator: ",")
             result.transcodingProfiles[index].audioCodec = "aac"
             result.transcodingProfiles[index].maxAudioChannels = "2"
+        }
+        for index in result.codecProfiles.indices {
+            let depth: Int
+            switch result.codecProfiles[index].codec {
+            case "hevc": depth = Self.streamingHEVCBitDepth
+            case "h264": depth = Self.streamingH264BitDepth
+            default: continue
+            }
+            result.codecProfiles[index].conditions.append(.init(
+                condition: "LessThanEqual", property: "VideoBitDepth",
+                value: String(depth), isRequired: false
+            ))
         }
         if let height = options.quality.maximumHeight, let width = options.quality.maximumWidth {
             result.codecProfiles.append(.init(type: "Video", codec: "", conditions: [
@@ -122,6 +137,19 @@ extension MediaSourceInfo {
             set("VideoCodec", "hevc")
         } else if !supportsHEVC || options.codec == .preferH264 || !["h264", "hevc"].contains(videoCodec?.lowercased() ?? "") {
             set("VideoCodec", "h264")
+        }
+        let selectedCodec = query.first { $0.name.caseInsensitiveCompare("VideoCodec") == .orderedSame }?.value?.lowercased()
+        if selectedCodec == "hevc" {
+            let depth = String(JellyfinCapabilityProfile.streamingHEVCBitDepth)
+            set("MaxVideoBitDepth", depth)
+            set("hevc-videobitdepth", depth)
+            if (MediaStreams?.first { $0.Type == "Video" }?.BitDepth ?? 0) > 8 {
+                set("hevc-profile", "main10")
+            }
+        } else {
+            let depth = String(JellyfinCapabilityProfile.streamingH264BitDepth)
+            set("MaxVideoBitDepth", depth)
+            set("h264-videobitdepth", depth)
         }
         set("AudioCodec", "aac")
         url.queryItems = query

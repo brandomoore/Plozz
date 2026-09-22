@@ -112,6 +112,11 @@ or the requested preference as proof of output. Direct play remains preferred
 when the original fits the limit; the codec preference does not force conversion.
 HEVC output
 depends on server version, encoder support, permissions, and configuration;
+Jellyfin/Emby mobile profiles explicitly advertise 10-bit HEVC capability and
+8-bit H.264. Their rendition requests carry those limits through to the encoder;
+10-bit sources requested as HEVC also select Main 10. A profile name alone is
+not proof of 10-bit output, and these requests do not claim HDR is preserved or
+that the server performed tone mapping.
 Plex hardware transcoding generally requires Plex Pass. Force transcoding is
 an advanced option, not a server hardware-encoder selector. Transcoding may
 change HDR/audio formats. A failed bounded rendition never retries the original
