@@ -52,7 +52,6 @@ public struct DetailHeaderMetadataRow: View {
                         metadataLine(ratingCount: count, showsFormats: false)
                     }
                     disclosureChevron
-                        .accessibilityLabel(Text(detailsTitle))
                 }
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
@@ -115,7 +114,9 @@ public struct DetailHeaderMetadataRow: View {
                     ForEach(badges) { MetadataMediaBadgeChip(badge: $0) }
                 }
             }
-            disclosureChevron.accessibilityHidden(true)
+            disclosureChevron.accessibilityHidden(
+                familyGuidanceAge != nil || ratingCount > 0 || (showsFormats && !badges.isEmpty)
+            )
         }
         .fixedSize(horizontal: true, vertical: true)
     }
@@ -124,6 +125,7 @@ public struct DetailHeaderMetadataRow: View {
         Image(systemName: "chevron.forward")
             .font(.caption.weight(.semibold))
             .plozzForeground(.secondary)
+            .accessibilityLabel(Text(detailsTitle))
     }
 
     private var detailsTitle: LocalizedStringResource {
