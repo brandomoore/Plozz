@@ -12,7 +12,7 @@ public extension EnvironmentValues {
     }
 }
 
-public struct HeaderRatingPreviewControls: View {
+public struct HeaderReviewScoreCountPicker: View {
     @Binding private var settings: DetailPageSettings
 
     public init(settings: Binding<DetailPageSettings>) {
@@ -20,7 +20,6 @@ public struct HeaderRatingPreviewControls: View {
     }
 
     public var body: some View {
-        Toggle("Show Common Sense age", isOn: $settings.showsHeaderFamilyGuidance)
         Picker("Review scores shown", selection: $settings.maxHeaderRatings) {
             ForEach(Array(DetailPageSettings.headerRatingCountRange), id: \.self) { count in
                 Text(count, format: .number).tag(count)
@@ -29,7 +28,7 @@ public struct HeaderRatingPreviewControls: View {
     }
 }
 
-/// One line at every width; formats yield before lower-priority ratings.
+/// One line at every width; formats yield individually before lower-priority ratings.
 /// The disclosure always retains the full metadata without shrinking its text.
 public struct DetailHeaderMetadataRow: View {
     private let ratings: [ExternalRating]
@@ -47,9 +46,8 @@ public struct DetailHeaderMetadataRow: View {
         if !ratings.isEmpty || !badges.isEmpty || familyGuidanceAge != nil {
             Button { showsDetails = true } label: {
                 ViewThatFits(in: .horizontal) {
-                    metadataLine(ratingCount: ratings.count, showsFormats: true)
-                    ForEach(Array((0...ratings.count).reversed()), id: \.self) { count in
-                        metadataLine(ratingCount: count, showsFormats: false)
+                    ForEach(previews, id: \.self) { preview in
+                        metadataLine(ratingCount: preview.ratingCount, badgeCount: preview.badgeCount)
                     }
                     disclosureChevron
                 }
@@ -103,19 +101,33 @@ public struct DetailHeaderMetadataRow: View {
         }
     }
 
-    private func metadataLine(ratingCount: Int, showsFormats: Bool) -> some View {
+    private struct Preview: Hashable {
+        let ratingCount: Int
+        let badgeCount: Int
+    }
+
+    private var previews: [Preview] {
+        // ViewThatFits needs a globally unique identity for every flattened candidate.
+        (0...ratings.count).reversed().flatMap { ratingCount in
+            (0...badges.count).reversed().map { badgeCount in
+                Preview(ratingCount: ratingCount, badgeCount: badgeCount)
+            }
+        }
+    }
+
+    private func metadataLine(ratingCount: Int, badgeCount: Int) -> some View {
         HStack(spacing: 12) {
             if let familyGuidanceAge {
                 FamilyGuidanceAgeBadge(age: familyGuidanceAge)
             }
             ForEach(Array(ratings.prefix(ratingCount))) { RatingBadge(rating: $0) }
-            if showsFormats, !badges.isEmpty {
+            if badgeCount > 0 {
                 HStack(spacing: 10) {
-                    ForEach(badges) { MetadataMediaBadgeChip(badge: $0) }
+                    ForEach(Array(badges.prefix(badgeCount))) { MetadataMediaBadgeChip(badge: $0) }
                 }
             }
             disclosureChevron.accessibilityHidden(
-                familyGuidanceAge != nil || ratingCount > 0 || (showsFormats && !badges.isEmpty)
+                familyGuidanceAge != nil || ratingCount > 0 || badgeCount > 0
             )
         }
         .fixedSize(horizontal: true, vertical: true)

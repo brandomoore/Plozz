@@ -17,7 +17,7 @@ final class DetailPageSettingsTests: XCTestCase {
         ), [audience, critics])
     }
 
-    func testAgeVisibilityHonorsItsOwnPreferenceGlobalHidingAndSpoilers() {
+    func testAgeVisibilityIsIndependentOfReviewScoresAndHonorsSpoilers() {
         var settings = DetailPageSettings.default
         XCTAssertNil(settings.headerFamilyGuidanceAge(from: 14, hidesRatings: true))
         settings.showsHeaderFamilyGuidance = false
@@ -27,7 +27,25 @@ final class DetailPageSettingsTests: XCTestCase {
         ), [imdb])
         settings.showsHeaderFamilyGuidance = true
         settings.showsHeaderRatings = false
+        XCTAssertEqual(settings.headerFamilyGuidanceAge(from: 14, hidesRatings: false), 14)
+        XCTAssertTrue(settings.headerRatings(from: [imdb], isAnime: false, hidesRatings: false).isEmpty)
+        XCTAssertNil(settings.headerFamilyGuidanceAge(from: 14, hidesRatings: true))
+        settings.showsHeaderFamilyGuidance = false
         XCTAssertNil(settings.headerFamilyGuidanceAge(from: 14, hidesRatings: false))
+    }
+
+    func testReviewCountDoesNotChangeAgeVisibilityOrStoredPreference() throws {
+        for count in DetailPageSettings.headerRatingCountRange {
+            let settings = DetailPageSettings(showsHeaderRatings: false, maxHeaderRatings: count)
+            let restored = try JSONDecoder().decode(
+                DetailPageSettings.self, from: JSONEncoder().encode(settings)
+            )
+            XCTAssertEqual(restored, settings)
+            XCTAssertEqual(restored.headerFamilyGuidanceAge(from: 12, hidesRatings: false), 12)
+            XCTAssertTrue(restored.headerRatings(
+                from: [audience, critics, imdb, tmdb], isAnime: false, hidesRatings: false
+            ).isEmpty)
+        }
     }
 
     func testLegacyAgePreferenceDoesNotResetExistingReviewChoices() throws {

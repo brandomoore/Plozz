@@ -274,10 +274,17 @@ struct DetailPageDetailView: View {
         if let detailHeaderSettings {
             rows.append(SettingsSplitRow(
                 id: "detail-page-header-ratings",
-                title: "Header ratings",
-                description: "The Common Sense age appears separately from review scores. Full ratings remain in title information. Spoiler settings still apply."
+                title: "Review scores",
+                description: "Show up to this many review scores. Full ratings remain in title information. Spoiler settings still apply."
             ) {
                 DetailHeaderRatingsSettingsForm(model: detailHeaderSettings)
+            })
+            rows.append(SettingsSplitRow(
+                id: "detail-page-age-recommendation",
+                title: "Age recommendation",
+                description: "Separate from review scores and not included in their count. Spoiler settings still apply."
+            ) {
+                DetailHeaderAgeSettingsForm(model: detailHeaderSettings)
             })
         }
         return rows
@@ -289,11 +296,19 @@ private struct DetailHeaderRatingsSettingsForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
-            Toggle("Show ratings in header", isOn: $model.settings.showsHeaderRatings)
+            Toggle("Show review scores", isOn: $model.settings.showsHeaderRatings)
             if model.settings.showsHeaderRatings {
-                HeaderRatingPreviewControls(settings: $model.settings)
+                HeaderReviewScoreCountPicker(settings: $model.settings)
             }
         }
+    }
+}
+
+private struct DetailHeaderAgeSettingsForm: View {
+    @Bindable var model: DetailPageSettingsModel
+
+    var body: some View {
+        Toggle("Show Common Sense age", isOn: $model.settings.showsHeaderFamilyGuidance)
     }
 }
 

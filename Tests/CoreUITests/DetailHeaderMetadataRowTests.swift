@@ -78,14 +78,14 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
         ratings: [ExternalRating], badges: [MediaBadge], age: Double?,
         width: CGFloat, textSize: DynamicTypeSize
     ) -> AnyView {
-        let full = inline(ratings: ratings, badges: badges, age: age)
-        if size(of: full, width: 4_000, textSize: textSize).width <= width {
-            return AnyView(full)
-        }
         for count in stride(from: ratings.count, through: 0, by: -1) {
-            let candidate = inline(ratings: Array(ratings.prefix(count)), badges: [], age: age)
-            if size(of: candidate, width: 4_000, textSize: textSize).width <= width {
-                return AnyView(candidate)
+            for badgeCount in stride(from: badges.count, through: 0, by: -1) {
+                let candidate = inline(
+                    ratings: Array(ratings.prefix(count)), badges: Array(badges.prefix(badgeCount)), age: age
+                )
+                if size(of: candidate, width: 4_000, textSize: textSize).width <= width {
+                    return AnyView(candidate)
+                }
             }
         }
         return AnyView(chevron)
@@ -241,6 +241,56 @@ final class DetailHeaderMetadataRowTests: XCTestCase {
                 render(DetailHeaderMetadataRow(ratings: scores, badges: badges, familyGuidanceAge: 11), width: width),
                 render(referenceButton(line), width: width), context: "wide-real-badges-\(scores.count)"
             )
+        }
+    }
+
+    func testIndividualFormatBadgesFillAvailableSpaceWithoutDroppingReviews() throws {
+        let scores = Array(jurassicRatings.prefix(3))
+        for textSize in [DynamicTypeSize.large, .accessibility3] {
+            for count in 1..<badges.count {
+                let line = inline(ratings: scores, badges: Array(badges.prefix(count)), age: 12)
+                let width = ceil(size(of: line, width: 4_000, textSize: textSize).width) + 1
+                let row = DetailHeaderMetadataRow(ratings: scores, badges: badges, familyGuidanceAge: 12)
+                try assertSameRendering(
+                    render(row, width: width, textSize: textSize),
+                    render(referenceButton(line), width: width, textSize: textSize),
+                    context: "individual-format-\(count)-\(textSize)"
+                )
+                XCTAssertNotEqual(
+                    try pixels(render(row, width: width, textSize: textSize)),
+                    try pixels(render(
+                        referenceButton(inline(ratings: scores, badges: [], age: 12)),
+                        width: width, textSize: textSize
+                    )),
+                    "Fitting format badges must not all disappear into the sheet."
+                )
+            }
+        }
+    }
+
+    func testThreeReviewsExcludeTheSeparateAgeRecommendationAndLeaveRoomForFormats() throws {
+        let available: [ExternalRating] = [
+            .init(source: .rottenTomatoesAudience, value: 52, scale: .percent),
+            .init(source: .rottenTomatoes, value: 57, scale: .percent),
+            .init(source: .imdb, value: 6.6, scale: .outOfTen),
+            .init(source: .tmdb, value: 6.5, scale: .outOfTen)
+        ]
+        let settings = DetailPageSettings(maxHeaderRatings: 3)
+        let scores = settings.headerRatings(from: available, isAnime: false, hidesRatings: false)
+        let age = settings.headerFamilyGuidanceAge(from: 12, hidesRatings: false)
+        XCTAssertEqual(scores, Array(available.prefix(3)))
+        XCTAssertEqual(age, 12)
+        for width: CGFloat in [354, 393] {
+            let row = DetailHeaderMetadataRow(ratings: scores, badges: badges, familyGuidanceAge: age)
+            let oneFormat = inline(ratings: scores, badges: Array(badges.prefix(1)), age: age)
+            XCTAssertLessThanOrEqual(size(of: oneFormat, width: 4_000).width, width)
+            let expected = referenceButton(expectedLine(
+                ratings: scores, badges: badges, age: age, width: width, textSize: .large
+            ))
+            let image = try render(row, width: width)
+            attach(image, name: "lost-world-three-reviews-formats-\(Int(width))")
+            try assertSameRendering(image, render(expected, width: width), context: "Lost-World-\(width)")
+            XCTAssertEqual(size(of: row, width: width).height, 44, accuracy: 0.5)
         }
     }
 

@@ -1888,7 +1888,8 @@ private struct PlozziOSHomeSettingsView: View {
                     Toggle("Hide watched titles", isOn: $hero.settings.hideWatched)
                     Toggle("Show ratings", isOn: $hero.settings.showsRatings)
                     if hero.settings.showsRatings {
-                        HeaderRatingPreviewControls(settings: $hero.settings.ratingPreferences)
+                        Toggle("Show Common Sense age", isOn: $hero.settings.ratingPreferences.showsHeaderFamilyGuidance)
+                        HeaderReviewScoreCountPicker(settings: $hero.settings.ratingPreferences)
                     }
                     Toggle(isOn: $hero.settings.showsDiscoverySources) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -2180,10 +2181,10 @@ private struct PlozziOSDetailPageSettingsView: View {
 
     var body: some View {
         List {
-            SettingsSectionGroup("Header ratings") {
-                Toggle("Show ratings in header", isOn: $detailPage.settings.showsHeaderRatings)
+            SettingsSectionGroup("Review scores") {
+                Toggle("Show review scores", isOn: $detailPage.settings.showsHeaderRatings)
                 if detailPage.settings.showsHeaderRatings {
-                    HeaderRatingPreviewControls(settings: $detailPage.settings)
+                    HeaderReviewScoreCountPicker(settings: $detailPage.settings)
                 }
                 NavigationLink {
                     PlozziOSDetailRatingPriorityView(model: detailPage)
@@ -2191,7 +2192,12 @@ private struct PlozziOSDetailPageSettingsView: View {
                     Text("Rating sources & order")
                 }
             } footer: {
-                Text("Compact headers stay on one line. Tap the row for more ratings and picture or sound details. Missing scores are skipped in your source order. Spoiler settings still apply.")
+                Text("Show up to this many scores in your chosen order. Missing scores are skipped. Tap the compact header for anything that doesn't fit.")
+            }
+            SettingsSectionGroup("Age recommendation") {
+                Toggle("Show Common Sense age", isOn: $detailPage.settings.showsHeaderFamilyGuidance)
+            } footer: {
+                Text("Separate from review scores and not included in their count. Spoiler settings still apply.")
             }
             SettingsSectionGroup("Behind the hero") {
                 Picker(
