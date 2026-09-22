@@ -5,6 +5,22 @@ import XCTest
 @testable import ProviderPlex
 
 final class PlexStreamingQualityTests: XCTestCase {
+    func testHEVCOnlyDecisionRejectsAnUnchangedH264Output() throws {
+        let decision = try JSONDecoder().decode(PlexStreamingDecisionResponse.self, from: Data(
+            #"{"MediaContainer":{"transcodeDecisionCode":1001,"Metadata":[{"Media":[{"container":"mp4","videoCodec":"h264"}]}]}}"#.utf8
+        )).MediaContainer
+        XCTAssertThrowsError(try decision.validate(
+            options: .init(quality: .hd720, codec: .preferHEVC), supportsHEVC: true
+        )) { XCTAssertEqual($0 as? StreamingQualityError, .codecUnavailable(.hevc)) }
+        XCTAssertEqual(try decision.validate(options: .init(quality: .hd720), supportsHEVC: true), .h264)
+        let hevc = try JSONDecoder().decode(PlexStreamingDecisionResponse.self, from: Data(
+            #"{"MediaContainer":{"transcodeDecisionCode":1001,"Metadata":[{"Media":[{"container":"mp4","videoCodec":"hevc"}]}]}}"#.utf8
+        )).MediaContainer
+        XCTAssertEqual(try hevc.validate(
+            options: .init(quality: .hd720, codec: .preferHEVC), supportsHEVC: true
+        ), .hevc)
+    }
+
     func testDecisionDoesNotDecodeUnrelatedLibraryMetadata() async throws {
         let decision = """
         {"MediaContainer":{
@@ -62,7 +78,7 @@ final class PlexStreamingQualityTests: XCTestCase {
         let http = StubHTTPClient()
         let request = try await fixture(http: http).playbackInfo(
             for: "movie", mediaSourceID: "7", forceTranscode: false,
-            streaming: .init(quality: .hd720, codec: .preferHEVC)
+            streaming: .init(quality: .hd720, codec: .automatic)
         )
         let source = try locator(request)
         let query = Dictionary(source.resource.queryItems.map { ($0.name, $0.value) }, uniquingKeysWith: { first, _ in first })
@@ -86,6 +102,8 @@ final class PlexStreamingQualityTests: XCTestCase {
         XCTAssertNil(request.originalFileSource)
         XCTAssertNotNil(request.streamingSessionID)
         XCTAssertEqual(request.streamingOptions?.quality, .hd720)
+        XCTAssertEqual(request.negotiatedStreamingVideoCodec, .h264,
+                       "The response, not the original file or client codec list, identifies the selected codec")
     }
 
     func testAlreadySmallOriginalDoesNotNeedAConversion() async throws {
@@ -114,11 +132,11 @@ final class PlexStreamingQualityTests: XCTestCase {
         } catch is StreamingQualityError {} catch { XCTFail("Unexpected error: \(error)") }
     }
 
-    func testH264FallbackKeepsTheSameBudgetAndUsesUniqueSessions() async throws {
+    func testCodecAttemptsKeepTheSameBudgetAndUseUniqueSessions() async throws {
         let provider = fixture()
         let first = try await provider.playbackInfo(
             for: "movie", mediaSourceID: "7", forceTranscode: false,
-            streaming: .init(quality: .sd480, codec: .preferHEVC)
+            streaming: .init(quality: .sd480, codec: .automatic)
         )
         let second = try await provider.playbackInfo(
             for: "movie", mediaSourceID: "7", forceTranscode: false,

@@ -268,7 +268,16 @@ public final class PlayerViewModel {
     }
     public var streamingQualityError: StreamingQualityError? { streamingQuality.error }
     public var streamingPreparation: StreamingPreparationPhase { streamingQuality.preparation }
-    public var streamingUsedH264Fallback: Bool { streamingQuality.usedH264Fallback }
+    public var streamingUsedH264Fallback: Bool { streamingQuality.fallbackCodec == .preferH264 }
+    public var streamingUsedHEVCFallback: Bool { streamingQuality.fallbackCodec == .preferHEVC }
+    public var streamingCodecRetryMessage: LocalizedStringResource? {
+        switch streamingQuality.fallbackCodec {
+        case .preferHEVC: "Retried requesting HEVC at the same quality limit."
+        case .preferH264: "Retried requesting H.264 at the same quality limit."
+        default: nil
+        }
+    }
+    public var streamingNegotiatedVideoCodec: DirectPlayVideoCodec? { request?.negotiatedStreamingVideoCodec }
     public var streamingIsTranscoding: Bool { request?.isTranscoding == true }
     public var streamingOutputVideoCodec: DirectPlayVideoCodec? {
         guard request?.isTranscoding == true, streamingOptions != nil else { return nil }
@@ -280,6 +289,9 @@ public final class PlayerViewModel {
             && engine.streamingOutputDynamicRange == .sdr
     }
     public var streamingHasHDRConversionError: Bool {
+        if case .codecUnavailable = streamingQuality.error {
+            return streamingQuality.sourceWasHDR
+        }
         guard case .playback(let failure) = streamingQuality.error else { return false }
         return failure.kind == .hdrConversion || failure.kind == .hdrConversionUnconfirmed
     }
@@ -293,7 +305,7 @@ public final class PlayerViewModel {
     @ObservationIgnored private var streamingLoadGeneration = 0
     @ObservationIgnored private var streamingResumePosition: TimeInterval?
     @ObservationIgnored private var streamingTrackSnapshot: SubtitleTrackController.StreamSnapshot?
-    @ObservationIgnored private var hasTriedStreamingH264 = false
+    @ObservationIgnored private var streamingSessionCleanups: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var streamingMediaSourceID: String?
     /// Per-profile spoiler protection, used to mask the Up Next card's thumbnail
     /// and title for an unwatched next episode (the common case). Pure value type.
@@ -683,7 +695,7 @@ public final class PlayerViewModel {
                 if self.streamingOptions != nil {
                     let facts = failureEvidence
                     let canRetry = facts?.allowsCodecFallback ?? (error == .invalidResponse)
-                    if canRetry, self.retryStreamingWithH264IfNeeded() { return }
+                    if (canRetry || facts?.kind == .hdrConversion), self.retryStreamingCodecIfNeeded(failure: facts) { return }
                     self.streamingQuality.error = Self.streamingFailure(error, evidence: facts)
                 }
                 await self.engineHandoff.handleEngineFailure(
@@ -946,12 +958,20 @@ public final class PlayerViewModel {
             // proceed to bring up an engine that will immediately be torn down —
             // short-circuit cleanly without going through the failure path.
             if Task.isCancelled || didStop || streamingGeneration != streamingLoadGeneration {
-                await (provider as? any StreamingQualityProviding)?.releaseStreamingSession(resolved.request)
+                await releaseStreamingSession(resolved.request)
                 throw CancellationError()
             }
 
             let request = resolved.request
             self.request = request
+            streamingQuality.sourceWasHDR = SourceDynamicRange.providerHint(from: request.sourceMetadata)?.isHDR == true
+            if let options = request.streamingOptions {
+                HandoffDiagnostics.emit(
+                    "streaming RESOLVED preference=\(streamingOptions?.codec.rawValue ?? "none") "
+                        + "attempt=\(options.codec.rawValue) negotiated=\(request.negotiatedStreamingVideoCodec?.rawValue ?? "unknown") "
+                        + "quality=\(options.quality.rawValue)"
+                )
+            }
             streamingQuality.preparation = .opening
             if streamingOptions != nil, case let .authenticatedHTTP(locator) = request.playbackSource {
                 streamingMediaSourceID = locator.mediaSourceID
@@ -1074,7 +1094,7 @@ public final class PlayerViewModel {
         }
         var request: PlaybackRequest
         if var options = streamingOptions, let provider = provider as? any StreamingQualityProviding {
-            if itemID == self.itemID, hasTriedStreamingH264 { options.codec = .preferH264 }
+            if itemID == self.itemID, let retry = streamingQuality.fallbackCodec { options.codec = retry }
             let source = itemID == self.itemID ? (streamingMediaSourceID ?? mediaSourceID) : mediaSourceID
             if let item = offlineItem {
                 options.preferredAudioLanguages = preferredAudioLanguages(
@@ -1111,11 +1131,15 @@ public final class PlayerViewModel {
                 }
                 let canRetry = (error as? StreamingQualityError)?.allowsCodecFallback == true
                     || (error as? AppError) == .invalidResponse || declinedHEVCAttempt
-                guard canRetry, options.codec != .preferH264, !Task.isCancelled else { throw error }
-                options.codec = .preferH264
+                guard canRetry, !Task.isCancelled,
+                      let retry = StreamingCodecRetryPolicy.next(
+                        preference: options.codec, selectedCodec: nil,
+                        supportsHEVC: capabilities.supportsHEVC,
+                        alreadyRetried: itemID == self.itemID && streamingQuality.fallbackCodec != nil
+                      ) else { throw error }
+                options.codec = retry
                 if itemID == self.itemID, streamingGeneration == streamingLoadGeneration {
-                    streamingQuality.usedH264Fallback = true
-                    hasTriedStreamingH264 = true
+                    streamingQuality.fallbackCodec = retry
                 }
                 PlozzLog.playback.info("Server rejected the preferred rendition; retrying H.264 within the same quality limit.")
                 request = try await provider.playbackInfo(
@@ -1127,7 +1151,7 @@ public final class PlayerViewModel {
                 for: itemID, mediaSourceID: mediaSourceID, forceTranscode: forceTranscode)
         }
         if Task.isCancelled {
-            await (provider as? any StreamingQualityProviding)?.releaseStreamingSession(request)
+            await releaseStreamingSession(request)
             throw CancellationError()
         }
         // Offline choke point: if a completed download exists for this item,
@@ -1138,7 +1162,7 @@ public final class PlayerViewModel {
         let localURL = await offlinePlaybackResolver?
             .localPlaybackURL(for: request.item, versionID: mediaSourceID)
         if localURL != nil {
-            await (provider as? any StreamingQualityProviding)?.releaseStreamingSession(request)
+            await releaseStreamingSession(request)
         }
         request = Self.applyingOfflineRewrite(to: request, localURL: localURL)
         // Steer the engine's INITIAL active audio track by language (no reload)
@@ -1199,6 +1223,7 @@ public final class PlayerViewModel {
         rewritten.localRemuxSource = nil
         rewritten.streamingOptions = nil
         rewritten.streamingSessionID = nil
+        rewritten.negotiatedStreamingVideoCodec = nil
         rewritten.isManifestStream = false
         rewritten.isTranscoding = false
         rewritten.deliveryMode = .directPlay
@@ -1220,8 +1245,7 @@ public final class PlayerViewModel {
         if case .failed = phase { failed = true } else { failed = false }
         guard streamingOptions?.matchesSelection(options) != true || failed else { return }
         streamingQuality.options = options
-        hasTriedStreamingH264 = false
-        streamingQuality.usedH264Fallback = false
+        streamingQuality.fallbackCodec = nil
         restartStreamingRendition()
     }
 
@@ -1260,7 +1284,7 @@ public final class PlayerViewModel {
                         positionSeconds: position, isPaused: true, durationSeconds: outgoing.item.runtime
                     ), event: .stop)
                 } catch { PlozzLog.playback.error("Unable to report the ended streaming rendition.") }
-                await (self.provider as? any StreamingQualityProviding)?.releaseStreamingSession(outgoing)
+                await self.releaseStreamingSession(outgoing)
             }
             await self.nextEpisodeCoordinator.releaseOrphanedPrefetchIfNeeded()
             guard !Task.isCancelled, !self.didStop, generation == self.streamingLoadGeneration else { return }
@@ -1268,15 +1292,31 @@ public final class PlayerViewModel {
         }
     }
 
-    private func retryStreamingWithH264IfNeeded() -> Bool {
+    private func retryStreamingCodecIfNeeded(failure: StreamingPlaybackFailure? = nil) -> Bool {
         guard request?.isTranscoding == true, let options = streamingOptions,
-              request?.streamingOptions?.codec != .preferH264,
-              options.codec != .preferH264, !hasTriedStreamingH264, !didStop else { return false }
-        hasTriedStreamingH264 = true
-        streamingQuality.usedH264Fallback = true
-        PlozzLog.playback.info("Retrying server transcode with H.264 at the same streaming quality.")
+              !didStop, let retry = StreamingCodecRetryPolicy.next(
+                preference: options.codec,
+                selectedCodec: engine.streamingOutputVideoCodec ?? request?.negotiatedStreamingVideoCodec
+                    ?? (failure?.kind == .hdrConversion ? .h264 : nil),
+                supportsHEVC: capabilities.supportsHEVC,
+                alreadyRetried: streamingQuality.fallbackCodec != nil
+              ) else { return false }
+        streamingQuality.fallbackCodec = retry
+        HandoffDiagnostics.emit("streaming CODEC_RETRY requested=\(retry.rawValue) quality=\(options.quality.rawValue)")
         restartStreamingRendition()
         return true
+    }
+
+    private func releaseStreamingSession(_ request: PlaybackRequest) async {
+        guard let sessionID = request.streamingSessionID,
+              let provider = provider as? any StreamingQualityProviding else { return }
+        if let cleanup = streamingSessionCleanups[sessionID] {
+            await cleanup.value
+            return
+        }
+        let cleanup = Task { await provider.releaseStreamingSession(request) }
+        streamingSessionCleanups[sessionID] = cleanup
+        await cleanup.value
     }
 
     private func restoreStreamingTracks() {
@@ -1913,7 +1953,7 @@ public final class PlayerViewModel {
             positionOverride: finalPosition,
             durationOverride: finalDuration
         )
-        if let request { await (provider as? any StreamingQualityProviding)?.releaseStreamingSession(request) }
+        if let request { await releaseStreamingSession(request) }
         onPlaybackStopped(finalPosition, percent)
     }
 
@@ -2376,6 +2416,9 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
             seekCoordinator.cancelAll()
             subtitleOverlay.cancelAll()
             engine.stop()
+            if let request {
+                Task { @MainActor [weak self] in await self?.releaseStreamingSession(request) }
+            }
         }
         self.phase = phase
     }
@@ -2384,7 +2427,8 @@ extension PlayerViewModel: EngineHandoffCoordinatorHost {
         guard streamingOptions != nil, !didStop else { return false }
         HandoffDiagnostics.emit("streaming STARTUP_TIMEOUT provider=\(provider.kind.rawValue) suppliedStream=\(request != nil)")
         let evidence = engine.streamingFailure
-        if evidence?.allowsCodecFallback != false, retryStreamingWithH264IfNeeded() { return true }
+        if (evidence?.allowsCodecFallback != false || evidence?.kind == .hdrConversion),
+           retryStreamingCodecIfNeeded(failure: evidence) { return true }
         streamingQuality.error = evidence.map(StreamingQualityError.playback) ?? .startupTimedOut
         return false
     }

@@ -292,6 +292,8 @@ public struct PlaybackRequest: Hashable, Sendable {
     /// server rendition through an original-file or local-remux fallback.
     public var streamingOptions: StreamingPlaybackOptions?
     public var streamingSessionID: String?
+    /// Negotiated rendition codec, not original-file metadata or proof of decoded output.
+    public var negotiatedStreamingVideoCodec: DirectPlayVideoCodec?
     public var item: MediaItem
     /// Credential-free source resolved at the engine boundary. Network files
     /// use this path and never carry a diagnostic or placeholder URL.

@@ -3,6 +3,34 @@ import XCTest
 @testable import CoreModels
 
 final class StreamingQualityTests: XCTestCase {
+    func testAutomaticRetriesTheOtherKnownCodecOnlyOnce() {
+        XCTAssertEqual(StreamingCodecRetryPolicy.next(
+            preference: .automatic, selectedCodec: .h264, supportsHEVC: true, alreadyRetried: false
+        ), .preferHEVC)
+        XCTAssertEqual(StreamingCodecRetryPolicy.next(
+            preference: .automatic, selectedCodec: .hevc, supportsHEVC: true, alreadyRetried: false
+        ), .preferH264)
+        XCTAssertNil(StreamingCodecRetryPolicy.next(
+            preference: .automatic, selectedCodec: .h264, supportsHEVC: false, alreadyRetried: false
+        ))
+        for preference in StreamingCodecPreference.allCases {
+            XCTAssertNil(StreamingCodecRetryPolicy.next(
+                preference: preference, selectedCodec: .h264, supportsHEVC: true, alreadyRetried: true
+            ))
+        }
+        XCTAssertNil(StreamingCodecRetryPolicy.next(
+            preference: .preferH264, selectedCodec: .h264, supportsHEVC: true, alreadyRetried: false
+        ))
+        XCTAssertNil(StreamingCodecRetryPolicy.next(
+            preference: .preferHEVC, selectedCodec: .h264, supportsHEVC: true, alreadyRetried: false
+        ), "Do not repeat H.264 when the server already substituted it for a HEVC request")
+        var message = StreamingPreparationPhase.requesting.message(
+            provider: "Emby", transcoding: true, usingH264Fallback: false, usingHEVCFallback: true
+        )
+        message.locale = Locale(identifier: "en_US")
+        XCTAssertEqual(String(localized: message), "Trying HEVC…")
+    }
+
     func testPreparationCopyIsAShortStatusNotAnExplanation() {
         let cases: [(StreamingPreparationPhase, Bool, Bool, String)] = [
             (.requesting, false, false, "Connecting to Plex…"),

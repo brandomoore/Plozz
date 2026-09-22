@@ -77,6 +77,24 @@ public enum StreamingCodecPreference: String, CaseIterable, Codable, Sendable, I
     }
 }
 
+public enum StreamingCodecRetryPolicy {
+    public static func next(
+        preference: StreamingCodecPreference,
+        selectedCodec: DirectPlayVideoCodec?,
+        supportsHEVC: Bool,
+        alreadyRetried: Bool
+    ) -> StreamingCodecPreference? {
+        guard !alreadyRetried else { return nil }
+        switch preference {
+        case .preferH264: return nil
+        case .preferHEVC: return selectedCodec == .h264 ? nil : .preferH264
+        case .automatic:
+            if selectedCodec == .h264 { return supportsHEVC ? .preferHEVC : nil }
+            return .preferH264
+        }
+    }
+}
+
 public enum StreamingNetwork: Sendable, Equatable {
     case unknown, offline, wifi, cellular, wired
 }
@@ -195,12 +213,13 @@ public enum StreamingQualityError: Error, Equatable, Sendable {
     case permissionDenied, noCompatibleStream, sourceUnavailable, malformedResponse, negotiationFailed
     case serverHTTP(Int)
     case plexDecision(Int)
+    case codecUnavailable(DirectPlayVideoCodec)
     case playback(StreamingPlaybackFailure)
     case startupTimedOut
 
     public var allowsCodecFallback: Bool {
         switch self {
-        case .unavailable, .noCompatibleStream: true
+        case .unavailable, .noCompatibleStream, .codecUnavailable: true
         case .playback(let failure): failure.allowsCodecFallback
         default: false
         }
@@ -226,6 +245,8 @@ public enum StreamingQualityError: Error, Equatable, Sendable {
             "The server returned HTTP \(status) while preparing playback. Check its transcoding log for the cause. Changing codec may not resolve a server error."
         case .plexDecision:
             "Plex refused the conversion. Check the server’s transcoding settings and log."
+        case .codecUnavailable(let codec):
+            "The server didn’t provide \(PlaybackDiagnostics.friendlyCodecName(codec.rawValue) ?? codec.rawValue) for these settings. Check its encoder support and transcoding settings, or choose another quality."
         case .playback(let failure):
             failure.userMessage
         case .startupTimedOut:
@@ -243,6 +264,7 @@ public enum StreamingQualityError: Error, Equatable, Sendable {
         case .negotiationFailed: "PlaybackNegotiationFailed"
         case .serverHTTP(let status): "HTTP \(status)"
         case .plexDecision(let code): "Plex decision \(code)"
+        case .codecUnavailable(let codec): "CodecUnavailable(\(codec.rawValue))"
         case .startupTimedOut: "PlaybackStartupTimeout"
         case .playback(let failure): failure.diagnosticCode
         default: nil
@@ -314,8 +336,13 @@ public struct StreamingPlaybackFailure: Equatable, Sendable {
 public enum StreamingPreparationPhase: Sendable {
     case requesting, opening, waitingForVideo
 
-    public func message(provider: String, transcoding: Bool, usingH264Fallback: Bool) -> LocalizedStringResource {
+    public func message(
+        provider: String, transcoding: Bool, usingH264Fallback: Bool,
+        usingHEVCFallback: Bool = false
+    ) -> LocalizedStringResource {
         switch self {
+        case .requesting where usingHEVCFallback:
+            "Trying HEVC…"
         case .requesting where usingH264Fallback:
             "Trying H.264…"
         case .requesting:

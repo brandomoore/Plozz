@@ -80,7 +80,10 @@ Plex bounded streams first validate the server's universal-transcoder decision
 with the same session and settings as the start request. HEVC uses fragmented
 MP4 HLS. Decision parsing reads only status codes and the output format; it must
 not decode unrelated library-item fields, whose wire types can differ here.
-The one-shot H.264 fallback requests MPEG-TS at the unchanged budget.
+Automatic recovery uses the observed/negotiated codec: a failed H.264
+conversion can request HEVC on a capable device; HEVC can fall back to H.264.
+There is one compatibility retry, not a loop through the same codec.
+The Plex H.264 fallback requests MPEG-TS at the unchanged budget.
 A missing converted resource may trigger this fallback too; it never falls back
 to the uncapped original. Decision status and numeric codes are retained without
 copying raw server descriptions into the player.
@@ -121,7 +124,10 @@ are disabled, and manifest-subtitle requests are removed from that video URL.
 Omitting the delivery method alone can still trigger Emby's default burn-in.
 An engine load that returns after a terminal startup failure cannot publish ready.
 Terminal managed-stream failures stop the decoder so audio cannot continue
-behind the error screen.
+behind the error screen and immediately release the owned server rendition.
+Retry/dismiss joins that same cleanup instead of issuing duplicate stop requests.
+Retry copy names the codec requested, not an encoder we cannot prove ran; the
+negotiated codec is shown separately and all attempts are journaled.
 Tone-mapping advice requires the returned stream's actual H.264 codec and PQ/HLG
 transfer metadata, combined with a decoder-format failure. Neither the original
 file's HDR badge nor a numeric error alone establishes this condition. Emby advice

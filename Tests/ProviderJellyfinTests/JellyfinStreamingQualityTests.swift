@@ -16,6 +16,21 @@ private struct StreamingErrorHTTP: HTTPClient {
 }
 
 final class JellyfinStreamingQualityTests: XCTestCase {
+    func testHEVCOnlyRetryCannotSilentlyRestartTheRejectedH264Rendition() throws {
+        let source = try JSONDecoder().decode(MediaSourceInfo.self, from: Data(
+            #"{"Id":"version","TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=h264"}"#.utf8
+        ))
+        XCTAssertThrowsError(try source.boundedTranscodingURL(
+            .init(quality: .hd720, codec: .preferHEVC), supportsHEVC: true
+        )) { XCTAssertEqual($0 as? StreamingQualityError, .codecUnavailable(.hevc)) }
+        XCTAssertNoThrow(try source.boundedTranscodingURL(
+            .init(quality: .hd720), supportsHEVC: true
+        ))
+        XCTAssertNoThrow(try source.boundedTranscodingURL(
+            .init(quality: .hd720, codec: .preferHEVC), supportsHEVC: false
+        ))
+    }
+
     func testHEVCAndAutomaticSendDifferentProfilesToJellyfinAndEmby() async throws {
         for kind in [ProviderKind.jellyfin, .emby] {
             for capable in [true, false] {
@@ -51,7 +66,7 @@ final class JellyfinStreamingQualityTests: XCTestCase {
             #"{"Id":"version","TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=hevc,h264&SegmentContainer=mp4"}"#.utf8
         ))
         let query = try XCTUnwrap(URLComponents(string: source.boundedTranscodingURL(
-            .init(quality: .hd720, codec: .preferHEVC)
+            .init(quality: .hd720, codec: .preferHEVC), supportsHEVC: true
         ))?.queryItems)
         XCTAssertEqual(query.first { $0.name == "VideoCodec" }?.value, "hevc")
         XCTAssertEqual(query.first { $0.name == "VideoBitrate" }?.value, "1872000")
@@ -102,7 +117,7 @@ final class JellyfinStreamingQualityTests: XCTestCase {
             options.subtitleTrack = .init(id: 2, kind: .subtitle, displayTitle: "Subtitle", codec: codec)
             for off in [false, true] {
                 options.subtitlesOff = off
-                let url = try XCTUnwrap(URLComponents(string: source.boundedTranscodingURL(options)))
+                let url = try XCTUnwrap(URLComponents(string: source.boundedTranscodingURL(options, supportsHEVC: true)))
                 let query = url.queryItems ?? []
                 XCTAssertEqual(query.first { $0.name == "SubtitleStreamIndex" }?.value, "-1")
                 XCTAssertEqual(query.first { $0.name == "SubtitleMethod" }?.value, "External")
@@ -208,6 +223,7 @@ final class JellyfinStreamingQualityTests: XCTestCase {
             XCTAssertNil(request.localRemuxSource)
             XCTAssertNil(request.originalFileSource)
             XCTAssertTrue(request.isTranscoding)
+            XCTAssertEqual(request.negotiatedStreamingVideoCodec, provider.client.canRequestHEVC ? .hevc : .h264)
             XCTAssertEqual(locator.mediaSourceID, "version")
         }
     }
@@ -220,6 +236,7 @@ final class JellyfinStreamingQualityTests: XCTestCase {
                 streaming: .init(quality: .hd720, codec: .preferHEVC)
             )
             XCTAssertFalse(direct.isTranscoding)
+            XCTAssertNil(direct.negotiatedStreamingVideoCodec)
             let (large, http) = fixture(kind: kind, rendition: false)
             do {
                 _ = try await large.playbackInfo(
@@ -262,7 +279,7 @@ final class JellyfinStreamingQualityTests: XCTestCase {
         var options = StreamingPlaybackOptions(quality: .sd480, codec: .preferH264)
         options.audioTrack = .init(id: 4, kind: .audio, displayTitle: "Japanese", language: "jpn")
         options.subtitleTrack = .init(id: 6, kind: .subtitle, displayTitle: "English", language: "eng", codec: "pgssub")
-        let url = try XCTUnwrap(URLComponents(string: source.boundedTranscodingURL(options)))
+        let url = try XCTUnwrap(URLComponents(string: source.boundedTranscodingURL(options, supportsHEVC: true)))
         let query = Dictionary((url.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { first, _ in first })
         XCTAssertEqual(query["VideoCodec"], "h264")
         XCTAssertEqual(query["VideoBitrate"], "872000")
@@ -270,7 +287,7 @@ final class JellyfinStreamingQualityTests: XCTestCase {
         XCTAssertEqual(query["SubtitleMethod"], "Encode")
         XCTAssertEqual(query["AudioStreamIndex"], "4")
         options.subtitlesOff = true
-        let off = try XCTUnwrap(URLComponents(string: source.boundedTranscodingURL(options)))
+        let off = try XCTUnwrap(URLComponents(string: source.boundedTranscodingURL(options, supportsHEVC: true)))
         XCTAssertEqual(off.queryItems?.first { $0.name == "SubtitleStreamIndex" }?.value, "-1")
     }
 

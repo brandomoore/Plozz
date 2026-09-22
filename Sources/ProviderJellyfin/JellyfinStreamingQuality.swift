@@ -19,23 +19,29 @@ extension JellyfinProvider: StreamingQualityProviding {
     }
 
     func releaseStreamingEncoding(_ id: String) async {
-        do { try await client.stopActiveEncoding(playSessionID: id) }
-        catch { PlozzLog.playback.error("Unable to release the previous streaming rendition.") }
+        do {
+            try await client.stopActiveEncoding(playSessionID: id)
+            HandoffDiagnostics.emit("streaming RELEASE_ACK provider=\(kind.rawValue)")
+        } catch {
+            HandoffDiagnostics.emit("streaming RELEASE_FAILED provider=\(kind.rawValue)")
+            PlozzLog.playback.error("Unable to release the previous streaming rendition.")
+        }
     }
 }
 
 extension JellyfinCapabilityProfile {
+    var canRequestHEVC: Bool {
+        transcodingProfiles.contains { $0.videoCodec.split(separator: ",").contains("hevc") }
+    }
+
     func applying(_ options: StreamingPlaybackOptions) -> Self {
         var result = self
         if let limit = options.quality.maximumBitrate {
             result.maxStreamingBitrate = limit
             result.maxStaticBitrate = limit
         }
-        let supportsHEVC = transcodingProfiles.contains {
-            $0.videoCodec.split(separator: ",").contains("hevc")
-        }
         for index in result.transcodingProfiles.indices {
-            result.transcodingProfiles[index].videoCodec = options.codec.codecs(supportsHEVC: supportsHEVC)
+            result.transcodingProfiles[index].videoCodec = options.codec.codecs(supportsHEVC: canRequestHEVC)
                 .joined(separator: ",")
             result.transcodingProfiles[index].audioCodec = "aac"
             result.transcodingProfiles[index].maxAudioChannels = "2"
@@ -68,7 +74,7 @@ extension MediaSourceInfo {
     }
 
     /// Apply bounds to the server-issued rendition, never to an original-file URL.
-    func boundedTranscodingURL(_ options: StreamingPlaybackOptions) throws -> String {
+    func boundedTranscodingURL(_ options: StreamingPlaybackOptions, supportsHEVC: Bool) throws -> String {
         guard let TranscodingUrl, var url = URLComponents(string: TranscodingUrl) else {
             throw StreamingQualityError.unavailable
         }
@@ -108,9 +114,13 @@ extension MediaSourceInfo {
         let videoCodec = query.first { $0.name.caseInsensitiveCompare("VideoCodec") == .orderedSame }?.value
         let offeredCodecs = (videoCodec ?? "").lowercased().split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
-        if options.codec == .preferHEVC, offeredCodecs.contains("hevc") {
+        if options.codec == .preferHEVC, supportsHEVC {
+            guard offeredCodecs.contains("hevc") else {
+                PlozzLog.playback.info("The server did not provide the requested HEVC rendition.")
+                throw StreamingQualityError.codecUnavailable(.hevc)
+            }
             set("VideoCodec", "hevc")
-        } else if options.codec == .preferH264 || !["h264", "hevc"].contains(videoCodec?.lowercased() ?? "") {
+        } else if !supportsHEVC || options.codec == .preferH264 || !["h264", "hevc"].contains(videoCodec?.lowercased() ?? "") {
             set("VideoCodec", "h264")
         }
         set("AudioCodec", "aac")

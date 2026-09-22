@@ -9,6 +9,69 @@ import UIKit
 
 @MainActor
 final class StreamingPlaybackTests: XCTestCase {
+    func testAutomaticH264FailureRequestsHEVCWithoutChangingBudgetOrVersion() async throws {
+        let provider = QualityPlaybackProvider()
+        await provider.setNegotiatedCodec(.h264)
+        let (model, engine, _) = make(provider: provider, capabilities: .init(supportsHEVC: true))
+        await model.load()
+        XCTAssertEqual(model.streamingNegotiatedVideoCodec, .h264)
+        engine.currentTime = 95
+        model.setPaused(true)
+        engine.streamingFailure = .init(kind: .hdrConversionUnconfirmed, domain: .coreMedia, code: -12927, provider: .emby)
+        engine.onFailure?(.invalidResponse)
+        await wait { model.phase == .ready && engine.positions.count == 2 }
+        let calls = await provider.calls
+        XCTAssertEqual(calls.map { $0.options.codec }, [.automatic, .preferHEVC])
+        XCTAssertEqual(calls.map { $0.options.quality }, [.hd720, .hd720])
+        XCTAssertEqual(calls.map(\.source), ["version", "version"])
+        XCTAssertEqual(engine.positions.last, 95)
+        XCTAssertTrue(engine.isPaused)
+        XCTAssertTrue(model.streamingUsedHEVCFallback)
+        XCTAssertFalse(model.streamingUsedH264Fallback)
+        var retryMessage = try XCTUnwrap(model.streamingCodecRetryMessage)
+        retryMessage.locale = Locale(identifier: "en_US")
+        XCTAssertEqual(String(localized: retryMessage), "Retried requesting HEVC at the same quality limit.")
+        XCTAssertEqual(model.streamingNegotiatedVideoCodec, .h264,
+                       "A requested HEVC retry is not proof that the server supplied HEVC")
+        XCTAssertEqual(model.streamingOptions?.codec, .automatic)
+        engine.onFailure?(.invalidResponse)
+        await wait { if case .failed = model.phase { return true }; return false }
+        let afterFailure = await provider.calls
+        XCTAssertEqual(afterFailure.count, 2)
+        await model.stop()
+    }
+
+    func testRefusedAutomaticHEVCRetryDoesNotFallBackToH264AThirdTime() async {
+        let provider = QualityPlaybackProvider()
+        await provider.setNegotiatedCodec(.h264)
+        await provider.setSourceRange("HDR10")
+        await provider.setHEVCFailure(StreamingQualityError.codecUnavailable(.hevc))
+        let (model, engine, _) = make(provider: provider, capabilities: .init(supportsHEVC: true))
+        await model.load()
+        engine.onFailure?(.invalidResponse)
+        await wait { if case .failed = model.phase { return true }; return false }
+        let calls = await provider.calls
+        XCTAssertEqual(calls.map { $0.options.codec }, [.automatic, .preferHEVC])
+        XCTAssertEqual(calls.count, 2)
+        XCTAssertEqual(model.streamingQualityError, .codecUnavailable(.hevc))
+        XCTAssertTrue(model.streamingHasHDRConversionError, "Keep explicit SDR/original recovery available after HEVC is refused")
+        await model.stop()
+    }
+
+    func testFailedStreamIsReleasedBeforeDismissAndOnlyOnce() async {
+        let (model, engine, provider) = make(options: .init(quality: .hd720, codec: .preferH264))
+        await model.load()
+        engine.onFailure?(.invalidResponse)
+        await wait { if case .failed = model.phase { return true }; return false }
+        let deadline = ContinuousClock.now + .seconds(3)
+        while await provider.released.isEmpty, ContinuousClock.now < deadline { await Task.yield() }
+        let beforeDismiss = await provider.released
+        XCTAssertEqual(beforeDismiss, ["quality-1"])
+        await model.stop()
+        let afterDismiss = await provider.released
+        XCTAssertEqual(afterDismiss, ["quality-1"])
+    }
+
     func testRefusedHEVCNegotiationRetriesH264OnceWithoutChangingThePreferenceOrBudget() async {
         for refusal in [
             StreamingQualityError.noCompatibleStream, .unavailable, .plexDecision(4005),
@@ -218,7 +281,7 @@ final class StreamingPlaybackTests: XCTestCase {
     }
 
     func testConfirmedHDRConversionFailureDoesNotRepeatAnIdenticalH264Attempt() async {
-        let (model, engine, provider) = make()
+        let (model, engine, provider) = make(capabilities: .init(supportsHEVC: false))
         await model.load()
         let failure = StreamingPlaybackFailure(kind: .hdrConversion, domain: .coreMedia, code: -12927, provider: .emby)
         engine.streamingFailure = failure
@@ -240,14 +303,16 @@ final class StreamingPlaybackTests: XCTestCase {
     }
     private func make(
         options: StreamingPlaybackOptions? = .init(quality: .hd720),
-        provider: QualityPlaybackProvider = QualityPlaybackProvider()
+        provider: QualityPlaybackProvider = QualityPlaybackProvider(),
+        capabilities: MediaCapabilities = .detected()
     ) -> (PlayerViewModel, QualityEngine, QualityPlaybackProvider) {
         let engine = QualityEngine()
         let model = PlayerViewModel(
             provider: provider, itemID: "movie", mediaSourceID: "version",
             playbackSettings: .init(resumeRewindInterval: .five, audioLanguagePreference: .device),
             streamingOptions: options,
-            engineFactory: .init(makeNative: { _ in engine })
+            engineFactory: .init(makeNative: { _ in engine }),
+            capabilities: capabilities
         )
         return (model, engine, provider)
     }
@@ -416,11 +481,13 @@ final class StreamingPlaybackTests: XCTestCase {
         )
         request.streamingOptions = .init(quality: .hd720)
         request.streamingSessionID = "session"
+        request.negotiatedStreamingVideoCodec = .hevc
         let local = PlayerViewModel.applyingOfflineRewrite(
             to: request, localURL: URL(fileURLWithPath: "/fixture/movie.mp4")
         )
         XCTAssertNil(local.streamingOptions)
         XCTAssertNil(local.streamingSessionID)
+        XCTAssertNil(local.negotiatedStreamingVideoCodec)
         XCTAssertFalse(local.isTranscoding)
         XCTAssertFalse(PlayerViewModel.streamingSelectionMatches(.init(quality: .hd720), .init(quality: .original)))
         XCTAssertFalse(PlayerViewModel.streamingSelectionMatches(.init(quality: .hd720), nil))
@@ -455,12 +522,14 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
     private(set) var released: [String] = []
     private var refusesQuality = false
     private var hevcFailure: (any Error & Sendable)?
+    private var negotiatedCodec: DirectPlayVideoCodec?
     private var sourceRange: String?
     private var gate: QualityDecisionGate?
     init(gate: QualityDecisionGate? = nil) { self.gate = gate }
     func installGate(_ gate: QualityDecisionGate) { self.gate = gate }
     func setRefusesQuality() { refusesQuality = true }
     func setHEVCFailure(_ error: any Error & Sendable) { hevcFailure = error }
+    func setNegotiatedCodec(_ codec: DirectPlayVideoCodec) { negotiatedCodec = codec }
     func setSourceRange(_ range: String) { sourceRange = range }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest {
         ordinaryCalls += 1
@@ -477,6 +546,7 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
         request.deliveryMode = request.isTranscoding ? .transcode : .directPlay
         request.streamingOptions = streaming
         request.streamingSessionID = "quality-\(sequence)"
+        request.negotiatedStreamingVideoCodec = negotiatedCodec
         return request
     }
     func releaseStreamingSession(_ request: PlaybackRequest) {

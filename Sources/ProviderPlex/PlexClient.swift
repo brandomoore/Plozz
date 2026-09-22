@@ -1745,7 +1745,7 @@ public struct PlexClient: Sendable {
         return absoluteURL(serverPath: "/video/:/transcode/universal/start.m3u8", extraQuery: query)
     }
 
-    func validateStreamingTranscode(url: URL, options: StreamingPlaybackOptions) async throws {
+    func validateStreamingTranscode(url: URL, options: StreamingPlaybackOptions) async throws -> DirectPlayVideoCodec {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             throw StreamingQualityError.malformedResponse
         }
@@ -1770,7 +1770,9 @@ public struct PlexClient: Sendable {
             PlozzLog.playback.error("Unable to decode the Plex streaming decision.")
             throw StreamingQualityError.malformedResponse
         }
-        try decision.validate(options: options)
+        return try decision.validate(
+            options: options, supportsHEVC: capabilities.allowedDirectPlayVideoCodecs.contains(.hevc)
+        )
     }
 
     func stopStreamingTranscode(sessionID: String) async throws {

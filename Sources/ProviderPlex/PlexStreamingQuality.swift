@@ -22,7 +22,8 @@ struct PlexStreamingDecision: Decodable {
     @LenientInt var mdeDecisionCode: Int?
     let Metadata: [Item]?
 
-    func validate(options: StreamingPlaybackOptions) throws {
+    @discardableResult
+    func validate(options: StreamingPlaybackOptions, supportsHEVC: Bool) throws -> DirectPlayVideoCodec {
         let codes = [generalDecisionCode, transcodeDecisionCode, mdeDecisionCode].compactMap { $0 }
         if let failure = codes.first(where: { $0 >= 2000 }) {
             HandoffDiagnostics.emit("plex STREAM_DECISION refused code=\(failure)")
@@ -37,12 +38,16 @@ struct PlexStreamingDecision: Decodable {
         let validContainer = options.codec == .preferH264
             ? ["mpegts", "mp4"].contains(container ?? "")
             : container == "mp4"
-        let validCodec = options.codec == .preferH264 ? codec == "h264" : ["h264", "hevc"].contains(codec ?? "")
+        let validCodec = options.codec.codecs(supportsHEVC: supportsHEVC).contains(codec ?? "")
+        if !validCodec, options.codec == .preferHEVC, supportsHEVC, codec == "h264" {
+            throw StreamingQualityError.codecUnavailable(.hevc)
+        }
         guard validContainer, validCodec else {
             HandoffDiagnostics.emit("plex STREAM_DECISION incompatible-output")
             throw StreamingQualityError.noCompatibleStream
         }
         HandoffDiagnostics.emit("plex STREAM_DECISION accepted container=\(container ?? "") codec=\(codec ?? "")")
+        return codec == "hevc" ? .hevc : .h264
     }
 }
 

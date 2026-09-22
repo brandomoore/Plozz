@@ -236,7 +236,8 @@ public struct PlayerView: View {
                 StreamingPlaybackLoadingView(
                     options: options, provider: viewModel.streamingProviderName,
                     phase: viewModel.streamingPreparation, transcoding: viewModel.streamingIsTranscoding,
-                    h264Fallback: viewModel.streamingUsedH264Fallback
+                    h264Fallback: viewModel.streamingUsedH264Fallback,
+                    hevcFallback: viewModel.streamingUsedHEVCFallback
                 )
                 .transition(.opacity)
             } else {
@@ -288,7 +289,8 @@ public struct PlayerView: View {
             MobilePlaybackFailureView(
                 message: viewModel.streamingQualityError?.userMessage ?? error.userMessage,
                 code: viewModel.streamingQualityError?.diagnosticCode,
-                usedH264Fallback: viewModel.streamingUsedH264Fallback,
+                retryMessage: viewModel.streamingCodecRetryMessage,
+                negotiatedCodec: viewModel.streamingNegotiatedVideoCodec,
                 onChangeQuality: viewModel.streamingQualityAvailable ? onChangeQuality : nil,
                 onChangeVersion: onChangeVersion,
                 onPlaySDRVersion: onPlaySDRVersion,

@@ -864,9 +864,10 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         ) else {
             throw AppError.notFound
         }
+        var negotiatedCodec: DirectPlayVideoCodec?
         if let streaming, resolved.isTranscoding {
             do {
-                try await client.validateStreamingTranscode(url: resolved.url, options: streaming)
+                negotiatedCodec = try await client.validateStreamingTranscode(url: resolved.url, options: streaming)
                 try Task.checkCancellation()
             } catch {
                 do { try await client.stopStreamingTranscode(sessionID: transcodeSessionID) }
@@ -959,6 +960,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         if let streaming {
             request.streamingOptions = streaming
             request.streamingSessionID = resolved.isTranscoding ? transcodeSessionID : nil
+            request.negotiatedStreamingVideoCodec = negotiatedCodec
             if resolved.isTranscoding {
                 request.localRemuxSource = nil
                 request.originalFileSource = nil

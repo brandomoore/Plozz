@@ -1022,7 +1022,9 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             source = converted
         }
         if let streaming, source.TranscodingUrl != nil {
-            do { source.TranscodingUrl = try source.boundedTranscodingURL(streaming) }
+            do {
+                source.TranscodingUrl = try source.boundedTranscodingURL(streaming, supportsHEVC: client.canRequestHEVC)
+            }
             catch {
                 if let id = info.PlaySessionId { await releaseStreamingEncoding(id) }
                 throw error
@@ -1166,6 +1168,10 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             request.streamingOptions = streaming
             request.streamingSessionID = info.PlaySessionId
             if request.isTranscoding {
+                request.negotiatedStreamingVideoCodec = source.TranscodingUrl
+                    .flatMap { URLComponents(string: $0)?.queryItems }
+                    .flatMap { $0.first { $0.name.caseInsensitiveCompare("VideoCodec") == .orderedSame }?.value }
+                    .flatMap { DirectPlayVideoCodec(rawValue: $0.lowercased()) }
                 request.originalFileSource = nil
                 request.localRemuxSource = nil
             }

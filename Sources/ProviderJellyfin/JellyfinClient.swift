@@ -857,6 +857,8 @@ public struct JellyfinClient: Sendable {
         case transcode
     }
 
+    var canRequestHEVC: Bool { capabilityProfile.canRequestHEVC }
+
     func playbackInfo(
         userID: String, itemID: String, mediaSourceID: String? = nil,
         mode: PlaybackStreamMode = .auto, streaming: StreamingPlaybackOptions? = nil

@@ -9,11 +9,15 @@ struct StreamingPlaybackLoadingView: View {
     let phase: StreamingPreparationPhase
     let transcoding: Bool
     let h264Fallback: Bool
+    let hevcFallback: Bool
 
     var body: some View {
         VStack(spacing: 12) {
             ProgressView().tint(.white)
-            Text(phase.message(provider: provider, transcoding: transcoding, usingH264Fallback: h264Fallback))
+            Text(phase.message(
+                provider: provider, transcoding: transcoding,
+                usingH264Fallback: h264Fallback, usingHEVCFallback: hevcFallback
+            ))
                 .font(.headline)
             Text(options.quality.title).font(.subheadline)
         }
@@ -32,7 +36,8 @@ struct StreamingPlaybackLoadingView: View {
 struct MobilePlaybackFailureView: View {
     let message: LocalizedStringResource
     let code: String? // l10n:content — allowlisted diagnostic domain and numeric code
-    let usedH264Fallback: Bool
+    let retryMessage: LocalizedStringResource?
+    let negotiatedCodec: DirectPlayVideoCodec?
     let onChangeQuality: (() -> Void)?
     let onChangeVersion: (() -> Void)?
     let onPlaySDRVersion: (() -> Void)?
@@ -51,8 +56,12 @@ struct MobilePlaybackFailureView: View {
                         .foregroundStyle(.yellow)
                     Text("Can’t play this right now").font(.title2.bold())
                     Text(message).font(.body).foregroundStyle(.white.opacity(0.8))
-                    if usedH264Fallback {
-                        Text("The H.264 fallback was also tried at the same quality limit.")
+                    if let retryMessage {
+                        Text(retryMessage)
+                            .font(.footnote).foregroundStyle(.white.opacity(0.7))
+                    }
+                    if let negotiatedCodec {
+                        Text("Negotiated codec: \(PlaybackDiagnostics.friendlyCodecName(negotiatedCodec.rawValue) ?? negotiatedCodec.rawValue)")
                             .font(.footnote).foregroundStyle(.white.opacity(0.7))
                     }
                     if let code {
