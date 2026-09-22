@@ -1942,13 +1942,11 @@ struct PlayerControls: View {
     }
 
     /// Audio menu rows: selectable tracks followed by the Dialog Enhance toggle
-    /// when supported. Indexed from 0 in their own focus-slot space. Every audio
-    /// track is listed even when there's only one, so the menu always reflects
-    /// what's playing.
+    /// when supported. A single track is read-only information in the Info card.
     private var audioRows: [TrackRow] {
         var rows: [TrackRow] = []
         var index = 0
-        for option in model.audioOptions {
+        for option in model.audioOptions where model.hasSelectableAudio {
             rows.append(TrackRow(
                 id: index,
                 header: nil,
@@ -2134,7 +2132,7 @@ extension PlayerControlsModel {
         if engineCapabilities.contains(.playbackSpeed) {
             result.append(.speed)
         }
-        if !audioOptions.isEmpty || engineCapabilities.contains(.dialogEnhance) {
+        if hasAudioControls {
             result.append(.audio)
         }
         if hasSelectableSubtitles || subtitleDownload.canSearch {

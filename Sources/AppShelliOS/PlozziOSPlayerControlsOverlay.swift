@@ -7,7 +7,6 @@ import SwiftUI
 import CoreUI
 
 private enum PlozziOSPlayerSheet: String, Identifiable {
-    case info
     case speed
     case subtitles
     case sync
@@ -28,7 +27,6 @@ struct PlozziOSPlayerControlsOverlay: View {
     @State private var isScrubbing = false
     @State private var scrubPreviewCoordinator: ScrubPreviewCoordinator?
     @State private var presentedSheet: PlozziOSPlayerSheet?
-    @State private var showsDiagnosticsAfterSheet = false
     @State private var optionsMenuPresented = false
     /// Whether the Info / Cast card is expanded. Owned here rather than inside
     /// the strip because dismissing it is this view's job: the tap that closes
@@ -170,10 +168,6 @@ struct PlozziOSPlayerControlsOverlay: View {
                     onSkipForward: {
                         seek(by: viewModel.controls.skipGesture.forwardInterval.seconds)
                     },
-                    onShowInfo: {
-                        presentedSheet = .info
-                        cancelAutoHide()
-                    },
                     onShowSpeed: {
                         presentedSheet = .speed
                         cancelAutoHide()
@@ -268,20 +262,8 @@ struct PlozziOSPlayerControlsOverlay: View {
         .onChange(of: versionsPresented) { _, presented in
             if presented { cancelAutoHide() } else { scheduleAutoHide() }
         }
-        .sheet(item: $presentedSheet, onDismiss: {
-            if showsDiagnosticsAfterSheet {
-                showsDiagnosticsAfterSheet = false
-                viewModel.controls.diagnosticsEnabled = true
-            } else {
-                scheduleAutoHide()
-            }
-        }) { sheet in
+        .sheet(item: $presentedSheet, onDismiss: scheduleAutoHide) { sheet in
             switch sheet {
-            case .info:
-                PlozziOSPlaybackInfoSheet(viewModel: viewModel) {
-                    showsDiagnosticsAfterSheet = true
-                    presentedSheet = nil
-                }
             case .speed:
                 PlozziOSPlaybackSpeedSheet(viewModel: viewModel)
             case .subtitles:
@@ -534,6 +516,7 @@ private extension View {
 private struct PlozziOSPlaybackOptionsMenu: View {
     @Environment(\.locale) private var locale
     let audioOptions: [PlayerTrackOption]
+    let hasAudioControls: Bool
     let supportsPlaybackSpeed: Bool
     let supportsSync: Bool
     let supportsDialogEnhance: Bool
@@ -546,7 +529,6 @@ private struct PlozziOSPlaybackOptionsMenu: View {
     let onShowSync: () -> Void
     let onShowQuality: () -> Void
     let onShowVersions: () -> Void
-    let onShowInfo: () -> Void
     let onPresentationChange: (Bool) -> Void
 
     var body: some View {
@@ -564,7 +546,7 @@ private struct PlozziOSPlaybackOptionsMenu: View {
         if supportsQuality {
             items.append(action("Quality", icon: "slider.horizontal.3", perform: onShowQuality))
         }
-        if !audioOptions.isEmpty || supportsDialogEnhance {
+        if hasAudioControls {
             var audio: [UIMenuElement] = audioOptions.map { option in
                 UIAction(title: option.nativeTitle, state: option.isSelected ? .on : .off) { _ in
                     onSelectAudio(option.id)
@@ -586,7 +568,6 @@ private struct PlozziOSPlaybackOptionsMenu: View {
         if supportsSync {
             items.append(action("Playback Sync", icon: "slider.horizontal.3", perform: onShowSync))
         }
-        items.append(action("Now Playing", icon: "info.circle", perform: onShowInfo))
         return UIMenu(children: items)
     }
 
@@ -616,7 +597,6 @@ private struct PlozziOSPlayerTransport: View {
     let onSkipBackward: () -> Void
     let onPlayPause: () -> Void
     let onSkipForward: () -> Void
-    let onShowInfo: () -> Void
     let onShowSpeed: () -> Void
     let onShowSubtitles: () -> Void
     let onShowSync: () -> Void
@@ -759,7 +739,8 @@ private struct PlozziOSPlayerTransport: View {
 
     private var playbackOptions: some View {
         PlozziOSPlaybackOptionsMenu(
-            audioOptions: viewModel.controls.audioOptions,
+            audioOptions: viewModel.controls.hasSelectableAudio ? viewModel.controls.audioOptions : [],
+            hasAudioControls: viewModel.controls.hasAudioControls,
             supportsPlaybackSpeed: viewModel.controls.engineCapabilities.contains(.playbackSpeed),
             supportsSync: supportsSync,
             supportsDialogEnhance: supportsDialogEnhance,
@@ -778,7 +759,6 @@ private struct PlozziOSPlayerTransport: View {
             onShowSync: onShowSync,
             onShowQuality: onShowQuality,
             onShowVersions: onShowVersions,
-            onShowInfo: onShowInfo,
             onPresentationChange: onOptionsMenuPresentationChange
         )
     }
@@ -1675,66 +1655,6 @@ private struct PlozziOSPlaybackSpeedSheet: View {
             }
         }
         .presentationDetents([.medium])
-    }
-}
-
-private struct PlozziOSPlaybackInfoSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let viewModel: PlayerViewModel
-    let onShowDiagnostics: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    Text(viewModel.controls.infoCard.headline)
-                        .font(.headline)
-                    if !viewModel.controls.infoCard.overview.isEmpty {
-                        Text(verbatim: viewModel.controls.infoCard.overview.overviewPlainText)
-                            .plozzForeground(.secondary)
-                    }
-                }
-
-                Section {
-                    Button("Restart from Beginning", systemImage: "arrow.counterclockwise") {
-                        viewModel.requestSeek(to: 0)
-                        dismiss()
-                    }
-                    if viewModel.controls.infoCard.hasPreviousEpisode,
-                       let previous = viewModel.previousEpisode {
-                        Button("Previous Episode", systemImage: "backward.end.fill") {
-                            viewModel.playEpisode(previous)
-                            dismiss()
-                        }
-                    }
-                    if viewModel.controls.infoCard.hasNextEpisode {
-                        Button("Next Episode", systemImage: "forward.end.fill") {
-                            viewModel.playNextEpisode()
-                            dismiss()
-                        }
-                    }
-                }
-
-                if !viewModel.controls.infoCard.badges.isEmpty {
-                    Section("Media") {
-                        ForEach(viewModel.controls.infoCard.badges, id: \.self) { badge in
-                            Text(badge.label)
-                        }
-                    }
-                }
-                Section {
-                    Button("Playback Diagnostics", systemImage: "waveform.path.ecg", action: onShowDiagnostics)
-                }
-            }
-            .navigationTitle("Now Playing")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-        .presentationDetents([.medium, .large])
     }
 }
 

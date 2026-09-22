@@ -176,6 +176,8 @@ public final class InfoCardModel {
     public var overview: String = ""   // l10n:content — media metadata from the server
     /// Technical badges (resolution/codec/HDR/etc.).
     public var badges: [MediaBadge] = []
+    /// Track labels describe the input file, not converted output.
+    public var audioIsSourceTrack = false
     /// On-screen talent for what is playing, driving the in-player Cast tab.
     ///
     /// Arrives with the item, so it needs no request of its own — and the tab
@@ -528,6 +530,7 @@ public final class PlayerControlsModel {
     }
 
     public var hasSelectableAudio: Bool { audioOptions.count > 1 }
+    public var hasAudioControls: Bool { hasSelectableAudio || engineCapabilities.contains(.dialogEnhance) }
     public var hasSelectableSubtitles: Bool { !subtitleOptions.isEmpty }
 
     /// The skippable segment whose window currently contains the live position,

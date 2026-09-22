@@ -63,8 +63,13 @@ Ethernet retain their local/remote classification even when marked expensive.
 Connection changes reapply the relevant saved default. The player Quality sheet
 changes only the current video's rendition, not the saved preferences.
 The transport keeps subtitles directly accessible and groups quality, version,
-audio, speed, sync, and Now Playing in one playback-options menu. Diagnostics
-is available inside Now Playing, not in the main options list. Subtitles remain
+audio, speed, and sync in one playback-options menu. The existing Info card owns
+media details, restart/episode actions, and Playback Info (diagnostics); there is
+no duplicate Now Playing sheet. Audio controls appear only for alternate tracks
+or Dialog Enhance, on both mobile and tvOS. Single tracks remain read-only in
+Info, labelled Source audio during conversion rather than implying output format.
+Provider-generated format/default labels use the shared friendly codec naming;
+the current selection is a checkmark, not the container's Default suffix. Subtitles remain
 one separate button, without a duplicate menu entry. A native button snapshots
 the menu on opening; playback-clock updates never replace its presented rows.
 Its presentation lifecycle suspends control auto-hide until dismissal, including

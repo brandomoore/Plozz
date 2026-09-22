@@ -9,6 +9,37 @@ import XCTest
 
 @MainActor
 final class MobileDiagnosticsLayoutTests: XCTestCase {
+    func testInfoRetainsReadOnlyAudioWithSourceLabelDuringConversion() throws {
+        let model = PlayerControlsModel()
+        model.infoCard.headline = "Fixture Movie"
+        model.infoCard.overview = "A movie with a single audio track."
+        model.audioOptions = TrackMenuBuilder.audioOptions(tracks: [
+            .init(id: 1, kind: .audio, displayTitle: "AC3 5.1 (Default)", codec: "ac3", channels: 6)
+        ], selectedID: 1, preferred: [], locale: .init(identifier: "en_US"))
+        XCTAssertFalse(model.hasAudioControls)
+        for transcoding in [false, true] {
+            model.infoCard.audioIsSourceTrack = transcoding
+            for width in [CGFloat(390), 1024, 1920] {
+                let renderer = ImageRenderer(content:
+                    InfoAudioFixture(model: model)
+                        .environment(\.playerCardMetrics, width == 1920 ? .tv : .resolved(forWidth: width, height: 844))
+                        .environment(\.themePalette, .dark)
+                        .environment(\.locale, Locale(identifier: "en_US"))
+                        .frame(width: width)
+                        .background(.black)
+                )
+                renderer.scale = 2
+                let image = try XCTUnwrap(renderer.cgImage)
+                let text = try recognizedText(image)
+                XCTAssertTrue(text.contains("Dolby Digital 5.1"), text)
+                XCTAssertEqual(text.contains("Source audio"), transcoding, text)
+                XCTAssertFalse(text.contains("AC3"), text)
+                XCTAssertFalse(text.contains("Default"), text)
+                attach(image, name: "Info audio \(Int(width)) converted \(transcoding)")
+            }
+        }
+    }
+
     private var fixture: PlaybackDiagnostics {
         var value = PlaybackDiagnostics(
             videoCodec: "HEVC", audioCodec: "AAC", audioChannels: 2, container: "mkv",
@@ -119,6 +150,15 @@ final class MobileDiagnosticsLayoutTests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+}
+
+private struct InfoAudioFixture: View {
+    let model: PlayerControlsModel
+    @FocusState private var focus: PlayerControls.FocusSlot?
+
+    var body: some View {
+        InfoPanelView(model: model, actions: .init(), focus: $focus, onClose: {})
     }
 }
 #endif

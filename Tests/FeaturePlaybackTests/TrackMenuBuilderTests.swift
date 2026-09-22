@@ -74,13 +74,49 @@ final class SubtitleMenuAvailabilityTests: XCTestCase {
         let model = PlayerControlsModel()
         model.engineCapabilities = [.playbackSpeed]
         model.audioOptions = [
-            PlayerTrackOption(id: 1, title: Text("English"), isSelected: true)
+            PlayerTrackOption(id: 1, title: Text("English"), isSelected: true),
+            PlayerTrackOption(id: 2, title: Text("French"), isSelected: false)
         ]
         model.subtitleDownload.canSearch = true
         XCTAssertEqual(model.trackControlCategories, [.speed, .audio, .subtitles])
 
         model.subtitleDownload.canSearch = false
         XCTAssertEqual(model.trackControlCategories, [.speed, .audio])
+    }
+}
+
+@MainActor
+final class AudioMenuAvailabilityTests: XCTestCase {
+    func testSingleTrackIsReadOnlyAndAbsentFromTVFocusCategories() {
+        let model = PlayerControlsModel()
+        model.engineCapabilities = [.playbackSpeed]
+        XCTAssertFalse(model.hasAudioControls)
+        model.audioOptions = [.init(id: 1, title: Text("Dolby Digital 5.1"), isSelected: true)]
+        XCTAssertFalse(model.hasSelectableAudio)
+        XCTAssertFalse(model.hasAudioControls)
+        XCTAssertEqual(model.trackControlCategories, [.speed])
+        XCTAssertEqual(model.audioOptions.count, 1, "Info must retain the nonadjustable track")
+    }
+
+    func testAlternateTrackAndDialogEnhanceEachKeepAudioReachable() {
+        let model = PlayerControlsModel()
+        model.audioOptions = [
+            .init(id: 1, title: Text("English"), isSelected: true),
+            .init(id: 2, title: Text("French"), isSelected: false)
+        ]
+        XCTAssertTrue(model.hasSelectableAudio)
+        XCTAssertTrue(model.hasAudioControls)
+        XCTAssertEqual(model.trackControlCategories, [.audio])
+        model.audioOptions.removeLast()
+        model.engineCapabilities = [.dialogEnhance]
+        XCTAssertFalse(model.hasSelectableAudio)
+        XCTAssertTrue(model.hasAudioControls)
+        XCTAssertEqual(model.trackControlCategories, [.audio])
+        model.audioOptions = []
+        XCTAssertTrue(model.hasAudioControls)
+        model.engineCapabilities = []
+        XCTAssertFalse(model.hasAudioControls)
+        XCTAssertTrue(model.trackControlCategories.isEmpty)
     }
 }
 
@@ -91,6 +127,18 @@ final class SubtitleMenuAvailabilityTests: XCTestCase {
 /// exclusion, engine-dual vs sidecar sourcing) that used to be buried in
 /// `PlayerViewModel.loadTrackOptions`.
 final class TrackMenuBuilderTests: XCTestCase {
+    func testBothPresentationsUseNormalizedSourceTrackAndActualSelection() {
+        let options = TrackMenuBuilder.audioOptions(tracks: [
+            MediaTrack(id: 1, kind: .audio, displayTitle: "AC3 5.1 (Default)", codec: "ac3", isDefault: true, channels: 6),
+            MediaTrack(id: 2, kind: .audio, displayTitle: "AAC 2.0", codec: "aac", channels: 2)
+        ], selectedID: 2, preferred: [], locale: .init(identifier: "en_US"))
+        XCTAssertEqual(options[0].nativeTitle, "Dolby Digital 5.1")
+        XCTAssertEqual(options[0].title, Text(verbatim: "Dolby Digital 5.1"))
+        XCTAssertFalse(options[0].isSelected, "Container default is not current selection")
+        XCTAssertEqual(options[1].nativeTitle, "AAC Stereo")
+        XCTAssertTrue(options[1].isSelected)
+    }
+
     func testNativeAudioTitlesKeepLanguageFormatAndCommentary() {
         let tracks = [MediaTrack(
             id: 1, kind: .audio, displayTitle: "Audio 1", language: "en", codec: "ac3",

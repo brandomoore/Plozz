@@ -116,6 +116,57 @@ final class TrackLabelingTests: XCTestCase {
 
     // MARK: audio labels
 
+    func testGeneratedAudioTitleUsesKnownFormatWithoutDefaultMarker() {
+        for title in ["AC3 5.1 (Default)", "AC-3 - 5.1 (default)", "Dolby Digital 5.1", "AC3"] {
+            XCTAssertEqual(
+                TrackLabeling.audioLabel(displayTitle: title, language: nil, codec: "ac3", channels: 6, trackID: 1),
+                TrackLabel(base: .content("Dolby Digital 5.1")), title
+            )
+        }
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "E-AC-3 5.1 (Default)", language: nil, codec: "e-ac-3", channels: 6, trackID: 1),
+            TrackLabel(base: .content("Dolby Digital+ 5.1"))
+        )
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "AAC 2.0 (Default)", language: nil, codec: "aac", channels: 2, trackID: 1),
+            TrackLabel(base: .content("AAC Stereo"))
+        )
+    }
+
+    func testGeneratedAudioTitleKeepsLanguageAndRealQualifiers() {
+        for title in ["AC3 5.1 (Default)", "English - AC3 - 5.1 (Default)"] {
+            XCTAssertEqual(
+                TrackLabeling.audioLabel(
+                    displayTitle: title, language: "en", codec: "ac3", channels: 6, isCommentary: true,
+                    trackID: 1, locale: Locale(identifier: "en_US")
+                ),
+                TrackLabel(base: .content("English"), qualifiers: [.format("Dolby Digital 5.1"), .commentary])
+            )
+        }
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "AC3 5.1 (Default)", language: "en", codec: "ac3", channels: 6,
+                                    trackID: 1, locale: Locale(identifier: "es")),
+            TrackLabel(base: .content("Inglés"), qualifiers: [.format("Dolby Digital 5.1")])
+        )
+    }
+
+    func testFormatCleanupDoesNotEraseCustomTitlesOrInventMissingFacts() {
+        for title in ["AC3 5.1 Director's Mix", "Original theatrical 5.1", "Director's Default"] {
+            XCTAssertEqual(
+                TrackLabeling.audioLabel(displayTitle: title, language: nil, codec: "ac3", channels: 6, trackID: 1),
+                TrackLabel(base: .content(title))
+            )
+        }
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "AC3 5.1 (Default)", language: nil, trackID: 1),
+            TrackLabel(base: .content("AC3 5.1")), "Do not guess structured codec/channel facts from a title"
+        )
+        XCTAssertEqual(
+            TrackLabeling.audioLabel(displayTitle: "English Commentary (Default)", language: "en", codec: "ac3", channels: 6, trackID: 1),
+            TrackLabel(base: .content("English Commentary"))
+        )
+    }
+
     func testAudioLabelKeepsRichProviderTitle() {
         let label = TrackLabeling.audioLabel(
             displayTitle: "English - Dolby Digital - 5.1", language: "en", trackID: 1

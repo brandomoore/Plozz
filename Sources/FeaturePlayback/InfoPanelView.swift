@@ -144,6 +144,7 @@ struct InfoPanelView: View {
             // this right. It takes the full row when it fits and sheds the
             // badges — then the release date — when it does not.
             adaptiveMetaRow
+            audioDetails
 
             // Playback Info at the far left, apart from the three transport
             // actions: it is a diagnostics toggle rather than something reached
@@ -233,6 +234,24 @@ struct InfoPanelView: View {
         }
     }
 
+    @ViewBuilder
+    private var audioDetails: some View {
+        if let option = model.audioOptions.first(where: \.isSelected)
+            ?? (model.audioOptions.count == 1 ? model.audioOptions.first : nil) {
+            Group {
+                if model.infoCard.audioIsSourceTrack {
+                    Text("Source audio: \(option.title)")
+                } else {
+                    Text("Audio: \(option.title)")
+                }
+            }
+            .font(metrics.captionFont)
+            .foregroundStyle(.white.opacity(0.85))
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
     private func regularBody(thumbRadius: CGFloat, thumbHeight: CGFloat) -> some View {
         HStack(alignment: .top, spacing: metrics.columnSpacing) {
             infoThumbnail(cornerRadius: thumbRadius, height: thumbHeight)
@@ -296,6 +315,7 @@ struct InfoPanelView: View {
                 // shorter string AND the more useful one, so it holds its size and
                 // the badges are dropped instead when the row will not fit.
                 adaptiveMetaRow
+                audioDetails
             }
             .frame(maxWidth: metrics.textColumnMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)

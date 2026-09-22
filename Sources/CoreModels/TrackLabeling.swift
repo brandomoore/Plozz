@@ -103,8 +103,8 @@ public enum TrackLabeling {
     private static func audioCodecName(_ codec: String?) -> String? {  // l10n:content — codec brand names ("Dolby Digital", "DTS", ...), never translated
         guard let token = codec?.lowercased(), !token.isEmpty else { return nil }
         switch token {
-        case "ac3": return "Dolby Digital"
-        case "eac3", "ec3", "ec-3": return "Dolby Digital+"
+        case "ac3", "ac-3": return "Dolby Digital"
+        case "eac3", "e-ac-3", "ec3", "ec-3": return "Dolby Digital+"
         case "truehd", "mlp": return "Dolby TrueHD"
         case "dts", "dca", "dts-hd", "dtshd": return "DTS"
         case "aac", "aac_latm": return "AAC"
@@ -216,27 +216,38 @@ public enum TrackLabeling {
         locale: Locale = .current
     ) -> TrackLabel {
         let languageNm = languageName(forCode: language, in: locale)
+        let title = displayTitle.replacingOccurrences(
+            of: #"\s*\(default\)\s*$"#, with: "", options: [.regularExpression, .caseInsensitive]
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        let format = audioFormatHint(codec: codec, channels: channels, isAtmos: isAtmos)
+        let generatedFormatTitle = isAudioFormatTitle(
+            title, languageName: languageNm, codec: codec, channels: channels, format: format
+        )
 
         // A provider title that already names the language is a complete label.
         if let languageNm,
-           !isGenericTitle(displayTitle),
-           displayTitle.range(of: languageNm, options: .caseInsensitive) != nil {
-            return TrackLabel(base: .content(displayTitle))
+           !generatedFormatTitle, !isGenericTitle(title),
+           title.range(of: languageNm, options: .caseInsensitive) != nil {
+            return TrackLabel(base: .content(title))
         }
 
         let base: TrackLabel.Base
+        var formatIsBase = false
         if let languageNm {
             base = .content(languageNm)
-        } else if !isGenericTitle(displayTitle) {
+        } else if generatedFormatTitle, let format {
+            base = .content(format)
+            formatIsBase = true
+        } else if !isGenericTitle(title) {
             // No language, but the title says something real — trust it as-is.
-            return TrackLabel(base: .content(displayTitle))
+            return TrackLabel(base: .content(title))
         } else {
             base = .trackNumber(trackID)
         }
 
         var qualifiers: [TrackLabel.Qualifier] = []
-        if let hint = audioFormatHint(codec: codec, channels: channels, isAtmos: isAtmos) {
-            qualifiers.append(.format(hint))
+        if let format, !formatIsBase {
+            qualifiers.append(.format(format))
         }
         // `audioFormatHint`/`channelLayoutName` say nothing for a channel count
         // with no named convention (9+ channels — vanishingly rare, no known
@@ -250,6 +261,29 @@ public enum TrackLabeling {
         if isCommentary { qualifiers.append(.commentary) }
 
         return TrackLabel(base: base, qualifiers: qualifiers)
+    }
+
+    /// Match only titles completely described by known format facts; never
+    /// erase commentary, edition, or custom names because they contain a codec.
+    private static func isAudioFormatTitle(
+        _ title: String, languageName: String?, codec: String?, channels: Int?, format: String? // l10n:content - provider track title and format facts.
+    ) -> Bool {
+        guard let format else { return false }
+        func normalized(_ text: String) -> String {
+            text.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "+" }
+        }
+        var candidates = [format]
+        if let codec, !codec.isEmpty {
+            let names = [codec, audioCodecName(codec)].compactMap { $0 }
+            var layouts = [""]
+            if let layout = channelLayoutName(channels) { layouts.append(layout) }
+            if channels == 1 { layouts.append("1.0") }
+            if channels == 2 { layouts.append("2.0") }
+            candidates += names.flatMap { name in layouts.map { name + " " + $0 } }
+        }
+        if let languageName { candidates += candidates.map { languageName + " " + $0 } }
+        let normalizedTitle = normalized(title)
+        return !normalizedTitle.isEmpty && candidates.contains { normalized($0) == normalizedTitle }
     }
 }
 

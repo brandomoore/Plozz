@@ -2117,6 +2117,7 @@ public final class PlayerViewModel {
         controls.infoCard.episodeTag = Self.episodeTag(for: request.item)
         controls.infoCard.releaseLabel = request.item.releaseDateLabel ?? ""
         controls.infoCard.badges = request.item.technicalBadges
+        controls.infoCard.audioIsSourceTrack = request.isTranscoding
         controls.infoCard.artworkURLs = [request.item.backdropURL, request.item.heroBackdropURL, request.item.fallbackArtworkURL, request.item.posterURL].compactMap { $0 }
         controls.infoCard.runtimeLabel = request.item.runtime?.runtimeBadgeText ?? ""
         controls.hasTrickplay = request.scrubPreview?.isUsable ?? false
