@@ -674,7 +674,8 @@ private struct PlozziOSSettingsSplitView: View {
                 audioPolicy: appModel.settings.audioPolicy,
                 hasStreamingServer: appModel.accountsProviders.resolvedActiveAccounts.contains {
                     $0.provider is any StreamingQualityProviding
-                }
+                },
+                streamingSupport: appModel.streamingQualitySupport
             )
         case .downloads:
             PlozziOSDownloadSettingsView(model: appModel.downloads)
@@ -980,7 +981,8 @@ private struct PlozziOSSettingsCompactMenu: View {
                         audioPolicy: appModel.settings.audioPolicy,
                         hasStreamingServer: appModel.accountsProviders.resolvedActiveAccounts.contains {
                             $0.provider is any StreamingQualityProviding
-                        }
+                        },
+                        streamingSupport: appModel.streamingQualitySupport
                     )
                 } label: {
                     Label("Playback", systemImage: "play.rectangle")
@@ -2280,6 +2282,7 @@ private struct PlozziOSPlaybackSettingsView: View {
     @Bindable var model: PlaybackSettingsModel
     @Bindable var audioPolicy: AudioPolicyModel
     let hasStreamingServer: Bool
+    let streamingSupport: StreamingQualitySupport
 
     private static let policyCategories: [ContentCategory] = [.movie, .tvShow, .anime]
     private static let audioOptions: [AudioLanguagePreference] =
@@ -2290,7 +2293,8 @@ private struct PlozziOSPlaybackSettingsView: View {
     var body: some View {
         List {
             PlozziOSStreamingSettings(
-                settings: $model.settings.streaming, hasCompatibleServer: hasStreamingServer
+                settings: $model.settings.streaming, hasCompatibleServer: hasStreamingServer,
+                support: streamingSupport
             )
             SettingsSectionGroup("Skipping") {
                 Picker("Intros and credits", selection: $model.settings.skipIntros) {

@@ -31,7 +31,7 @@
       "tokenKeychainAccount": "silo-dedicated-credential",
       "itemID": "replace-with-fixture-content-id",
       "mediaSourceID": "replace-with-fixture-file-id",
-      "codecs": ["server"]
+      "codecs": ["h264"]
     },
     "emby": {
       "baseURL": "http://127.0.0.1:8097",

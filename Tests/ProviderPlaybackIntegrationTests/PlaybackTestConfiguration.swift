@@ -32,7 +32,8 @@ struct PlaybackTestConfiguration: Decodable {
                   parts.query == nil, parts.fragment == nil,
                   !server.serverID.isEmpty, !server.userID.isEmpty, !server.itemID.isEmpty,
                   server.tokenFile.hasPrefix("/"), !server.codecs.isEmpty,
-                  (name == "silo" ? server.codecs == ["server"] : Set(server.codecs).isSubset(of: ["h264", "hevc"])),
+                  (name == "silo" ? (server.codecs == ["server"] || server.codecs == ["h264"])
+                    : Set(server.codecs).isSubset(of: ["h264", "hevc"])),
                   Set(server.codecs).count == server.codecs.count else {
                 throw PlaybackTestFailure.invalidConfiguration
             }

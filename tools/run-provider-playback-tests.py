@@ -67,9 +67,10 @@ def validate_config(path, providers):
         if any(not isinstance(server.get(key), str) or not server[key] for key in ("serverID", "userID", "itemID")):
             raise ConfigurationError(f"Missing server/user/fixture identity for {provider}.")
         codecs = server.get("codecs")
-        allowed = ("server",) if provider == "silo" else ("h264", "hevc")
+        allowed = ("server", "h264") if provider == "silo" else ("h264", "hevc")
         if (not isinstance(codecs, list) or not codecs or any(not isinstance(codec, str) for codec in codecs)
-                or len(codecs) != len(set(codecs)) or not set(codecs).issubset(allowed)):
+                or len(codecs) != len(set(codecs)) or not set(codecs).issubset(allowed)
+                or (provider == "silo" and len(codecs) != 1)):
             raise ConfigurationError(f"Invalid codec matrix for {provider}.")
         if any(not isinstance(server.get(key), str) or not server[key]
                for key in ("tokenKeychainService", "tokenKeychainAccount")):
@@ -291,7 +292,7 @@ def main(argv=None):
             (media / "hls").mkdir(parents=True)
             run("fixture-encode", [
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-n",
-                "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24",
+                "-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=24",
                 "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
                 "-t", "90", "-c:v", "libx264", "-preset", "ultrafast", "-threads", "2",
                 "-pix_fmt", "yuv420p", "-g", "48", "-b:v", "4000k",
@@ -299,8 +300,9 @@ def main(argv=None):
             ], 180)
             run("fixture-hls", [
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-n",
-                "-i", str(media / "source.mp4"), "-vf", "scale=426:240", "-c:v", "libx264",
-                "-preset", "ultrafast", "-threads", "2", "-b:v", "672k", "-g", "48",
+                "-i", str(media / "source.mp4"), "-c:v", "libx264",
+                "-preset", "ultrafast", "-threads", "2", "-b:v", "1808k",
+                "-maxrate", "1808k", "-bufsize", "3616k", "-g", "48",
                 "-c:a", "aac", "-b:a", "128k", "-f", "hls", "-hls_time", "2",
                 "-hls_playlist_type", "vod", "-hls_segment_type", "fmp4", str(media / "hls/media.m3u8"),
             ], 180)
@@ -326,7 +328,7 @@ def main(argv=None):
                     "userID": "account:profile" if provider == "silo" else "user",
                     "tokenFile": str(silo_token_path if provider == "silo" else token_path),
                     "itemID": "movie", "mediaSourceID": "7" if provider == "plex" else "version",
-                    "codecs": ["server"] if provider == "silo" else ["h264"],
+                    "codecs": ["h264"],
                 } for provider in providers},
             }
             config_path = output / "synthetic-config.json"
@@ -394,7 +396,7 @@ def main(argv=None):
             "kind": "harness-unit-tests" if args.self_test else "synthetic-provider-contract-playback" if args.fixture_self_test else "real-provider-playback",
             "status": "passed" if status == 0 else "failed",
             "requiredProviders": [] if args.self_test else providers,
-            "siloQuality": "server-selected 1080p conversion; no arbitrary custom bitrate API in the production adapter",
+            "siloQuality": "custom 1080p / 2000 Kbps total limit through native quality preference and video bandwidth cap",
             "localShares": "out-of-scope",
             "summary": {key: summary.get(key) for key in ("result", "passedTests", "failedTests", "skippedTests")},
             "ownedEncodingCleanup": cleanup,

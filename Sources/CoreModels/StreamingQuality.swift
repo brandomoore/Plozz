@@ -320,6 +320,8 @@ public struct StreamingPlaybackOptions: Hashable, Sendable {
     public var subtitlesOff = false
     public var subtitleMode: SubtitleMode?
     public var subtitleLanguage: String?
+    /// Source-time resume intent for a server that prepares its output at that position.
+    public var startPosition: TimeInterval?
 
     public init(
         quality: StreamingQuality, codec: StreamingCodecPreference = .automatic,
@@ -366,11 +368,16 @@ public struct StreamingPlaybackOptions: Hashable, Sendable {
 
 /// Only real server adapters opt in. A file-share provider must not ignore a limit.
 public protocol StreamingQualityProviding: MediaProvider {
+    var streamingQualitySupport: StreamingQualitySupport { get }
     func playbackInfo(
         for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
         streaming: StreamingPlaybackOptions
     ) async throws -> PlaybackRequest
     func releaseStreamingSession(_ request: PlaybackRequest) async
+}
+
+public extension StreamingQualityProviding {
+    var streamingQualitySupport: StreamingQualitySupport { .standard }
 }
 
 public enum StreamingQualityError: Error, Equatable, Sendable {
@@ -380,6 +387,7 @@ public enum StreamingQualityError: Error, Equatable, Sendable {
     case serverHTTP(Int)
     case plexDecision(Int)
     case codecUnavailable(DirectPlayVideoCodec)
+    case serverRefusal(LocalizedStringResource)
     case playback(StreamingPlaybackFailure)
     case startupTimedOut
 
@@ -393,6 +401,8 @@ public enum StreamingQualityError: Error, Equatable, Sendable {
 
     public var userMessage: LocalizedStringResource {
         switch self {
+        case .serverRefusal(let message):
+            message
         case .invalidQuality(let error):
             error.userMessage
         case .unavailable:

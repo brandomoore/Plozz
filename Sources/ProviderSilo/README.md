@@ -71,6 +71,28 @@ action. Leaving the flow cancels pending work and clears in-memory PINs/tokens.
 - Watched state and the native Silo watchlist write back to Silo. Batched resume
   synchronization checks each result, not only HTTP success.
 
+## Streaming quality
+
+The mobile quality controls use Silo's native protocol-3 preferences and video
+bandwidth cap; they never rewrite a session's signed media URL. Resolution is
+a height ceiling. Compound preferences preserve the requested height under a
+lower bitrate cap, while smaller sources stay at their original dimensions.
+The total bitrate reserves 192 Kbps for stereo AAC, and the HLS capability caps
+audio at two channels. The returned effective recipe must satisfy the limits;
+normalized preferences, ignored limits, or substituted files are refused and
+their sessions released.
+
+The published API currently supports 480p, 720p, 1080p and 4K conversion with
+H.264 output. The UI disables unsupported 240p/1440p and HEVC conversion choices.
+A saved HEVC preference can use the shared explicit H.264 retry without raising
+the limit. Maximum retains the original negotiation path unless conversion is
+forced; force uses a genuine bitrate reduction rather than inventing decoder
+capabilities. Session cleanup sends an idempotent stop without fabricating a
+resume position.
+The quality contract was verified against Silo server revision
+`8e5ae2f469d36109e28cab3959693236cb503833`; unsupported growing/non-source-aligned
+timelines remain an explicit refusal rather than an incorrect resume clock.
+
 ## Subtitle search and download
 
 Silo uses the shared TV/iOS subtitle search, accessibility preference ranking,

@@ -48,16 +48,22 @@ class ProviderPlaybackRunnerTests(unittest.TestCase):
             with self.assertRaises(runner.ConfigurationError):
                 runner.validate_config(path, ["emby"])
 
-    def test_silo_requires_its_real_server_contract_and_shares_are_rejected(self):
+    def test_silo_h264_is_supported_but_hevc_and_shares_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path, _, data = self.fixture(Path(directory))
-            for name in ("silo", "mediaShare"):
-                data["servers"][name] = data["servers"].pop(next(iter(data["servers"])))
-                path.write_text(json.dumps(data))
-                with self.assertRaises(runner.ConfigurationError):
-                    runner.validate_config(path, [name])
+            data["servers"]["silo"] = data["servers"].pop("emby")
+            path.write_text(json.dumps(data))
+            runner.validate_config(path, ["silo"])
+            data["servers"]["silo"]["codecs"] = ["hevc"]
+            path.write_text(json.dumps(data))
+            with self.assertRaises(runner.ConfigurationError):
+                runner.validate_config(path, ["silo"])
+            data["servers"]["mediaShare"] = data["servers"].pop("silo")
+            path.write_text(json.dumps(data))
+            with self.assertRaises(runner.ConfigurationError):
+                runner.validate_config(path, ["mediaShare"])
 
-    def test_silo_server_selected_mode_is_supported_without_claiming_custom_bitrate(self):
+    def test_silo_legacy_server_codec_alias_is_accepted(self):
         with tempfile.TemporaryDirectory() as directory:
             path, _, data = self.fixture(Path(directory))
             silo = data["servers"].pop("emby")

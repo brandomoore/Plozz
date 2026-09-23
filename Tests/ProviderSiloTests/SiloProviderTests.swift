@@ -9,7 +9,7 @@ import XCTest
   import FoundationNetworking
 #endif
 
-private actor SiloHTTPStub: HTTPClient {
+actor SiloHTTPStub: HTTPClient {
   private var responses: [String: String]
   private(set) var requests: [Endpoint] = []
   init(_ responses: [String: String]) { self.responses = responses }
@@ -107,7 +107,7 @@ extension SiloProviderTests {
     XCTAssertTrue(request.isTranscoding)
     XCTAssertTrue(request.isManifestStream)
     XCTAssertEqual(request.playSessionID, "session1")
-    XCTAssertNil(request.streamingOptions, "Silo does not implement custom bitrate/resolution limits")
+    XCTAssertNil(request.streamingOptions, "The legacy API does not invent a user-selected quality limit")
     XCTAssertNil(request.streamingSessionID, "Cleanup uses the negotiated playback session")
     XCTAssertNil(request.streamURL)
     XCTAssertNil(request.originalFileSource)

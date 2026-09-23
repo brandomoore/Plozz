@@ -62,9 +62,14 @@ playback. Cellular and unclassified paths use the cellular policy; Wi-Fi and
 Ethernet retain their local/remote classification even when marked expensive.
 Connection changes reapply the relevant saved default. The player Quality sheet
 changes only the current video's rendition, not the saved preferences.
-Each picker also offers Custom: an independent resolution ceiling (240p–2160p)
-and integer total bitrate in Kbps. The total includes the 128 Kbps audio budget;
-1080p / 2,000 Kbps therefore leaves 1,872 Kbps for video and never forces upscaling.
+Each picker also offers Custom: an independent resolution ceiling and integer
+total bitrate in Kbps. Plex/Jellyfin/Emby support 240p–2160p and reserve 128 Kbps
+for audio. Silo's native API supports 480p/720p/1080p/4K and H.264 conversion;
+its stereo AAC budget is 192 Kbps. A 1080p / 2,000 Kbps selection therefore
+leaves 1,872 Kbps for video on the former adapters and 1,808 Kbps on Silo.
+Unsupported Silo choices are disabled, and an unsupported saved limit is
+reported instead of silently becoming Maximum. See ProviderSilo's README for
+native recipe validation and server limits.
 Custom edits are drafts until Apply, and Cancel leaves the previous choice intact.
 Presets retain their legacy serialized names; custom values persist their own
 dimensions/budget per profile and network category. Invalid custom values remain

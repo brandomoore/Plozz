@@ -66,10 +66,10 @@ class FixtureServer:
                 if endpoint == "/api/v2/catalog/items/movie":
                     self.reply({
                         "content_id": "movie", "type": "movie", "title": "Synthetic fixture", "position_seconds": 0,
-                        "versions": [{"file_id": "version", "resolution": "360p", "codec_video": "h264", "codec_audio": "aac",
+                        "versions": [{"file_id": "version", "resolution": "1080p", "codec_video": "h264", "codec_audio": "aac",
                                       "container": "mp4", "file_size": (owner.root / "source.mp4").stat().st_size,
                                       "duration": 90, "bitrate": 4128,
-                                      "video_tracks": [{"codec": "h264", "width": 640, "height": 360}]}],
+                                      "video_tracks": [{"codec": "h264", "width": 1920, "height": 1080}]}],
                     })
                 elif endpoint == "/api/v2/playback/capabilities":
                     self.reply({"installation_id": "fixture", "protocol_versions": [3],
@@ -85,6 +85,11 @@ class FixtureServer:
                                                   "stream": {"url": path + "?st=synthetic-session", "headers": {}, "header_refresh": "none"},
                                                   "timeline": {"source_start_seconds": 0, "player_start_seconds": 0,
                                                                "timeline_offset_seconds": 0, "can_seek_anywhere": True},
+                                                  "effective_recipe": {
+                                                      "video_codec": "h264", "audio_codec": "aac",
+                                                      "width": 1920, "height": 1080,
+                                                      "bitrate_kbps": 1808 if converting else 4000, "audio_channels": 2
+                                                  },
                                                   "subtitle": {"mode": "none", "inventory": []}}})
                 elif endpoint.startswith("/api/v2/playback/") and self.command in ("POST", "DELETE"):
                     if self.command == "DELETE":
@@ -98,7 +103,7 @@ class FixtureServer:
                         "Id": "version", "Container": "mp4", "SupportsDirectPlay": True,
                         "SupportsTranscoding": True, "Bitrate": 4_128_000, "RunTimeTicks": 900_000_000,
                         "MediaStreams": [
-                            {"Index": 0, "Type": "Video", "Codec": "h264", "Width": 640, "Height": 360},
+                            {"Index": 0, "Type": "Video", "Codec": "h264", "Width": 1920, "Height": 1080},
                             {"Index": 1, "Type": "Audio", "Codec": "aac", "Channels": 2, "Language": "eng", "IsDefault": True},
                         ],
                     }
@@ -117,7 +122,7 @@ class FixtureServer:
                     self.reply({"MediaContainer": {"Metadata": [{
                         "ratingKey": "movie", "title": "Synthetic fixture", "type": "movie", "duration": 90000,
                         "Media": [{"id": 7, "container": "mp4", "videoCodec": "h264", "audioCodec": "aac",
-                                   "bitrate": 4128, "width": 640, "height": 360,
+                                   "bitrate": 4128, "width": 1920, "height": 1080,
                                    "Part": [{"id": 8, "key": "/library/parts/8/file.mp4", "Stream": [
                                        {"id": 1, "streamType": 2, "codec": "aac", "channels": 2,
                                         "languageCode": "eng", "default": True}
@@ -132,7 +137,7 @@ class FixtureServer:
                 elif endpoint.endswith(".m3u8"):
                     owner.media_requests += 1
                     if endpoint.endswith(("master.m3u8", "start.m3u8")):
-                        text = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,CODECS="avc1.64001e,mp4a.40.2"\n'
+                        text = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1936000,CODECS="avc1.640028,mp4a.40.2",RESOLUTION=1920x1080\n'
                         text += f"/media/{codec}/main.m3u8?api_key={owner.token}\n"
                     else:
                         text = (owner.root / "hls/media.m3u8").read_text()

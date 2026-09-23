@@ -11,7 +11,7 @@
           "category": "New",
           "items": [
             {
-              "text": "Change playback quality with transcoding presets or custom resolution/bitrate limits for Plex, Jellyfin, and Emby, with per-network defaults and codec preferences.",
+              "text": "Change playback quality with transcoding presets or custom resolution/bitrate limits for Plex, Jellyfin, Emby, and Silo, with per-network defaults and supported codec choices.",
               "platforms": ["iOS"]
             },
             {

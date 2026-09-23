@@ -260,6 +260,9 @@ public final class PlayerViewModel {
     private let playbackSettings: PlaybackSettings
     private let streamingQuality = StreamingPlaybackState()
     public var streamingOptions: StreamingPlaybackOptions? { streamingQuality.options }
+    public var streamingQualitySupport: StreamingQualitySupport {
+        (provider as? any StreamingQualityProviding)?.streamingQualitySupport ?? .standard
+    }
     public var currentPlaybackItem: MediaItem? { request?.item ?? offlineItem }
     public var currentMediaSourceID: String? {
         if case .authenticatedHTTP(let locator) = request?.playbackSource { return locator.mediaSourceID }
@@ -977,7 +980,10 @@ public final class PlayerViewModel {
             } else {
                 let resolveStart = Date()
                 resolved = try await resolveAndRoute(
-                    itemID: itemID, mediaSourceID: mediaSourceID, forceTranscode: forceTranscode)
+                    itemID: itemID, mediaSourceID: mediaSourceID, forceTranscode: forceTranscode,
+                    startPosition: resumeOverride ?? startPositionOverride.map {
+                        playbackSettings.resumeRewindInterval.applied(to: $0)
+                    })
                 HandoffDiagnostics.emit("bringup RESOLVED on-demand item=\(itemID) engine=\(resolved.engineKind.rawValue) playbackInfo=\(HandoffDiagnostics.ms(resolveStart)) provider=\(provider.kind.rawValue) transcode=\(forceTranscode)")
             }
             // A user-initiated Back during playbackInfo resolution should NOT
@@ -1080,7 +1086,8 @@ public final class PlayerViewModel {
     private func resolveAndRoute(
         itemID: String,
         mediaSourceID: String?,
-        forceTranscode: Bool
+        forceTranscode: Bool,
+        startPosition: TimeInterval? = nil
     ) async throws -> PrefetchedPlayback {
         let streamingGeneration = streamingLoadGeneration
         if let offlineItem,
@@ -1133,6 +1140,7 @@ public final class PlayerViewModel {
         var request: PlaybackRequest
         if var options = streamingOptions, let provider = provider as? any StreamingQualityProviding {
             try options.quality.validate()
+            options.startPosition = itemID == self.itemID ? startPosition : 0
             if itemID == self.itemID, let retry = streamingQuality.fallbackCodec { options.codec = retry }
             let source = itemID == self.itemID ? (streamingMediaSourceID ?? mediaSourceID) : mediaSourceID
             if let item = offlineItem {
@@ -1173,7 +1181,7 @@ public final class PlayerViewModel {
                 guard canRetry, !Task.isCancelled,
                       let retry = StreamingCodecRetryPolicy.next(
                         preference: options.codec, selectedCodec: nil,
-                        supportsHEVC: capabilities.supportsHEVC,
+                        supportsHEVC: capabilities.supportsHEVC && streamingQualitySupport.codecs.contains(.preferHEVC),
                         alreadyRetried: itemID == self.itemID && streamingQuality.fallbackCodec != nil
                       ) else { throw error }
                 options.codec = retry
@@ -1358,7 +1366,7 @@ public final class PlayerViewModel {
                 preference: options.codec,
                 selectedCodec: engine.streamingOutputVideoCodec ?? request?.negotiatedStreamingVideoCodec
                     ?? (failure?.kind == .hdrConversion ? .h264 : nil),
-                supportsHEVC: capabilities.supportsHEVC,
+                supportsHEVC: capabilities.supportsHEVC && streamingQualitySupport.codecs.contains(.preferHEVC),
                 alreadyRetried: streamingQuality.fallbackCodec != nil
               ) else { return false }
         streamingQuality.fallbackCodec = retry

@@ -77,13 +77,13 @@ final class ProviderPlaybackIntegrationTests: XCTestCase {
             ))
             for codec in server.codecs {
                 let options = StreamingPlaybackOptions(
-                    quality: kind == .silo ? .hd1080 : try .custom(maximumHeight: 1080, bitrateKbps: 2_000),
+                    quality: try .custom(maximumHeight: 1080, bitrateKbps: 2_000),
                     codec: codec == "hevc" ? .preferHEVC : .preferH264, forceTranscoding: true
                 )
                 evidence.append(try await exercise(
                     provider: provider, resolver: resolver, http: http, server: server, configuration: configuration,
-                    options: options, resumeAt: configuration.resumeSeconds, expectedCodec: kind == .silo ? nil : codec,
-                    name: kind == .silo ? "server-transcode-1080p" : "custom-1080p-2000Kbps-\(codec)", deviceID: session.deviceID
+                    options: options, resumeAt: configuration.resumeSeconds, expectedCodec: codec == "server" ? "h264" : codec,
+                    name: "custom-1080p-2000Kbps-\(codec)", deviceID: session.deviceID
                 ))
             }
             let data = try JSONSerialization.data(withJSONObject: [
@@ -106,18 +106,15 @@ final class ProviderPlaybackIntegrationTests: XCTestCase {
         resumeAt: Double, expectedCodec: String?, name: String, deviceID: String
     ) async throws -> [String: Any] {
         let started = ContinuousClock.now
-        let request: PlaybackRequest
-        if let streaming = provider as? any StreamingQualityProviding {
-            request = try await streaming.playbackInfo(
-                for: server.itemID, mediaSourceID: server.mediaSourceID,
-                forceTranscode: options.forceTranscoding, streaming: options
-            )
-        } else {
-            guard provider.kind == .silo else { throw PlaybackTestFailure.invalidConfiguration }
-            request = try await provider.playbackInfo(
-                for: server.itemID, mediaSourceID: server.mediaSourceID, forceTranscode: options.forceTranscoding
-            )
+        guard let streaming = provider as? any StreamingQualityProviding else {
+            throw PlaybackTestFailure.invalidConfiguration
         }
+        var requested = options
+        requested.startPosition = resumeAt
+        let request = try await streaming.playbackInfo(
+            for: server.itemID, mediaSourceID: server.mediaSourceID,
+            forceTranscode: options.forceTranscoding, streaming: requested
+        )
         guard !request.isTranscoding || (request.streamingSessionID ?? request.playSessionID) != nil else {
             await (provider as? any StreamingQualityProviding)?.releaseStreamingSession(request)
             throw PlaybackTestFailure.cleanupFailed

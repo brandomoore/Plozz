@@ -7,10 +7,11 @@ server. Local/network shares are deliberately out of scope.
 Every test player is muted before it can start. Audio decoding is verified from
 stream bytes without sending sound to speakers; system volume is never changed.
 
-Silo uses its native protocol-3 original/forced-1080p playback contract and
-sequenced stop receipts. Its current production adapter does not expose an
-arbitrary bitrate preference, so this lane does **not** claim that Silo accepts
-the independent Custom bitrate limit used by Plex/Jellyfin/Emby.
+Silo uses native protocol-3 quality preferences and bandwidth caps, validating
+the returned recipe before playback. Its custom case uses the same total
+1080p / 2,000 Kbps limit as the other adapters, reserving 192 Kbps for Silo's
+stereo AAC output. Native Silo currently offers 480p/720p/1080p/4K conversion
+with H.264 output; unsupported resolution/codec choices remain explicit.
 
 ## One-time setup
 
@@ -35,7 +36,8 @@ the independent Custom bitrate limit used by Plex/Jellyfin/Emby.
 4. Choose an explicitly owned iOS or tvOS simulator. All servers must be reachable
    from it. A VPN, Local Network permission, unsupported server setting, or missing
    subscription can make a live run fail; none is treated as a passing skip.
-5. For Plex/Jellyfin/Emby, start with `codecs: ["h264"]`; Silo uses `["server"]`.
+5. Start with `codecs: ["h264"]` for every provider. Silo also accepts the
+   legacy `["server"]` alias, which now checks the H.264 custom-limit case.
    Add `"hevc"` only when the server's HEVC encoder
    is configured/entitled **and the destination advertises HEVC hardware decode**.
    The current iOS simulator does not; it fails explicitly with
@@ -85,10 +87,10 @@ building.
 For every selected provider:
 
 - Maximum negotiates original playback of the native-compatible fixture.
-- Plex/Jellyfin/Emby Custom **1080p / 2,000 Kbps**, including the audio budget,
+- Custom **1080p / 2,000 Kbps**, including the audio budget,
   requests a forced rendition through the production provider; each configured
-  codec is exercised. Silo requests its supported server-selected 1080p
-  conversion and verifies its output dimensions without claiming a custom bitrate.
+  codec is exercised. Silo validates its server's effective recipe and verifies
+  the played H.264 rendition against the height and bitrate ceilings.
 - AVPlayer produces actual decoded pixel buffers, not merely `readyToPlay`.
   Sustained frame delivery and clock advancement must continue for the configured
   observation window.
