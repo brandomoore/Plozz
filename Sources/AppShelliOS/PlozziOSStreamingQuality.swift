@@ -115,7 +115,7 @@ private struct StreamingCustomQualityEditor: View {
                 Section {
                     Picker("Maximum resolution", selection: $draft.maximumHeight) {
                         ForEach(CustomStreamingQuality.supportedHeights, id: \.self) { height in
-                            Text("\(height)p").tag(height)
+                            Text(verbatim: "\(height)p").tag(height)
                         }
                     }
                     LabeledContent("Total bitrate (Kbps)") {

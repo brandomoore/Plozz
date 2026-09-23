@@ -58,7 +58,7 @@ public enum StreamingQuality: Hashable, CaseIterable, Codable, Sendable, Identif
         case .hd720: "720p · 2 Mbps"
         case .sd480: "480p · 1 Mbps"
         case .low: "240p · 500 Kbps"
-        case .custom(let value): "Custom · \(value.maximumHeight)p · \(value.bitrateKbps) Kbps"
+        case .custom(let value): "Custom · \(String(value.maximumHeight))p · \(value.bitrateKbps.formatted()) Kbps"
         case .invalid: "Invalid custom quality"
         }
     }
@@ -163,7 +163,7 @@ public enum StreamingQualityValidationError: String, Error, Hashable, Codable, S
         switch self {
         case .invalidBitrate: "Enter a whole number of Kbps, without decimals or separators."
         case .bitrateTooLow: "Enter more than 128 Kbps to leave room for video after the audio budget."
-        case .bitrateTooHigh: "The server supports at most \(CustomStreamingQuality.maximumBitrateKbps) Kbps."
+        case .bitrateTooHigh: "The server supports at most \(CustomStreamingQuality.maximumBitrateKbps.formatted()) Kbps."
         case .unsupportedResolution: "Choose a supported maximum resolution."
         case .malformedCustom: "This saved custom quality couldn’t be read. Choose a quality or enter a new custom limit."
         }
@@ -410,7 +410,7 @@ public enum StreamingQualityError: Error, Equatable, Sendable {
         case .negotiationFailed:
             "The server couldn’t prepare playback and didn’t report a specific cause. Check the server’s logs and try again."
         case .serverHTTP(let status):
-            "The server returned HTTP \(status) while preparing playback. Check its transcoding log for the cause. Changing codec may not resolve a server error."
+            "The server returned HTTP \(String(status)) while preparing playback. Check its transcoding log for the cause. Changing codec may not resolve a server error."
         case .plexDecision:
             "Plex refused the conversion. Check the server’s transcoding settings and log."
         case .codecUnavailable(let codec):

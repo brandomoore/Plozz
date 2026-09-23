@@ -2,6 +2,84 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/041",
+      "version": "2026.9.22",
+      "build": 41,
+      "releasedAt": "2026-09-22",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Native Silo support with profile-aware sign-in, libraries, playback, watchlists, and subtitle downloads.",
+            "Jump to a letter in individual and combined libraries.",
+            {
+              "text": "Download Silo movies and episodes for offline playback.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Streaming-quality presets and custom resolution/bitrate limits for Plex, Jellyfin, and Emby, with separate local-network, remote, and cellular defaults.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Choose Automatic, HEVC, or H.264 for server conversion.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Switch versions from the player while keeping your playback position and settings.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Updated the playback engine and improved HDR10+ and Atmos metadata detection.",
+            "Playback Info shows measured converted-stream quality; diagnostics keep original-file details separate.",
+            "Cleaner audio-track labels; Audio controls appear only when tracks or Dialog Enhance can be changed.",
+            "Separate detail-page controls for review scores and Common Sense age recommendations.",
+            "Status messages now follow the selected appearance consistently.",
+            "Clearer server connection progress and setup prompts.",
+            {
+              "text": "Streamlined playback options, clearer loading and error recovery, and readable scrolling diagnostics.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Clearer server-import prompts identify the source device and let you defer setup to Settings.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "More compact title-page ratings and format badges, with extra details available when they do not fit.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Episode format badges stay consistent when title details refresh.",
+            "Improved recovery of older synced watchlist entries and prevented imported entries from reappearing as user-added titles.",
+            "Emby resume syncing no longer risks stopping active playback.",
+            {
+              "text": "Prevented automatic screen locking while video starts or buffers.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Hero trailers stay paused behind full-screen video playback.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Playback options stay open while you use them instead of disappearing with the controls timer.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Corrected the alphabet indicator while scrolling library grids.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/040",
       "version": "2026.9.20",
       "build": 40,
