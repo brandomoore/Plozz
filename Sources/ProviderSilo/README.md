@@ -32,7 +32,11 @@ action. Leaving the flow cancels pending work and clears in-memory PINs/tokens.
   the account Keychain entry. The raw PIN is never persisted. Refresh is
   single-flight and compare-and-set against the original login revision.
   An uncertain refresh requires sign-in rather than replaying a possibly spent
-  token. Silo logins are not cloned through device-to-device credential transfer
+  token. A refresh proven by transport metrics not to have been transmitted
+  restores the original credential for a later retry after an outage; missing
+  evidence is never treated as proof. Library errors retain their real cause,
+  so expired authentication offers sign-in rather than an endless offline retry.
+  Silo logins are not cloned through device-to-device credential transfer
   or iCloud Keychain; another device pairs independently. Device setup still
   imports the server descriptor and shows it as needing sign-in rather than
   omitting it from the summary. Settings > iCloud Sync keeps that entry

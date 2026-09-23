@@ -1,6 +1,7 @@
 #if os(iOS)
 import AppRuntime
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureSettings
 import FeatureSyncSetup
@@ -226,6 +227,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
     var presentation: ProfileLibrariesScope.Presentation = .settings
     @State private var libraries: [ProfileLibraryChoice] = []
     @State private var unreachableAccountIDs: Set<String> = []
+    @State private var libraryFailures: [String: AppError] = [:]
     @State private var isLoading = false
 
     /// Server keys whose switch has been flipped but whose write hasn't landed.
@@ -332,15 +334,26 @@ struct PlozziOSMyLibrariesSettingsView: View {
                     }
                 } else if librariesForActiveIdentity(in: group).isEmpty {
                     if isUnreachable(group) {
+                        let account = activeAccount(in: group)
+                        let failure = account.flatMap { libraryFailures[$0.id] } ?? .serverUnreachable
                         HStack {
-                            Label(
-                                "Can't reach this server — it may be offline.",
-                                systemImage: "exclamationmark.triangle"
-                            )
+                            Label {
+                                if failure == .serverUnreachable {
+                                    Text("Can't reach this server — it may be offline.")
+                                } else {
+                                    Text(failure.userMessage)
+                                }
+                            } icon: {
+                                Image(systemName: failure.requiresSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
+                            }
                             .plozzForeground(.secondary)
                             Spacer()
-                            Button { Task { await loadLibraries() } } label: {
-                                Label("Retry", systemImage: "arrow.clockwise")
+                            if failure.requiresSignIn, let account {
+                                Button("Sign In") { onAddUser(account.server) }
+                            } else {
+                                Button { Task { await loadLibraries() } } label: {
+                                    Label("Retry", systemImage: "arrow.clockwise")
+                                }
                             }
                         }
                     } else {
@@ -361,7 +374,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
                 }
             }
         } footer: {
-            Text("Saved for \(appModel.profiles.activeProfile.name).")
+            Text("Saved for profile “\(appModel.profiles.activeProfile.name)”.")
         }
     }
 
@@ -592,6 +605,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
         )
         var loaded: [ProfileLibraryChoice] = []
         var unreachable: Set<String> = []
+        var failures: [String: AppError] = [:]
         for account in resolved {
             do {
                 let choices = try await account.provider.libraries()
@@ -609,19 +623,23 @@ struct PlozziOSMyLibrariesSettingsView: View {
                 // A server we couldn't reach is marked unreachable (offline) so the
                 // card shows "can't reach this server", not "no libraries".
                 unreachable.insert(account.account.id)
+                let failure = (error as? AppError) ?? .unknown("")
+                failures[account.account.id] = failure
+                PlozzLog.app.error("Library discovery failed provider=\(account.provider.kind.rawValue) error=\(HandoffDiagnostics.errorCode(failure))")
             }
         }
         libraries = loaded.sorted {
             $0.title.localizedStandardCompare($1.title) == .orderedAscending
         }
         unreachableAccountIDs = unreachable
+        libraryFailures = failures
     }
 
     /// Whether every account backing this server card failed its last library
     /// fetch (offline / unreachable).
     private func isUnreachable(_ group: ServerAccountGroup) -> Bool {
-        let ids = group.accounts.map(\.id)
-        return !ids.isEmpty && ids.allSatisfy { unreachableAccountIDs.contains($0) }
+        guard let account = activeAccount(in: group) else { return false }
+        return unreachableAccountIDs.contains(account.id)
     }
 }
 

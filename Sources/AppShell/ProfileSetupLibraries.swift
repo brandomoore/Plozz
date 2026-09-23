@@ -16,6 +16,7 @@ final class ProfileSetupLibrariesLoader {
     var state: LoadState<[AggregatedLibrary]> = .idle
     var refreshingAccountIDs: Set<String> = []
     var unreachableAccountIDs: Set<String> = []
+    var libraryFailures: [String: AppError] = [:]
 
     @ObservationIgnored private let discovery = LibraryDiscoveryModel()
     @ObservationIgnored private var revision = 0
@@ -34,6 +35,7 @@ final class ProfileSetupLibrariesLoader {
         guard mine == revision else { return }
         refreshingAccountIDs = []
         unreachableAccountIDs = discovered.unreachableAccountIDs
+        libraryFailures = discovered.failures
         state = .loaded(discovered.libraries)
     }
 }
@@ -51,6 +53,7 @@ extension AppState {
             discoveredLibraries: librariesStore.state,
             refreshingLibraryAccountIDs: librariesStore.refreshingAccountIDs,
             unreachableLibraryAccountIDs: librariesStore.unreachableAccountIDs,
+            libraryFailures: librariesStore.libraryFailures,
             reloadLibraries: { [weak self] in
                 guard let self else { return }
                 await librariesStore.reload(appState: self)

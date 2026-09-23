@@ -21,6 +21,68 @@ public protocol HTTPClient: Sendable {
     func sendRaw(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse)
 }
 
+public struct HTTPRequestNotSentError: Error, Sendable {
+    public let underlying: AppError
+
+    public init(underlying: AppError) {
+        self.underlying = underlying
+    }
+}
+
+final class HTTPRequestDeliveryEvidence: @unchecked Sendable {
+    private let lock = NSLock()
+    private var hasTransactions = false
+    private var requestStarted = false
+    private var sentBody = false
+
+    func recordTransactions(requestStarted values: [Bool]) {
+        lock.lock()
+        defer { lock.unlock() }
+        hasTransactions = hasTransactions || !values.isEmpty
+        requestStarted = requestStarted || values.contains(true)
+    }
+
+    func recordBodyBytes(_ count: Int64) {
+        lock.lock()
+        defer { lock.unlock() }
+        sentBody = sentBody || count > 0
+    }
+
+    var confirmedNotSent: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return hasTransactions && !requestStarted && !sentBody
+    }
+}
+
+class HTTPDeliveryTaskDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let evidence: HTTPRequestDeliveryEvidence?
+
+    init(evidence: HTTPRequestDeliveryEvidence?) {
+        self.evidence = evidence
+        super.init()
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        evidence?.recordBodyBytes(task.countOfBytesSent)
+        evidence?.recordTransactions(requestStarted: metrics.transactionMetrics.map { transaction in
+            let observedConnection = transaction.resourceFetchType == .networkLoad
+            let observedHTTP = transaction.requestStartDate != nil || transaction.requestEndDate != nil
+                || transaction.response != nil || transaction.responseStartDate != nil
+                || transaction.responseEndDate != nil
+            // Missing timing from an unknown/custom transport is not proof.
+            return !observedConnection || observedHTTP
+        })
+    }
+
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64,
+        totalBytesSent: Int64, totalBytesExpectedToSend: Int64
+    ) {
+        evidence?.recordBodyBytes(totalBytesSent)
+    }
+}
+
 public extension HTTPClient {
     /// Default: no distinct raw path — reuse `send` (which throws on non-2xx, so
     /// the error body is unavailable to conformers that don't override this).
@@ -124,7 +186,9 @@ public struct URLSessionHTTPClient: HTTPClient {
     /// `(data, response)` for **every** HTTP status (only transport failures
     /// throw), so callers that need the error body/status can inspect them.
     public func sendRaw(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
-        let request = try Self.makeRequest(endpoint, baseURL: baseURL)
+        var request = try Self.makeRequest(endpoint, baseURL: baseURL)
+        if endpoint.reportsUndeliveredRequests { request.cachePolicy = .reloadIgnoringLocalCacheData }
+        let delivery = endpoint.reportsUndeliveredRequests ? HTTPRequestDeliveryEvidence() : nil
 
         PlozzLog.networking.debug(
             "→ \(endpoint.method.rawValue) \(PlozzLog.redact(url: request.url ?? baseURL))"
@@ -135,12 +199,19 @@ public struct URLSessionHTTPClient: HTTPClient {
         do {
             switch endpoint.redirectPolicy {
             case .follow:
-                (data, response) = try await session.data(for: request)
+                if let delivery {
+                    (data, response) = try await session.data(for: request, delegate: HTTPDeliveryTaskDelegate(evidence: delivery))
+                } else {
+                    (data, response) = try await session.data(for: request)
+                }
             case .sameOrigin:
-                let delegate = SameOriginHTTPRedirectDelegate(url: request.url ?? baseURL)
+                let delegate = SameOriginHTTPRedirectDelegate(url: request.url ?? baseURL, evidence: delivery)
                 (data, response) = try await session.data(for: request, delegate: delegate)
             }
         } catch let urlError as URLError {
+            if delivery?.confirmedNotSent == true {
+                throw HTTPRequestNotSentError(underlying: Self.map(urlError))
+            }
             throw Self.map(urlError)
         } catch is CancellationError {
             throw AppError.cancelled
@@ -195,12 +266,12 @@ public struct URLSessionHTTPClient: HTTPClient {
 
 /// Per-task protection for endpoints carrying credentials or tuner ownership.
 /// A blocked redirect is returned as its original non-success HTTP response.
-final class SameOriginHTTPRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+final class SameOriginHTTPRedirectDelegate: HTTPDeliveryTaskDelegate, @unchecked Sendable {
     private let origin: NetworkOrigin?
 
-    init(url: URL) {
+    init(url: URL, evidence: HTTPRequestDeliveryEvidence? = nil) {
         self.origin = Self.origin(of: url)
-        super.init()
+        super.init(evidence: evidence)
     }
 
     func allowedRequest(_ request: URLRequest) -> URLRequest? {

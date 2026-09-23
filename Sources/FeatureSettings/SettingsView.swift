@@ -365,6 +365,7 @@ public struct SettingsView: View {
             discoveredLibraries: librariesStore.state,
             refreshingLibraryAccountIDs: librariesStore.refreshingAccountIDs,
             unreachableLibraryAccountIDs: librariesStore.unreachableAccountIDs,
+            libraryFailures: librariesStore.failures,
             reloadLibraries: reloadLibraries,
             accounts: accounts,
             activeAccountID: activeAccountID,

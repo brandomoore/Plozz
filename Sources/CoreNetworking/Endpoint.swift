@@ -25,6 +25,8 @@ public struct Endpoint: Sendable {
     public var headers: [String: String]
     public var body: Data?
     public var redirectPolicy: RedirectPolicy
+    /// Preserve proof that a one-time mutation never reached HTTP transmission.
+    public var reportsUndeliveredRequests: Bool = false
 
     public init(
         method: HTTPMethod = .get,

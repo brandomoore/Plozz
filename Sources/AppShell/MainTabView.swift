@@ -1795,7 +1795,8 @@ struct MainTabView: View {
         guard revision == libraryReloadRevision else { return }
         librariesStore.finishRefresh(
             with: discovered.libraries,
-            unreachableAccountIDs: discovered.unreachableAccountIDs
+            unreachableAccountIDs: discovered.unreachableAccountIDs,
+            failures: discovered.failures
         )
     }
 
@@ -1810,7 +1811,8 @@ struct MainTabView: View {
             guard revision == libraryReloadRevision else { return }
             librariesStore.finishRefresh(
                 with: discovered.libraries,
-                unreachableAccountIDs: discovered.unreachableAccountIDs
+                unreachableAccountIDs: discovered.unreachableAccountIDs,
+                failures: discovered.failures
             )
         }
     }

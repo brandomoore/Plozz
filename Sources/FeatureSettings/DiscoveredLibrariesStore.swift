@@ -32,6 +32,7 @@ public final class DiscoveredLibrariesStore {
     /// unreachable). Lets the UI show "couldn't reach this server" instead of the
     /// misleading "No libraries found on this server".
     public var unreachableAccountIDs: Set<String> = []
+    public var failures: [String: AppError] = [:]
 
     public init() {}
 
@@ -44,10 +45,12 @@ public final class DiscoveredLibrariesStore {
 
     public func finishRefresh(
         with libraries: [AggregatedLibrary],
-        unreachableAccountIDs: Set<String> = []
+        unreachableAccountIDs: Set<String> = [],
+        failures: [String: AppError] = [:]
     ) {
         state = libraries.isEmpty ? .empty : .loaded(libraries)
         self.unreachableAccountIDs = unreachableAccountIDs
+        self.failures = failures
         refreshingAccountIDs.removeAll()
     }
 }

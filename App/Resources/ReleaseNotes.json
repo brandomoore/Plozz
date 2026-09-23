@@ -31,7 +31,7 @@
           "items": [
             "Updated the playback engine and improved HDR10+ and Atmos metadata detection.",
             "Clearer playback information and audio controls, including measured converted-stream quality and separate original-file diagnostics.",
-            "Clearer server setup, theme-consistent status messages, and separate detail-page controls for review scores and Common Sense ages.",
+            "Clearer server setup and sign-in recovery, theme-consistent status messages, and separate detail-page controls for review scores and Common Sense ages.",
             {
               "text": "More compact detail headers, clearer device-to-device imports, and streamlined playback menus, recovery messages, and scrolling diagnostics.",
               "platforms": ["iOS"]

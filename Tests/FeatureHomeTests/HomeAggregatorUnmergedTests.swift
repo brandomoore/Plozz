@@ -62,6 +62,22 @@ final class HomeAggregatorUnmergedTests: XCTestCase {
         XCTAssertEqual(content.libraries.map(\.library.id), ["L1"], "Libraries tiles still available")
     }
 
+    func testLibraryDiscoveryPreservesFailureCausesAndRetriesAfterRecovery() async {
+        let aggregator = HomeAggregator()
+        let failed = await aggregator.libraryDiscovery(from: [
+            resolved("offline", provider: UnmergedStub(libraryError: .serverUnreachable)),
+            resolved("expired", provider: UnmergedStub(libraryError: .unauthorized))
+        ])
+        XCTAssertEqual(failed.failures["offline"], .serverUnreachable)
+        XCTAssertEqual(failed.failures["expired"], .unauthorized)
+        let recovered = await aggregator.libraryDiscovery(from: [
+            resolved("offline", provider: UnmergedStub(libraries: [lib("movies", "Movies", .movie)]))
+        ])
+        XCTAssertEqual(recovered.libraries.count, 1)
+        XCTAssertTrue(recovered.failures.isEmpty)
+        XCTAssertTrue(recovered.unreachableAccountIDs.isEmpty)
+    }
+
     func testOnlyEnabledRowsAreFetchedAndShown() async {
         let stub = UnmergedStub(
             libraries: [lib("L1", "Movies", .movie)],
@@ -204,6 +220,7 @@ private final class UnmergedStub: MediaProvider, @unchecked Sendable {
     private let stubbedLatest: [MediaItem]
     private let itemsByContainer: [String: [MediaItem]]
     private let hubsByLibrary: [String: [LibrarySection]]
+    private let libraryError: AppError?
     /// Whether `items(in:)` (Recently Added) was requested — lets a test prove a
     /// non-opted-in row is never fetched.
     private(set) var itemsRequested = false
@@ -213,20 +230,25 @@ private final class UnmergedStub: MediaProvider, @unchecked Sendable {
         continueWatching: [MediaItem] = [],
         latest: [MediaItem] = [],
         itemsByContainer: [String: [MediaItem]] = [:],
-        hubsByLibrary: [String: [LibrarySection]] = [:]
+        hubsByLibrary: [String: [LibrarySection]] = [:],
+        libraryError: AppError? = nil
     ) {
         self.stubbedLibraries = libraries
         self.stubbedContinueWatching = continueWatching
         self.stubbedLatest = latest
         self.itemsByContainer = itemsByContainer
         self.hubsByLibrary = hubsByLibrary
+        self.libraryError = libraryError
         self.session = UserSession(
             server: MediaServer(id: "s", name: "Home", baseURL: URL(string: "http://host")!, provider: .jellyfin),
             userID: "u", userName: "User", deviceID: "d", accessToken: "TOKEN"
         )
     }
 
-    func libraries() async throws -> [MediaLibrary] { stubbedLibraries }
+    func libraries() async throws -> [MediaLibrary] {
+        if let libraryError { throw libraryError }
+        return stubbedLibraries
+    }
     func continueWatching(limit: Int) async throws -> [MediaItem] { stubbedContinueWatching }
     func latest(limit: Int) async throws -> [MediaItem] { stubbedLatest }
     func item(id: String) async throws -> MediaItem { throw AppError.notFound }

@@ -32,5 +32,19 @@ final class DiscoveredLibrariesStoreTests: XCTestCase {
         XCTAssertEqual(store.state, .empty)
         XCTAssertTrue(store.refreshingAccountIDs.isEmpty)
     }
+
+    func testAuthenticationFailureRemainsDistinctFromOfflineAndClearsAfterRecovery() {
+        let store = DiscoveredLibrariesStore()
+        store.finishRefresh(
+            with: [], unreachableAccountIDs: ["server"],
+            failures: ["server": .unauthorized]
+        )
+        XCTAssertEqual(store.failures["server"], .unauthorized)
+        XCTAssertTrue(store.failures["server"]?.requiresSignIn == true)
+        XCTAssertFalse(AppError.serverUnreachable.requiresSignIn)
+        store.finishRefresh(with: [])
+        XCTAssertTrue(store.failures.isEmpty)
+        XCTAssertTrue(store.unreachableAccountIDs.isEmpty)
+    }
 }
 #endif

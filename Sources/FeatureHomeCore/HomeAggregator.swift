@@ -142,9 +142,11 @@ public struct HomeAggregator: Sendable {
     public struct LibraryDiscovery: Sendable {
         public let libraries: [AggregatedLibrary]
         public let unreachableAccountIDs: Set<String>
-        public init(libraries: [AggregatedLibrary], unreachableAccountIDs: Set<String>) {
+        public let failures: [String: AppError]
+        public init(libraries: [AggregatedLibrary], unreachableAccountIDs: Set<String>, failures: [String: AppError] = [:]) {
             self.libraries = libraries
             self.unreachableAccountIDs = unreachableAccountIDs
+            self.failures = failures
         }
     }
 
@@ -157,13 +159,16 @@ public struct HomeAggregator: Sendable {
         }
         var libraries: [AggregatedLibrary] = []
         var unreachable: Set<String> = []
+        var failures: [String: AppError] = [:]
         for outcome in outcomes {
             switch outcome {
             case let .libraries(libs): libraries.append(contentsOf: libs)
-            case let .unreachable(accountID): unreachable.insert(accountID)
+            case let .unreachable(accountID, error):
+                unreachable.insert(accountID)
+                failures[accountID] = error
             }
         }
-        return LibraryDiscovery(libraries: libraries, unreachableAccountIDs: unreachable)
+        return LibraryDiscovery(libraries: libraries, unreachableAccountIDs: unreachable, failures: failures)
     }
 
     private enum AccountLibraryOutcome: Sendable {
@@ -171,7 +176,7 @@ public struct HomeAggregator: Sendable {
         case libraries([AggregatedLibrary])
         /// The library fetch threw (server offline / unreachable). Carries the
         /// account id so the UI can mark that server offline.
-        case unreachable(String)
+        case unreachable(String, AppError)
     }
 
     private static func libraryOutcome(from resolved: ResolvedAccount) async -> AccountLibraryOutcome {
@@ -180,7 +185,7 @@ public struct HomeAggregator: Sendable {
             return .libraries(libs.map { aggregated($0, from: resolved) })
         } catch {
             PlozzLog.app.error("Aggregation: failed to list libraries for account \(resolved.account.id)")
-            return .unreachable(resolved.account.id)
+            return .unreachable(resolved.account.id, (error as? AppError) ?? .unknown(""))
         }
     }
 

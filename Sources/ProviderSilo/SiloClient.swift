@@ -101,10 +101,20 @@ actor SiloClient {
                 let refresh_token: String
                 let expires_in: Int
             }
-            let endpoint = try SiloAPI.endpoint("/auth/refresh", method: .post)
+            var endpoint = try SiloAPI.endpoint("/auth/refresh", method: .post)
                 .jsonBody(Body(refresh_token: credential.refreshToken))
+            endpoint.reportsUndeliveredRequests = true
             // A refresh rotates credentials; never replay an uncertain exchange.
-            let result = try await http.decode(Refreshed.self, from: endpoint, baseURL: baseURL, decoder: JSONDecoder())
+            let result: Refreshed
+            do {
+                result = try await http.decode(Refreshed.self, from: endpoint, baseURL: baseURL, decoder: JSONDecoder())
+            } catch let failure as HTTPRequestNotSentError {
+                try store.rotateCredential(
+                    accountID: accountID, revision: revision, expected: pendingRaw, replacement: raw
+                )
+                PlozzLog.auth.info("Silo refresh was not transmitted; retained the login for a later retry.")
+                throw failure.underlying
+            }
             guard !result.access_token.isEmpty, !result.refresh_token.isEmpty, result.expires_in > 0 else {
                 throw AppError.invalidResponse
             }

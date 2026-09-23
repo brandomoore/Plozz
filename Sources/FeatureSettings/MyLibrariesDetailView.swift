@@ -387,7 +387,7 @@ public struct MyLibrariesDetailView: View {
     /// fetch (server offline / unreachable). Distinguishes a server we couldn't
     /// reach from one that's reachable but genuinely has no libraries.
     private func isUnreachable(_ group: ServerAccountGroup) -> Bool {
-        let ids = group.accounts.map(\.id)
+        let ids = group.accounts.filter { scope.isAccountIncludedInActiveProfile($0.id) }.map(\.id)
         return !ids.isEmpty && ids.allSatisfy {
             scope.unreachableLibraryAccountIDs.contains($0)
         }
@@ -399,16 +399,29 @@ public struct MyLibrariesDetailView: View {
     @ViewBuilder
     private func libraryStatusMessage(for group: ServerAccountGroup) -> some View {
         if isUnreachable(group) {
+            let account = group.accounts.first {
+                scope.isAccountIncludedInActiveProfile($0.id) && scope.libraryFailures[$0.id] != nil
+            }
+            let failure = account.flatMap { scope.libraryFailures[$0.id] } ?? .serverUnreachable
             HStack(alignment: .firstTextBaseline) {
-                Label(
-                    "Can't reach this server — it may be offline.",
-                    systemImage: "exclamationmark.triangle"
-                )
+                Label {
+                    if failure == .serverUnreachable {
+                        Text("Can't reach this server — it may be offline.")
+                    } else {
+                        Text(failure.userMessage)
+                    }
+                } icon: {
+                    Image(systemName: failure.requiresSignIn ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle")
+                }
                 .font(.footnote)
                 .plozzForeground(.secondary)
                 Spacer()
-                Button { Task { await scope.reloadLibraries() } } label: {
-                    Label("Retry", systemImage: "arrow.clockwise")
+                if failure.requiresSignIn, let account {
+                    Button("Sign In") { scope.onAddUser(account.server) }
+                } else {
+                    Button { Task { await scope.reloadLibraries() } } label: {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                    }
                 }
             }
         } else {

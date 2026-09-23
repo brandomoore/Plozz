@@ -36,6 +36,7 @@ public struct ProfileLibrariesScope {
     /// Accounts whose last library fetch failed, so the UI can say "couldn't
     /// reach this server" rather than "no libraries".
     public var unreachableLibraryAccountIDs: Set<String>
+    public var libraryFailures: [String: AppError]
     public var reloadLibraries: () async -> Void
     public var homeVisibility: HomeLibraryVisibilityModel
     public var isAccountIncludedInActiveProfile: (String) -> Bool
@@ -59,6 +60,7 @@ public struct ProfileLibrariesScope {
         discoveredLibraries: LoadState<[AggregatedLibrary]>,
         refreshingLibraryAccountIDs: Set<String>,
         unreachableLibraryAccountIDs: Set<String>,
+        libraryFailures: [String: AppError] = [:],
         reloadLibraries: @escaping () async -> Void,
         homeVisibility: HomeLibraryVisibilityModel,
         isAccountIncludedInActiveProfile: @escaping (String) -> Bool,
@@ -74,6 +76,7 @@ public struct ProfileLibrariesScope {
         self.discoveredLibraries = discoveredLibraries
         self.refreshingLibraryAccountIDs = refreshingLibraryAccountIDs
         self.unreachableLibraryAccountIDs = unreachableLibraryAccountIDs
+        self.libraryFailures = libraryFailures
         self.reloadLibraries = reloadLibraries
         self.homeVisibility = homeVisibility
         self.isAccountIncludedInActiveProfile = isAccountIncludedInActiveProfile
@@ -94,6 +97,7 @@ extension SettingsContext {
             discoveredLibraries: discoveredLibraries,
             refreshingLibraryAccountIDs: refreshingLibraryAccountIDs,
             unreachableLibraryAccountIDs: unreachableLibraryAccountIDs,
+            libraryFailures: libraryFailures,
             reloadLibraries: reloadLibraries,
             homeVisibility: homeVisibility,
             isAccountIncludedInActiveProfile: isAccountIncludedInActiveProfile,

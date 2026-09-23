@@ -36,6 +36,10 @@ public enum AppError: Error, Equatable, Sendable {
     /// Anything else, with a non-sensitive message.
     case unknown(String)
 
+    public var requiresSignIn: Bool {
+        self == .unauthorized || self == .invalidCredentials
+    }
+
     /// Whether this represents a *transport-level* failure — we never reached a
     /// server that could give us a real answer (offline, DNS, TLS, timeout,
     /// connection refused), the request was cancelled, or the session token was
