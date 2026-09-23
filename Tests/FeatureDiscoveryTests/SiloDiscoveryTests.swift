@@ -142,6 +142,67 @@ final class SiloDiscoveryTests: XCTestCase {
         XCTAssertTrue(ServerIdentity.isSame(first, authenticated))
     }
 
+    func testRootURLAndInstallationIdentityMatchWithoutCrossingOrigins() {
+        let url = URL(string: "http://192.168.1.71:8090")!
+        let authenticated = MediaServer(id: "installation-id", name: "Silo", baseURL: url, provider: .silo)
+        let discovered = MediaServer(id: url.absoluteString, name: "Silo", baseURL: url, provider: .silo)
+        var slash = discovered
+        slash.baseURL = URL(string: url.absoluteString + "/")!
+        XCTAssertTrue(ServerIdentity.isSame(authenticated, discovered))
+        XCTAssertTrue(ServerIdentity.isSame(discovered, authenticated))
+        XCTAssertTrue(ServerIdentity.isSame(slash, authenticated))
+        XCTAssertTrue(ServerIdentity.isSame(authenticated, slash))
+        for otherURL in ["http://192.168.1.71:8091", "https://192.168.1.71:8090", "http://192.168.1.71:8090/other"] {
+            let other = MediaServer(id: otherURL, name: "Other", baseURL: URL(string: otherURL)!, provider: .silo)
+            XCTAssertFalse(ServerIdentity.isSame(authenticated, other))
+        }
+    }
+
+    @MainActor
+    func testSavedRecentAndDiscoveredSiloAppearAsOneSignedInServer() async {
+        let url = URL(string: "http://192.168.1.71:8090")!
+        let saved = MediaServer(id: "installation-id", name: "192.168.1.71", baseURL: url, provider: .silo)
+        let recent = MediaServer(id: url.absoluteString, name: "Silo", baseURL: url, provider: .silo)
+        let store = SiloRecentStore()
+        store.recentServers = [recent]
+        let validator = ServerValidator(provider: .silo, http: SiloDiscoveryHTTP())
+        let model = ServerPickerViewModel(
+            provider: .silo,
+            discovery: SiloServerDiscovery(candidates: { [url] }, validator: validator),
+            validator: validator, store: store
+        )
+        model.setSignedInServers([SignedInServer(server: saved, userNames: ["Viewer"])])
+        XCTAssertTrue(model.recentServers.isEmpty)
+        model.startScan(timeout: 1)
+        let deadline = ContinuousClock.now + .seconds(2)
+        while model.phase != .idle, ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertTrue(model.discoveredServers.isEmpty)
+        XCTAssertEqual(model.signedInServers.count, 1)
+        XCTAssertEqual(model.status(for: saved), .onNetwork)
+        XCTAssertEqual(model.signedInServers.first?.server, saved, "Picker deduplication must not migrate saved accounts.")
+        model.stopScan()
+    }
+
+    @MainActor
+    func testSigningInAfterDiscoveryCollapsesTheExistingRow() async {
+        let url = URL(string: "http://192.168.1.71:8090")!
+        let validator = ServerValidator(provider: .silo, http: SiloDiscoveryHTTP())
+        let model = ServerPickerViewModel(
+            provider: .silo,
+            discovery: SiloServerDiscovery(candidates: { [url] }, validator: validator),
+            validator: validator, store: SiloRecentStore()
+        )
+        model.startScan(timeout: 1)
+        let deadline = ContinuousClock.now + .seconds(2)
+        while model.phase != .idle, ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertEqual(model.discoveredServers.count, 1)
+        let saved = MediaServer(id: "installation-id", name: "Silo", baseURL: url, provider: .silo)
+        model.setSignedInServers([SignedInServer(server: saved, userNames: ["Viewer"])])
+        XCTAssertTrue(model.discoveredServers.isEmpty)
+        XCTAssertEqual(model.status(for: saved), .onNetwork)
+        model.stopScan()
+    }
+
     private final class SiloRecentStore: LastServerStoring, @unchecked Sendable {
         var recentServers: [MediaServer] = []
     }

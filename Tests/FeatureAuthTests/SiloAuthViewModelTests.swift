@@ -10,6 +10,30 @@ import XCTest
 
 @MainActor
 final class SiloAuthViewModelTests: XCTestCase {
+    func testSignInPreservesTheSelectedServerNameInsteadOfSavingItsHost() async throws {
+        for (selectedName, expectedName) in [("Silo", "Silo"), ("Living Room Movies", "Living Room Movies"), ("silo.test", "Silo")] {
+            let http = SiloOnboardingHTTP()
+            let url = URL(string: "https://silo.test")!
+            let server = MediaServer(id: url.absoluteString, name: selectedName, baseURL: url, provider: .silo)
+            var received: UserSession?
+            let model = SiloAuthViewModel(
+                server: server, deviceID: "test",
+                service: SiloAuthentication(baseURL: url, http: http),
+                onAuthenticated: { received = $0 }
+            )
+            defer { model.cancel() }
+            model.start()
+            try await wait { if case .profiles = model.phase { return true }; return false }
+            guard case let .profiles(profiles) = model.phase,
+                  let open = profiles.first(where: { !$0.has_pin }) else { return XCTFail("Missing open profile") }
+            model.select(open)
+            try await wait { received != nil }
+            XCTAssertEqual(received?.server.name, expectedName)
+            XCTAssertEqual(received?.server.baseURL, url)
+            XCTAssertNotEqual(received?.server.id, url.absoluteString, "The authenticated installation id still owns identity.")
+        }
+    }
+
     func testPINBackKeepsApprovalAndAllowsAnotherProfile() async throws {
         let http = SiloOnboardingHTTP()
         var received: [UserSession] = []

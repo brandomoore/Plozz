@@ -157,7 +157,8 @@ public struct SiloAuthentication: Sendable {
     }
 
     public func makeSession(
-        tokens: SiloTokenPair, profile: SiloProfile, profileToken: String?, deviceID: String
+        tokens: SiloTokenPair, profile: SiloProfile, profileToken: String?, deviceID: String,
+        serverName: String? = nil
     ) async throws -> UserSession {
         guard !profile.has_pin || profileToken?.isEmpty == false else { throw AppError.unauthorized }
         let credential = SiloCredential(tokens: tokens, profile: profile, profileToken: profileToken)
@@ -167,8 +168,12 @@ public struct SiloAuthentication: Sendable {
         guard let installationID = capabilities.installation_id, !installationID.isEmpty else {
             throw AppError.invalidResponse
         }
+        let selectedName = serverName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = selectedName.flatMap {
+            $0.isEmpty || $0 == baseURL.host || $0 == baseURL.absoluteString ? nil : $0
+        } ?? ProviderKind.silo.displayName
         return UserSession(
-            server: MediaServer(id: installationID, name: baseURL.host ?? "Silo", baseURL: baseURL, provider: .silo),
+            server: MediaServer(id: installationID, name: displayName, baseURL: baseURL, provider: .silo),
             userID: "\(tokens.user.id):\(profile.id)",
             userName: profile.name,
             deviceID: deviceID,

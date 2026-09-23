@@ -13,6 +13,11 @@ capability before displaying a result. The scan is bounded and stops when the
 picker closes; it never signs in automatically. Saved servers remain one-tap
 choices. Custom ports, remote/Tailscale addresses, IPv6-only hosts and reverse
 proxy paths remain available through manual URL entry.
+Discovery URL identities and authenticated installation IDs collapse into one
+picker row when their provider, origin, and base path match, including root URLs
+with or without a trailing slash. Different ports, schemes, and proxy paths stay
+separate. New sign-ins preserve the selected server name rather than replacing
+it with an IP address; existing account records are not migrated by discovery.
 
 Silo uses the shared server picker, authentication handoff and library/profile
 setup, not a separate onboarding flow. Pairing shows the selected server, a

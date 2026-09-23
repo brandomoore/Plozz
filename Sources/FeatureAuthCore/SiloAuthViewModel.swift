@@ -188,7 +188,10 @@ public final class SiloAuthViewModel {
                 let proof: String?
                 if let pin { proof = try await service.verifyPIN(pin, profile: profile, token: tokens.access_token) }
                 else { proof = nil }
-                let session = try await service.makeSession(tokens: tokens, profile: profile, profileToken: proof, deviceID: deviceID)
+                let session = try await service.makeSession(
+                    tokens: tokens, profile: profile, profileToken: proof,
+                    deviceID: deviceID, serverName: server.name
+                )
                 try Task.checkCancellation()
                 guard generation == current else { return }
                 self.tokens = nil

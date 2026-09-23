@@ -92,16 +92,27 @@ public final class ServerPickerViewModel {
     /// re-find on its own. Servers already surfaced in the signed-in group are
     /// filtered out so each server appears once.
     public var recentServers: [MediaServer] {
-        let signedIn = signedInKeys
-        return store.recentServers.filter {
-            $0.provider == provider && !signedIn.contains(ServerIdentity.key(for: $0))
+        store.recentServers.filter { server in
+            server.provider == provider && !signedInServers.contains {
+                ServerIdentity.isSame($0.server, server)
+            }
         }
     }
 
     /// Updates the set of servers this device already has accounts on. Kept
     /// separate from discovery so the host can feed it from the account list.
     public func setSignedInServers(_ servers: [SignedInServer]) {
+        for entry in servers {
+            if discoveredServers.contains(where: {
+                ServerIdentity.isSame($0, entry.server) && lanKeys.contains(ServerIdentity.key(for: $0))
+            }) {
+                lanKeys.insert(ServerIdentity.key(for: entry.server))
+            }
+        }
         signedInServers = servers
+        discoveredServers.removeAll { server in
+            servers.contains { ServerIdentity.isSame($0.server, server) }
+        }
     }
 
     /// Identity keys of the signed-in servers, for de-duplication.
