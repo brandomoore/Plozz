@@ -3,7 +3,7 @@ import CoreModels
 import CoreUI
 import SwiftUI
 
-/// Full-page "we found your setup" screen — the promoted, full-screen version of the
+/// Full-page server-import invitation — the promoted, full-screen version of the
 /// mid-session new-server drawer. Shown on a fresh launch ONLY when we detected
 /// household servers that genuinely need bringing over (see
 /// `PlozziOSAppModel.pendingServersNeedingSetup` — in practice Apple-TV-origin
@@ -11,12 +11,13 @@ import SwiftUI
 ///
 /// The app leads with what it already knows: instead of the plain provider chooser,
 /// a returning user sees their own setup and one tap to bring it over. A quiet
-/// "Later in Settings" defers these offers on this device. Adaptive: two columns when
+/// "Import later in Settings" defers these offers on this device. Adaptive: two columns when
 /// wide (iPad landscape), stacked when narrow (iPhone / iPad portrait).
 @MainActor
 struct PlozziOSDetectedSetupView: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.locale) private var locale
     let appModel: PlozziOSAppModel
     let servers: [SyncedAccountDescriptor]
     /// Bring everything over from the detected device (runs the receive/pairing flow,
@@ -47,15 +48,18 @@ struct PlozziOSDetectedSetupView: View {
         serverGroups.filter { !localServerKeys.contains($0.id) }
     }
     private var originName: String? {
-        servers.compactMap { descriptor in
+        var seen = Set<String>()
+        let names = servers.compactMap { descriptor in
             let name = descriptor.originDeviceName?.trimmingCharacters(in: .whitespacesAndNewlines)
             return name?.isEmpty == false ? name : nil
-        }.first
+        }.filter { seen.insert($0).inserted }
+        return names.isEmpty ? nil : names.formatted(.list(type: .and).locale(locale))
     }
 
     /// SF Symbol for the origin device kind, matching the new-server drawer's mapping.
     private var originIcon: String {
-        switch servers.compactMap(\.originDeviceKind).first {
+        let kinds = Set(servers.compactMap(\.originDeviceKind))
+        switch kinds.count == 1 ? kinds.first : nil {
         case "tv": return "appletv.fill"
         case "pad": return "ipad"
         case "phone": return "iphone"
@@ -137,37 +141,17 @@ struct PlozziOSDetectedSetupView: View {
     }
 
     private var header: some View {
-        VStack(spacing: 8) {
-            Text(detectionTitle)
-                .font(.title2.weight(.bold))
-                .multilineTextAlignment(.center)
-            subtitle
-                .font(.subheadline)
-                .foregroundStyle(palette.secondaryText)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
+        ServerImportHeading(content: importContent, deviceName: originName, deviceIcon: originIcon)
     }
 
-    private var detectionTitle: LocalizedStringResource {
+    private var importContent: ServerImportHeading.Content {
         if newServerGroups.isEmpty {
-            return servers.count == 1
-                ? "We found another user"
-                : "We found more users"
+            return servers.count == 1 ? .account : .accounts
         }
         if !existingServerGroups.isEmpty {
-            return "We found more of your setup"
+            return .setup
         }
-        return serverGroups.count == 1
-            ? "We found your server"
-            : "We found your servers"
-    }
-
-    private var subtitle: Text {
-        if let originName {
-            return Text("From \(Image(systemName: originIcon)) \(originName)")
-        }
-        return Text("From another device")
+        return serverGroups.count == 1 ? .server : .servers
     }
 
     private func serverRow(_ group: SyncedServerAccountGroup) -> some View {
@@ -196,10 +180,8 @@ struct PlozziOSDetectedSetupView: View {
     private func userSummary(for group: SyncedServerAccountGroup) -> Text {
         let names = group.userNames
         guard !names.isEmpty else { return Text(verbatim: group.provider.displayName) }
-        let joined = names.formatted(.list(type: .and))
-        return localServerKeys.contains(group.id)
-            ? Text("Add \(joined)")
-            : Text("Sign in as \(joined)")
+        let joined = names.formatted(.list(type: .and).locale(locale))
+        return names.count == 1 ? Text("Account: \(joined)") : Text("Accounts: \(joined)")
     }
 
     private var divider: some View {
@@ -210,7 +192,7 @@ struct PlozziOSDetectedSetupView: View {
     private var actions: some View {
         VStack(spacing: 12) {
             Button(action: onSetUpFromDevice) {
-                Text("Set Up")
+                Text(importContent.primaryAction)
                 .fontWeight(.semibold)
                 .foregroundStyle(palette.onAccent)
                 .frame(maxWidth: .infinity)
@@ -218,7 +200,7 @@ struct PlozziOSDetectedSetupView: View {
             .buttonStyle(.borderedProminent)
 
             Button(action: onSetUpLater) {
-                Text("Later in Settings")
+                Text("Import later in Settings")
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
             }
