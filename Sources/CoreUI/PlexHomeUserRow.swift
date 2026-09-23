@@ -16,30 +16,7 @@ public struct PlexHomeUserAvatar: View {
     }
 
     public var body: some View {
-        ZStack {
-            Circle().fill(ProviderBrandMark.brandTint(.plex).opacity(0.18))
-            if let url = user.avatarURL {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case let .success(image):
-                        image.resizable().scaledToFill()
-                    default:
-                        initial
-                    }
-                }
-            } else {
-                initial
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(Circle())
-        .overlay(Circle().strokeBorder(ProviderBrandMark.brandTint(.plex).opacity(0.45), lineWidth: 1.5))
-    }
-
-    private var initial: some View {
-        Text(String(user.name.prefix(1)).uppercased())
-            .font(.system(size: size * 0.34, weight: .semibold))
-            .foregroundStyle(ProviderBrandMark.brandTint(.plex))
+        ServerUserAvatar(provider: .plex, name: user.name, avatarURL: user.avatarURL, size: size)
     }
 }
 
@@ -49,12 +26,7 @@ public struct PlexHomeUserAvatar: View {
 /// `Button { } .buttonStyle(SettingsFocusButtonStyle())`, so the Settings Plex-
 /// user picker and the first-run onboarding picker render identically.
 public struct PlexHomeUserRow: View {
-    public enum Accessory: Equatable, Sendable {
-        /// No trailing accessory.
-        case none
-        /// A green checkmark indicating this is the active selection.
-        case selected
-    }
+    public typealias Accessory = ServerUserRow.Accessory
 
     private let user: PlexHomeUser
     private let showsOwnerBadge: Bool
@@ -71,44 +43,10 @@ public struct PlexHomeUserRow: View {
     }
 
     public var body: some View {
-        HStack(spacing: 16) {
-            PlexHomeUserAvatar(user: user, size: 52)
-
-            HStack(spacing: 6) {
-                Text(user.name).font(.headline)
-
-                if showsOwnerBadge {
-                    Text("Account owner")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(ProviderBrandMark.brandTint(.plex).opacity(0.18)))
-                        .foregroundStyle(ProviderBrandMark.brandTint(.plex))
-                }
-
-                if user.requiresPIN {
-                    // Lock + "PIN" together — the lock alone read as unclear;
-                    // keep it focus-adaptive so it stays legible on the
-                    // inverted (focused) card.
-                    HStack(spacing: 3) {
-                        Image(systemName: "lock.fill")
-                        Text("PIN")
-                    }
-                    .font(.caption2.weight(.semibold))
-                    .settingsRowSecondary()
-                    .accessibilityLabel("PIN required")
-                }
-            }
-
-            Spacer()
-
-            if accessory == .selected {
-                SettingsSelectionIndicator()
-            }
-        }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 14)
-        .contentShape(Rectangle())
+        ServerUserRow(
+            provider: .plex, name: user.name, avatarURL: user.avatarURL,
+            showsOwnerBadge: showsOwnerBadge, requiresPIN: user.requiresPIN, accessory: accessory
+        )
     }
 }
 #endif

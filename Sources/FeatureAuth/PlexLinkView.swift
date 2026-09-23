@@ -134,7 +134,7 @@ public struct PlexLinkView: View {
                                 .padding(.vertical, 24)
                                 .background { codePanel }
 
-                            PlexExpiryCountdown(
+                            LinkCodeExpiryCountdown(
                                 expiresAt: expiresAt,
                                 lifetime: viewModel.codeLifetime
                             )
@@ -332,34 +332,4 @@ private struct ServerCheckRow: View {
 
 /// Animated ring that depletes over the life of the current code, mirroring the
 /// Quick Connect countdown.
-private struct PlexExpiryCountdown: View {
-    let expiresAt: Date
-    let lifetime: TimeInterval
-
-    var body: some View {
-        TimelineView(.animation) { context in
-            let remaining = max(0, expiresAt.timeIntervalSince(context.date))
-            let fraction = lifetime > 0 ? remaining / lifetime : 0
-            let tint: Color = remaining <= 30 ? .orange : .accentColor
-
-            ZStack {
-                Circle()
-                    .stroke(tint.opacity(0.18), lineWidth: 8)
-                Circle()
-                    .trim(from: 0, to: fraction)
-                    .stroke(tint, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Text(Int(remaining.rounded(.up)), format: .number)
-                    .font(.system(size: 34, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(tint)
-                    .contentTransition(.numericText())
-            }
-            .frame(width: 104, height: 104)
-            .animation(.easeOut(duration: 0.3), value: tint)
-            .accessibilityLabel("Code expires in \(Int(remaining.rounded(.up))) seconds")
-        }
-    }
-}
-
 #endif

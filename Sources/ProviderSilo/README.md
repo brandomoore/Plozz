@@ -21,6 +21,12 @@ Approval continues automatically to the profile picker. PIN entry can return to
 that picker without repeating approval; retrying a failed profile lookup reuses
 the approved login while it remains valid. Expired codes have an explicit renewal
 action. Leaving the flow cancels pending work and clears in-memory PINs/tokens.
+TV approval follows the shared Plex-style QR/manual-code layout with one expiry
+ring and a visible match phrase. Profile selection uses the same avatar-row
+component and scroll card as Plex server-user selection, including focus-aware
+PIN indicators. These are Silo server profiles, not new Plozz household profiles.
+On mobile, browser approval stays primary and manual/QR alternatives share one
+disclosure instead of repeating the same instructions.
 
 ## Contracts
 

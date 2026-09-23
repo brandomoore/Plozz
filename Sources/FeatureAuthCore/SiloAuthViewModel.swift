@@ -29,6 +29,7 @@ public final class SiloAuthViewModel {
     public private(set) var phase: Phase = .idle
     public private(set) var operation: Operation = .preparing
     public private(set) var verificationURL: URL?
+    public private(set) var codeLifetime: TimeInterval = 600
     public var pin = ""
     public private(set) var pinError: LocalizedStringResource?
     private let server: MediaServer
@@ -73,6 +74,7 @@ public final class SiloAuthViewModel {
                 try Task.checkCancellation()
                 guard generation == current else { return }
                 verificationURL = manualURL
+                codeLifetime = TimeInterval(challenge.expires_in)
                 phase = .pairing(code: challenge.user_code, match: challenge.match_code, url: url, expiresAt: deadline)
                 var interval = challenge.interval
                 while Date() < deadline {

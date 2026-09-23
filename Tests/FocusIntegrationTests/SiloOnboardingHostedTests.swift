@@ -1,5 +1,6 @@
 #if os(tvOS)
 import CoreModels
+import CoreImage
 import CoreNetworking
 @testable import CoreUI
 @testable import AppShell
@@ -8,6 +9,7 @@ import FeatureAuthCore
 import ProviderSilo
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 
 @MainActor
@@ -47,30 +49,67 @@ final class SiloOnboardingHostedTests: XCTestCase {
             try await wait { if case .pairing = model.phase { return true }; return false }
             try await Task.sleep(for: .seconds(1))
             window.layoutIfNeeded()
-            _ = capture(window, name: light ? "silo-pairing-light" : "silo-pairing-dark")
+            let pairingImage = capture(window, name: light ? "silo-pairing-light" : "silo-pairing-dark")
+            let pairingText = try recognize(pairingImage)
+            XCTAssertTrue(pairingText.contains("Scan with your phone"), pairingText)
+            XCTAssertTrue(pairingText.contains("Or enter a code at"), pairingText)
+            XCTAssertTrue(pairingText.contains("Before approving"), pairingText)
+            XCTAssertTrue(pairingText.contains("calm river"), pairingText)
+            XCTAssertFalse(pairingText.contains("Waiting for approval"), pairingText)
+            XCTAssertFalse(pairingText.contains("Code expires in"), pairingText)
+            let qrImage = try XCTUnwrap(pairingImage.cgImage)
+            let payloads = await Task.detached {
+                let detector = CIDetector(
+                    ofType: CIDetectorTypeQRCode, context: nil,
+                    options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]
+                )
+                let image = CIImage(cgImage: qrImage)
+                return [image, image.applyingFilter("CIColorInvert")].flatMap { candidate in
+                    (detector?.features(in: candidate) ?? []).compactMap { ($0 as? CIQRCodeFeature)?.messageString }
+                }
+            }.value
+            XCTAssertTrue(payloads.contains("https://silo.example.test/pair?code=ABCD-EFGH"),
+                          "The production QR must remain scannable in both themes.")
             await http.approve()
             try await wait { if case .profiles = model.phase { return true }; return false }
             try await wait {
                 guard let focused = UIFocusSystem.focusSystem(for: window)?.focusedItem,
                       let frame = NavigationRowFocusRequester.frame(of: focused, relativeTo: window) else { return false }
-                // SwiftUI uses virtual focus items, not UIViews/accessibility
-                // elements. Of this fixture's three cards, only Alex is left of center.
-                return frame.midX < window.bounds.midX && frame.width > 150 && frame.height > 150
+                return frame.width > 600 && frame.height > 50 && frame.height < 150
             }
-            _ = capture(window, name: light ? "silo-profiles-light" : "silo-profiles-dark")
+            let profilesImage = capture(window, name: light ? "silo-profiles-light" : "silo-profiles-dark")
+            let text = VNRecognizeTextRequest()
+            text.recognitionLevel = .accurate
+            text.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(profilesImage.cgImage)).perform([text])
+            let alex = try XCTUnwrap(text.results?.first {
+                $0.topCandidates(1).first?.string.hasSuffix("Alex") == true
+            })
             let focused = try XCTUnwrap(UIFocusSystem.focusSystem(for: window)?.focusedItem)
             let frame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: focused, relativeTo: window))
             XCTAssertTrue(window.bounds.contains(frame),
                           "The first profile must be on-screen, not just assigned in FocusState")
+            XCTAssertTrue(frame.contains(CGPoint(
+                x: alex.boundingBox.midX * window.bounds.width,
+                y: (1 - alex.boundingBox.midY) * window.bounds.height
+            )), "The actual focused avatar row must be Alex.")
         }
+    }
+
+    private func recognize(_ image: UIImage) throws -> String {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
     }
 
     private func capture(_ window: UIWindow, name: String) -> UIImage {
         window.layoutIfNeeded()
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { context in
-            window.layer.render(in: context.cgContext)
+        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
         }
         let attachment = XCTAttachment(image: image)
         attachment.name = name
@@ -88,38 +127,4 @@ final class SiloOnboardingHostedTests: XCTestCase {
     }
 }
 
-private actor OnboardingPreviewHTTP: HTTPClient {
-    private var approved = false
-    func approve() { approved = true }
-
-    func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
-        let body: String
-        switch endpoint.path {
-        case "/api/v2/system/info": body = #"{"api_major":2}"#
-        case "/api/v2/auth/device/capability":
-            body = #"{"state":"available","protocol_versions":[2],"allowed":true}"#
-        case "/api/v2/auth/device/start":
-            body = """
-            {"device_code":"fixture","user_code":"ABCD12","match_code":"57",
-             "verification_uri":"https://silo.example.test/pair",
-             "verification_uri_complete":"https://silo.example.test/pair?code=ABCD12",
-             "expires_in":600,"interval":1}
-            """
-        case "/api/v2/auth/device/poll":
-            body = """
-            {"status":"\(approved ? "approved" : "pending")","poll_after":1,"temporary":false,
-             "tokens":{"access_token":"fixture","refresh_token":"fixture","expires_in":3600,
-             "user":{"id":"fixture","username":"Alex"}}}
-            """
-        case "/api/v2/profiles":
-            body = """
-            {"items":[{"id":"alex","name":"Alex","has_pin":false,"is_child":false},
-            {"id":"sam","name":"Sam","has_pin":true,"is_child":false},
-            {"id":"kids","name":"Kids","has_pin":true,"is_child":true}]}
-            """
-        default: throw AppError.notFound
-        }
-        return (Data(body.utf8), HTTPURLResponse(url: baseURL, statusCode: 200, httpVersion: nil, headerFields: nil)!)
-    }
-}
 #endif
