@@ -151,6 +151,22 @@ public struct RootView: View {
         return "Set up “\(device)”?"
     }
 
+    private func setUpPendingServer(_ descriptor: SyncedAccountDescriptor) {
+        if descriptor.provider.permitsCredentialTransfer {
+            showSyncReceiveFromSettings = true
+        } else if let baseURL = descriptor.candidateBaseURLs.first {
+            appState.beginAddingUser(on: MediaServer(
+                id: descriptor.serverID,
+                name: descriptor.serverName,
+                baseURL: baseURL,
+                provider: descriptor.provider,
+                connectionURLs: descriptor.candidateBaseURLs
+            ))
+        } else {
+            appState.addAccount()
+        }
+    }
+
     /// The palette for the currently-selected theme. `.system` resolves against
     /// `systemColorScheme` — which stays the TRUE device scheme because we no
     /// longer force `preferredColorScheme` (that override polluted every colour-
@@ -521,7 +537,7 @@ public struct RootView: View {
                         syncRepair: syncRepairActions,
                         pendingSyncedServers: appState.cloudSyncUI.pendingSyncedServers,
                         onIgnorePendingServer: { appState.ignorePendingSyncedServer($0) },
-                        onSetUpFromAnotherDevice: { showSyncReceiveFromSettings = true },
+                        onSetUpPendingServer: setUpPendingServer,
                         admissionContext: appState.admissionContext,
                         pendingStandaloneLiveTVEntry: appState.pendingStandaloneLiveTVEntry,
                         onConsumeStandaloneLiveTVEntry: {
@@ -750,7 +766,7 @@ public struct RootView: View {
         ) { descriptor in
             Button("Set Up") {
                 appState.clearPendingServerPrompt()
-                showSyncReceiveFromSettings = true
+                setUpPendingServer(descriptor)
             }
             Button("Ignore", role: .destructive) {
                 appState.ignorePendingSyncedServer(descriptor.id)

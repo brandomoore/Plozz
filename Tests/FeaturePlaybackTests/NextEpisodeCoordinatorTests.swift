@@ -208,6 +208,32 @@ final class NextEpisodeCoordinatorTests: XCTestCase {
         XCTAssertFalse(sut.awaitingFirstFrame)
     }
 
+    func testPausedVersionResumeWaitsForAnActualFrameAtTheRequestedPosition() async {
+        let (sut, _, engine, _) = makeSUT()
+        engine.isPaused = true
+        engine.preventsDisplaySleep = false
+        engine._currentTime = 92
+        sut.beginAwaitingFirstFrame(resumeClock: 92)
+        await Task.yield()
+        XCTAssertTrue(sut.awaitingFirstFrame)
+        engine.hasPresentedVideoFrame = true
+        await waitUntil { !sut.awaitingFirstFrame }
+        XCTAssertFalse(sut.awaitingFirstFrame)
+        XCTAssertTrue(engine.isPaused)
+    }
+
+    func testPausedPictureAtZeroCannotCompleteAResumedStartup() async {
+        let (sut, _, engine, _) = makeSUT()
+        engine.isPaused = true
+        engine.preventsDisplaySleep = false
+        engine.hasPresentedVideoFrame = true
+        engine._currentTime = 0
+        sut.beginAwaitingFirstFrame(resumeClock: 425.7)
+        try? await Task.sleep(for: .milliseconds(150))
+        XCTAssertTrue(sut.awaitingFirstFrame)
+        sut.clearFirstFrameWait()
+    }
+
     /// Regression: on the Plozzigen/custom-source path the engine reports
     /// `state == .playing` (preventsDisplaySleep) the instant the play command is
     /// issued, ~20s before a cold SMB/WebDAV source renders its first frame. The
@@ -372,6 +398,7 @@ private actor UpNextRecordingProvider: MediaProvider {
 
 @MainActor
 private final class UpNextSpyEngine: VideoEngine {
+    var hasPresentedVideoFrame = false
     let displayName = "upnext-spy"
     var status: VideoEngineStatus = .idle
     var isPaused = false

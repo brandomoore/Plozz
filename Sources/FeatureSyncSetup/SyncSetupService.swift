@@ -214,6 +214,28 @@ public final class SyncSetupService {
         public let config: SyncConfigSnapshot
         public let secrets: SyncSecretsBundle?
         public let application: SyncSetupCoordinator.Application
+
+        public func serversNeedingSignIn(
+            excluding localAccountIDs: Set<String> = []
+        ) -> [SyncedAccountDescriptor] {
+            let pendingIDs = Set(application.pendingAuthorizations.map(\.id))
+            return config.accounts.filter {
+                pendingIDs.contains($0.id) && !localAccountIDs.contains($0.id)
+            }
+        }
+
+        public func retainPendingServers(
+            in store: inout PendingSyncedServersStore,
+            restrictToAccountID: String? = nil
+        ) {
+            let pending = serversNeedingSignIn().filter {
+                restrictToAccountID == nil || $0.id == restrictToAccountID
+            }
+            for descriptor in pending {
+                store.upsertSynced(descriptor.sanitizingURLs())
+            }
+            store.deferSetup(pending.map(\.id))
+        }
     }
 
     /// Result of persisting a received setup on this device, so the UI can confirm
@@ -316,6 +338,7 @@ public final class SyncSetupService {
             profileSettings: profileSettings, profileMemberships: memberships
         )
         var secrets = configOnly ? nil : secretsProvider()
+        secrets?.accounts.removeAll { !$0.provider.permitsCredentialTransfer }
         if let ids = restrictToAccountIDs, var filtered = secrets {
             filtered.accounts = filtered.accounts.filter { ids.contains($0.accountID) }
             filtered.shares = filtered.shares.filter { ids.contains($0.accountID) }

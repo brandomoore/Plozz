@@ -203,9 +203,9 @@ public struct PlozziOSRootView: View {
                  : "Send your servers and sign-in so it’s ready to watch.")
         }
         .sheet(item: serverPromptBinding, onDismiss: consumeServerPromptFollowUp) { descriptor in
-            PlozziOSNewServerPromptView(
+            SyncedServerSetupPrompt(
                 descriptor: descriptor,
-                accent: resolvedPalette.accent,
+                palette: resolvedPalette,
                 onSignIn: {
                     serverPromptFollowUp = .signIn(descriptor)
                     appModel.clearPendingSyncedServerPrompt()
@@ -559,7 +559,10 @@ public struct PlozziOSRootView: View {
             // Suppress the mid-session drawer while the full-page "we found your setup"
             // cover is (or is about to be) presented at cold launch, so the two don't
             // fight over the same server.
-            get: { (showDetectedCover || detectedFollowUpReceive) ? nil : appModel.pendingSyncedServerPrompt },
+            get: {
+                (appModel.isSettingsPresented || showDetectedCover || detectedFollowUpReceive)
+                    ? nil : appModel.pendingSyncedServerPrompt
+            },
             set: { if $0 == nil { appModel.clearPendingSyncedServerPrompt() } }
         )
     }
@@ -610,13 +613,6 @@ private struct PlozziOSScenePhaseEffects: View {
 private struct PendingPairing: Identifiable {
     let invite: String
     var id: String { invite }
-}
-
-/// The action a user chose in the new-server prompt, deferred until the prompt sheet
-/// dismisses so a follow-up sheet never races the dismissal.
-private enum ServerPromptFollowUp {
-    case signIn(SyncedAccountDescriptor)
-    case pairDevice(SyncedAccountDescriptor)
 }
 
 private enum PlozziOSDestination: String, CaseIterable, Identifiable, Hashable {

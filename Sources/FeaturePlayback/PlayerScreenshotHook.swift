@@ -23,6 +23,7 @@ public enum PlayerScreenshotHook {
     public enum Panel: String, Sendable {
         /// The Subtitles panel's Style editor, over live playback.
         case subtitleStyle
+        case versions
     }
 
     /// Set by the capture rig when it starts playback; consumed by the controls.

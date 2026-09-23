@@ -33,7 +33,10 @@ action. Leaving the flow cancels pending work and clears in-memory PINs/tokens.
   single-flight and compare-and-set against the original login revision.
   An uncertain refresh requires sign-in rather than replaying a possibly spent
   token. Silo logins are not cloned through device-to-device credential transfer
-  or iCloud Keychain; another device pairs independently.
+  or iCloud Keychain; another device pairs independently. Device setup still
+  imports the server descriptor and shows it as needing sign-in rather than
+  omitting it from the summary. Settings > iCloud Sync keeps that entry
+  available and opens Silo's native sign-in flow.
 - Catalog requests use native cursor pagination and explicit `seek` windows.
   Lightweight cards inherit missing external identities from Silo's frozen
   provider-anchored content-ID scheme, so the identity index can match owned

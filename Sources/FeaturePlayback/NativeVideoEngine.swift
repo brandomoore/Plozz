@@ -38,6 +38,14 @@ public final class NativeVideoEngine: VideoEngine {
         player?.timeControlStatus == .playing
     }
 
+    public var hasPresentedVideoFrame: Bool {
+        #if canImport(UIKit)
+        status == .ready && videoOutputView?.playerLayer.isReadyForDisplay == true
+        #else
+        false
+        #endif
+    }
+
     public var currentTime: TimeInterval {
         guard let seconds = player?.currentTime().seconds, seconds.isFinite else { return 0 }
         return max(0, seconds)
@@ -306,24 +314,21 @@ public final class NativeVideoEngine: VideoEngine {
         if inspectsConvertedFormat { inspectVideoFormat(asset: asset, item: item, request: request) }
         furthestObservedPosition = max(furthestObservedPosition, startPosition)
         if startPosition > 1 {
-            if request.streamingOptions != nil, request.isTranscoding {
-                let result = await resumeManagedPlayback(
-                    player: player, item: item, to: startPosition, generation: generation
-                )
-                guard generation == loadGeneration, !Task.isCancelled else { return }
-                switch result {
-                case .ready: break
-                case .cancelled:
-                    status = .failed(.cancelled)
-                    return
-                case .failed:
-                    let error = currentPlayerError()
-                    status = .failed(error)
-                    onFailure?(error)
-                    return
-                }
-            } else {
-                await seekWhenReady(player: player, to: startPosition)
+            let result = await resumePlayback(
+                player: player, item: item, to: startPosition, generation: generation
+            )
+            guard generation == loadGeneration, !Task.isCancelled else { return }
+            switch result {
+            case .ready: break
+            case .cancelled:
+                status = .failed(.cancelled)
+                return
+            case .failed:
+                PlozzLog.playback.error("Native startup seek did not reach the requested position.")
+                let error = currentPlayerError()
+                status = .failed(error)
+                onFailure?(error)
+                return
             }
             guard generation == loadGeneration, !Task.isCancelled else {
                 player.pause()
@@ -1018,14 +1023,29 @@ public final class NativeVideoEngine: VideoEngine {
     ) {
         let target = seekTarget(seconds, item: item)
         let time = CMTime(seconds: target, preferredTimescale: 600)
-        let tolerance = CMTime(seconds: kind == .fast ? 5 : 1, preferredTimescale: 600)
+        let toleranceSeconds: TimeInterval = kind == .fast ? 5 : 1
+        let tolerance = CMTime(seconds: toleranceSeconds, preferredTimescale: 600)
+        let generation = loadGeneration
         HandoffDiagnostics.emit(
             "native RESUME_SEEK_BEGIN generation=\(loadGeneration) target=\(String(format: "%.2f", target)) status=\(item.status.rawValue)"
         )
-        player.seek(to: time, toleranceBefore: tolerance, toleranceAfter: tolerance, completionHandler: completion)
+        player.seek(to: time, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak player] finished in
+            Task { @MainActor in
+                let position = player?.currentTime().seconds ?? .nan
+                let landed = NativeStartupResume.didLand(
+                    finished: finished, position: position,
+                    target: target, tolerance: toleranceSeconds
+                )
+                HandoffDiagnostics.emit(
+                    "native RESUME_SEEK_END generation=\(generation) finished=\(finished)"
+                        + " target=\(String(format: "%.2f", target)) position=\(String(format: "%.2f", position)) landed=\(landed)"
+                )
+                completion(landed)
+            }
+        }
     }
 
-    private func resumeManagedPlayback(
+    private func resumePlayback(
         player: AVPlayer, item: AVPlayerItem, to seconds: TimeInterval, generation: UInt
     ) async -> NativeStartupResume.Result {
         let resume = NativeStartupResume(
@@ -1045,26 +1065,6 @@ public final class NativeVideoEngine: VideoEngine {
         if startupResume === resume { startupResume = nil }
         HandoffDiagnostics.emit("native RESUME_RESULT generation=\(generation) result=\(result)")
         return result
-    }
-
-    /// Waits (briefly) for the player item to become ready before seeking. A
-    /// resume seek issued before the asset is ready — common for far positions —
-    /// is silently dropped by AVPlayer, leaving playback at 0.
-    private func seekWhenReady(player: AVPlayer, to seconds: TimeInterval) async {
-        guard let item = player.currentItem else { return }
-        PlaybackTrace.note("NATIVE resumeSeek WAIT to=\(String(format: "%.2f", seconds)) status=\(item.status.rawValue)")
-        let deadline = Date().addingTimeInterval(5)
-        // 20ms poll keeps resume start-up snappy: most assets reach
-        // `.readyToPlay` within one or two ticks, instead of waiting out a
-        // coarse 50ms slot before the seek can fire.
-        while item.status != .readyToPlay, Date() < deadline {
-            if item.status == .failed || Task.isCancelled { return }
-            do { try await Task.sleep(nanoseconds: 20_000_000) }
-            catch { return }
-        }
-        guard !Task.isCancelled else { return }
-        PlaybackTrace.note("NATIVE resumeSeek FIRE to=\(String(format: "%.2f", seconds)) status=\(item.status.rawValue)")
-        await seek(player: player, to: seconds)
     }
 
     private func seek(player: AVPlayer, to seconds: TimeInterval) async {
@@ -1255,12 +1255,19 @@ public final class NativeVideoEngine: VideoEngine {
     #endif
 }
 
-/// Managed resume is bounded by the owner's startup watchdog, not a timer that
+/// Startup resume is bounded by the owner's startup watchdog, not a timer that
 /// seeks an unready HLS item. All continuation and seek ownership stays on main.
 @MainActor
 final class NativeStartupResume {
     enum Result: Equatable, Sendable {
         case ready, failed, cancelled
+    }
+
+    static func didLand(
+        finished: Bool, position: TimeInterval, target: TimeInterval, tolerance: TimeInterval
+    ) -> Bool {
+        finished && position.isFinite && target.isFinite
+            && abs(position - target) <= tolerance + 0.1
     }
 
     private let itemStatus: @MainActor () -> AVPlayerItem.Status

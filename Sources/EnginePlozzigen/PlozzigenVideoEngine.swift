@@ -81,6 +81,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private var liveSourceResetCancellable: AnyCancellable?
 
     public var currentTime: TimeInterval { engine.currentTime }
+    public var hasPresentedVideoFrame: Bool {
+        status == .ready && engine.isSessionReady && engine.hasFirstFrameReadyForDisplay
+    }
     public var isPlaybackPositionReady: Bool {
         status == .ready && engine.isSessionReady && engine.hasFirstFrameReadyForDisplay
             && !engine.isSeeking && !outputLoadInProgress && outputPolicyReload == nil

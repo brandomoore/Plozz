@@ -435,7 +435,7 @@ struct MainTabView: View {
     /// Pending (needs-sign-in) synced servers + their actions.
     var pendingSyncedServers: [SyncedAccountDescriptor] = []
     var onIgnorePendingServer: (String) -> Void = { _ in }
-    var onSetUpFromAnotherDevice: (() -> Void)?
+    var onSetUpPendingServer: ((SyncedAccountDescriptor) -> Void)?
     var admissionContext = AppAdmissionContext(hasMediaAccounts: true)
     var pendingStandaloneLiveTVEntry = false
     var onConsumeStandaloneLiveTVEntry: (() -> Void)?
@@ -1026,7 +1026,7 @@ struct MainTabView: View {
                 syncRepair: syncRepair,
                 pendingSyncedServers: pendingSyncedServers,
                 onIgnorePendingServer: onIgnorePendingServer,
-                onSetUpFromAnotherDevice: onSetUpFromAnotherDevice,
+                onSetUpPendingServer: onSetUpPendingServer,
                 metadataSettings: metadataSettings,
                 navigation: settingsNavigation
             )
@@ -1672,6 +1672,7 @@ struct MainTabView: View {
             subtitlePolicy: subtitlePolicyModel.resolvedPolicy(behavior: subtitleBehaviorModel.settings),
             audioPolicy: audioPolicyModel.resolvedPolicy(settings: playbackModel.settings),
             seriesTrackStore: seriesTrackStore,
+            versionPreferences: VersionPreferenceStore(namespace: liveTVPreferencesNamespace),
             scrobbler: RealtimePlaybackScrobbler(trakt: trakt.scrobbler, simkl: simkl.scrobbler),
             watchBridge: watchBridge,
             identitySources: identitySources,

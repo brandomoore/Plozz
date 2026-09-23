@@ -15,6 +15,23 @@ final class PendingSyncedServersStoreTests: XCTestCase {
                                 serverName: "Server \(id)", userID: "u", userName: "U")
     }
 
+    func testPendingServerBrandingKeepsShareTransportAndSiloIdentitySeparate() {
+        var webDAV = desc("webdav")
+        webDAV.provider = .mediaShare
+        webDAV.candidateBaseURLs = [URL(string: "https://files.example.com/Documents")!]
+        XCTAssertEqual(webDAV.mediaShareTransportKind, .webDAV)
+        XCTAssertEqual(
+            SyncedServerAccountGroup.groups(from: [webDAV]).first?.mediaShareTransportKind,
+            .webDAV
+        )
+        var silo = desc("silo")
+        silo.provider = .silo
+        silo.candidateBaseURLs = [URL(string: "https://silo.example.com")!]
+        XCTAssertNil(silo.mediaShareTransportKind)
+        XCTAssertFalse(silo.provider.permitsCredentialTransfer)
+        XCTAssertTrue(webDAV.provider.permitsCredentialTransfer)
+    }
+
     func testReconcileRecordsOnlyUnauthorized() {
         var store = PendingSyncedServersStore(defaults: makeDefaults())
         let newlyPending = store.reconcile(

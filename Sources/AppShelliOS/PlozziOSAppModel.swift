@@ -177,6 +177,8 @@ final class PlozziOSAppModel {
         // receiver had already completed setup (used to guard its own default
         // profile from being clobbered by the incoming default).
         let receiverWasConfigured = profiles.firstRunProfileSetupComplete
+        var pendingStore = PendingSyncedServersStore()
+        received.retainPendingServers(in: &pendingStore, restrictToAccountID: restrictToAccountID)
         // Per-server request → never import profiles (the user only wanted one server).
         let incomingProfiles = restrictToAccountID == nil ? received.config.profiles.map(\.profile) : []
         if !incomingProfiles.isEmpty {
@@ -307,6 +309,7 @@ final class PlozziOSAppModel {
         // Pairing is an explicit consent to share this household, so turn on
         // cross-device CloudKit sync (idempotent; a no-op if already on).
         setSyncSetupEnabled(true)
+        refreshPendingSyncedServers()
         PlozzLog.auth.info("Sync setup applied: added \(added)/\(expected) account(s), \(incomingProfiles.count) profile(s), \(failedAccountIDs.count) failed")
         return outcome
     }

@@ -41,6 +41,30 @@ private final class LifecycleDiagnosticItem: AVPlayerItem {
 
 final class NativeStartupResumeTests: XCTestCase {
     @MainActor
+    func testRejectedDirectPlayResumeFailsBeforePlayingFromZero() async {
+        let resume = NativeStartupResume(
+            itemStatus: { .readyToPlay }, isCurrent: { true },
+            beginSeek: { completion in
+                completion(NativeStartupResume.didLand(
+                    finished: false, position: 0, target: 425.7, tolerance: 1
+                ))
+            },
+            cancelSeek: { XCTFail("A completed rejection has no pending seek to cancel.") }
+        )
+        let result = await resume.run()
+        XCTAssertEqual(result, .failed)
+        XCTAssertFalse(NativeStartupResume.didLand(
+            finished: true, position: 0, target: 425.7, tolerance: 1
+        ), "A callback alone must not accept playback at the wrong position.")
+        XCTAssertTrue(NativeStartupResume.didLand(
+            finished: true, position: 425.73, target: 425.7, tolerance: 1
+        ))
+        XCTAssertFalse(NativeStartupResume.didLand(
+            finished: true, position: .nan, target: 425.7, tolerance: 1
+        ))
+    }
+
+    @MainActor
     func testCancellingAUserWaiterDoesNotCancelStartupOrAnotherWaiter() async {
         let seeking = expectation(description: "startup seek pending")
         let waiterReturned = expectation(description: "cancelled user waiter returned")

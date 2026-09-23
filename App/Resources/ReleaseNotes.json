@@ -23,10 +23,7 @@
               "platforms": ["tvOS"]
             },
             "Jump to a letter in individual and combined libraries.",
-            {
-              "text": "Switch versions from the player while keeping your playback position and settings.",
-              "platforms": ["iOS"]
-            }
+            "Switch versions from the player while keeping your playback position and settings."
           ]
         },
         {
@@ -47,7 +44,7 @@
             "Fixed episode badge refreshes and older watchlist synchronization, including imported titles reappearing as user-added entries.",
             "Emby resume syncing no longer risks stopping active playback.",
             {
-              "text": "Prevented screen locking during startup or buffering, kept hero trailers paused behind playback, and stopped open player menus from disappearing.",
+              "text": "Fixed pending-server setup actions, screen locking during startup or buffering, background hero trailers, and disappearing player menus.",
               "platforms": ["iOS"]
             },
             {

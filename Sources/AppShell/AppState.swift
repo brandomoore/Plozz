@@ -699,6 +699,8 @@ public final class AppState {
         // Captured BEFORE markFirstRunProfileSetupComplete: guards the receiver's
         // own default-profile membership from being clobbered by the incoming one.
         let receiverWasConfigured = profilesModel.firstRunProfileSetupComplete
+        var pendingStore = PendingSyncedServersStore()
+        received.retainPendingServers(in: &pendingStore)
 
         // 1. Import profiles (merge by id; existing ids preserved).
         let incomingProfiles = received.config.profiles.map(\.profile)

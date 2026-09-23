@@ -404,6 +404,7 @@ public final class PlayerControlsModel {
     public let infoCard = InfoCardModel()
 
     // MARK: Track menus
+    public let versions = PlayerVersionMenuModel()
     public var audioOptions: [PlayerTrackOption] = []
     public var subtitleOptions: [PlayerTrackOption] = []
     /// Eligible tracks for the **second** (dual) subtitle line, as an ordered

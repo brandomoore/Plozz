@@ -311,8 +311,11 @@ final class NextEpisodeCoordinator {
             // A true hang is handled by the existing playback watchdog, not here.
             while !Task.isCancelled {
                 guard let self, self.awaitingFirstFrame, let host = self.host else { return }
-                if host.upNextEngine.preventsDisplaySleep,
-                   host.upNextEngine.currentTime > baselineClock + Self.firstFramePresentThreshold {
+                let engine = host.upNextEngine
+                let pausedFrameReady = engine.isPaused && engine.hasPresentedVideoFrame
+                    && abs(engine.currentTime - baselineClock) <= 1.1
+                if pausedFrameReady || (engine.preventsDisplaySleep
+                    && engine.currentTime > baselineClock + Self.firstFramePresentThreshold) {
                     self.awaitingFirstFrame = false
                     if let start = host.upNextBringUpStartedAt {
                         HandoffDiagnostics.emit("first-frame PRESENTED total=\(HandoffDiagnostics.ms(start)) engine=\(host.upNextCurrentEngineKind.rawValue)")

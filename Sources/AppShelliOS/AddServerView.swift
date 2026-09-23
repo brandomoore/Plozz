@@ -37,12 +37,7 @@ struct AddServerView: View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("Provider", selection: $provider) {
-                        providerChoice(.jellyfin)
-                        providerChoice(.emby)
-                        providerChoice(.plex)
-                        providerChoice(.silo)
-                    }
+                    ManagedProviderPicker(provider: $provider)
 
                     if provider != .plex {
                         ManagedServerDiscoverySection(
@@ -181,17 +176,6 @@ struct AddServerView: View {
         }
     }
 
-    private func providerChoice(_ provider: ProviderKind) -> some View {
-        HStack(spacing: 8) {
-            ProviderBrandMark(
-                provider: provider,
-                size: 22,
-                showsBackground: false
-            )
-            Text(provider.displayName)
-        }
-        .tag(provider)
-    }
 }
 
 private struct ManagedServerDiscoverySection: View {

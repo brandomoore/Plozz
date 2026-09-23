@@ -562,7 +562,9 @@ private func makePlayerViewModel(
     watchBridge: WatchOutboxBridge,
     identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef],
     onSubtitleStyleChanged: @escaping (SubtitleStyle) -> Void = { _ in },
-    adoptedResolved: PlayerViewModel.PrefetchedPlayback? = nil
+    adoptedResolved: PlayerViewModel.PrefetchedPlayback? = nil,
+    continuation: PlaybackContinuation? = nil,
+    versionPreferences: any VersionPreferenceStoring = VersionPreferenceStore()
 ) -> PlayerViewModel {
     if let videoID = request.item.youTubeTrailerVideoID {
         let trailerItem = request.item
@@ -642,7 +644,6 @@ private func makePlayerViewModel(
         // the remembered preference is a SHAPE: episodes have their own files,
         // and the match has to be made against the files that episode actually
         // has (see `MediaVersionDescriptor`).
-        let versionPreferences = VersionPreferenceStore()
         let deviceCapabilities = MediaCapabilities.detected()
         neighborResolver = {
             let siblings = (try? await episodeProvider.children(of: seasonID)) ?? []
@@ -679,6 +680,7 @@ private func makePlayerViewModel(
         provider: episodeProvider,
         itemID: request.item.id,
         mediaSourceID: request.item.selectedVersionID,
+        continuation: continuation,
         offlinePlaybackResolver: offlinePlaybackResolver,
         behavior: behavior,
         style: style,
@@ -845,6 +847,7 @@ extension View {
         subtitlePolicy: SubtitlePolicy,
         audioPolicy: AudioPolicy,
         seriesTrackStore: any SeriesTrackPreferenceStoring,
+        versionPreferences: any VersionPreferenceStoring,
         scrobbler: any TraktScrobbling,
         watchBridge: WatchOutboxBridge,
         identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef],
@@ -859,7 +862,7 @@ extension View {
         fullScreenCover(item: playRequest) { request in
             PlayerPresentation(
                 request: request,
-                make: { request, adopted in
+                make: { request, adopted, continuation in
                     let model = makePlayerViewModel(
                         for: request,
                         accounts: accounts,
@@ -877,7 +880,9 @@ extension View {
                         watchBridge: watchBridge,
                         identitySources: identitySources,
                         onSubtitleStyleChanged: onSubtitleStyleChanged,
-                        adoptedResolved: adopted
+                        adoptedResolved: adopted,
+                        continuation: continuation,
+                        versionPreferences: versionPreferences
                     )
                     // Set here rather than inside the factory: leaving the film
                     // is a navigation concern, and navigation lives with the
@@ -898,7 +903,8 @@ extension View {
                     )
                 },
                 showDiagnostics: showDiagnostics,
-                themePalette: themePalette
+                themePalette: themePalette,
+                versionPreferences: versionPreferences
             )
         }
         .resumePrompt(item: resumePrompt) { item, startPosition in

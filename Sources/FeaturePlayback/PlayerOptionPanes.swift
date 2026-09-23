@@ -29,9 +29,17 @@ struct PlayerMenuRowStack: View {
     private func compactSelectableRow(_ row: PlayerControls.TrackRow) -> some View {
         Button(action: row.action) {
             HStack(spacing: 10) {
-                row.title
-                    .font(.body)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    row.title
+                        .font(.body)
+                        .lineLimit(1)
+                    if let subtitle = row.subtitle {
+                        subtitle
+                            .font(.caption2)
+                            .playerMenuRowSecondary()
+                            .lineLimit(2)
+                    }
+                }
                 if row.isExternal {
                     // Marks a subtitle that isn't embedded in the video — one you
                     // downloaded this session, or a local sidecar file — so it's
@@ -50,6 +58,7 @@ struct PlayerMenuRowStack: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PlayerMenuRowButtonStyle())
+        .accessibilityIdentifier("player-option-row-\(row.id)")
         .focusEffectDisabled()
         .focused($focus, equals: .row(row.id))
     }

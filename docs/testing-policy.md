@@ -176,6 +176,15 @@ Runner verdict regressions use the existing host-side unittest runner:
 
 ## App-hosted focus integration
 
+The `PlozziOSPresentationTests` scheme supplies a separate iOS app scene for
+native Form/picker and sheet rendering. Run it on an explicitly owned iOS
+simulator under the shared build lease, with a lane-private package workspace
+and retained result bundle. Its host and tests share only the `AppShelliOS`
+package product. `ServerSetupPresentationTests` checks rendered primary-button
+text in all themes, the native provider picker's logo bounds, and transparent
+WebDAV badge edges. Package-only UIKit snapshots cannot replace this gate:
+without an application scene, `drawHierarchy` returns an empty image.
+
 `tools/run-focus-tests.sh` runs the `PlozzFocusTests` scheme in a minimal,
 separate `PlozzFocusHost` app. It uses the same package code but supplies a real
 foreground window scene, which package logic tests cannot provide. The suite

@@ -194,7 +194,7 @@ public struct SettingsView: View {
     /// Synced servers this device isn't signed into yet, plus ignore + set-up actions.
     private let pendingSyncedServers: [SyncedAccountDescriptor]
     private let onIgnorePendingServer: (String) -> Void
-    private let onSetUpFromAnotherDevice: (() -> Void)?
+    private let onSetUpPendingServer: ((SyncedAccountDescriptor) -> Void)?
     private let plexHomeUsersFetcher: (String) async -> [PlexHomeUser]
     private let onSelectPlexHomeUser: (String, PlexHomeUser?) -> Void
     private let onSetProfileLock: (String, ProfileLock?) -> Void
@@ -273,7 +273,7 @@ public struct SettingsView: View {
         syncRepair: SyncRepairActions? = nil,
         pendingSyncedServers: [SyncedAccountDescriptor] = [],
         onIgnorePendingServer: @escaping (String) -> Void = { _ in },
-        onSetUpFromAnotherDevice: (() -> Void)? = nil,
+        onSetUpPendingServer: ((SyncedAccountDescriptor) -> Void)? = nil,
         metadataSettings: MetadataSettingsDependencies? = nil,
         navigation: SettingsNavigationModel
     ) {
@@ -340,7 +340,7 @@ public struct SettingsView: View {
         self.syncRepair = syncRepair
         self.pendingSyncedServers = pendingSyncedServers
         self.onIgnorePendingServer = onIgnorePendingServer
-        self.onSetUpFromAnotherDevice = onSetUpFromAnotherDevice
+        self.onSetUpPendingServer = onSetUpPendingServer
         self.metadataSettings = metadataSettings
         self.navigation = navigation
     }
@@ -1295,7 +1295,10 @@ public struct SettingsView: View {
 
     private func pendingServerRow(_ server: SyncedAccountDescriptor) -> some View {
         HStack(alignment: .center, spacing: 16) {
-            rowIcon("externaldrive.badge.person.crop")
+            ProviderBrandMark(
+                provider: server.provider, size: 44,
+                mediaShareTransport: server.mediaShareTransportKind
+            )
             VStack(alignment: .leading, spacing: 4) {
                 Text(server.serverName)
                     .font(.callout.weight(.medium))
@@ -1304,8 +1307,8 @@ public struct SettingsView: View {
                     .settingsRowSecondary()
             }
             Spacer()
-            if let onSetUpFromAnotherDevice {
-                Button("Set Up", action: onSetUpFromAnotherDevice)
+            if let onSetUpPendingServer {
+                Button("Set Up") { onSetUpPendingServer(server) }
                     .buttonStyle(PlozzSeasonTabStyle(isSelected: false))
             }
             Button("Ignore") { onIgnorePendingServer(server.id) }

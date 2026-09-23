@@ -156,7 +156,10 @@ struct PlozziOSDetectedSetupView: View {
 
     private func serverRow(_ group: SyncedServerAccountGroup) -> some View {
         HStack(spacing: 14) {
-            ProviderBrandMark(provider: group.provider, size: 34)
+            ProviderBrandMark(
+                provider: group.provider, size: 34,
+                mediaShareTransport: group.mediaShareTransportKind
+            )
             VStack(alignment: .leading, spacing: 2) {
                 Text(group.serverName)
                     .font(.headline)

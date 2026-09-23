@@ -207,6 +207,10 @@ public protocol VideoEngine: AnyObject {
     /// can't report a finer-grained state.
     var preventsDisplaySleep: Bool { get }
 
+    /// An actual displayable frame from the current load, including while paused.
+    /// Unknown readiness is false, not an optimistic alias for `.ready`.
+    var hasPresentedVideoFrame: Bool { get }
+
     /// Current playback position in seconds (`0` when unknown).
     var currentTime: TimeInterval { get }
 
@@ -406,6 +410,7 @@ public extension VideoEngine {
     /// `timeControlStatus`, Plozzigen end-of-stream signals) override this so the screensaver
     /// is also allowed at end-of-stream / during a stall, not just on pause.
     var preventsDisplaySleep: Bool { !isPaused }
+    var hasPresentedVideoFrame: Bool { false }
     var isPlaybackPositionReady: Bool { status == .ready }
 
     /// Default kinded-seek forwards to the unkinded variant, so existing

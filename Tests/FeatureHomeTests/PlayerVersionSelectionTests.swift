@@ -70,4 +70,35 @@ final class PlayerVersionSelectionTests: XCTestCase {
         XCTAssertTrue(PlayerVersionSelection.isSelected(item.versions[0], item: item, mediaSourceID: nil))
         XCTAssertNil(PlayerVersionSelection.selecting("missing", in: item))
     }
+
+    func testResolvedFilesRefreshOnlyThePlayingSourceInACombinedTitle() throws {
+        var lightweight = movie("one", edition: "Theatrical")
+        lightweight.versions = [lightweight.versions[0]]
+        let merged = try XCTUnwrap(MediaItemMerger.merge([
+            lightweight,
+            movie("two", edition: "Extended"),
+            movie("one", account: "other", edition: "Theatrical")
+        ]).first)
+        let source = try XCTUnwrap(merged.sources.first {
+            $0.accountID == "server" && $0.itemID == "one"
+        })
+        let opened = merged.selectingSource(source)
+        let refreshed = PlayerVersionSelection.item(
+            opened: opened, resolved: movie("one", edition: "Theatrical")
+        )
+        let versions = PlayerVersionSelection.versions(for: refreshed)
+        XCTAssertEqual(versions.count, 4)
+        XCTAssertEqual(versions.filter { $0.sourceItemID == "one" }.count, 2)
+        XCTAssertEqual(
+            refreshed.sources.filter { $0.accountID != "server" || $0.itemID != "one" },
+            opened.sources.filter { $0.accountID != "server" || $0.itemID != "one" }
+        )
+        let version = try XCTUnwrap(versions.first {
+            $0.sourceItemID == "one" && $0.playbackMediaSourceID == "file-2"
+        })
+        let selected = try XCTUnwrap(PlayerVersionSelection.selecting(version.id, in: refreshed))
+        XCTAssertEqual(selected.id, "one")
+        XCTAssertEqual(selected.sourceAccountID, "server")
+        XCTAssertEqual(selected.selectedVersionID, "file-2")
+    }
 }

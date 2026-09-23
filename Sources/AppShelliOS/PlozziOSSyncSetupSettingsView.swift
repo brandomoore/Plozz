@@ -1,4 +1,5 @@
 #if os(iOS)
+import CoreModels
 import CoreUI
 import FeatureSettings
 import SwiftUI
@@ -8,11 +9,17 @@ import FeatureSyncSetup
 /// this page (no extra tap): opening it starts discovering nearby devices to pair.
 @MainActor
 struct PlozziOSSyncSetupSettingsView: View {
+    @Environment(\.themePalette) private var palette
     let appModel: PlozziOSAppModel
     @State private var model: SyncSetupPairingModel
     @State private var showScanner = false
     @State private var showCodeEntry = false
     @State private var showReceive = false
+    @State private var serverToReceive: SyncedAccountDescriptor?
+    @State private var serverToSignIn: SyncedAccountDescriptor?
+    @State private var serverPrompt: SyncedAccountDescriptor?
+    @State private var serverPromptFollowUp: ServerPromptFollowUp?
+    @State private var showAddShare = false
     @State private var handled = false
 
     init(appModel: PlozziOSAppModel) {
@@ -54,6 +61,42 @@ struct PlozziOSSyncSetupSettingsView: View {
         .onDisappear { model.stopDiscovery() }
         .fullScreenCover(isPresented: $showReceive) {
             PlozziOSSyncSetupReceiveView(appModel: appModel) { showReceive = false }
+        }
+        .fullScreenCover(item: $serverToReceive) { server in
+            PlozziOSSyncSetupReceiveView(appModel: appModel, requestedServer: server) {
+                serverToReceive = nil
+            }
+        }
+        .sheet(item: $serverPrompt, onDismiss: consumeServerPromptFollowUp) { server in
+            SyncedServerSetupPrompt(
+                descriptor: server, palette: palette,
+                onSignIn: {
+                    serverPromptFollowUp = .signIn(server)
+                    serverPrompt = nil
+                },
+                onUseOtherDevice: {
+                    serverPromptFollowUp = .pairDevice(server)
+                    serverPrompt = nil
+                },
+                onNotNow: {
+                    serverPromptFollowUp = nil
+                    serverPrompt = nil
+                }
+            )
+        }
+        .fullScreenCover(isPresented: $showAddShare, onDismiss: appModel.refreshPendingSyncedServers) {
+            PlozziOSUnifiedAddShareView(appModel: appModel)
+        }
+        .sheet(item: $serverToSignIn, onDismiss: {
+            appModel.finishManagedServerPresentation()
+            appModel.refreshPendingSyncedServers()
+        }) { server in
+            AddServerView(
+                appModel: appModel,
+                initialProvider: server.provider,
+                initialAddress: server.candidateBaseURLs.first?.absoluteString ?? ""
+            )
+            .presentationSizing(.page)
         }
         .fullScreenCover(isPresented: $showScanner) {
             SyncSetupScannerScreen(
@@ -183,16 +226,29 @@ struct PlozziOSSyncSetupSettingsView: View {
                 SettingsSectionGroup("Servers to Set Up") {
                     ForEach(appModel.pendingSyncedServers, id: \.id) { server in
                         HStack(spacing: 12) {
-                            Image(systemName: "externaldrive.badge.person.crop")
-                                .font(.title3)
-                                .plozzForeground(.secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(server.serverName).fontWeight(.medium)
-                                Text("Needs sign-in")
-                                    .font(.footnote)
-                                    .plozzForeground(.secondary)
+                            Button {
+                                serverPrompt = server
+                            } label: {
+                                HStack(spacing: 12) {
+                                    ProviderBrandMark(
+                                        provider: server.provider, size: 32,
+                                        mediaShareTransport: server.mediaShareTransportKind
+                                    )
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(server.serverName).fontWeight(.medium)
+                                        Text("Needs sign-in")
+                                            .font(.footnote)
+                                            .plozzForeground(.secondary)
+                                    }
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.forward")
+                                        .font(.footnote.weight(.semibold))
+                                        .plozzForeground(.tertiary)
+                                }
+                                .contentShape(Rectangle())
                             }
-                            Spacer()
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("pending-server-setup-\(server.id)")
                             Button("Ignore") {
                                 appModel.ignorePendingSyncedServer(server.id)
                             }
@@ -214,6 +270,22 @@ struct PlozziOSSyncSetupSettingsView: View {
                         )
                     }
                 }
+            }
+        }
+    }
+
+    private func consumeServerPromptFollowUp() {
+        guard let followUp = serverPromptFollowUp else { return }
+        serverPromptFollowUp = nil
+        switch followUp {
+        case .pairDevice(let server):
+            serverToReceive = server
+        case .signIn(let server):
+            if server.provider == .mediaShare {
+                showAddShare = true
+            } else {
+                appModel.beginManagedServerPresentation()
+                serverToSignIn = server
             }
         }
     }

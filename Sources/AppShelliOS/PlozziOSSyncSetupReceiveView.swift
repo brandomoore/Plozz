@@ -87,7 +87,14 @@ struct PlozziOSSyncSetupReceiveView: View {
                 Text("Setup didn’t finish").font(.title3.bold())
                 Text(message).foregroundStyle(palette.secondaryText)
                     .multilineTextAlignment(.center)
-                Button("Try Again") { Task { await model.startReceiving() } }
+                Button("Try Again") {
+                    Task {
+                        await model.startReceiving(
+                            requestedAccountID: requestedServer?.id,
+                            requestedServerName: requestedServer?.serverName
+                        )
+                    }
+                }
                     .syncPrimaryButtonStyle()
             }
         default:
@@ -178,13 +185,14 @@ struct PlozziOSSyncSetupReceiveView: View {
 
     @ViewBuilder
     private func appliedSummary(_ received: SyncSetupService.ReceivedSetup) -> some View {
-        let authIDs = Set(received.application.authorizedAuthorizations.map(\.id))
         // For a per-server request, only surface the one server the user asked for,
         // even if an older/manual source happened to send the whole household.
         let servers = received.config.accounts.filter { account in
-            authIDs.contains(account.id)
-                && (requestedServer == nil || account.id == requestedServer?.id)
+            requestedServer == nil || account.id == requestedServer?.id
         }
+        let pendingIDs = Set(received.serversNeedingSignIn(
+            excluding: Set(appModel.accountsProviders.accounts.map(\.id))
+        ).map(\.id)).intersection(servers.map(\.id))
         let serverGroups = SyncedServerAccountGroup.groups(
             from: servers,
             localAccounts: appModel.accountsProviders.accounts
@@ -194,7 +202,8 @@ struct PlozziOSSyncSetupReceiveView: View {
         VStack(spacing: 22) {
             Spacer(minLength: 0)
             VStack(spacing: 8) {
-                Text("You’re all set").font(.title.bold()).foregroundStyle(palette.primaryText)
+                Text(pendingIDs.isEmpty ? "You’re all set" : "Set Up This Device")
+                    .font(.title.bold()).foregroundStyle(palette.primaryText)
             }
             VStack(spacing: 14) {
                 if !serverGroups.isEmpty {
@@ -203,14 +212,17 @@ struct PlozziOSSyncSetupReceiveView: View {
                             HStack(spacing: 14) {
                                 ProviderBrandMark(
                                     provider: group.provider, size: 32,
-                                    mediaShareTransport: MediaShareTransportKind(
-                                        mediaShareScheme: group.accounts.first?
-                                            .candidateBaseURLs.first?.scheme))
+                                    mediaShareTransport: group.mediaShareTransportKind)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(group.serverName).font(.body.weight(.semibold))
                                         .foregroundStyle(palette.primaryText)
-                                    signedInSummary(group).font(.caption)
-                                        .foregroundStyle(palette.secondaryText)
+                                    if group.accounts.contains(where: { pendingIDs.contains($0.id) }) {
+                                        Text("Needs sign-in").font(.caption)
+                                            .foregroundStyle(palette.secondaryText)
+                                    } else {
+                                        signedInSummary(group).font(.caption)
+                                            .foregroundStyle(palette.secondaryText)
+                                    }
                                 }
                                 Spacer()
                             }
@@ -231,15 +243,21 @@ struct PlozziOSSyncSetupReceiveView: View {
                 }
 
             }
+            if !pendingIDs.isEmpty {
+                Text("Finish signing in to the remaining servers in Settings > iCloud Sync.")
+                    .font(.footnote)
+                    .foregroundStyle(palette.secondaryText)
+                    .multilineTextAlignment(.center)
+            }
             Spacer(minLength: 0)
-            Button("Start Watching") {
+            Button(pendingIDs.isEmpty ? "Start Watching" : "Continue") {
                 guard !didApply else { return }
                 didApply = true
                 let outcome = appModel.applyReceivedSetup(received, restrictToAccountID: requestedServer?.id)
                 // For a per-server request, success means that one server actually
                 // signed in. For a whole-device transfer, success means at least one
                 // credential stuck (the existing gate).
-                let failed = requestedServer != nil
+                let failed = requestedServer != nil && pendingIDs.isEmpty
                     ? outcome.addedCredentialed == 0
                     : outcome.isTotalCredentialFailure
                 if failed {

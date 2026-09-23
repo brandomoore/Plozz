@@ -118,6 +118,13 @@ public struct SyncedAccountDescriptor: Codable, Hashable, Identifiable, Sendable
         copy.originDeviceKind = kind
         return copy
     }
+
+    public var mediaShareTransportKind: MediaShareTransportKind? {
+        guard provider == .mediaShare else { return nil }
+        return candidateBaseURLs.lazy.compactMap {
+            MediaShareTransportKind(mediaShareScheme: $0.scheme)
+        }.first
+    }
 }
 
 /// One physical media server with every synced account/login that belongs to it.
@@ -131,6 +138,10 @@ public struct SyncedServerAccountGroup: Identifiable, Sendable, Equatable {
     public let serverID: String
     public let serverName: String
     public let accounts: [SyncedAccountDescriptor]
+
+    public var mediaShareTransportKind: MediaShareTransportKind? {
+        accounts.lazy.compactMap(\.mediaShareTransportKind).first
+    }
 
     public var userNames: [String] {
         var seen = Set<String>()

@@ -37,9 +37,7 @@ public struct ProviderBrandMark: View {
     }
 
     private var badgeBackground: Color {
-        provider == .silo
-            ? Color(red: 0xD6 / 255, green: 0xE5 / 255, blue: 1)
-            : tint.opacity(0.18)
+        tint.opacity(0.18)
     }
 
     private var assetName: String {
@@ -126,12 +124,10 @@ public struct ProviderBrandMark: View {
                     // Slice the lower band cleanly off the glyph (a straight
                     // horizontal cut) so the top of the drive stays intact and the
                     // bottom becomes a consistent, empty band for the label.
-                    .overlay(alignment: .bottom) {
+                    .mask(alignment: .top) {
                         Rectangle()
-                            .frame(height: chop)
-                            .blendMode(.destinationOut)
+                            .frame(height: size - chop)
                     }
-                    .compositingGroup()
                 // The label sits in the cleared band, same color as the glyph,
                 // nudged up so it reads more centered under the smaller drive.
                 badgeText(badgeLabel)

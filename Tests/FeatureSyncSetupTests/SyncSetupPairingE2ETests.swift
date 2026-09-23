@@ -112,6 +112,77 @@ final class SyncSetupPairingE2ETests: XCTestCase {
         XCTAssertEqual(received.secrets?.accounts.first?.token, "TOK")
     }
 
+    func testSiloStaysVisibleAndDurablyPendingWithoutCopyingItsLogin() async throws {
+        let (hostLink, guestLink) = await InMemoryPairingLink.makePair()
+        let silo = Account(
+            id: "silo", server: MediaServer(
+                id: "silo-server", name: "Silo",
+                baseURL: URL(string: "https://silo.example.com")!, provider: .silo
+            ),
+            userID: "profile", userName: "Viewer", deviceID: "source"
+        )
+        let sender = service(
+            accounts: [account("jellyfin"), silo],
+            secrets: SyncSecretsBundle(accounts: [
+                AccountSecret(
+                    accountID: "jellyfin", provider: .jellyfin, token: "TRANSFERABLE",
+                    deviceID: "source", trustedOrigin: "https://h.example.com"
+                ),
+                AccountSecret(
+                    accountID: "silo", provider: .silo, token: "DEVICE-LOCAL",
+                    deviceID: "source", trustedOrigin: "https://silo.example.com"
+                )
+            ]),
+            configured: true, id: "source"
+        )
+        let receiver = service(id: "target")
+        let pairing = receiver.makeHostPairing()
+        async let receiving = receiver.receiveSetup(pairing: pairing, over: hostLink)
+        try await sender.sendSetup(over: guestLink, expectedPublicKey: pairing.identity.publicKeyData)
+        let received = try await receiving
+
+        XCTAssertEqual(Set(received.config.accounts.map(\.id)), ["jellyfin", "silo"])
+        XCTAssertEqual(received.secrets?.accounts.map(\.accountID), ["jellyfin"])
+        XCTAssertEqual(received.application.authorizedAuthorizations.map(\.id), ["jellyfin"])
+        XCTAssertEqual(received.serversNeedingSignIn().map(\.id), ["silo"])
+        XCTAssertTrue(received.serversNeedingSignIn(excluding: ["silo"]).isEmpty)
+
+        let suite = "SiloPendingSetup.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var store = PendingSyncedServersStore(defaults: defaults)
+        received.retainPendingServers(in: &store)
+        let reopened = PendingSyncedServersStore(defaults: defaults)
+        XCTAssertEqual(reopened.pending.map(\.id), ["silo"])
+        XCTAssertTrue(reopened.setupOffers(from: reopened.pending).isEmpty)
+        XCTAssertTrue(reopened.pending(excludingLocal: ["silo"]).isEmpty)
+    }
+
+    func testRetainedPendingSetupHonorsTheRequestedAccountAndSanitizesURLs() throws {
+        let descriptors = ["silo", "other"].map { id in
+            SyncedAccountDescriptor(
+                id: id, provider: .silo, serverID: id, serverName: id,
+                userID: "profile", userName: "Viewer",
+                candidateBaseURLs: [URL(string: "https://silo.example.com?api_key=TEST-ONLY")!]
+            )
+        }
+        let snapshot = SyncConfigSnapshot(accounts: descriptors)
+        let received = SyncSetupService.ReceivedSetup(
+            config: snapshot, secrets: nil,
+            application: SyncSetupCoordinator().apply(
+                snapshot: snapshot, existingAuthorizations: [:], thisDeviceID: "target"
+            )
+        )
+        let suite = "ScopedPendingSetup.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var store = PendingSyncedServersStore(defaults: defaults)
+        received.retainPendingServers(in: &store, restrictToAccountID: "silo")
+        XCTAssertEqual(store.pending.map(\.id), ["silo"])
+        XCTAssertNil(store.pending.first?.candidateBaseURLs.first?.query)
+        XCTAssertTrue(store.newlyPending(excludingLocal: []).isEmpty)
+    }
+
     /// The household Seerr connection (URL + admin API key) must survive the sealed
     /// pairing channel — that channel is the ONLY way it can reach an Apple TV, which
     /// can't participate in iCloud Keychain.

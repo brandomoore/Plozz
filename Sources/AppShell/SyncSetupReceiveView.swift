@@ -115,13 +115,15 @@ struct SyncSetupReceiveView: View {
 
     @ViewBuilder
     private func appliedSummary(_ received: SyncSetupService.ReceivedSetup) -> some View {
-        let authIDs = Set(received.application.authorizedAuthorizations.map(\.id))
-        let servers = received.config.accounts.filter { authIDs.contains($0.id) }
+        let servers = received.config.accounts
+        let pendingIDs = Set(received.serversNeedingSignIn(
+            excluding: Set(appState.accountsProviders.accounts.map(\.id))
+        ).map(\.id))
         let profiles = received.config.profiles.map(\.profile)
 
         ScrollView {
             VStack(spacing: 40) {
-                Text("You’re all set")
+                Text(pendingIDs.isEmpty ? "You’re all set" : "Set Up This Device")
                     .font(.largeTitle.bold()).foregroundStyle(palette.primaryText)
                     .padding(.top, 12)
 
@@ -138,14 +140,13 @@ struct SyncSetupReceiveView: View {
                                 HStack(spacing: 16) {
                                     ProviderBrandMark(
                                         provider: server.provider, size: 44,
-                                        mediaShareTransport: MediaShareTransportKind(
-                                            mediaShareScheme: server.candidateBaseURLs.first?.scheme))
+                                        mediaShareTransport: server.mediaShareTransportKind)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(server.serverName)
                                             .font(.title3.weight(.semibold))
                                             .foregroundStyle(palette.primaryText)
                                             .lineLimit(1).minimumScaleFactor(0.7)
-                                        Text("Signed in")
+                                        Text(pendingIDs.contains(server.id) ? "Needs sign-in" : "Signed in")
                                             .font(.callout).foregroundStyle(palette.secondaryText)
                                     }
                                     Spacer(minLength: 0)
@@ -169,7 +170,12 @@ struct SyncSetupReceiveView: View {
             }
             .frame(maxWidth: 1240)
 
-            Button("Start Watching") {
+            if !pendingIDs.isEmpty {
+                Text("Finish signing in to the remaining servers in Settings > iCloud Sync.")
+                    .font(.callout).foregroundStyle(palette.secondaryText)
+                    .multilineTextAlignment(.center)
+            }
+            Button(pendingIDs.isEmpty ? "Start Watching" : "Continue") {
                 guard !didApply else { return }
                 didApply = true
                 let outcome = appState.applyReceivedSetup(received)

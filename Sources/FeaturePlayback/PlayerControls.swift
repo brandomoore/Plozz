@@ -63,10 +63,12 @@ struct PlayerControls: View {
     let onExitToSurface: () -> Void
 
     enum Category: Hashable {
-        case subtitles, audio, speed, sync, info, cast
+        case subtitles, audio, speed, sync, info, cast, version
 
         var title: LocalizedStringResource {
             switch self {
+            case .version:
+                return "Version"
             case .subtitles:
                 return LocalizedStringResource(
                     "player.category.subtitles",
@@ -108,6 +110,7 @@ struct PlayerControls: View {
 
         var icon: String {
             switch self {
+            case .version: return "rectangle.stack"
             case .subtitles: return "captions.bubble"
             case .audio: return "waveform"
             case .speed: return "speedometer"
@@ -346,6 +349,11 @@ struct PlayerControls: View {
             guard let panel = PlayerScreenshotHook.pendingPanel else { return }
             PlayerScreenshotHook.pendingPanel = nil
             switch panel {
+            case .versions:
+                guard model.versions.isAvailable else { return }
+                model.controlsVisible = true
+                model.isPanelOpen = true
+                openPanel = .version
             case .subtitleStyle:
                 model.controlsVisible = true
                 model.isPanelOpen = true
@@ -835,6 +843,7 @@ struct PlayerControls: View {
                         .labelStyle(.iconOnly)
                 }
                 .playerGlassButton(prominent: openPanel == category)
+                .accessibilityIdentifier("player-control-\(category.icon)")
                 .focused($focus, equals: .button(category))
                 .disabled(entryLocksOut(.button(category)))
                 .background {
@@ -1444,7 +1453,7 @@ struct PlayerControls: View {
             case .styleOutline, .styleBackground, .styleDual:
                 return .row(0)
             }
-        case .audio, .speed:
+        case .audio, .speed, .version:
             return .row(selectedRowIndex(for: panel))
         case .sync:
             if model.engineCapabilities.contains(.audioDelay) { return .row(0) }
@@ -1462,6 +1471,7 @@ struct PlayerControls: View {
     private func panelWidth(for category: Category) -> CGFloat {
         switch category {
         case .speed: return 260
+        case .version: return 860
         // The Download screen lists scene-release filenames; it's wider than the
         // other menus, and the title marquee-scrolls the rest on focus, so it needs
         // room to be readable without being absurdly wide.
@@ -1663,6 +1673,15 @@ struct PlayerControls: View {
     @ViewBuilder
     private func panelBodyContent(for category: Category) -> some View {
         switch category {
+        case .version:
+            VStack(alignment: .leading, spacing: 12) {
+                PlayerMenuRowStack(rows: versionRows, palette: palette, focus: $focus)
+                Text("Resumes at the current position. Different cuts may have different timing.")
+                    .font(.caption)
+                    .plozzForeground(.secondary)
+                    .padding(.horizontal, 16)
+            }
+            .padding(.horizontal, 14)
         case .subtitles: subtitleBody
         case .audio: AudioPaneView(rows: audioRows, palette: palette, focus: $focus)
         case .speed: SpeedPaneView(model: model, palette: palette, actions: actions, focus: $focus)
@@ -1973,8 +1992,25 @@ struct PlayerControls: View {
         return rows
     }
 
+    private var versionRows: [TrackRow] {
+        model.versions.options.enumerated().map { index, option in
+            TrackRow(
+                id: index, header: nil,
+                title: option.version.displayLabel.map { Text(verbatim: $0) } ?? Text("Original"),
+                subtitle: option.version.fileName.map { Text(verbatim: $0) },
+                isSelected: option.isSelected, isToggle: false,
+                action: {
+                    withAnimation { openPanel = nil }
+                    model.versions.select(option.id)
+                }
+            )
+        }
+    }
+
     private func selectedRowIndex(for category: Category) -> Int {
         switch category {
+        case .version:
+            return model.versions.options.firstIndex(where: \.isSelected) ?? 0
         case .subtitles:
             // Open focused on the active subtitle (incl. "Off"), else the top row.
             return subtitleRows.first(where: { $0.isSelected })?.id ?? 0
@@ -2129,6 +2165,9 @@ extension PlayerControlsModel {
     /// removed. `Category.sync` + `syncPane` are kept so it can be restored later.
     var trackControlCategories: [PlayerControls.Category] {
         var result: [PlayerControls.Category] = []
+        if versions.isAvailable {
+            result.append(.version)
+        }
         if engineCapabilities.contains(.playbackSpeed) {
             result.append(.speed)
         }

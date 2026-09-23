@@ -449,6 +449,39 @@ targets:
       - package: Plozz
         product: AppShell
 
+  PlozziOSPresentationHost:
+    type: application
+    platform: iOS
+    sources:
+      - path: Tests/iOSPresentationHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.PresentationHost
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    dependencies:
+      - package: Plozz
+        product: AppShelliOS
+
+  PlozziOSPresentationTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/iOSPresentationTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.PresentationTests
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PlozziOSPresentationHost.app/PlozziOSPresentationHost"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+    dependencies:
+      - target: PlozziOSPresentationHost
+      - package: Plozz
+        product: AppShelliOS
+
   PlozzHomeRemoteTests:
     type: bundle.ui-testing
     platform: tvOS
@@ -477,6 +510,16 @@ targets:
         product: AppShell
 
 schemes:
+  PlozziOSPresentationTests:
+    build:
+      targets:
+        PlozziOSPresentationHost: all
+        PlozziOSPresentationTests: [test]
+    test:
+      config: Debug
+      targets:
+        - PlozziOSPresentationTests
+
   PlozzHomeFixtureTests:
     build:
       targets:

@@ -87,6 +87,19 @@ builder with the SwiftUI controls. Version choices
 stay on the active account, reuse detail-page edition/file routing, and carry the
 current position, pause intent, speed, quality, and matching tracks to the new
 player. The per-profile version preference also applies to later playback.
+On Apple TV, Up reaches the transport controls; the stacked-rectangles Version
+button appears when the active server offers multiple files or editions.
+Its panel focuses and checks the playing version. Selection uses the same
+account/file routing and playback continuation as mobile, swapping players
+inside the existing cover. An explicit choice never silently fails over to
+another source. Resolved file lists refresh the playing source without
+discarding other editions in a combined title.
+Every native startup resume waits for readiness and verifies both seek completion
+and the actual landing. A rejected seek fails before playback starts at zero,
+allowing the existing alternate-engine fallback to keep the requested position
+instead of waiting for the first-frame watchdog and adopting the wrong clock.
+A paused handoff clears loading only when the engine has a displayable frame at
+the resumed position; it does not force playback merely to advance the clock.
 For a server conversion, Info's existing badge row describes the active rendition
 and is labelled Transcoded alongside the badges: exact encoded dimensions, video codec, known range,
 and actual audio format/channels. No original-file badges are substituted while

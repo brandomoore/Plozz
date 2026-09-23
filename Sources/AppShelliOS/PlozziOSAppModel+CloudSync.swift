@@ -457,7 +457,9 @@ extension PlozziOSAppModel {
     }
 
     var pendingSetupOffers: [SyncedAccountDescriptor] {
-        PendingSyncedServersStore().setupOffers(from: pendingServersNeedingSetup)
+        PendingSyncedServersStore().setupOffers(
+            from: pendingServersNeedingSetup.filter(\.provider.permitsCredentialTransfer)
+        )
     }
 
     func deferDetectedSetup(_ ids: [String]) {
