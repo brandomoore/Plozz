@@ -3,27 +3,26 @@
   "releases": [
     {
       "id": "release/041",
-      "version": "2026.9.22",
+      "version": "2026.9.23",
       "build": 41,
-      "releasedAt": "2026-09-22",
+      "releasedAt": "2026-09-23",
       "sections": [
         {
           "category": "New",
           "items": [
-            "Native Silo support with profile-aware sign-in, libraries, playback, watchlists, and subtitle downloads.",
+            {
+              "text": "Change playback quality with transcoding presets or custom resolution/bitrate limits for Plex, Jellyfin, and Emby, with per-network defaults and codec preferences.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Native Silo support with profiles, libraries, playback, watchlists, subtitle downloads, and offline downloads.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Native Silo support with profiles, libraries, playback, watchlists, and subtitle downloads.",
+              "platforms": ["tvOS"]
+            },
             "Jump to a letter in individual and combined libraries.",
-            {
-              "text": "Download Silo movies and episodes for offline playback.",
-              "platforms": ["iOS"]
-            },
-            {
-              "text": "Streaming-quality presets and custom resolution/bitrate limits for Plex, Jellyfin, and Emby, with separate local-network, remote, and cellular defaults.",
-              "platforms": ["iOS"]
-            },
-            {
-              "text": "Choose Automatic, HEVC, or H.264 for server conversion.",
-              "platforms": ["iOS"]
-            },
             {
               "text": "Switch versions from the player while keeping your playback position and settings.",
               "platforms": ["iOS"]
@@ -34,21 +33,10 @@
           "category": "Updated",
           "items": [
             "Updated the playback engine and improved HDR10+ and Atmos metadata detection.",
-            "Playback Info shows measured converted-stream quality; diagnostics keep original-file details separate.",
-            "Cleaner audio-track labels; Audio controls appear only when tracks or Dialog Enhance can be changed.",
-            "Separate detail-page controls for review scores and Common Sense age recommendations.",
-            "Status messages now follow the selected appearance consistently.",
-            "Clearer server connection progress and setup prompts.",
+            "Clearer playback information and audio controls, including measured converted-stream quality and separate original-file diagnostics.",
+            "Clearer server setup, theme-consistent status messages, and separate detail-page controls for review scores and Common Sense ages.",
             {
-              "text": "Streamlined playback options, clearer loading and error recovery, and readable scrolling diagnostics.",
-              "platforms": ["iOS"]
-            },
-            {
-              "text": "Clearer server-import prompts identify the source device and let you defer setup to Settings.",
-              "platforms": ["iOS"]
-            },
-            {
-              "text": "More compact title-page ratings and format badges, with extra details available when they do not fit.",
+              "text": "More compact detail headers, clearer device-to-device imports, and streamlined playback menus, recovery messages, and scrolling diagnostics.",
               "platforms": ["iOS"]
             }
           ]
@@ -56,19 +44,10 @@
         {
           "category": "Fixed",
           "items": [
-            "Episode format badges stay consistent when title details refresh.",
-            "Improved recovery of older synced watchlist entries and prevented imported entries from reappearing as user-added titles.",
+            "Fixed episode badge refreshes and older watchlist synchronization, including imported titles reappearing as user-added entries.",
             "Emby resume syncing no longer risks stopping active playback.",
             {
-              "text": "Prevented automatic screen locking while video starts or buffers.",
-              "platforms": ["iOS"]
-            },
-            {
-              "text": "Hero trailers stay paused behind full-screen video playback.",
-              "platforms": ["iOS"]
-            },
-            {
-              "text": "Playback options stay open while you use them instead of disappearing with the controls timer.",
+              "text": "Prevented screen locking during startup or buffering, kept hero trailers paused behind playback, and stopped open player menus from disappearing.",
               "platforms": ["iOS"]
             },
             {
