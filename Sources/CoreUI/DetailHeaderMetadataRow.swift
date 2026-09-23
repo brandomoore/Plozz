@@ -12,7 +12,7 @@ public extension EnvironmentValues {
     }
 }
 
-public struct HeaderRatingPreviewControls: View {
+public struct HeaderReviewScoreCountPicker: View {
     @Binding private var settings: DetailPageSettings
 
     public init(settings: Binding<DetailPageSettings>) {
@@ -20,7 +20,6 @@ public struct HeaderRatingPreviewControls: View {
     }
 
     public var body: some View {
-        Toggle("Show Common Sense age", isOn: $settings.showsHeaderFamilyGuidance)
         Picker("Review scores shown", selection: $settings.maxHeaderRatings) {
             ForEach(Array(DetailPageSettings.headerRatingCountRange), id: \.self) { count in
                 Text(count, format: .number).tag(count)
@@ -29,7 +28,8 @@ public struct HeaderRatingPreviewControls: View {
     }
 }
 
-/// Richer previews wrap without hiding the recommended age or extra review scores.
+/// One line at every width; formats yield individually before lower-priority ratings.
+/// Only an overflowing row opens a disclosure; fully visible metadata is static.
 public struct DetailHeaderMetadataRow: View {
     private let ratings: [ExternalRating]
     private let badges: [MediaBadge]
@@ -45,67 +45,22 @@ public struct DetailHeaderMetadataRow: View {
     public var body: some View {
         if !ratings.isEmpty || !badges.isEmpty || familyGuidanceAge != nil {
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    if let familyGuidanceAge {
-                        FamilyGuidanceAgeBadge(age: familyGuidanceAge)
-                    }
-                    ForEach(ratings) { RatingBadge(rating: $0) }
-                    if !badges.isEmpty {
-                        Button { showsDetails = true } label: {
-                            HStack(spacing: 10) {
-                                ForEach(badges) { badge in
-                                    MetadataMediaBadgeChip(badge: badge)
-                                }
-                            }
-                        }
-                        .accessibilityLabel("Picture & sound")
-                        .accessibilityValue(badges.map(\.accessibilityText).joined(separator: ", "))
-                    }
-                }
-                .fixedSize(horizontal: true, vertical: true)
+                metadataLine(ratingCount: ratings.count, badgeCount: badges.count, showsDisclosure: false)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("detail-header-metadata-inline")
 
-                HStack(spacing: 12) {
-                    if let familyGuidanceAge {
-                        FamilyGuidanceAgeBadge(age: familyGuidanceAge)
-                    }
-                    ForEach(ratings) { RatingBadge(rating: $0) }
-                    if !badges.isEmpty {
-                        formatsDisclosure
-                    }
-                }
-                .fixedSize(horizontal: true, vertical: true)
-
-                if ratings.count > 2 || familyGuidanceAge != nil {
-                    WrappingHStackLayout(
-                        alignment: .center,
-                        spacing: 12,
-                        lineSpacing: 8,
-                        balancesLastRow: true
-                    ) {
-                        if let familyGuidanceAge {
-                            FamilyGuidanceAgeBadge(age: familyGuidanceAge)
-                        }
-                        ForEach(ratings) { RatingBadge(rating: $0) }
-                        if !badges.isEmpty {
-                            formatsDisclosure
-                        }
-                    }
-                } else {
+                Button { showsDetails = true } label: {
                     ViewThatFits(in: .horizontal) {
-                        Button { showsDetails = true } label: {
-                            Text(detailsTitle)
-                                .font(.subheadline.weight(.medium))
+                        ForEach(previews, id: \.self) { preview in
+                            metadataLine(ratingCount: preview.ratingCount, badgeCount: preview.badgeCount)
                         }
-                        .fixedSize(horizontal: true, vertical: true)
-
-                        Button { showsDetails = true } label: {
-                            Image(systemName: "info.circle")
-                                .font(.body)
-                                .frame(width: 44, height: 44)
-                        }
-                        .accessibilityLabel(Text(detailsTitle))
+                        disclosureChevron
                     }
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
                 }
+                .accessibilityHint(Text(detailsTitle))
+                .accessibilityIdentifier("detail-header-metadata")
             }
             .lineLimit(1)
             .buttonStyle(.plain)
@@ -152,11 +107,47 @@ public struct DetailHeaderMetadataRow: View {
         }
     }
 
-    private var formatsDisclosure: some View {
-        Button { showsDetails = true } label: {
-            Label("Formats", systemImage: "info.circle")
-                .font(.subheadline.weight(.medium))
+    private struct Preview: Hashable {
+        let ratingCount: Int
+        let badgeCount: Int
+    }
+
+    private var previews: [Preview] {
+        // ViewThatFits needs a globally unique identity for every flattened candidate.
+        (0...ratings.count).reversed().flatMap { ratingCount in
+            (0...badges.count).reversed().map { badgeCount in
+                Preview(ratingCount: ratingCount, badgeCount: badgeCount)
+            }
         }
+    }
+
+    private func metadataLine(
+        ratingCount: Int, badgeCount: Int, showsDisclosure: Bool = true
+    ) -> some View {
+        HStack(spacing: 12) {
+            if let familyGuidanceAge {
+                FamilyGuidanceAgeBadge(age: familyGuidanceAge)
+            }
+            ForEach(Array(ratings.prefix(ratingCount))) { RatingBadge(rating: $0) }
+            if badgeCount > 0 {
+                HStack(spacing: 10) {
+                    ForEach(Array(badges.prefix(badgeCount))) { MetadataMediaBadgeChip(badge: $0) }
+                }
+            }
+            if showsDisclosure {
+                disclosureChevron.accessibilityHidden(
+                    familyGuidanceAge != nil || ratingCount > 0 || badgeCount > 0
+                )
+            }
+        }
+        .fixedSize(horizontal: true, vertical: true)
+    }
+
+    private var disclosureChevron: some View {
+        Image(systemName: "chevron.forward")
+            .font(.caption.weight(.semibold))
+            .plozzForeground(.secondary)
+            .accessibilityLabel(Text(detailsTitle))
     }
 
     private var detailsTitle: LocalizedStringResource {

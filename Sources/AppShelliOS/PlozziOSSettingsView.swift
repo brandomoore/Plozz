@@ -1888,7 +1888,8 @@ private struct PlozziOSHomeSettingsView: View {
                     Toggle("Hide watched titles", isOn: $hero.settings.hideWatched)
                     Toggle("Show ratings", isOn: $hero.settings.showsRatings)
                     if hero.settings.showsRatings {
-                        HeaderRatingPreviewControls(settings: $hero.settings.ratingPreferences)
+                        Toggle("Show Common Sense age", isOn: $hero.settings.ratingPreferences.showsHeaderFamilyGuidance)
+                        HeaderReviewScoreCountPicker(settings: $hero.settings.ratingPreferences)
                     }
                     Toggle(isOn: $hero.settings.showsDiscoverySources) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -2180,18 +2181,19 @@ private struct PlozziOSDetailPageSettingsView: View {
 
     var body: some View {
         List {
-            SettingsSectionGroup("Header ratings") {
-                Toggle("Show ratings in header", isOn: $detailPage.settings.showsHeaderRatings)
+            SettingsSectionGroup("Review scores") {
+                Toggle("Show review scores", isOn: $detailPage.settings.showsHeaderRatings)
                 if detailPage.settings.showsHeaderRatings {
-                    HeaderRatingPreviewControls(settings: $detailPage.settings)
+                    HeaderReviewScoreCountPicker(settings: $detailPage.settings)
                 }
                 NavigationLink {
                     PlozziOSDetailRatingPriorityView(model: detailPage)
                 } label: {
                     Text("Rating sources & order")
                 }
-            } footer: {
-                Text("The Common Sense age appears separately from review scores. Missing scores are skipped in your source order, and extra badges can wrap. Full ratings remain in title information. Spoiler settings still apply.")
+            }
+            SettingsSectionGroup("Age recommendation") {
+                Toggle("Show Common Sense age", isOn: $detailPage.settings.showsHeaderFamilyGuidance)
             }
             SettingsSectionGroup("Behind the hero") {
                 Picker(

@@ -456,23 +456,17 @@ extension PlozziOSAppModel {
         pendingSyncedServers.filter { !hasPortableCredential($0.id) }
     }
 
-    /// The friendly origin device name shared by the detected servers ("Brando TV"),
-    /// when the publisher stamped one — for the "Set Up from …" copy.
-    var pendingSetupOriginName: String? {
-        for d in pendingServersNeedingSetup {
-            let n = d.originDeviceName?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let n, !n.isEmpty { return n }
-        }
-        return nil
+    var pendingSetupOffers: [SyncedAccountDescriptor] {
+        PendingSyncedServersStore().setupOffers(from: pendingServersNeedingSetup)
     }
 
-    /// The origin device kind ("tv"/"pad"/"phone"/"mac") shared by the detected
-    /// servers, for the inline device icon.
-    var pendingSetupOriginKind: String? {
-        for d in pendingServersNeedingSetup where d.originDeviceKind != nil {
-            return d.originDeviceKind
+    func deferDetectedSetup(_ ids: [String]) {
+        var store = PendingSyncedServersStore()
+        store.deferSetup(ids)
+        if let prompt = pendingSyncedServerPrompt, ids.contains(prompt.id) {
+            pendingSyncedServerPrompt = nil
         }
-        return nil
+        refreshPendingSyncedServers()
     }
 
     /// Record this device in the household presence registry (so peers know it exists).

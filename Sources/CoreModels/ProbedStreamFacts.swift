@@ -17,6 +17,10 @@ public struct ProbedStreamFacts: Codable, Hashable, Sendable {
     /// Provider-agnostic dynamic-range token (matches Jellyfin's vocabulary the rest
     /// of the app uses): "SDR" / "HDR10" / "HDR10Plus" / "HLG" / "DOVI". nil = unknown.
     public var videoRangeType: String?
+    /// Positive HDR10+ metadata evidence, independent of the primary range.
+    /// Dolby Vision remains DOVI even when the same file also carries HDR10+.
+    /// nil (including in older persisted facts) means unconfirmed, not absent.
+    public var carriesHDR10PlusMetadata: Bool?
     public var videoCodec: String?
     /// Demuxer stream index for the probed/default audio track.
     public var audioTrackID: Int?
@@ -34,11 +38,13 @@ public struct ProbedStreamFacts: Codable, Hashable, Sendable {
         audioCodec: String? = nil,
         audioChannels: Int? = nil,
         audioIsAtmos: Bool = false,
-        durationSeconds: Double? = nil
+        durationSeconds: Double? = nil,
+        carriesHDR10PlusMetadata: Bool? = nil
     ) {
         self.videoWidth = videoWidth
         self.videoHeight = videoHeight
         self.videoRangeType = videoRangeType
+        self.carriesHDR10PlusMetadata = carriesHDR10PlusMetadata == true ? true : nil
         self.videoCodec = videoCodec
         self.audioTrackID = audioTrackID
         self.audioCodec = audioCodec
@@ -49,6 +55,29 @@ public struct ProbedStreamFacts: Codable, Hashable, Sendable {
 }
 
 public extension ProbedStreamFacts {
+    /// Combines independent inspections of the same file representation. A
+    /// bounded unknown/negative scan cannot erase a positive confirmation.
+    /// Audio evidence from a different track cannot relabel the default track.
+    func merging(_ newer: ProbedStreamFacts) -> ProbedStreamFacts {
+        var copy = self
+        copy.videoWidth = newer.videoWidth ?? videoWidth
+        copy.videoHeight = newer.videoHeight ?? videoHeight
+        copy.videoCodec = newer.videoCodec ?? videoCodec
+        copy.videoRangeType = Self.mergedVideoRange(
+            existing: videoRangeType, incoming: newer.videoRangeType
+        )
+        copy.carriesHDR10PlusMetadata =
+            carriesHDR10PlusMetadata == true || newer.carriesHDR10PlusMetadata == true ? true : nil
+        copy.durationSeconds = newer.durationSeconds ?? durationSeconds
+        if audioTrackID == nil || newer.audioTrackID == nil || audioTrackID == newer.audioTrackID {
+            copy.audioTrackID = audioTrackID ?? newer.audioTrackID
+            copy.audioCodec = audioCodec ?? newer.audioCodec
+            copy.audioChannels = audioChannels ?? newer.audioChannels
+            copy.audioIsAtmos = audioIsAtmos || newer.audioIsAtmos
+        }
+        return copy
+    }
+
     /// Merges authoritative probe output into existing source metadata. Unknown
     /// fields remain untouched and a negative Atmos result never clears a profile
     /// previously confirmed by a provider.
@@ -59,7 +88,11 @@ public extension ProbedStreamFacts {
             if let videoCodec { video.codec = videoCodec }
             if let videoWidth { video.width = videoWidth }
             if let videoHeight { video.height = videoHeight }
-            if let videoRangeType { video.videoRangeType = videoRangeType }
+            video.videoRangeType = Self.mergedVideoRange(
+                existing: video.videoRangeType,
+                existingKind: SourceDynamicRange.providerHint(from: copy),
+                incoming: videoRangeType
+            )
             copy.video = video
         }
         if audioCodec != nil || audioChannels != nil || audioIsAtmos {
@@ -70,6 +103,25 @@ public extension ProbedStreamFacts {
             copy.audio = audio
         }
         return copy
+    }
+
+    fileprivate static func mergedVideoRange(
+        existing: String?,
+        existingKind: SourceDynamicRange? = nil,
+        incoming: String?
+    ) -> String? {
+        guard let incoming else { return existing }
+        let incomingKind = SourceDynamicRange.classify(videoRangeType: incoming)
+        switch existingKind ?? SourceDynamicRange.classify(videoRangeType: existing) {
+        case .dolbyVision, .hlg, .sdr:
+            return existing
+        case .hdr10Plus:
+            return incomingKind == .dolbyVision ? incoming : existing
+        case .hdr10:
+            return incomingKind == .dolbyVision || incomingKind == .hdr10Plus ? incoming : existing
+        case nil:
+            return incoming
+        }
     }
 }
 
@@ -102,11 +154,20 @@ public extension MediaItem {
             guard version.id == targetVersionID else { return version }
             if let videoWidth = facts.videoWidth { version.width = videoWidth }
             if let videoHeight = facts.videoHeight { version.height = videoHeight }
-            if let videoRangeType = facts.videoRangeType { version.videoRange = videoRangeType }
+            if let videoCodec = facts.videoCodec { version.videoCodec = videoCodec }
+            if version.duration == nil { version.duration = facts.durationSeconds }
+            version.videoRange = ProbedStreamFacts.mergedVideoRange(
+                existing: version.videoRange,
+                existingKind: SourceDynamicRange.classify(videoRangeType: version.videoRange)
+                    ?? SourceDynamicRange.providerHint(from: version.sourceMetadata),
+                incoming: facts.videoRangeType
+            )
             if let audioCodec = facts.audioCodec { version.audioCodec = audioCodec }
             if let audioChannels = facts.audioChannels { version.audioChannels = audioChannels }
             if facts.audioIsAtmos { version.audioProfile = "Dolby Atmos" }
-            version.sourceMetadata = facts.applying(to: version.sourceMetadata)
+            let versionMetadata = ProbedStreamFacts(videoRangeType: version.videoRange)
+                .applying(to: version.sourceMetadata)
+            version.sourceMetadata = facts.applying(to: versionMetadata)
             return version
         }
         return copy
@@ -128,6 +189,32 @@ public struct SupplementalStreamProbeRequirements: OptionSet, Sendable, Hashable
     public init(rawValue: UInt8) { self.rawValue = rawValue }
     public static let atmos = Self(rawValue: 1 << 0)
     public static let hdr10Plus = Self(rawValue: 1 << 1)
+    /// Network-file header metadata, independently of either packet scan.
+    /// Every network probe reads headers; this also permits a headers-only probe.
+    public static let streamDetails = Self(rawValue: 1 << 2)
+
+    /// Shares have no authoritative server stream description. Inspect missing
+    /// headers and independently request eligible audio/video confirmations;
+    /// Aether, not the provider, decides which video codecs it can scan.
+    public static func missingNetworkFileFacts(in metadata: MediaSourceMetadata?) -> Self {
+        var result: Self = []
+        let audioCodec = metadata?.audio?.codec?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        if (audioCodec.isEmpty || audioCodec == "eac3"),
+           metadata?.audio?.profile?.localizedCaseInsensitiveContains("atmos") != true {
+            result.insert(.atmos)
+        }
+        let range = SourceDynamicRange.providerHint(from: metadata)
+        if range == nil || range == .hdr10 {
+            result.insert(.hdr10Plus)
+        }
+        if metadata?.video?.codec?.isEmpty != false
+            || metadata?.video?.width == nil || metadata?.video?.height == nil
+            || audioCodec.isEmpty || metadata?.audio?.channels == nil {
+            result.insert(.streamDetails)
+        }
+        return result
+    }
 
     public static func missingEmbyFacts(in metadata: MediaSourceMetadata?) -> Self {
         var result: Self = []
@@ -151,6 +238,19 @@ public protocol NetworkFileStreamProbing: Sendable {
     /// Resolve `locator`, read its headers, and return the probed facts — or nil
     /// if the probe failed/timed out (the caller then shows nothing, never a guess).
     func probe(locator: NetworkFileLocator) async -> ProbedStreamFacts?
+    /// Packet scans are independently selectable; `.streamDetails` asks only
+    /// for headers. Implementations must preserve the file's default audio track.
+    func probe(
+        locator: NetworkFileLocator, requirements: SupplementalStreamProbeRequirements
+    ) async -> ProbedStreamFacts?
+}
+
+public extension NetworkFileStreamProbing {
+    func probe(
+        locator: NetworkFileLocator, requirements: SupplementalStreamProbeRequirements
+    ) async -> ProbedStreamFacts? {
+        await probe(locator: locator)
+    }
 }
 
 /// Probes a managed provider's credential-free authenticated HTTP locator.

@@ -323,7 +323,7 @@ private struct SiloProfileChoices: View {
                 .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                 .focused(focused, equals: .profile(profile.id))
                 .accessibilityLabel(Text(profile.name))
-                .accessibilityValue(profile.has_pin ? Text("PIN required") : Text(""))
+                .accessibilityValue(profile.has_pin ? Text("PIN required") : Text(verbatim: ""))
                 .accessibilityIdentifier("silo-profile-\(profile.id)")
             }
         }

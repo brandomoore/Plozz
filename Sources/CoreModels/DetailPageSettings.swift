@@ -72,7 +72,7 @@ public struct DetailPageSettings: Codable, Equatable, Sendable {
     }
 
     public func headerFamilyGuidanceAge(from age: Double?, hidesRatings: Bool) -> Double? {
-        guard showsHeaderRatings, showsHeaderFamilyGuidance, !hidesRatings else { return nil }
+        guard showsHeaderFamilyGuidance, !hidesRatings else { return nil }
         return age
     }
 }

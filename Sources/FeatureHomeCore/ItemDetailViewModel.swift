@@ -2392,7 +2392,11 @@ public final class ItemDetailViewModel {
         guard let provider = provider as? any SupplementalStreamFactsProviding else {
             return
         }
-        if item.mediaInfo?.audio?.profile?.localizedCaseInsensitiveContains("atmos") == true,
+        if providerKind == .mediaShare {
+            guard !SupplementalStreamProbeRequirements.missingNetworkFileFacts(in: item.mediaInfo).isEmpty else {
+                return
+            }
+        } else if item.mediaInfo?.audio?.profile?.localizedCaseInsensitiveContains("atmos") == true,
            !(providerKind == .emby
                 && SupplementalStreamProbeRequirements.missingEmbyFacts(in: item.mediaInfo).contains(.hdr10Plus)) {
             return
@@ -2463,7 +2467,9 @@ public final class ItemDetailViewModel {
            cached.mediaInfo?.audio?.profile?.localizedCaseInsensitiveContains("atmos") == true {
             result = result.confirmingAtmos()
         }
-        if SourceDynamicRange.providerHint(from: cached.mediaInfo) == .hdr10Plus {
+        if SourceDynamicRange.providerHint(from: cached.mediaInfo) == .dolbyVision {
+            result = result.applyingSupplementalStreamFacts(.init(videoRangeType: "DOVI"))
+        } else if SourceDynamicRange.providerHint(from: cached.mediaInfo) == .hdr10Plus {
             result = result.confirmingHDR10Plus()
         }
         return result

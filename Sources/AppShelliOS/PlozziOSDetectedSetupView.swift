@@ -11,20 +11,20 @@ import SwiftUI
 ///
 /// The app leads with what it already knows: instead of the plain provider chooser,
 /// a returning user sees their own setup and one tap to bring it over. A quiet
-/// "Set up manually" escape drops to the normal chooser. Adaptive: two columns when
+/// "Later in Settings" defers these offers on this device. Adaptive: two columns when
 /// wide (iPad landscape), stacked when narrow (iPhone / iPad portrait).
 @MainActor
 struct PlozziOSDetectedSetupView: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.horizontalSizeClass) private var hSize
     let appModel: PlozziOSAppModel
+    let servers: [SyncedAccountDescriptor]
     /// Bring everything over from the detected device (runs the receive/pairing flow,
     /// seamless on the same iCloud account).
     let onSetUpFromDevice: () -> Void
-    /// Quiet escape to the normal provider chooser.
-    let onSetUpManually: () -> Void
+    /// Keep setup available in Settings without prompting again.
+    let onSetUpLater: () -> Void
 
-    private var servers: [SyncedAccountDescriptor] { appModel.pendingServersNeedingSetup }
     private var serverGroups: [SyncedServerAccountGroup] {
         SyncedServerAccountGroup.groups(
             from: servers,
@@ -46,11 +46,16 @@ struct PlozziOSDetectedSetupView: View {
     private var newServerGroups: [SyncedServerAccountGroup] {
         serverGroups.filter { !localServerKeys.contains($0.id) }
     }
-    private var originName: String? { appModel.pendingSetupOriginName }
+    private var originName: String? {
+        servers.compactMap { descriptor in
+            let name = descriptor.originDeviceName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name?.isEmpty == false ? name : nil
+        }.first
+    }
 
     /// SF Symbol for the origin device kind, matching the new-server drawer's mapping.
     private var originIcon: String {
-        switch appModel.pendingSetupOriginKind {
+        switch servers.compactMap(\.originDeviceKind).first {
         case "tv": return "appletv.fill"
         case "pad": return "ipad"
         case "phone": return "iphone"
@@ -94,18 +99,10 @@ struct PlozziOSDetectedSetupView: View {
     }
 
     private var branding: some View {
-        VStack(spacing: 14) {
-            Image("PlozzLogo")
-                .resizable().scaledToFit()
-                .frame(width: 88, height: 88)
-            Image("PlozzWordmark")
-                .resizable().scaledToFit()
-                .frame(height: 38)
-                .foregroundStyle(palette.primaryText)
-            Text("Free forever and open source.")
-                .font(.subheadline)
-                .foregroundStyle(palette.secondaryText)
-        }
+        Image("PlozzLogo")
+            .resizable().scaledToFit()
+            .frame(width: 88, height: 88)
+            .accessibilityHidden(true)
     }
 
     private var card: some View {
@@ -168,9 +165,9 @@ struct PlozziOSDetectedSetupView: View {
 
     private var subtitle: Text {
         if let originName {
-            return Text("You’re already set up on \(Image(systemName: originIcon)) \(originName). Bring it here?")
+            return Text("From \(Image(systemName: originIcon)) \(originName)")
         }
-        return Text("You’re already set up on another device. Bring it here?")
+        return Text("From another device")
     }
 
     private func serverRow(_ group: SyncedServerAccountGroup) -> some View {
@@ -213,21 +210,15 @@ struct PlozziOSDetectedSetupView: View {
     private var actions: some View {
         VStack(spacing: 12) {
             Button(action: onSetUpFromDevice) {
-                Group {
-                    if let originName {
-                        Text("Set Up from \(Image(systemName: originIcon)) \(originName)")
-                    } else {
-                        Text("Set Up from Your Other Device")
-                    }
-                }
+                Text("Set Up")
                 .fontWeight(.semibold)
                 .foregroundStyle(palette.onAccent)
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
 
-            Button(action: onSetUpManually) {
-                Text("Set up manually")
+            Button(action: onSetUpLater) {
+                Text("Later in Settings")
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
             }
