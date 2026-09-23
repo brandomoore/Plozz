@@ -24,7 +24,11 @@ class MobileQualityControlsTests(unittest.TestCase):
         self.assertIn('title: "Quality limit"', quality)
         self.assertIn("CurrentStreamDetailsSection(details: viewModel.currentStreamDetails)", quality)
         info = (ROOT / "Sources/FeaturePlayback/InfoPanelView.swift").read_text()
-        self.assertIn('Text("Transcoding")', info)
+        self.assertIn('Text("Transcoded")', info)
+        self.assertNotIn('Text("Transcoding")', info)
+        badges = swift_block(info, "WrappingHStackLayout(")
+        self.assertIn('Text("Transcoded")', badges)
+        self.assertIn("ForEach(model.infoCard.badges)", badges)
         self.assertNotIn("Source audio:", info)
 
     def test_network_cost_does_not_replace_wifi_with_the_cellular_preset(self):

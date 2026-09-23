@@ -79,7 +79,7 @@ stay on the active account, reuse detail-page edition/file routing, and carry th
 current position, pause intent, speed, quality, and matching tracks to the new
 player. The per-profile version preference also applies to later playback.
 For a server conversion, Info's existing badge row describes the active rendition
-and is labelled Transcoding: exact encoded dimensions, video codec, known range,
+and is labelled Transcoded alongside the badges: exact encoded dimensions, video codec, known range,
 and actual audio format/channels. No original-file badges are substituted while
 the stream is unknown. Quality shows the selected limit separately from Current
 stream. Diagnostics likewise separates CURRENT VIDEO/AUDIO from ORIGINAL FILE;

@@ -228,15 +228,15 @@ struct InfoPanelView: View {
     private var adaptiveMetaRow: some View {
         if model.infoCard.isTranscoding {
             VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    metaRow(includingBadges: false, includingRelease: false)
-                    Text("Transcoding").font(metrics.captionFont).foregroundStyle(.white.opacity(0.6))
-                }
+                metaRow(includingBadges: false, includingRelease: false)
                 if model.infoCard.badges.isEmpty {
                     Text("Reading stream details…")
                         .font(metrics.captionFont).foregroundStyle(.white.opacity(0.6))
                 } else {
                     WrappingHStackLayout(spacing: 10 * metrics.badgeScale, lineSpacing: 6) {
+                        Text("Transcoded")
+                            .font(metrics.captionFont)
+                            .foregroundStyle(.white.opacity(0.6))
                         ForEach(model.infoCard.badges) { badge in
                             MediaBadgeChip(badge: badge)
                         }

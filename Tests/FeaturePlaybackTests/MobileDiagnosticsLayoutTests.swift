@@ -33,14 +33,28 @@ final class MobileDiagnosticsLayoutTests: XCTestCase {
             )
             renderer.scale = 2
             let image = try XCTUnwrap(renderer.cgImage)
-            let text = try recognizedText(image)
-            XCTAssertTrue(text.contains("Transcoding"), text)
+            attach(image, name: "Measured Info \(Int(width))")
+            let textLeading = metrics.contentPadding
+                + (metrics.showsThumbnail ? metrics.contentHeight * 16 / 9 + metrics.columnSpacing : 0)
+            let textWidth = min(metrics.textColumnMaxWidth, width - textLeading - metrics.contentPadding)
+            let textImage = try XCTUnwrap(image.cropping(to: CGRect(
+                x: textLeading * renderer.scale, y: 0,
+                width: textWidth * renderer.scale, height: CGFloat(image.height)
+            )))
+            let text = try recognizedText(textImage)
+            XCTAssertTrue(text.contains("Transcoded"), text)
             XCTAssertTrue(text.contains("426"), text)
             XCTAssertTrue(text.contains("230"), text)
             XCTAssertFalse(text.contains("4K"), text)
             XCTAssertFalse(text.contains("5.1"), text)
             XCTAssertFalse(text.contains("Source audio"), text)
-            attach(image, name: "Measured Info \(Int(width))")
+            let statusBounds = try recognizedBounds(of: "Transcoded", in: textImage)
+            let resolutionBounds = try recognizedBounds(of: "426", in: textImage)
+            XCTAssertLessThan(statusBounds.maxX, resolutionBounds.minX,
+                              "Delivery mode should lead the quality badges, not float against the card edge")
+            XCTAssertEqual(statusBounds.midY, resolutionBounds.midY,
+                           accuracy: max(statusBounds.height, resolutionBounds.height),
+                           "Delivery mode and resolution belong on the same row")
         }
         let quality = ImageRenderer(content:
             VStack(alignment: .leading, spacing: 12) {
@@ -236,6 +250,20 @@ final class MobileDiagnosticsLayoutTests: XCTestCase {
         request.recognitionLanguages = ["en-US"]
         try VNImageRequestHandler(cgImage: image).perform([request])
         return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+    }
+    private func recognizedBounds(of token: String, in image: CGImage) throws -> CGRect {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        for observation in request.results ?? [] {
+            guard let text = observation.topCandidates(1).first,
+                  let range = text.string.range(of: token),
+                  let box = try text.boundingBox(for: range) else { continue }
+            return box.boundingBox
+        }
+        XCTFail("Missing rendered text: \(token)")
+        throw NSError(domain: "InfoLayoutTest", code: 1)
     }
     private func attach(_ image: CGImage, name: String) {
         let attachment = XCTAttachment(image: UIImage(cgImage: image))
