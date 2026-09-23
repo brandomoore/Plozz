@@ -164,6 +164,34 @@ public actor MediaAliasLedger: MediaAliasResolving {
         return resolvedIDs
     }
 
+    /// Recover only missing legacy Home-seed records from their retained row
+    /// identity. Existing kind/title/year ambiguity rules still own reconciliation;
+    /// no external identifiers or provider bindings are invented here.
+    @discardableResult
+    public func restoreMissingLegacyAliases(from intents: [WatchlistIntent]) throws -> Int {
+        var candidate = records
+        var restored = 0
+        let restoredAt = Date()
+        for intent in intents where intent.origin == .legacyHomeSeed && candidate[intent.aliasID] == nil {
+            guard let presentation = intent.presentation,
+                  let weak = MediaAliasWeakEvidence(
+                    kind: intent.kind, title: presentation.title, year: presentation.year
+                  ),
+                  let evidence = MediaAliasEvidence(
+                    kind: intent.kind, weak: weak, presentation: presentation
+                  ),
+                  let existing = MediaAliasResolver.lookup(evidence: evidence, in: currentSnapshot),
+                  let record = MediaAliasRecord(
+                    id: intent.aliasID, kind: intent.kind, createdAt: restoredAt,
+                    weakEvidence: [weak], presentation: presentation, redirectTarget: existing
+                  ) else { continue }
+            candidate[intent.aliasID] = record
+            restored += 1
+        }
+        if restored > 0 { try persistAndPublish(candidate, reconcile: false) }
+        return restored
+    }
+
     public func enrich(
         aliasID: MediaAliasID,
         with evidence: MediaAliasEvidence

@@ -5,6 +5,7 @@ import FeatureWatchlistCore
 import Foundation
 import ProviderJellyfin
 import ProviderPlex
+import ProviderSilo
 
 /// The shell-side dependencies the universal watchlist needs.
 ///
@@ -1638,6 +1639,23 @@ public extension UniversalWatchlistHost {
     ) async {
         guard let reconciler = universalWatchlistReconciler,
               profiles.activeProfileID == profileID else { return }
+        do {
+            let restored = try await mediaAliasLedger.restoreMissingLegacyAliases(
+                profileID: profileID,
+                intents: Array(universalWatchlist.activeSnapshot.intentsByAliasID.values)
+            )
+            guard profiles.activeProfileID == profileID else { return }
+            if restored > 0 {
+                try universalWatchlist.reconcileAliases(
+                    profileID: profileID, aliasSnapshot: mediaAliasLedger.activeSnapshot
+                )
+                HandoffDiagnostics.emit("watchlist legacy identities restored count=\(restored)")
+                scheduleCloudPublish()
+            }
+        } catch {
+            PlozzLog.app.error("Unable to restore missing legacy watchlist identities")
+        }
+        guard profiles.activeProfileID == profileID else { return }
         let intents = Array(
             universalWatchlist.activeSnapshot.intentsByAliasID.values
         )
@@ -1678,7 +1696,7 @@ public extension UniversalWatchlistHost {
             )
             let bindings = Set(sources.compactMap {
                 source -> MediaAliasProviderBindingKey? in
-                guard source.providerKind?.usesMediaBrowserAPI == true else {
+                guard let kind = source.providerKind, kind.usesMediaBrowserAPI || kind == .silo else {
                     return nil
                 }
                 return MediaAliasProviderBindingKey(
@@ -1902,6 +1920,9 @@ public extension UniversalWatchlistHost {
                         provider: provider
                       ) {
                 destinations.append(destination)
+            } else if let provider = resolved.provider as? SiloProvider,
+                      let destination = SiloWatchlistDestination(provider: provider) {
+                destinations.append(destination)
             }
         }
         let legacyValidatedDestinationIDs = Set(destinations.map(\.id.rawValue))
@@ -1999,7 +2020,7 @@ public extension UniversalWatchlistHost {
             ))
         }
         let bindings = refs.compactMap { ref -> MediaAliasProviderBindingKey? in
-            guard ref.providerKind?.usesMediaBrowserAPI == true else { return nil }
+            guard let kind = ref.providerKind, kind.usesMediaBrowserAPI || kind == .silo else { return nil }
             return MediaAliasProviderBindingKey(
                 providerKind: ref.providerKind!,
                 accountDescriptorID: ref.accountID,

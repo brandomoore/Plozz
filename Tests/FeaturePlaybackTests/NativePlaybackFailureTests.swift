@@ -310,6 +310,17 @@ final class NativeStartupResumeTests: XCTestCase {
 }
 
 final class NativePlaybackFailureTests: XCTestCase {
+    @MainActor
+    func testSilentTestEngineMutesPlayerBeforeStartingPlayback() async {
+        let engine = NativeVideoEngine(startsMuted: true)
+        defer { engine.stop() }
+        await engine.load(request: .init(
+            item: .init(id: "fixture", title: "Silent fixture", kind: .movie),
+            streamURL: URL(fileURLWithPath: "/dev/null")
+        ), startPosition: 0)
+        XCTAssertEqual(engine.underlyingPlayer?.isMuted, true)
+    }
+
     func testErrorChainKeepsUnderlyingNumericCauseWithoutDescriptionsOrUnknownDomains() {
         let media = NSError(domain: "CoreMediaErrorDomain", code: -12642, userInfo: [
             NSLocalizedDescriptionKey: "https://private.example/?api_key=secret"

@@ -65,14 +65,98 @@ struct PlozziOSStreamingSettings: View {
 struct StreamingQualityPicker: View {
     let title: LocalizedStringResource
     @Binding var selection: StreamingQuality
+    @State private var editingQuality: StreamingQuality?
 
     var body: some View {
-        Picker(selection: $selection) {
-            ForEach(StreamingQuality.allCases) { quality in
-                Text(quality.title).tag(quality)
+        Menu {
+            Picker(selection: $selection) {
+                ForEach(StreamingQuality.allCases) { quality in
+                    Text(quality.title).tag(quality)
+                }
+                if !StreamingQuality.allCases.contains(selection) {
+                    Text(selection.title).tag(selection)
+                }
+            } label: {
+                Text(title)
             }
+            Button("Custom…") { editingQuality = selection }
         } label: {
-            Text(title)
+            LabeledContent {
+                Text(selection.title)
+            } label: {
+                Text(title)
+            }
+        }
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text(selection.title))
+        .sheet(item: $editingQuality) { quality in
+            StreamingCustomQualityEditor(quality: quality) { selection = $0 }
+        }
+        if let error = selection.validationError {
+            Text(error.userMessage).font(.footnote).foregroundStyle(.red)
+        }
+    }
+}
+
+private struct StreamingCustomQualityEditor: View {
+    let apply: (StreamingQuality) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: StreamingQualityDraft
+    @State private var applicationError: LocalizedStringResource?
+
+    init(quality: StreamingQuality, apply: @escaping (StreamingQuality) -> Void) {
+        self.apply = apply
+        _draft = State(initialValue: StreamingQualityDraft(quality: quality))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Maximum resolution", selection: $draft.maximumHeight) {
+                        ForEach(CustomStreamingQuality.supportedHeights, id: \.self) { height in
+                            Text("\(height)p").tag(height)
+                        }
+                    }
+                    LabeledContent("Total bitrate (Kbps)") {
+                        TextField("Kbps", text: $draft.bitrateKbps)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityLabel("Total bitrate in Kbps")
+                    }
+                    if let error = draft.validationError {
+                        Text(error.userMessage).foregroundStyle(.red)
+                    } else if let applicationError {
+                        Text(applicationError).foregroundStyle(.red)
+                    } else if let bytes = try? draft.validatedQuality().estimatedBytesPerHour {
+                        Text("About \(bytes.formatted(.byteCount(style: .file))) per hour")
+                            .foregroundStyle(.secondary)
+                    }
+                } footer: {
+                    Text("Resolution and bitrate are independent limits. Smaller videos aren’t enlarged. Kbps means kilobits per second: 2,000 Kbps is 2 Mbps. The total includes 128 Kbps for audio; the rest is available for video.")
+                }
+            }
+            .navigationTitle("Custom quality")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Apply") {
+                        do {
+                            let quality = try draft.validatedQuality()
+                            apply(quality)
+                            dismiss()
+                        } catch let error as StreamingQualityValidationError {
+                            applicationError = error.userMessage
+                        } catch {
+                            applicationError = "This custom quality couldn’t be applied. Check the values and try again."
+                        }
+                    }
+                    .disabled(draft.validationError != nil)
+                }
+            }
+            .onChange(of: draft) { _, _ in applicationError = nil }
         }
     }
 }
@@ -132,6 +216,7 @@ struct PlozziOSStreamingQualitySheet: View {
                         viewModel.changeStreamingOptions(selection)
                         dismiss()
                     }
+                    .disabled(selection.quality.validationError != nil)
                 }
             }
         }

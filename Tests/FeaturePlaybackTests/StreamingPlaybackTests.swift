@@ -9,6 +9,93 @@ import UIKit
 
 @MainActor
 final class StreamingPlaybackTests: XCTestCase {
+    func testCustomSelectionRetainsTracksPositionPauseSpeedAndVersionContinuation() async throws {
+        let quality = try StreamingQuality.custom(maximumHeight: 1080, bitrateKbps: 2_000)
+        let (model, engine, provider) = make()
+        await model.load()
+        engine.currentTime = 123
+        model.selectAudioOption(id: 4)
+        model.selectSubtitleOption(id: 6)
+        model.setPaused(true)
+        model.setPlaybackSpeed(1.5)
+        model.changeStreamingOptions(.init(quality: quality))
+        await wait { engine.positions.count == 2 && model.phase == .ready }
+        XCTAssertEqual(engine.positions.last, 123)
+        XCTAssertTrue(engine.isPaused)
+        XCTAssertEqual(model.controls.playbackSpeed, 1.5)
+        XCTAssertEqual(engine.currentAudioTrackID, 4)
+        XCTAssertEqual(engine.selectedSubtitleID, 6)
+        XCTAssertEqual(model.streamingOptions?.quality, quality)
+        let calls = await provider.calls
+        XCTAssertEqual(calls.map(\.source), ["version", "version"])
+        XCTAssertEqual(calls.map { $0.options.quality }, [.hd720, quality],
+                       "Changing just resolution at the same total bitrate is still a new quality")
+        model.changeStreamingOptions(.init(quality: try .custom(maximumHeight: 1080, bitrateKbps: 2_000)))
+        let unchangedCalls = await provider.calls
+        XCTAssertEqual(unchangedCalls.count, 2, "Recreating the same custom value must not restart playback")
+
+        engine.currentTime = 92
+        let continuation = model.continuationForVersionChange()
+        await model.stop()
+        let incomingEngine = QualityEngine()
+        let incomingProvider = QualityPlaybackProvider()
+        let incoming = PlayerViewModel(
+            provider: incomingProvider, itemID: "movie", mediaSourceID: "other-version",
+            continuation: continuation,
+            streamingOptions: .init(quality: .original),
+            engineFactory: .init(makeNative: { _ in incomingEngine })
+        )
+        await incoming.load()
+        XCTAssertEqual(incomingEngine.positions, [92])
+        XCTAssertTrue(incomingEngine.isPaused)
+        XCTAssertEqual(incoming.controls.playbackSpeed, 1.5)
+        XCTAssertEqual(incoming.streamingOptions?.quality, quality)
+        XCTAssertEqual(incomingEngine.currentAudioTrackID, 4)
+        XCTAssertEqual(incomingEngine.selectedSubtitleID, 6)
+        let incomingCalls = await incomingProvider.calls
+        XCTAssertEqual(incomingCalls.first?.source, "other-version")
+        await incoming.stop()
+    }
+
+    func testCustomCodecRetryRetainsExactLimitsAndDoesNotChangeAnotherPlayer() async throws {
+        let quality = try StreamingQuality.custom(maximumHeight: 1080, bitrateKbps: 2_000)
+        let otherQuality = try StreamingQuality.custom(maximumHeight: 480, bitrateKbps: 750)
+        let (model, engine, provider) = make(options: .init(quality: quality, codec: .preferHEVC))
+        let (other, otherEngine, otherProvider) = make(options: .init(quality: otherQuality))
+        await model.load()
+        await other.load()
+        engine.currentTime = 76
+        model.setPaused(true)
+        engine.onFailure?(.invalidResponse)
+        await wait { engine.positions.count == 2 && model.phase == .ready }
+        let calls = await provider.calls
+        XCTAssertEqual(calls.map { $0.options.quality }, [quality, quality])
+        XCTAssertEqual(calls.map { $0.options.codec }, [.preferHEVC, .preferH264])
+        XCTAssertEqual(calls.map(\.source), ["version", "version"])
+        XCTAssertEqual(engine.positions.last, 76)
+        XCTAssertTrue(engine.isPaused)
+        XCTAssertEqual(model.streamingOptions?.codec, .preferHEVC)
+        XCTAssertEqual(other.streamingOptions?.quality, otherQuality)
+        XCTAssertEqual(otherEngine.loadedQualities, [otherQuality])
+        let otherCalls = await otherProvider.calls
+        XCTAssertEqual(otherCalls.count, 1)
+        await model.stop()
+        await other.stop()
+    }
+
+    func testInvalidCustomLimitShowsItsErrorWithoutCallingProviderOrTryingMaximum() async {
+        let (model, engine, provider) = make(options: .init(quality: .invalid(.malformedCustom)))
+        await model.load()
+        if case .failed = model.phase {} else { XCTFail("Invalid custom quality must fail closed") }
+        XCTAssertEqual(model.streamingQualityError, .invalidQuality(.malformedCustom))
+        let calls = await provider.calls
+        let ordinaryCalls = await provider.ordinaryCalls
+        XCTAssertTrue(calls.isEmpty)
+        XCTAssertEqual(ordinaryCalls, 0)
+        XCTAssertTrue(engine.loadedQualities.isEmpty)
+        await model.stop()
+    }
+
     func testCurrentStreamBadgesResetAndRejectPriorRenditionCallbacks() async {
         let (model, engine, _) = make()
         await model.load()

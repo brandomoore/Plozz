@@ -716,12 +716,15 @@ public enum IdentityEnrichment {
     ///     per-page latency N sequential round-trips — a dominant cold-boot warm
     ///     cost. Bounded so it speeds up the scan without flooding the connection
     ///     pool or the small tvOS cooperative thread pool.
+    ///   - enrichIdentifiedItems: also hydrate cards whose one ID is only a partial
+    ///     identity. Silo's catalog anchor omits the cross-namespace links in detail.
     ///   - fetchFull: fetches the fuller per-item record for an item that lacks a
     ///     strong id. Return `nil` to signal the fetch **failed** (inconclusive);
     ///     return the enriched item (ideally now carrying external ids) on success.
     public static func prepare(
         _ items: [MediaItem],
         concurrency: Int = 5,
+        enrichIdentifiedItems: Bool = false,
         fetchFull: @Sendable @escaping (MediaItem) async -> MediaItem?
     ) async -> Result {
         // Partition without any network work: movies/series that already carry a
@@ -731,7 +734,7 @@ public enum IdentityEnrichment {
         var indexable: [MediaItem] = []
         var needsFetch: [MediaItem] = []
         for item in items where item.kind == .movie || item.kind == .series {
-            if MediaItemIdentity.identities(for: item).isEmpty {
+            if enrichIdentifiedItems || MediaItemIdentity.identities(for: item).isEmpty {
                 needsFetch.append(item)
             } else {
                 indexable.append(item)
@@ -749,7 +752,8 @@ public enum IdentityEnrichment {
         ) { group in
             for item in needsFetch {
                 group.addTask {
-                    guard let full = await limiter.run({ await fetchFull(item) }) else {
+                    guard let full = await limiter.run({ await fetchFull(item) }),
+                          full.id == item.id, full.kind == item.kind else {
                         return (nil, true)
                     }
                     if MediaItemIdentity.identities(for: full).isEmpty { return (nil, false) }

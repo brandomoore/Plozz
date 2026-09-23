@@ -90,7 +90,8 @@ public final class LibraryBrowseViewModel {
     /// grid index of its first item in the current sort. Populated (once, off the
     /// first page) only when sorting by **name** and the library is big enough to
     /// be worth an index; empty for every other sort, so the rail simply hides.
-    public private(set) var letterEntries: [LibraryLetterIndexEntry] = []
+    public let alphabet = LibraryAlphabetState()
+    public var letterEntries: [LibraryLetterIndexEntry] { alphabet.entries }
 
     /// Whether the trailing alphabet rail should be shown — true only when a
     /// name-sort letter index resolved with at least a couple of letters.
@@ -130,7 +131,7 @@ public final class LibraryBrowseViewModel {
 
     /// Below this library size the alphabet rail isn't worth showing (a short
     /// list scrolls fine on its own) or the round-trips to build it.
-    private static let minItemsForLetterRail = 30
+    private static let minItemsForLetterRail = 2
 
     /// In-flight letter-index build, cancelled when the sort changes or the grid
     /// reloads so a stale index never lands over a new sort.
@@ -287,9 +288,10 @@ public final class LibraryBrowseViewModel {
         visibleCellCountsByPage = [:]
         visibleIndices = []
         topVisibleIndex = nil
+        reportedViewportIndex = nil
         lastAppearedIndex = nil
         letterIndexTask?.cancel()
-        letterEntries = []
+        alphabet.reset()
         await noteInteractiveBrowseActivity()
         guard !Task.isCancelled, generation == loadGeneration else { return }
         PlozzLog.app.info(
@@ -395,7 +397,7 @@ public final class LibraryBrowseViewModel {
             }
             state = firstPage.totalCount == 0 ? .empty : .loaded(firstPage.totalCount)
             letterIndexTask?.cancel()
-            letterEntries = []
+            alphabet.reset()
             loadLetterIndexIfNeeded()
         } catch {
             // Keep the still-usable old page on a transient refresh failure; normal
@@ -430,20 +432,117 @@ public final class LibraryBrowseViewModel {
         // A library's title-letter offsets do not describe its scoped collections.
         guard browseScope == .library, contentMode == .titles,
               sort.field == .name, totalCount >= Self.minItemsForLetterRail else {
-            letterEntries = []
+            alphabet.reset()
             return
         }
+        alphabet.isLoading = true
+        alphabet.message = nil
         let sortAtRequest = sort
         let generation = contentGeneration
         letterIndexTask = Task { [weak self] in
             guard let self else { return }
-            let entries = (try? await self.provider.letterIndex(
-                in: self.containerID, kind: self.containerKind, sort: sortAtRequest
-            )) ?? []
-            guard !Task.isCancelled, generation == self.contentGeneration,
-                  sortAtRequest == self.sort else { return }
-            self.letterEntries = entries
+            do {
+                let entries = try await self.provider.letterIndex(
+                    in: self.containerID, kind: self.containerKind, sort: sortAtRequest)
+                guard !Task.isCancelled, generation == self.contentGeneration,
+                      sortAtRequest == self.sort else { return }
+                guard Set(entries.map(\.letter)).count == entries.count,
+                      entries.allSatisfy({ $0.startIndex.map { $0 >= 0 && $0 < self.totalCount } ?? true }) else {
+                    throw AppError.invalidResponse
+                }
+                self.alphabet.entries = entries
+                self.alphabet.isLoading = false
+                self.updateAlphabetPosition()
+            } catch {
+                guard !Task.isCancelled, generation == self.contentGeneration, sortAtRequest == self.sort else { return }
+                PlozzLog.app.error("Library alphabet index failed: \(String(describing: error))")
+                self.alphabet.isLoading = false
+                self.alphabet.message = "Couldn't load the alphabet index. Try again."
+            }
         }
+    }
+
+    public func retryLetterIndex() { loadLetterIndexIfNeeded() }
+
+    public func cancelLetterJump() {
+        if let page = alphabet.landingPage, (visibleCellCountsByPage[page] ?? 0) == 0 {
+            cancelPageLoad(page)
+        }
+        alphabet.cancelJump()
+    }
+
+    public func jumpToLetter(_ letter: String, focusesItem: Bool = true) async -> Int? {
+        await beginLetterJump(letter, focusesItem: focusesItem)?.value
+    }
+
+    /// Begin feedback and media I/O immediately; only the eventual focus handoff
+    /// waits for a native menu to finish dismissing.
+    @discardableResult
+    public func beginLetterJump(
+        _ letter: String, focusesItem: Bool = true, menuPresentationID: UUID? = nil
+    ) -> Task<Int?, Never>? {
+        guard let entry = letterEntries.first(where: { $0.letter == letter }) else { return nil }
+        alphabet.focusesItem = focusesItem
+        if alphabet.jumpingTo == letter, let task = alphabet.jumpTask {
+            alphabet.menuPresentationID = menuPresentationID
+            return task
+        }
+        cancelLetterJump()
+        alphabet.menuPresentationID = menuPresentationID
+        let id = alphabet.jumpID
+        let generation = contentGeneration
+        let requestedSort = sort
+        alphabet.jumpingTo = letter
+        alphabet.message = nil
+        let task = Task<Int?, Never> { [weak self] in
+            guard let self else { return nil }
+            defer {
+                if self.alphabet.jumpID == id {
+                    self.alphabet.jumpingTo = nil
+                    self.alphabet.jumpTask = nil
+                    self.alphabet.landingPage = nil
+                }
+            }
+            do {
+                let index: Int?
+                if let known = entry.startIndex { index = known }
+                else {
+                    index = try await self.provider.letterPosition(
+                        in: self.containerID, kind: self.containerKind, letter: letter, sort: requestedSort)
+                }
+                guard !Task.isCancelled, self.alphabet.jumpID == id,
+                      self.contentGeneration == generation, self.sort == requestedSort else { return nil }
+                guard let index else {
+                    self.alphabet.message = "No titles under \(letter) in this library."
+                    return nil
+                }
+                guard index >= 0, index < self.totalCount else { throw AppError.conflict }
+                let page = self.pageForIndex(index)
+                self.alphabet.landingPage = page
+                // Deferred resolution may have reconciled a merged cache since
+                // this slot was last viewed. Fetch its current landing window.
+                if entry.startIndex == nil { self.pagesLoaded.remove(page) }
+                if let load = self.startPageLoadIfNeeded(page, priority: .userInitiated) {
+                    await load.value
+                }
+                guard !Task.isCancelled, self.alphabet.jumpID == id,
+                      self.contentGeneration == generation, self.sort == requestedSort else { return nil }
+                guard self.pagesLoaded.contains(page), self.item(at: index) != nil else {
+                    throw AppError.serverUnreachable
+                }
+                self.prepareJump(toIndex: index)
+                self.alphabet.publishDestination(LibraryAlphabetDestination(
+                    index: index, focusesItem: self.alphabet.focusesItem))
+                return index
+            } catch {
+                guard !Task.isCancelled, self.alphabet.jumpID == id else { return nil }
+                PlozzLog.app.error("Library alphabet jump failed: \(String(describing: error))")
+                self.alphabet.message = "Couldn't jump to \(letter). Try again."
+                return nil
+            }
+        }
+        alphabet.jumpTask = task
+        return task
     }
 
     /// The rail letter whose range currently contains `index` — the last entry
@@ -452,10 +551,19 @@ public final class LibraryBrowseViewModel {
     /// first entry.
     public func letter(forIndex index: Int) -> String? {
         var match: String?
+        if letterEntries.contains(where: { $0.startIndex == nil }) {
+            return item(at: index).map { MediaItemSortOrder.alphabetBucket(for: $0) }
+        }
         for entry in letterEntries {
-            if entry.startIndex <= index { match = entry.letter } else { break }
+            guard let start = entry.startIndex else { continue }
+            if start <= index { match = entry.letter } else { break }
         }
         return match
+    }
+
+    private func updateAlphabetPosition() {
+        guard !letterEntries.isEmpty else { return }
+        alphabet.updatePosition(letter(forIndex: topVisibleIndex ?? 0))
     }
 
     /// The top-most currently-visible grid index (smallest visible index), used
@@ -467,13 +575,30 @@ public final class LibraryBrowseViewModel {
     /// visible cell, so the highlight doesn't flash back to the first letter
     /// mid-library.
     public private(set) var topVisibleIndex: Int?
+    @ObservationIgnored private var reportedViewportIndex: Int?
+
+    /// UIKit may retain an off-screen focused cell among its visible items.
+    /// Native grids report their intersecting layout frames instead of that cache.
+    public func reportViewport(firstIndex: Int, generation: Int) {
+        guard generation == contentGeneration, firstIndex >= 0, firstIndex < totalCount else { return }
+        reportedViewportIndex = firstIndex
+        updateTopVisibleIndex()
+    }
+
+    public func clearReportedViewport() {
+        reportedViewportIndex = nil
+        updateTopVisibleIndex()
+    }
 
     /// Recompute `topVisibleIndex` from the live visible set, publishing only a
     /// genuine change and never nil-ing out during a transient empty frame, so the
     /// rail highlight stays put and observers aren't churned needlessly.
     private func updateTopVisibleIndex() {
-        guard let newTop = visibleIndices.min() else { return }
-        if topVisibleIndex != newTop { topVisibleIndex = newTop }
+        guard let newTop = reportedViewportIndex ?? visibleIndices.min() else { return }
+        if topVisibleIndex != newTop {
+            topVisibleIndex = newTop
+            updateAlphabetPosition()
+        }
     }
 
     /// Called when the cell at `index` appears. Loads the page that owns `index`
@@ -744,6 +869,7 @@ public final class LibraryBrowseViewModel {
         let minKeep = max(0, page - 1)
         let maxKeep = page + max(lookAhead, 1) + 1
         for candidate in Array(pageTasks.keys) {
+            if candidate == alphabet.landingPage { continue }
             if (visibleCellCountsByPage[candidate] ?? 0) > 0 { continue }
             if candidate < minKeep || candidate > maxKeep {
                 cancelPageLoad(candidate)
@@ -823,6 +949,7 @@ public final class LibraryBrowseViewModel {
         for (offset, item) in page.items.enumerated() {
             loaded[page.startIndex + offset].item = tagged(item)
         }
+        updateAlphabetPosition()
     }
 
     /// Stamps an item with this library's owning account (if any).

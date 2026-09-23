@@ -167,7 +167,7 @@ extension JellyfinCapabilityProfile {
         // because the on-device engine software-decodes them regardless of
         // VideoToolbox AV1 support, exactly as the router expects.
         if hybrid {
-            let mkvVideo = ["h264", "hevc", "mpeg4", "vc1", "mpeg2video", "vp8", "vp9", "av1"]
+            let mkvVideo = MediaCapabilities.plozzigenVideoCodecs
             let mkvAudio = [
                 "aac", "ac3", "eac3", "dts", "dca", "truehd", "mlp",
                 "flac", "alac", "mp3", "opus", "vorbis",

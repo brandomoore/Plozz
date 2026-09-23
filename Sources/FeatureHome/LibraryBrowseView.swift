@@ -28,6 +28,7 @@ public struct LibraryBrowseView: View {
     /// goes away (a non-name sort) so re-entering name sort re-arms the reveal.
     @State private var railHasRevealed = false
     @State private var sortButtonHeight: CGFloat?
+    @FocusState private var focusedGridIndex: Int?
     #if os(tvOS)
     @State private var nativeScrollTarget = NativeLibraryScrollTarget()
     #endif
@@ -127,6 +128,10 @@ public struct LibraryBrowseView: View {
             }
         }
         .task { await viewModel.loadFirstPageIfNeeded() }
+        .background {
+            LibraryAlphabetFeedback(letter: viewModel.alphabet.jumpingTo, message: viewModel.alphabet.message)
+        }
+        .onDisappear { viewModel.cancelLetterJump() }
         .onChange(of: viewModel.contentMode) { _, _ in
             railFocusedLetter = nil
             railHasRevealed = false
@@ -188,8 +193,7 @@ public struct LibraryBrowseView: View {
         .overlay(alignment: .trailing) {
             LibraryRailLayer(
                 viewModel: viewModel, railFocusedLetter: $railFocusedLetter,
-                railHasRevealed: $railHasRevealed, revealThreshold: railRevealThreshold,
-                scrollTo: { nativeScrollTarget.scroll(to: $0) }
+                railHasRevealed: $railHasRevealed, revealThreshold: railRevealThreshold
             )
         }
         .overlay {
@@ -199,6 +203,11 @@ public struct LibraryBrowseView: View {
         }
         .onChange(of: viewModel.showsLetterRail) { _, shows in
             if !shows { railHasRevealed = false }
+        }
+        .onChange(of: viewModel.alphabet.destination) { _, destination in
+            if let destination {
+                nativeScrollTarget.scroll(to: destination.index, focusesItem: destination.focusesItem)
+            }
         }
     }
     #endif
@@ -216,6 +225,10 @@ public struct LibraryBrowseView: View {
                                 index: index,
                                 generation: generation,
                                 spoilerSettings: spoilerSettings,
+                                focusRequest: viewModel.alphabet.destination.flatMap {
+                                    $0.focusesItem && $0.index == index ? $0.id : nil
+                                },
+                                onFocusRequestHandled: viewModel.alphabet.completeDestination,
                                 onSelect: onSelect,
                                 onAppear: { idx in
                                     await viewModel.itemAppeared(at: idx, generation: generation)
@@ -226,6 +239,7 @@ public struct LibraryBrowseView: View {
                             // Explicit scroll identity so the rail's
                             // `scrollTo(startIndex)` lands on the right row.
                             .id(index)
+                            .focused($focusedGridIndex, equals: index)
                         }
                     }
                     .padding(.leading, contentLeadingPadding)
@@ -261,8 +275,7 @@ public struct LibraryBrowseView: View {
                     viewModel: viewModel,
                     railFocusedLetter: $railFocusedLetter,
                     railHasRevealed: $railHasRevealed,
-                    revealThreshold: railRevealThreshold,
-                    scrollTo: { proxy.scrollTo($0, anchor: .top) }
+                    revealThreshold: railRevealThreshold
                 )
             }
             // A transient jumbo letter that appears while flying the rail so
@@ -279,6 +292,14 @@ public struct LibraryBrowseView: View {
             // switch to a non-name sort), so the next name sort starts hidden.
             .onChange(of: viewModel.showsLetterRail) { _, shows in
                 if !shows { railHasRevealed = false }
+            }
+            .onChange(of: viewModel.alphabet.destination) { _, destination in
+                if let destination {
+                    proxy.scrollTo(destination.index, anchor: .top)
+                    if destination.focusesItem, viewModel.item(at: destination.index)?.kind == .folder {
+                        focusedGridIndex = destination.index
+                    }
+                }
             }
         }
         .id(viewModel.contentMode)
@@ -305,6 +326,14 @@ public struct LibraryBrowseView: View {
             }
             if viewModel.supportsCollections {
                 LibraryContentModeControl(viewModel: viewModel, buttonHeight: sortButtonHeight)
+            }
+            if viewModel.alphabet.isVisible {
+                LibraryAlphabetMenu(entries: viewModel.letterEntries, isLoading: viewModel.alphabet.isLoading,
+                                    isJumping: viewModel.alphabet.jumpingTo != nil,
+                                    onSelect: { letter, id in viewModel.beginLetterJump(letter, menuPresentationID: id) },
+                                    onDismiss: viewModel.alphabet.menuDidDismiss,
+                                    onCancel: viewModel.cancelLetterJump,
+                                    onRetry: viewModel.retryLetterIndex)
             }
             if !viewModel.availableSortFields.isEmpty {
                 sortControl
@@ -535,6 +564,8 @@ private struct LibraryGridCell: View {
     let index: Int
     let generation: Int
     let spoilerSettings: SpoilerSettings
+    let focusRequest: UUID?
+    let onFocusRequestHandled: (UUID) -> Void
     let onSelect: (MediaItem) -> Void
     let onAppear: (Int) async -> Void
     let onDisappear: (Int) -> Void
@@ -551,7 +582,11 @@ private struct LibraryGridCell: View {
                         item: item,
                         style: .poster,
                         spoilerSettings: spoilerSettings,
-                        enablesAsyncArtworkFallback: false
+                        enablesAsyncArtworkFallback: false,
+                        focusRequest: focusRequest,
+                        onFocusRequestHandled: {
+                            if let focusRequest { onFocusRequestHandled(focusRequest) }
+                        }
                     ) {
                         onSelect(item)
                     }
@@ -608,7 +643,6 @@ private struct LibraryRailLayer: View {
     @Binding var railFocusedLetter: String?
     @Binding var railHasRevealed: Bool
     let revealThreshold: Int
-    let scrollTo: (Int) -> Void
 
     private var isRailVisible: Bool { viewModel.showsLetterRail && railHasRevealed }
 
@@ -616,7 +650,7 @@ private struct LibraryRailLayer: View {
     /// the rail, otherwise the letter owning the top-most visible grid row.
     private var currentLetter: String? {
         if let railFocusedLetter { return railFocusedLetter }
-        return viewModel.letter(forIndex: viewModel.topVisibleIndex ?? 0)
+        return viewModel.alphabet.jumpingTo ?? viewModel.alphabet.positionLetter
     }
 
     var body: some View {
@@ -625,12 +659,11 @@ private struct LibraryRailLayer: View {
                 LibraryLetterRail(
                     entries: viewModel.letterEntries,
                     currentLetter: currentLetter,
+                    layoutLetter: currentLetter ?? viewModel.alphabet.lastKnownPositionLetter,
+                    isLoading: viewModel.alphabet.isPositionLoading || viewModel.alphabet.jumpingTo != nil,
                     focusedLetter: $railFocusedLetter,
                     onScrollToLetter: { entry in
-                        viewModel.prepareJump(toIndex: entry.startIndex)
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            scrollTo(entry.startIndex)
-                        }
+                        viewModel.beginLetterJump(entry.letter, focusesItem: false)
                     }
                 )
                 // Gate re-renders on the rail's meaningful inputs (entries +
@@ -678,6 +711,8 @@ private struct LibraryRailLayer: View {
 private struct LibraryLetterRail: View, Equatable {
     let entries: [LibraryLetterIndexEntry]
     let currentLetter: String?
+    let layoutLetter: String?
+    let isLoading: Bool
     @Binding var focusedLetter: String?
     let onScrollToLetter: (LibraryLetterIndexEntry) -> Void
 
@@ -688,7 +723,8 @@ private struct LibraryLetterRail: View, Equatable {
     // scroll closure are excluded (they can't be compared and don't change the
     // rail's appearance). Internal @FocusState changes still re-render as usual.
     static func == (lhs: LibraryLetterRail, rhs: LibraryLetterRail) -> Bool {
-        lhs.currentLetter == rhs.currentLetter && lhs.entries == rhs.entries
+        lhs.currentLetter == rhs.currentLetter && lhs.layoutLetter == rhs.layoutLetter
+            && lhs.entries == rhs.entries && lhs.isLoading == rhs.isLoading
     }
 
     var body: some View {
@@ -707,7 +743,8 @@ private struct LibraryLetterRail: View, Equatable {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(
-                    LetterRailButtonStyle(isCurrent: isActive, magnification: magnification)
+                    LetterRailButtonStyle(isCurrent: isActive, magnification: magnification,
+                                          showsMagnification: currentLetter != nil)
                 )
                 // A single liquid-glass pill lives behind whichever letter is active
                 // and rides `matchedGeometryEffect`, so changing the active letter
@@ -728,7 +765,17 @@ private struct LibraryLetterRail: View, Equatable {
                 }
                 // Fade with distance from the active letter (brightest at the
                 // "cursor", dimmer further out) but never below a legible floor.
-                .opacity(opacity(forMagnification: magnification))
+                .opacity(currentLetter == nil ? 1 : opacity(forMagnification: magnification))
+                .overlay(alignment: .trailing) {
+                    if isActive, isLoading {
+                        ProgressView()
+                            .scaleEffect(0.45)
+                            .frame(width: 14, height: 14)
+                            .offset(x: 24)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .accessibilityValue(isActive && isLoading ? Text("Loading") : Text(verbatim: ""))
                 .zIndex(isActive ? 1 : 0)
                 .focused($focus, equals: entry.letter)
             }
@@ -738,6 +785,17 @@ private struct LibraryLetterRail: View, Equatable {
         // already inset from the bezel by overscan) rather than pushing content.
         // Wide enough to give the enlarged active bubble room without clipping.
         .frame(width: 64)
+        .overlay(alignment: .leading) {
+            if isLoading, currentLetter == nil {
+                ProgressView()
+                    .accessibilityLabel("Loading titles")
+                    .frame(width: 24, height: 24)
+                    .padding(10)
+                    .plozzSurface(.overlay, cornerRadius: 22)
+                    .offset(x: -48)
+                    .allowsHitTesting(false)
+            }
+        }
         // Morph + magnify the letters between slots as the active letter changes —
         // whether that's the focused rail letter or the top-of-grid position marker.
         // A gentle spring makes the dock-style ripple feel slick rather than abrupt.
@@ -753,7 +811,14 @@ private struct LibraryLetterRail: View, Equatable {
         .onChange(of: focus) { _, newValue in
             focusedLetter = newValue
             guard let newValue,
-                  let entry = entries.first(where: { $0.letter == newValue }) else { return }
+                  let entry = entries.first(where: { $0.letter == newValue }),
+                  entry.startIndex != nil else { return }
+            onScrollToLetter(entry)
+        }
+        .task(id: focus) {
+            guard let focus, let entry = entries.first(where: { $0.letter == focus }),
+                  entry.startIndex == nil else { return }
+            do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
             onScrollToLetter(entry)
         }
     }
@@ -761,8 +826,8 @@ private struct LibraryLetterRail: View, Equatable {
     /// Index of the currently-active letter (focused rail letter, or the top-of-grid
     /// position marker), used as the "cursor" the dock-style magnification centres on.
     private var activeIndex: Int? {
-        guard let currentLetter else { return nil }
-        return entries.firstIndex { $0.letter == currentLetter }
+        guard let layoutLetter else { return nil }
+        return entries.firstIndex { $0.letter == layoutLetter }
     }
 
     /// Resting scale of the letters far from the cursor. Below 1 so the inactive
@@ -792,7 +857,7 @@ private struct LibraryLetterRail: View, Equatable {
     private func opacity(forMagnification magnification: CGFloat) -> Double {
         guard railPeak > 0 else { return 1 }
         let t = min(1, max(0, Double((magnification - railBase) / railPeak)))
-        return 0.55 + 0.45 * t
+        return 0.75 + 0.25 * t
     }
 }
 
@@ -804,15 +869,18 @@ private struct LibraryLetterRail: View, Equatable {
 private struct LetterRailButtonStyle: ButtonStyle {
     let isCurrent: Bool
     let magnification: CGFloat
+    let showsMagnification: Bool
 
     func makeBody(configuration: Configuration) -> some View {
-        RailLetterBody(configuration: configuration, isCurrent: isCurrent, magnification: magnification)
+        RailLetterBody(configuration: configuration, isCurrent: isCurrent,
+                       magnification: magnification, showsMagnification: showsMagnification)
     }
 
     private struct RailLetterBody: View {
         let configuration: ButtonStyle.Configuration
         let isCurrent: Bool
         let magnification: CGFloat
+        let showsMagnification: Bool
         @Environment(\.isFocused) private var isFocused
         @Environment(\.themePalette) private var palette
 
@@ -827,7 +895,7 @@ private struct LetterRailButtonStyle: ButtonStyle {
                 .foregroundStyle(foreground)
                 // Scale the glyph itself (smooth) but reserve the magnified height so
                 // the stack reflows and neighbours slide away, like the macOS Dock.
-                .scaleEffect(magnification)
+                .scaleEffect(showsMagnification ? magnification : 1)
                 .frame(width: 56, height: 37 * magnification)
         }
     }

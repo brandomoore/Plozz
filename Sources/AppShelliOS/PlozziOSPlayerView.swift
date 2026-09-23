@@ -226,8 +226,8 @@ struct PlozziOSPlayerView: View {
         HandoffDiagnostics.emit(
             "streaming DEFAULTS network=\(streamingNetwork) locality=\(locality) connection=\(connection.rawValue) "
                 + "profileScope=\(appModel.profiles.activeNamespace == nil ? "default" : "named") "
-                + "quality=\(settings.options(for: connection).quality.rawValue) "
-                + "local=\(settings.local.rawValue) remote=\(settings.remote.rawValue) cellular=\(settings.cellular.rawValue)"
+                + "quality=\(settings.options(for: connection).quality.diagnosticName) "
+                + "local=\(settings.local.diagnosticName) remote=\(settings.remote.diagnosticName) cellular=\(settings.cellular.diagnosticName)"
         )
         return connection
     }

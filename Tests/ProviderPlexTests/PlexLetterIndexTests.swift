@@ -8,6 +8,22 @@ import CoreNetworking
 /// single request yields every offset — meaning, unlike Jellyfin, the real
 /// offsets are assertable here.
 final class PlexLetterIndexTests: XCTestCase {
+    func testNonLatinFacetKeepsItsNativePositionAndSeriesScope() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/firstCharacter", json: """
+        {"MediaContainer":{"size":4,"Directory":[
+          {"title":"1","size":2},{"title":"A","size":3},
+          {"title":"Z","size":4},{"title":"映画","size":1}
+        ]}}
+        """)
+        let provider = PlexProvider(session: makeSession(), http: stub)
+        let entries = try await provider.letterIndex(in: "shows", kind: .series, sort: .default)
+        XCTAssertEqual(entries, [.init(letter: "#", startIndex: 0), .init(letter: "A", startIndex: 2),
+                                 .init(letter: "Z", startIndex: 5)])
+        XCTAssertTrue(stub.sentPaths.allSatisfy { $0 == "/library/sections/shows/firstCharacter" })
+        XCTAssertTrue(stub.sentQueryItems.allSatisfy { $0.contains(.init(name: "type", value: "2")) })
+    }
+
     private func makeSession() -> UserSession {
         UserSession(
             server: MediaServer(id: "srv", name: "Home", baseURL: URL(string: "https://plex.host:32400")!, provider: .plex),

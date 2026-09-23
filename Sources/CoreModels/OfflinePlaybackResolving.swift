@@ -29,9 +29,14 @@ public protocol OfflinePlaybackResolving: Sendable {
     /// downloaded copy (used by callers that only ask "is this available
     /// offline?").
     func localPlaybackURL(for item: MediaItem, versionID: String?) async -> URL?
+    func localSubtitleTracks(for item: MediaItem, versionID: String?) async -> [MediaTrack]
+    func localPlaybackMetadata(for item: MediaItem, versionID: String?) async -> MediaSourceMetadata?
 }
 
 public extension OfflinePlaybackResolving {
+    func localSubtitleTracks(for item: MediaItem, versionID: String?) async -> [MediaTrack] { [] }
+    func localPlaybackMetadata(for item: MediaItem, versionID: String?) async -> MediaSourceMetadata? { nil }
+
     /// Version-agnostic convenience for availability checks.
     func localPlaybackURL(for item: MediaItem) async -> URL? {
         await localPlaybackURL(for: item, versionID: nil)

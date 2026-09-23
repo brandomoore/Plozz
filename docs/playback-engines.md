@@ -6,12 +6,21 @@ with the best possible quality (Dolby Vision, Atmos, full-timeline seek).
 
 ## Dependency version
 
-Plozz pins upstream AetherEngine **7.8.1** to commit
-`b89240afcaebb958632b4b2c69284138c96e275f`. Its iOS/tvOS 18 minimum matches
-Plozz's existing deployment targets. The engine owns the FFmpegBuild 3.4.x and
-LibDovi 2.1.x dependencies; Plozz does not link a second FFmpeg build.
+Plozz pins upstream release **7.10.0**, commit
+`ca8512cd579b770d96dec8cea23507a5bb81128a`. It contains the structural HDR10+
+validator and shared probe limits/cancellation from
+[superuser404notfound/AetherEngine#583](https://github.com/superuser404notfound/AetherEngine/pull/583),
+plus the follow-up fixes in
+[superuser404notfound/AetherEngine#586](https://github.com/superuser404notfound/AetherEngine/pull/586).
+Validated positive evidence survives later packet damage or soft pass-budget
+expiry; whole-probe cancellation/deadlines still throw. Controlled probing
+retains normal stream analysis within its input limit, and bounded HTTP probes
+wait for an origin slot until their deadline. Plozz's existing public-API
+integration and stricter HTTP transport remain unchanged.
 
-This release contains both merged integration fixes:
+Its iOS/tvOS 18 minimum matches Plozz's existing deployment targets. The engine
+owns the FFmpegBuild 3.4.x and LibDovi 2.1.x dependencies; Plozz does not link a
+second FFmpeg build. This release also retains both earlier integration fixes:
 
 - [superuser404notfound/AetherEngine#566](https://github.com/superuser404notfound/AetherEngine/pull/566):
   item-bound background access/error-log reads, stale-result fencing, and bounded
@@ -82,18 +91,21 @@ can confirm HDR10+ on an original HEVC source independently of its audio codec,
 including titles whose Atmos badge is already known. It is not a library-wide
 scan and playback never waits for it.
 
-The HDR probe examines bounded video packets, not filenames or arbitrary byte
-matches in a container. Only positively identified HDR10+ metadata upgrades the
-source badge. An exhausted budget, inaccessible stream or ordinary HDR10 result
-does not downgrade a server declaration. Dolby Vision keeps its primary
-classification. The existing Atmos decode probe is requested only when its own
-confirmation is missing.
+Plozz delegates structural HDR10+ validation and Atmos detection to Aether's
+combined probe instead of maintaining a second parser and FFmpeg demux loop.
+The requested details are independent: a known Atmos badge does not suppress
+missing HDR10+ detection. Only positive evidence upgrades the source badge;
+an exhausted budget, inaccessible stream or unconfirmed result never disproves
+a server declaration. Dolby Vision keeps its primary classification.
 
-HDR inspection is capped at 8 MiB of reserved HTTP ranges, 128 packets and five
-seconds, with two-second request deadlines. Ignored or invalid Range responses
-are rejected before buffering a full body; redirects may not cross origins.
-The engine's existing FFmpeg libraries demux the bounded data, and the probe
-validates HEVC SEI/T.35 HDR10+ payloads without opening a video decoder.
+The app retains bounded HTTP transport, including 8 MiB of reserved ranges,
+two-second request deadlines, validated partial responses and same-origin
+redirects. Upstream whole-probe limits cover opening, analysis, seeks and detail
+passes; cancellation interrupts the owned reader and rejects late results.
+Those engine limits count delivered input bytes, not network-wire traffic or a
+hard native-allocation ceiling. Transport safeguards therefore remain separate
+from upstream packet parsing. Network-share probes use the same combined API
+through their independent, representation-bound transport readers.
 
 Probe coverage and positive results are cached independently for audio and
 video, scoped to the original media-source revision. A replaced file invalidates

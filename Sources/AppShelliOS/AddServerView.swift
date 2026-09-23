@@ -3,6 +3,7 @@ import CoreModels
 import CoreNetworking
 import CoreUI
 import FeatureAuthCore
+import FeatureAuth
 import FeatureDiscoveryCore
 import ProviderPlex
 import SwiftUI
@@ -14,8 +15,11 @@ struct AddServerView: View {
     @State private var server: MediaServer?
     @State private var jellyfinDiscovery = ServerPickerViewModel(provider: .jellyfin)
     @State private var embyDiscovery = ServerPickerViewModel(provider: .emby)
+    @State private var siloDiscovery = ServerPickerViewModel(provider: .silo)
     @State private var showingPlexSignIn = false
-    @State private var validationMessage: String?
+    @State private var validationMessage: LocalizedStringResource?
+    @State private var isValidating = false
+    @State private var validationTask: Task<Void, Never>?
 
     let appModel: PlozziOSAppModel
 
@@ -37,11 +41,13 @@ struct AddServerView: View {
                         providerChoice(.jellyfin)
                         providerChoice(.emby)
                         providerChoice(.plex)
+                        providerChoice(.silo)
                     }
 
                     if provider != .plex {
                         ManagedServerDiscoverySection(
                             model: discoveryModel,
+                            showsEmptyState: provider == .silo,
                             onSelect: selectDiscoveredServer
                         )
 
@@ -50,12 +56,17 @@ struct AddServerView: View {
                             .keyboardType(.URL)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .submitLabel(.continue)
+                            .onSubmit(continueSignIn)
+                            .disabled(isValidating)
                     }
                 } header: {
                     Text("Media server")
                 } footer: {
                     if provider == .plex {
                         Text("Plex sign-in finds every server linked to your account.")
+                    } else if provider == .silo {
+                        Text("Select a saved or nearby server to continue. If it isn't listed, enter the address you use to open Silo in a browser. An IP address alone uses port 8090.")
                     } else {
                         Text("Use a hostname, IP address, or full URL.")
                     }
@@ -69,10 +80,17 @@ struct AddServerView: View {
                 }
 
                 Section {
-                    Button(provider == .plex ? "Link Plex account" : "Continue") {
+                    Button {
                         continueSignIn()
+                    } label: {
+                        if isValidating {
+                            ProgressView("Checking server…")
+                        } else {
+                            Text(provider == .plex ? "Link Plex account" : "Continue")
+                        }
                     }
                     .frame(maxWidth: .infinity)
+                    .disabled(isValidating || (provider != .plex && address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
                 }
             }
             .settingsPageSurface()
@@ -102,16 +120,39 @@ struct AddServerView: View {
                 defer { model.stopScan() }
                 try? await Task.sleep(for: .seconds(86_400))
             }
+            .onChange(of: provider) { _, _ in
+                validationTask?.cancel()
+                validationMessage = nil
+                isValidating = false
+            }
+            .onDisappear {
+                validationTask?.cancel()
+                isValidating = false
+            }
         }
     }
 
     private func continueSignIn() {
+        guard !isValidating else { return }
         validationMessage = nil
         if provider == .plex {
             showingPlexSignIn = true
             return
         }
-        guard let url = ServerURLNormalizer.normalize(address) else {
+        if provider == .silo {
+            siloDiscovery.manualURLText = address
+            guard siloDiscovery.canSubmitManualURL else { return }
+            isValidating = true
+            validationTask = Task {
+                let validated = await siloDiscovery.submitManualURL()
+                guard !Task.isCancelled, provider == .silo else { return }
+                isValidating = false
+                if let validated { server = validated }
+                else if case let .error(message) = siloDiscovery.phase { validationMessage = message }
+            }
+            return
+        }
+        guard let url = ServerURLNormalizer.normalize(address, defaultPort: provider == .silo ? 8090 : 8096) else {
             validationMessage = "Enter a valid server address."
             return
         }
@@ -124,12 +165,20 @@ struct AddServerView: View {
     }
 
     private var discoveryModel: ServerPickerViewModel {
-        provider == .emby ? embyDiscovery : jellyfinDiscovery
+        switch provider {
+        case .silo: siloDiscovery
+        case .emby: embyDiscovery
+        default: jellyfinDiscovery
+        }
     }
 
     private func selectDiscoveredServer(_ selectedServer: MediaServer) {
         address = selectedServer.baseURL.absoluteString
         validationMessage = nil
+        if provider == .silo {
+            siloDiscovery.select(selectedServer)
+            server = selectedServer
+        }
     }
 
     private func providerChoice(_ provider: ProviderKind) -> some View {
@@ -147,13 +196,14 @@ struct AddServerView: View {
 
 private struct ManagedServerDiscoverySection: View {
     let model: ServerPickerViewModel
+    var showsEmptyState = false
     let onSelect: (MediaServer) -> Void
 
     var body: some View {
-        if !discoveryServers.isEmpty || model.phase == .scanning {
+        if !discoveryServers.isEmpty || model.phase == .scanning || showsEmptyState {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Label("Nearby servers", systemImage: "dot.radiowaves.left.and.right")
+                    Label("Saved and nearby servers", systemImage: "dot.radiowaves.left.and.right")
                         .font(.headline)
 
                     Spacer()
@@ -166,9 +216,19 @@ private struct ManagedServerDiscoverySection: View {
                             model.startScan()
                         }
                         .font(.subheadline)
+                        .disabled(model.phase == .validating)
                     }
                 }
 
+                if discoveryServers.isEmpty {
+                    if model.phase == .scanning {
+                        Text("Looking on your local network…")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    } else if showsEmptyState {
+                        Text("No nearby servers found. Enter an address below, or scan again.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
                 ForEach(discoveryServers) { server in
                     Button {
                         model.select(server)
@@ -191,11 +251,12 @@ private struct ManagedServerDiscoverySection: View {
 
                             Spacer()
 
-                            Image(systemName: "arrow.up.backward")
+                            Image(systemName: server.provider == .silo ? "chevron.forward" : "arrow.up.backward")
                                 .plozzForeground(.tertiary)
                         }
                     }
                     .buttonStyle(.plain)
+                    .disabled(model.phase == .validating)
                 }
             }
             .padding(.vertical, 4)
@@ -208,6 +269,7 @@ private struct ManagedServerDiscoverySection: View {
 }
 
 private struct ManagedServerSignInView: View {
+    @Environment(\.dismiss) private var dismiss
     @State private var usesPassword: Bool
     let server: MediaServer
     let appModel: PlozziOSAppModel
@@ -225,7 +287,17 @@ private struct ManagedServerSignInView: View {
     }
 
     var body: some View {
-        if usesPassword {
+        if server.provider == .silo {
+            SiloSignInView(
+                server: server, deviceID: appModel.deviceID,
+                onAuthenticated: { session in
+                    var store = UserDefaultsLastServerStore()
+                    store.remember(session.server)
+                    appModel.persist([session])
+                    onComplete()
+                },
+                onCancel: { dismiss() })
+        } else if usesPassword {
             PasswordServerSignInView(
                 server: server,
                 appModel: appModel,

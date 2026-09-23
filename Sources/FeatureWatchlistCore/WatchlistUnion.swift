@@ -118,7 +118,9 @@ public struct WatchlistUnion: Sendable, Equatable {
             }
         }
 
-        for intent in snapshot.orderedEntries {
+        // Older peers can replay imported evidence after the one-time migration.
+        // Retain sync bytes for round-trip fidelity, but never revive it as intent.
+        for intent in snapshot.orderedEntries where intent.origin != .nativeImport {
             let aliasID = aliasSnapshot.resolvedAliasID(for: intent.aliasID)
                 ?? snapshot.resolvedAliasID(for: intent.aliasID)
             guard seen.insert(aliasID).inserted else { continue }

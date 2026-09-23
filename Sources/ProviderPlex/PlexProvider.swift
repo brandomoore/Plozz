@@ -755,14 +755,12 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         // Fold the facet onto the canonical "#"/A–Z rail buckets, preserving the
         // server's ascending order and summing any that collapse (e.g. "1-9" and
         // "#" both fall into "#").
-        var counts: [String: Int] = [:]
-        var order: [String] = []
-        for directory in directories {
-            let bucket = LibraryLetterIndex.bucket(forPrefix: directory.titleSort ?? directory.title ?? "#")
-            if counts[bucket] == nil { order.append(bucket) }
-            counts[bucket, default: 0] += max(0, directory.size ?? 0)
+        // Keep disjoint non-Latin/symbol buckets in place. Coalescing all "#" rows
+        // before accumulating offsets shifts every intervening Latin letter.
+        let bucketCounts = directories.map {
+            (letter: LibraryLetterIndex.bucket(forPrefix: $0.titleSort ?? $0.title ?? "#"),
+             count: max(0, $0.size ?? 0))
         }
-        let bucketCounts = order.map { (letter: $0, count: counts[$0] ?? 0) }
         let entries = LibraryLetterIndex.entries(
             bucketCountsAscending: bucketCounts, direction: sort.direction
         )
@@ -814,6 +812,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
         streaming: StreamingPlaybackOptions? = nil
     ) async throws -> PlaybackRequest {
+        try streaming?.quality.validate()
         // Original playback needs only metadata. Bounded conversion additionally
         // validates Plex's decision before handing a transcode URL to the player.
         let detail = try await client.metadata(ratingKey: itemID)

@@ -5,6 +5,91 @@ import XCTest
 @testable import ProviderPlex
 
 final class PlexStreamingQualityTests: XCTestCase {
+    func testCustom1080pAt2000KbpsKeepsDecisionAndPlaybackLimitsIdentical() async throws {
+        let quality = try StreamingQuality.custom(maximumHeight: 1080, bitrateKbps: 2_000)
+        let supportsHEVC = MediaCapabilities.detected().allowedDirectPlayVideoCodecs.contains(.hevc)
+        for codec in StreamingCodecPreference.allCases {
+            let http = StubHTTPClient()
+            let decision = """
+            {"MediaContainer":{"transcodeDecisionCode":1001,"Metadata":[{"Media":[{
+              "container":"mp4","videoCodec":"\(codec == .preferHEVC && supportsHEVC ? "hevc" : "h264")"
+            }]}]}}
+            """
+            let provider = fixture(decision: decision, http: http)
+            let request = try await provider.playbackInfo(
+                for: "movie", mediaSourceID: "7", forceTranscode: false,
+                streaming: .init(quality: quality, codec: codec)
+            )
+            let source = try locator(request)
+            let query = source.resource.queryItems.map { URLQueryItem(name: $0.name, value: $0.value) }
+            let decisionQuery = try XCTUnwrap(http.queryItems(forPathSuffix: "/decision"))
+            for items in [query, decisionQuery] {
+                XCTAssertEqual(items.first { $0.name == "maxVideoBitrate" }?.value, "1872")
+                XCTAssertEqual(items.first { $0.name == "audioBitrate" }?.value, "128")
+                XCTAssertEqual(items.first { $0.name == "videoResolution" }?.value, "1920x1080")
+                XCTAssertEqual(items.first { $0.name == "directPlay" }?.value, "0")
+                XCTAssertEqual(items.first { $0.name == "directStream" }?.value, "0")
+                let profile = try XCTUnwrap(items.first { $0.name == "X-Plex-Client-Profile-Extra" }?.value)
+                XCTAssertTrue(profile.contains("type=upperBound&name=video.width&value=1920&"))
+                XCTAssertTrue(profile.contains("type=upperBound&name=video.height&value=1080&"))
+                XCTAssertTrue(profile.contains("type=upperBound&name=video.bitrate&value=1872&"))
+                let codecs = codec.codecs(supportsHEVC: supportsHEVC).joined(separator: "%2C")
+                XCTAssertTrue(profile.contains("videoCodec=\(codecs)&"))
+            }
+            XCTAssertEqual(request.streamingOptions?.quality, quality)
+            XCTAssertEqual(request.streamingOptions?.codec, codec)
+            XCTAssertEqual(source.mediaSourceID, "7")
+            XCTAssertNil(request.localRemuxSource)
+            XCTAssertNil(request.originalFileSource)
+            XCTAssertTrue(request.isTranscoding)
+        }
+    }
+
+    func testCustomCeilingRetainsSmallerPlexOriginalWithoutNegotiationOrUpscaling() async throws {
+        let quality = try StreamingQuality.custom(maximumHeight: 1080, bitrateKbps: 2_000)
+        let http = StubHTTPClient()
+        let request = try await fixture(bitrate: 1_500, width: 1280, height: 720, http: http).playbackInfo(
+            for: "movie", mediaSourceID: "7", forceTranscode: false,
+            streaming: .init(quality: quality, codec: .preferHEVC)
+        )
+        XCTAssertFalse(request.isTranscoding)
+        XCTAssertEqual(try locator(request).deliveryMode, .directFile)
+        XCTAssertFalse(http.sentPaths.contains { $0.hasSuffix("/decision") })
+        XCTAssertEqual(request.streamingOptions?.quality, quality)
+    }
+
+    func testInvalidSavedCustomLimitStopsPlexBeforeNetworkIO() async {
+        let http = StubHTTPClient()
+        do {
+            _ = try await fixture(http: http).playbackInfo(
+                for: "movie", mediaSourceID: "7", forceTranscode: false,
+                streaming: .init(quality: .invalid(.bitrateTooHigh))
+            )
+            XCTFail("An invalid custom limit must not turn into unrestricted playback")
+        } catch {
+            XCTAssertEqual(error as? StreamingQualityError, .invalidQuality(.bitrateTooHigh))
+        }
+        XCTAssertTrue(http.sentPaths.isEmpty)
+    }
+
+    func testCustomMinimumAndMaximumProviderBudgetsAreNotRoundedOrSilentlyCapped() throws {
+        let client = PlexClient(
+            baseURL: URL(string: "https://fixture.test")!,
+            deviceProfile: .init(clientIdentifier: "fixture"), token: "fixture",
+            http: StubHTTPClient()
+        )
+        for bitrate in [129, CustomStreamingQuality.maximumBitrateKbps] {
+            let quality = try StreamingQuality.custom(maximumHeight: 2160, bitrateKbps: bitrate)
+            let url = try XCTUnwrap(client.transcodeURL(
+                ratingKey: "movie", sessionID: "fixture", streaming: .init(quality: quality)
+            ))
+            let query = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+            XCTAssertEqual(query.first { $0.name == "maxVideoBitrate" }?.value, String(bitrate - 128))
+            XCTAssertEqual(query.first { $0.name == "audioBitrate" }?.value, "128")
+            XCTAssertEqual(query.first { $0.name == "videoResolution" }?.value, "3840x2160")
+        }
+    }
+
     func testHEVCOnlyDecisionRejectsAnUnchangedH264Output() throws {
         let decision = try JSONDecoder().decode(PlexStreamingDecisionResponse.self, from: Data(
             #"{"MediaContainer":{"transcodeDecisionCode":1001,"Metadata":[{"Media":[{"container":"mp4","videoCodec":"h264"}]}]}}"#.utf8

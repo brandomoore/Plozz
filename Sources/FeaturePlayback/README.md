@@ -62,6 +62,15 @@ playback. Cellular and unclassified paths use the cellular policy; Wi-Fi and
 Ethernet retain their local/remote classification even when marked expensive.
 Connection changes reapply the relevant saved default. The player Quality sheet
 changes only the current video's rendition, not the saved preferences.
+Each picker also offers Custom: an independent resolution ceiling (240p–2160p)
+and integer total bitrate in Kbps. The total includes the 128 Kbps audio budget;
+1080p / 2,000 Kbps therefore leaves 1,872 Kbps for video and never forces upscaling.
+Custom edits are drafts until Apply, and Cancel leaves the previous choice intact.
+Presets retain their legacy serialized names; custom values persist their own
+dimensions/budget per profile and network category. Invalid custom values remain
+explicitly invalid and are rejected before provider I/O, never treated as Maximum.
+The same value travels through codec retries, seeks, and version changes.
+
 The transport keeps subtitles directly accessible and groups quality, version,
 audio, speed, and sync in one playback-options menu. The existing Info card owns
 media details, restart/episode actions, and Playback Info (diagnostics); there is
@@ -203,6 +212,10 @@ session. Prefetched episodes must match the current quality policy before
 adoption. A downloaded local file bypasses this policy. Plain network shares
 do not implement the conversion protocol and have no player quality control.
 Existing Apple TV callers and Live TV never opt in.
+Real-server playback automation is documented in
+[`docs/provider-playback-tests.md`](../../docs/provider-playback-tests.md).
+Its synthetic harness checks and real-server results are separate; neither a
+missing provider/configuration nor a skipped XCTest is a successful live run.
 
 ## Siri Remote input
 

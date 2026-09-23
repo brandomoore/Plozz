@@ -1686,6 +1686,7 @@ public struct PlexClient: Sendable {
         partIndex: Int = 0,
         streaming: StreamingPlaybackOptions? = nil
     ) -> URL? {
+        guard streaming?.quality.validationError == nil else { return nil }
         var query: [URLQueryItem] = [
             URLQueryItem(name: "path", value: "/library/metadata/\(ratingKey)"),
             URLQueryItem(name: "mediaIndex", value: String(mediaIndex)),
@@ -1746,6 +1747,7 @@ public struct PlexClient: Sendable {
     }
 
     func validateStreamingTranscode(url: URL, options: StreamingPlaybackOptions) async throws -> DirectPlayVideoCodec {
+        try options.quality.validate()
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             throw StreamingQualityError.malformedResponse
         }

@@ -827,6 +827,13 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
                 includeItemTypes: includeItemTypes, recursive: recursive
             )
         }
+        async let lastLetterTask: Int = limiter.run {
+            try await client.itemCount(
+                userID: userID, parentID: containerID,
+                includeItemTypes: includeItemTypes, recursive: recursive,
+                nameStartsWith: "Z"
+            )
+        }
 
         var offsets: [String: Int] = [:]
         try await withThrowingTaskGroup(of: (String, Int).self) { group in
@@ -845,9 +852,19 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             for try await (letter, count) in group { offsets[letter] = count }
         }
         let total = try await totalTask
+        let lastLetterCount = try await lastLetterTask
+        var previous = 0
+        for letter in letters {
+            guard let offset = offsets[letter], offset >= previous, offset <= total else {
+                throw AppError.invalidResponse
+            }
+            previous = offset
+        }
+        guard lastLetterCount <= total - previous else { throw AppError.invalidResponse }
 
         let entries = LibraryLetterIndex.entries(
-            lessThanOffsetsByLetter: offsets, totalCount: total, direction: sort.direction
+            lessThanOffsetsByLetter: offsets, totalCount: total, lastLetterCount: lastLetterCount,
+            direction: sort.direction
         )
         PlozzLog.networking.info(
             "Library letter index: container=\(containerID) total=\(total) letters=\(entries.count) dir=\(sort.direction.rawValue)"
@@ -957,6 +974,7 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
         for itemID: String, mediaSourceID: String?, forceTranscode: Bool,
         streaming: StreamingPlaybackOptions? = nil
     ) async throws -> PlaybackRequest {
+        try streaming?.quality.validate()
         // Jellyfin needs two independent round-trips here — the item detail and
         // the playback decision (media sources). They don't depend on each other,
         // so issue them concurrently to halve the time-to-first-frame latency
@@ -1049,7 +1067,15 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
         // remux response describes the output container instead.
         let originalSource = source
         let originalContainer = source.Container
-        let originalStreams = source.MediaStreams ?? detail.MediaStreams ?? []
+        let sourceRevision = Self.sourceRevision(itemID: itemID, source: originalSource)
+        let detailSourceRevision = detail.MediaSources?
+            .first { ($0.Id ?? itemID) == (originalSource.Id ?? itemID) }
+            .map { Self.sourceRevision(itemID: itemID, source: $0) }
+        // Different-revision detail headers cannot supply playback or remux evidence.
+        let canReuseDetailStreams = kind != .emby
+            || detailSourceRevision == nil || detailSourceRevision == sourceRevision
+        let fallbackStreams = canReuseDetailStreams ? detail.MediaStreams ?? [] : []
+        let originalStreams = source.MediaStreams ?? fallbackStreams
 
         // Track whether we deliberately swapped to a server **remux** (DirectStream,
         // video stream-copied) so diagnostics can report it as a lossless remux
@@ -1088,7 +1114,9 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             playSessionID: info.PlaySessionId,
             didRemux: didRemux
         )
-        let sourceRevision = Self.sourceRevision(itemID: itemID, source: originalSource)
+        if kind == .emby {
+            await probeDescriptors.remember(itemID: itemID, sources: [originalSource])
+        }
         let cachedProbe = kind == .emby
             ? await probeDescriptors.cachedResult(for: sourceRevision)
             : (completed: false, facts: nil)
@@ -1096,7 +1124,7 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             && cachedProbe.facts?.audioIsAtmos == true
         var mappedItem = map(item: detail)
 
-        let streams = source.MediaStreams ?? detail.MediaStreams ?? []
+        let streams = source.MediaStreams ?? fallbackStreams
         var audio = streams.filter { $0.`Type` == "Audio" }.map(map(stream:))
         var mappedSourceMetadata = Self.sourceMetadata(
             container: originalContainer,
@@ -1104,11 +1132,41 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             sourceRevision: sourceRevision,
             fileSizeBytes: originalSource.Size
         )
-        if confirmsAtmos {
-            mappedItem = mappedItem.confirmingAtmos()
-            if let metadata = mappedSourceMetadata {
-                mappedSourceMetadata = metadata.confirmingAtmos()
+        if cachedProbe.completed, let facts = cachedProbe.facts {
+            let selectedSourceID = originalSource.Id ?? itemID
+            let selectedMetadata = mappedSourceMetadata ?? MediaSourceMetadata(sourceRevision: sourceRevision)
+            if !mappedItem.versions.isEmpty {
+                mappedItem.selectedVersionID = selectedSourceID
             }
+            if mappedItem.mediaInfo?.sourceRevision != sourceRevision {
+                mappedItem.mediaInfo = selectedMetadata
+            }
+            mappedItem.versions = mappedItem.versions.map { version in
+                guard version.id == selectedSourceID else { return version }
+                var version = version
+                if detailSourceRevision != sourceRevision {
+                    // A stale detail response may describe the same file ID's
+                    // old representation. Its flattened facts are not evidence
+                    // for this playback revision, even when metadata is sparse.
+                    version.width = selectedMetadata.video?.width
+                    version.height = selectedMetadata.video?.height
+                    version.bitrate = originalSource.Bitrate ?? selectedMetadata.video?.bitrate
+                    version.sizeBytes = originalSource.Size
+                    version.duration = originalSource.RunTimeTicks.map { TimeInterval($0) / 10_000_000 }
+                    version.videoCodec = selectedMetadata.video?.codec
+                    version.videoRange = selectedMetadata.video?.videoRangeType ?? selectedMetadata.video?.videoRange
+                    version.audioCodec = selectedMetadata.audio?.codec
+                    version.audioChannels = selectedMetadata.audio?.channels
+                    version.audioProfile = selectedMetadata.audio?.profile
+                    version.container = originalContainer
+                }
+                version.sourceMetadata = selectedMetadata
+                return version
+            }
+            mappedItem = mappedItem.applyingSupplementalStreamFacts(facts)
+            mappedSourceMetadata = facts.applying(to: selectedMetadata)
+        }
+        if confirmsAtmos {
             let targetIndex = audio.firstIndex {
                 $0.isDefault && $0.codec?.lowercased() == "eac3"
             } ?? audio.firstIndex {
@@ -1118,14 +1176,12 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
                 audio[targetIndex].isAtmos = true
             }
         }
-        if cachedProbe.completed, cachedProbe.facts?.videoRangeType == "HDR10Plus" {
-            mappedItem = mappedItem.confirmingHDR10Plus()
-            mappedSourceMetadata = mappedSourceMetadata?.confirmingHDR10Plus()
-        }
         let sourceID = source.Id ?? itemID
         let subs = try streams.filter { $0.`Type` == "Subtitle" }.map { stream in
             try map(subtitleStream: stream, itemID: itemID, sourceID: sourceID)
         }
+        // Probe-only DOVI is a display fact, not a profile/compatibility proof.
+        // Keep the local-remux descriptor based on the original provider streams.
         let localRemuxSource = try? localRemuxSourceDescriptor(
             itemID: itemID,
             source: originalSource,
@@ -2376,10 +2432,12 @@ extension JellyfinProvider: SupplementalStreamFactsProviding {
 
     private static func supplementalConfirmations(_ facts: ProbedStreamFacts?, for item: MediaItem) -> ProbedStreamFacts? {
         guard var facts else { return nil }
-        if SourceDynamicRange.providerHint(from: item.mediaInfo) == .dolbyVision {
+        if SourceDynamicRange.providerHint(from: item.mediaInfo) == .dolbyVision,
+           SourceDynamicRange.classify(videoRangeType: facts.videoRangeType) != .dolbyVision {
             facts.videoRangeType = nil
         }
-        return facts.audioIsAtmos || facts.videoRangeType != nil ? facts : nil
+        return facts.audioIsAtmos || facts.videoRangeType != nil
+            || facts.carriesHDR10PlusMetadata == true ? facts : nil
     }
 }
 

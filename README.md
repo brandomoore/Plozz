@@ -84,6 +84,17 @@ presents them as a single library rather than a set of tabs you switch between.
   (Shares are supported, but still the newest and roughest part.)
 - **One merged library** — connect several servers and see one set of rows
   instead of picking a server first.
+- **Jump to a letter** — name-sorted Plex, Jellyfin, Emby, and Silo libraries
+  have an alphabet menu on Apple TV, iPhone, and iPad, including combined
+  libraries. Apple TV also keeps its fast-scroll letter rail. Silo and combined
+  libraries resolve exact positions on demand; a deep first jump may take time,
+  can be cancelled, and leaves the current view in place until its titles load.
+  TV menu selections move focus to the destination card; rail navigation keeps
+  focus on the letters. While rows load, the rail stays visible without claiming
+  an unverified current letter. Jump progress appears immediately in the shared
+  theme-aware status toast as **Jumping to [letter]…**; **Cancel jump** remains
+  available in the alphabet menu.
+  Other sorts and collection-member lists keep their own ordering.
 - **Common Sense Media in Ratings** — Plex movie and show details can display
   a prominent recommended age, separate from review scores. When header ratings
   are shown, they default to the age badge plus two available review scores. Open the tile for

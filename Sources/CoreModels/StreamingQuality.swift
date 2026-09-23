@@ -1,28 +1,49 @@
 import Foundation
 
 /// Streaming limits, independent of offline download renditions.
-public enum StreamingQuality: String, CaseIterable, Codable, Sendable, Identifiable {
+public enum StreamingQuality: Hashable, CaseIterable, Codable, Sendable, Identifiable {
     case original, hd1080High, hd1080, hd720High, hd720, sd480, low
+    case custom(CustomStreamingQuality)
+    /// Retain a damaged saved limit until the user replaces it, never as Maximum.
+    case invalid(StreamingQualityValidationError)
+
+    /// Built-in choices; Custom is constructed with its own validated limits.
+    public static let allCases: [Self] = [.original, .hd1080High, .hd1080, .hd720High, .hd720, .sd480, .low]
+
+    public static func custom(maximumHeight: Int, bitrateKbps: Int) throws -> Self {
+        .custom(try CustomStreamingQuality(maximumHeight: maximumHeight, bitrateKbps: bitrateKbps))
+    }
 
     public var id: Self { self }
+    public var validationError: StreamingQualityValidationError? {
+        if case .invalid(let error) = self { return error }
+        return nil
+    }
+
+    public func validate() throws {
+        if let validationError { throw StreamingQualityError.invalidQuality(validationError) }
+    }
+
     public var maximumBitrate: Int? {
         switch self {
-        case .original: nil
+        case .original, .invalid: nil
         case .hd1080High: 20_000_000
         case .hd1080: 8_000_000
         case .hd720High: 4_000_000
         case .hd720: 2_000_000
         case .sd480: 1_000_000
         case .low: 500_000
+        case .custom(let value): value.bitrateKbps * 1_000
         }
     }
     public var maximumHeight: Int? {
         switch self {
-        case .original: nil
+        case .original, .invalid: nil
         case .hd1080High, .hd1080: 1080
         case .hd720High, .hd720: 720
         case .sd480: 480
         case .low: 240
+        case .custom(let value): value.maximumHeight
         }
     }
     public var maximumWidth: Int? { maximumHeight.map { ($0 * 16 / 9) / 2 * 2 } }
@@ -37,15 +58,141 @@ public enum StreamingQuality: String, CaseIterable, Codable, Sendable, Identifia
         case .hd720: "720p · 2 Mbps"
         case .sd480: "480p · 1 Mbps"
         case .low: "240p · 500 Kbps"
+        case .custom(let value): "Custom · \(value.maximumHeight)p · \(value.bitrateKbps) Kbps"
+        case .invalid: "Invalid custom quality"
         }
     }
-    public var estimatedBytesPerHour: Int64? { maximumBitrate.map { Int64($0) * 3_600 / 8 } }
+    public var estimatedBytesPerHour: Int64? { maximumBitrate.map { Int64($0) * 450 } }
+
+    public var diagnosticName: String {
+        switch self {
+        case .original: "original"
+        case .hd1080High: "hd1080High"
+        case .hd1080: "hd1080"
+        case .hd720High: "hd720High"
+        case .hd720: "hd720"
+        case .sd480: "sd480"
+        case .low: "low"
+        case .custom(let value): "custom-\(value.maximumHeight)p-\(value.bitrateKbps)Kbps"
+        case .invalid(let error): "invalid-\(error.rawValue)"
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey { case type, maximumHeight, bitrateKbps, error }
+
+    public init(from decoder: any Decoder) throws {
+        if let name = try? decoder.singleValueContainer().decode(String.self) {
+            if name == "custom" { throw StreamingQualityValidationError.malformedCustom }
+            guard let preset = Self.allCases.first(where: { $0.diagnosticName == name }) else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: decoder.codingPath, debugDescription: "Unknown streaming quality preset."
+                ))
+            }
+            self = preset
+            return
+        }
+        do {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            switch try c.decode(String.self, forKey: .type) {
+            case "custom":
+                self = try .custom(
+                    maximumHeight: c.decode(Int.self, forKey: .maximumHeight),
+                    bitrateKbps: c.decode(Int.self, forKey: .bitrateKbps)
+                )
+            case "invalid":
+                self = .invalid(try c.decode(StreamingQualityValidationError.self, forKey: .error))
+            default: throw StreamingQualityValidationError.malformedCustom
+            }
+        } catch let error as StreamingQualityValidationError {
+            throw error
+        } catch {
+            throw StreamingQualityValidationError.malformedCustom
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .custom(let value):
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode("custom", forKey: .type)
+            try c.encode(value.maximumHeight, forKey: .maximumHeight)
+            try c.encode(value.bitrateKbps, forKey: .bitrateKbps)
+        case .invalid(let error):
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode("invalid", forKey: .type)
+            try c.encode(error, forKey: .error)
+        default:
+            var c = encoder.singleValueContainer()
+            try c.encode(diagnosticName)
+        }
+    }
 
     /// Unknown source facts are not evidence that an original fits a data limit.
     public func permitsOriginal(bitrate: Int?, width: Int?, height: Int?) -> Bool {
+        guard validationError == nil else { return false }
         guard let maximumBitrate, let maximumWidth, let maximumHeight else { return true }
         guard let bitrate, bitrate > 0, let width, width > 0, let height, height > 0 else { return false }
         return bitrate <= maximumBitrate && width <= maximumWidth && height <= maximumHeight
+    }
+}
+
+public struct CustomStreamingQuality: Hashable, Sendable {
+    public static let supportedHeights = [240, 480, 720, 1080, 1440, 2160]
+    // Jellyfin/Emby's MaxStreamingBitrate is signed 32-bit bits per second.
+    public static let maximumBitrateKbps = Int(Int32.max) / 1_000
+    public let maximumHeight: Int
+    /// Total audio + video budget, in decimal kilobits per second.
+    public let bitrateKbps: Int
+
+    public init(maximumHeight: Int, bitrateKbps: Int) throws {
+        guard Self.supportedHeights.contains(maximumHeight) else {
+            throw StreamingQualityValidationError.unsupportedResolution
+        }
+        guard bitrateKbps > 128 else { throw StreamingQualityValidationError.bitrateTooLow }
+        let (bits, overflow) = bitrateKbps.multipliedReportingOverflow(by: 1_000)
+        guard !overflow, bits <= Int(Int32.max) else { throw StreamingQualityValidationError.bitrateTooHigh }
+        self.maximumHeight = maximumHeight
+        self.bitrateKbps = bitrateKbps
+    }
+}
+
+public enum StreamingQualityValidationError: String, Error, Hashable, Codable, Sendable {
+    case invalidBitrate, bitrateTooLow, bitrateTooHigh, unsupportedResolution, malformedCustom
+
+    public var userMessage: LocalizedStringResource {
+        switch self {
+        case .invalidBitrate: "Enter a whole number of Kbps, without decimals or separators."
+        case .bitrateTooLow: "Enter more than 128 Kbps to leave room for video after the audio budget."
+        case .bitrateTooHigh: "The server supports at most \(CustomStreamingQuality.maximumBitrateKbps) Kbps."
+        case .unsupportedResolution: "Choose a supported maximum resolution."
+        case .malformedCustom: "This saved custom quality couldn’t be read. Choose a quality or enter a new custom limit."
+        }
+    }
+}
+
+/// Editing never mutates a saved quality until validation succeeds and Apply is chosen.
+public struct StreamingQualityDraft: Equatable, Sendable {
+    public var maximumHeight: Int
+    public var bitrateKbps: String
+
+    public init(quality: StreamingQuality) {
+        maximumHeight = quality.maximumHeight ?? StreamingQuality.hd1080.maximumHeight!
+        bitrateKbps = String((quality.maximumBitrate ?? StreamingQuality.hd1080.maximumBitrate!) / 1_000)
+    }
+
+    public func validatedQuality() throws -> StreamingQuality {
+        let text = bitrateKbps.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.utf8.allSatisfy({ (48...57).contains($0) }) else {
+            throw StreamingQualityValidationError.invalidBitrate
+        }
+        guard let bitrate = Int(text) else { throw StreamingQualityValidationError.bitrateTooHigh }
+        return try .custom(maximumHeight: maximumHeight, bitrateKbps: bitrate)
+    }
+
+    public var validationError: StreamingQualityValidationError? {
+        do { _ = try validatedQuality(); return nil }
+        catch let error as StreamingQualityValidationError { return error }
+        catch { return .malformedCustom }
     }
 }
 
@@ -149,9 +296,15 @@ public struct StreamingQualitySettings: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey { case local, remote, cellular, codec, forceTranscoding }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        local = (try? c.decode(StreamingQuality.self, forKey: .local)) ?? .original
-        remote = (try? c.decode(StreamingQuality.self, forKey: .remote)) ?? .original
-        cellular = (try? c.decode(StreamingQuality.self, forKey: .cellular)) ?? .hd720
+        func quality(_ key: CodingKeys, fallback: StreamingQuality) -> StreamingQuality {
+            guard c.contains(key), (try? c.decodeNil(forKey: key)) != true else { return fallback }
+            do { return try c.decode(StreamingQuality.self, forKey: key) }
+            catch let error as StreamingQualityValidationError { return .invalid(error) }
+            catch { return fallback }
+        }
+        local = quality(.local, fallback: .original)
+        remote = quality(.remote, fallback: .original)
+        cellular = quality(.cellular, fallback: .hd720)
         codec = (try? c.decode(StreamingCodecPreference.self, forKey: .codec)) ?? .automatic
         forceTranscoding = (try? c.decode(Bool.self, forKey: .forceTranscoding)) ?? false
     }
@@ -221,6 +374,7 @@ public protocol StreamingQualityProviding: MediaProvider {
 }
 
 public enum StreamingQualityError: Error, Equatable, Sendable {
+    case invalidQuality(StreamingQualityValidationError)
     case unavailable, unsupported
     case permissionDenied, noCompatibleStream, sourceUnavailable, malformedResponse, negotiationFailed
     case serverHTTP(Int)
@@ -239,6 +393,8 @@ public enum StreamingQualityError: Error, Equatable, Sendable {
 
     public var userMessage: LocalizedStringResource {
         switch self {
+        case .invalidQuality(let error):
+            error.userMessage
         case .unavailable:
             "The server didn’t offer a converted stream for these settings. It didn’t report a specific reason. Try another quality, or ask the server owner to check the transcoding log."
         case .unsupported:
@@ -269,6 +425,7 @@ public enum StreamingQualityError: Error, Equatable, Sendable {
     /// Codes only: never display raw server/AVFoundation descriptions or URLs.
     public var diagnosticCode: String? {
         switch self {
+        case .invalidQuality(let error): "InvalidQuality(\(error.rawValue))"
         case .permissionDenied: "NotAllowed"
         case .noCompatibleStream: "NoCompatibleStream"
         case .sourceUnavailable: "MediaSourceUnavailable"

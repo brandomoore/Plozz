@@ -430,7 +430,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     private func detailContent(_ detail: ItemDetailViewModel.Detail) -> some View {
         let heroTarget = seriesHeroShowsSeries
             ? detail.item
-            : (seriesPlayTarget ?? detail.item)
+            : viewModel.episodeWithEnrichedBadges(seriesPlayTarget ?? detail.item)
         let playableHeroTarget = seriesPlayTarget.map(playbackItem(for:))
             ?? detailPlayableItem(for: detail.item)
         let seasons = detail.children.filter { $0.kind == .season }
@@ -610,6 +610,10 @@ private struct PlozziOSCanonicalItemDetailView: View {
         .navigationTitle(Text(verbatim: ""))
         .task(id: seasonRequestRefreshKey(for: detail)) {
             await refreshVisibleSeasonRequests(for: detail)
+        }
+        .task(id: viewModel.episodeBadgeEnrichmentKey(for: playableHeroTarget)) {
+            guard let episode = playableHeroTarget, episode.kind == .episode else { return }
+            _ = await viewModel.enrichEpisodeBadgesIfNeeded(episode)
         }
         .task(id: isDiscoveryItem) {
             await pollDiscoveryStatus()
@@ -936,6 +940,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     }
 
     private func playbackItem(for item: MediaItem) -> MediaItem {
+        let item = viewModel.episodeWithEnrichedBadges(item)
         let sources = availableSources
         let source = DetailPlaybackSelection.preferredSource(
             sourceOverride: sourceOverride,

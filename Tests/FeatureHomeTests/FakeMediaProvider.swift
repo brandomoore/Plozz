@@ -31,6 +31,21 @@ final class FakeMediaProvider: MediaProvider, InteractiveBrowseActivityReporting
 
     /// Full backing list a container pages through.
     var allItems: [MediaItem]
+    var alphabetEntries: [LibraryLetterIndexEntry] = []
+    var alphabetError: AppError?
+    var alphabetJump: (@Sendable (String) async throws -> Int?)?
+
+    func letterIndex(in containerID: String, kind: MediaItemKind,
+                     sort: CoreModels.SortDescriptor) async throws -> [LibraryLetterIndexEntry] {
+        if let alphabetError { throw alphabetError }
+        return alphabetEntries
+    }
+
+    func letterPosition(in containerID: String, kind: MediaItemKind, letter: String,
+                        sort: CoreModels.SortDescriptor) async throws -> Int? {
+        if let alphabetJump { return try await alphabetJump(letter) }
+        return alphabetEntries.first { $0.letter == letter }?.startIndex
+    }
     /// Optional per-parent children for `children(of:)`. When `nil`, the legacy
     /// behaviour (return `allItems`) is preserved for existing tests.
     var childrenByParent: [String: [MediaItem]]?

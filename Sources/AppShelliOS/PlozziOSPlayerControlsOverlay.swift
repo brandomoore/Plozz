@@ -1017,6 +1017,9 @@ private struct PlozziOSSubtitleOptionsSheet: View {
                     Text("Subtitle search failed.")
                         .foregroundStyle(.red)
                     searchButton
+                case .unavailable(let message):
+                    Text(message).foregroundStyle(.red)
+                    searchButton
                 }
             }
         }

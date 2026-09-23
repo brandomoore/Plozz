@@ -388,7 +388,14 @@ public final class PlayerViewModel {
     /// stuck instead of an opaque spinner.
     public private(set) var diagnosticsToken = UUID()
 
-    private var request: PlaybackRequest?
+    private var request: PlaybackRequest? {
+        didSet {
+            guard oldValue.map({ RemoteSubtitleContext(request: $0) })
+                != request.map({ RemoteSubtitleContext(request: $0) }) else { return }
+            subtitleAcquisition?.cancelAll()
+            controls.subtitleDownload.state = .idle
+        }
+    }
     @ObservationIgnored private var nowPlaying: VideoNowPlayingCoordinator?
     @ObservationIgnored private var systemResumeTask: Task<Void, Never>?
     @ObservationIgnored private var isInBackground = false
@@ -994,7 +1001,7 @@ public final class PlayerViewModel {
                 HandoffDiagnostics.emit(
                     "streaming RESOLVED preference=\(streamingOptions?.codec.rawValue ?? "none") "
                         + "attempt=\(options.codec.rawValue) negotiated=\(request.negotiatedStreamingVideoCodec?.rawValue ?? "unknown") "
-                        + "quality=\(options.quality.rawValue)"
+                        + "quality=\(options.quality.diagnosticName)"
                 )
             }
             streamingQuality.preparation = .opening
@@ -1095,6 +1102,12 @@ public final class PlayerViewModel {
                 sourceProvider: provider.kind,
                 sourceFileName: localURL.lastPathComponent
             )
+            request.subtitleTracks = await offlinePlaybackResolver?.localSubtitleTracks(
+                for: offlineItem, versionID: mediaSourceID) ?? []
+            if let metadata = await offlinePlaybackResolver?.localPlaybackMetadata(for: offlineItem, versionID: mediaSourceID) {
+                request.sourceMetadata = metadata
+                request.item.mediaInfo = metadata
+            }
             // The entire point of this path is zero-network local playback. Anime
             // has a trustworthy local answer; other content defers to remembered,
             // explicit, device, or embedded/default track policy rather than waiting
@@ -1119,6 +1132,7 @@ public final class PlayerViewModel {
         }
         var request: PlaybackRequest
         if var options = streamingOptions, let provider = provider as? any StreamingQualityProviding {
+            try options.quality.validate()
             if itemID == self.itemID, let retry = streamingQuality.fallbackCodec { options.codec = retry }
             let source = itemID == self.itemID ? (streamingMediaSourceID ?? mediaSourceID) : mediaSourceID
             if let item = offlineItem {
@@ -1190,6 +1204,14 @@ public final class PlayerViewModel {
             await releaseStreamingSession(request)
         }
         request = Self.applyingOfflineRewrite(to: request, localURL: localURL)
+        if localURL != nil {
+            request.subtitleTracks = await offlinePlaybackResolver?.localSubtitleTracks(
+                for: request.item, versionID: mediaSourceID) ?? []
+            if let metadata = await offlinePlaybackResolver?.localPlaybackMetadata(for: request.item, versionID: mediaSourceID) {
+                request.sourceMetadata = metadata
+                request.item.mediaInfo = metadata
+            }
+        }
         // Steer the engine's INITIAL active audio track by language (no reload)
         // from the prefer-original-language policy. Computed here so every
         // playResolved entry (initial, adopted prefetch, and cross-engine
@@ -1340,7 +1362,7 @@ public final class PlayerViewModel {
                 alreadyRetried: streamingQuality.fallbackCodec != nil
               ) else { return false }
         streamingQuality.fallbackCodec = retry
-        HandoffDiagnostics.emit("streaming CODEC_RETRY requested=\(retry.rawValue) quality=\(options.quality.rawValue)")
+        HandoffDiagnostics.emit("streaming CODEC_RETRY requested=\(retry.rawValue) quality=\(options.quality.diagnosticName)")
         restartStreamingRendition()
         return true
     }
@@ -2315,6 +2337,10 @@ extension PlayerViewModel: NextEpisodeCoordinatorHost {
 }
 
 extension PlayerViewModel: RemoteSubtitleAcquisitionHost {
+    var subtitlePlaybackContext: RemoteSubtitleContext? {
+        request.map { RemoteSubtitleContext(request: $0) }
+    }
+
     func setSubtitleDownloadState(_ state: SubtitleDownloadState) {
         controls.subtitleDownload.state = state
     }

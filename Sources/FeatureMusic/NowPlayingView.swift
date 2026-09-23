@@ -300,7 +300,7 @@ public struct NowPlayingView: View {
                 TransientStatusView(
                     presenter: statusPresenter,
                     placement: .musicTransport,
-                    isLightSurface: isLightPlayer
+                    palette: isLightPlayer ? .light : .dark
                 )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, bottomBarHeight + 20)

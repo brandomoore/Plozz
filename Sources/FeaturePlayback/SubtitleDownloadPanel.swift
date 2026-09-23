@@ -32,7 +32,7 @@ struct SubtitleDownloadScreen: View {
             subtitleDownloadStatus(
                 systemImage: "text.magnifyingglass",
                 title: "No subtitles found",
-                detail: "Nothing matched in your language. If this is a Plex or Jellyfin server, make sure a subtitle source (e.g. OpenSubtitles) is set up on the server."
+                detail: "Nothing matched in your language. Check that a subtitle source, such as OpenSubtitles, is set up on your server."
             )
         case .downloading:
             subtitleDownloadStatus(
@@ -52,6 +52,12 @@ struct SubtitleDownloadScreen: View {
                 systemImage: "exclamationmark.triangle",
                 title: "Couldn't get that subtitle",
                 detail: "Something went wrong searching or downloading. Try again."
+            )
+        case .unavailable(let message):
+            subtitleDownloadStatus(
+                systemImage: "exclamationmark.triangle",
+                title: "Subtitles unavailable",
+                detail: message
             )
         }
     }

@@ -51,6 +51,16 @@ public struct ServerPickerView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 header
+                if provider == .silo {
+                    HStack(spacing: 18) {
+                        ProviderBrandMark(provider: .silo, size: 60)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Choose your Silo server").font(.title2.bold())
+                            Text("Select a server below. You'll approve Plozz in your browser, then choose a profile.")
+                                .font(.callout).plozzForeground(.secondary)
+                        }
+                    }
+                }
 
                 // One combined card: recently-used servers (reconnect targets,
                 // including manual/Tailscale entries) first, then anything new
@@ -101,15 +111,25 @@ public struct ServerPickerView: View {
 
                 PickerPanel(
                     title: "Enter address",
-                    footer: "Enter an IP address or full URL, e.g. 192.168.1.10 or \(provider == .emby ? "emby.example.com" : "jelly.example.com")"
+                    footer: manualEntryFooter
                 ) {
                     VStack(alignment: .leading, spacing: 18) {
                         TextField("Server address", text: $viewModel.manualURLText)
                             .focused($focusedControl, equals: .manualField)
                             .textContentType(.URL)
                             .autocorrectionDisabled()
-                        Button("Connect") { Task { await connectManually() } }
-                            .disabled(viewModel.manualURLText.isEmpty)
+                            .disabled(viewModel.phase == .validating)
+                            .onSubmit { Task { await connectManually() } }
+                        Button {
+                            Task { await connectManually() }
+                        } label: {
+                            if viewModel.phase == .validating {
+                                ProgressView("Checking server…")
+                            } else {
+                                Text("Connect")
+                            }
+                        }
+                            .disabled(!viewModel.canSubmitManualURL)
                             .focused($focusedControl, equals: .connect)
                     }
                 }
@@ -153,6 +173,13 @@ public struct ServerPickerView: View {
 
     // MARK: - Header (in-bounds Back + Rescan)
 
+    private var manualEntryFooter: LocalizedStringResource {
+        if provider == .silo {
+            return "Use the address you open Silo with in a browser. An IP address alone uses port 8090; include a different port or path if your server needs it."
+        }
+        return "Enter an IP address or full URL, e.g. 192.168.1.10 or \(provider == .emby ? "emby.example.com" : "jelly.example.com")"
+    }
+
     private var header: some View {
         HStack {
             if let onBack {
@@ -167,6 +194,7 @@ public struct ServerPickerView: View {
                 Label("Rescan", systemImage: "arrow.clockwise")
             }
             .buttonStyle(.bordered)
+            .disabled(viewModel.phase == .validating)
             .focused($focusedControl, equals: .rescan)
         }
         .padding(.top, PlozzTheme.Spacing.large)
@@ -250,6 +278,7 @@ public struct ServerPickerView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(SettingsFocusButtonStyle(size: .prominent))
+        .disabled(viewModel.phase == .validating)
         .focused($focusedControl, equals: .server(ServerIdentity.key(for: server)))
     }
 
@@ -328,13 +357,13 @@ public struct ServerPickerView: View {
 /// to FeatureDiscovery so the picker reads as Settings without depending on it.
 private struct PickerPanel<Content: View, Accessory: View>: View {
     var title: LocalizedStringResource? = nil
-    var footer: String? = nil   // l10n:content — server-supplied footer detail
+    var footer: LocalizedStringResource? = nil
     var titleAccessory: () -> Accessory
     var content: () -> Content
 
     init(
         title: LocalizedStringResource? = nil,
-        footer: String? = nil,   // l10n:content — server-supplied footer detail
+        footer: LocalizedStringResource? = nil,
         @ViewBuilder titleAccessory: @escaping () -> Accessory = { EmptyView() },
         @ViewBuilder content: @escaping () -> Content
     ) {

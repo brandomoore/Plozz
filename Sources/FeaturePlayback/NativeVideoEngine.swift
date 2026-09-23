@@ -95,6 +95,7 @@ public final class NativeVideoEngine: VideoEngine {
     @ObservationIgnored private let authenticatedHTTPResolver:
         (any AuthenticatedHTTPResourceResolving)?
     @ObservationIgnored private let streamingPlaylistClient: (any HTTPClient)?
+    @ObservationIgnored private let startsMuted: Bool
     @ObservationIgnored private var timeObserver: (owner: AVPlayer, token: Any)?
     /// Fences reentrant async loads. A newer load or stop invalidates every older
     /// continuation before it can publish or start a stale player.
@@ -144,11 +145,13 @@ public final class NativeVideoEngine: VideoEngine {
     public init(
         style: SubtitleStyle = .default,
         authenticatedHTTPResolver: (any AuthenticatedHTTPResourceResolving)? = nil,
-        streamingPlaylistClient: (any HTTPClient)? = nil
+        streamingPlaylistClient: (any HTTPClient)? = nil,
+        startsMuted: Bool = false
     ) {
         self.style = style
         self.authenticatedHTTPResolver = authenticatedHTTPResolver
         self.streamingPlaylistClient = streamingPlaylistClient
+        self.startsMuted = startsMuted
         PlaybackInstrumentation.increment(.nativeEngine)
     }
 
@@ -286,6 +289,7 @@ public final class NativeVideoEngine: VideoEngine {
         configureDynamicRange(for: request, item: item)
 
         let player = AVPlayer(playerItem: item)
+        player.isMuted = startsMuted
         #if os(iOS)
         player.audiovisualBackgroundPlaybackPolicy = backgroundAudioEnabled ? .continuesIfPossible : .automatic
         #endif

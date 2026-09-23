@@ -1,5 +1,6 @@
 #if os(tvOS)
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureHomeCore
 import Observation
@@ -10,8 +11,8 @@ import UIKit
 final class NativeLibraryScrollTarget {
     weak var controller: NativeLibraryGridController?
 
-    func scroll(to index: Int) {
-        controller?.scroll(to: index)
+    func scroll(to index: Int, focusesItem: Bool = false) {
+        controller?.scroll(to: index, focusesItem: focusesItem)
     }
 }
 
@@ -70,6 +71,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     private var requestedFocusIndex: IndexPath?
     private var measuredHeaderHeight: CGFloat = 0
     private var hidesScrollIndicator = false
+    private var viewportReport: Task<Void, Never>?
 
     override var preferredFocusEnvironments: [any UIFocusEnvironment] {
         requestedFocusIndex == nil ? super.preferredFocusEnvironments : [collection]
@@ -200,11 +202,40 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
             layout.invalidateLayout()
         }
         headerHost.view.frame = CGRect(origin: .zero, size: headerSize)
+        scheduleViewportReport()
     }
 
-    func scroll(to index: Int) {
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        scheduleViewportReport()
+    }
+
+    private func scheduleViewportReport() {
+        guard viewportReport == nil, viewIfLoaded?.window != nil else { return }
+        let generation = generation
+        viewportReport = Task { @MainActor [weak self] in
+            // Publish outside UIKit/SwiftUI's layout update, coalescing a scroll frame.
+            await Task.yield()
+            guard !Task.isCancelled, let self else { return }
+            self.viewportReport = nil
+            guard self.generation == generation, self.viewIfLoaded?.window != nil,
+                  let first = self.layout.layoutAttributesForElements(in: self.collection.bounds)?
+                    .filter({ $0.representedElementCategory == .cell && $0.frame.intersects(self.collection.bounds) })
+                    .map(\.indexPath.item).min() else { return }
+            self.model?.reportViewport(firstIndex: first, generation: generation)
+        }
+    }
+
+    func scroll(to index: Int, focusesItem: Bool = false) {
         guard index >= 0, index < total else { return }
-        collection.scrollToItem(at: IndexPath(item: index, section: 0), at: .top, animated: true)
+        let path = IndexPath(item: index, section: 0)
+        collection.scrollToItem(at: path, at: .top, animated: !focusesItem)
+        guard focusesItem else { return }
+        collection.layoutIfNeeded()
+        guard let cell = collection.cellForItem(at: path) as? NativeTVLibraryCell,
+              cell.onRequestFocus?() == true else {
+            PlozzLog.app.error("Library alphabet destination did not accept focus at index \(index)")
+            return
+        }
     }
 
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { total }
@@ -279,12 +310,15 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     }
 
     func stopObserving() {
+        viewportReport?.cancel()
+        viewportReport = nil
         for binding in bindings.values {
             binding.load?.cancel()
             model?.itemDisappeared(at: binding.index, generation: binding.generation)
         }
 
         bindings.removeAll()
+        model?.clearReportedViewport()
         if isViewLoaded {
             for cell in collection.visibleCells { (cell as? NativeTVLibraryCell)?.cancelArtwork() }
         }

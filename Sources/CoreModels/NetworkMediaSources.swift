@@ -776,6 +776,7 @@ private enum SensitiveQueryPolicy {
         "sessionid",
         "sig",
         "signature",
+        "st",
         "ticket",
         "token",
         "x-plex-session-identifier",

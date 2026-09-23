@@ -1,0 +1,47 @@
+{
+  "startupTimeoutSeconds": 45,
+  "playbackSeconds": 10,
+  "seekSeconds": 30,
+  "resumeSeconds": 12,
+  "servers": {
+    "jellyfin": {
+      "baseURL": "http://127.0.0.1:8096",
+      "serverID": "replace-with-server-id",
+      "userID": "replace-with-dedicated-test-user-id",
+      "tokenKeychainService": "PlozzPlaybackTests",
+      "tokenKeychainAccount": "jellyfin",
+      "itemID": "replace-with-generated-fixture-item-id",
+      "mediaSourceID": "replace-with-fixture-media-source-id",
+      "codecs": ["h264"]
+    },
+    "plex": {
+      "baseURL": "http://127.0.0.1:32400",
+      "serverID": "replace-with-machine-identifier",
+      "userID": "replace-with-test-user-id",
+      "tokenKeychainService": "PlozzPlaybackTests",
+      "tokenKeychainAccount": "plex",
+      "itemID": "replace-with-fixture-rating-key",
+      "codecs": ["h264"]
+    },
+    "silo": {
+      "baseURL": "http://127.0.0.1:8090",
+      "serverID": "replace-with-server-id",
+      "userID": "replace-with-silo-account-id:replace-with-profile-id",
+      "tokenKeychainService": "PlozzPlaybackTests",
+      "tokenKeychainAccount": "silo-dedicated-credential",
+      "itemID": "replace-with-fixture-content-id",
+      "mediaSourceID": "replace-with-fixture-file-id",
+      "codecs": ["server"]
+    },
+    "emby": {
+      "baseURL": "http://127.0.0.1:8097",
+      "serverID": "replace-with-server-id",
+      "userID": "replace-with-dedicated-test-user-id",
+      "tokenKeychainService": "PlozzPlaybackTests",
+      "tokenKeychainAccount": "emby",
+      "itemID": "replace-with-generated-fixture-item-id",
+      "mediaSourceID": "replace-with-fixture-media-source-id",
+      "codecs": ["h264"]
+    }
+  }
+}

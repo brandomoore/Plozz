@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import CoreModels
 
@@ -47,5 +48,125 @@ final class SupplementalStreamProbeRequirementsTests: XCTestCase {
         XCTAssertEqual(metadata.confirmingHDR10Plus(), metadata)
         let item = MediaItem(id: "dv", title: "DV", kind: .movie, mediaInfo: metadata)
         XCTAssertEqual(item.confirmingHDR10Plus(), item)
+    }
+
+    func testNetworkRequirementsKeepHDRIndependentAndDelegateVideoCodecSupport() {
+        for codec in ["hevc", "av1", "vp9", "h264"] {
+            let metadata = MediaSourceMetadata(
+                video: .init(codec: codec, width: 3840, height: 2160, videoRangeType: "HDR10"),
+                audio: .init(codec: "eac3", profile: "Dolby Atmos", channels: 6))
+            XCTAssertEqual(
+                SupplementalStreamProbeRequirements.missingNetworkFileFacts(in: metadata), .hdr10Plus)
+        }
+        XCTAssertEqual(
+            SupplementalStreamProbeRequirements.missingNetworkFileFacts(in: nil),
+            [.streamDetails, .atmos, .hdr10Plus])
+    }
+
+    func testNetworkRequirementsDoNotRescanKnownRangesOrUnrelatedAudioCodecs() {
+        for range in ["DOVI", "HDR10Plus", "SDR", "HLG"] {
+            for codec in ["aac", "truehd", "dts"] {
+                let metadata = MediaSourceMetadata(
+                    video: .init(codec: "hevc", width: 1920, height: 1080, videoRangeType: range),
+                    audio: .init(codec: codec, channels: 6))
+                XCTAssertTrue(SupplementalStreamProbeRequirements.missingNetworkFileFacts(in: metadata).isEmpty)
+            }
+        }
+        XCTAssertEqual(
+            SupplementalStreamProbeRequirements.missingNetworkFileFacts(in: .init(
+                video: .init(codec: "av1", videoRangeType: "SDR"),
+                audio: .init(codec: "aac", channels: 2))),
+            .streamDetails)
+    }
+
+    func testNetworkAudioRequirementsForMissingAndEAC3CodecsOnly() {
+        for codec in [nil, "", "eac3", " EAC3 "] as [String?] {
+            let metadata = MediaSourceMetadata(
+                video: .init(codec: "av1", width: 1920, height: 1080, videoRangeType: "HLG"),
+                audio: .init(codec: codec, channels: 6))
+            let requirements = SupplementalStreamProbeRequirements.missingNetworkFileFacts(in: metadata)
+            XCTAssertTrue(requirements.contains(.atmos))
+            XCTAssertFalse(requirements.contains(.hdr10Plus))
+        }
+    }
+
+    func testIndependentProbeFactsMergeWithoutLosingPositiveOrDefaultTrackEvidence() {
+        let original = ProbedStreamFacts(
+            videoWidth: 3840, videoHeight: 2160, videoRangeType: "DOVI", videoCodec: "hevc",
+            audioTrackID: 3, audioCodec: "eac3", audioChannels: 6, audioIsAtmos: true,
+            durationSeconds: 120)
+        let merged = original.merging(.init(videoRangeType: "HDR10Plus", audioIsAtmos: false))
+        XCTAssertEqual(merged, original)
+        XCTAssertEqual(original.merging(.init(
+            audioTrackID: 7, audioCodec: "aac", audioChannels: 2)), original)
+        XCTAssertEqual(
+            ProbedStreamFacts(videoRangeType: "HDR10Plus").merging(.init(videoRangeType: "HDR10")).videoRangeType,
+            "HDR10Plus")
+        XCTAssertEqual(
+            ProbedStreamFacts(videoRangeType: "HDR10").merging(.init(videoRangeType: "HDR10Plus")).videoRangeType,
+            "HDR10Plus")
+    }
+
+    func testApplyingHeaderAndScanFactsDoesNotDemoteKnownRangesInItemOrVersion() {
+        for range in ["DOVI", "HDR10Plus", "SDR", "HLG"] {
+            let metadata = MediaSourceMetadata(
+                sourceRevision: "same-file",
+                video: .init(codec: "hevc", videoRangeType: range),
+                audio: .init(codec: "eac3", profile: "Dolby Atmos", channels: 6))
+            let item = MediaItem(
+                id: "movie", title: "Movie", kind: .movie, mediaInfo: metadata,
+                versions: [
+                    .init(id: "selected", videoRange: range, audioProfile: "Dolby Atmos", sourceMetadata: metadata),
+                    .init(id: "alternate", videoRange: "SDR")
+                ],
+                selectedVersionID: "selected")
+            let enriched = item.applyingSupplementalStreamFacts(.init(
+                videoWidth: 3840, videoHeight: 2160, videoRangeType: "HDR10",
+                audioIsAtmos: false, durationSeconds: 100))
+            XCTAssertEqual(enriched.mediaInfo?.video?.videoRangeType, range)
+            XCTAssertEqual(enriched.mediaInfo?.audio?.profile, "Dolby Atmos")
+            XCTAssertEqual(enriched.mediaInfo?.sourceRevision, "same-file")
+            XCTAssertEqual(enriched.versions.first?.videoRange, range)
+            XCTAssertEqual(enriched.versions.first?.sourceMetadata?.video?.videoRangeType, range)
+            XCTAssertEqual(enriched.versions.first?.audioProfile, "Dolby Atmos")
+            XCTAssertEqual(enriched.versions.last, item.versions.last)
+            XCTAssertEqual(enriched.runtime, 100)
+        }
+    }
+
+    func testHDR10PlusOutputCannotDemoteExplicitDolbyVisionProfile() {
+        let metadata = MediaSourceMetadata(video: .init(codec: "hevc", dolbyVisionProfile: 8))
+        let enriched = ProbedStreamFacts(videoRangeType: "HDR10Plus").applying(to: metadata)
+        XCTAssertEqual(enriched, metadata)
+    }
+
+    func testAdditionalHDR10PlusEvidenceSurvivesIndependentMergesWithoutDemotingDolbyVision() {
+        let dolbyVision = ProbedStreamFacts(videoRangeType: "DOVI")
+        let hdr = ProbedStreamFacts(videoRangeType: "HDR10Plus", carriesHDR10PlusMetadata: true)
+        let combined = dolbyVision.merging(hdr)
+        XCTAssertEqual(combined.videoRangeType, "DOVI")
+        XCTAssertEqual(combined.carriesHDR10PlusMetadata, true)
+        XCTAssertEqual(combined.merging(.init()).carriesHDR10PlusMetadata, true)
+        var negative = ProbedStreamFacts()
+        negative.carriesHDR10PlusMetadata = false
+        XCTAssertEqual(combined.merging(negative).carriesHDR10PlusMetadata, true)
+        XCTAssertNil(dolbyVision.merging(negative).carriesHDR10PlusMetadata)
+        XCTAssertNil(ProbedStreamFacts(carriesHDR10PlusMetadata: false).carriesHDR10PlusMetadata)
+    }
+
+    func testLegacyProbeFactsDecodeWithoutAdditionalHDR10PlusEvidence() throws {
+        let legacy = Data(#"{"videoRangeType":"DOVI","audioIsAtmos":true}"#.utf8)
+        let decoded = try JSONDecoder().decode(ProbedStreamFacts.self, from: legacy)
+        XCTAssertEqual(decoded.videoRangeType, "DOVI")
+        XCTAssertTrue(decoded.audioIsAtmos)
+        XCTAssertNil(decoded.carriesHDR10PlusMetadata)
+    }
+
+    func testAdditionalHDR10PlusEvidenceCodableRoundTripPreservesBothFormats() throws {
+        let facts = ProbedStreamFacts(
+            videoRangeType: "DOVI", carriesHDR10PlusMetadata: true)
+        let decoded = try JSONDecoder().decode(
+            ProbedStreamFacts.self, from: JSONEncoder().encode(facts))
+        XCTAssertEqual(decoded, facts)
     }
 }

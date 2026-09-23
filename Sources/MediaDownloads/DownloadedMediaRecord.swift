@@ -122,9 +122,24 @@ public struct DownloadedMediaRecord: Codable, Sendable, Hashable, Identifiable {
 /// well-defined **empty** state.
 public struct DownloadedMediaRegistryState: Codable, Sendable, Equatable {
     public var records: [String: DownloadedMediaRecord]
+    public var pendingManagedRemovals: [ManagedHTTPDownloadSource]
+    public var managedCompletionAcknowledgements: [String: Date]
 
-    public init(records: [String: DownloadedMediaRecord] = [:]) {
+    public init(records: [String: DownloadedMediaRecord] = [:], pendingManagedRemovals: [ManagedHTTPDownloadSource] = []) {
         self.records = records
+        self.pendingManagedRemovals = pendingManagedRemovals
+        self.managedCompletionAcknowledgements = [:]
+    }
+
+    private enum CodingKeys: String, CodingKey { case records, pendingManagedRemovals, managedCompletionAcknowledgements }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        records = try container.decode([String: DownloadedMediaRecord].self, forKey: .records)
+        pendingManagedRemovals = try container.decodeIfPresent(
+            [ManagedHTTPDownloadSource].self, forKey: .pendingManagedRemovals) ?? []
+        managedCompletionAcknowledgements = try container.decodeIfPresent(
+            [String: Date].self, forKey: .managedCompletionAcknowledgements) ?? [:]
     }
 
     public static let empty = DownloadedMediaRegistryState()

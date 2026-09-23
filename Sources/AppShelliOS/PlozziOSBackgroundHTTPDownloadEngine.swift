@@ -2,6 +2,7 @@
 @preconcurrency import AVFoundation
 import Foundation
 import MediaDownloads
+import CoreModels
 
 public enum PlozziOSBackgroundSessionBridge {
     private static let lock = NSLock()
@@ -53,10 +54,14 @@ struct PlozziOSBackgroundHTTPDownloadEngine:
         let url: URL
         let expectedDuration: TimeInterval?
         let cleanupURL: URL?
+        var headers: [String: String] = [:]
+        var singleFile: Bool = false
+        var expectedBytes: Int64? = nil
+        var didComplete: (@Sendable (URL) async throws -> Void)? = nil
     }
 
     typealias SourceUpdater =
-        @Sendable (ManagedHTTPDownloadSource) async -> Void
+        @Sendable (ManagedHTTPDownloadSource) async throws -> Void
     typealias PreparationProgressUpdater =
         @Sendable (Double?) async -> Void
     typealias URLResolver =
@@ -120,8 +125,8 @@ struct PlozziOSBackgroundHTTPDownloadEngine:
         let resolution = try await resolveURL(
             source,
             { updatedSource in
-                guard !Task.isCancelled else { return }
-                try? await registry.setManagedHTTPSource(
+                try Task.checkCancellation()
+                try await registry.setManagedHTTPSource(
                     identityKey: record.identityKey,
                     source: updatedSource
                 )
@@ -146,7 +151,7 @@ struct PlozziOSBackgroundHTTPDownloadEngine:
         let usesProgressiveRendition =
             source.provider == .plex && source.quality != .original
         if case .constrained(let constraint) = source.quality,
-           !usesProgressiveRendition {
+           !usesProgressiveRendition, !resolution.singleFile {
             return try await BackgroundHLSDownloadSession.shared.download(
                 profileID: profileID,
                 identityKey: record.identityKey,
@@ -188,6 +193,7 @@ struct PlozziOSBackgroundHTTPDownloadEngine:
                     profileID: profileID,
                     policy: policy,
                     from: url,
+                    headers: resolution.headers,
                     to: destination,
                     onProgress: onProgress
                 )
@@ -205,6 +211,7 @@ struct PlozziOSBackgroundHTTPDownloadEngine:
                 identityKey: record.identityKey,
                 localFileName: record.localFileName,
                 from: url,
+                headers: resolution.headers,
                 to: destination,
                 onProgress: onProgress
             )
@@ -230,6 +237,10 @@ struct PlozziOSBackgroundHTTPDownloadEngine:
             }
         }
         await removeRemotePreparation(at: resolution.cleanupURL)
+        if let expected = resolution.expectedBytes, expected != transferredBytes {
+            throw BackgroundDownloadError.incompleteTransfer(expected: expected, actual: transferredBytes)
+        }
+        try await resolution.didComplete?(destination)
         return transferredBytes
     }
 
@@ -968,6 +979,18 @@ private final class BackgroundDownloadCoordinator:
         super.init()
     }
 
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard task.originalRequest?.value(forHTTPHeaderField: "X-Silo-Device-Id") != nil else {
+            completionHandler(request)
+            return
+        }
+        completionHandler(SiloDownloadRedirectDelegate.sameOrigin(task.originalRequest?.url, request.url) ? request : nil)
+    }
+
     func activate() {
         _ = session
     }
@@ -993,6 +1016,7 @@ private final class BackgroundDownloadCoordinator:
         identityKey: String,
         localFileName: String,
         from url: URL,
+        headers: [String: String] = [:],
         to destination: URL,
         onProgress: @escaping @Sendable (Int64, Int64) async -> Void
     ) async throws -> Int64 {
@@ -1052,6 +1076,7 @@ private final class BackgroundDownloadCoordinator:
                         self.policies[profileID] ?? .default
                     }
                     var request = URLRequest(url: url)
+                    for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
                     request.allowsExpensiveNetworkAccess =
                         policy.allowsExpensiveNetwork
                     request.allowsConstrainedNetworkAccess =
@@ -1259,6 +1284,7 @@ private actor ForegroundManagedDownloadCoordinator {
         profileID: String,
         policy: DownloadNetworkPolicy,
         from url: URL,
+        headers: [String: String] = [:],
         to destination: URL,
         onProgress: @escaping @Sendable (Int64, Int64) async -> Void
     ) async throws -> Int64 {
@@ -1290,6 +1316,7 @@ private actor ForegroundManagedDownloadCoordinator {
         }
 
         var request = URLRequest(url: url)
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         request.allowsExpensiveNetworkAccess = policy.allowsExpensiveNetwork
         request.allowsConstrainedNetworkAccess =
             !policy.pausesOnConstrainedNetwork
@@ -1303,7 +1330,8 @@ private actor ForegroundManagedDownloadCoordinator {
             }
         }
 
-        let (stream, response) = try await URLSession.shared.bytes(for: request)
+        let (stream, response) = try await URLSession.shared.bytes(
+            for: request, delegate: headers["X-Silo-Device-Id"] == nil ? nil : SiloDownloadRedirectDelegate(origin: url))
         try Task.checkCancellation()
         guard let response = response as? HTTPURLResponse else {
             throw BackgroundDownloadError.missingTemporaryFile

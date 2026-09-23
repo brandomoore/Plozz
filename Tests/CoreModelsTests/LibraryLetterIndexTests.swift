@@ -6,6 +6,69 @@ import XCTest
 /// per-letter counts). All the tricky ascending-vs-descending index arithmetic
 /// lives here so it is verified without a network.
 final class LibraryLetterIndexTests: XCTestCase {
+    func testDeferredTargetsNeverInventOffsets() {
+        let entries = LibraryLetterIndex.deferredEntries(direction: .descending)
+        XCTAssertEqual(entries.first?.letter, "Z")
+        XCTAssertEqual(entries.last?.letter, "#")
+        XCTAssertEqual(entries.count, 27)
+        XCTAssertTrue(entries.allSatisfy { $0.startIndex == nil })
+    }
+
+    func testNonLatinSuffixDoesNotBecomeAFictitiousZBucket() {
+        let offsets = Dictionary(uniqueKeysWithValues: LibraryLetterIndex.railLetters.dropFirst().map { ($0, 0) })
+        for direction in SortDirection.allCases {
+            let entries = LibraryLetterIndex.entries(lessThanOffsetsByLetter: offsets, totalCount: 4,
+                                                     lastLetterCount: 0, direction: direction)
+            XCTAssertEqual(entries, [.init(letter: "#", startIndex: 0)])
+        }
+    }
+
+    func testDisjointHashBucketsDoNotShiftInterveningLetters() {
+        let buckets: [(String, Int)] = [("#", 2), ("A", 3), ("#", 4), ("Z", 5), ("#", 1)]
+        let ascending = LibraryLetterIndex.entries(bucketCountsAscending: buckets, direction: .ascending)
+        XCTAssertEqual(ascending, [.init(letter: "#", startIndex: 0),
+                                  .init(letter: "A", startIndex: 2), .init(letter: "Z", startIndex: 9)])
+        let descending = LibraryLetterIndex.entries(bucketCountsAscending: buckets, direction: .descending)
+        XCTAssertEqual(descending, [.init(letter: "#", startIndex: 0),
+                                   .init(letter: "Z", startIndex: 1), .init(letter: "A", startIndex: 10)])
+    }
+
+    func testDeferredScanStopsAtTargetWithoutFetchingWholeCatalog() async throws {
+        let index = try await LibraryLetterIndex.findPosition(pageSize: 20, fetch: { offset, limit in
+            XCTAssertLessThanOrEqual(offset, 40)
+            XCTAssertEqual(limit, 20)
+            return MediaPage(items: (offset..<(offset + limit)).map {
+                MediaItem(id: "\($0)", title: "\($0)", kind: .movie)
+            }, startIndex: offset, totalCount: 10_000)
+        }, matches: { $0.id == "43" })
+        XCTAssertEqual(index, 43)
+    }
+
+    func testDeferredScanRejectsIncompleteEmptyPage() async {
+        do {
+            _ = try await LibraryLetterIndex.findPosition(fetch: { offset, _ in
+                MediaPage(items: [], startIndex: offset, totalCount: 100)
+            }, matches: { _ in false })
+            XCTFail("A failed/short source is not an absent letter")
+        } catch { XCTAssertEqual(error as? AppError, .serverUnreachable) }
+    }
+
+    func testDeferredScanHonorsCancellation() async {
+        let started = expectation(description: "Page requested")
+        let task = Task {
+            try await LibraryLetterIndex.findPosition(fetch: { offset, _ in
+                started.fulfill()
+                try await Task.sleep(for: .seconds(5))
+                return MediaPage(items: [], startIndex: offset, totalCount: 0)
+            }, matches: { _ in false })
+        }
+        await fulfillment(of: [started], timeout: 1)
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("Cancelled scan returned a result")
+        } catch { XCTAssertTrue(error is CancellationError) }
+    }
 
     // MARK: bucket(forPrefix:)
 

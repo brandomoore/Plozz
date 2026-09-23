@@ -69,6 +69,8 @@ struct PlozziOSOnboardingView: View {
             divider
             providerRow(.emby)
             divider
+            providerRow(.silo)
+            divider
             providerRow(.mediaShare)
             if let onStandalonePlayback {
                 divider

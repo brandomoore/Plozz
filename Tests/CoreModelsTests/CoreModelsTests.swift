@@ -134,11 +134,13 @@ final class HandoffDiagnosticsRedactionTests: XCTestCase {
 
 final class ProviderKindTests: XCTestCase {
     func testDedicatedServersAreFirstClassProviders() {
-        XCTAssertEqual(Set(ProviderKind.allCases), [.jellyfin, .emby, .plex, .mediaShare])
-        XCTAssertEqual(ProviderKind.allCases, [.jellyfin, .plex, .emby, .mediaShare])
+        XCTAssertEqual(Set(ProviderKind.allCases), [.jellyfin, .emby, .plex, .silo, .mediaShare])
+        XCTAssertEqual(ProviderKind.allCases, [.jellyfin, .plex, .emby, .silo, .mediaShare])
         XCTAssertEqual(ProviderKind.jellyfin.displayName, "Jellyfin")
         XCTAssertEqual(ProviderKind.emby.displayName, "Emby")
         XCTAssertEqual(ProviderKind.plex.displayName, "Plex")
+        XCTAssertEqual(ProviderKind.silo.displayName, "Silo")
+        XCTAssertFalse(ProviderKind.silo.usesMediaBrowserAPI)
         XCTAssertEqual(ProviderKind.mediaShare.displayName, "Media Share")
         XCTAssertTrue(ProviderKind.emby.usesMediaBrowserAPI)
     }

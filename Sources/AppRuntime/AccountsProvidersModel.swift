@@ -151,7 +151,7 @@ public final class AccountsProvidersModel {
         case .plex: .plex
         case .jellyfin: .jellyfin
         case .emby: .emby
-        case .mediaShare: nil
+        case .mediaShare, .silo: nil
         }
     }
 

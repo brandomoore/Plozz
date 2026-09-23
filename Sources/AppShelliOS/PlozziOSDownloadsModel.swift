@@ -4,6 +4,8 @@ import Foundation
 import MediaDownloads
 import MediaTransportCore
 import Observation
+import ProviderSilo
+import CoreNetworking
 import UserNotifications
 
 @MainActor
@@ -126,6 +128,10 @@ final class PlozziOSDownloadsModel {
     private var speedSample: (date: Date, bytes: Int64)?
     private var speedSamplesByKey: [String: (date: Date, bytes: Int64)] = [:]
     private var hasLoadedRecords = false
+    private var drainingManagedRemovals = false
+    private var lastManagedRemovalAttempt = Date.distantPast
+    private var managedRemoval: (@Sendable (ManagedHTTPDownloadSource) async throws -> Void)?
+    private var managedCompletion: (@Sendable (ManagedHTTPDownloadSource, Date) async throws -> Void)?
     private var notifiedBatchIDs: Set<String> = []
     private var isUsingUncappedBackgroundPolicy = false
     private let uncappedBackgroundPolicyKey: String
@@ -157,7 +163,9 @@ final class PlozziOSDownloadsModel {
             @escaping @MainActor (MediaItem) -> [String],
         startsActive: Bool = true,
         managedURLResolver:
-            @escaping PlozziOSBackgroundHTTPDownloadEngine.URLResolver
+            @escaping PlozziOSBackgroundHTTPDownloadEngine.URLResolver,
+        managedRemoval: (@Sendable (ManagedHTTPDownloadSource) async throws -> Void)? = nil,
+        managedCompletion: (@Sendable (ManagedHTTPDownloadSource, Date) async throws -> Void)? = nil
     ) throws {
         let store = try DurableDownloadedMediaStore(
             store: durableStore,
@@ -196,6 +204,8 @@ final class PlozziOSDownloadsModel {
         )
 
         self.registry = registry
+        self.managedRemoval = managedRemoval
+        self.managedCompletion = managedCompletion
         self.queue = queue
         self.storage = storage
         self.offlineResolver = RegistryOfflinePlaybackResolver(
@@ -679,6 +689,36 @@ final class PlozziOSDownloadsModel {
                 "This item does not have a stable offline identity."
             )
         }
+        if let silo = provider as? SiloProvider {
+            let quality = requestedQuality ?? policy.quality
+            let preset = try SiloOfflineDownload.preset(quality)
+            let capability = try await silo.downloadCapability()
+            guard capability.quality_presets.contains(preset.name) else {
+                throw PlozziOSDownloadError.nativeServer("This Silo account cannot prepare the selected download quality.")
+            }
+            let detail = try await silo.item(id: item.id)
+            let selected = item.selectedVersionID.flatMap { id in detail.versions.first { $0.id == id } }
+                ?? detail.versions.first
+            guard let selected, item.selectedVersionID == nil || selected.id == item.selectedVersionID else {
+                throw AppError.notFound
+            }
+            if quality != .original, policy.includesAllAudioTracks {
+                throw PlozziOSDownloadError.nativeServer("Silo reduced-quality downloads keep one audio track. Choose Original to keep every embedded track.")
+            }
+            return DownloadRequest.managedHTTP(
+                identity: identity,
+                source: ManagedHTTPDownloadSource(
+                    provider: .silo, accountID: silo.accountID, itemID: item.id, mediaSourceID: selected.id,
+                    quality: quality, includesAllAudioTracks: policy.includesAllAudioTracks,
+                    includesTextSubtitleTracks: policy.includesTextSubtitleTracks,
+                    preferredAudioLanguages: preferredAudioLanguages(item)),
+                snapshot: PinnedMediaSnapshot(item: detail),
+                versionID: selected.id, versionLabel: selected.displayLabel,
+                groupID: groupID, batchID: batchID, batchKind: batchKind,
+                batchTitle: batchTitle, batchExpectedCount: batchExpectedCount,
+                expectedBytes: quality == .original ? selected.sizeBytes : nil,
+                fileExtension: quality == .original ? selected.container : "mp4", quality: quality)
+        }
         let playback = try await provider.playbackInfo(
             for: item.id,
             mediaSourceID: item.selectedVersionID,
@@ -790,6 +830,14 @@ final class PlozziOSDownloadsModel {
         for item: MediaItem,
         provider: any MediaProvider
     ) async throws -> Bool {
+        if let silo = provider as? SiloProvider {
+            let capability = try await silo.downloadCapability()
+            let supported = capability.quality_presets.contains { $0 != "original" }
+            if let id = item.sourceAccountID {
+                renditionCapabilities[id] = RenditionCapability(isSupported: supported, checkedAt: Date())
+            }
+            return supported
+        }
         guard let accountID = item.sourceAccountID,
               [.plex, .jellyfin, .emby].contains(provider.kind) else {
             throw PlozziOSDownloadError.unavailable(
@@ -1515,6 +1563,36 @@ final class PlozziOSDownloadsModel {
         sampleTransferSpeed(refreshed)
         records = refreshed
         hasLoadedRecords = true
+        if acceptsNewWork, !drainingManagedRemovals, let registry, let managedRemoval,
+           Date().timeIntervalSince(lastManagedRemovalAttempt) >= 60 {
+            let pending = await registry.pendingManagedRemovals()
+            let completions = await registry.pendingManagedCompletions()
+            guard !pending.isEmpty || !completions.isEmpty else { return }
+            drainingManagedRemovals = true
+            lastManagedRemovalAttempt = Date()
+            defer { drainingManagedRemovals = false }
+            for source in pending {
+                guard acceptsNewWork else { return }
+                do {
+                    try await managedRemoval(source)
+                    try await registry.acknowledgeManagedRemoval(source)
+                } catch {
+                    PlozzLog.networking.error("Silo download removal remains queued for reconnection")
+                }
+            }
+            if let managedCompletion {
+                for record in completions {
+                    guard acceptsNewWork else { return }
+                    guard let source = record.managedHTTPSource else { continue }
+                    do {
+                        try await managedCompletion(source, record.updatedAt)
+                        try await registry.acknowledgeManagedCompletion(identityKey: record.identityKey, at: record.updatedAt)
+                    } catch {
+                        PlozzLog.networking.error("Silo download completion remains queued for reconnection")
+                    }
+                }
+            }
+        }
     }
 
     private func persistPolicy(restartActiveManagedDownloads: Bool = false) {
@@ -1821,12 +1899,14 @@ private struct PlozziOSDownloadPreferences: Codable {
     }
 }
 
-private enum PlozziOSDownloadError: LocalizedError {
+enum PlozziOSDownloadError: LocalizedError {
     case unavailable(String)
+    case nativeServer(LocalizedStringResource)
 
     var errorDescription: String? {
         switch self {
         case .unavailable(let message): message
+        case .nativeServer(let message): String(localized: message) // l10n:content — LocalizedError requires resolved text.
         }
     }
 }

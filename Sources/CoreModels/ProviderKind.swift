@@ -10,6 +10,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
     case jellyfin
     case plex
     case emby
+    case silo
     /// A local network media share (SMB today). Deliberately **second-class**:
     /// there's no server doing library management, metadata, or watch-state, so
     /// Plozz scans the files itself and synthesises everything a first-class
@@ -21,6 +22,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
         case .jellyfin: return "Jellyfin"
         case .emby: return "Emby"
         case .plex: return "Plex"
+        case .silo: return "Silo"
         case .mediaShare: return "Media Share"
         }
     }
@@ -40,7 +42,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
     /// beats a richer one that buffers.
     public var metadataRichnessRank: Int {
         switch self {
-        case .jellyfin, .emby, .plex: return 1
+        case .jellyfin, .emby, .plex, .silo: return 1
         case .mediaShare: return 0
         }
     }
@@ -50,6 +52,10 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
     public var usesMediaBrowserAPI: Bool {
         self == .jellyfin || self == .emby
     }
+
+    /// A rotating Silo refresh token belongs to one installation's login.
+    /// Other devices pair independently instead of racing the same token.
+    public var permitsCredentialTransfer: Bool { self != .silo }
 
     /// Whether `MediaProvider.playbackInfo` is idempotent — i.e. resolving a
     /// stream has **no server-side session side-effects**, so it is safe to call
@@ -70,7 +76,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
     public var playbackInfoIsIdempotent: Bool {
         switch self {
         case .plex, .mediaShare: return true
-        case .jellyfin, .emby: return false
+        case .jellyfin, .emby, .silo: return false
         }
     }
 }

@@ -90,6 +90,7 @@ extension MediaSourceInfo {
 
     /// Apply bounds to the server-issued rendition, never to an original-file URL.
     func boundedTranscodingURL(_ options: StreamingPlaybackOptions, supportsHEVC: Bool) throws -> String {
+        try options.quality.validate()
         guard let TranscodingUrl, var url = URLComponents(string: TranscodingUrl) else {
             throw StreamingQualityError.unavailable
         }

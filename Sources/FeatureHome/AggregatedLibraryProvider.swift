@@ -198,6 +198,11 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
             merger.slice(from: start, limit: limit)
         }
 
+        func bufferedLetterPosition(_ letter: String, sort: CoreModels.SortDescriptor) -> Int? {
+            guard activeSort == sort else { return nil }
+            return merger.mergedItems().firstIndex { MediaItemSortOrder.alphabetBucket(for: $0) == letter }
+        }
+
         // MARK: Ordered k-way merge
 
         /// Fetched-but-not-yet-emitted items per source, in the server's own order.
@@ -448,6 +453,34 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
         try await loadPage(kind: kind, page: page, content: .titles, cache: cache)
     }
 
+    public func letterIndex(in containerID: String, kind: MediaItemKind,
+                            sort: CoreModels.SortDescriptor) async throws -> [LibraryLetterIndexEntry] {
+        guard sort.field == .name, kind != .collection,
+              sources.contains(where: { $0.provider.kind != .mediaShare }) else { return [] }
+        return LibraryLetterIndex.deferredEntries(direction: sort.direction)
+    }
+
+    public func letterPosition(in containerID: String, kind: MediaItemKind, letter: String,
+                               sort: CoreModels.SortDescriptor) async throws -> Int? {
+        guard sort.field == .name, LibraryLetterIndex.railLetters.contains(letter) else {
+            throw AppError.invalidResponse
+        }
+        try Task.checkCancellation()
+        if let position = await cache.bufferedLetterPosition(letter, sort: sort) {
+            try Task.checkCancellation()
+            return position
+        }
+        // Resolve against the actual merged stream, not a sum of native counts.
+        // Already-browsed pages come from this provider's existing merge cache.
+        return try await LibraryLetterIndex.findPosition(
+            fetch: { [self] offset, limit in
+                try await loadPage(kind: kind, page: .init(startIndex: offset, limit: limit, sort: sort),
+                                   content: .titles, cache: cache, requiresAllSources: true)
+            },
+            matches: { MediaItemSortOrder.alphabetBucket(for: $0) == letter }
+        )
+    }
+
     public func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
         guard capabilities.contains(.libraryCollections) else { throw AppError.notFound }
         guard page.startIndex >= 0, page.limit > 0 else { throw AppError.invalidResponse }
@@ -455,7 +488,8 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
     }
 
     private func loadPage(
-        kind: MediaItemKind, page: PageRequest, content: BrowseContent, cache: Cache
+        kind: MediaItemKind, page: PageRequest, content: BrowseContent, cache: Cache,
+        requiresAllSources: Bool = false
     ) async throws -> MediaPage {
         let sourceIDs = sources.map(\.sourceKey)
         await cache.initialize(with: sourceIDs)
@@ -473,7 +507,7 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
         // successful fill, or later retries would wait forever.
         await cache.acquireFill()
         defer { Task { [cache] in await cache.releaseFill() } }
-        if content == .collections { try Task.checkCancellation() }
+        try Task.checkCancellation()
         // A changed sort invalidates every buffered page and the whole running
         // merge. Done inside the gate, so a concurrent prefetch can never observe
         // a half-reset cache or fold a page fetched under the old ordering.
@@ -492,7 +526,7 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
         var answeredThisFill: Set<String> = []
         var askedThisFill: Set<String> = []
         while await cache.mergedCount() < targetCount {
-            if content == .collections { try Task.checkCancellation() }
+            try Task.checkCancellation()
             let allExhausted = await cache.allExhausted(sourceIDs: sourceIDs)
             let hasPending = await cache.hasPending(sourceIDs)
             if allExhausted, !hasPending { break }
@@ -511,7 +545,8 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
                     sort: page.sort,
                     limit: page.limit,
                     content: content,
-                    cache: cache
+                    cache: cache,
+                    requiresAllSources: requiresAllSources
                 )
                 fetchMs += Int(Date().timeIntervalSince(tf) * 1000)
                 progressed = !produced.isEmpty
@@ -604,7 +639,8 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
         sort: CoreModels.SortDescriptor,
         limit: Int,
         content: BrowseContent,
-        cache: Cache
+        cache: Cache,
+        requiresAllSources: Bool
     ) async throws -> Set<String> {
         let chunkSize = max(20, limit)
         let wanted = Set(sourceKeys)
@@ -651,9 +687,10 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
             return collected
         }
 
+        try Task.checkCancellation()
         // A missing source must not turn a collection list into an empty or
         // complete-looking success. Keep title browsing's existing resilience.
-        if content == .collections, let error = results.compactMap(\.error).first {
+        if content == .collections || requiresAllSources, let error = results.compactMap(\.error).first {
             throw error
         }
         var produced: Set<String> = []

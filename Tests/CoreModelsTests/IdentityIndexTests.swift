@@ -539,6 +539,29 @@ final class IdentityIndexTests: XCTestCase {
         XCTAssertEqual(result.indexable.map(\.id), ["p1"])
     }
 
+    func testPartialIdentityHydrationFailureRemainsInconclusive() async {
+        let partial = series("series-tvdb-7", account: "silo", tvdb: "7")
+        let result = await IdentityEnrichment.prepare(
+            [partial], enrichIdentifiedItems: true
+        ) { _ in nil }
+        XCTAssertTrue(result.inconclusive)
+        XCTAssertTrue(result.indexable.isEmpty)
+    }
+
+    func testIdentityHydrationRejectsDifferentItemOrKind() async {
+        let partial = series("series-tvdb-7", account: "silo", tvdb: "7")
+        for changesKind in [false, true] {
+            var wrong = partial
+            if changesKind { wrong.kind = .movie } else { wrong.id = "different-item" }
+            let full = wrong
+            let result = await IdentityEnrichment.prepare(
+                [partial], enrichIdentifiedItems: true
+            ) { _ in full }
+            XCTAssertTrue(result.inconclusive)
+            XCTAssertTrue(result.indexable.isEmpty)
+        }
+    }
+
     func testEnrichmentNeverLoosensSeriesToTitle() async {
         // Even after a failed enrichment, a series must never resolve by title —
         // so two same-titled, differently-keyed shows can't false-merge.

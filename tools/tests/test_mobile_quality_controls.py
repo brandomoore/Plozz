@@ -16,6 +16,47 @@ def swift_block(source, declaration):
 
 
 class MobileQualityControlsTests(unittest.TestCase):
+    def test_custom_editor_uses_drafts_and_only_applies_validated_values(self):
+        source = (ROOT / "Sources/AppShelliOS/PlozziOSStreamingQuality.swift").read_text()
+        editor = swift_block(source, "private struct StreamingCustomQualityEditor:")
+        self.assertIn("@State private var draft: StreamingQualityDraft", editor)
+        self.assertIn("StreamingQualityDraft(quality: quality)", editor)
+        self.assertIn("CustomStreamingQuality.supportedHeights", editor)
+        self.assertIn('LabeledContent("Total bitrate (Kbps)")', editor)
+        self.assertIn('TextField("Kbps", text: $draft.bitrateKbps)', editor)
+        self.assertIn(".disabled(draft.validationError != nil)", editor)
+        cancel = swift_block(editor, 'Button("Cancel")')
+        self.assertIn("dismiss()", cancel)
+        self.assertNotIn("apply(", cancel)
+        apply = swift_block(editor, 'Button("Apply")')
+        self.assertNotIn("try?", apply)
+        success = swift_block(apply, "do")
+        self.assertLess(success.index("try draft.validatedQuality()"), success.index("apply(quality)"))
+        self.assertLess(success.index("apply(quality)"), success.index("dismiss()"))
+        for declaration in ("catch let error as StreamingQualityValidationError", "} catch {"):
+            failure = swift_block(apply, declaration)
+            self.assertIn("applicationError =", failure)
+            self.assertNotIn("apply(", failure)
+            self.assertNotIn("dismiss()", failure)
+        self.assertIn("Text(applicationError)", editor)
+        self.assertIn(".onChange(of: draft) { _, _ in applicationError = nil }", editor)
+
+    def test_custom_picker_is_shared_by_each_profile_connection_and_the_video_draft(self):
+        source = (ROOT / "Sources/AppShelliOS/PlozziOSStreamingQuality.swift").read_text()
+        settings = swift_block(source, "struct PlozziOSStreamingSettings:")
+        self.assertIn("if hasCompatibleServer", settings)
+        for connection in ("local", "remote", "cellular"):
+            self.assertIn(f"selection: $settings.{connection}", settings)
+        picker = swift_block(source, "struct StreamingQualityPicker:")
+        self.assertIn('Button("Custom…") { editingQuality = selection }', picker)
+        self.assertIn("StreamingCustomQualityEditor(quality: quality) { selection = $0 }", picker)
+        sheet = swift_block(source, "struct PlozziOSStreamingQualitySheet:")
+        self.assertIn("@State private var selection: StreamingPlaybackOptions", sheet)
+        self.assertIn('StreamingQualityPicker(title: "Quality limit", selection: $selection.quality)', sheet)
+        self.assertIn("viewModel.changeStreamingOptions(selection)", swift_block(sheet, 'Button("Apply")'))
+        self.assertNotIn("changeStreamingOptions", swift_block(sheet, 'Button("Cancel")'))
+        self.assertNotIn("PlaybackSettingsStore", sheet)
+
     def test_transcodes_share_measured_details_without_changing_menu_ownership(self):
         player = (ROOT / "Sources/FeaturePlayback/PlayerView.swift").read_text()
         self.assertIn("viewModel.deliveryMode == .transcode", player)

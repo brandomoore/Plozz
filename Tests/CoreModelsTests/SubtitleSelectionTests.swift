@@ -10,6 +10,20 @@ final class SubtitleSelectionTests: XCTestCase {
         XCTAssertEqual(SubtitleSelector.decide(candidates: [], mode: .all, preferredLanguage: "en"), .none)
     }
 
+    func testRemoteMatchScoreIsRankedWithoutInventingRatingOrHashEvidence() {
+        let popular = RemoteSubtitle(id: "popular", name: "Popular", language: "en",
+                                     downloadCount: 1000, matchScore: 80)
+        let closer = RemoteSubtitle(id: "closer", name: "Closer", language: "en",
+                                    downloadCount: 10, matchScore: 95)
+        let accessible = RemoteSubtitle(id: "accessible", name: "SDH", language: "en",
+                                        isHearingImpaired: true, matchScore: 60)
+        let candidates = [popular, closer, accessible]
+        XCTAssertEqual(candidates.applying(.default).first?.id, "closer")
+        XCTAssertEqual(candidates.applying(.init(hearingImpaired: .preferSDH)).first?.id, "accessible")
+        XCTAssertNil(closer.communityRating)
+        XCTAssertFalse(closer.isHashMatch)
+    }
+
     func testOffNeverSelectsEvenWithMatches() {
         // Off must win over any candidate, including a forced or default track in
         // the preferred language.

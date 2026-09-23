@@ -53,6 +53,11 @@ public final class ServerPickerViewModel {
     private var store: LastServerStoring
     private var scanTask: Task<Void, Never>?
     private var reachabilityTask: Task<Void, Never>?
+    private var validationGeneration = 0
+
+    public var canSubmitManualURL: Bool {
+        phase != .validating && !manualURLText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     #if canImport(Network)
     public init(
@@ -62,7 +67,9 @@ public final class ServerPickerViewModel {
         store: LastServerStoring = UserDefaultsLastServerStore()
     ) {
         self.provider = provider
-        self.discovery = discovery ?? UDPServerDiscovery(provider: provider)
+        self.discovery = discovery ?? (provider == .silo
+            ? SiloServerDiscovery() as any ServerDiscovering
+            : UDPServerDiscovery(provider: provider) as any ServerDiscovering)
         self.validator = validator ?? ServerValidator(provider: provider)
         self.store = store
     }
@@ -131,9 +138,8 @@ public final class ServerPickerViewModel {
     /// Starts a LAN scan, appending servers as they answer. In parallel, probes
     /// every recent server directly so we can tell the user whether each is
     /// online even when broadcast discovery comes back empty.
-    public func startScan(timeout: TimeInterval = 6) {
-        scanTask?.cancel()
-        reachabilityTask?.cancel()
+    public func startScan(timeout: TimeInterval? = nil) {
+        stopScan()
         discoveredServers = []
         lanKeys = []
         reachabilityByKey = [:]
@@ -144,20 +150,22 @@ public final class ServerPickerViewModel {
 
         scanTask = Task { [weak self] in
             guard let self else { return }
-            for await server in discovery.discover(timeout: timeout) {
+            for await server in discovery.discover(timeout: timeout ?? (provider == .silo ? 12 : 6)) {
                 if Task.isCancelled { break }
                 self.merge(server)
             }
-            if case .scanning = self.phase { self.phase = .idle }
+            if !Task.isCancelled, case .scanning = self.phase { self.phase = .idle }
         }
     }
 
     public func stopScan() {
+        validationGeneration += 1
         scanTask?.cancel()
         scanTask = nil
         reachabilityTask?.cancel()
         reachabilityTask = nil
         if case .scanning = phase { phase = .idle }
+        if case .validating = phase { phase = .idle }
     }
 
     /// Re-evaluates whether this device is on a tailnet by inspecting local
@@ -197,6 +205,12 @@ public final class ServerPickerViewModel {
         // Hearing from a server on the LAN is definitive: mark it present and
         // reachable so its row (recent or discovered) reads "On your network".
         lanKeys.insert(key)
+        if let known = (signedInServers.map(\.server) + recentServers).first(where: {
+            ServerIdentity.isSame($0, server)
+        }) {
+            lanKeys.insert(ServerIdentity.key(for: known))
+            return
+        }
         // A server we already have an account on is shown in the signed-in
         // group — don't also list it under discovered.
         if signedInKeys.contains(key) { return }
@@ -212,17 +226,25 @@ public final class ServerPickerViewModel {
     /// success; updates `phase` to `.error` on failure.
     @discardableResult
     public func submitManualURL() async -> MediaServer? {
-        let text = manualURLText
-        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        guard canSubmitManualURL else { return nil }
+        let text = manualURLText.trimmingCharacters(in: .whitespacesAndNewlines)
+        stopScan()
+        let generation = validationGeneration
         phase = .validating
+        defer {
+            if generation == validationGeneration, phase == .validating { phase = .idle }
+        }
         do {
             let server = try await validator.validate(rawURL: text)
+            guard !Task.isCancelled, generation == validationGeneration else { return nil }
             select(server)
             return server
         } catch let error as AppError {
+            guard !Task.isCancelled, generation == validationGeneration else { return nil }
             phase = .error(error.userMessage)
             return nil
         } catch {
+            guard !Task.isCancelled, generation == validationGeneration else { return nil }
             phase = .error(AppError.serverUnreachable.userMessage)
             return nil
         }
@@ -230,6 +252,7 @@ public final class ServerPickerViewModel {
 
     /// Records the chosen server at the top of the recents list.
     public func select(_ server: MediaServer) {
+        stopScan()
         store.remember(server)
         phase = .idle
     }

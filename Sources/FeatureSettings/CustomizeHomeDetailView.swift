@@ -260,7 +260,8 @@ struct CustomizeHomeDetailView: View {
                 Toggle("Show ratings", isOn: $hero.settings.showsRatings)
                     .toggleStyle(SettingsSwitchToggleStyle())
                 if hero.settings.showsRatings {
-                    HeaderRatingPreviewControls(settings: $hero.settings.ratingPreferences)
+                    Toggle("Show Common Sense age", isOn: $hero.settings.ratingPreferences.showsHeaderFamilyGuidance)
+                    HeaderReviewScoreCountPicker(settings: $hero.settings.ratingPreferences)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("Show discovery sources", isOn: $hero.settings.showsDiscoverySources)

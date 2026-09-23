@@ -1081,3 +1081,16 @@ tools/test-fast.sh --dry-run …     # print the selection, don't run
 - The old "flaky Plex network-probe" tests are deterministic (injected `HTTPClient`
   doubles, fake hosts); only the occasional host-launch timing race remains, which
   the runner's retry-once absorbs.
+## Opt-in provider playback
+
+Use [the provider playback test lane](provider-playback-tests.md) for actual
+Jellyfin, Plex, Emby, and native Silo negotiation → authenticated stream → decoded frames/audio
+→ seek/pause/resume → owned cleanup checks. It records startup timings and exact
+stream formats without treating HTTP success as playback success. It requires
+dedicated fixture items/accounts and explicit simulator ownership.
+
+Normal package runs skip the live methods. The dedicated runner requires every
+selected provider to execute and pass, with zero skips, and labels synthetic
+contract-fixture runs separately. Silo tests its supported server-selected
+conversion, not an unsupported arbitrary bitrate policy. Local shares are out
+of scope. All test players are muted before playback begins.

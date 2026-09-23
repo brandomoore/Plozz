@@ -12,15 +12,18 @@ public struct TransientStatusMessage: Equatable, Sendable {
     public let icon: String
     public let text: LocalizedStringResource
     public let placement: TransientStatusPlacement
+    public let isProgress: Bool
 
     public init(
         icon: String,
         text: LocalizedStringResource,
-        placement: TransientStatusPlacement = .root
+        placement: TransientStatusPlacement = .root,
+        isProgress: Bool = false
     ) {
         self.icon = icon
         self.text = text
         self.placement = placement
+        self.isProgress = isProgress
     }
 }
 
@@ -69,11 +72,13 @@ public final class TransientStatusPresenter {
         dismissalTask?.cancel()
     }
 
+    @discardableResult
     public func present(
         icon: String,
         text: LocalizedStringResource,
-        placement: TransientStatusPlacement = .root
-    ) {
+        placement: TransientStatusPlacement = .root,
+        isProgress: Bool = false
+    ) -> UInt64 {
         generation &+= 1
         let expectedGeneration = generation
         dismissalTask?.cancel()
@@ -83,10 +88,13 @@ public final class TransientStatusPresenter {
             message = TransientStatusMessage(
                 icon: icon,
                 text: text,
-                placement: placement
+                placement: placement,
+                isProgress: isProgress
             )
         }
         announcement(text)
+        dismissalTask = nil
+        guard !isProgress else { return expectedGeneration }
 
         let displayDuration = self.displayDuration
         let sleeper = self.sleeper
@@ -95,6 +103,7 @@ public final class TransientStatusPresenter {
             guard !Task.isCancelled else { return }
             await self?.dismiss(expectedGeneration: expectedGeneration)
         }
+        return expectedGeneration
     }
 
     public func dismiss() {
@@ -108,8 +117,9 @@ public final class TransientStatusPresenter {
         }
     }
 
-    private func dismiss(expectedGeneration: UInt64) {
+    public func dismiss(expectedGeneration: UInt64) {
         guard expectedGeneration == generation else { return }
+        dismissalTask?.cancel()
         dismissalTask = nil
         withAnimation(.easeInOut(
             duration: Self.dismissalAnimationDuration
@@ -122,16 +132,16 @@ public final class TransientStatusPresenter {
 public struct TransientStatusView: View {
     private let presenter: TransientStatusPresenter
     private let placement: TransientStatusPlacement
-    private let isLightSurface: Bool
+    private let palette: ThemePalette
 
     public init(
         presenter: TransientStatusPresenter,
         placement: TransientStatusPlacement = .root,
-        isLightSurface: Bool = false
+        palette: ThemePalette = .dark
     ) {
         self.presenter = presenter
         self.placement = placement
-        self.isLightSurface = isLightSurface
+        self.palette = palette
     }
 
     public var body: some View {
@@ -139,25 +149,32 @@ public struct TransientStatusView: View {
             if let message = presenter.message,
                message.placement == placement {
                 HStack(spacing: 10) {
-                    Image(systemName: message.icon)
+                    Group {
+                        if message.isProgress {
+                            ProgressView()
+                                .controlSize(.small)
+                                #if os(tvOS)
+                                .scaleEffect(0.5)
+                                #endif
+                        } else {
+                            Image(systemName: message.icon)
+                        }
+                    }
+                    .frame(width: 22, height: 22)
                     Text(message.text)
                 }
                 .font(messageFont)
-                .foregroundStyle(.primary)
+                .foregroundStyle(palette.primaryText)
+                .tint(palette.primaryText)
                 .padding(.horizontal, 22)
                 .padding(.vertical, 13)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(
-                    Capsule().strokeBorder(
-                        .white.opacity(isLightSurface ? 0.15 : 0.12),
-                        lineWidth: 1
-                    )
-                )
-                .shadow(
-                    color: .black.opacity(isLightSurface ? 0.12 : 0.4),
-                    radius: 12,
-                    y: 4
-                )
+                .background(palette.overlay.fill, in: Capsule())
+                .overlay {
+                    if let border = palette.overlay.border {
+                        Capsule().strokeBorder(border, lineWidth: palette.overlay.borderWidth)
+                    }
+                }
+                .modifier(OptionalSurfaceShadow(shadow: palette.overlay.shadow))
                 .transition(.opacity)
             }
         }
@@ -200,13 +217,13 @@ public extension View {
         placement: TransientStatusPlacement = .root,
         alignment: Alignment = .bottom,
         bottomPadding: CGFloat = 48,
-        isLightSurface: Bool = false
+        palette: ThemePalette = .dark
     ) -> some View {
         overlay(alignment: alignment) {
             TransientStatusView(
                 presenter: presenter,
                 placement: placement,
-                isLightSurface: isLightSurface
+                palette: palette
             )
             .padding(.bottom, bottomPadding)
         }

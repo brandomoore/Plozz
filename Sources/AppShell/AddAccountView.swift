@@ -114,6 +114,13 @@ struct AddAccountView: View {
                 viewModel: plexAuthViewModel,
                 onCancel: navigateBackToChooser
             )
+        case .silo:
+            ServerPickerView(
+                provider: .silo,
+                isPageReady: pageIsReady,
+                signedInServers: signedInServers.filter { $0.server.provider == .silo },
+                onBack: navigateBackToChooser
+            ) { onMediaBrowserServerSelected($0) }
         case .mediaShare:
             AddMediaShareView(
                 isPageReady: pageIsReady,
@@ -150,6 +157,7 @@ struct AddAccountView: View {
         case .jellyfin: "jellyfin"
         case .emby: "emby"
         case .plex: "plex"
+        case .silo: "silo"
         case .mediaShare: "mediaShare"
         }
     }
@@ -211,6 +219,7 @@ private enum ProviderChooserFocus: Hashable {
     case jellyfin
     case emby
     case plex
+    case silo
     case mediaShare
     case standalonePlayback
     case setUpFromAnotherDevice
@@ -220,6 +229,7 @@ private enum ProviderChooserFocus: Hashable {
         case .jellyfin: self = .jellyfin
         case .emby: self = .emby
         case .plex: self = .plex
+        case .silo: self = .silo
         case .mediaShare: self = .mediaShare
         }
     }
@@ -287,6 +297,7 @@ private struct ProviderChooserView: View {
         case (.some(.jellyfin), .left),
              (.some(.emby), .left),
              (.some(.plex), .left),
+             (.some(.silo), .left),
              (.some(.mediaShare), .left),
              (.some(.standalonePlayback), .left):
             focusedControl = .back
@@ -360,6 +371,16 @@ private struct ProviderChoiceGroup: View {
                 focusedControl: focusedControl
             ) {
                 onSelect(.emby)
+            }
+
+            Divider().padding(.horizontal, 1)
+
+            ProviderChoiceRow(
+                provider: .silo,
+                height: 88,
+                focusedControl: focusedControl
+            ) {
+                onSelect(.silo)
             }
 
             Divider().padding(.horizontal, 1)

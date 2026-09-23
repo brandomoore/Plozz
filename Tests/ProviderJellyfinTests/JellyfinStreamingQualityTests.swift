@@ -30,6 +30,105 @@ private struct ResumeMutationApplier: WatchMutationApplying {
 }
 
 final class JellyfinStreamingQualityTests: XCTestCase {
+    func testCustom1080pAt2000KbpsConstrainsJellyfinAndEmbyWithoutForcingCodec() async throws {
+        let quality = try StreamingQuality.custom(maximumHeight: 1080, bitrateKbps: 2_000)
+        for kind in [ProviderKind.jellyfin, .emby] {
+            for codec in StreamingCodecPreference.allCases {
+                let (provider, http) = fixture(kind: kind, rendition: true)
+                let request = try await provider.playbackInfo(
+                    for: "movie", mediaSourceID: "version", forceTranscode: false,
+                    streaming: .init(quality: quality, codec: codec)
+                )
+                let body = try XCTUnwrap(http.sentBodies.first { $0.key.hasSuffix("/PlaybackInfo") }?.value)
+                let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+                XCTAssertEqual(object["MaxStreamingBitrate"] as? Int, 2_000_000)
+                XCTAssertEqual(object["MediaSourceId"] as? String, "version")
+                let profile = try XCTUnwrap(object["DeviceProfile"] as? [String: Any])
+                XCTAssertEqual(profile["MaxStreamingBitrate"] as? Int, 2_000_000)
+                XCTAssertEqual(profile["MaxStaticBitrate"] as? Int, 2_000_000)
+                let codecProfiles = try XCTUnwrap(profile["CodecProfiles"] as? [[String: Any]])
+                let constraints = codecProfiles.flatMap { $0["Conditions"] as? [[String: Any]] ?? [] }
+                for (property, value) in [("Width", "1920"), ("Height", "1080")] {
+                    XCTAssertTrue(constraints.contains {
+                        $0["Property"] as? String == property && $0["Value"] as? String == value
+                            && $0["Condition"] as? String == "LessThanEqual"
+                    }, "Resolution is an upper bound, not a requested upscale")
+                }
+                let targets = try XCTUnwrap(profile["TranscodingProfiles"] as? [[String: Any]])
+                XCTAssertEqual(targets.first?["VideoCodec"] as? String,
+                               codec.codecs(supportsHEVC: provider.client.canRequestHEVC).joined(separator: ","))
+                guard case .authenticatedHTTP(let locator) = request.playbackSource else {
+                    return XCTFail("Expected authenticated HTTP")
+                }
+                let query = Dictionary(locator.resource.queryItems.map { ($0.name, $0.value ?? "") },
+                                       uniquingKeysWith: { first, _ in first })
+                XCTAssertEqual(query["VideoBitrate"], "1872000")
+                XCTAssertEqual(query["AudioBitrate"], "128000")
+                XCTAssertEqual(query["MaxStreamingBitrate"], "2000000")
+                XCTAssertEqual(query["MaxHeight"], "1080")
+                XCTAssertEqual(query["MaxWidth"], "1920")
+                XCTAssertNil(query["Height"])
+                XCTAssertNil(query["Width"])
+                XCTAssertEqual(request.streamingOptions?.quality, quality)
+                XCTAssertEqual(request.streamingOptions?.codec, codec)
+                XCTAssertEqual(locator.mediaSourceID, "version")
+                XCTAssertTrue(request.isTranscoding)
+                XCTAssertNil(request.originalFileSource)
+                XCTAssertNil(request.localRemuxSource)
+            }
+        }
+    }
+
+    func testCustomCeilingDoesNotConvertOrEnlargeSmallerJellyfinAndEmbyOriginals() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let (provider, http) = fixture(kind: kind, rendition: true, bitrate: 1_500_000)
+            let quality = try StreamingQuality.custom(maximumHeight: 1080, bitrateKbps: 2_000)
+            let request = try await provider.playbackInfo(
+                for: "movie", mediaSourceID: "version", forceTranscode: false,
+                streaming: .init(quality: quality, codec: .preferHEVC)
+            )
+            XCTAssertFalse(request.isTranscoding)
+            XCTAssertEqual(request.streamingOptions?.quality, quality)
+            XCTAssertEqual(http.sentPaths.filter { $0.hasSuffix("/PlaybackInfo") }.count, 1)
+        }
+    }
+
+    func testInvalidSavedCustomLimitStopsJellyfinAndEmbyBeforeNetworkIO() async {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let (provider, http) = fixture(kind: kind, rendition: true)
+            do {
+                _ = try await provider.playbackInfo(
+                    for: "movie", mediaSourceID: "version", forceTranscode: false,
+                    streaming: .init(quality: .invalid(.bitrateTooLow))
+                )
+                XCTFail("An invalid custom limit must not turn into unrestricted playback")
+            } catch {
+                XCTAssertEqual(error as? StreamingQualityError, .invalidQuality(.bitrateTooLow))
+            }
+            XCTAssertTrue(http.sentPaths.isEmpty)
+        }
+    }
+
+    func testCustomMinimumAndMaximumProviderBudgetsAreNotRoundedOrSilentlyCapped() throws {
+        let source = try JSONDecoder().decode(MediaSourceInfo.self, from: Data(
+            #"{"Id":"version","TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=h264"}"#.utf8
+        ))
+        for bitrate in [129, CustomStreamingQuality.maximumBitrateKbps] {
+            let quality = try StreamingQuality.custom(maximumHeight: 2160, bitrateKbps: bitrate)
+            let options = StreamingPlaybackOptions(quality: quality)
+            let profile = JellyfinCapabilityProfile.appleTV().applying(options)
+            XCTAssertEqual(profile.maxStreamingBitrate, bitrate * 1_000)
+            let query = try XCTUnwrap(URLComponents(string: source.boundedTranscodingURL(
+                options, supportsHEVC: true
+            ))?.queryItems)
+            XCTAssertEqual(query.first { $0.name == "MaxStreamingBitrate" }?.value, String(bitrate * 1_000))
+            XCTAssertEqual(query.first { $0.name == "VideoBitrate" }?.value, String((bitrate - 128) * 1_000))
+            XCTAssertEqual(query.first { $0.name == "AudioBitrate" }?.value, "128000")
+            XCTAssertEqual(query.first { $0.name == "MaxWidth" }?.value, "3840")
+            XCTAssertEqual(query.first { $0.name == "MaxHeight" }?.value, "2160")
+        }
+    }
+
     func testEmbyResumeWritesUseDocumentedUserScopedEndpointWithoutStoppingPlayback() async throws {
         let (provider, http) = fixture(kind: .emby, rendition: true)
         let path = "/Users/user/Items/movie/UserData"
