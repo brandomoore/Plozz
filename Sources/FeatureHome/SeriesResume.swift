@@ -40,6 +40,29 @@ public enum SeriesResume {
     }
 }
 
+/// Resolves the fully-loaded episode a series hero should front on initial open.
+/// Kept pure so every entry path can share and test the same behavior.
+public enum SeriesInitialHeroTarget {
+    public static func episode(
+        matching initialEpisode: MediaItem?,
+        in episodes: [MediaItem]
+    ) -> MediaItem? {
+        if let initialEpisode {
+            if let exact = episodes.first(where: { $0.id == initialEpisode.id }) {
+                return exact
+            }
+            if let season = initialEpisode.seasonNumber,
+               let episode = initialEpisode.episodeNumber,
+               let ordinalMatch = episodes.first(where: {
+                   $0.seasonNumber == season && $0.episodeNumber == episode
+               }) {
+                return ordinalMatch
+            }
+        }
+        return SeriesResume.nextUp(in: episodes)
+    }
+}
+
 /// A season+episode ordinal pair, used to re-locate "the same episode" on a
 /// different server (where per-server ids differ) — e.g. preserving the fronted
 /// episode across an in-place cross-server switch.

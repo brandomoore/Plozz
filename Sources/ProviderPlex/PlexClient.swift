@@ -636,7 +636,21 @@ public struct PlexClient: Sendable {
             ],
             headers: headers
         )
-        let (data, _) = try await http.send(endpoint, baseURL: Self.watchlistBase)
+        // TEMP DEBUG: use sendRaw so a 404 vs an empty-body 200 can be told apart
+        // (both currently surface identically as AppError.notFound to callers).
+        let (data, http0) = try await http.sendRaw(endpoint, baseURL: Self.watchlistBase)
+        Self.debugLog(
+            "DISCOVER-RAW id=\(metadataID) status=\(http0.statusCode) bytes=\(data.count) "
+                + "body=\(String(data: data.prefix(400), encoding: .utf8) ?? "<non-utf8>")"
+        )
+        guard 200...299 ~= http0.statusCode else {
+            switch http0.statusCode {
+            case 401, 403: throw AppError.unauthorized
+            case 404: throw AppError.notFound
+            case 409: throw AppError.conflict
+            default: throw AppError.invalidResponse
+            }
+        }
         do {
             guard let item = try JSONDecoder.plozz
                 .decode(PlexMediaContainerResponse.self, from: data)
@@ -648,6 +662,22 @@ public struct PlexClient: Sendable {
         } catch {
             PlozzLog.networking.error("Decoding Plex Discover metadata failed")
             throw AppError.decoding
+        }
+    }
+
+    /// TEMP DEBUG helper: appends to the same `detaildiag.log` the detail view
+    /// model writes to, so a single pull shows both the fetch outcome and the
+    /// raw Discover response. Remove once the watchlist-detail 404 is root-caused.
+    static func debugLog(_ line: String) {
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        guard let url = dir?.appendingPathComponent("detaildiag.log") else { return }
+        let stamped = "[\(Date())] " + line + "\n"
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: Data(stamped.utf8))
+        } else {
+            try? stamped.data(using: .utf8)?.write(to: url)
         }
     }
 

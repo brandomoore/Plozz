@@ -239,7 +239,7 @@ public struct ItemDetailView: View {
             if let itemID {
                 heroTrailerController.clearEndHandler(ownerID: "detail-\(itemID)")
                 if !preservesHeroTrailerOnDisappear {
-                    heroTrailerController.stop(ifShowing: itemID)
+                    heroTrailerController.stop()
                 }
             }
         }
@@ -259,7 +259,18 @@ public struct ItemDetailView: View {
                   let item = viewModel.state.value?.item else { return }
             if let currentID = heroTrailerController.currentItemID,
                currentID != item.id {
-                heroTrailerController.stop()
+                if HeroTrailerIdentityPolicy.shouldRebind(
+                    currentItemID: currentID,
+                    entryItemID: viewModel.entryItemID,
+                    resolvedItemID: item.id
+                ) {
+                    heroTrailerController.rebindCurrentItemID(
+                        from: currentID,
+                        to: item.id
+                    )
+                } else {
+                    heroTrailerController.stop()
+                }
             }
             // Detail owns end-of-item while it is frontmost. This replaces Home's
             // page-advance callback so the hidden carousel cannot start a

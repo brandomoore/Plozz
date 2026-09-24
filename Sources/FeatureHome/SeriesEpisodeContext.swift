@@ -6,28 +6,32 @@ import MetadataKit
 struct SeriesEpisodeContext: Sendable {
     let seriesTMDbID: String?
     let animeIDs: [String: String]
-    let isAnime: Bool
 
     init(series: MediaItem) {
         seriesTMDbID = series.providerIDs["Tmdb"]
-        animeIDs = series.providerIDs.filter { ContentClassifier.isAnimeProviderIDKey($0.key) }
-        isAnime = ContentClassifier.isAnime(series)
+        animeIDs = series.providerIDs.filter {
+            ContentClassifier.isAnimeProviderIDKey($0.key)
+        }
     }
 
-    init(seriesTMDbID: String?, animeIDs: [String: String], isAnime: Bool) {
+    init(seriesTMDbID: String?, animeIDs: [String: String]) {
         self.seriesTMDbID = seriesTMDbID
         self.animeIDs = animeIDs
-        self.isAnime = isAnime
     }
 
     var isEmpty: Bool {
-        (seriesTMDbID?.isEmpty != false) && animeIDs.isEmpty && !isAnime
+        (seriesTMDbID?.isEmpty != false) && animeIDs.isEmpty
     }
 
     /// Stamps this context into each episode:
     ///  * parent TMDb id under `SeriesTmdb` when missing;
-    ///  * anime provider ids (AniList/AniDB/MAL/...) when missing;
-    ///  * an "Anime" genre marker when the parent series is anime.
+    ///  * authoritative anime provider ids (AniList/AniDB/MAL/...) when missing.
+    ///
+    /// Never copy a visible "Anime" genre from the series. Besides changing UI
+    /// metadata, a weak genre-only match can poison playback language policy and
+    /// artwork routing for every episode (as happened when a live-action series
+    /// inherited metadata from an unrelated anime title). Real anime database IDs
+    /// are strong enough to propagate and already classify the episode as anime.
     func stamping(_ episodes: [MediaItem]) -> [MediaItem] {
         guard !isEmpty else { return episodes }
         return episodes.map { episode in
@@ -37,9 +41,6 @@ struct SeriesEpisodeContext: Sendable {
             }
             for (key, value) in animeIDs where copy.providerIDs[key] == nil {
                 copy.providerIDs[key] = value
-            }
-            if isAnime, !copy.genres.contains(where: { $0.lowercased().contains("anime") }) {
-                copy.genres.append("Anime")
             }
             return copy
         }

@@ -54,6 +54,39 @@ done
 # git resolve fails with "cannot use bare repository". This is EXPECTED.
 export GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS-'safe.bareRepository=all'}"
 
+# --- devicectl self-heal (CoreDeviceService can wedge) -----------------------
+# devicectl's underlying CoreDeviceService.xpc daemon has been observed to wedge
+# into a runaway loop (100%+ CPU, days of uptime) that makes EVERY devicectl
+# operation on this Mac hang forever at "Enabling developer disk image
+# services" with no error — retrying devicectl itself never recovers from
+# this; only killing the wedged process does (launchd respawns a healthy one
+# immediately). Checked before install/launch and again on a timeout/failure.
+heal_coredevice_service_if_wedged() {
+  local pid cpu
+  pgrep -f 'CoreDeviceService\.xpc/Contents/MacOS/CoreDeviceService' 2>/dev/null | while read -r pid; do
+    cpu="$(ps -o %cpu= -p "$pid" 2>/dev/null | tr -d ' ')"
+    [[ -z "$cpu" ]] && continue
+    # A healthy instance idles near 0% — sustained >=50% is the wedged signature.
+    if awk "BEGIN{exit !($cpu >= 50)}"; then
+      echo "▸ CoreDeviceService.xpc (pid $pid, ${cpu}% CPU) looks wedged — restarting…" >&2
+      kill "$pid" 2>/dev/null || true
+      sleep 2
+    fi
+  done || true
+}
+
+# Runs a devicectl command with a bounded timeout; on timeout/failure, heals
+# the daemon once and retries a single time before giving up for real.
+devicectl_with_heal() {
+  heal_coredevice_service_if_wedged
+  if xcrun devicectl "$@" --timeout 90; then
+    return 0
+  fi
+  echo "▸ devicectl call failed/stalled — checking for a wedged CoreDeviceService and retrying once…" >&2
+  heal_coredevice_service_if_wedged
+  xcrun devicectl "$@" --timeout 180
+}
+
 if [[ "$CLEAN" == "1" ]]; then
   echo "▸ Cleaning this worktree's DerivedData…"
   DD="$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showBuildSettings 2>/dev/null \
@@ -151,12 +184,12 @@ if [[ -d "$CT" ]]; then
 fi
 
 echo "▸ Installing $BUNDLE_ID → Apple TV…"
-xcrun devicectl device install app --device "$DEVICE_ID" "$APP_PATH"
+devicectl_with_heal device install app --device "$DEVICE_ID" "$APP_PATH"
 
 echo "▸ Launching…"
 if [[ "${PLOZZ_SHOW_FIRST_RUN_RESET:-0}" == "1" ]]; then
   export DEVICECTL_CHILD_PLOZZ_SHOW_FIRST_RUN_RESET=1
 fi
-xcrun devicectl device process launch --device "$DEVICE_ID" "$BUNDLE_ID"
+devicectl_with_heal device process launch --device "$DEVICE_ID" "$BUNDLE_ID"
 
 echo "✓ Deployed & launched: $BUNDLE_ID"

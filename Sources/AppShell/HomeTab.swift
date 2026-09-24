@@ -274,7 +274,11 @@ struct HomeTab: View {
                     onPlay: { requestPlay($0) },
                     onSelectChild: { navigate($0, libraryOrigin: route.originAccountID) },
                     heroTrailerResolver: makeHeroTrailerResolver(),
-                    preservesHeroTrailerOnDisappear: true,
+                    // Preserve only for a Home-originated open (no library origin),
+                    // where the Home hero may reclaim the same shared player on
+                    // return. A library-tile open must stop like any other
+                    // library-only flow — see the doc on the flag's declaration.
+                    preservesHeroTrailerOnDisappear: route.originAccountID == nil,
                     initialEpisode: route.episode,
                     seerConnected: seer.isConfigured,
                     requestAvailabilityRefresh: { await seer.requestAvailability(for: $0) },
@@ -308,7 +312,9 @@ struct HomeTab: View {
                     onPlay: { requestPlay($0) },
                     onSelectChild: { navigate($0, libraryOrigin: route.originAccountID) },
                     heroTrailerResolver: makeHeroTrailerResolver(),
-                    preservesHeroTrailerOnDisappear: true,
+                    // See the EpisodeContextRoute destination above: only preserve
+                    // for a Home-originated open.
+                    preservesHeroTrailerOnDisappear: route.originAccountID == nil,
                     initialSeasonID: route.season.id,
                     seerConnected: seer.isConfigured,
                     requestAvailabilityRefresh: { await seer.requestAvailability(for: $0) },
@@ -402,7 +408,12 @@ struct HomeTab: View {
             onPlay: { requestPlay($0) },
             onSelectChild: { navigate($0, libraryOrigin: libraryOrigin) },
             heroTrailerResolver: makeHeroTrailerResolver(),
-            preservesHeroTrailerOnDisappear: true,
+            // Preserve only for a Home/Search-originated open (`libraryOrigin ==
+            // nil`), where the Home hero may reclaim the same shared player on
+            // return. A library-tile open (non-nil `libraryOrigin`) is a
+            // library-only flow and must stop the trailer on disappear like
+            // Search already does — see the doc on the flag's declaration.
+            preservesHeroTrailerOnDisappear: libraryOrigin == nil,
             initialSeasonID: item.seasonID,
             isDiscoveryItem: isDiscovery,
             seerConnected: seer.isConfigured,

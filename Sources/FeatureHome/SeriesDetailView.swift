@@ -1100,30 +1100,20 @@ struct SeriesDetailView: View {
         return seasons.first?.id
     }
 
-    /// After episodes load, replace the hero's tapped-episode placeholder with the
-    /// fully-loaded episode (richer overview/badges) so the hero and Play target
-    /// reflect complete metadata. No-op unless the page is targeting an episode —
-    /// a normal open keeps the stable series hero (the Play button still resumes
-    /// "next up"), so nothing swaps under the user after load.
+    /// After episodes load, front the fully-loaded episode the page will play.
+    /// This applies to every entry point: a tapped episode is matched explicitly,
+    /// while a plain series/watchlist/library open fronts the resolved next-up
+    /// episode. The hero therefore has the same episode-specific synopsis before
+    /// focus reaches the rail instead of showing unrelated series-level metadata.
     @MainActor
     private func frontTargetEpisodeIfNeeded(in seasonID: String?) async {
         let pool = seasonID.flatMap { viewModel.episodes(for: $0) } ?? (seasons.isEmpty ? stampedLooseEpisodes : [])
-        
-        if let target = initialEpisode {
-            if let loaded = pool.first(where: { $0.id == target.id }) {
-                heroItem = loaded
-            } else if let season = target.seasonNumber, let episode = target.episodeNumber,
-                      let loaded = pool.first(where: {
-                          $0.seasonNumber == season && $0.episodeNumber == episode
-                      }) {
-                // Cross-server switch: per-server episode ids differ, so match the
-                // same episode by its season/episode NUMBER on the new server.
-                heroItem = loaded
-            }
-        } else if initialSeasonID != nil {
-            if let target = SeriesResume.nextUp(in: pool) {
-                heroItem = target
-            }
+
+        if let target = SeriesInitialHeroTarget.episode(
+            matching: initialEpisode,
+            in: pool
+        ) {
+            heroItem = target
         }
         updateRailTarget()
     }

@@ -73,6 +73,43 @@ final class SeriesResumeTests: XCTestCase {
         XCTAssertNil(SeriesResume.nextUp(in: []))
     }
 
+    func testInitialHeroFrontsNextUpEpisodeForPlainSeriesOpen() {
+        let items = [
+            episode("e1", number: 1, played: true, percentage: 1),
+            episode("e2", number: 2),
+            episode("e3", number: 3),
+        ]
+
+        XCTAssertEqual(
+            SeriesInitialHeroTarget.episode(matching: nil, in: items)?.id,
+            "e2"
+        )
+    }
+
+    func testInitialHeroPrefersExplicitEpisodeOverNextUp() {
+        let items = [
+            episode("e1", number: 1),
+            episode("e2", number: 2),
+        ]
+
+        XCTAssertEqual(
+            SeriesInitialHeroTarget.episode(matching: items[1], in: items)?.id,
+            "e2"
+        )
+    }
+
+    func testInitialHeroMatchesExplicitEpisodeByOrdinalAcrossServers() {
+        var remote = episode("remote-e2", number: 2)
+        remote.seasonNumber = 1
+        var local = episode("local-e2", number: 2)
+        local.seasonNumber = 1
+
+        XCTAssertEqual(
+            SeriesInitialHeroTarget.episode(matching: remote, in: [local])?.id,
+            "local-e2"
+        )
+    }
+
     func testPlayedItemIsNotInProgressEvenWithResumePosition() {
         // A fully-played item with stale progress data is not "resumable".
         let item = episode("e1", number: 1, played: true, percentage: 0.5, resume: 300)

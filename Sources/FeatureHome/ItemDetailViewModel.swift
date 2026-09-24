@@ -165,6 +165,10 @@ public final class ItemDetailViewModel {
 
     private let provider: any MediaProvider
     private let itemID: String
+    /// Immutable id of the card the viewer actually opened. The active item id
+    /// may later change when cross-server discovery retargets the detail to a
+    /// better copy; shared hero media can use this as a continuity alias.
+    public var entryItemID: String { itemID }
     private let ratingsProvider: any ExternalRatingsProviding
     /// A **discovery** item (a Seerr/Overseerr title that may not be in any
     /// library). Its synthetic `seer:<tmdbId>` id isn't resolvable through a
@@ -469,11 +473,13 @@ public final class ItemDetailViewModel {
     }
 
     public func load() async {
+        Self.appendDetailDiag("LOAD-ENTER item=\(activeItemID) acct=\(activeSourceAccountID ?? "nil") provider=\(type(of: activeProvider)) isDiscovery=\(isDiscoveryItem) seedOverview=\(state.value?.item.overview?.isEmpty == false ? "yes" : "EMPTY/nil")")
         // Discovery (Seerr) items aren't backed by a resolvable library provider,
         // so the library fetch below would only 404. Instead of the fetch, refresh
         // the title's request/availability state from Seerr (so a reopened title
         // reflects a request made earlier) and keep the seeded item otherwise.
         guard !isDiscoveryItem else {
+            Self.appendDetailDiag("LOAD-DISCOVERY-SKIP item=\(activeItemID) (kept seed, no re-fetch)")
             await refreshDiscoveryStatus()
             return
         }
@@ -537,7 +543,11 @@ public final class ItemDetailViewModel {
         if state.value == nil { state = .loading }
         do {
             let fetched = try await loadProvider.item(id: loadItemID)
-            guard !Task.isCancelled, isCurrent() else { return }
+            Self.appendDetailDiag("FETCH-OK item=\(loadItemID) provider=\(type(of: loadProvider)) overview=\(fetched.overview?.isEmpty == false ? "yes(\(fetched.overview!.count))" : "EMPTY") genres=\(fetched.genres.count) cast=\(fetched.people.count)")
+            guard !Task.isCancelled, isCurrent() else {
+                Self.appendDetailDiag("POST-FETCH-CANCEL item=\(loadItemID)")
+                return
+            }
             let redirected = await redirectingSeasonToSeries(fetched, using: loadProvider)
             guard !Task.isCancelled, isCurrent() else { return }
             preselectedSeasonID = redirected.preselectedSeasonID
@@ -629,16 +639,27 @@ public final class ItemDetailViewModel {
                 )
             }
         } catch is CancellationError {
-            // Back-button during load: leave whatever state we already published
-            // (seeded hero, full hero, or .loading) — never flash a failure for a
-            // clean cancel.
+            Self.appendDetailDiag("FETCH-CANCELLED item=\(loadItemID) hadSeed=\(state.value != nil)")
             return
         } catch let error as AppError {
-            // Don't bury an already-painted hero under a full-screen error just
-            // because the detail re-fetch failed; the seeded hero stays usable.
+            Self.appendDetailDiag("FETCH-APPERROR item=\(loadItemID) provider=\(type(of: loadProvider)) hadSeed=\(state.value != nil) err=\(error)")
             if isCurrent(), state.value == nil { state = .failed(error) }
         } catch {
+            Self.appendDetailDiag("FETCH-ERROR item=\(loadItemID) hadSeed=\(state.value != nil) err=\(error)")
             if isCurrent(), state.value == nil { state = .failed(.unknown("")) }
+        }
+    }
+
+    nonisolated static func appendDetailDiag(_ line: String) {
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        guard let url = dir?.appendingPathComponent("detaildiag.log") else { return }
+        let stamped = "[\(Date())] " + line + "\n"
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: Data(stamped.utf8))
+        } else {
+            try? stamped.data(using: .utf8)?.write(to: url)
         }
     }
 

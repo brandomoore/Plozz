@@ -38,4 +38,24 @@ final class HeroTrailerTimelineTests: XCTestCase {
             )
         }
     }
+
+    func testCrossServerResolvedIDRebindsTappedEntryTrailer() {
+        XCTAssertTrue(
+            HeroTrailerIdentityPolicy.shouldRebind(
+                currentItemID: "watchlist-global-id",
+                entryItemID: "watchlist-global-id",
+                resolvedItemID: "jellyfin-library-id"
+            )
+        )
+    }
+
+    func testUnrelatedTrailerDoesNotRebind() {
+        XCTAssertFalse(
+            HeroTrailerIdentityPolicy.shouldRebind(
+                currentItemID: "another-title",
+                entryItemID: "watchlist-global-id",
+                resolvedItemID: "jellyfin-library-id"
+            )
+        )
+    }
 }

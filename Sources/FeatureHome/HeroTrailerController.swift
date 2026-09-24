@@ -39,6 +39,17 @@ public enum HeroTrailerSurfaceRole: Sendable {
     case detail
 }
 
+enum HeroTrailerIdentityPolicy {
+    static func shouldRebind(
+        currentItemID: String?,
+        entryItemID: String,
+        resolvedItemID: String
+    ) -> Bool {
+        guard entryItemID != resolvedItemID else { return false }
+        return currentItemID == entryItemID
+    }
+}
+
 /// Shared, app-level owner of the **hero trailer** — one muted (by default)
 /// `AVPlayer` whose video layer is rendered by both the Home hero carousel and
 /// the detail-page hero. Hoisting it above both surfaces (like
@@ -116,6 +127,17 @@ public final class HeroTrailerController {
     /// hand-off for the same title can keep playing rather than reload).
     public func isShowing(_ itemID: String) -> Bool {
         currentItemID == itemID && currentItemID != nil
+    }
+
+    /// Rebinds a playing trailer from the tapped card's id to the fully-resolved
+    /// detail id without replacing the AVPlayerItem. Cross-server identity folding
+    /// legitimately changes ids for the same title while a detail page hydrates;
+    /// treating that as a new title interrupts an otherwise seamless handoff.
+    @discardableResult
+    public func rebindCurrentItemID(from oldID: String, to newID: String) -> Bool {
+        guard currentItemID == oldID, player.currentItem != nil else { return false }
+        currentItemID = newID
+        return true
     }
 
     /// Installs the current frontmost surface's end handler. Ownership prevents
