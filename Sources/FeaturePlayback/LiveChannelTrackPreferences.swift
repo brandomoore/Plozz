@@ -11,17 +11,30 @@ public final class LiveChannelTrackPreferences {
     public var subtitleMode: SubtitleMode
     public var subtitleLanguage: String?
     public var subtitleStyle: SubtitleStyle
+    /// Mirrors `SubtitleBehavior.usesNativeSubtitles`: subtitles AVPlayer draws
+    /// itself follow the system caption style instead of `subtitleStyle`.
+    public var usesNativeSubtitles: Bool
 
     public init(
         audioLanguage: String? = nil,
         subtitleMode: SubtitleMode = .off,
         subtitleLanguage: String? = nil,
-        subtitleStyle: SubtitleStyle = .default
+        subtitleStyle: SubtitleStyle = .default,
+        usesNativeSubtitles: Bool = false
     ) {
         self.audioLanguage = audioLanguage
         self.subtitleMode = subtitleMode
         self.subtitleLanguage = subtitleLanguage
         self.subtitleStyle = subtitleStyle
+        self.usesNativeSubtitles = usesNativeSubtitles
+    }
+
+    /// The look for subtitles the engine's AVPlayer draws (the remote-HLS route):
+    /// Plozz's style, or no overrides so the system caption style applies.
+    public var engineSubtitleStyle: SubtitleStyle {
+        var style = subtitleStyle
+        if usesNativeSubtitles { style.followsSystemStyle = true }
+        return style
     }
 
     public convenience init(namespace: String?) {
@@ -36,7 +49,8 @@ public final class LiveChannelTrackPreferences {
             ).first,
             subtitleMode: subtitles.subtitleMode,
             subtitleLanguage: subtitles.preferredSubtitleLanguage ?? LanguageMatch.deviceLanguageCode,
-            subtitleStyle: SubtitleStyleStore(namespace: namespace).load().base
+            subtitleStyle: SubtitleStyleStore(namespace: namespace).load().base,
+            usesNativeSubtitles: subtitles.usesNativeSubtitles
         )
     }
 }

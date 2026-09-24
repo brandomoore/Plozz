@@ -82,6 +82,10 @@ targets:
         # MARKETING_VERSION build setting so the app and Top Shelf extension match.
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        # The remote's Guide button reaches the app as this TVServices activity;
+        # without the declaration tvOS sends it to the default guide app.
+        NSUserActivityTypes:
+          - TVUserActivityTypeBrowsingChannelGuide
         # Expose Siri Remote touch position for first-generation edge clicks.
         GCSupportedGameControllers:
           - ProfileName: MicroGamepad

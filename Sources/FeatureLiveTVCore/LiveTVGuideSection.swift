@@ -30,6 +30,9 @@ public struct LiveTVChannelSequence {
         ids = channels.map(\.id).filter { seen.insert($0).inserted }
     }
 
+    /// The order the viewer tuned from, for surfaces that list its neighbours.
+    public var channelIDs: [String] { ids }
+
     public func neighbor(
         of channelID: String?, offset: Int, visibleChannels: [LiveTVPrototypeChannel]
     ) -> String? {

@@ -7,31 +7,30 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
         continueAfterFailure = true
         let app = launchVisualFixture()
         defer { app.terminate() }
-        if app.buttons["Pause"].exists { select(app.buttons["Pause"], in: app) }
+        let timeline = app.buttons["live-channel-timeline"]
+        // Select on the timeline pauses, so the HUD stays up while focus is walked.
+        select(timeline, in: app)
         let controls: [(String, XCUIElement)] = [
-            ("previous", app.buttons["Previous Channel"]),
-            ("play", app.buttons["Play"]),
-            ("next", app.buttons["Next Channel"]),
-            ("favorite", app.buttons["live-channel-favorite"]),
+            ("audio", app.buttons["live-channel-audio"]),
+            ("subtitles", app.buttons["live-channel-subtitles"]),
             ("multiview", app.buttons["live-channel-multiview"]),
-            ("tracks", app.buttons["live-channel-tracks"])
+            ("info", app.buttons["live-channel-info"])
         ]
         for (name, target) in controls {
-            let anchor = name == "next" ? app.buttons["Previous Channel"] : app.buttons["Next Channel"]
-            assertRenderedFocus(target, anchor: anchor, name: "player-\(name)", in: app)
+            assertRenderedFocus(target, anchor: timeline, name: "player-\(name)", in: app)
         }
-        select(app.buttons["live-channel-tracks"], in: app)
-        capture("player-track-menu", in: app)
-        selectMenuItem("Off", in: app)
+        select(app.buttons["live-channel-subtitles"], in: app)
+        capture("player-subtitle-menu", in: app)
+        select(app.buttons["Off"], in: app)
         assertRenderedFocus(
-            app.buttons["live-channel-tracks"], anchor: app.buttons["Next Channel"],
-            name: "player-tracks-return", in: app
+            app.buttons["live-channel-subtitles"], anchor: timeline,
+            name: "player-subtitles-return", in: app
         )
-        select(app.buttons["Play"], in: app)
+        select(timeline, in: app)
         let revealSurface = app.descendants(matching: .any)["live-channel-reveal-surface"].firstMatch
         for cycle in 1...2 {
             let hidden = NSPredicate { _, _ in
-                !app.buttons["live-channel-tracks"].exists && revealSurface.exists
+                !timeline.exists && revealSurface.exists
             }
             XCTAssertEqual(
                 XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hidden, object: nil)], timeout: 15),
@@ -39,30 +38,26 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             )
             capture("player-hud-hidden-\(cycle)", in: app)
             XCUIRemote.shared.press(.down)
-            XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertTrue(timeline.waitForExistence(timeout: 5), app.debugDescription)
             XCTAssertFalse(revealSurface.exists, "Visible controls must remove the native reveal focus surface")
             let focused = focusedElement(in: app)
-            guard focused.exists, focused.elementType == .button else {
-                XCTFail("Revealing the HUD must focus a visible control: \(nativeFocus(in: app))")
+            guard focused.exists, focused.identifier == "live-channel-timeline" else {
+                XCTFail("Revealing the HUD must focus the timeline: \(nativeFocus(in: app))")
                 return
             }
-            let identifier = focused.identifier
-            let label = focused.label
-            let frame = focused.frame
             let beforeFocus = nativeFocus(in: app)
             let before = capture("player-hud-revealed-\(cycle)", in: app)
-            let direction: XCUIRemote.Button = identifier == "live-channel-tracks" ? .down
-                : identifier == "live-channel-multiview" ? .left : .right
-            XCUIRemote.shared.press(direction)
+            XCUIRemote.shared.press(.up)
             let moved = focusedElement(in: app)
             XCTAssertTrue(moved.exists && moved.elementType == .button)
-            XCTAssertTrue(moved.identifier != identifier || moved.label != label, "Remote input must move control focus")
+            XCTAssertNotEqual(moved.identifier, "live-channel-timeline", "Up from the timeline must reach a badge")
             XCTAssertFalse(revealSurface.exists)
-            XCTAssertTrue(app.buttons["Pause"].exists)
             let after = capture("player-hud-moved-\(cycle)", in: app)
-            let change = pixelDifference(before, after, region: frame.insetBy(dx: -8, dy: -8), screen: app.frame)
+            let change = pixelDifference(
+                before, after, region: moved.frame.insetBy(dx: -8, dy: -8), screen: app.frame
+            )
             let evidence = XCTAttachment(string:
-                "HUD cycle \(cycle), \(label): changed pixel fraction=\(change.fraction), mean RGB delta=\(change.mean)\n" +
+                "HUD cycle \(cycle): changed pixel fraction=\(change.fraction), mean RGB delta=\(change.mean)\n" +
                 "Revealed: \(beforeFocus)\nMoved: \(nativeFocus(in: app))"
             )
             evidence.name = "player-hud-return-focus-\(cycle)-pixel-evidence"
@@ -70,10 +65,72 @@ final class LiveTVMultiviewRemoteTests: XCTestCase {
             add(evidence)
             XCTAssertGreaterThan(
                 change.fraction, 0.03,
-                "The initially focused HUD control must visibly differ after native directional movement"
+                "The badge reached from the timeline must visibly take focus"
             )
+            // Back to the hub so the next cycle hides from a playing timeline.
+            XCUIRemote.shared.press(.down)
         }
         XCTAssertEqual(app.staticTexts["multiview-fixture-player-1"].label, "Engine 1 loads 1")
+    }
+
+    @MainActor
+    func testLiveTransportTabsMenusAndGuideAreReachableByRemote() {
+        continueAfterFailure = true
+        let app = launchVisualFixture()
+        defer { app.terminate() }
+        let timeline = app.buttons["live-channel-timeline"]
+        select(timeline, in: app) // pause, so the HUD stays up
+        XCTAssertEqual(focusedElement(in: app).identifier, "live-channel-timeline")
+
+        // Down from the hub lands on the first card tab and opens its card.
+        press(.down)
+        XCTAssertEqual(focusedElement(in: app).identifier, "live-channel-info", nativeFocus(in: app))
+        capture("osd-card-info", in: app)
+        for tab in ["live-channel-on-now", "live-channel-guide", "live-channel-stats"] {
+            press(.right)
+            XCTAssertEqual(focusedElement(in: app).identifier, tab, nativeFocus(in: app))
+            capture("osd-\(tab)", in: app)
+        }
+        // Up leaves the card for the timeline.
+        press(.up)
+        XCTAssertEqual(focusedElement(in: app).identifier, "live-channel-timeline", nativeFocus(in: app))
+        capture("osd-card-closed", in: app)
+
+        // Track menus open above the badges, never over the timeline.
+        for badge in ["live-channel-subtitles", "live-channel-audio"] {
+            select(app.buttons[badge], in: app)
+            let panelRow = app.buttons.matching(NSPredicate(format: "hasFocus == true")).firstMatch
+            XCTAssertTrue(panelRow.waitForExistence(timeout: 3))
+            capture("osd-menu-\(badge)", in: app)
+            XCTAssertLessThan(panelRow.frame.maxY, timeline.frame.minY, "\(badge) menu must sit above the timeline")
+            XCUIRemote.shared.press(.menu)
+            XCTAssertTrue(app.buttons[badge].waitForExistence(timeout: 3))
+        }
+
+        // Guide: a card like the others, with the grid under the pills.
+        press(.down) // badge → timeline
+        press(.down) // → Info tab, card opens
+        for _ in 0..<2 { press(.right) }
+        XCTAssertEqual(focusedElement(in: app).identifier, "live-channel-guide", nativeFocus(in: app))
+        let guide = app.descendants(matching: .any)["live-channel-guide-overlay"].firstMatch
+        XCTAssertTrue(guide.waitForExistence(timeout: 5), "Focusing the Guide pill shows the grid")
+        capture("osd-guide", in: app)
+        press(.down)
+        XCTAssertNotEqual(focusedElement(in: app).identifier, "live-channel-guide", "Down walks into the grid")
+        capture("osd-guide-moved", in: app)
+        press(.up)
+        XCTAssertEqual(focusedElement(in: app).identifier, "live-channel-guide", "Up from the grid returns to the pills")
+        press(.right)
+        XCTAssertEqual(focusedElement(in: app).identifier, "live-channel-stats", nativeFocus(in: app))
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(timeline.waitForExistence(timeout: 5), "Menu closes the card")
+        capture("osd-guide-closed", in: app)
+    }
+
+    @MainActor
+    private func press(_ button: XCUIRemote.Button) {
+        XCUIRemote.shared.press(button)
+        usleep(700_000)
     }
 
     @MainActor

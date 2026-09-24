@@ -31,3 +31,14 @@ public enum PlayerScreenshotHook {
     @MainActor
     public static var pendingPanel: Panel?
 }
+
+/// The live transport's counterpart: a card tab, or the guide, for the capture
+/// rig and the Live TV fixture to open without a remote. Read once on appear.
+public enum LiveChannelScreenshotHook {
+    public enum Surface: String, Sendable {
+        case info, onNow, stats, guide
+    }
+
+    @MainActor
+    public static var pendingSurface: Surface?
+}

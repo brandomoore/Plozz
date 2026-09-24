@@ -117,6 +117,10 @@
 		<string>OpenDyslexic-Bold.otf</string>
 		<string>OpenDyslexic-BoldItalic.otf</string>
 	</array>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>TVUserActivityTypeBrowsingChannelGuide</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

@@ -610,7 +610,14 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
 
     func testGuideAndLogoCornersStayConcentric() {
         XCTAssertEqual(PrototypeLayout.guideRadius, PrototypeLayout.rowRadius + PrototypeLayout.guideInset)
+        #if os(iOS)
+        // A phone's short rows take a squarer, TV-proportioned radius instead.
+        if UIDevice.current.userInterfaceIdiom != .phone {
+            XCTAssertEqual(PrototypeLayout.rowRadius, PrototypeLayout.logoRadius + PrototypeLayout.rowInset)
+        }
+        #else
         XCTAssertEqual(PrototypeLayout.rowRadius, PrototypeLayout.logoRadius + PrototypeLayout.rowInset)
+        #endif
         XCTAssertEqual(PrototypeLayout.rowHeight, PrototypeLayout.stationSize + PrototypeLayout.rowInset * 2)
         XCTAssertEqual(PrototypeLayout.stationArtworkInset, PrototypeLayout.guideInset + 8)
         XCTAssertEqual(
@@ -644,7 +651,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             #else
             XCTAssertLessThanOrEqual(size.width, width + 0.5)
             #endif
-            XCTAssertGreaterThanOrEqual(size.height, PrototypeLayout.controlHeight)
+            XCTAssertGreaterThanOrEqual(size.height, PrototypeBrowseToolbar.controlHeight)
         }
     }
 

@@ -283,10 +283,46 @@ final class LiveChannelInputPlayerTests: XCTestCase {
         engine.selectedSubtitleID = 5
         engine.onTracksChanged?()
         XCTAssertEqual(engine.currentAudioTrackID, 1)
+        // The subtitle choice waits for the new programme's first frame.
+        XCTAssertEqual(engine.selectedSubtitleID, 5)
+        model.refreshFromEngine()
         XCTAssertNil(engine.selectedSubtitleID)
         XCTAssertEqual(engine.loadedInputs.count, 1)
         XCTAssertEqual(engine.goLiveCount, 0)
         XCTAssertEqual(engine.genericSeekCount, 0)
+    }
+
+    func testSubtitlePreferenceReachesTheEngineOnlyOnceTheChannelIsShowingPictures() async {
+        let engine = LiveEngineSpy()
+        engine.liveSnapshot.firstFrameReady = false
+        let preferences = LiveChannelTrackPreferences(subtitleMode: .all, subtitleLanguage: "en")
+        engine.subtitleTracks = [.init(id: 5, kind: .subtitle, displayTitle: "English", language: "eng")]
+        let model = LiveChannelPlayerModel(
+            engine: engine, input: .libraryChannel(id: UUID(), authorizationID: "fixture"), trackPreferences: preferences
+        )
+        defer { model.stop() }
+        await model.start()
+        // Chosen and shown as on straight away...
+        XCTAssertEqual(model.selectedSubtitleID, 5)
+        // ...but not sent while the engine could still drop it.
+        XCTAssertNil(engine.selectedSubtitleID)
+        engine.liveSnapshot.firstFrameReady = true
+        model.refreshFromEngine()
+        XCTAssertEqual(engine.selectedSubtitleID, 5)
+    }
+
+    func testSubtitlesOffIsSentToAnEngineThatAutoSelectedOne() async {
+        let engine = LiveEngineSpy()
+        engine.subtitleTracks = [.init(id: 5, kind: .subtitle, displayTitle: "English", language: "eng")]
+        engine.selectedSubtitleID = 5
+        let model = LiveChannelPlayerModel(
+            engine: engine, input: .libraryChannel(id: UUID(), authorizationID: "fixture"),
+            trackPreferences: LiveChannelTrackPreferences(subtitleMode: .off)
+        )
+        defer { model.stop() }
+        await model.start()
+        XCTAssertNil(model.selectedSubtitleID)
+        XCTAssertNil(engine.selectedSubtitleID)
     }
 
     func testProgrammeBoundaryReselectsBothLanguagesFromFreshTracksWithoutRetuning() async {
