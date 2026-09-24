@@ -5,7 +5,7 @@
 <h1 align="center">Plozz</h1>
 
 <p align="center">
-  A free, open source media player for <b>Jellyfin</b>, <b>Plex</b>, and <b>Emby</b> —
+  A free, open source media player for <b>Jellyfin</b>, <b>Plex</b>, <b>Emby</b>, and <b>Silo</b> —
   native on Apple TV, iPhone, and iPad.
   <br />
   It also plays straight from network shares, so a folder of files works too.
@@ -59,16 +59,19 @@
 Plozz plays the movies, shows, and music on **your** server, on your Apple TV,
 iPhone, and iPad. It's free and open source.
 
-It talks to Jellyfin, Plex, and Emby, and it can read a plain network share
+It talks to Jellyfin, Plex, Emby, and Silo, and it can read a plain network share
 directly if you don't run a server at all. Connect more than one and Plozz
-presents them as a single library rather than a set of tabs you switch between.
+can bring them together in one library, while keeping individual libraries
+available when you want them.
 
 ## Features
 
 ### Your servers, together
 
-- **Jellyfin, Plex, and Emby** — all three are first-class. Nothing is a
-  second-tier afterthought bolted on later.
+- **Jellyfin, Plex, Emby, and native Silo** — connect directly to your media
+  servers. Silo uses its native API, not its Jellyfin-compatibility connection:
+  approve the device in your browser, choose a Silo profile, and keep that
+  profile's library access, watch history, and watchlist.
 - **Network shares too** — SMB, NFS, WebDAV, SFTP, and FTP. A bare folder of
   files becomes a real library with artwork, descriptions, ratings, and cast.
   Browse folders as grids on both iOS and tvOS, with recognized movies and
@@ -81,29 +84,24 @@ presents them as a single library rather than a set of tabs you switch between.
   Library scans run while the app is active: normal passes skip unchanged
   folders, while a daily deep pass (or **Scan now**) rechecks all contents,
   including changes a server's folder timestamps cannot reveal.
-  (Shares are supported, but still the newest and roughest part.)
+  (Share support is still evolving during the beta.)
 - **One merged library** — connect several servers and see one set of rows
   instead of picking a server first.
-- **Jump to a letter** — name-sorted Plex, Jellyfin, Emby, and Silo libraries
-  have an alphabet menu on Apple TV, iPhone, and iPad, including combined
-  libraries. Apple TV also keeps its fast-scroll letter rail. Silo and combined
-  libraries resolve exact positions on demand; a deep first jump may take time,
-  can be cancelled, and leaves the current view in place until its titles load.
-  TV menu selections move focus to the destination card; rail navigation keeps
-  focus on the letters. While rows load, the rail stays visible without claiming
-  an unverified current letter. Jump progress appears immediately in the shared
-  theme-aware status toast as **Jumping to [letter]…**; **Cancel jump** remains
-  available in the alphabet menu.
+- **Jump to a letter** — an A–Z menu for name-sorted individual and combined
+  Plex, Jellyfin, Emby, and Silo libraries, on all three platforms. Apple TV also
+  has a fast-scroll letter rail. Deep Silo and combined-library jumps load on
+  demand, show progress, and can be cancelled without losing your place.
   Other sorts and collection-member lists keep their own ordering.
 - **Common Sense Media in Ratings** — Plex movie and show details can display
-  a prominent recommended age, separate from review scores. When header ratings
-  are shown, they default to the age badge plus two available review scores. Open the tile for
-  topic-by-topic guidance when the viewing account has eligible Plex Pass access.
+  a recommended age independently of review scores, with separate detail-header
+  controls for each. Open the tile for topic-by-topic guidance when the viewing
+  Plex account has eligible Plex Pass access.
 - **Sync watch history across servers** — optional, and off until you ask for it.
-- **Found automatically** — Plozz detects Jellyfin, Emby, and Seerr servers on
-  your network so you don't type an address.
-- **Sign in without the remote** — Jellyfin **Quick Connect**, Plex **Link**, and
-  Emby password sign-in.
+- **Found automatically** — Plozz looks for Jellyfin, Emby, Silo, and Seerr
+  servers on your local network. Silo discovery checks its standard port 8090;
+  custom ports, remote addresses, and reverse-proxy paths can be entered manually.
+- **Server sign-in** — Jellyfin **Quick Connect**, Plex **Link**, and
+  Silo **browser approval**. Emby also supports password sign-in.
 
 ### Watching
 
@@ -114,6 +112,26 @@ presents them as a single library rather than a set of tabs you switch between.
   other clients hand back to you, powered by
   [AetherEngine](https://github.com/superuser404notfound/AetherEngine).
   ([The full format list](https://github.com/superuser404notfound/AetherEngine/blob/main/docs/formats.md).)
+- **Change versions without leaving the player** — switch between files or
+  editions on the active server on Apple TV, iPhone, and iPad. Keep your
+  playback position, pause state, speed, quality limit, and matching audio and
+  subtitle choices. Different cuts can have different timelines; switching
+  never silently picks another edition or server.
+- **Control streaming quality on iPhone and iPad** — choose a preset or a
+  custom resolution and total bitrate limit for Plex, Jellyfin, Emby, and Silo
+  movies and episodes. Save separate per-profile defaults for local networks,
+  remote Wi-Fi/Ethernet, and cellular, or change just the current video.
+  Maximum is the local/remote default; cellular starts at 720p / 2 Mbps.
+  The original plays when it fits the limit; otherwise the server converts it.
+  Codec preferences and forced conversion are available where supported;
+  conversion can change HDR and audio formats.
+  These controls are separate from downloads and don't apply to Apple TV,
+  music, Live TV, or file shares.
+- **Know what is actually playing** — Info and streaming-quality details show
+  measured dimensions, video/audio formats, and known dynamic range for the
+  current converted stream. Playback diagnostics keep the original file,
+  selected limit, stream bitrate, and network throughput distinct. A source
+  badge is not a claim about the TV's HDMI output mode.
 - **Subtitles you can actually read** — change font, size, weight, colour,
   opacity, background, shadow, position, and HDR brightness from inside the
   player. Position adjusts in 0.5% steps from -5% to 100%, with consistent sizing
@@ -122,23 +140,64 @@ presents them as a single library rather than a set of tabs you switch between.
   expand. Above is the default.
 - **Two subtitle tracks at once** — for learning a language, or for a household
   that doesn't share one.
+- **Find subtitles in the player** — search and download through supported
+  servers' subtitle services, including native Silo, with language and
+  accessibility preferences.
 - **Mark as watched** — a whole season, or everything up to a given episode.
 - **Watched and unwatched indicators** — a checkmark, or an unwatched corner
   badge in the Infuse / classic-Plex style, on every poster.
 
+Streaming capabilities depend on the server and its configuration. Silo's
+current native API supports H.264 conversion at 480p, 720p, 1080p, and 4K;
+unsupported 240p/1440p and HEVC **conversion** choices are unavailable.
+This does not prevent playing an existing HEVC file. Custom bitrate limits
+include audio. Plozz checks Silo's returned playback plan against the selected
+limits and refuses an incompatible plan rather than quietly using Maximum.
+
+### Take it offline
+
+- **Downloads on iPhone and iPad** — save movies and episodes for playback
+  without a server connection, with local artwork and metadata for browsing.
+  Native Silo downloads are supported too; they use the server's download
+  permissions and preparation options, not a temporary playback link.
+- **Choose download quality separately** — streaming preferences don't change
+  your saved download settings. Available renditions and background-transfer
+  behavior depend on the provider. Apple TV does not offer offline downloads.
+
 ### Music
 
-- **Your music library too** — browse albums and artists, queue things up, and
-  keep listening with a mini-player while you carry on browsing. Audio keeps
-  playing in the background.
+- **Your Plex, Jellyfin, or Emby music library too** — browse albums and
+  artists, queue things up, and keep listening with a mini-player while you
+  carry on browsing. Audio keeps playing in the background.
+
+### Live TV
+
+- **Your own channels and guide** — combine M3U playlists, optional XMLTV
+  guides, and authorized Plex, Jellyfin, or Emby Live TV channels on Apple TV,
+  iPhone, and iPad. Search the guide, save favorites, and return to recently
+  watched channels.
+- **Multiview and library channels** — watch several channels together or
+  build a scheduled lineup from your own library.
+
+Live TV is still experimental. Native Silo Live TV integration is not offered,
+and Plozz does not supply channels or an IPTV subscription.
+[Live TV setup and capabilities](docs/live-tv-prototype.md).
 
 ### Make it yours
 
 - **Themes** — light, dark, or Pure Black.
 - **Layout** — change how dense the rows are, whether the big hero banner shows
   at all, and how navigation behaves.
-- **Profiles** — real Apple TV profile support. Every setting is per-profile, and
-  Plozz remembers which one you were using.
+- **Profiles on every device** — keep library choices, layout, playback, and
+  subtitle preferences with the active Plozz profile. Apple TV system-user
+  support and Plex Home/Silo server-profile selection keep the right identity
+  in view. Server-side access and watch history still belong to the server user
+  you choose; device-wide settings remain device-wide.
+- **Set up another device** — use nearby-device setup, a QR code, or a pairing
+  code to import an existing setup. iCloud sync carries profiles, settings, and
+  server details; Silo asks you to approve each receiving device independently.
+  Servers still needing sign-in remain available in **Settings > iCloud Sync**
+  rather than disappearing from the import.
 - **Circadian mode** — warms and dims the app at times you choose, so late-night
   viewing isn't a floodlight.
 
@@ -166,8 +225,14 @@ Plozz is in **public beta** on TestFlight.
 [**Join the beta**](https://testflight.apple.com/join/EKfReNMu) and it installs
 on your Apple TV, iPhone, and iPad.
 
-You'll need one of: a Jellyfin, Plex, or Emby server, or a network share with
-your media on it. Plozz will offer to set up whichever it finds.
+You'll need an Apple TV, iPhone, or iPad running tvOS/iOS/iPadOS 18 or later,
+plus a Jellyfin, Plex, Emby, or Silo server—or a network share—with your own
+media on it. Plozz will offer to set up compatible servers it finds, and you can
+enter an address for anything it can't discover.
+
+Plozz itself is free. Server-side permissions, hardware, configuration, and any
+provider subscription requirements still apply to features such as conversion
+or detailed Plex family guidance.
 
 ## Found a bug? Want something?
 
@@ -217,9 +282,9 @@ by any of the services below.
 
 - **OMDb API** — optional IMDb ratings enrichment (requires your own OMDb key).
 - **AniList** — keyless community scores for anime titles.
-- **Plex**, **Jellyfin**, and **Emby** — the media servers Plozz connects to. All
-  library content, artwork, and ratings shown in the app are supplied by your own
-  server. Those names are trademarks of their respective owners.
+- **Plex**, **Jellyfin**, **Emby**, and **Silo** — compatible media servers.
+  Plozz does not supply media; you bring your own library. Names and logos belong
+  to their respective owners.
 
 ## License
 

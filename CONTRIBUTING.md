@@ -1,7 +1,7 @@
 # Contributing to Plozz
 
 Thanks for your interest in Plozz — a free, open source client for Jellyfin,
-Plex, Emby, and local shares, on Apple TV, iPhone, and iPad. It's a small,
+Plex, Emby, Silo, and local shares, on Apple TV, iPhone, and iPad. It's a small,
 solo-maintained project, so this guide stays lightweight.
 
 ## Reporting bugs & requesting features
