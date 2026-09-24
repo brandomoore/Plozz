@@ -169,6 +169,68 @@ final class PlayerViewModelEOFTests: XCTestCase {
         await viewModel.stop()
     }
 
+    func testSystemPlayPauseRevealsTransportWithTheIntentAlreadyApplied() async {
+        // tvOS delivers the Siri Remote's Play/Pause here while video plays. The
+        // transport reacts synchronously, so its countdown must already read the
+        // new intent rather than wait for the engine mirror's next tick.
+        let publisher = VideoNowPlayingPublisherSpy()
+        let (viewModel, engine, _) = makeViewModel(nowPlayingPublisher: publisher)
+        await viewModel.load()
+        let controls = viewModel.controls
+        var pausedAtReveal: [Bool] = []
+        controls.remotePlayPause.onSystemCommand = { [unowned controls] in
+            pausedAtReveal.append(controls.isPaused && controls.intendsPause)
+        }
+        publisher.command?(.togglePlayPause)
+        XCTAssertTrue(engine.isPaused)
+        publisher.command?(.play)
+        XCTAssertFalse(engine.isPaused)
+        XCTAssertEqual(pausedAtReveal, [true, false], "Each command reveals once, after it is applied")
+        await viewModel.stop()
+    }
+
+    func testSystemCommandEchoingARemotePressDoesNotToggleBack() async {
+        let publisher = VideoNowPlayingPublisherSpy()
+        let (viewModel, engine, _) = makeViewModel(nowPlayingPublisher: publisher)
+        await viewModel.load()
+        var reveals = 0
+        viewModel.controls.remotePlayPause.onSystemCommand = { reveals += 1 }
+        // The input surface applies the press...
+        XCTAssertTrue(viewModel.controls.remotePlayPause.admit(.press))
+        viewModel.togglePlayPause()
+        XCTAssertTrue(engine.isPaused)
+        // ...and the same press then arrives as a Now Playing toggle.
+        publisher.command?(.togglePlayPause)
+        XCTAssertTrue(engine.isPaused, "One press must not pause and then resume")
+        XCTAssertEqual(reveals, 0, "The press already revealed the transport")
+        await viewModel.stop()
+    }
+
+    func testLosingNowPlayingPausesWithoutCountingAsRemoteInput() async {
+        let publisher = VideoNowPlayingPublisherSpy()
+        let (viewModel, engine, _) = makeViewModel(nowPlayingPublisher: publisher)
+        await viewModel.load()
+        var reveals = 0
+        viewModel.controls.remotePlayPause.onSystemCommand = { reveals += 1 }
+        publisher.resign()
+        XCTAssertTrue(engine.isPaused)
+        XCTAssertEqual(reveals, 0)
+        XCTAssertTrue(viewModel.controls.remotePlayPause.admit(.press),
+                      "A press right after losing Now Playing is the viewer's, not an echo")
+        await viewModel.stop()
+    }
+
+    func testSystemCommandAfterStopDoesNotRevealTheTransport() async {
+        let publisher = VideoNowPlayingPublisherSpy()
+        let (viewModel, _, _) = makeViewModel(nowPlayingPublisher: publisher)
+        await viewModel.load()
+        var reveals = 0
+        viewModel.controls.remotePlayPause.onSystemCommand = { reveals += 1 }
+        await viewModel.stop()
+        viewModel.nowPlayingSetPaused(true)
+        XCTAssertEqual(reveals, 0)
+    }
+
     #if os(iOS)
     func testSystemResumeRebuildsThePausedBackgroundPipelineWhenEnabled() async {
         let publisher = VideoNowPlayingPublisherSpy()

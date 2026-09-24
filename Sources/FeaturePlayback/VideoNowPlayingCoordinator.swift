@@ -22,6 +22,7 @@ protocol VideoNowPlayingHost: AnyObject {
     var nowPlayingBackwardInterval: TimeInterval { get }
     var nowPlayingForwardInterval: TimeInterval { get }
     func nowPlayingSetPaused(_ paused: Bool)
+    func nowPlayingResigned()
     func nowPlayingSeek(to seconds: TimeInterval)
     func nowPlayingPlayEpisode(_ item: MediaItem)
     func nowPlayingStop()
@@ -166,7 +167,7 @@ final class VideoNowPlayingCoordinator {
         clockTask?.cancel()
         clockTask = nil
         cancelArtwork()
-        host?.nowPlayingSetPaused(true)
+        host?.nowPlayingResigned()
     }
 
     private func cancelArtwork() {

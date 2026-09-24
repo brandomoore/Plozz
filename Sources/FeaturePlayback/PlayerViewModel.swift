@@ -1925,8 +1925,9 @@ public final class PlayerViewModel {
         applyPaused(paused, origin: "transport")
     }
 
-    private func applyPaused(_ paused: Bool, origin: String) {
-        guard !didStop, !didReachNaturalEnd else { return }
+    @discardableResult
+    private func applyPaused(_ paused: Bool, origin: String) -> Bool {
+        guard !didStop, !didReachNaturalEnd else { return false }
         HandoffDiagnostics.emit(
             "session PLAYBACK_INTENT vm=\(instanceID) origin=\(origin)"
                 + " fromPaused=\(!intendsPlayback) paused=\(paused) loading=\(phase == .loading)"
@@ -1954,6 +1955,7 @@ public final class PlayerViewModel {
             foregroundReload.markEnteredBackground()
         }
         #endif
+        return true
     }
 
     /// Guards against a double teardown: `PlayerView` may call `stop()` itself on
@@ -2617,7 +2619,14 @@ extension PlayerViewModel: VideoNowPlayingHost {
     }
 
     func nowPlayingSetPaused(_ paused: Bool) {
-        applyPaused(paused, origin: "system-command")
+        // On tvOS this is where the Siri Remote's Play/Pause lands while video
+        // plays, so it is viewer input like a press: drop it if it echoes a press
+        // already applied, and let the transport reveal and restart its countdown
+        // once the intent is in place (see `RemotePlayPauseInput`).
+        guard controls.remotePlayPause.admit(.systemCommand) else { return }
+        if applyPaused(paused, origin: "system-command") {
+            controls.remotePlayPause.onSystemCommand?()
+        }
         #if os(iOS)
         if !paused, isInBackground, systemResumeTask == nil {
             systemResumeTask = Task { [weak self] in
@@ -2629,6 +2638,10 @@ extension PlayerViewModel: VideoNowPlayingHost {
         }
         #endif
     }
+
+    /// Another session took Now Playing. Not viewer input, so it never reveals
+    /// the transport or counts as a press's echo.
+    func nowPlayingResigned() { applyPaused(true, origin: "system-resign") }
 
     func nowPlayingSeek(to seconds: TimeInterval) { requestSeek(to: seconds, origin: "now-playing") }
     func nowPlayingPlayEpisode(_ item: MediaItem) { playEpisode(item) }

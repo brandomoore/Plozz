@@ -119,6 +119,9 @@ final class VideoNowPlayingCoordinatorTests: XCTestCase {
         sut.begin(item: movie(), title: "Movie", subtitle: "", position: 0)
         publisher.resign()
         XCTAssertTrue(host.nowPlayingPaused)
+        XCTAssertEqual(host.resignations, 1)
+        XCTAssertTrue(host.playPauseCommands.isEmpty,
+                      "Losing Now Playing pauses, but it is not the viewer's Play/Pause")
         sut.begin(item: movie(), title: "Movie", subtitle: "", position: 60)
         sut.refresh()
         XCTAssertEqual(publisher.activations, 1)
@@ -297,7 +300,16 @@ private final class NowPlayingHostSpy: VideoNowPlayingHost {
     var seeks: [TimeInterval] = []
     var episodes: [String] = []
     var stops = 0
-    func nowPlayingSetPaused(_ paused: Bool) { nowPlayingPaused = paused }
+    var playPauseCommands: [Bool] = []
+    var resignations = 0
+    func nowPlayingSetPaused(_ paused: Bool) {
+        nowPlayingPaused = paused
+        playPauseCommands.append(paused)
+    }
+    func nowPlayingResigned() {
+        nowPlayingPaused = true
+        resignations += 1
+    }
     func nowPlayingSeek(to seconds: TimeInterval) {
         seeks.append(seconds)
         nowPlayingPendingSeek = seconds

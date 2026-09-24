@@ -494,6 +494,9 @@ public final class PlayerControlsModel {
     /// while focus is in the bar and restarts the idle auto-hide countdown on
     /// each change, so the transport never hides out from under an active viewer.
     public var controlBarActivity: Int = 0
+    /// Joins the Siri Remote's Play/Pause press and its Now Playing command into
+    /// one input: the view model reports commands, the input controller presses.
+    let remotePlayPause = RemotePlayPauseInput()
 
 
     // MARK: Skipping

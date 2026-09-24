@@ -68,4 +68,16 @@ enum ControlsAutoHidePolicy {
         case .skipButton, .upNext: return .keepForAffordance
         }
     }
+
+    /// Whether a Play/Pause reveals the transport and restarts the countdown from
+    /// that input. It does from the scrub surface and the control bar, whether the
+    /// remote's button arrived as a press or as a Now Playing command. A focused
+    /// Skip button or Up Next card keeps the screen instead: Play/Pause toggles in
+    /// place there and its countdown ring simply freezes with the video.
+    static func playPauseRevealsTransport(focus: Focus) -> Bool {
+        switch focus {
+        case .surface, .controlBar: return true
+        case .skipButton, .upNext: return false
+        }
+    }
 }
