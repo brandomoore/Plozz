@@ -702,6 +702,45 @@ final class SiloProviderTests: XCTestCase {
       item.mediaInfo?.audioBadges.isEmpty == true, "Unknown channel count must not invent surround")
   }
 
+  func testDynamicRangeSummaryFallbackPreservesFalseTrueAndUnknown() throws {
+    let raw = try credential().encoded()
+    let provider = try SiloProvider(
+      context: context(raw), credentials: SiloCredentialStub(raw), http: SiloHTTPStub([:]))
+    let summaries: [(json: String, expectedHDR: Bool?, expectedRange: String?)] = [
+      (#","hdr":false"#, false, "SDR"),
+      (#","hdr":true"#, true, "HDR"),
+      (#","hdr":null"#, nil, nil),
+      ("", nil, nil),
+    ]
+    let trackShapes = ["", #","video_tracks":null"#, #","video_tracks":[]"#, #","video_tracks":[{}]"#]
+    for summary in summaries {
+      for tracks in trackShapes {
+        let payload = """
+        {"file_id":"file","resolution":"1080p","codec_video":"h264","codec_audio":"aac",
+         "container":"mkv","file_size":100,"duration":600,"bitrate":2000\(summary.json)\(tracks)}
+        """
+        let file = try JSONDecoder().decode(SiloFileVersion.self, from: Data(payload.utf8))
+        XCTAssertEqual(file.hdr, summary.expectedHDR, payload)
+        XCTAssertEqual(provider.metadata(file).video?.videoRange, summary.expectedRange, payload)
+      }
+    }
+  }
+
+  func testDetailedDynamicRangeOutranksAContradictoryFileSummary() throws {
+    let raw = try credential().encoded()
+    let provider = try SiloProvider(
+      context: context(raw), credentials: SiloCredentialStub(raw), http: SiloHTTPStub([:]))
+    for (summary, detail) in [(true, "SDR"), (false, "HDR")] {
+      let payload = """
+      {"file_id":"file","resolution":"1080p","hdr":\(summary),"codec_video":"h264","codec_audio":"aac",
+       "container":"mkv","file_size":100,"duration":600,"bitrate":2000,
+       "video_tracks":[{"video_range":"\(detail)"}]}
+      """
+      let file = try JSONDecoder().decode(SiloFileVersion.self, from: Data(payload.utf8))
+      XCTAssertEqual(provider.metadata(file).video?.videoRange, detail)
+    }
+  }
+
   func testDownloadStatusCarriesRFC3339TimezoneAndOriginalEventTime() async throws {
     let raw = try credential().encoded()
     let http = SiloHTTPStub(["PATCH /api/v2/downloads/download1": downloadEntry])

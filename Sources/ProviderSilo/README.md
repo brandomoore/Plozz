@@ -61,7 +61,9 @@ disclosure instead of repeating the same instructions.
   indexing and on-demand ownership searches hydrate native item details with
   bounded concurrency to join TVDB-anchored titles to TMDB/IMDb watchlist entries.
   Episode file resolution and coarse HDR/SDR fields fill missing track-level
-  metadata for hero badges; detailed track facts take precedence. Unknown audio
+  metadata for hero badges; detailed track facts take precedence. An explicit
+  file-level `hdr: false` means SDR even when no video tracks are supplied;
+  an absent or null HDR value stays unknown. Unknown audio
   channels never imply stereo or surround. Detail heroes observe source-scoped
   episode metadata separately from the rail, so a later sparse season/resume
   result cannot erase badges or restore stale progress.

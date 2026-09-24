@@ -348,12 +348,20 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         let resolution = file.resolution.lowercased()
         let summaryHeight = (resolution.hasSuffix("p") || resolution.hasSuffix("i"))
             ? Int(resolution.dropLast()).flatMap { (100...16384).contains($0) ? $0 : nil } : nil
+        let videoRange: String?
+        if let detailedRange = video?.video_range {
+            videoRange = detailedRange
+        } else if let hdr = file.hdr {
+            videoRange = hdr ? "HDR" : "SDR"
+        } else {
+            videoRange = nil
+        }
         return MediaSourceMetadata(
             container: file.container, fileSizeBytes: file.file_size,
             video: .init(codec: video?.codec ?? file.codec_video, width: video?.width,
                          height: video?.height ?? summaryHeight,
                          bitrate: file.bitrate.multipliedReportingOverflow(by: 1000).overflow ? nil : file.bitrate * 1000,
-                         videoRange: video?.video_range ?? file.hdr.map { $0 ? "HDR" : "SDR" },
+                         videoRange: videoRange,
                          videoRangeType: range, dolbyVisionProfile: video?.dv_profile),
             audio: .init(codec: audio?.codec ?? file.codec_audio, profile: audio?.profile,
                          channels: audio?.channels, channelLayout: audio?.layout))
