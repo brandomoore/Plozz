@@ -17,6 +17,14 @@ struct PlozzApp: App {
             diskCapacity: 512 * 1024 * 1024,    // 512 MB on disk
             directory: nil
         )
+
+        // TEST-ONLY (coordinator deploy of B7 ec0827c) — DO NOT COMMIT.
+        // Persist playback flags so they survive a TV-initiated relaunch.
+        UserDefaults.standard.register(defaults: [
+            "com.plozz.playback.remuxFullVod": true,
+            "com.plozz.playback.remuxHevcAny": true,
+            "com.plozz.playback.mpvSafeAudio": true,
+        ])
     }
 
     var body: some Scene {
