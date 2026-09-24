@@ -2,6 +2,43 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/042",
+      "version": "2026.9.23",
+      "build": 42,
+      "releasedAt": "2026-09-24",
+      "sections": [
+        {
+          "category": "Updated",
+          "items": [
+            "Updated the playback engine, with steadier recovery after the device wakes from sleep and lower memory use while streaming.",
+            "Preferred audio and subtitle languages now also match region-specific tracks, such as English (US) for English.",
+            {
+              "text": "HDR10+ videos played through the system player now let tvOS choose the display mode from the video itself.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Paused videos no longer jump back to where you started, or start playing and wake the screen, when the screensaver comes on.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Pressing Play/Pause on the Siri Remote now shows the player controls and keeps them up while paused.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Swiping right during playback scrubs again instead of opening Info and Cast.",
+              "platforms": ["tvOS"]
+            },
+            "Detail pages keep their 4K and audio badges when a title's HDR10+ badge appears."
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/041",
       "version": "2026.9.23",
       "build": 41,
