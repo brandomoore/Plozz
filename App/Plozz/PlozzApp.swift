@@ -6,6 +6,18 @@ import CoreModels
 @main
 struct PlozzApp: App {
     init() {
+        // TEST-DEPLOY DEFAULTS (coordinator-only, not for merge): persist remux
+        // test flags so they apply on EVERY launch (Top Shelf, home-screen
+        // relaunch, resume), not just devicectl -arguments. remuxLazyIndex turns
+        // on B7's windowed/EVENT near-instant lazy path; remuxHevcAny routes 4K
+        // HDR10/DoVi MKVs to AVPlayer (not crash-prone mpv); mpvSafeAudio guards
+        // the mpv path for anything that still falls through.
+        UserDefaults.standard.register(defaults: [
+            "com.plozz.playback.remuxLazyIndex": true,
+            "com.plozz.playback.remuxHevcAny": true,
+            "com.plozz.playback.mpvSafeAudio": true,
+        ])
+
         // Give artwork a real on-disk cache so backdrops, posters and logos load
         // instantly on revisit instead of being re-fetched every time (the
         // default shared URLCache is only a few MB — far too small for 4K
