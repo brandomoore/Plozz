@@ -115,4 +115,17 @@ final class ControlsAutoHidePolicyTests: XCTestCase {
             ControlsAutoHidePolicy.outcome(focus: .upNext, isScrubbing: false, isPaused: false, isPanelOpen: false),
             .keepForAffordance)
     }
+
+    // MARK: Play/Pause — viewer input, whichever path delivered it
+
+    func testPlayPauseRevealsTransportFromSurfaceAndControlBar() {
+        XCTAssertTrue(ControlsAutoHidePolicy.playPauseRevealsTransport(focus: .surface))
+        XCTAssertTrue(ControlsAutoHidePolicy.playPauseRevealsTransport(focus: .controlBar),
+                      "a resume in the bar must restart the countdown so the bar can time out")
+    }
+
+    func testPlayPauseLeavesFocusedSkipAndUpNextOwningTheScreen() {
+        XCTAssertFalse(ControlsAutoHidePolicy.playPauseRevealsTransport(focus: .skipButton))
+        XCTAssertFalse(ControlsAutoHidePolicy.playPauseRevealsTransport(focus: .upNext))
+    }
 }

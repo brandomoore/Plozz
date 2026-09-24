@@ -451,9 +451,12 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     /// interaction is off so indirect-touch scrub pans flow to the surface and it
     /// can't steal focus.
     func attachControls(themePalette: ThemePaletteBox) {
+        // The remote's Play/Pause reaches the view model as a Now Playing command
+        // while video plays; this is where it becomes the same input as a press.
+        model.remotePlayPause.onSystemCommand = { [weak self] in self?.revealAfterPlayPause() }
         let exitToSurface: () -> Void = { [weak self] in self?.exitToSurface() }
         let actions = PlayerOptionsActions(
-            togglePlayPause: { [weak self] in self?.actions.togglePlayPause() },
+            togglePlayPause: { [weak self] in self?.togglePlayPauseFromControlBar() },
             selectAudio: { [weak self] in self?.actions.selectAudio($0) },
             selectSubtitle: { [weak self] in self?.actions.selectSubtitle($0) },
             selectSecondarySubtitle: { [weak self] in self?.actions.selectSecondarySubtitle($0) },
@@ -719,7 +722,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     /// transport bar — so the affordance stays put. The countdown ring freezes on
     /// its own because it's driven by playback position, which stops while paused.
     private func togglePlayPauseFromOverlay() {
-        actions.togglePlayPause()
+        togglePlayPauseFromPress()
     }
 
     /// `.autoDelay` deadline reached: seek past the segment (no notice — the
@@ -1141,9 +1144,30 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         }
     }
 
-    @objc private func handlePlayPause() {
+    @objc func handlePlayPause() {
         if model.isScrubbing { commitScrub() }
+        togglePlayPauseFromPress()
+        flashControls()
+    }
+
+    /// Play/Pause while focus is in the control bar. The transport is already up;
+    /// restarting its countdown here is what lets a resume time out again.
+    private func togglePlayPauseFromControlBar() {
+        togglePlayPauseFromPress()
+        revealAfterPlayPause()
+    }
+
+    /// Every Play/Pause press toggles through here, unless the same press already
+    /// reached the view model as a Now Playing command (`RemotePlayPauseInput`).
+    private func togglePlayPauseFromPress() {
+        guard model.remotePlayPause.admit(.press) else { return }
         actions.togglePlayPause()
+    }
+
+    /// A Play/Pause the view model has already applied, from whichever path
+    /// delivered it: reveal the transport and count the idle timeout from now.
+    private func revealAfterPlayPause() {
+        guard ControlsAutoHidePolicy.playPauseRevealsTransport(focus: focusContext.policyFocus) else { return }
         flashControls()
     }
 
