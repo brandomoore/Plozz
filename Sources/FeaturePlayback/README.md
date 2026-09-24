@@ -239,7 +239,10 @@ missing provider/configuration nor a skipped XCTest is a successful live run.
 
 `ScrubGestureInterpreter` routes upward and downward swipes through the same
 actions as the corresponding directional presses: Up reaches the track controls
-(or a pending Skip/Up Next affordance), and Down opens Info.
+(or a pending Skip/Up Next affordance), and Down opens Info. Scrubbing locks after
+18 points of horizontal-dominant travel; vertical navigation waits for 54 points
+of vertical-dominant travel. A right swipe's first delivered sample can still lean
+downward, and locking there opened Info and let the rest of the swipe move focus to Cast.
 
 First-generation touchpad edge clicks arrive as UIKit **Select** presses, not
 Left/Right. `RemoteTouchInput` reads the old remote's absolute GameController

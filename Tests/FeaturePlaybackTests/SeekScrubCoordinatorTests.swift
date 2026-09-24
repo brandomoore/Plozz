@@ -327,6 +327,38 @@ final class PlayerScrubInputTests: XCTestCase {
         XCTAssertFalse(model.isScrubbing)
     }
 
+    func testRightSwipeWithDownwardFirstSampleScrubsWithoutOpeningInfo() {
+        let (controller, model, recorder) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        let gesture = ScrubInputPan()
+        gesture.phase = .began
+        gesture.travel = CGPoint(x: 8, y: 20)
+        controller.handlePan(gesture)
+        gesture.phase = .changed
+        gesture.travel = CGPoint(x: 60, y: 26)
+        controller.handlePan(gesture)
+        XCTAssertFalse(model.controlBarVisible)
+        XCTAssertTrue(model.isScrubbing)
+        XCTAssertEqual(model.scrubSeconds, 100 + (60 - 18) * 0.18, accuracy: 0.001)
+        XCTAssertTrue(recorder.targets.isEmpty)
+    }
+
+    func testDeliberateSwipeDownStillOpensInfo() {
+        let (controller, model, _) = makeInput()
+        defer { controller.viewDidDisappear(false) }
+        let gesture = ScrubInputPan()
+        gesture.phase = .began
+        gesture.travel = CGPoint(x: 2, y: 20)
+        controller.handlePan(gesture)
+        XCTAssertFalse(model.controlBarVisible)
+        gesture.phase = .changed
+        gesture.travel = CGPoint(x: 4, y: 80)
+        controller.handlePan(gesture)
+        XCTAssertTrue(model.controlBarVisible)
+        XCTAssertEqual(model.controlBar.entry, .info)
+        XCTAssertFalse(model.isScrubbing)
+    }
+
     private func makeInput() -> (PlayerInputViewController, PlayerControlsModel, ScrubInputRecorder) {
         let model = PlayerControlsModel()
         model.duration = 7200

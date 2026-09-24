@@ -45,12 +45,12 @@ final class ScrubGestureInterpreterTests: XCTestCase {
     func testVerticalDownEntersControlBarAndLocksVertical() {
         var g = makeInterpreter()
         g.begin()
-        let outcome = g.changed(translationX: 3, translationY: 25, velocityX: 0,
+        let outcome = g.changed(translationX: 3, translationY: 60, velocityX: 0,
                                 isScrubbing: false, seekWithoutPausing: true, isPaused: true)
         XCTAssertEqual(outcome, .enterControlBar)
         XCTAssertEqual(g.axis, .verticalIgnored)
         // Subsequent samples in the same gesture do nothing (locked vertical).
-        let next = g.changed(translationX: 60, translationY: 40, velocityX: 500,
+        let next = g.changed(translationX: 90, translationY: 70, velocityX: 500,
                              isScrubbing: false, seekWithoutPausing: true, isPaused: true)
         XCTAssertEqual(next, .ignore)
     }
@@ -82,18 +82,18 @@ final class ScrubGestureInterpreterTests: XCTestCase {
     func testVerticalUpMovesUpAndLocksVertical() {
         var g = makeInterpreter()
         g.begin()
-        let outcome = g.changed(translationX: 3, translationY: -25, velocityX: 0,
+        let outcome = g.changed(translationX: 3, translationY: -60, velocityX: 0,
                                 isScrubbing: false, seekWithoutPausing: true, isPaused: true)
         XCTAssertEqual(outcome, .moveUp)
         XCTAssertEqual(g.axis, .verticalIgnored)
-        let next = g.changed(translationX: 60, translationY: -40, velocityX: 500,
+        let next = g.changed(translationX: 90, translationY: -70, velocityX: 500,
                              isScrubbing: false, seekWithoutPausing: true, isPaused: true)
         XCTAssertEqual(next, .ignore)
     }
 
     func testVerticalNavigationDoesNotRequirePausing() {
-        for (translationY, expected) in [(25.0, ScrubGestureInterpreter.PanOutcome.enterControlBar),
-                                         (-25.0, .moveUp)] {
+        for (translationY, expected) in [(60.0, ScrubGestureInterpreter.PanOutcome.enterControlBar),
+                                         (-60.0, .moveUp)] {
             var g = makeInterpreter()
             g.begin()
             XCTAssertEqual(
@@ -102,6 +102,95 @@ final class ScrubGestureInterpreterTests: XCTestCase {
                 expected)
             XCTAssertEqual(g.ended(gestureEnded: true, velocityX: 0, isScrubbing: false), .none)
         }
+    }
+
+    // MARK: Vertical navigation distance
+
+    func testRightSwipeWhoseFirstSampleLeansDownStillScrubs() {
+        // The pan's first delivered sample can catch the thumb rolling downward
+        // before it travels right. Locking there opened Info and the rest of the
+        // swipe moved focus to Cast; it must wait and then scrub.
+        for (firstX, firstY) in [(8.0, 20.0), (2.0, 19.0), (12.0, 50.0)] {
+            var g = makeInterpreter()
+            g.begin()
+            XCTAssertEqual(
+                g.changed(translationX: firstX, translationY: firstY, velocityX: 600,
+                          isScrubbing: false, seekWithoutPausing: true, isPaused: true),
+                .ignore)
+            XCTAssertEqual(g.axis, .undecided)
+            let outcome = g.changed(translationX: 60, translationY: firstY + 6, velocityX: 1500,
+                                    isScrubbing: false, seekWithoutPausing: true, isPaused: true)
+            guard case let .advance(delta, _, beginScrub, _) = outcome else {
+                return XCTFail("expected advance after (\(firstX), \(firstY)), got \(outcome)")
+            }
+            XCTAssertEqual(delta, 42, accuracy: 0.0001)
+            XCTAssertTrue(beginScrub)
+            XCTAssertEqual(g.axis, .horizontal)
+        }
+    }
+
+    func testCoalescedRightFlickWithDownwardFirstSampleScrubsOnLift() {
+        var g = makeInterpreter()
+        g.begin()
+        XCTAssertEqual(
+            g.changed(translationX: 6, translationY: 24, velocityX: 0,
+                      isScrubbing: false, seekWithoutPausing: true, isPaused: true),
+            .ignore)
+        // The lift is the only other sample a coalesced flick delivers.
+        let lift = g.changed(translationX: 260, translationY: 30, velocityX: 1200,
+                             isScrubbing: false, seekWithoutPausing: true, isPaused: true)
+        guard case let .advance(delta, _, beginScrub, _) = lift else {
+            return XCTFail("expected advance, got \(lift)")
+        }
+        XCTAssertEqual(delta, 242, accuracy: 0.0001)
+        XCTAssertTrue(beginScrub)
+    }
+
+    func testVerticalSwipesNavigateOnceTheyTravelTheNavigationDistance() {
+        for (sign, expected) in [(1.0, ScrubGestureInterpreter.PanOutcome.enterControlBar),
+                                 (-1.0, .moveUp)] {
+            var g = makeInterpreter()
+            g.begin()
+            for y in [20.0, 53.9] {
+                XCTAssertEqual(
+                    g.changed(translationX: 2, translationY: sign * y, velocityX: 0,
+                              isScrubbing: false, seekWithoutPausing: false, isPaused: false),
+                    .ignore)
+                XCTAssertEqual(g.axis, .undecided)
+            }
+            XCTAssertEqual(
+                g.changed(translationX: 4, translationY: sign * 54, velocityX: 0,
+                          isScrubbing: false, seekWithoutPausing: false, isPaused: false),
+                expected)
+            XCTAssertEqual(g.axis, .verticalIgnored)
+        }
+    }
+
+    func testSwipeDownWithSidewaysWobbleStillEntersControlBar() {
+        var g = makeInterpreter()
+        g.begin()
+        // Waiting for vertical travel never hands a downward swipe to scrubbing:
+        // horizontal still needs at least as much x as y.
+        for (x, y) in [(3.0, 30.0), (20.0, 45.0)] {
+            XCTAssertEqual(
+                g.changed(translationX: x, translationY: y, velocityX: 300,
+                          isScrubbing: false, seekWithoutPausing: true, isPaused: true),
+                .ignore)
+        }
+        XCTAssertEqual(
+            g.changed(translationX: 25, translationY: 70, velocityX: 300,
+                      isScrubbing: false, seekWithoutPausing: true, isPaused: true),
+            .enterControlBar)
+    }
+
+    func testShortVerticalTwitchDoesNothing() {
+        var g = makeInterpreter()
+        g.begin()
+        XCTAssertEqual(
+            g.changed(translationX: 2, translationY: 40, velocityX: 0,
+                      isScrubbing: false, seekWithoutPausing: true, isPaused: true),
+            .ignore)
+        XCTAssertEqual(g.ended(gestureEnded: true, velocityX: 0, isScrubbing: false), .none)
     }
 
     func testAxisLockKeepsScrubbingDespiteVerticalDrift() {
