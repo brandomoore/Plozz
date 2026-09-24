@@ -2,6 +2,7 @@
 import AVFoundation
 import CoreMedia
 import XCTest
+import CoreModels
 @testable import FeaturePlayback
 
 @MainActor
@@ -250,6 +251,24 @@ final class NativeDisplayCriteriaTests: XCTestCase {
         func finish(_ index: Int, with result: Result<AVDisplayCriteria, Error>) {
             waiters[index].resume(with: result)
         }
+    }
+
+    // MARK: Source-hint bootstrap (#58)
+
+    func testHDR10PlusRequestsNoSyntheticBootstrapCriteria() {
+        let metadata = MediaSourceMetadata(
+            video: .init(codec: "hevc", width: 3840, height: 2160, videoRangeType: "HDR10Plus"))
+        XCTAssertNil(nativeBootstrapDisplayCriteria(metadata: metadata))
+    }
+
+    func testOtherHDRSourcesKeepTheirBootstrapCriteria() {
+        for range in ["HDR10", "DOVI", "HLG"] {
+            let metadata = MediaSourceMetadata(
+                video: .init(codec: "hevc", width: 3840, height: 2160, videoRangeType: range))
+            XCTAssertNotNil(nativeBootstrapDisplayCriteria(metadata: metadata), range)
+        }
+        XCTAssertNil(nativeBootstrapDisplayCriteria(metadata: .init(
+            video: .init(codec: "h264", videoRangeType: "SDR"))))
     }
 }
 #endif

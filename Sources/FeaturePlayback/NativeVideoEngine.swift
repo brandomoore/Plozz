@@ -408,12 +408,11 @@ public final class NativeVideoEngine: VideoEngine {
     /// when the provider omitted or misclassified HDR; AVFoundation applies only
     /// metadata actually present in the stream.
     private func configureDynamicRange(for request: PlaybackRequest, item: AVPlayerItem) {
-        let mode = HDRDisplayMode(request.sourceMetadata)
         item.appliesPerFrameHDRDisplayMetadata = true
         #if os(tvOS)
         displayCriteria.configure(
             asset: item.asset,
-            fallback: makeDisplayCriteria(mode: mode, metadata: request.sourceMetadata))
+            fallback: nativeBootstrapDisplayCriteria(metadata: request.sourceMetadata))
         #endif
     }
 

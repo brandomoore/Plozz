@@ -92,5 +92,14 @@ func makeDisplayCriteria(mode: HDRDisplayMode, metadata: MediaSourceMetadata?) -
 
     return AVDisplayCriteria(refreshRate: refreshRate, formatDescription: formatDescription)
 }
+
+/// The bootstrap the native player requests before the asset's own criteria
+/// load. An HDR10+ source requests none and waits for AVFoundation's: a
+/// synthetic PQ format description may keep AVPlayer from passing the per-frame
+/// ST 2094-40 metadata to the display, which showed plain HDR10 (#58).
+func nativeBootstrapDisplayCriteria(metadata: MediaSourceMetadata?) -> AVDisplayCriteria? {
+    guard SourceDynamicRange.providerHint(from: metadata) != .hdr10Plus else { return nil }
+    return makeDisplayCriteria(mode: HDRDisplayMode(metadata), metadata: metadata)
+}
 #endif
 #endif
