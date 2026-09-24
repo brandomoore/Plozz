@@ -17,6 +17,16 @@ struct PlozzApp: App {
             diskCapacity: 512 * 1024 * 1024,    // 512 MB on disk
             directory: nil
         )
+
+        // TEST-ONLY (coordinator deploy of B7 d02dce4) — DO NOT COMMIT.
+        // Persist playback flags so they survive a TV-initiated relaunch.
+        // remuxFullVod routes 4K HDR to the AVPlayer remux path (NOT mpv).
+        // Cadence for this build is set per-launch via env REMUX_FULLVOD_CADENCE.
+        UserDefaults.standard.register(defaults: [
+            "com.plozz.playback.remuxFullVod": true,
+            "com.plozz.playback.remuxHevcAny": true,
+            "com.plozz.playback.mpvSafeAudio": true,
+        ])
     }
 
     var body: some Scene {
