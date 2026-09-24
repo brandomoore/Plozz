@@ -101,6 +101,32 @@ final class LiveTVPlaylistParserTests: XCTestCase {
         XCTAssertTrue(result.channels[1].httpHeaders.isEmpty)
     }
 
+    func testPipeSuffixHeadersAreStrippedFromURLAndApplied() throws {
+        let input = """
+        #EXTM3U
+        #EXTINF:-1,Piped
+        #EXTVLCOPT:http-user-agent=Overridden/1.0
+        https://media.example/live.m3u8?token=a|User-Agent=Mozilla%2F5.0%20(Fixture)&referer=https://example.com/&X-Ignored=1
+        #EXTINF:-1,Raw
+        https://media.example/raw.m3u8|user-agent=Raw Player/2.0
+        #EXTINF:-1,Injected
+        https://media.example/bad.m3u8|User-Agent=Bad%0D%0AX-Evil: 1
+        """
+        let result = try LiveTVPlaylistParser().parse(input)
+
+        XCTAssertEqual(result.channels.map(\.streamURL?.absoluteString), [
+            "https://media.example/live.m3u8?token=a",
+            "https://media.example/raw.m3u8",
+            "https://media.example/bad.m3u8",
+        ])
+        XCTAssertEqual(result.channels[0].httpHeaders, [
+            "User-Agent": "Mozilla/5.0 (Fixture)",
+            "Referer": "https://example.com/",
+        ])
+        XCTAssertEqual(result.channels[1].httpHeaders, ["User-Agent": "Raw Player/2.0"])
+        XCTAssertTrue(result.channels[2].httpHeaders.isEmpty)
+    }
+
     func testStableUniqueIDsUseIdentityAndURLNotPlaylistOrder() throws {
         let first = """
         #EXTM3U

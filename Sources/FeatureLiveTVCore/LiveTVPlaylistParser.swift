@@ -199,11 +199,19 @@ public struct LiveTVPlaylistParser: Sendable {
                 continue
             }
 
-            guard !line.hasPrefix("#"), let entry = pending else { continue }
+            guard !line.hasPrefix("#"), var entry = pending else { continue }
             pending = nil
-            guard let streamURL = supportedURL(line, relativeTo: baseURL) else {
+            // Kodi-style `url|User-Agent=...&Referer=...` carries per-stream headers.
+            let pipe = line.firstIndex(of: "|")
+            let address = pipe.map { String(line[..<$0]) } ?? line
+            guard let streamURL = supportedURL(address, relativeTo: baseURL) else {
                 skippedEntryCount += 1
                 continue
+            }
+            if let pipe {
+                for header in parsePipeHeaders(line[line.index(after: pipe)...]) {
+                    entry.headers[header.name] = header.value
+                }
             }
 
             fallbackNumber += 1
@@ -372,10 +380,42 @@ public struct LiveTVPlaylistParser: Sendable {
         let keyStart = line.index(line.startIndex, offsetBy: prefix.count)
         let key = line[keyStart..<separator].lowercased()
         let value = line[line.index(after: separator)...]
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, value.count <= 4_096 else { return nil }
         switch key {
         case "http-referrer", "http-referer":
+            return header(named: "Referer", value: String(value))
+        case "http-user-agent":
+            return header(named: "User-Agent", value: String(value))
+        default:
+            return nil
+        }
+    }
+
+    private func parsePipeHeaders(_ suffix: Substring) -> [(name: String, value: String)] {
+        suffix.split(separator: "&").compactMap { pair in
+            guard let separator = pair.firstIndex(of: "=") else { return nil }
+            let key = pair[..<separator]
+                .trimmingCharacters(in: .whitespaces).lowercased()
+            let rawValue = String(pair[pair.index(after: separator)...])
+            let value = rawValue.removingPercentEncoding ?? rawValue
+            switch key {
+            case "user-agent":
+                return header(named: "User-Agent", value: value)
+            case "referer", "referrer":
+                return header(named: "Referer", value: value)
+            default:
+                return nil
+            }
+        }
+    }
+
+    private func header(named name: String, value: String) -> (name: String, value: String)? {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Scalars, not Characters: "\r\n" is one grapheme and would slip past `contains("\r")`.
+        guard !value.isEmpty, value.count <= 4_096,
+              !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+        else { return nil }
+        switch name {
+        case "Referer":
             guard let url = URL(string: value),
                   ["http", "https"].contains(url.scheme?.lowercased()),
                   url.host != nil,
@@ -383,8 +423,7 @@ public struct LiveTVPlaylistParser: Sendable {
                   url.password == nil
             else { return nil }
             return ("Referer", value)
-        case "http-user-agent":
-            guard !value.contains("\r"), !value.contains("\n") else { return nil }
+        case "User-Agent":
             return ("User-Agent", value)
         default:
             return nil
