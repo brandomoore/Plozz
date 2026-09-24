@@ -91,7 +91,7 @@ final class ChannelLogoArtworkTests: XCTestCase {
         for luminance in [0.08, 0.3, 0.55] {
             let plate = ChannelLogoPlate(tone: ResolvedLogoTone(
                 luminance: luminance, coverage: 0.4, red: 0.8, green: 0.15, blue: 0.1
-            ))
+            ), prefersLight: true)
             XCTAssertGreaterThan(min(plate.red, plate.green, plate.blue), 0.93)
             XCTAssertGreaterThan(plate.red, plate.green)
             XCTAssertLessThan(max(plate.red, plate.green, plate.blue) - min(plate.red, plate.green, plate.blue), 0.04)
@@ -110,7 +110,7 @@ final class ChannelLogoArtworkTests: XCTestCase {
     func testNeutralInkDoesNotInventAChannelColour() {
         let darkInk = ChannelLogoPlate(tone: ResolvedLogoTone(
             luminance: 0.2, coverage: 0.4, red: 0.2, green: 0.2, blue: 0.2
-        ))
+        ), prefersLight: true)
         XCTAssertEqual(darkInk.color, Color(red: 1, green: 1, blue: 1))
         let whiteInk = ChannelLogoPlate(tone: ResolvedLogoTone(
             luminance: 1, coverage: 0.4, red: 1, green: 1, blue: 1, brightInk: 1
@@ -124,7 +124,7 @@ final class ChannelLogoArtworkTests: XCTestCase {
                 let plate = ChannelLogoPlate(tone: ResolvedLogoTone(
                     luminance: 0.4, coverage: 0.4,
                     red: ink.0, green: ink.1, blue: ink.2, brightInk: whiteLettering ? 0.1 : 0
-                ))
+                ), prefersLight: !whiteLettering)
                 func linear(_ value: Double) -> Double {
                     value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
                 }
@@ -137,11 +137,14 @@ final class ChannelLogoArtworkTests: XCTestCase {
     }
 
     func testOriginalWhitePlateWinsEvenWithBrightHighlightsInsideTheLogo() {
-        let plate = ChannelLogoPlate(tone: ResolvedLogoTone(
+        let tone = ResolvedLogoTone(
             luminance: 0.5, coverage: 1, brightInk: 0.6,
             backgroundPlate: HeroBackgroundSample(red: 1, green: 1, blue: 1, luminance: 1)
-        ))
-        XCTAssertEqual(plate.color, Color(red: 1, green: 1, blue: 1))
+        )
+        XCTAssertEqual(ChannelLogoPlate(tone: tone, prefersLight: true).color, Color(red: 1, green: 1, blue: 1))
+        // A dark theme never hands out a white plate, and a boxed logo keeps its own pixels.
+        XCTAssertFalse(ChannelLogoPlate(tone: tone).isLight)
+        XCTAssertFalse(ChannelLogoPlate.rendersInkLight(tone, prefersLight: false))
     }
 
     func testOriginalBrandBackingIsNotTintedByTheLogosInk() {
@@ -153,6 +156,32 @@ final class ChannelLogoArtworkTests: XCTestCase {
         XCTAssertEqual(plate.red, original.red)
         XCTAssertEqual(plate.green, original.green)
         XCTAssertEqual(plate.blue, original.blue)
+    }
+
+    func testLightThemeDefaultsToLightBackingUnlessTheInkIsPale() {
+        let coloured = ResolvedLogoTone(luminance: 0.35, coverage: 0.4, red: 0.9, green: 0.3, blue: 0.1, brightInk: 0.06)
+        XCTAssertFalse(ChannelLogoPlate(tone: coloured).isLight, "dark theme keeps the wordmark's dark backing")
+        XCTAssertTrue(ChannelLogoPlate(tone: coloured, prefersLight: true).isLight)
+
+        let whiteInk = ResolvedLogoTone(luminance: 0.95, coverage: 0.4, red: 1, green: 1, blue: 1, brightInk: 0.9)
+        XCTAssertFalse(ChannelLogoPlate(tone: whiteInk, prefersLight: true).isLight, "white ink would vanish on white")
+
+        let blackInk = ResolvedLogoTone(luminance: 0.05, coverage: 0.4)
+        XCTAssertFalse(ChannelLogoPlate(tone: blackInk).isLight, "a dark theme never gets a white plate")
+        XCTAssertTrue(ChannelLogoPlate.rendersInkLight(blackInk, prefersLight: false), "black ink is drawn light instead")
+        XCTAssertFalse(ChannelLogoPlate.rendersInkLight(blackInk, prefersLight: true))
+        XCTAssertTrue(ChannelLogoPlate(tone: blackInk, prefersLight: true).isLight)
+        let redInk = ResolvedLogoTone(luminance: 0.35, coverage: 0.4, red: 0.9, green: 0.1, blue: 0.1)
+        XCTAssertFalse(ChannelLogoPlate.rendersInkLight(redInk, prefersLight: false), "brand colour reads on charcoal")
+        for deep in [(0.05, 0.1, 0.45), (0.4, 0.05, 0.08), (0.25, 0.08, 0.35)] {
+            let tone = ResolvedLogoTone(luminance: 0.12, coverage: 0.4, red: deep.0, green: deep.1, blue: deep.2)
+            XCTAssertFalse(ChannelLogoPlate.rendersInkLight(tone, prefersLight: false), "deep brand colours keep their colour")
+        }
+        let charcoalInk = ResolvedLogoTone(luminance: 0.25, coverage: 0.4, red: 0.25, green: 0.25, blue: 0.25)
+        XCTAssertFalse(ChannelLogoPlate.rendersInkLight(charcoalInk, prefersLight: false), "only near-black ink is redrawn")
+
+        XCTAssertTrue(ChannelLogoPlate(tone: nil, prefersLight: true).isLight)
+        XCTAssertFalse(ChannelLogoPlate(tone: nil).isLight)
     }
 
     func testDarkPlateHasAFirmCharcoalFloorInsteadOfFadingIntoBlack() {
@@ -207,7 +236,7 @@ final class ChannelLogoArtworkTests: XCTestCase {
         }
         let content = ChannelLogoPlateContent(
             name: "Brand", image: logo,
-            plate: ChannelLogoPlate(tone: ResolvedLogoTone(luminance: 0.2, coverage: 0.4)),
+            plate: ChannelLogoPlate(tone: ResolvedLogoTone(luminance: 0.2, coverage: 0.4), prefersLight: true),
             size: CGSize(width: 200, height: 128), cornerRadius: 16, artworkInset: 20
         )
         let renderer = ImageRenderer(content: content)
@@ -259,7 +288,8 @@ final class ChannelLogoArtworkTests: XCTestCase {
         let background = (4 * rendered.width + rendered.width / 2) * 4
         XCTAssertEqual(pixels[background + 3], 255)
         XCTAssertGreaterThan(pixels[background], pixels[background + 1])
-        XCTAssertGreaterThan(min(pixels[background], pixels[background + 1], pixels[background + 2]), 235)
+        // The default theme is dark, whose plates are always charcoal.
+        XCTAssertLessThan(max(pixels[background], pixels[background + 1], pixels[background + 2]), 70)
     }
 
     private func rgbaPixels(_ image: CGImage) throws -> [UInt8] {
