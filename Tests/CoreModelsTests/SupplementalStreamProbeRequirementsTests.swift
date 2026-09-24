@@ -169,4 +169,46 @@ final class SupplementalStreamProbeRequirementsTests: XCTestCase {
             ProbedStreamFacts.self, from: JSONEncoder().encode(facts))
         XCTAssertEqual(decoded, facts)
     }
+
+    // MARK: Probe results on a version's badges (#58)
+
+    /// An Emby/Jellyfin version usually has no stream metadata of its own, only
+    /// flattened fields. Upgrading its HDR10 to HDR10+ used to create metadata
+    /// holding just the range, which `technicalBadges` then preferred, so the
+    /// 4K and Dolby Digital+ badges disappeared as the HDR10+ one appeared.
+    func testHDR10PlusUpgradeKeepsResolutionAndAudioBadges() {
+        var item = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        item.versions = [MediaVersion(
+            id: "v", width: 3840, height: 2160, isDefault: true,
+            videoCodec: "hevc", videoRange: "HDR10",
+            audioCodec: "eac3", audioChannels: 6)]
+        XCTAssertNil(item.versions[0].sourceMetadata)
+        let before = item.versions[0].technicalBadges.map(\.label)
+
+        let upgraded = item.applyingSupplementalStreamFacts(.init(videoRangeType: "HDR10Plus"))
+        let after = upgraded.versions[0].technicalBadges.map(\.label)
+
+        XCTAssertTrue(before.contains("4K") && before.contains("HDR10"), "\(before)")
+        XCTAssertEqual(after, before.map { $0 == "HDR10" ? "HDR10+" : $0 })
+    }
+
+    /// A version that already carries its file's metadata keeps it, with the
+    /// probed range merged in, exactly as before.
+    func testProbeMergesIntoExistingVersionMetadata() {
+        var item = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        let metadata = MediaSourceMetadata(
+            container: "mkv",
+            video: .init(codec: "hevc", width: 3840, height: 2160, videoRangeType: "HDR10"),
+            audio: .init(codec: "truehd", profile: "Dolby Atmos", channels: 8))
+        item.versions = [MediaVersion(id: "v", isDefault: true, videoRange: "HDR10", sourceMetadata: metadata)]
+
+        let upgraded = item.applyingSupplementalStreamFacts(.init(videoRangeType: "HDR10Plus"))
+        let merged = upgraded.versions[0].sourceMetadata
+
+        XCTAssertEqual(merged?.container, "mkv")
+        XCTAssertEqual(merged?.video?.videoRangeType, "HDR10Plus")
+        XCTAssertEqual(merged?.audio?.profile, "Dolby Atmos")
+        XCTAssertEqual(merged?.audio?.channels, 8)
+    }
 }
+

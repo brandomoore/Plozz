@@ -165,8 +165,13 @@ public extension MediaItem {
             if let audioCodec = facts.audioCodec { version.audioCodec = audioCodec }
             if let audioChannels = facts.audioChannels { version.audioChannels = audioChannels }
             if facts.audioIsAtmos { version.audioProfile = "Dolby Atmos" }
-            let versionMetadata = ProbedStreamFacts(videoRangeType: version.videoRange)
-                .applying(to: version.sourceMetadata)
+            // `technicalBadges` reads a version's metadata in preference to its
+            // flattened fields, so metadata a probe creates starts from those
+            // fields. Created holding only the probed range, it dropped the
+            // resolution and audio badges when HDR10 upgraded to HDR10+ (#58).
+            let versionMetadata = version.sourceMetadata.map {
+                ProbedStreamFacts(videoRangeType: version.videoRange).applying(to: $0)
+            } ?? version.flattenedSourceMetadata
             version.sourceMetadata = facts.applying(to: versionMetadata)
             return version
         }
@@ -181,6 +186,15 @@ public extension MediaItem {
     func confirmingHDR10Plus() -> MediaItem {
         guard SourceDynamicRange.providerHint(from: mediaInfo) != .dolbyVision else { return self }
         return applyingSupplementalStreamFacts(ProbedStreamFacts(videoRangeType: "HDR10Plus"))
+    }
+}
+
+extension MediaVersion {
+    /// The version's own flattened stream facts, as the metadata a probe adds to.
+    var flattenedSourceMetadata: MediaSourceMetadata {
+        MediaSourceMetadata(
+            video: .init(codec: videoCodec, width: width, height: height, videoRangeType: videoRange),
+            audio: .init(codec: audioCodec, profile: audioProfile, channels: audioChannels))
     }
 }
 
