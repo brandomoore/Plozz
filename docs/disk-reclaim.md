@@ -119,7 +119,6 @@ write:
 - `tools/l10n-sync.py`, `tools/l10n-guard.sh`, and
   `tools/l10n-prune-stale-products.sh`;
 - `tools/capture-shots.sh`;
-- the on-device pairing probe under `experiments/sync-feasibility-probes/`;
 - the direct CI simulator build through
   `tools/with-apple-build-lease.sh`.
 
