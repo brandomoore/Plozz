@@ -341,30 +341,39 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
     }
 
     func metadata(_ file: SiloFileVersion) -> MediaSourceMetadata {
-        let video = file.video_tracks?.first
-        let audio = file.audio_tracks?.first(where: { $0.default }) ?? file.audio_tracks?.first
-        let range = (video?.dv_profile ?? 0) > 0 ? "DOVI"
-            : video?.hdr10_plus == true ? "HDR10Plus" : video?.video_range_type
         let resolution = file.resolution.lowercased()
         let summaryHeight = (resolution.hasSuffix("p") || resolution.hasSuffix("i"))
             ? Int(resolution.dropLast()).flatMap { (100...16384).contains($0) ? $0 : nil } : nil
-        let videoRange: String?
-        if let detailedRange = video?.video_range {
-            videoRange = detailedRange
-        } else if let hdr = file.hdr {
-            videoRange = hdr ? "HDR" : "SDR"
-        } else {
-            videoRange = nil
+        var videoInfo = MediaSourceMetadata.VideoStream(
+            codec: file.codec_video,
+            height: summaryHeight,
+            bitrate: file.bitrate.multipliedReportingOverflow(by: 1000).overflow ? nil : file.bitrate * 1000
+        )
+        if let hdr = file.hdr { videoInfo.videoRange = hdr ? "HDR" : "SDR" }
+        if let video = file.video_tracks?.first {
+            if let codec = video.codec { videoInfo.codec = codec }
+            videoInfo.width = video.width
+            if let height = video.height { videoInfo.height = height }
+            if let range = video.video_range { videoInfo.videoRange = range }
+            videoInfo.dolbyVisionProfile = video.dv_profile
+            if let profile = video.dv_profile, profile > 0 {
+                videoInfo.videoRangeType = "DOVI"
+            } else if video.hdr10_plus == true {
+                videoInfo.videoRangeType = "HDR10Plus"
+            } else {
+                videoInfo.videoRangeType = video.video_range_type
+            }
+        }
+        var audioInfo = MediaSourceMetadata.AudioStream(codec: file.codec_audio)
+        if let audio = file.audio_tracks?.first(where: { $0.default }) ?? file.audio_tracks?.first {
+            if let codec = audio.codec { audioInfo.codec = codec }
+            audioInfo.profile = audio.profile
+            audioInfo.channels = audio.channels
+            audioInfo.channelLayout = audio.layout
         }
         return MediaSourceMetadata(
             container: file.container, fileSizeBytes: file.file_size,
-            video: .init(codec: video?.codec ?? file.codec_video, width: video?.width,
-                         height: video?.height ?? summaryHeight,
-                         bitrate: file.bitrate.multipliedReportingOverflow(by: 1000).overflow ? nil : file.bitrate * 1000,
-                         videoRange: videoRange,
-                         videoRangeType: range, dolbyVisionProfile: video?.dv_profile),
-            audio: .init(codec: audio?.codec ?? file.codec_audio, profile: audio?.profile,
-                         channels: audio?.channels, channelLayout: audio?.layout))
+            video: videoInfo, audio: audioInfo)
     }
 }
 

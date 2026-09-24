@@ -721,7 +721,14 @@ final class SiloProviderTests: XCTestCase {
         """
         let file = try JSONDecoder().decode(SiloFileVersion.self, from: Data(payload.utf8))
         XCTAssertEqual(file.hdr, summary.expectedHDR, payload)
-        XCTAssertEqual(provider.metadata(file).video?.videoRange, summary.expectedRange, payload)
+        let metadata = provider.metadata(file)
+        XCTAssertEqual(metadata.video?.videoRange, summary.expectedRange, payload)
+        XCTAssertEqual(metadata.video?.height, 1080, payload)
+        XCTAssertNil(metadata.video?.width, payload)
+        XCTAssertEqual(metadata.video?.codec, "h264", payload)
+        XCTAssertEqual(metadata.video?.bitrate, 2_000_000, payload)
+        XCTAssertEqual(metadata.audio?.codec, "aac", payload)
+        XCTAssertNil(metadata.audio?.channels, payload)
       }
     }
   }
