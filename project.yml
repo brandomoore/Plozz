@@ -223,10 +223,11 @@ targets:
         # LAN, behind a reverse proxy, or over Tailscale (the 100.64.0.0/10 CGNAT
         # range, which is NOT covered by NSAllowsLocalNetworking). Since the user
         # explicitly enters their own server address, allow arbitrary HTTP loads
-        # so Tailscale IPs (http://100.x.x.x:8096) and MagicDNS names resolve.
+        # so Tailscale IPs (http://100.x.x.x:8096) and MagicDNS names resolve,
+        # as do public-IP IPTV playlists/guides. Do NOT add NSAllowsLocalNetworking
+        # here: when present, iOS/tvOS ignore NSAllowsArbitraryLoads entirely.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-          NSAllowsLocalNetworking: true
         # Deep links that launch the app straight into playback, used by the
         # Top Shelf extension's cards (e.g. plozz://item/<id>).
         CFBundleURLTypes:
@@ -392,7 +393,6 @@ targets:
         LastFmSharedSecret: "$(LASTFM_SHARED_SECRET)"
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-          NSAllowsLocalNetworking: true
         CFBundleURLTypes:
           - CFBundleURLName: com.thatcube.Plozz.deeplink
             CFBundleURLSchemes:
