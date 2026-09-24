@@ -246,7 +246,7 @@ Please don't paste tokens, passwords, or credentialed server URLs into an issue.
 
 Pull requests are welcome. Building the app, running the tests, the module
 layout, how localization works, and the release process are all in
-[**CONTRIBUTING.md**](CONTRIBUTING.md), with the deeper notes in
+[**CONTRIBUTING.md**](.github/CONTRIBUTING.md), with the deeper notes in
 [`docs/`](docs/).
 
 ## Donate

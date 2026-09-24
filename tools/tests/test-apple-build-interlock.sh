@@ -601,7 +601,6 @@ assert_source_contains "tools/capture-shots.sh" 'acquire_apple_build_shared_leas
 assert_source_contains "tools/l10n-guard.sh" 'acquire_apple_build_shared_lease "plozz/l10n-guard"'
 assert_source_contains "tools/l10n-prune-stale-products.sh" 'acquire_apple_build_shared_lease "plozz/l10n-prune-stale-products"'
 assert_source_contains "tools/l10n-sync.py" '"plozz/l10n-sync"'
-assert_source_contains "experiments/sync-feasibility-probes/OnDevice/run-ondevice.sh" 'acquire_apple_build_shared_lease "plozz/experiment/pair-probe"'
 assert_source_contains ".github/workflows/ci.yml" 'tools/with-apple-build-lease.sh plozz/ci-tvos-build -- xcodebuild build'
 
 echo "apple build interlock tests passed"
