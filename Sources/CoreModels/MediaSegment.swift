@@ -13,9 +13,9 @@ import Foundation
 /// Times are stored in **seconds** so the player can compare them directly
 /// against the engine's `currentTime` without unit juggling.
 public struct MediaSegment: Codable, Equatable, Sendable, Identifiable {
-    /// The kind of segment. Only `.intro` and `.credits` are "skippable" today
-    /// (what the Skip Intros toggle acts on); the rest are modelled so the data
-    /// is ready if more behaviours are added later, per the flexibility mandate.
+    /// The kind of segment. Intros, credits, previews and commercials are
+    /// "skippable" (each has its own skip mode in settings); recaps and unknown
+    /// segments are modelled so the data is ready if more behaviours are added.
     public enum Kind: String, Codable, CaseIterable, Sendable {
         case intro
         case credits
@@ -31,7 +31,7 @@ public struct MediaSegment: Codable, Equatable, Sendable, Identifiable {
             case .credits: return "Skip Credits"
             case .recap: return "Skip Recap"
             case .preview: return "Skip Preview"
-            case .commercial: return "Skip"
+            case .commercial: return "Skip Commercial"
             case .unknown: return "Skip"
             }
         }
@@ -45,7 +45,7 @@ public struct MediaSegment: Codable, Equatable, Sendable, Identifiable {
             case .credits: return "Credits Skipped"
             case .recap: return "Recap Skipped"
             case .preview: return "Preview Skipped"
-            case .commercial: return "Skipped"
+            case .commercial: return "Commercial Skipped"
             case .unknown: return "Skipped"
             }
         }
@@ -65,10 +65,13 @@ public struct MediaSegment: Codable, Equatable, Sendable, Identifiable {
         self.end = end
     }
 
-    /// Segments the Skip Intros feature offers a button for. Intros and credits
-    /// only — recaps/previews/commercials are detected but not auto-offered.
+    /// Segments the skip feature can offer a button for — the kinds with their
+    /// own skip setting. Recaps are detected but not offered.
     public var isSkippable: Bool {
-        kind == .intro || kind == .credits
+        switch kind {
+        case .intro, .credits, .preview, .commercial: return true
+        case .recap, .unknown: return false
+        }
     }
 
     /// Whether `position` (seconds) falls inside this segment's window. A small
@@ -109,6 +112,14 @@ public struct MediaSegment: Codable, Equatable, Sendable, Identifiable {
 }
 
 public extension Array where Element == MediaSegment {
+    /// This list with `fallback`'s segments added for every kind this list has
+    /// none of. Used to layer community markers (IntroDB / TheIntroDB) under the
+    /// server's own: the server wins per kind, the fallback fills the gaps.
+    func filling(from fallback: [MediaSegment]) -> [MediaSegment] {
+        let present = Set(map(\.kind))
+        return self + fallback.filter { !present.contains($0.kind) }
+    }
+
     /// The skippable segment whose window currently contains `position`, if any.
     /// Intros win ties over credits since an intro can never overlap credits in
     /// practice; if data is malformed the earliest-starting match is returned.

@@ -603,15 +603,28 @@ struct PlaybackDetailView: View {
         [
             SettingsSplitRow(
                 id: "skip-intros-mode",
-                title: "Skip Intros",
-                description: "Uses intro and credit markers from your server. Requires Plex Pass on Plex, or Media Segments / Intro Skipper on Jellyfin.",
+                title: "Skip Markers",
+                description: "Uses intro, credit, preview and commercial markers from your server, plus community markers when enabled below. Server markers require Plex Pass on Plex, or Media Segments / Intro Skipper on Jellyfin.",
             ) {
-                DescribedSegmentedPicker(
-                    options: SkipIntrosMode.allCases,
-                    selection: $playback.settings.skipIntros,
-                    title: { $0.title },
-                    detail: { $0.detail }
+                SkipMarkerModesControl(
+                    rows: [
+                        .init(id: 0, title: "Intros", selection: $playback.settings.skipIntros),
+                        .init(id: 1, title: "Credits", selection: $playback.settings.skipCredits),
+                        .init(id: 2, title: "Previews", selection: $playback.settings.skipPreviews),
+                        .init(id: 3, title: "Commercials", selection: $playback.settings.skipCommercials)
+                    ]
                 )
+            },
+            SettingsSplitRow(
+                id: "skip-community-markers",
+                title: "Community Markers",
+                description: "Also look up markers from community databases, whether or not your server has its own. Your server's markers win when both have one. Sends the title's IMDb or TMDB ID to the database.",
+            ) {
+                VStack(alignment: .leading, spacing: 28) {
+                    Toggle("IntroDB", isOn: $playback.settings.useIntroDB)
+                    Toggle("TheIntroDB", isOn: $playback.settings.useTheIntroDB)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         ]
     }
@@ -780,6 +793,65 @@ private struct DescribedSegmentedPicker<Option: Hashable>: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .animation(.easeInOut(duration: 0.18), value: describedOption)
+    }
+}
+
+/// The per-kind skip controls: an Off / On / Auto (delay) / Auto (instant)
+/// picker for each marker kind, with ONE live description beneath that follows
+/// focus across all of them (the options mean the same thing on every row, so
+/// repeating the line four times would just be noise). Falls back to the first
+/// row's selection when focus is outside the pickers.
+private struct SkipMarkerModesControl: View {
+    struct Row: Identifiable {
+        let id: Int
+        let title: LocalizedStringResource
+        let selection: Binding<SkipIntrosMode>
+    }
+
+    let rows: [Row]
+
+    @State private var focusedMode: SkipIntrosMode?
+    @State private var focusOwner: Int?
+
+    private var describedMode: SkipIntrosMode {
+        focusedMode ?? rows.first?.selection.wrappedValue ?? .off
+    }
+
+    private func reportFocus(owner id: Int, mode: SkipIntrosMode?) {
+        if let mode {
+            focusOwner = id
+            focusedMode = mode
+        } else if focusOwner == id {
+            focusOwner = nil
+            focusedMode = nil
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            // Label stacked above each picker: four segments don't fit beside a
+            // fixed label column in the split layout's detail pane.
+            ForEach(rows) { row in
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(row.title)
+                        .font(.headline.weight(.semibold))
+                    SettingsSegmentedPicker(
+                        options: SkipIntrosMode.allCases,
+                        selection: row.selection,
+                        title: { $0.title },
+                        onFocusedOptionChange: { reportFocus(owner: row.id, mode: $0) }
+                    )
+                }
+            }
+
+            Text(describedMode.detail)
+                .font(.callout)
+                .plozzForeground(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.opacity)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .animation(.easeInOut(duration: 0.18), value: describedMode)
     }
 }
 

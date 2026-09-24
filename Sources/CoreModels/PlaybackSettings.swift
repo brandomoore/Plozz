@@ -7,9 +7,29 @@ import Foundation
 /// sync. Modelled as data so defaults can move with real feedback and
 /// finer-grained toggles can be added later without a rewrite.
 public struct PlaybackSettings: Codable, Equatable, Sendable {
-    /// How intros/credits are handled. Off by default — opt-in, and a no-op on
-    /// servers/items that expose no markers. Covers both intros and credits.
+    /// How intro markers are handled. Off by default — opt-in, and a no-op on
+    /// items with no intro marker. (Historically this one setting covered credits
+    /// too; ``skipCredits`` now owns those and migrates from it — see the decoder.)
     public var skipIntros: SkipIntrosMode
+
+    /// How closing-credits markers are handled. Installs that predate the split
+    /// inherit their old ``skipIntros`` choice so behaviour doesn't change.
+    public var skipCredits: SkipIntrosMode
+
+    /// How "next time on" / preview markers are handled. Off by default.
+    public var skipPreviews: SkipIntrosMode
+
+    /// How commercial markers (e.g. DVR recordings) are handled. Off by default.
+    public var skipCommercials: SkipIntrosMode
+
+    /// Whether to look up community markers on IntroDB (introdb.app) as a backup
+    /// to the server's own markers. Queried whether or not the server has markers;
+    /// server markers win for any kind both provide. Needs an IMDb id.
+    public var useIntroDB: Bool
+
+    /// Whether to look up community markers on TheIntroDB (theintrodb.org) as a
+    /// backup to the server's own markers (and IntroDB's). Needs a TMDB or IMDb id.
+    public var useTheIntroDB: Bool
 
     /// How many seconds a left-press on the Siri Remote skips backward.
     public var skipBackwardInterval: SkipInterval
@@ -120,6 +140,11 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
 
     public init(
         skipIntros: SkipIntrosMode = .off,
+        skipCredits: SkipIntrosMode = .off,
+        skipPreviews: SkipIntrosMode = .off,
+        skipCommercials: SkipIntrosMode = .off,
+        useIntroDB: Bool = true,
+        useTheIntroDB: Bool = true,
         skipBackwardInterval: SkipInterval = .ten,
         skipForwardInterval: SkipInterval = .ten,
         resumeRewindInterval: ResumeRewindInterval = .five,
@@ -137,6 +162,11 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         streaming: StreamingQualitySettings = .default
     ) {
         self.skipIntros = skipIntros
+        self.skipCredits = skipCredits
+        self.skipPreviews = skipPreviews
+        self.skipCommercials = skipCommercials
+        self.useIntroDB = useIntroDB
+        self.useTheIntroDB = useTheIntroDB
         self.skipBackwardInterval = skipBackwardInterval
         self.skipForwardInterval = skipForwardInterval
         self.resumeRewindInterval = resumeRewindInterval
@@ -156,6 +186,19 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
 
     public static let `default` = PlaybackSettings()
 
+    /// The per-kind skip modes, as the player consumes them.
+    public var skipMarkerModes: SkipMarkerModes {
+        SkipMarkerModes(
+            intro: skipIntros,
+            credits: skipCredits,
+            preview: skipPreviews,
+            commercial: skipCommercials
+        )
+    }
+
+    /// Whether any community marker source is enabled.
+    public var usesCommunityMarkers: Bool { useIntroDB || useTheIntroDB }
+
     /// Selectable values (seconds) for ``upNextLeadSeconds`` in Settings. A small,
     /// curated set — err late (never interrupt real content) with room to go
     /// earlier for shows with long credits. `default`'s 30s must be a member.
@@ -167,6 +210,11 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
 public extension PlaybackSettings {
     private enum CodingKeys: String, CodingKey {
         case skipIntros
+        case skipCredits
+        case skipPreviews
+        case skipCommercials
+        case useIntroDB
+        case useTheIntroDB
         case skipBackwardInterval
         case skipForwardInterval
         case resumeRewindInterval
@@ -211,6 +259,23 @@ public extension PlaybackSettings {
         } else {
             self.skipIntros = defaults.skipIntros
         }
+        // Credits used to share the intro setting; an install that predates the
+        // split keeps whatever it had for both.
+        self.skipCredits =
+            (try? container.decodeIfPresent(SkipIntrosMode.self, forKey: .skipCredits))
+            .flatMap { $0 } ?? self.skipIntros
+        self.skipPreviews =
+            (try? container.decodeIfPresent(SkipIntrosMode.self, forKey: .skipPreviews))
+            .flatMap { $0 } ?? defaults.skipPreviews
+        self.skipCommercials =
+            (try? container.decodeIfPresent(SkipIntrosMode.self, forKey: .skipCommercials))
+            .flatMap { $0 } ?? defaults.skipCommercials
+        self.useIntroDB =
+            (try? container.decodeIfPresent(Bool.self, forKey: .useIntroDB))
+            .flatMap { $0 } ?? defaults.useIntroDB
+        self.useTheIntroDB =
+            (try? container.decodeIfPresent(Bool.self, forKey: .useTheIntroDB))
+            .flatMap { $0 } ?? defaults.useTheIntroDB
         self.skipBackwardInterval =
             (try? container.decodeIfPresent(SkipInterval.self, forKey: .skipBackwardInterval))
             .flatMap { $0 } ?? defaults.skipBackwardInterval
@@ -272,6 +337,11 @@ public extension PlaybackSettings {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(skipIntros, forKey: .skipIntros)
+        try container.encode(skipCredits, forKey: .skipCredits)
+        try container.encode(skipPreviews, forKey: .skipPreviews)
+        try container.encode(skipCommercials, forKey: .skipCommercials)
+        try container.encode(useIntroDB, forKey: .useIntroDB)
+        try container.encode(useTheIntroDB, forKey: .useTheIntroDB)
         try container.encode(skipBackwardInterval, forKey: .skipBackwardInterval)
         try container.encode(skipForwardInterval, forKey: .skipForwardInterval)
         try container.encode(resumeRewindInterval, forKey: .resumeRewindInterval)

@@ -2297,7 +2297,22 @@ private struct PlozziOSPlaybackSettingsView: View {
                 support: streamingSupport
             )
             SettingsSectionGroup("Skipping") {
-                Picker("Intros and credits", selection: $model.settings.skipIntros) {
+                Picker("Intros", selection: $model.settings.skipIntros) {
+                    ForEach(SkipIntrosMode.allCases, id: \.self) {
+                        Text($0.title).tag($0)
+                    }
+                }
+                Picker("Credits", selection: $model.settings.skipCredits) {
+                    ForEach(SkipIntrosMode.allCases, id: \.self) {
+                        Text($0.title).tag($0)
+                    }
+                }
+                Picker("Previews", selection: $model.settings.skipPreviews) {
+                    ForEach(SkipIntrosMode.allCases, id: \.self) {
+                        Text($0.title).tag($0)
+                    }
+                }
+                Picker("Commercials", selection: $model.settings.skipCommercials) {
                     ForEach(SkipIntrosMode.allCases, id: \.self) {
                         Text($0.title).tag($0)
                     }
@@ -2317,6 +2332,13 @@ private struct PlozziOSPlaybackSettingsView: View {
                         Text(verbatim: $0.title(locale: locale)).tag($0)
                     }
                 }
+            }
+
+            SettingsSectionGroup("Community Markers") {
+                Toggle("IntroDB", isOn: $model.settings.useIntroDB)
+                Toggle("TheIntroDB", isOn: $model.settings.useTheIntroDB)
+            } footer: {
+                Text("Also look up skip markers from community databases, whether or not your server has its own. Your server's markers win when both have one.")
             }
 
             SettingsSectionGroup("Playback") {

@@ -572,10 +572,10 @@ public final class PlayerControlsModel {
     public var skipButtonVisible: Bool {
         guard activeSkipSegment != nil else { return false }
         if creditsOwnedByUpNext { return false }
-        // Skip OFF must never surface a button — even after a grace-window seek.
-        // Markers are now fetched when the Up Next card is enabled (skip can be
-        // off), so without this guard a seek near an intro/credits marker would
-        // resurrect a Skip button the viewer turned off.
+        // Skip OFF (for this segment's kind) must never surface a button — even
+        // after a grace-window seek. Markers are fetched when the Up Next card is
+        // enabled or another kind is on, so without this guard a seek near a
+        // marker would resurrect a Skip button the viewer turned off.
         guard skipMode != .off else { return false }
         if activeSkipWasSeekEntered { return true }
         return skipMode == .on || skipMode == .autoDelay
@@ -636,10 +636,18 @@ public final class PlayerControlsModel {
         return !hasCreditsMarker && isNearEndByTime
     }
 
-    /// How intros/credits are handled (Off / On / Auto (delay) / Auto (instant)).
-    /// Mirrors the per-profile setting; set when markers load. Drives whether the
-    /// Skip button is surfaced, auto-skipped after a delay, or skipped instantly.
-    public var skipMode: SkipIntrosMode = .off
+    /// How each kind of marker is handled (Off / On / Auto (delay) / Auto
+    /// (instant)), per the per-profile settings; set when markers load.
+    public var skipModes: SkipMarkerModes = .allOff
+
+    /// The mode in force right now: the active segment's kind decides it. With
+    /// no active segment it's the credits mode — the only time it's read then is
+    /// for the Up Next card, which stands in for credits (including the
+    /// time-based fallback on marker-less content). Drives whether the Skip
+    /// button is surfaced, auto-skipped after a delay, or skipped instantly.
+    public var skipMode: SkipIntrosMode {
+        skipModes.mode(for: activeSkipSegment?.kind ?? .credits)
+    }
 
     /// In `.autoDelay`, the playback position (seconds) at which the active
     /// segment auto-skips. Set while the button counts down; `nil` otherwise.
