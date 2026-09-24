@@ -87,8 +87,8 @@ let package = Package(
         // Powers the native HLS-fMP4 remux path for MKV → DoVi + Atmos + seek.
         // See AGENTS.local.md › "Playback engine (AetherEngine / Plozzigen)".
         //
-        // Pinned to upstream release 7.15.1:
-        // b93f9c4b9937874dc12fee2824ea3327a05b84e3.
+        // Pinned to upstream release 7.16.1:
+        // 4ef5ef95faf271cb0c0e9cc79a0bf81a54b1244b.
         //
         // Plozz no longer carries an AetherEngine fork. Everything the old
         // `plozz-pin-*` stack existed for is upstream as of 5.23.2:
@@ -208,9 +208,16 @@ let package = Package(
         // FFmpegBuild advances to 3.5.x (FFmpeg n8.1.3); platform minimums are
         // unchanged.
         //
+        // 7.16.1 carries the two stage-2 recovery fixes Plozz contributed for
+        // issue #61 (AetherEngine#621, #623): the media fallback comes back where
+        // the refused item was placed instead of the session's first mount, and a
+        // recovery reload leaves a paused viewer paused instead of starting the
+        // title behind the tvOS screensaver. 7.16.0 keeps IPTV path credentials
+        // out of the engine log; 7.15.2 times remote-HLS sourceTime to the picture.
+        //
         // SMB enters AetherEngine only through Plozz's protocol-neutral custom-source
         // bridge; the engine's legacy SMB URL product is not linked.
-        .package(url: "https://github.com/superuser404notfound/AetherEngine", revision: "b93f9c4b9937874dc12fee2824ea3327a05b84e3"),
+        .package(url: "https://github.com/superuser404notfound/AetherEngine", revision: "4ef5ef95faf271cb0c0e9cc79a0bf81a54b1244b"),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x decode-only) and LibDovi (Dolby Vision
         // RPU parser) are pulled in TRANSITIVELY by AetherEngine — its own manifest
         // declares and consumes them. Plozz used to declare them directly only for

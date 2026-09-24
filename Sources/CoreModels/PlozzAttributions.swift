@@ -73,7 +73,7 @@ public enum PlozzAttributions {
             title: "AetherEngine",
             detail:
                 "Plozzigen playback is powered by AetherEngine by Vincent Herbst. "
-                + "Source: https://github.com/superuser404notfound/AetherEngine/tree/7.15.1",
+                + "Source: https://github.com/superuser404notfound/AetherEngine/tree/7.16.1",
             licenses: [.init("LGPL-3.0", family: .lgpl)]
         ),
         PlozzAttribution(

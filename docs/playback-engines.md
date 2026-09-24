@@ -6,8 +6,15 @@ with the best possible quality (Dolby Vision, Atmos, full-timeline seek).
 
 ## Dependency version
 
-Plozz pins upstream release **7.15.1**, commit
-`b93f9c4b9937874dc12fee2824ea3327a05b84e3`. Since 7.10.0 it notices a media
+Plozz pins upstream release **7.16.1**, commit
+`4ef5ef95faf271cb0c0e9cc79a0bf81a54b1244b`. It carries the two stage-2
+recovery fixes behind issue #61: the media fallback comes back where the
+refused item was placed rather than where the session first started
+([superuser404notfound/AetherEngine#621](https://github.com/superuser404notfound/AetherEngine/pull/621)),
+and a recovery reload leaves a paused viewer paused rather than starting the
+title behind the tvOS screensaver
+([superuser404notfound/AetherEngine#623](https://github.com/superuser404notfound/AetherEngine/pull/623)).
+7.16.0 keeps IPTV path credentials out of the engine log. Since 7.10.0 it notices a media
 services reset after tvOS sleep instead of reloading onto the invalidated
 player, stops waiting on a media server that no longer answers
 ([superuser404notfound/AetherEngine#597](https://github.com/superuser404notfound/AetherEngine/issues/597)),
