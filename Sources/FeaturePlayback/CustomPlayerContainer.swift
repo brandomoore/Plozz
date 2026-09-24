@@ -562,7 +562,8 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
                 currentTime: engine.currentTime,
                 duration: engine.duration,
                 bufferedPosition: engine.bufferedPosition,
-                isPaused: engine.isPaused),
+                isPaused: engine.isPaused,
+                isLoading: engine.status == .loading),
             isScrubbing: model.isScrubbing,
             pendingSeekTarget: model.pendingSeekTarget,
             isResumeConfirming: model.isResumeConfirming)
@@ -947,8 +948,16 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
             maxAccelMultiplier: 5)
     }
 
+    /// Whether scrub or skip input may act. A loading engine (bring-up, or the
+    /// rebuild after tvOS suspended the app) has no playhead to seek from, and the
+    /// model's kept duration must not let new input seek it mid-rebuild (issue
+    /// #61). A scrub already under way may still move, commit or cancel.
+    private var canSeekFromPosition: Bool {
+        model.duration > 0 && (model.isScrubbing || engine.status != .loading)
+    }
+
     @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
-        guard model.duration > 0 else { return }
+        guard canSeekFromPosition else { return }
         guard focusContext == .surface else { return }
         guard surfacePan?.click.suppressesPan != true else { return }
         switch gesture.state {
@@ -1196,7 +1205,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     }
 
     private func skip(by seconds: TimeInterval) {
-        guard model.duration > 0 else { return }
+        guard canSeekFromPosition else { return }
         if model.isScrubbing {
             model.scrubSeconds = min(max(0, model.scrubSeconds + seconds), model.duration)
             updatePreviewThumbnail()

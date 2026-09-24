@@ -346,7 +346,7 @@ public struct PlayerView: View {
                 downloadRemoteSubtitle: { viewModel.downloadAndLoadRemoteSubtitle($0) },
                 playNextEpisode: { if let next = viewModel.nextEpisode { viewModel.playEpisode(next) } },
                 playPreviousEpisode: { if let prev = viewModel.previousEpisode { viewModel.playEpisode(prev) } },
-                restart: { viewModel.requestSeek(to: 0) },
+                restart: { viewModel.requestSeek(to: 0, origin: "restart") },
                 skipSegment: { viewModel.skipActiveSegment() },
                 autoSkipSegment: { viewModel.autoSkipActiveSegment() },
                 dismissSkip: { viewModel.dismissActiveSkipSegment() },

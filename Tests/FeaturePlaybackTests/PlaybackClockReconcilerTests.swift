@@ -12,9 +12,12 @@ final class PlaybackClockReconcilerTests: XCTestCase {
         currentTime: TimeInterval = 100,
         duration: TimeInterval = 3600,
         buffered: TimeInterval = 120,
-        isPaused: Bool = false
+        isPaused: Bool = false,
+        isLoading: Bool = false
     ) -> PlaybackClockReconciler.EngineSnapshot {
-        .init(currentTime: currentTime, duration: duration, bufferedPosition: buffered, isPaused: isPaused)
+        .init(
+            currentTime: currentTime, duration: duration, bufferedPosition: buffered,
+            isPaused: isPaused, isLoading: isLoading)
     }
 
     // MARK: Normal ticking
@@ -105,6 +108,38 @@ final class PlaybackClockReconcilerTests: XCTestCase {
             snapshot: snapshot(isPaused: true),
             isScrubbing: false, pendingSeekTarget: nil, isResumeConfirming: false)
         XCTAssertEqual(r.isPaused, true)
+    }
+
+    // MARK: Engine rebuild (issue #61)
+
+    func testLoadingEngineHoldsLastPositionInsteadOfZeroedClock() {
+        // The rebuild after the screensaver zeroes the engine clock and duration
+        // until the new item lands. Mirroring that 0 let a scrub or skip start
+        // from the beginning of the title.
+        let r = PlaybackClockReconciler.reconcile(
+            snapshot: snapshot(currentTime: 0, duration: 0, buffered: 0, isPaused: true, isLoading: true),
+            isScrubbing: false, pendingSeekTarget: nil, isResumeConfirming: false)
+        XCTAssertNil(r.currentSeconds, "the zeroed rebuild clock must not replace the last position")
+        XCTAssertNil(r.bufferedSeconds)
+        XCTAssertNil(r.duration)
+        XCTAssertFalse(r.shouldEvaluateSkip, "auto-skip must not act on a held position")
+        XCTAssertEqual(r.isPaused, true, "the paused mirror is unaffected")
+    }
+
+    func testLoadingEngineKeepsPendingSeekPinned() {
+        let r = PlaybackClockReconciler.reconcile(
+            snapshot: snapshot(currentTime: 0, isLoading: true),
+            isScrubbing: false, pendingSeekTarget: 0.5, isResumeConfirming: false)
+        XCTAssertFalse(r.clearPendingSeek, "a zeroed clock is not a seek landing")
+        XCTAssertNil(r.currentSeconds)
+    }
+
+    func testReadyEngineResumesMirroringAfterRebuild() {
+        let r = PlaybackClockReconciler.reconcile(
+            snapshot: snapshot(currentTime: 1834, isLoading: false),
+            isScrubbing: false, pendingSeekTarget: nil, isResumeConfirming: false)
+        XCTAssertEqual(r.currentSeconds, 1834)
+        XCTAssertTrue(r.shouldEvaluateSkip)
     }
 }
 #endif

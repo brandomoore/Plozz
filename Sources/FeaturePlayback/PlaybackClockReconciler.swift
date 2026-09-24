@@ -16,6 +16,10 @@ enum PlaybackClockReconciler {
         var duration: TimeInterval
         var bufferedPosition: TimeInterval
         var isPaused: Bool
+        /// The engine is (re)building its session, e.g. the rebuild after tvOS
+        /// suspended the app behind the screensaver. Its clock reads 0 until the
+        /// new item lands at the preserved position, so it is not a playhead.
+        var isLoading = false
     }
 
     /// What to write into the model this tick. A `nil` field means "leave it as
@@ -24,17 +28,19 @@ enum PlaybackClockReconciler {
         /// New known duration (only set once the engine reports a positive one).
         var duration: TimeInterval?
         /// New live position, or `nil` to hold (pinned to an optimistic seek
-        /// target, or suppressed while scrubbing).
+        /// target, or suppressed while scrubbing or while the engine loads).
         var currentSeconds: TimeInterval?
         /// Clear `pendingSeekTarget` — the committed seek has arrived.
         var clearPendingSeek: Bool
-        /// New buffered-ahead position, or `nil` to hold (while scrubbing).
+        /// New buffered-ahead position, or `nil` to hold (while scrubbing or
+        /// while the engine loads).
         var bufferedSeconds: TimeInterval?
         /// New paused state, or `nil` to hold (while scrubbing, or a resume is
         /// being confirmed and the engine's transient rate-0 must not leak).
         var isPaused: Bool?
         /// Whether the controller should evaluate skip/up-next presentation this
-        /// tick (skipped while scrubbing, matching the original early return).
+        /// tick (skipped while scrubbing, matching the original early return, and
+        /// while the engine loads, so auto-skip never acts on a held position).
         var shouldEvaluateSkip: Bool
     }
 
@@ -62,6 +68,19 @@ enum PlaybackClockReconciler {
                 clearPendingSeek: false,
                 bufferedSeconds: nil,
                 isPaused: nil,
+                shouldEvaluateSkip: false)
+        }
+
+        // A loading engine's zeroed clock must not replace the last real position:
+        // a scrub or skip started from it would land at the start of the title
+        // (issue #61). The paused mirror is unaffected; the rebuild restores intent.
+        guard !snapshot.isLoading else {
+            return Resolution(
+                duration: duration,
+                currentSeconds: nil,
+                clearPendingSeek: false,
+                bufferedSeconds: nil,
+                isPaused: isResumeConfirming ? nil : snapshot.isPaused,
                 shouldEvaluateSkip: false)
         }
 

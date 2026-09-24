@@ -1721,7 +1721,7 @@ public final class PlayerViewModel {
     public func skipActiveSegment() {
         guard let segment = controls.activeSkipSegment else { return }
         controls.skipSegments.dismissedSegmentID = segment.id
-        requestSeek(to: segment.end)
+        requestSeek(to: segment.end, origin: "skip-segment")
     }
 
     /// Dismisses the skip button for the active segment without seeking (Menu /
@@ -1738,7 +1738,7 @@ public final class PlayerViewModel {
         guard let segment = controls.activeSkipSegment else { return }
         controls.skipSegments.dismissedSegmentID = segment.id
         controls.autoSkipNotice = AutoSkipNotice(label: segment.kind.autoSkippedLabel)
-        requestSeek(to: segment.end)
+        requestSeek(to: segment.end, origin: "auto-skip-segment")
         autoSkipNoticeTask?.cancel()
         autoSkipNoticeTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 1_800_000_000)
@@ -1834,8 +1834,16 @@ public final class PlayerViewModel {
 
     /// Requests a committed seek. Coalesces rapid presses and defers the engine
     /// commit; owned by ``SeekScrubCoordinator``. See that type for the full
-    /// coalescing / resume-confirm semantics.
-    public func requestSeek(to seconds: TimeInterval) {
+    /// coalescing / resume-confirm semantics. `origin` names the caller in the
+    /// persistent playback trace, so an unexpected jump (issue #61) is traceable.
+    public func requestSeek(to seconds: TimeInterval, origin: String = "transport") {
+        HandoffDiagnostics.emit(
+            "session SEEK_INTENT vm=\(instanceID) origin=\(origin)"
+                + " from=\(String(format: "%.1f", controls.currentSeconds))"
+                + " to=\(String(format: "%.1f", seconds))"
+                + " engineLoading=\(engine.status == .loading)"
+                + " recovering=\(isRecoveringAfterForeground)"
+        )
         seekCoordinator.requestSeek(to: seconds)
         nowPlaying?.refresh()
     }
@@ -2622,7 +2630,7 @@ extension PlayerViewModel: VideoNowPlayingHost {
         #endif
     }
 
-    func nowPlayingSeek(to seconds: TimeInterval) { requestSeek(to: seconds) }
+    func nowPlayingSeek(to seconds: TimeInterval) { requestSeek(to: seconds, origin: "now-playing") }
     func nowPlayingPlayEpisode(_ item: MediaItem) { playEpisode(item) }
     func nowPlayingStop() {
         nowPlaying?.end()
