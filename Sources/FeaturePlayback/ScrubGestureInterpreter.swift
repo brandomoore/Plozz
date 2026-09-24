@@ -18,8 +18,9 @@ struct ScrubGestureInterpreter {
 
     /// What the host controller should do for one `.changed` pan sample.
     enum PanOutcome: Equatable {
-        /// Still deciding the axis (travel below the dead-zone), or a suppressed
-        /// vertical drag — do nothing this sample.
+        /// Still deciding the axis (travel below the dead-zone, or a vertical lean
+        /// short of `verticalNavigationDistance`), or a suppressed vertical drag —
+        /// do nothing this sample.
         case ignore
         /// A deliberate downward swipe — reveal the Info card.
         case enterControlBar
@@ -49,6 +50,10 @@ struct ScrubGestureInterpreter {
 
     /// Distance (points) a touch must travel before we lock to an axis.
     let axisDeadZone: Double
+    /// Vertical travel (points) before a swipe leaves the scrub surface for the
+    /// controls. Longer than the dead-zone so a horizontal swipe whose first
+    /// delivered sample still leans vertical can lock horizontal on a later one.
+    let verticalNavigationDistance: Double
     /// EMA weight at the 60 Hz reference cadence. Actual samples are weighted by
     /// elapsed time, so matching 24 Hz video does not slow the acceleration ramp.
     let speedSmoothing: Double
@@ -66,10 +71,12 @@ struct ScrubGestureInterpreter {
     private var smoothedSpeed: Double = 0
 
     init(axisDeadZone: Double = 18,
+         verticalNavigationDistance: Double = 54,
          speedSmoothing: Double = 0.25,
          flickCommitThreshold: Double = 1000) {
         precondition((0...1).contains(speedSmoothing))
         self.axisDeadZone = axisDeadZone
+        self.verticalNavigationDistance = verticalNavigationDistance
         self.speedSmoothing = speedSmoothing
         self.flickCommitThreshold = flickCommitThreshold
     }
@@ -118,6 +125,10 @@ struct ScrubGestureInterpreter {
                 }
                 lastTranslationX = translationX < 0 ? -axisDeadZone : axisDeadZone
             } else {
+                // Leaving the surface needs more travel than a scrub. UIKit can deliver
+                // a right swipe's first sample while it still leans downward; locking
+                // there opened Info and the rest of the swipe moved focus to Cast.
+                guard absY >= verticalNavigationDistance else { return .ignore }
                 axis = .verticalIgnored
                 return translationY > 0 ? .enterControlBar : .moveUp
             }
