@@ -996,6 +996,18 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         }
     }
 
+    /// Records a swipe that left the scrub surface in the persistent playback
+    /// trace, so a right swipe that opened the controls instead of scrubbing can
+    /// be diagnosed from the device afterwards, without a console capture.
+    private func traceVerticalSwipe(
+        _ direction: String, phase: UIGestureRecognizer.State, translation: CGPoint
+    ) {
+        HandoffDiagnostics.emit(
+            "input SWIPE_VERTICAL dir=\(direction) phase=\(phase.rawValue)"
+                + " x=\(Int(translation.x)) y=\(Int(translation.y))"
+        )
+    }
+
     private func advanceScrub(using gesture: UIPanGestureRecognizer) {
         let translation = gesture.translation(in: view)
         let sampleStart = ScrubDiagnostics.enabled ? CACurrentMediaTime() : 0
@@ -1020,9 +1032,11 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         case .ignore:
             break
         case .enterControlBar:
+            traceVerticalSwipe("down", phase: gesture.state, translation: translation)
             if model.isScrubbing { scheduleScrubCommit() }
             handleDown()
         case .moveUp:
+            traceVerticalSwipe("up", phase: gesture.state, translation: translation)
             if model.isScrubbing { scheduleScrubCommit() }
             handleUp()
         case .flashAndSuppress:
