@@ -87,8 +87,8 @@ let package = Package(
         // Powers the native HLS-fMP4 remux path for MKV → DoVi + Atmos + seek.
         // See AGENTS.local.md › "Playback engine (AetherEngine / Plozzigen)".
         //
-        // Pinned to upstream release 7.10.0:
-        // ca8512cd579b770d96dec8cea23507a5bb81128a.
+        // Pinned to upstream release 7.15.1:
+        // b93f9c4b9937874dc12fee2824ea3327a05b84e3.
         //
         // Plozz no longer carries an AetherEngine fork. Everything the old
         // `plozz-pin-*` stack existed for is upstream as of 5.23.2:
@@ -198,9 +198,19 @@ let package = Package(
         // positive evidence, stream analysis, and HTTP origin-slot waiting.
         // Plozz retains its provider and HTTP transport safeguards.
         //
+        // 7.15.1 notices a media services reset after tvOS sleep instead of
+        // reloading onto the invalidated player, stops waiting on a media server
+        // that no longer answers (AetherEngine#597), keeps the playhead through a
+        // rebuild raised just after another (#464), and no longer latches an HDR
+        // refusal made while the display is ineligible (#535). 7.11.0 matches
+        // audio and subtitle language preferences on parsed tags (en-US answers
+        // en), which can change the default track picked for some titles.
+        // FFmpegBuild advances to 3.5.x (FFmpeg n8.1.3); platform minimums are
+        // unchanged.
+        //
         // SMB enters AetherEngine only through Plozz's protocol-neutral custom-source
         // bridge; the engine's legacy SMB URL product is not linked.
-        .package(url: "https://github.com/superuser404notfound/AetherEngine", revision: "ca8512cd579b770d96dec8cea23507a5bb81128a"),
+        .package(url: "https://github.com/superuser404notfound/AetherEngine", revision: "b93f9c4b9937874dc12fee2824ea3327a05b84e3"),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x decode-only) and LibDovi (Dolby Vision
         // RPU parser) are pulled in TRANSITIVELY by AetherEngine — its own manifest
         // declares and consumes them. Plozz used to declare them directly only for

@@ -6,8 +6,15 @@ with the best possible quality (Dolby Vision, Atmos, full-timeline seek).
 
 ## Dependency version
 
-Plozz pins upstream release **7.10.0**, commit
-`ca8512cd579b770d96dec8cea23507a5bb81128a`. It contains the structural HDR10+
+Plozz pins upstream release **7.15.1**, commit
+`b93f9c4b9937874dc12fee2824ea3327a05b84e3`. Since 7.10.0 it notices a media
+services reset after tvOS sleep instead of reloading onto the invalidated
+player, stops waiting on a media server that no longer answers
+([superuser404notfound/AetherEngine#597](https://github.com/superuser404notfound/AetherEngine/issues/597)),
+keeps the playhead through a rebuild raised just after another, and no longer
+latches an HDR refusal made while the display is ineligible. Audio and subtitle
+language preferences now match parsed tags (`en-US` answers `en`), which can
+change the default track picked for some titles. It contains the structural HDR10+
 validator and shared probe limits/cancellation from
 [superuser404notfound/AetherEngine#583](https://github.com/superuser404notfound/AetherEngine/pull/583),
 plus the follow-up fixes in
@@ -19,7 +26,7 @@ wait for an origin slot until their deadline. Plozz's existing public-API
 integration and stricter HTTP transport remain unchanged.
 
 Its iOS/tvOS 18 minimum matches Plozz's existing deployment targets. The engine
-owns the FFmpegBuild 3.4.x and LibDovi 2.1.x dependencies; Plozz does not link a
+owns the FFmpegBuild 3.5.x and LibDovi 2.1.x dependencies; Plozz does not link a
 second FFmpeg build. This release also retains both earlier integration fixes:
 
 - [superuser404notfound/AetherEngine#566](https://github.com/superuser404notfound/AetherEngine/pull/566):
