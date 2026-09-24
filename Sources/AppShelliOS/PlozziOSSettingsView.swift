@@ -2434,7 +2434,10 @@ private struct PlozziOSSubtitleSettingsView: View {
     var body: some View {
         List {
             SettingsSectionGroup("Appearance") {
-                Toggle("Follow system style", isOn: $style.style.followsSystemStyle)
+                Toggle(
+                    "Use native subtitles where available",
+                    isOn: $behavior.settings.usesNativeSubtitles
+                )
                 Picker("Font", selection: $style.style.fontFamily) {
                     ForEach(SubtitleFontFamily.allCases, id: \.self) {
                         Text($0.displayName).tag($0)
@@ -2446,7 +2449,7 @@ private struct PlozziOSSubtitleSettingsView: View {
                     }
                 }
                 LabeledContent("Size") {
-                    Slider(value: $style.style.fontScale, in: 0.6...2.0)
+                    Slider(value: $style.style.fontScale, in: 0.4...2.0)
                         .frame(maxWidth: 360)
                 }
                 LabeledContent("Opacity") {
@@ -2454,6 +2457,8 @@ private struct PlozziOSSubtitleSettingsView: View {
                         .frame(maxWidth: 360)
                 }
                 Toggle("Background", isOn: $style.style.background.isEnabled)
+                Toggle("Use File Positions", isOn: $style.style.usesSourcePosition)
+                Toggle("Use File Colors", isOn: $style.style.usesSourceColors)
             }
 
             SettingsSectionGroup("Behavior") {

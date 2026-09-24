@@ -39,6 +39,14 @@ struct SubtitleBackgroundSpec: Equatable {
 /// outer outline and shadow are never clipped. It also drives the **CJK font
 /// cascade** (Hiragino / PingFang / Apple SD Gothic Neo) so mixed-language and
 /// dual-subtitle lines render with the bundled Latin face *and* system CJK.
+/// A span of the line filled in a source-declared colour instead of the
+/// style's, as a UTF-16 range into the line's text.
+struct SubtitleFillSpan: Equatable {
+    var location: Int
+    var length: Int
+    var color: UIColor
+}
+
 struct CoreTextSubtitleLine: UIViewRepresentable {
     let text: String
     let family: SubtitleFontFamily
@@ -53,6 +61,7 @@ struct CoreTextSubtitleLine: UIViewRepresentable {
     let shadow: SubtitleShadowSpec?
     let background: SubtitleBackgroundSpec?
     let alignment: NSTextAlignment
+    var fillSpans: [SubtitleFillSpan] = []
 
     func makeUIView(context: Context) -> SubtitleLineView { SubtitleLineView() }
 
@@ -61,7 +70,8 @@ struct CoreTextSubtitleLine: UIViewRepresentable {
             text: text, family: family, weight: weight, fontSize: fontSize,
             isBold: isBold, isItalic: isItalic,
             fill: fill, outline: outline, outlineWidth: outlineWidth,
-            shadow: shadow, background: background, alignment: alignment))
+            shadow: shadow, background: background, alignment: alignment,
+            fillSpans: fillSpans))
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: SubtitleLineView, context: Context) -> CGSize? {
@@ -89,14 +99,25 @@ final class SubtitleLineView: UIView {
         var shadow: SubtitleShadowSpec?
         var background: SubtitleBackgroundSpec?
         var alignment: NSTextAlignment
+        var fillSpans: [SubtitleFillSpan] = []
     }
 
     private struct Layout {
         var path: CGPath          // combined glyph outline, positioned in flipped coords
+        var spanFills: [SpanFill] // glyphs painted in a source colour over the default fill
         var totalSize: CGSize     // text size + outline/shadow/background insets
         var colorGlyphs: [ColorGlyph]  // emoji / colour glyphs (no vector path) drawn on top
         var background: BackgroundFill?  // rounded box hugging the text, drawn first
     }
+
+    /// Glyphs of one source-coloured span, in the same coordinates as `path`.
+    private struct SpanFill {
+        var path: CGPath
+        var color: UIColor
+    }
+
+    /// Tags the ranges a source colour covers so glyph extraction can group them.
+    private static let fillSpanKey = NSAttributedString.Key("PlozzSubtitleFillSpan")
 
     /// A resolved background box in the line's flipped drawing coordinates.
     private struct BackgroundFill {
@@ -215,10 +236,15 @@ final class SubtitleLineView: UIView {
             ctx.restoreGState()
         }
 
-        // 3. Fill on top.
+        // 3. Fill on top, then repaint source-coloured spans over their glyphs.
         ctx.addPath(path)
         ctx.setFillColor(c.fill.cgColor)
         ctx.fillPath()
+        for span in l.spanFills {
+            ctx.addPath(span.path)
+            ctx.setFillColor(span.color.cgColor)
+            ctx.fillPath()
+        }
 
         // 4. Colour-glyph pass (emoji etc.): these expose no vector outline, so
         //    we draw just those individual glyphs on top. Crucially we do NOT
@@ -266,7 +292,7 @@ final class SubtitleLineView: UIView {
         let frame = CTFramesetterCreateFrame(
             fs, CFRange(location: 0, length: attr.length),
             CGPath(rect: boxRect, transform: nil), nil)
-        let (rawPath, rawColorGlyphs) = Self.combinedGlyphPath(frame: frame)
+        let (rawPath, rawColorGlyphs, rawSpanFills) = Self.combinedGlyphPath(frame: frame)
 
         // Font ascent/descent/leading are layout metrics, not visible padding.
         // Anchor to actual ink (including fallback/colour glyphs), otherwise
@@ -282,7 +308,7 @@ final class SubtitleLineView: UIView {
             }
         }
         guard !ink.isNull else {
-            return Layout(path: rawPath, totalSize: .zero, colorGlyphs: [], background: nil)
+            return Layout(path: rawPath, spanFills: [], totalSize: .zero, colorGlyphs: [], background: nil)
         }
 
         // Grow the ink by the per-side reach to get the full drawn rect, union in
@@ -301,6 +327,9 @@ final class SubtitleLineView: UIView {
         }
         var shift = CGAffineTransform(translationX: -drawn.minX, y: -drawn.minY)
         let path = rawPath.copy(using: &shift) ?? rawPath
+        let spanFills = rawSpanFills.map { span in
+            SpanFill(path: span.path.copy(using: &shift) ?? span.path, color: span.color)
+        }
         let colorGlyphs = rawColorGlyphs.map {
             ColorGlyph(font: $0.font, glyph: $0.glyph,
                        position: CGPoint(x: $0.position.x - drawn.minX,
@@ -313,6 +342,7 @@ final class SubtitleLineView: UIView {
                 color: bg.color, cornerRadius: bg.cornerRadius)
         }
         return Layout(path: path,
+                      spanFills: spanFills,
                       totalSize: CGSize(width: ceil(drawn.width), height: ceil(drawn.height)),
                       colorGlyphs: colorGlyphs,
                       background: background)
@@ -330,10 +360,11 @@ final class SubtitleLineView: UIView {
             right:  blur + max(0,  sh.offset.width))
     }
 
-    private static func combinedGlyphPath(frame: CTFrame) -> (CGPath, [ColorGlyph]) {
+    private static func combinedGlyphPath(frame: CTFrame) -> (CGPath, [ColorGlyph], [SpanFill]) {
         let combined = CGMutablePath()
         var colorGlyphs: [ColorGlyph] = []
-        guard let lines = CTFrameGetLines(frame) as? [CTLine] else { return (combined, []) }
+        var spanPaths: [(path: CGMutablePath, color: UIColor)] = []
+        guard let lines = CTFrameGetLines(frame) as? [CTLine] else { return (combined, [], []) }
         var origins = [CGPoint](repeating: .zero, count: lines.count)
         CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
 
@@ -345,6 +376,18 @@ final class SubtitleLineView: UIView {
                 guard let runFontRaw = attrs[kCTFontAttributeName] else { continue }
                 // CTFont is a Core Foundation class; this cast always succeeds.
                 let runFont = runFontRaw as! CTFont
+                // Source-coloured runs also collect into a per-colour path so the
+                // fill pass can repaint just those glyphs.
+                var spanPath: CGMutablePath?
+                if let color = attrs[fillSpanKey] as? UIColor {
+                    if let existing = spanPaths.first(where: { $0.color.isEqual(color) }) {
+                        spanPath = existing.path
+                    } else {
+                        let created = CGMutablePath()
+                        spanPaths.append((created, color))
+                        spanPath = created
+                    }
+                }
                 let count = CTRunGetGlyphCount(run)
                 if count == 0 { continue }
                 var glyphs = [CGGlyph](repeating: 0, count: count)
@@ -355,7 +398,9 @@ final class SubtitleLineView: UIView {
                     let pos = CGPoint(x: lineOrigin.x + positions[j].x,
                                       y: lineOrigin.y + positions[j].y)
                     if let gp = CTFontCreatePathForGlyph(runFont, glyphs[j], nil) {
-                        combined.addPath(gp, transform: CGAffineTransform(translationX: pos.x, y: pos.y))
+                        let placed = CGAffineTransform(translationX: pos.x, y: pos.y)
+                        combined.addPath(gp, transform: placed)
+                        spanPath?.addPath(gp, transform: placed)
                         continue
                     }
                     // No vector outline. This is *usually* whitespace (a space has
@@ -371,7 +416,7 @@ final class SubtitleLineView: UIView {
                 }
             }
         }
-        return (combined, colorGlyphs)
+        return (combined, colorGlyphs, spanPaths.map { SpanFill(path: $0.path, color: $0.color) })
     }
 
     // MARK: - Font
@@ -483,6 +528,12 @@ final class SubtitleLineView: UIView {
             .foregroundColor: c.fill,
             .paragraphStyle: para
         ])
+        let length = attributed.length
+        for span in c.fillSpans {
+            let range = NSRange(location: span.location, length: span.length)
+            guard range.location >= 0, range.length > 0, NSMaxRange(range) <= length else { continue }
+            attributed.addAttribute(Self.fillSpanKey, value: span.color, range: range)
+        }
         // Core Text scales cascade fonts to the base size even when their
         // descriptors specify a size. Pin resolved fallback runs explicitly so
         // switching to OpenDyslexic doesn't shrink CJK, Arabic or emoji.

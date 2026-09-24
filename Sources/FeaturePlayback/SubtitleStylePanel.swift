@@ -223,6 +223,7 @@ struct SubtitleStylePanel: View {
             current: Int((s.verticalPosition / SubtitleStyle.verticalPositionStep).rounded()),
             label: { Text(Double($0) * SubtitleStyle.verticalPositionStep, format: .percent.precision(.fractionLength(0...1))) }
         ) { v in updateStyle { $0.verticalPosition = Double(v) * SubtitleStyle.verticalPositionStep } }); slot += 1
+        rows.append(StyleRowSpec(slot: slot, title: "Use File Positions", kind: .toggle(isOn: s.usesSourcePosition, flip: { updateStyle { $0.usesSourcePosition.toggle() } }))); slot += 1
         rows.append(choiceRow(
             slot,
             LocalizedStringResource(
@@ -235,6 +236,7 @@ struct SubtitleStylePanel: View {
         ) { v in updateStyle { $0.verticalAnchor = v } }); slot += 1
         rows.append(numberRow(slot, "Horizontal Offset", options: Self.hOffsetOptions, current: Int((s.horizontalOffset * 100).rounded()), label: { Text(PlayerControlsFormatting.hOffsetLabel($0)) }) { v in updateStyle { $0.horizontalOffset = Double(v) / 100 } }); slot += 1
         rows.append(colorRow(slot, "Text Color", options: Self.textColorOptions, current: s.textColor, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.textColor = c } }); slot += 1
+        rows.append(StyleRowSpec(slot: slot, title: "Use File Colors", kind: .toggle(isOn: s.usesSourceColors, flip: { updateStyle { $0.usesSourceColors.toggle() } }))); slot += 1
         rows.append(numberRow(slot, "Opacity", options: Self.opacityOptions, current: Int((s.opacity * 100).rounded()), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.opacity = Double(v) / 100 } }); slot += 1
         // Only affects HDR frames, so it appears exclusively while HDR is live —
         // mirroring how the bitmap-primary gate hides controls that can't act.
@@ -508,7 +510,7 @@ struct SubtitleStylePanel: View {
     // MARK: Option grids
 
     // Precise, numeric option grids — no "low / high" buckets.
-    private static let sizeOptions: [Int] = Array(stride(from: 60, through: 250, by: 5))
+    private static let sizeOptions: [Int] = Array(stride(from: 40, through: 250, by: 5))
     private static let positionOptions = SubtitleStyle.verticalPositionOptions.map {
         Int(($0 / SubtitleStyle.verticalPositionStep).rounded())
     }
