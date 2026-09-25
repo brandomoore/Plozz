@@ -2,13 +2,24 @@ import XCTest
 @testable import CoreModels
 
 final class MediaSegmentTests: XCTestCase {
-    func testIsSkippableOnlyIntroAndCredits() {
+    func testIsSkippableForKindsWithASkipSetting() {
         XCTAssertTrue(MediaSegment(kind: .intro, start: 0, end: 10).isSkippable)
         XCTAssertTrue(MediaSegment(kind: .credits, start: 100, end: 120).isSkippable)
+        XCTAssertTrue(MediaSegment(kind: .preview, start: 0, end: 5).isSkippable)
+        XCTAssertTrue(MediaSegment(kind: .commercial, start: 0, end: 5).isSkippable)
         XCTAssertFalse(MediaSegment(kind: .recap, start: 0, end: 5).isSkippable)
-        XCTAssertFalse(MediaSegment(kind: .preview, start: 0, end: 5).isSkippable)
-        XCTAssertFalse(MediaSegment(kind: .commercial, start: 0, end: 5).isSkippable)
         XCTAssertFalse(MediaSegment(kind: .unknown, start: 0, end: 5).isSkippable)
+    }
+
+    func testFillingAddsOnlyKindsThePrimaryLacks() {
+        let server = [MediaSegment(id: "s-intro", kind: .intro, start: 10, end: 40)]
+        let community = [
+            MediaSegment(id: "c-intro", kind: .intro, start: 12, end: 42),
+            MediaSegment(id: "c-credits", kind: .credits, start: 1200, end: 1260)
+        ]
+        let merged = server.filling(from: community)
+        XCTAssertEqual(merged.map(\.id), ["s-intro", "c-credits"])
+        XCTAssertEqual([MediaSegment]().filling(from: community).map(\.id), ["c-intro", "c-credits"])
     }
 
     func testContainsRespectsMargins() {
@@ -120,6 +131,37 @@ final class PlaybackSettingsTests: XCTestCase {
             let decoded = try JSONDecoder().decode(PlaybackSettings.self, from: data)
             XCTAssertEqual(decoded.skipIntros, mode)
         }
+    }
+
+    func testSkipCreditsMigratesFromLegacyCombinedSetting() throws {
+        // Before the split, `skipIntros` covered credits too.
+        let decoded = try JSONDecoder().decode(
+            PlaybackSettings.self, from: Data(#"{"skipIntros":"autoDelay"}"#.utf8)
+        )
+        XCTAssertEqual(decoded.skipCredits, .autoDelay)
+        XCTAssertEqual(decoded.skipPreviews, .off)
+        XCTAssertEqual(decoded.skipCommercials, .off)
+        XCTAssertTrue(decoded.useIntroDB)
+        XCTAssertTrue(decoded.useTheIntroDB)
+    }
+
+    func testPerKindModesRoundTrip() throws {
+        let settings = PlaybackSettings(
+            skipIntros: .autoInstant, skipCredits: .on, skipPreviews: .autoDelay,
+            skipCommercials: .autoInstant, useIntroDB: false, useTheIntroDB: true
+        )
+        let decoded = try JSONDecoder().decode(
+            PlaybackSettings.self, from: JSONEncoder().encode(settings)
+        )
+        XCTAssertEqual(decoded, settings)
+        let modes = decoded.skipMarkerModes
+        XCTAssertEqual(modes.mode(for: .intro), .autoInstant)
+        XCTAssertEqual(modes.mode(for: .credits), .on)
+        XCTAssertEqual(modes.mode(for: .preview), .autoDelay)
+        XCTAssertEqual(modes.mode(for: .commercial), .autoInstant)
+        XCTAssertEqual(modes.mode(for: .recap), .off)
+        XCTAssertTrue(modes.fetchesMarkers)
+        XCTAssertFalse(SkipMarkerModes.allOff.fetchesMarkers)
     }
 
     func testModeFlags() {

@@ -598,7 +598,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     ///    `autoSkipDelay` seconds (the button's ring counts the wait down; the
     ///    viewer can skip now or swipe-up to cancel).
     ///  * `.autoInstant` — skip immediately with only a brief notice, no button.
-    ///  * `.off` — never reached (markers aren't fetched).
+    ///  * `.off` (for the active segment's kind) — no button; tears one down.
     /// Only auto-presents from the scrub surface so it never yanks focus out of
     /// the control bar or a scrub; returns focus to the surface once the segment
     /// passes or is dismissed.
