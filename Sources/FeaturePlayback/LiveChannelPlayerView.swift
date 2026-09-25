@@ -268,6 +268,8 @@ public struct LiveChannelPlayerView: View {
                 #if os(tvOS)
                 if isExpanded, diagnosticsEnabled, sourceMatches, model.hasPresentedFrame {
                     PlaybackDiagnosticsOverlay(diagnostics: diagnosticsSampler.latest)
+                        // Pinned to the top-left corner, as the VOD player's is.
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .allowsHitTesting(false)
                         .ignoresSafeArea()
                         .transition(.opacity)
@@ -1221,6 +1223,9 @@ private final class LiveChannelPlayerPlaybackState {
     var seekableWindow: LiveSeekableWindow?
     var isAtLiveEdge = true
     var behindLiveSeconds: TimeInterval = 0
+    /// The viewer paused, so being behind the live edge is their doing until
+    /// they go back to live.
+    var timeShifted = false
     var manualRetryCount = 0
     var isLoading = false
     var userPaused = false
@@ -1252,6 +1257,14 @@ private final class LiveChannelPlayerTrackState {
     }
 
     var engineSubtitleStyle: SubtitleStyle { preferences.engineSubtitleStyle }
+
+    /// An edit from the Style screen: previewed on the overlay at once, pushed
+    /// to subtitles the engine draws itself, and kept as live TV's style.
+    func setSubtitleStyle(_ style: SubtitleStyle, engine: any LiveChannelEngine) {
+        preferences.setSubtitleStyle(style)
+        subtitles.style = style
+        engine.updateSubtitleStyle(preferences.engineSubtitleStyle)
+    }
 
     func selectAudio(_ track: MediaTrack, engine: any LiveChannelEngine) {
         guard audioTracks.contains(track) else { return }
@@ -1372,6 +1385,11 @@ final class LiveChannelPlayerModel {
     private var userPaused: Bool {
         get { playbackState.userPaused }
         set { playbackState.userPaused = newValue }
+    }
+
+    private var timeShifted: Bool {
+        get { playbackState.timeShifted }
+        set { playbackState.timeShifted = newValue }
     }
     private var isRecoveringProgramme: Bool {
         get { playbackState.isRecoveringProgramme }
@@ -1531,6 +1549,21 @@ final class LiveChannelPlayerModel {
             || (hasPresentedFrame && supportsTimeShift))
     }
 
+    /// Within this of the newest segment is the live edge itself.
+    static let liveEdgeTolerance: TimeInterval = 3
+
+    /// Whether the viewer is behind live, as Go Live and the status pill show it.
+    ///
+    /// An HLS stream plays a few segments behind the newest, and that gap grows
+    /// by a segment and snaps back each time the playlist updates. Judged
+    /// against the 3s edge alone, a channel nobody touched flipped Go Live on
+    /// and off every few seconds. So being behind counts once the viewer paused
+    /// (their own time shift), or when the stream has fallen well past any
+    /// live delay on its own.
+    static func isBehindLive(_ behind: TimeInterval, timeShifted: Bool) -> Bool {
+        timeShifted ? behind > liveEdgeTolerance : behind > 30
+    }
+
     var canGoLive: Bool {
         canPause && hasPresentedFrame && supportsTimeShift && !isAtLiveEdge
     }
@@ -1616,6 +1649,10 @@ final class LiveChannelPlayerModel {
         trackState.selectSubtitle(track, engine: engine)
     }
 
+    func setSubtitleStyle(_ style: SubtitleStyle) {
+        trackState.setSubtitleStyle(style, engine: engine)
+    }
+
     private func refreshTracks() {
         trackState.refresh(engine: engine, isReady: !isLoading && hasPresentedFrame)
     }
@@ -1692,6 +1729,7 @@ final class LiveChannelPlayerModel {
         hasPresentedFrame = false
         seekableWindow = nil
         isAtLiveEdge = true
+        timeShifted = false
         attemptStartedAt = uptime()
         bufferingStartedAt = nil
         needsForegroundLoad = isSuspended
@@ -1749,6 +1787,7 @@ final class LiveChannelPlayerModel {
         } else {
             guard canPause else { return }
             userPaused = true
+            timeShifted = true
             diagnostics.event(.pause, attempt: attemptCount)
             if !isLoading { cancelRecovery() }
             engine.pause()
@@ -1762,6 +1801,7 @@ final class LiveChannelPlayerModel {
         guard canGoLive, !isSuspended, !isLoading else { return }
         let generation = attemptGeneration
         userPaused = false
+        timeShifted = false
         diagnostics.event(.seek, attempt: attemptCount)
         phase = .seeking
         bufferingStartedAt = uptime()
@@ -1865,6 +1905,7 @@ final class LiveChannelPlayerModel {
         hasPresentedFrame = false
         seekableWindow = nil
         isAtLiveEdge = true
+        timeShifted = false
         attemptStartedAt = uptime()
         firstFrameTimingStartedAt = attemptStartedAt
         bufferingStartedAt = nil
@@ -1985,13 +2026,19 @@ final class LiveChannelPlayerModel {
         seekableWindow = snapshot.seekableRange.flatMap {
             LiveSeekableWindow(ranges: [(start: $0.lowerBound, duration: $0.upperBound - $0.lowerBound)])
         }
-        if let behind = snapshot.behindLiveSeconds, behind.isFinite {
-            isAtLiveEdge = behind <= 3
+        let behind: TimeInterval? = if let behind = snapshot.behindLiveSeconds, behind.isFinite {
+            behind
+        } else {
+            seekableWindow.map { $0.upperBound - snapshot.position }
+        }
+        if let behind, behind.isFinite {
+            // Back at the edge by any route ends the time shift.
+            if behind <= Self.liveEdgeTolerance { timeShifted = false }
+            isAtLiveEdge = !Self.isBehindLive(behind, timeShifted: timeShifted)
             behindLiveSeconds = isAtLiveEdge ? 0 : max(0, behind)
         } else {
-            isAtLiveEdge = seekableWindow?.isAtLiveEdge(currentTime: snapshot.position) ?? true
-            behindLiveSeconds = isAtLiveEdge ? 0
-                : max(0, (seekableWindow?.upperBound ?? snapshot.position) - snapshot.position)
+            isAtLiveEdge = true
+            behindLiveSeconds = 0
         }
         let hadPresentedFrame = hasPresentedFrame
         hasPresentedFrame = hasPresentedFrame || snapshot.firstFrameReady

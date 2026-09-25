@@ -92,8 +92,17 @@ struct LiveChannelOverlay: View {
 
     @Environment(\.playerCardMetrics) private var metrics
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.themePalette) private var palette
     @State private var openMenu: LiveChannelTrackMenuKind?
     @State private var menuReturnFocus: LiveChannelControl?
+    /// The VOD player's options panel, fed the channel's tracks: its model, the
+    /// Subtitles screen it shows, its remembered heights, the Menu press that
+    /// steps it back, and the focus inside it.
+    @State private var trackOptions = PlayerControlsModel()
+    @State private var subtitleScreen: PlayerControls.SubtitleScreen = .tracks
+    @State private var panelHeights: [PlayerControls.Category: CGFloat] = [:]
+    @State private var panelBackRequest = 0
+    @FocusState private var panelFocus: PlayerControls.FocusSlot?
     @State private var cardOpen = false
     /// The tab the card draws, kept while it parks so it leaves showing what
     /// the viewer was looking at, and reopened by the next Down.
@@ -126,6 +135,8 @@ struct LiveChannelOverlay: View {
     var body: some View {
         layout
         .animation(.easeInOut(duration: 0.2), value: openMenu)
+        .animation(.easeInOut(duration: 0.3), value: styleEditing)
+        .onChange(of: trackOptionsSource, initial: true) { _, source in syncTrackOptions(source) }
         .onChange(of: focus) { _, control in focusChanged(control) }
         .onChange(of: openMenu != nil || cardOpen) { _, pinned in onTracksPresentationChange(pinned) }
         .onChange(of: cardOpen && cardTab == .guide) { _, showing in onGuideCardChange(showing) }
@@ -163,11 +174,14 @@ struct LiveChannelOverlay: View {
             Color.clear
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { layerBottom = $0 }
             scrim
+                .opacity(styleEditing ? 0 : 1)
             topBar
+                .opacity(styleEditing ? 0 : 1)
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
                 bottomCluster
             }
+            .opacity(styleEditing ? 0 : 1)
             menuLayer
         }
         .ignoresSafeArea()
@@ -378,6 +392,81 @@ struct LiveChannelOverlay: View {
         #endif
     }
 
+    // MARK: Track options (the VOD player's panel)
+
+    /// Everything the options panel shows, as one value to follow.
+    private struct TrackOptionsSource: Equatable {
+        var audio: [MediaTrack]
+        var subtitles: [MediaTrack]
+        var selectedAudio: Int?
+        var selectedSubtitle: Int?
+        var style: SubtitleStyle
+        var isHDR: Bool
+        var capabilities: PlayerEngineCapabilities
+    }
+
+    private var trackOptionsSource: TrackOptionsSource {
+        TrackOptionsSource(
+            audio: tracks.audioTracks, subtitles: tracks.subtitleTracks,
+            selectedAudio: tracks.selectedAudioID, selectedSubtitle: tracks.selectedSubtitleID,
+            style: tracks.subtitles.style, isHDR: tracks.subtitles.isHDR,
+            capabilities: tracks.engine.capabilities
+        )
+    }
+
+    /// The channel's tracks as the VOD menus list them (`TrackMenuBuilder`: the
+    /// same labels, and an Off row for subtitles), with the live style.
+    private func syncTrackOptions(_ source: TrackOptionsSource) {
+        trackOptions.audioOptions = TrackMenuBuilder.audioOptions(
+            tracks: source.audio, selectedID: source.selectedAudio, preferred: []
+        )
+        trackOptions.subtitleOptions = TrackMenuBuilder.subtitleOptions(
+            tracks: source.subtitles, selectedID: source.selectedSubtitle, preferred: [], detectedLanguages: [:]
+        )
+        trackOptions.subtitleStyle = source.style
+        trackOptions.subtitlesRenderHDR = source.isHDR
+        trackOptions.engineCapabilities = source.capabilities
+        // A live channel has nothing to search.
+        trackOptions.subtitleDownload.canSearch = false
+    }
+
+    private var trackActions: PlayerOptionsActions {
+        let tracks = tracks
+        var actions = PlayerOptionsActions()
+        actions.selectAudio = { id in
+            if let track = tracks.audioTracks.first(where: { $0.id == id }) { tracks.selectAudio(track) }
+        }
+        actions.selectSubtitle = { id in
+            tracks.selectSubtitle(
+                id == PlayerTrackOption.offID ? nil : tracks.subtitleTracks.first { $0.id == id }
+            )
+        }
+        actions.setSubtitleStyle = { tracks.setSubtitleStyle($0) }
+        actions.togglePlayPause = onPlayPause
+        return actions
+    }
+
+    /// The Style editor (or one of its screens) is up: as in VOD, the panel
+    /// pins to the top and the transport steps aside so the subtitles show.
+    private var styleEditing: Bool {
+        openMenu == .subtitles && subtitleScreen.isStyleFamily
+    }
+
+    #if os(tvOS)
+    @ViewBuilder
+    private func optionsPanel(_ kind: LiveChannelTrackMenuKind) -> some View {
+        PlayerOptionsPanel(
+            category: kind.category, model: trackOptions, palette: palette, actions: trackActions,
+            subtitleScreen: $subtitleScreen, heightCache: $panelHeights, focus: $panelFocus,
+            close: closeMenu, backRequest: panelBackRequest,
+            // A live channel draws one subtitle line.
+            offersDualSubtitles: false
+        )
+        .id(kind)
+        .plozzFocusSection()
+    }
+    #endif
+
     // MARK: Badges
 
     /// VOD's rule (`PlayerControlsModel.hasSelectableAudio`): Audio only when
@@ -459,6 +548,20 @@ struct LiveChannelOverlay: View {
                 .padding(.bottom, Self.horizontalMargin)
                 .transition(.scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity))
             } else {
+                #if os(tvOS)
+                VStack(spacing: 0) {
+                    // Style pins to the TOP, as VOD's does, so its height changes
+                    // extend downward; every other menu rests above its buttons.
+                    if !styleEditing { Spacer(minLength: 0) }
+                    optionsPanel(openMenu)
+                    if styleEditing { Spacer(minLength: 0) }
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.horizontal, Self.horizontalMargin)
+                .padding(.top, Self.horizontalMargin)
+                .padding(.bottom, styleEditing ? Self.horizontalMargin : menuBottomInset)
+                .transition(.scale(scale: 0.9, anchor: .bottomTrailing).combined(with: .opacity))
+                #else
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
                     LiveChannelTrackPanel(kind: openMenu, model: tracks, focus: $focus, onSelect: closeMenu)
@@ -468,6 +571,7 @@ struct LiveChannelOverlay: View {
                 .padding(.top, Self.horizontalMargin)
                 .padding(.bottom, menuBottomInset)
                 .transition(.scale(scale: 0.9, anchor: .bottomTrailing).combined(with: .opacity))
+                #endif
             }
         }
     }
@@ -815,22 +919,34 @@ struct LiveChannelOverlay: View {
             return
         }
         menuReturnFocus = focus ?? kind.control
+        subtitleScreen = .tracks
         openMenu = kind
         // After tvOS's own default-focus pass over the new rows — see
         // `PlayerControls.restoreFocus`.
+        #if os(tvOS)
+        let target = PlayerOptionsPanel.preferredFocus(
+            for: kind.category, subtitleScreen: .tracks, model: trackOptions
+        )
+        DispatchQueue.main.async { panelFocus = target }
+        #else
         let row = LiveChannelTrackPanel.selectedRow(kind: kind, model: tracks)
         DispatchQueue.main.async { focus = .trackRow(row) }
+        #endif
     }
 
     private func closeMenu() {
         let returnFocus = menuReturnFocus
         openMenu = nil
         menuReturnFocus = nil
+        subtitleScreen = .tracks
         DispatchQueue.main.async { focus = returnFocus }
     }
 
     private func handleExit() {
-        if openMenu != nil {
+        if openMenu == .subtitles, subtitleScreen != .tracks {
+            // Back out of a Subtitles screen to the track list first, as VOD.
+            panelBackRequest &+= 1
+        } else if openMenu != nil {
             closeMenu()
         } else if cardOpen {
             closeCard()
@@ -1714,6 +1830,14 @@ enum LiveChannelTrackMenuKind: Hashable {
     }
 
     var control: LiveChannelControl {
+        switch self {
+        case .audio: .audio
+        case .subtitles: .subtitles
+        }
+    }
+
+    /// The VOD options panel's menu for this kind.
+    var category: PlayerControls.Category {
         switch self {
         case .audio: .audio
         case .subtitles: .subtitles

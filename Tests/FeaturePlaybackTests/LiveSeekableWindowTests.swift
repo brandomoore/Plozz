@@ -40,5 +40,17 @@ final class LiveSeekableWindowTests: XCTestCase {
         let window = LiveSeekableWindow(ranges: [(start: 100, duration: 60)])
 
     }
+
+    @MainActor
+    func testGoLiveOnlyWhenTheViewerIsActuallyBehind() {
+        // A channel nobody touched: HLS's normal delay swings as segments land,
+        // and none of it counts as being behind.
+        for behind in [0.5, 3, 6, 9, 18, 24] as [TimeInterval] {
+            XCTAssertFalse(LiveChannelPlayerModel.isBehindLive(behind, timeShifted: false), "\(behind)s")
+        }
+        XCTAssertTrue(LiveChannelPlayerModel.isBehindLive(45, timeShifted: false), "fallen well behind on its own")
+        XCTAssertTrue(LiveChannelPlayerModel.isBehindLive(4, timeShifted: true), "paused past the edge")
+        XCTAssertFalse(LiveChannelPlayerModel.isBehindLive(2, timeShifted: true), "still at the edge")
+    }
 }
 #endif

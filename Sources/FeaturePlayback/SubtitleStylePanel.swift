@@ -26,6 +26,9 @@ struct SubtitleStylePanel: View {
     /// morph and defers the focus write. Kept in the parent so the fragile
     /// focus-restore choreography is unchanged by this extraction.
     let openScreen: (PlayerControls.SubtitleScreen) -> Void
+    /// Whether the player can show a second subtitle line; where it can't (a
+    /// live channel) the Dual Subtitles entry is left out.
+    var offersDualSubtitles = true
 
     /// Hold-to-accelerate state for the numeric style rows (see the field in the
     /// former PlayerControls home). Lives here because only `handleStyleMove`
@@ -248,7 +251,9 @@ struct SubtitleStylePanel: View {
         let dividerBefore = slot
         rows.append(StyleRowSpec(slot: slot, title: "Shadow & Outline", kind: .submenu(summary: Text(verbatim: PlayerControlsFormatting.edgeSummary(s)), open: { openScreen(.styleOutline) }))); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Background", kind: .submenu(summary: s.background.isEnabled ? Text("On") : Text("Off"), open: { openScreen(.styleBackground) }))); slot += 1
-        rows.append(StyleRowSpec(slot: slot, title: "Dual Subtitles", kind: .submenu(summary: hasSecondaryTrack ? Text("On") : Text("Off"), open: { openScreen(.styleDual) }))); slot += 1
+        if offersDualSubtitles {
+            rows.append(StyleRowSpec(slot: slot, title: "Dual Subtitles", kind: .submenu(summary: hasSecondaryTrack ? Text("On") : Text("Off"), open: { openScreen(.styleDual) }))); slot += 1
+        }
         rows.append(StyleRowSpec(slot: slot, title: "Reset to Default", kind: .action(run: { updateStyle { $0 = .default } }))); slot += 1
         return (rows, dividerBefore)
     }
