@@ -2,6 +2,7 @@
 import AppRuntime
 import CoreModels
 import CoreUI
+import FeaturePlayback
 import FeatureSettings
 import FeatureSyncSetup
 import SwiftUI
@@ -2505,13 +2506,13 @@ private struct PlozziOSSubtitleSettingsView: View {
                 }
                 // The device style decides these while it's followed.
                 if !style.style.followsSystemStyle {
-                    Picker("Font", selection: $style.style.fontFamily) {
-                        ForEach(SubtitleFontFamily.allCases, id: \.self) {
-                            Text($0.displayName).tag($0)
-                        }
+                    NavigationLink {
+                        PlozziOSSubtitleFontList(style: $style.style)
+                    } label: {
+                        LabeledContent("Font", value: InstalledSubtitleFonts.displayName(for: style.style))
                     }
                     Picker("Weight", selection: $style.style.fontWeight) {
-                        ForEach(style.style.fontFamily.availableWeights, id: \.self) {
+                        ForEach(InstalledSubtitleFonts.weights(for: style.style), id: \.self) {
                             Text($0.displayName).tag($0)
                         }
                     }

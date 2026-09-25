@@ -46,6 +46,7 @@ struct SubtitleStylePanel: View {
                 styleScreen(main.rows, dividerBefore: main.dividerBefore)
             }
         case .styleFont: styleFontScreen
+        case .styleSystemFonts: styleSystemFontsScreen
         case .styleOutline: styleScreen(styleOutlineRows)
         case .styleBackground: styleScreen(styleBackgroundRows)
         case .styleDual: styleScreen(styleDualRows)
@@ -212,14 +213,14 @@ struct SubtitleStylePanel: View {
     /// size, colour, opacity, edge, box), so only placement rows remain.
     private var styleMainRows: (rows: [StyleRowSpec], dividerBefore: Int) {
         let s = model.subtitleStyle
-        let weights = s.fontFamily.availableWeights
+        let weights = InstalledSubtitleFonts.weights(for: s)
         let editsLook = !s.followsSystemStyle
         var rows: [StyleRowSpec] = []
         var slot = 0
 
         rows.append(StyleRowSpec(slot: slot, title: "Use System Caption Style", kind: .toggle(isOn: s.followsSystemStyle, flip: { updateStyle { $0.followsSystemStyle.toggle() } }))); slot += 1
         if editsLook {
-            rows.append(StyleRowSpec(slot: slot, title: "Font", kind: .submenu(summary: Text(verbatim: s.fontFamily.displayName), open: { openScreen(.styleFont) }))); slot += 1
+            rows.append(StyleRowSpec(slot: slot, title: "Font", kind: .submenu(summary: Text(verbatim: InstalledSubtitleFonts.displayName(for: s)), open: { openScreen(.styleFont) }))); slot += 1
             rows.append(choiceRow(slot, "Weight", options: weights, current: s.fontWeight.snapped(to: weights), label: { $0.displayName }) { v in updateStyle { $0.fontWeight = v } }); slot += 1
             rows.append(numberRow(slot, "Text Size", options: Self.sizeOptions, current: Int((s.fontScale * 100).rounded()), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.fontScale = Double(v) / 100 } }); slot += 1
         }
@@ -265,17 +266,78 @@ struct SubtitleStylePanel: View {
         return (rows, dividerBefore)
     }
 
-    /// The Font picker: one selectable row per family, each rendered **in its own
-    /// typeface** (a touch larger than the value rows) so the list previews itself.
-    /// Selecting a font applies it and returns to the Style screen; the chosen
-    /// weight persists and is re-snapped to the new family's available weights by
-    /// the renderer and the Weight row.
+    /// The Font picker: one selectable row per curated family, each rendered **in
+    /// its own typeface** (a touch larger than the value rows) so the list previews
+    /// itself, then System Fonts for the device's own. Selecting a font applies it
+    /// and returns to the Style screen; the chosen weight persists and is
+    /// re-snapped to the new family's available weights by the renderer and the
+    /// Weight row.
     @ViewBuilder
     private var styleFontScreen: some View {
-        let current = model.subtitleStyle.fontFamily
+        let style = model.subtitleStyle
+        let curated = SubtitleFontFamily.allCases
         VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(SubtitleFontFamily.allCases.enumerated()), id: \.offset) { idx, family in
-                fontChoiceRow(family, index: idx, isSelected: family == current)
+            ForEach(Array(curated.enumerated()), id: \.offset) { idx, family in
+                fontChoiceRow(
+                    Text(verbatim: family.displayName), font: Self.fontPreviewFont(for: family),
+                    index: idx, isSelected: style.installedFontFamily == nil && family == style.fontFamily
+                ) {
+                    updateStyle {
+                        $0.fontFamily = family
+                        $0.installedFontFamily = nil
+                    }
+                }
+            }
+            systemFontsRow(index: curated.count, current: style.installedFontFamily)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    /// Opens the device's fonts, naming the one in use when it's one of them.
+    @ViewBuilder
+    private func systemFontsRow(index: Int, current: String?) -> some View {
+        Button {
+            openScreen(.styleSystemFonts)
+        } label: {
+            HStack(spacing: 10) {
+                Text("System Fonts")
+                    .font(.system(size: 32))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if let current {
+                    Text(verbatim: current)
+                        .font(.body)
+                        .lineLimit(1)
+                        .plozzForeground(.secondary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.body)
+                    .plozzForeground(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PlayerMenuRowButtonStyle())
+        .focusEffectDisabled()
+        .focused($focus, equals: .row(index))
+    }
+
+    /// Every font family installed on the device, each named in its own face.
+    /// The curated families aren't repeated here.
+    @ViewBuilder
+    private var styleSystemFontsScreen: some View {
+        let current = model.subtitleStyle.installedFontFamily
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(InstalledSubtitleFonts.families.enumerated()), id: \.offset) { idx, family in
+                fontChoiceRow(
+                    Text(verbatim: family), font: .custom(family, size: 34),
+                    index: idx, isSelected: family == current
+                ) {
+                    updateStyle { $0.installedFontFamily = family }
+                }
             }
         }
         .padding(.horizontal, 14)
@@ -284,14 +346,16 @@ struct SubtitleStylePanel: View {
     }
 
     @ViewBuilder
-    private func fontChoiceRow(_ family: SubtitleFontFamily, index: Int, isSelected: Bool) -> some View {
+    private func fontChoiceRow(
+        _ name: Text, font: Font, index: Int, isSelected: Bool, select: @escaping () -> Void
+    ) -> some View {
         Button {
-            updateStyle { $0.fontFamily = family }
+            select()
             openScreen(.style)
         } label: {
             HStack(spacing: 10) {
-                Text(family.displayName)
-                    .font(Self.fontPreviewFont(for: family))
+                name
+                    .font(font)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                 Spacer(minLength: 8)

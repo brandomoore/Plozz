@@ -964,7 +964,7 @@ private struct PlozziOSSubtitleOptionsSheet: View {
                 } label: {
                     LabeledContent(
                         "Style",
-                        value: viewModel.controls.subtitleStyle.fontFamily.displayName
+                        value: InstalledSubtitleFonts.displayName(for: viewModel.controls.subtitleStyle)
                     )
                 }
             }
@@ -1080,11 +1080,11 @@ private struct PlozziOSSubtitleAppearanceView: View {
             Section("Text") {
                 if !followsSystemStyle {
                     NavigationLink {
-                        PlozziOSSubtitleFontView(viewModel: viewModel)
+                        PlozziOSSubtitleFontList(style: subtitleStyleBinding(viewModel, \.self))
                     } label: {
                         LabeledContent(
                             "Font",
-                            value: viewModel.controls.subtitleStyle.fontFamily.displayName
+                            value: InstalledSubtitleFonts.displayName(for: viewModel.controls.subtitleStyle)
                         )
                     }
 
@@ -1093,7 +1093,7 @@ private struct PlozziOSSubtitleAppearanceView: View {
                         selection: subtitleStyleBinding(viewModel, \.fontWeight)
                     ) {
                         ForEach(
-                            viewModel.controls.subtitleStyle.fontFamily.availableWeights,
+                            InstalledSubtitleFonts.weights(for: viewModel.controls.subtitleStyle),
                             id: \.self
                         ) {
                             Text($0.displayName).tag($0)
@@ -1224,37 +1224,6 @@ private struct PlozziOSSubtitleAppearanceView: View {
             }
         }
         .navigationTitle("Appearance")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-private struct PlozziOSSubtitleFontView: View {
-    let viewModel: PlayerViewModel
-
-    var body: some View {
-        List {
-            ForEach(SubtitleFontFamily.allCases, id: \.self) { family in
-                Button {
-                    var style = viewModel.controls.subtitleStyle
-                    style.fontFamily = family
-                    style.fontWeight = style.fontWeight.snapped(
-                        to: family.availableWeights
-                    )
-                    viewModel.applySubtitleStyle(style)
-                } label: {
-                    HStack {
-                        Text(family.displayName)
-                            .font(subtitlePreviewFont(for: family))
-                        Spacer()
-                        if family ==
-                            viewModel.controls.subtitleStyle.fontFamily {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-        }
-        .navigationTitle("Font")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -1617,19 +1586,6 @@ private func subtitleColorPicker(
             .tag(option.color)
         }
     }
-}
-
-private func subtitlePreviewFont(
-    for family: SubtitleFontFamily
-) -> Font {
-    let size: CGFloat = family == .openDyslexic ? 17 : 22
-    if family.usesRoundedDesign {
-        return .system(size: size, design: .rounded)
-    }
-    if let name = family.postScriptNameCandidates().first {
-        return .custom(name, size: size)
-    }
-    return .system(size: size)
 }
 
 @MainActor

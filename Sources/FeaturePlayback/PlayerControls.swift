@@ -153,15 +153,17 @@ struct PlayerControls: View {
     /// Sub-screens of the Subtitles panel. `tracks` is the default list; the
     /// header ✎ Edit opens `style`, and the trailing row opens `download`. The
     /// Style screen has its own detail sub-screens (`styleOutline` / `styleBackground`
-    /// / `styleDual`). Back steps to a screen's PARENT rather than closing the panel.
+    /// / `styleDual`), and the Font picker its System Fonts list (`styleSystemFonts`).
+    /// Back steps to a screen's PARENT rather than closing the panel.
     enum SubtitleScreen: Equatable {
-        case tracks, download, sync, style, styleFont, styleOutline, styleBackground, styleDual
+        case tracks, download, sync, style, styleFont, styleSystemFonts, styleOutline, styleBackground, styleDual
 
         /// The screen a Back / Menu press should return to.
         var parent: SubtitleScreen {
             switch self {
             case .tracks, .download, .sync, .style: return .tracks
             case .styleFont, .styleOutline, .styleBackground, .styleDual: return .style
+            case .styleSystemFonts: return .styleFont
             }
         }
 
@@ -170,7 +172,7 @@ struct PlayerControls: View {
         /// screen like the track list / Download, so it stays out of this family.
         var isStyleFamily: Bool {
             switch self {
-            case .style, .styleFont, .styleOutline, .styleBackground, .styleDual: return true
+            case .style, .styleFont, .styleSystemFonts, .styleOutline, .styleBackground, .styleDual: return true
             case .tracks, .download, .sync: return false
             }
         }
@@ -1449,7 +1451,12 @@ struct PlayerControls: View {
             case .style:
                 return model.secondarySubtitleImagePrimaryFormat == nil ? .row(0) : .subBack
             case .styleFont:
+                // An installed font lives under System Fonts, the row after the curated ones.
+                if model.subtitleStyle.installedFontFamily != nil { return .row(SubtitleFontFamily.allCases.count) }
                 return .row(SubtitleFontFamily.allCases.firstIndex(of: model.subtitleStyle.fontFamily) ?? 0)
+            case .styleSystemFonts:
+                let current = model.subtitleStyle.installedFontFamily
+                return .row(InstalledSubtitleFonts.families.firstIndex { $0 == current } ?? 0)
             case .styleOutline, .styleBackground, .styleDual:
                 return .row(0)
             }
@@ -1787,6 +1794,7 @@ struct PlayerControls: View {
         )
         case .style: return "Subtitle Style"
         case .styleFont: return "Font"
+        case .styleSystemFonts: return "System Fonts"
         case .styleOutline: return "Shadow & Outline"
         case .styleBackground: return "Background"
         case .styleDual: return "Dual Subtitles"
@@ -1809,7 +1817,7 @@ struct PlayerControls: View {
             SubtitleDownloadScreen(model: model, actions: actions, focus: $focus)
                 .frame(minHeight: Self.panelBodyMaxHeight, alignment: .top)
         case .sync: SubtitleSyncScreen(model: model, actions: actions, focus: $focus)
-        case .style, .styleFont, .styleOutline, .styleBackground, .styleDual:
+        case .style, .styleFont, .styleSystemFonts, .styleOutline, .styleBackground, .styleDual:
             SubtitleStylePanel(
                 screen: subtitleScreen,
                 model: model,

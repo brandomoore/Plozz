@@ -50,6 +50,8 @@ struct SubtitleFillSpan: Equatable {
 struct CoreTextSubtitleLine: UIViewRepresentable {
     let text: String
     let family: SubtitleFontFamily
+    /// A device font family that replaces `family` while installed.
+    var installedFamily: String? = nil
     let weight: SubtitleFontWeight
     let fontSize: CGFloat
     let isBold: Bool
@@ -67,7 +69,7 @@ struct CoreTextSubtitleLine: UIViewRepresentable {
 
     func updateUIView(_ view: SubtitleLineView, context: Context) {
         view.configure(SubtitleLineView.Config(
-            text: text, family: family, weight: weight, fontSize: fontSize,
+            text: text, family: family, installedFamily: installedFamily, weight: weight, fontSize: fontSize,
             isBold: isBold, isItalic: isItalic,
             fill: fill, outline: outline, outlineWidth: outlineWidth,
             shadow: shadow, background: background, alignment: alignment,
@@ -89,6 +91,7 @@ final class SubtitleLineView: UIView {
     struct Config: Equatable {
         var text: String
         var family: SubtitleFontFamily
+        var installedFamily: String?
         var weight: SubtitleFontWeight
         var fontSize: CGFloat
         var isBold: Bool
@@ -436,7 +439,7 @@ final class SubtitleLineView: UIView {
     /// what the family bundles, bumped to the family's heaviest face when the cue
     /// itself is bold (per-cue markup), never lighter than the chosen base.
     private func effectiveWeight(_ c: Config) -> SubtitleFontWeight {
-        let available = c.family.availableWeights
+        let available = c.installedFamily.map(InstalledSubtitleFonts.weights(forFamily:)) ?? c.family.availableWeights
         let base = c.weight.snapped(to: available)
         guard c.isBold else { return base }
         let heaviest = available.last ?? .bold
@@ -467,7 +470,12 @@ final class SubtitleLineView: UIView {
     private func makeCTFont(_ c: Config) -> CTFont {
         let size = c.fontSize
         let baseDescriptor: CTFontDescriptor
-        if let ps = postScriptName(c) {
+        if let family = c.installedFamily,
+           let installed = InstalledSubtitleFonts.font(
+               family: family, weight: effectiveWeight(c), isItalic: c.isItalic, size: size
+           ) {
+            baseDescriptor = installed.fontDescriptor as CTFontDescriptor
+        } else if let ps = postScriptName(c) {
             baseDescriptor = CTFontDescriptorCreateWithNameAndSize(ps as CFString, size)
             #if DEBUG
             // Core Text silently substitutes a fallback when a named font isn't

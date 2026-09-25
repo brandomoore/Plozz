@@ -63,13 +63,19 @@ final class SystemCaptionAppearanceTests: XCTestCase {
         XCTAssertEqual(appearance.applied(to: .default).fontScale, 2.5)
     }
 
-    func testDeviceFontsPlozzDoesNotBundleUseTheSystemFont() {
-        XCTAssertEqual(SystemCaptionAppearance.family(named: nil), .system)
-        XCTAssertEqual(SystemCaptionAppearance.family(named: "Helvetica"), .system)
-        XCTAssertEqual(SystemCaptionAppearance.family(named: "Menlo"), .system)
-        XCTAssertEqual(SystemCaptionAppearance.family(named: "Avenir Next"), .avenirNext)
-        XCTAssertEqual(SystemCaptionAppearance.family(named: "SF Pro Rounded"), .sfRounded)
-        XCTAssertEqual(SystemCaptionAppearance.family(named: "OpenDyslexic"), .openDyslexic)
+    func testTheDeviceFontIsDrawnExactly() {
+        XCTAssertTrue(SystemCaptionAppearance.font(named: nil) == (.system, nil))
+        XCTAssertTrue(SystemCaptionAppearance.font(named: ".SFUI-Regular") == (.system, nil))
+        XCTAssertTrue(SystemCaptionAppearance.font(named: "SF Pro Rounded") == (.sfRounded, nil))
+        XCTAssertTrue(SystemCaptionAppearance.font(named: "Avenir Next") == (.avenirNext, nil), "a curated family keeps its tuned face")
+        XCTAssertTrue(SystemCaptionAppearance.font(named: "Menlo") == (.system, "Menlo"), "any other family is drawn as installed")
+
+        var appearance = largeYellowOnBlackBox
+        appearance.fontFamilyName = "Menlo"
+        let style = appearance.applied(to: .default)
+        XCTAssertEqual(style.installedFontFamily, "Menlo")
+        appearance.fontFamilyName = "Avenir Next"
+        XCTAssertNil(appearance.applied(to: style).installedFontFamily, "switching back clears it")
     }
 
     @MainActor

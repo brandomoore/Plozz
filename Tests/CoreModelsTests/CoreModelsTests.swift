@@ -84,6 +84,17 @@ final class SubtitleStyleCodableTests: XCTestCase {
         XCTAssertEqual(decoded.border.width, 3)
     }
 
+    func testInstalledFontRoundTripsAndOlderStylesHaveNone() throws {
+        var style = SubtitleStyle.default
+        style.installedFontFamily = "Menlo"
+        let decoded = try JSONDecoder().decode(SubtitleStyle.self, from: JSONEncoder().encode(style))
+        XCTAssertEqual(decoded.installedFontFamily, "Menlo")
+
+        let older = try JSONDecoder().decode(SubtitleStyle.self, from: Data(#"{"fontFamily":"roboto"}"#.utf8))
+        XCTAssertNil(older.installedFontFamily)
+        XCTAssertEqual(older.fontFamily, .roboto)
+    }
+
     func testDefaultUsesOwnRenderer() {
         // The appearance model owns its look by default (Plozz's own renderer)
         // rather than deferring to the system caption style.

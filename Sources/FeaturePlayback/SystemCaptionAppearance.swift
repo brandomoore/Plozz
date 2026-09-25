@@ -27,7 +27,7 @@ struct SystemCaptionAppearance: Equatable {
     /// subtitles, which the device setting has no say in.
     func applied(to style: SubtitleStyle) -> SubtitleStyle {
         var resolved = style
-        resolved.fontFamily = Self.family(named: fontFamilyName)
+        (resolved.fontFamily, resolved.installedFontFamily) = Self.font(named: fontFamilyName)
         resolved.fontWeight = isBold ? .bold : .regular
         resolved.fontScale = min(max(relativeSize, 0.4), 2.5)
         resolved.textColor = textColor
@@ -40,18 +40,18 @@ struct SystemCaptionAppearance: Equatable {
         return resolved
     }
 
-    /// The Plozz typeface for a device font family. Families Plozz doesn't
-    /// bundle fall back to the system font.
-    static func family(named name: String?) -> SubtitleFontFamily {
-        guard let name = name?.lowercased() else { return .system }
-        if name.contains("avenir next") { return .avenirNext }
-        if name.contains("rounded") { return .sfRounded }
-        if let bundled = SubtitleFontFamily.allCases.first(where: {
-            !$0.usesSystemFont && name.contains($0.displayName.lowercased())
-        }) {
-            return bundled
+    /// The device's caption font as a style's typeface: a curated family Plozz
+    /// offers when it names one (SF included), otherwise that exact installed
+    /// family, with SF as the fallback should it ever not be installed.
+    static func font(named name: String?) -> (family: SubtitleFontFamily, installed: String?) {
+        guard let name else { return (.system, nil) }
+        if let curated = InstalledSubtitleFonts.curatedFamily(named: name) { return (curated, nil) }
+        let lowered = name.lowercased()
+        // The system font's own family names are private (".SF…") or generic.
+        if lowered.hasPrefix(".") || lowered.hasPrefix("sf pro") || lowered.contains("system") {
+            return (lowered.contains("rounded") ? .sfRounded : .system, nil)
         }
-        return .system
+        return (.system, name)
     }
 
     /// The appearance as the device has it now.
