@@ -522,6 +522,48 @@ final class StreamingPlaybackTests: XCTestCase {
         await model.stop()
     }
 
+    func testPlexEmbeddedSubtitleSelectionPreparesRenditionWithoutLosingContinuation() async {
+        let provider = QualityPlaybackProvider()
+        await provider.setPlexSubtitleRenditions()
+        let (model, engine, _) = make(provider: provider)
+        await model.load()
+        engine.currentTime = 123
+        model.setPaused(true)
+        model.setPlaybackSpeed(1.5)
+        model.selectSubtitleOption(id: 6)
+        await wait { engine.positions.count == 2 && model.phase == .ready }
+        XCTAssertEqual(engine.positions.last, 123)
+        XCTAssertTrue(engine.isPaused)
+        XCTAssertEqual(model.controls.playbackSpeed, 1.5)
+        XCTAssertEqual(engine.selectedSubtitleID, 6)
+        var calls = await provider.calls
+        XCTAssertEqual(calls.last?.options.subtitleTrack?.id, 6)
+        XCTAssertEqual(calls.last?.options.quality, .hd720)
+        XCTAssertEqual(calls.last?.source, "version")
+
+        model.selectSubtitleOption(id: PlayerTrackOption.offID)
+        XCTAssertNil(engine.selectedSubtitleID)
+        model.selectSubtitleOption(id: 6)
+        XCTAssertEqual(engine.selectedSubtitleID, 6)
+        calls = await provider.calls
+        XCTAssertEqual(calls.count, 2, "Off and the prepared rendition switch locally")
+
+        engine.currentTime = 150
+        model.selectSubtitleOption(id: 7)
+        await wait { engine.positions.count == 3 && model.phase == .ready }
+        XCTAssertEqual(engine.positions.last, 150)
+        XCTAssertTrue(engine.isPaused)
+        XCTAssertEqual(model.controls.playbackSpeed, 1.5)
+        XCTAssertEqual(engine.selectedSubtitleID, 7)
+        calls = await provider.calls
+        XCTAssertEqual(calls.last?.options.subtitleTrack?.id, 7)
+        XCTAssertEqual(calls.map { $0.options.quality }, [.hd720, .hd720, .hd720])
+        XCTAssertEqual(calls.map(\.source), ["version", "version", "version"])
+        let released = await provider.released
+        XCTAssertEqual(released, ["quality-1", "quality-2"])
+        await model.stop()
+    }
+
     func testRefusedQualitySurfacesSpecificErrorWithoutOriginalRetry() async {
         let provider = QualityPlaybackProvider()
         await provider.setRefusesQuality()
@@ -635,6 +677,7 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
     private var hevcFailure: (any Error & Sendable)?
     private var negotiatedCodec: DirectPlayVideoCodec?
     private var sourceRange: String?
+    private var plexSubtitleRenditions = false
     private var gate: QualityDecisionGate?
     init(gate: QualityDecisionGate? = nil) { self.gate = gate }
     func installGate(_ gate: QualityDecisionGate) { self.gate = gate }
@@ -642,6 +685,7 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
     func setHEVCFailure(_ error: any Error & Sendable) { hevcFailure = error }
     func setNegotiatedCodec(_ codec: DirectPlayVideoCodec) { negotiatedCodec = codec }
     func setSourceRange(_ range: String) { sourceRange = range }
+    func setPlexSubtitleRenditions() { plexSubtitleRenditions = true }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest {
         ordinaryCalls += 1
         return baseRequest()
@@ -670,9 +714,13 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
                             .init(id: 3, kind: .audio, displayTitle: "English", language: "eng", isDefault: true),
                             .init(id: 4, kind: .audio, displayTitle: "Japanese", language: "jpn")
                         ],
-                        subtitleTracks: [.init(id: 6, kind: .subtitle, displayTitle: "English", language: "eng")],
+                        subtitleTracks: plexSubtitleRenditions ? [
+                            .init(id: 6, kind: .subtitle, displayTitle: "English", language: "eng"),
+                            .init(id: 7, kind: .subtitle, displayTitle: "French", language: "fra")
+                        ] : [.init(id: 6, kind: .subtitle, displayTitle: "English", language: "eng")],
                         isTranscoding: true,
-                        sourceMetadata: sourceRange.map { .init(video: .init(videoRangeType: $0)) })
+                        sourceMetadata: sourceRange.map { .init(video: .init(videoRangeType: $0)) },
+                        sourceProvider: plexSubtitleRenditions ? .plex : nil)
     }
     func libraries() async throws -> [MediaLibrary] { [] }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }

@@ -2289,7 +2289,13 @@ public final class PlayerViewModel {
         if streamingOptions != nil, request?.isTranscoding == true {
             var snapshot = subtitleController.streamSnapshot()
             let chosen = request?.subtitleTracks.first { $0.id == id }
-            if snapshot.primary?.isBitmapSubtitle == true || chosen?.isBitmapSubtitle == true {
+            // Plex prepares the selected embedded text rendition at session start.
+            // Sidecars and an already-prepared rendition can still switch locally.
+            let needsPlexTextRendition = request?.sourceProvider == .plex
+                && chosen != nil && chosen?.deliverySource == nil
+                && request?.streamingOptions?.subtitleTrack?.id != chosen?.id
+            if snapshot.primary?.isBitmapSubtitle == true || chosen?.isBitmapSubtitle == true
+                || needsPlexTextRendition {
                 snapshot.primary = chosen
                 if userInitiated {
                     recordSeriesSubtitleSelection(chosen?.language.map(RememberedSubtitleSelection.language) ?? .off)

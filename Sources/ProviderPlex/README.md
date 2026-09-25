@@ -66,6 +66,32 @@ documents the shared static/smart membership path.
 
 Tests: `PlexCollectionBrowsingTests` and shared `CollectionDetailBrowsingTests`.
 
+## Streaming transcodes
+
+Universal-transcoder requests advertise HLS with fragmented MP4 audio/video
+segments, AAC audio, and WebVTT text subtitles for Automatic, H.264, and HEVC.
+The explicit target replaces the Generic profile's defaults; codec preferences
+and bitrate/resolution ceilings remain unchanged. Quality-controlled playback
+validates the same profile through `/decision` before opening `start.m3u8` and
+rejects an incompatible returned container or video codec.
+
+WebVTT is a separate subtitle rendition, not a subtitle muxed into ordinary
+MP4. Text tracks use automatic delivery instead of forced burn-in; bitmap
+tracks still require burn-in for a server transcode, and Off remains explicit.
+Existing fetchable text sidecars retain their original format and authenticated
+delivery source for Plozz's styled overlay. Embedded HLS text uses the native
+player's legible rendition and existing caption style rules. Selecting a different
+embedded track prepares a new server rendition while preserving position, pause,
+speed, quality limits, and the selected media version. Off and a text rendition
+already prepared by the current session can switch locally.
+
+Player track identities remain container indexes. Only the outbound transcode
+options translate selected audio/subtitle indexes to Plex's database stream
+IDs, using the selected media version's stream inventory. Decision and playback
+requests must carry identical selections and limits.
+
+Tests: `PlexStreamingQualityTests` and `StreamingPlaybackTests`.
+
 ## Where to look first
 
 - `PlexProvider.swift` / `PlexClient.swift` — the `MediaProvider` entry.

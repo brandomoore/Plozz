@@ -1706,6 +1706,13 @@ public struct PlexClient: Sendable {
         for (name, value) in deviceProfile.headers(token: token) where name.hasPrefix("X-Plex-") {
             query.append(URLQueryItem(name: name, value: value))
         }
+        let codecs = (streaming?.codec ?? .automatic).codecs(
+            supportsHEVC: capabilities.allowedDirectPlayVideoCodecs.contains(.hevc)
+        )
+        // The profile has its own query grammar inside the outer URL query.
+        let codecList = codecs.joined(separator: "%2C")
+        var profile = "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mp4&videoCodec=\(codecList)&audioCodec=aac&subtitleCodec=webvtt&replace=true)"
+        query.append(.init(name: "X-Plex-Client-Profile-Name", value: "Generic"))
         if let streaming {
             func set(_ name: String, _ value: String) {
                 query.removeAll { $0.name.caseInsensitiveCompare(name) == .orderedSame }
@@ -1716,13 +1723,7 @@ public struct PlexClient: Sendable {
             set("hasMDE", "1")
             set("context", "streaming")
             set("transcodeSessionId", sessionID)
-            set("X-Plex-Client-Profile-Name", "Generic")
             set("location", SourceLocalityClassifier.classify(url: baseURL) == .local ? "lan" : "wan")
-            let codecs = streaming.codec.codecs(supportsHEVC: capabilities.allowedDirectPlayVideoCodecs.contains(.hevc))
-            let container = streaming.codec == .preferH264 ? "mpegts" : "mp4"
-            // The profile has its own query grammar inside the outer URL query.
-            let codecList = codecs.joined(separator: "%2C")
-            var profile = "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=\(container)&videoCodec=\(codecList)&audioCodec=aac)"
             if let bitrate = streaming.quality.videoBitrate,
                let width = streaming.quality.maximumWidth, let height = streaming.quality.maximumHeight {
                 set("maxVideoBitrate", String(bitrate / 1_000))
@@ -1733,7 +1734,6 @@ public struct PlexClient: Sendable {
                 profile += "+add-limitation(scope=videoCodec&scopeName=*&type=upperBound&name=video.height&value=\(height)&replace=true)"
                 profile += "+add-limitation(scope=videoCodec&scopeName=*&type=upperBound&name=video.bitrate&value=\(bitrate / 1_000)&replace=true)"
             }
-            set("X-Plex-Client-Profile-Extra", profile)
             if let audio = streaming.audioTrack { set("audioStreamID", String(audio.id)) }
             if streaming.subtitlesOff {
                 set("subtitleStreamID", "-1")
@@ -1743,6 +1743,7 @@ public struct PlexClient: Sendable {
                 set("subtitles", subtitle.isBitmapSubtitle ? "burn" : "auto")
             }
         }
+        query.append(.init(name: "X-Plex-Client-Profile-Extra", value: profile))
         return absoluteURL(serverPath: "/video/:/transcode/universal/start.m3u8", extraQuery: query)
     }
 

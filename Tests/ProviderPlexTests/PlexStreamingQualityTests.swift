@@ -131,7 +131,8 @@ final class PlexStreamingQualityTests: XCTestCase {
 
     private func fixture(
         bitrate: Int? = 30_000, width: Int = 3840, height: Int = 2160,
-        decision: String? = nil, status: Int = 200, http: StubHTTPClient = StubHTTPClient()
+        decision: String? = nil, status: Int = 200, http: StubHTTPClient = StubHTTPClient(),
+        streams: String = #"{"id":2,"streamType":2,"codec":"aac","languageCode":"eng","default":true}"#
     ) -> PlexProvider {
         http.stub(pathSuffix: "/video/:/transcode/universal/decision", json: decision ?? """
         {"MediaContainer":{"generalDecisionCode":1001,"transcodeDecisionCode":1001,
@@ -142,8 +143,7 @@ final class PlexStreamingQualityTests: XCTestCase {
         {"MediaContainer":{"Metadata":[{"ratingKey":"movie","title":"Movie","type":"movie","Media":[
           {"id":7,"container":"mp4","videoCodec":"h264","audioCodec":"aac",
            "bitrate":\(bitrate.map(String.init) ?? "null"),"width":\(width),"height":\(height),
-           "Part":[{"id":8,"key":"/library/parts/8/file.mp4","Stream":[
-             {"id":2,"streamType":2,"codec":"aac","languageCode":"eng","default":true}]}]}]}]}}
+           "Part":[{"id":8,"key":"/library/parts/8/file.mp4","Stream":[\(streams)]}]}]}]}}
         """)
         return PlexProvider(session: .init(
             server: .init(id: "plex", name: "Plex", baseURL: URL(string: "https://plex.example.test")!, provider: .plex),
@@ -231,7 +231,7 @@ final class PlexStreamingQualityTests: XCTestCase {
         let query = try locator(second).resource.queryItems
         XCTAssertEqual(query.first { $0.name == "maxVideoBitrate" }?.value, "872")
         XCTAssertTrue(query.first { $0.name == "X-Plex-Client-Profile-Extra" }?.value?.contains("videoCodec=h264&") == true)
-        XCTAssertTrue(query.first { $0.name == "X-Plex-Client-Profile-Extra" }?.value?.contains("container=mpegts&") == true)
+        XCTAssertTrue(query.first { $0.name == "X-Plex-Client-Profile-Extra" }?.value?.contains("container=mp4&") == true)
     }
 
     func testRejectedDecisionsNeverPublishAStreamAndReleaseOnlyTheOwnedSession() async {
@@ -309,6 +309,9 @@ final class PlexStreamingQualityTests: XCTestCase {
                 let query = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
                 let profile = try XCTUnwrap(query.first { $0.name == "X-Plex-Client-Profile-Extra" }?.value)
                 XCTAssertTrue(profile.contains("videoCodec=\(capable ? capableCodecs : "h264")&"), profile)
+                XCTAssertTrue(profile.contains("protocol=hls&container=mp4&"))
+                XCTAssertTrue(profile.contains("audioCodec=aac&subtitleCodec=webvtt&replace=true)"))
+                XCTAssertFalse(profile.contains("mpegts"))
                 XCTAssertEqual(query.first { $0.name == "maxVideoBitrate" }?.value, "1872")
                 XCTAssertEqual(query.first { $0.name == "videoResolution" }?.value, "1280x720")
                 XCTAssertEqual(query.first { $0.name == "path" }?.value, "/library/metadata/movie")
@@ -316,4 +319,118 @@ final class PlexStreamingQualityTests: XCTestCase {
             }
         }
     }
+
+        func testFallbackWithoutQualityOptionsAlsoAdvertisesMP4AndWebVTT() throws {
+            let client = PlexClient(
+                baseURL: URL(string: "https://fixture.test")!,
+                deviceProfile: .init(clientIdentifier: "fixture"), token: "fixture",
+                http: StubHTTPClient(), capabilities: .init(supportsHEVC: false)
+            )
+            let url = try XCTUnwrap(client.transcodeURL(ratingKey: "movie", sessionID: "fallback"))
+            let query = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+            XCTAssertEqual(url.path, "/video/:/transcode/universal/start.m3u8")
+            XCTAssertEqual(query.first { $0.name == "protocol" }?.value, "hls")
+            XCTAssertEqual(query.first { $0.name == "directStream" }?.value, "1")
+            XCTAssertEqual(query.first { $0.name == "X-Plex-Client-Profile-Name" }?.value, "Generic")
+            XCTAssertEqual(query.first { $0.name == "X-Plex-Client-Profile-Extra" }?.value,
+                           "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mp4&videoCodec=h264&audioCodec=aac&subtitleCodec=webvtt&replace=true)")
+            XCTAssertFalse(query.contains { $0.name == "maxVideoBitrate" || $0.name == "videoResolution" })
+        }
+
+        func testTextSubtitlesNegotiateWebVTTUsingServerIDsWithoutChangingPlayerIndexes() async throws {
+            for codec in ["srt", "ass", "webvtt"] {
+                for external in [false, true] {
+                    let http = StubHTTPClient()
+                    let key = external ? #","key":"/library/streams/104/subtitle.\#(codec)""# : ""
+                    let provider = fixture(http: http, streams: """
+                    {"id":101,"index":1,"streamType":2,"codec":"aac","languageTag":"eng","default":true},
+                    {"id":102,"index":2,"streamType":2,"codec":"aac","languageTag":"jpn"},
+                    {"id":103,"index":3,"streamType":3,"codec":"pgs","languageTag":"eng","default":true},
+                    {"id":104,"index":4,"streamType":3,"codec":"\(codec)","languageTag":"eng"\(key)}
+                    """)
+                    var options = StreamingPlaybackOptions(quality: .hd720, codec: .preferH264)
+                    options.audioTrack = .init(id: 2, kind: .audio, displayTitle: "Japanese", language: "jpn")
+                    options.subtitleTrack = .init(id: 4, kind: .subtitle, displayTitle: "English", language: "eng")
+                    let request = try await provider.playbackInfo(
+                        for: "movie", mediaSourceID: "7", forceTranscode: false, streaming: options
+                    )
+                    let playback = try locator(request).resource.queryItems.map {
+                        URLQueryItem(name: $0.name, value: $0.value)
+                    }
+                    let decision = try XCTUnwrap(http.queryItems(forPathSuffix: "/decision"))
+                    let playbackNames = Set(playback.map(\.name))
+                    XCTAssertEqual(decision.filter { playbackNames.contains($0.name) }, playback,
+                                   "The decision must validate the exact credential-free playback parameters")
+                    XCTAssertEqual(decision.first { $0.name == "session" }?.value, request.streamingSessionID)
+                    XCTAssertEqual(playback.first { $0.name == "audioStreamID" }?.value, "102")
+                    XCTAssertEqual(playback.first { $0.name == "subtitleStreamID" }?.value, "104")
+                    XCTAssertEqual(playback.first { $0.name == "subtitles" }?.value, "auto")
+                    XCTAssertEqual(playback.first { $0.name == "maxVideoBitrate" }?.value, "1872")
+                    XCTAssertEqual(playback.first { $0.name == "videoResolution" }?.value, "1280x720")
+                    let profile = try XCTUnwrap(playback.first { $0.name == "X-Plex-Client-Profile-Extra" }?.value)
+                    XCTAssertTrue(profile.contains("container=mp4&videoCodec=h264&audioCodec=aac&subtitleCodec=webvtt&replace=true)"))
+                    XCTAssertEqual(request.streamingOptions?.audioTrack?.id, 2)
+                    XCTAssertEqual(request.streamingOptions?.subtitleTrack?.id, 4)
+                    let subtitle = try XCTUnwrap(request.subtitleTracks.first { $0.id == 4 })
+                    XCTAssertEqual(subtitle.codec, codec, "Original track facts must not claim a negotiated codec")
+                    XCTAssertFalse(subtitle.isBitmapSubtitle)
+                    if external {
+                        guard case .authenticatedHTTP(let source)? = subtitle.deliverySource else {
+                            return XCTFail("Text sidecars must remain available to the styled overlay")
+                        }
+                        XCTAssertEqual(source.formatHint.container, codec)
+                        XCTAssertEqual(source.resource.path, "library/streams/104/subtitle.\(codec)")
+                    } else {
+                        XCTAssertNil(subtitle.deliverySource, "Embedded text is delivered by the HLS rendition")
+                    }
+                }
+            }
+        }
+
+        func testBitmapAndOffKeepExplicitDeliveryWhileUsingMP4() async throws {
+            for off in [false, true] {
+                let http = StubHTTPClient()
+                let provider = fixture(http: http, streams: """
+                {"id":101,"index":1,"streamType":2,"codec":"aac","default":true},
+                {"id":103,"index":3,"streamType":3,"codec":"pgs","languageCode":"eng","default":true}
+                """)
+                var options = StreamingPlaybackOptions(quality: .hd720, codec: .preferH264)
+                options.subtitlesOff = off
+                let request = try await provider.playbackInfo(
+                    for: "movie", mediaSourceID: "7", forceTranscode: false, streaming: options
+                )
+                let query = try locator(request).resource.queryItems
+                XCTAssertEqual(query.first { $0.name == "subtitleStreamID" }?.value, off ? "-1" : "103")
+                XCTAssertEqual(query.first { $0.name == "subtitles" }?.value, off ? "none" : "burn")
+                XCTAssertEqual(request.streamingOptions?.subtitleTrack?.id, off ? nil : 3)
+                XCTAssertEqual(request.subtitleTracks.first?.isBitmapSubtitle, true)
+                let profile = try XCTUnwrap(query.first { $0.name == "X-Plex-Client-Profile-Extra" }?.value)
+                XCTAssertTrue(profile.contains("container=mp4&"))
+            }
+        }
+
+        func testEveryCodecPreferenceRejectsMPEGTSAndReleasesItsSession() async {
+            for codec in StreamingCodecPreference.allCases {
+                let http = StubHTTPClient()
+                let outputCodec = codec == .preferHEVC && MediaCapabilities.detected().allowedDirectPlayVideoCodecs.contains(.hevc)
+                    ? "hevc" : "h264"
+                let provider = fixture(decision: """
+                {"MediaContainer":{"transcodeDecisionCode":1001,"Metadata":[{"Media":[
+                  {"container":"mpegts","videoCodec":"\(outputCodec)"}
+                ]}]}}
+                """, http: http)
+                do {
+                    _ = try await provider.playbackInfo(
+                        for: "movie", mediaSourceID: "7", forceTranscode: false,
+                        streaming: .init(quality: .hd720, codec: codec)
+                    )
+                    XCTFail("The returned container must match the negotiated MP4 target")
+                } catch {
+                    XCTAssertEqual(error as? StreamingQualityError, .noCompatibleStream)
+                }
+                let session = http.queryItems(forPathSuffix: "/decision")?.first { $0.name == "session" }?.value
+                XCTAssertNotNil(session)
+                XCTAssertEqual(http.queryItems(forPathSuffix: "/stop")?.first { $0.name == "session" }?.value, session)
+            }
+        }
 }

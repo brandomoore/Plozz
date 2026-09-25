@@ -851,6 +851,19 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             streaming?.subtitleTrack = selected
             streaming?.subtitlesOff = selected == nil
         }
+        // Player selection uses container indexes; Plex's transcoder takes its
+        // database stream IDs. Keep the player's identities out of this mapping.
+        var transcodeOptions = streaming
+        if let audio = streaming?.audioTrack {
+            transcodeOptions?.audioTrack?.id = (part.Stream ?? []).first {
+                $0.streamType == 2 && ($0.index ?? $0.id) == audio.id
+            }?.id ?? audio.id
+        }
+        if let subtitle = streaming?.subtitleTrack {
+            transcodeOptions?.subtitleTrack?.id = (part.Stream ?? []).first {
+                $0.streamType == 3 && ($0.index ?? $0.id) == subtitle.id
+            }?.id ?? subtitle.id
+        }
         guard let resolved = client.playbackURL(
             ratingKey: itemID,
             media: media,
@@ -859,7 +872,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             mediaIndex: mediaIndex,
             partIndex: partIndex,
             forceTranscode: forceTranscode,
-            streaming: streaming
+            streaming: transcodeOptions
         ) else {
             throw AppError.notFound
         }

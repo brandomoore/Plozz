@@ -35,9 +35,7 @@ struct PlexStreamingDecision: Decodable {
         }
         let container = media.container?.lowercased()
         let codec = media.videoCodec?.lowercased()
-        let validContainer = options.codec == .preferH264
-            ? ["mpegts", "mp4"].contains(container ?? "")
-            : container == "mp4"
+        let validContainer = container == "mp4"
         let validCodec = options.codec.codecs(supportsHEVC: supportsHEVC).contains(codec ?? "")
         if !validCodec, options.codec == .preferHEVC, supportsHEVC, codec == "h264" {
             throw StreamingQualityError.codecUnavailable(.hevc)
