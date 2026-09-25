@@ -78,7 +78,9 @@ public struct LiveChannelPlayerView: View {
     @State private var guidePresented = false
     /// Set by the remote's Guide button for the transport to act on.
     @State private var pendingGuideOpen = false
-    @State private var streamStats = LiveChannelStreamStats()
+    /// The VOD player's Playback Info diagnostics, toggled from the Info card.
+    @State private var diagnosticsEnabled = false
+    @State private var diagnosticsSampler = PlaybackDiagnosticsSampler()
     @FocusState private var focusedControl: LiveChannelControl?
 
     private var plozzChannelID: String? {
@@ -258,6 +260,15 @@ public struct LiveChannelPlayerView: View {
                         .allowsHitTesting(false)
                 }
 
+                #if os(tvOS)
+                if isExpanded, diagnosticsEnabled, sourceMatches, model.hasPresentedFrame {
+                    PlaybackDiagnosticsOverlay(diagnostics: diagnosticsSampler.latest)
+                        .allowsHitTesting(false)
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                }
+                #endif
+
                 if !sourceMatches || !model.hasPresentedFrame || (!isExpanded && model.interruption != nil) {
                     Rectangle()
                         .fill(.black)
@@ -307,7 +318,8 @@ public struct LiveChannelPlayerView: View {
                             loadOnNow: loadOnNow,
                             onTuneChannel: onTuneChannel.map { tune in { (id: String) in noteInteraction(); tune(id) } },
                             tracks: model,
-                            stats: streamStats,
+                            diagnosticsEnabled: diagnosticsEnabled,
+                            toggleDiagnostics: { diagnosticsEnabled.toggle() },
                             onTracksPresentationChange: { tracksArePresented = $0 },
                             onControlActivity: noteControlNavigation,
                             onDismissControls: dismissControls
@@ -498,6 +510,22 @@ public struct LiveChannelPlayerView: View {
             onVideoAspectRatioChange(ratio)
         }
         .onChange(of: tracksArePresented) { _, _ in autoHideRevision &+= 1 }
+        .onChange(of: diagnosticsEnabled) { _, enabled in updateDiagnosticsSampling(enabled) }
+        .onChange(of: reportingID) { _, _ in updateDiagnosticsSampling(diagnosticsEnabled) }
+        #if os(iOS)
+        .sheet(isPresented: $diagnosticsEnabled) {
+            NavigationStack {
+                PlaybackDiagnosticsOverlay(diagnostics: diagnosticsSampler.latest, presentation: .mobile)
+                    .navigationTitle("Playback Diagnostics")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { diagnosticsEnabled = false }
+                        }
+                    }
+            }
+        }
+        #endif
         .onChange(of: isExpanded) { _, expanded in
             expansionChanged(expanded)
         }
@@ -665,6 +693,8 @@ public struct LiveChannelPlayerView: View {
     private func stopPlayback() {
         sourceTask?.cancel()
         sourceTask = nil
+        diagnosticsEnabled = false
+        diagnosticsSampler.stop()
         model?.stop()
         model = nil
     }
@@ -812,6 +842,30 @@ public struct LiveChannelPlayerView: View {
         onPlaybackStarted()
     }
 
+    /// Samples the playing channel for Playback Info, as the VOD player does,
+    /// only while it's showing: the sampler polls every second.
+    private func updateDiagnosticsSampling(_ enabled: Bool) {
+        guard enabled, let model else {
+            diagnosticsSampler.stop()
+            return
+        }
+        let engine = model.engine
+        let mode: PlaybackDiagnostics.PlaybackMode = switch engine.liveSnapshot.route {
+        case .nativeHLS: .directPlay
+        case .localHLS, .software: .plozzigen
+        case .none, .audio: .unknown
+        }
+        let streamURL: URL? = if case .stream(let url, _) = input { url } else { nil }
+        diagnosticsSampler.start(
+            player: engine.nowPlayingPlayer,
+            mode: mode,
+            engineName: engine.displayName,
+            streamURL: streamURL,
+            engineTelemetry: { engine.liveTelemetry },
+            probedFacts: { engine.probedSourceFacts }
+        )
+    }
+
     private func togglePlayPause() {
         guard let model else { return }
         noteInteraction()
@@ -923,6 +977,8 @@ enum LiveChannelControl: Hashable {
     case cardExit
     case onNowItem(String)
     case trackRow(Int)
+    /// The Info card's Playback Info toggle.
+    case playbackInfo
 }
 
 struct LiveChannelFavoriteControlState: Equatable {
@@ -962,7 +1018,7 @@ enum LiveChannelPlaybackFocusPolicy {
             guard isPresented, let control else { return false }
             switch control {
             case .previous, .next, .timeline, .audio, .subtitles, .cardTab, .cardExit,
-                 .onNowItem, .trackRow:
+                 .onNowItem, .trackRow, .playbackInfo:
                 return true
             case .playPause:
                 return canPlayPause

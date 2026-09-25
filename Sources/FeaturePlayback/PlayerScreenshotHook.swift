@@ -36,7 +36,7 @@ public enum PlayerScreenshotHook {
 /// rig and the Live TV fixture to open without a remote. Read once on appear.
 public enum LiveChannelScreenshotHook {
     public enum Surface: String, Sendable {
-        case info, onNow, stats, guide
+        case info, onNow, guide
     }
 
     @MainActor

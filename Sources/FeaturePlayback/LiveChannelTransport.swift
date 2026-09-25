@@ -6,7 +6,7 @@ import SwiftUI
 
 /// The bottom card's tabs. Guide's card is the EPG grid, taller than the rest.
 enum LiveChannelCardTab: Hashable, CaseIterable {
-    case info, onNow, guide, stats
+    case info, onNow, guide
 
     var title: LocalizedStringResource {
         switch self {
@@ -23,10 +23,6 @@ enum LiveChannelCardTab: Hashable, CaseIterable {
             "live.player.tab.guide", defaultValue: "Guide",
             comment: "Tab beneath the live TV timeline showing the channel guide under the video."
         )
-        case .stats: LocalizedStringResource(
-            "live.player.tab.stats", defaultValue: "Stats",
-            comment: "Tab beneath the live TV timeline showing technical details of the stream."
-        )
         }
     }
 
@@ -35,7 +31,6 @@ enum LiveChannelCardTab: Hashable, CaseIterable {
         case .info: "live-channel-info"
         case .onNow: "live-channel-on-now"
         case .guide: "live-channel-guide"
-        case .stats: "live-channel-stats"
         }
     }
 }
@@ -43,7 +38,7 @@ enum LiveChannelCardTab: Hashable, CaseIterable {
 /// The expanded live channel's transport, built from the VOD player's parts.
 ///
 /// Same stack as `PlayerControls`, bottom-up: the card, the tab row
-/// (Info · On Now · Stats · Guide), the timeline, and the title with its button
+/// (Info · On Now · Guide), the timeline, and the title with its button
 /// badges. The card is a permanent member of the stack and the whole cluster is
 /// parked by ONE offset — the VOD transport's rule 2 — so the reveal moves as a
 /// unit. The track menus float in a layer of their own above the badges, so they
@@ -84,7 +79,9 @@ struct LiveChannelOverlay: View {
     let loadOnNow: @MainActor () -> [LiveChannelOnNowItem]
     let onTuneChannel: ((String) -> Void)?
     let tracks: LiveChannelPlayerModel
-    let stats: LiveChannelStreamStats
+    /// The VOD player's Playback Info overlay, toggled from the Info card.
+    let diagnosticsEnabled: Bool
+    let toggleDiagnostics: () -> Void
     /// True while the controls must stay up until the viewer dismisses them: a
     /// track menu, or the pill row with its card. Only the plain transport
     /// (title, badges, timeline) idles out.
@@ -145,7 +142,6 @@ struct LiveChannelOverlay: View {
             switch surface {
             case .info: openCard(.info)
             case .onNow: openCard(.onNow)
-            case .stats: openCard(.stats)
             case .guide: openCard(.guide)
             }
         }
@@ -384,6 +380,13 @@ struct LiveChannelOverlay: View {
 
     // MARK: Badges
 
+    /// VOD's rule (`PlayerControlsModel.hasSelectableAudio`): Audio only when
+    /// there's more than one track to choose between.
+    private var showsAudio: Bool { tracks.audioTracks.count > 1 }
+
+    /// Subtitles once the stream offers any, as VOD.
+    private var showsSubtitles: Bool { !tracks.subtitleTracks.isEmpty }
+
     /// VOD's track-control badges, plus the live-only actions.
     private var badges: some View {
         HStack(spacing: 20) {
@@ -395,16 +398,20 @@ struct LiveChannelOverlay: View {
                 )
                 .accessibilityIdentifier("live-channel-go-live")
             }
-            badge(
-                LiveChannelTrackMenuKind.audio.title, systemImage: LiveChannelTrackMenuKind.audio.icon,
-                control: .audio, prominent: openMenu == .audio
-            ) { toggleMenu(.audio) }
-                .accessibilityIdentifier("live-channel-audio")
-            badge(
-                LiveChannelTrackMenuKind.subtitles.title, systemImage: LiveChannelTrackMenuKind.subtitles.icon,
-                control: .subtitles, prominent: openMenu == .subtitles
-            ) { toggleMenu(.subtitles) }
-                .accessibilityIdentifier("live-channel-subtitles")
+            if showsAudio {
+                badge(
+                    LiveChannelTrackMenuKind.audio.title, systemImage: LiveChannelTrackMenuKind.audio.icon,
+                    control: .audio, prominent: openMenu == .audio
+                ) { toggleMenu(.audio) }
+                    .accessibilityIdentifier("live-channel-audio")
+            }
+            if showsSubtitles {
+                badge(
+                    LiveChannelTrackMenuKind.subtitles.title, systemImage: LiveChannelTrackMenuKind.subtitles.icon,
+                    control: .subtitles, prominent: openMenu == .subtitles
+                ) { toggleMenu(.subtitles) }
+                    .accessibilityIdentifier("live-channel-subtitles")
+            }
             if let onMultiview {
                 badge("Multiview", systemImage: "rectangle.split.2x1", control: .multiview, action: onMultiview)
                     .accessibilityIdentifier("live-channel-multiview")
@@ -628,7 +635,9 @@ struct LiveChannelOverlay: View {
             case .info:
                 LiveChannelInfoCard(
                     title: title, logoURL: logoURL, plozzChannelID: plozzChannelID, program: program,
-                    compact: isTouchPortrait
+                    compact: isTouchPortrait,
+                    diagnosticsEnabled: diagnosticsEnabled, toggleDiagnostics: toggleDiagnostics,
+                    focus: $focus
                 )
             case .onNow:
                 LiveChannelOnNowPanel(
@@ -639,12 +648,6 @@ struct LiveChannelOverlay: View {
                 if let guideContent {
                     guideCard(guideContent)
                 }
-            case .stats:
-                LiveChannelStatsCard(
-                    stats: stats, engine: tracks.engine, model: tracks,
-                    focus: $focus, isCardOpen: cardOpen
-                )
-                .task(id: input) { await stats.load(input: input) }
             }
         }
         .frame(height: cardHeight)
@@ -704,7 +707,7 @@ struct LiveChannelOverlay: View {
             if cardOpen { closeCard() }
         case .cardExit:
             exitCard()
-        case .onNowItem, .trackRow:
+        case .onNowItem, .trackRow, .playbackInfo:
             // Into the card: Up from here belongs to the pill first.
             tabFocusedAt = nil
         default:
@@ -1075,16 +1078,20 @@ extension LiveChannelOverlay {
     /// bar stood up.
     private var touchTrackBadges: some View {
         HStack(spacing: 12) {
-            touchBadge(
-                LiveChannelTrackMenuKind.audio.title, systemImage: LiveChannelTrackMenuKind.audio.icon,
-                prominent: openMenu == .audio
-            ) { toggleMenu(.audio) }
-                .accessibilityIdentifier("live-channel-audio")
-            touchBadge(
-                LiveChannelTrackMenuKind.subtitles.title, systemImage: LiveChannelTrackMenuKind.subtitles.icon,
-                prominent: openMenu == .subtitles
-            ) { toggleMenu(.subtitles) }
-                .accessibilityIdentifier("live-channel-subtitles")
+            if showsAudio {
+                touchBadge(
+                    LiveChannelTrackMenuKind.audio.title, systemImage: LiveChannelTrackMenuKind.audio.icon,
+                    prominent: openMenu == .audio
+                ) { toggleMenu(.audio) }
+                    .accessibilityIdentifier("live-channel-audio")
+            }
+            if showsSubtitles {
+                touchBadge(
+                    LiveChannelTrackMenuKind.subtitles.title, systemImage: LiveChannelTrackMenuKind.subtitles.icon,
+                    prominent: openMenu == .subtitles
+                ) { toggleMenu(.subtitles) }
+                    .accessibilityIdentifier("live-channel-subtitles")
+            }
             if let onMultiview {
                 touchBadge("Multiview", systemImage: "rectangle.split.2x1", action: onMultiview)
                     .accessibilityIdentifier("live-channel-multiview")
@@ -1275,6 +1282,9 @@ private struct LiveChannelInfoCard: View {
     /// A stood-up phone: the art stays but shrinks, and the synopsis goes so
     /// the title and timing have room to wrap instead.
     var compact = false
+    let diagnosticsEnabled: Bool
+    let toggleDiagnostics: () -> Void
+    @FocusState.Binding var focus: LiveChannelControl?
 
     @Environment(\.playerCardMetrics) private var metrics
 
@@ -1318,6 +1328,8 @@ private struct LiveChannelInfoCard: View {
                         .font(metrics.bodyFont)
                         .foregroundStyle(.white.opacity(0.6))
                 }
+                Spacer(minLength: 0)
+                playbackInfoButton
             }
             .foregroundStyle(.white)
             .frame(maxWidth: metrics.textColumnMaxWidth, maxHeight: .infinity, alignment: .topLeading)
@@ -1326,6 +1338,33 @@ private struct LiveChannelInfoCard: View {
         .padding(metrics.contentPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .modifier(PanelGlassBackground(cornerRadius: metrics.panelCornerRadius))
+    }
+}
+
+extension LiveChannelInfoCard {
+    /// VOD's Playback Info toggle (see `InfoPanelView`): the icon alone at rest,
+    /// its title revealed by the capsule growing around it on focus.
+    fileprivate var playbackInfoButton: some View {
+        let isFocused = focus == .playbackInfo
+        return Button(action: toggleDiagnostics) {
+            HStack(spacing: 8) {
+                Image(systemName: "cpu")
+                if isFocused {
+                    Text("Playback Info").fixedSize().transition(.identity)
+                }
+            }
+            .font(metrics.actionFont)
+            .lineLimit(1)
+            .animation(.easeOut(duration: 0.2), value: isFocused)
+        }
+        .buttonStyle(InfoActionButtonStyle(
+            focused: isFocused,
+            prominent: diagnosticsEnabled,
+            hPadding: metrics.actionHPadding,
+            vPadding: metrics.actionVPadding
+        ))
+        .focused($focus, equals: .playbackInfo)
+        .accessibilityIdentifier("live-channel-playback-info")
     }
 }
 
@@ -1797,297 +1836,6 @@ private struct LiveChannelTrackPanel: View {
     #endif
 }
 
-// MARK: - Stats
-
-/// The stream as the engine and the origin describe it: what is playing now,
-/// and every distinct video, audio and subtitle variant the playlist offers.
-///
-/// Four columns across the card; a column longer than the card scrolls as
-/// focus walks down it, which is why its rows are focusable at all.
-private struct LiveChannelStatsCard: View {
-    let stats: LiveChannelStreamStats
-    let engine: any LiveChannelEngine
-    let model: LiveChannelPlayerModel
-    @FocusState.Binding var focus: LiveChannelControl?
-    let isCardOpen: Bool
-
-    @Environment(\.playerCardMetrics) private var metrics
-
-    private struct Line: Identifiable {
-        let id: String
-        let label: Text
-        let value: Text
-        var highlighted = false
-    }
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
-            GeometryReader { geometry in
-                if geometry.size.width < Self.columnsMinWidth {
-                    compactList
-                } else {
-                    columns(height: geometry.size.height)
-                }
-            }
-            .padding(metrics.contentPadding)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .clipped()
-        .modifier(PanelGlassBackground(cornerRadius: metrics.panelCornerRadius))
-    }
-
-    private static var nowPlayingTitle: Text {
-        Text("Now Playing", comment: "Stats column: the live stream as it is playing.")
-    }
-    private static var videoTitle: Text {
-        Text("Video Variants", comment: "Stats column listing the stream's video variants.")
-    }
-    private static var audioTitle: Text {
-        Text("Audio & Subtitles", comment: "Stats column listing the stream's audio and subtitle renditions.")
-    }
-
-    /// Below this the four columns are too narrow to read — a phone stood up —
-    /// and the card becomes one scrolling list instead.
-    private static let columnsMinWidth: CGFloat = 560
-
-    private func columns(height: CGFloat) -> some View {
-        let rows = rowsThatFit(height: height)
-        let stream = streamLines
-        let split = min(stream.count, rows)
-        return HStack(alignment: .top, spacing: metrics.columnSpacing) {
-            column(title: Self.nowPlayingTitle, lines: Array(stream.prefix(split)), rows: rows)
-            column(title: Text(verbatim: " "), lines: Array(stream.dropFirst(split)), rows: rows)
-            column(title: Self.videoTitle, lines: videoLines, rows: rows)
-            column(title: Self.audioTitle, lines: audioLines + subtitleLines, rows: rows)
-        }
-    }
-
-    private var compactList: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                section(title: Self.nowPlayingTitle, lines: streamLines)
-                section(title: Self.videoTitle, lines: videoLines)
-                section(title: Self.audioTitle, lines: audioLines + subtitleLines)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .scrollIndicators(.hidden)
-    }
-
-    private func section(title: Text, lines: [Line]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            header(title)
-            ForEach(lines) { line in
-                lineRow(line)
-            }
-        }
-    }
-
-    private func header(_ title: Text) -> some View {
-        title
-            .font(metrics.captionFont.weight(.semibold))
-            .foregroundStyle(.white.opacity(0.55))
-            .textCase(.uppercase)
-            .lineLimit(1)
-    }
-
-    private func lineRow(_ line: Line) -> some View {
-        HStack(spacing: 8) {
-            if line.highlighted {
-                Image(systemName: "play.fill").font(.system(size: metrics.captionSize * 0.7))
-            }
-            line.label
-                .foregroundStyle(.white.opacity(0.55))
-                .layoutPriority(0)
-            line.value
-                .foregroundStyle(.white)
-                .layoutPriority(1)
-        }
-        .font(metrics.captionFont)
-        .lineLimit(1)
-        .truncationMode(.tail)
-    }
-
-    private var rowHeight: CGFloat { (metrics.captionSize * 1.3).rounded(.up) + 4 }
-    private var headerHeight: CGFloat { (metrics.captionSize * 1.3).rounded(.up) + 10 }
-
-    /// How many single-line rows the card holds under a column header.
-    private func rowsThatFit(height: CGFloat) -> Int {
-        max(1, Int((height - headerHeight) / rowHeight))
-    }
-
-    /// One header and up to `rows` single-line rows; what does not fit is
-    /// counted rather than left to spill off the card.
-    private func column(title: Text, lines: [Line], rows: Int) -> some View {
-        let overflow = lines.count > rows ? lines.count - (rows - 1) : 0
-        let shown = overflow > 0 ? Array(lines.prefix(rows - 1)) : lines
-        return VStack(alignment: .leading, spacing: 4) {
-            header(title)
-                .frame(height: headerHeight - 4, alignment: .topLeading)
-            ForEach(shown) { line in
-                lineRow(line)
-                    .frame(height: rowHeight - 4, alignment: .leading)
-            }
-            if overflow > 0 {
-                Text("+\(overflow) more", comment: "Stats card: how many further entries did not fit.")
-                    .font(metrics.captionFont)
-                    .foregroundStyle(.white.opacity(0.55))
-                    .frame(height: rowHeight - 4, alignment: .leading)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-
-    // MARK: Lines
-
-    private var streamLines: [Line] {
-        var lines: [Line] = []
-        let snapshot = engine.liveSnapshot
-        lines.append(Line(id: "route", label: Text("Playback path"), value: Text(Self.routeName(snapshot.route))))
-        if let current = stats.currentVariant(engine: engine) {
-            lines.append(Line(
-                id: "variant",
-                label: current.isInferred
-                    ? Text("Variant (engine picks the highest)", comment: "Stats label: the HLS variant the engine ingests, which is always the highest bandwidth.")
-                    : Text("Current variant", comment: "Stats label: the HLS variant AVPlayer reports it is playing."),
-                value: Text(verbatim: Self.describe(current.variant))
-            ))
-        } else if case .loaded(let summary, _) = stats.playlist, !summary.isMaster {
-            lines.append(Line(id: "variant", label: Text("Current variant"), value: Text("Single-variant stream")))
-        }
-        let facts = engine.probedSourceFacts
-        if let width = facts?.videoWidth, let height = facts?.videoHeight {
-            lines.append(Line(id: "resolution", label: Text("Resolution"), value: Text(verbatim: "\(width)×\(height)")))
-        }
-        if let decoder = facts?.videoDecoder {
-            lines.append(Line(id: "vdecoder", label: Text("Video decoder"), value: Text(verbatim: decoder)))
-        }
-        if let codec = facts?.audioCodec {
-            let channels = facts?.audioChannels.map { " · \($0) ch" } ?? ""
-            lines.append(Line(id: "acodec", label: Text("Audio"), value: Text(verbatim: codec + channels + (facts?.audioIsAtmos == true ? " · Atmos" : ""))))
-        }
-        let telemetry = engine.liveTelemetry
-        if let bitrate = telemetry?.observedBitrate ?? accessLog?.observedBitrate, bitrate > 0 {
-            lines.append(Line(id: "bitrate", label: Text("Bitrate"), value: Text(verbatim: Self.bitrate(bitrate))))
-        }
-        if let fps = telemetry?.observedFps, fps > 0 {
-            lines.append(Line(id: "fps", label: Text("Frame rate"), value: Text(verbatim: String(format: "%.2f fps", fps))))
-        }
-        if let dropped = telemetry?.droppedFrameCount ?? accessLog.map({ $0.numberOfDroppedVideoFrames }), dropped >= 0 {
-            lines.append(Line(id: "dropped", label: Text("Dropped frames"), value: Text(verbatim: "\(dropped)")))
-        }
-        let buffered = max(0, snapshot.bufferedPosition - snapshot.position)
-        lines.append(Line(id: "buffer", label: Text("Buffered ahead"), value: Text(verbatim: String(format: "%.1f s", buffered))))
-        if let behind = snapshot.behindLiveSeconds, behind.isFinite {
-            lines.append(Line(id: "behind", label: Text("Behind live"), value: Text(verbatim: String(format: "%.1f s", max(0, behind)))))
-        }
-        if let audio = model.audioTracks.first(where: { $0.id == model.selectedAudioID }) {
-            lines.append(Line(id: "atrack", label: Text("Audio track"), value: Text(verbatim: audio.displayTitle)))
-        }
-        if let subtitle = model.subtitleTracks.first(where: { $0.id == model.selectedSubtitleID }) {
-            lines.append(Line(id: "strack", label: Text("Subtitle track"), value: Text(verbatim: subtitle.displayTitle)))
-        }
-        return lines
-    }
-
-    private var videoLines: [Line] {
-        guard case .loaded(let summary, _) = stats.playlist, summary.isMaster else { return playlistStatus }
-        let current = stats.currentVariant(engine: engine)?.variant
-        return summary.uniqueVideoVariants.enumerated().map { index, variant in
-            Line(
-                id: "\(index)",
-                label: Text(verbatim: Self.bitrate(Double(variant.bandwidth))),
-                value: Text(verbatim: Self.describe(variant, includingBandwidth: false)),
-                highlighted: current.map { $0.bandwidth == variant.bandwidth && $0.resolution == variant.resolution } ?? false
-            )
-        }
-    }
-
-    private var audioLines: [Line] {
-        guard case .loaded(let summary, _) = stats.playlist, summary.isMaster else { return playlistStatus }
-        let renditions = summary.uniqueAudioRenditions
-        if renditions.isEmpty {
-            let codecs = summary.muxedAudioCodecs
-            guard !codecs.isEmpty else { return [Line(id: "none", label: Text("Muxed"), value: Text("In each variant"))] }
-            return codecs.map { Line(id: $0, label: Text("Muxed in video"), value: Text(verbatim: $0)) }
-        }
-        return renditions.enumerated().map { index, rendition in
-            Line(id: "\(index)", label: Text(verbatim: rendition.groupID ?? ""), value: Text(verbatim: Self.describe(rendition)))
-        }
-    }
-
-    private var subtitleLines: [Line] {
-        guard case .loaded(let summary, _) = stats.playlist, summary.isMaster else { return playlistStatus }
-        let renditions = summary.uniqueSubtitleRenditions
-        guard !renditions.isEmpty else {
-            return [Line(id: "none", label: Text("Playlist"), value: Text("None declared"))]
-        }
-        return renditions.enumerated().map { index, rendition in
-            Line(
-                id: "\(index)",
-                label: rendition.kind == .closedCaptions ? Text("Closed captions") : Text("Subtitles"),
-                value: Text(verbatim: Self.describe(rendition))
-            )
-        }
-    }
-
-    /// What stands in for a list the playlist can't supply.
-    private var playlistStatus: [Line] {
-        switch stats.playlist {
-        case .loading:
-            [Line(id: "status", label: Text("Playlist"), value: Text("Loading…"))]
-        case .failed:
-            [Line(id: "status", label: Text("Playlist"), value: Text("Couldn't be read"))]
-        case .notApplicable:
-            [Line(id: "status", label: Text("Playlist"), value: Text("Not an HLS stream"))]
-        case .loaded:
-            [Line(id: "status", label: Text("Playlist"), value: Text("Single variant"))]
-        }
-    }
-
-    private var accessLog: AVPlayerItemAccessLogEvent? {
-        engine.nowPlayingPlayer?.currentItem?.accessLog()?.events.last
-    }
-
-    // MARK: Formatting (technical values, not prose)
-
-    private static func routeName(_ route: LiveChannelEngineRoute) -> LocalizedStringResource {
-        switch route {
-        case .none: "—"
-        case .nativeHLS: "Native HLS (AVPlayer)"
-        case .localHLS: "Remuxed HLS (loopback)"
-        case .software: "Software decode"
-        case .audio: "Audio only"
-        }
-    }
-
-    static func bitrate(_ bitsPerSecond: Double) -> String {
-        bitsPerSecond >= 1_000_000
-            ? String(format: "%.1f Mb/s", bitsPerSecond / 1_000_000)
-            : String(format: "%.0f kb/s", bitsPerSecond / 1_000)
-    }
-
-    /// Playlist attributes, not prose: resolution, rate, codec strings.
-    static func describe(_ variant: HLSPlaylistSummary.Variant, includingBandwidth: Bool = true) -> String { // l10n:content
-        var parts: [String] = []
-        if let resolution = variant.resolution { parts.append(resolution) }
-        if includingBandwidth { parts.append(bitrate(Double(variant.bandwidth))) }
-        if let rate = variant.frameRate { parts.append(String(format: "%g fps", rate)) }
-        let video = variant.codecs.filter { !HLSPlaylistSummary.isAudioCodec($0) }
-        if !video.isEmpty { parts.append(video.joined(separator: ", ")) }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
-    }
-
-    /// The rendition's own NAME / LANGUAGE / CHANNELS attributes.
-    static func describe(_ rendition: HLSPlaylistSummary.Rendition) -> String { // l10n:content
-        var parts: [String] = [rendition.name ?? rendition.language ?? "—"]
-        if let language = rendition.language, language != rendition.name { parts.append(language) }
-        if let channels = rendition.channels { parts.append("\(channels)ch") }
-        if rendition.isDefault { parts.append("DEFAULT") }
-        return parts.joined(separator: " · ")
-    }
-}
-
 // MARK: - On Now
 
 /// The On Now card: what else is airing, laid out like the Cast tab — a row of
@@ -2132,9 +1880,10 @@ private struct LiveChannelOnNowPanel: View {
                     .accessibilityIdentifier("live-channel-on-now-\(item.channelID)")
                 }
             }
+            // As the Cast row: flush with the panel's leading edge, and no
+            // vertical inset, so each card is the full height of the Info card
+            // it stands in for.
             .padding(.trailing, metrics.contentPadding)
-            // The cards sit a little short of the card's height; centre them.
-            .frame(maxHeight: .infinity)
         }
         .scrollClipDisabled()
     }
@@ -2154,7 +1903,9 @@ private struct LiveChannelCardButtonStyle: ButtonStyle {
         @Environment(\.isFocused) private var isFocused
 
         var body: some View {
-            PlayerOverVideoCardStyle(focused: isFocused, cornerRadius: cornerRadius, focusScale: 1.06)
+            // The Cast cards' lift: small cards in a row barely register the
+            // gentler default.
+            PlayerOverVideoCardStyle(focused: isFocused, cornerRadius: cornerRadius, focusScale: 1.10)
                 .makeBody(configuration: configuration)
         }
     }
@@ -2168,11 +1919,7 @@ private struct LiveChannelOnNowCard: View {
     @Environment(\.playerCardMetrics) private var metrics
     @Environment(\.isFocused) private var focused
 
-    private static let inset: CGFloat = 12
     private static let spacing: CGFloat = 10
-    /// How much of the card's height a card takes, so the row breathes
-    /// rather than filling the card edge to edge.
-    private static let fill: CGFloat = 0.86
     #if os(tvOS)
     private static let progressHeight: CGFloat = 6
     #else
@@ -2185,11 +1932,18 @@ private struct LiveChannelOnNowCard: View {
         ((metrics.castNameSize + metrics.castRoleSize) * 1.25).rounded(.up) + 3
     }
 
+    /// One inset on every side: the card's content padding, as the Info card
+    /// it stands in for.
+    private var inset: CGFloat { metrics.contentPadding }
+
+    /// The art takes the card's full height less its insets and the text, as
+    /// a Cast card's face does.
     private var artHeight: CGFloat {
-        max(40, (metrics.cardHeight * Self.fill - Self.inset * 2 - textHeight - Self.spacing).rounded())
+        max(40, (metrics.cardHeight - inset * 2 - textHeight - Self.spacing).rounded())
     }
 
-    private var artCornerRadius: CGFloat { max(8, metrics.panelCornerRadius - Self.inset) }
+    /// Concentric with the card: its radius less the inset between them.
+    private var artCornerRadius: CGFloat { max(8, metrics.panelCornerRadius - inset) }
 
     private var artWidth: CGFloat { (artHeight * 16 / 9).rounded() }
 
@@ -2215,8 +1969,8 @@ private struct LiveChannelOnNowCard: View {
                 .foregroundStyle(.white.opacity(0.6))
             }
         }
-        .padding(Self.inset)
-        .frame(width: artWidth + Self.inset * 2, alignment: .leading)
+        .padding(inset)
+        .frame(width: artWidth + inset * 2, height: metrics.cardHeight, alignment: .topLeading)
     }
 
     /// The programme's progress across the bottom of its art, as a VOD

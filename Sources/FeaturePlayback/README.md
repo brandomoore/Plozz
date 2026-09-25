@@ -344,7 +344,7 @@ fill = aired, bright fill = on screen, trailing it while paused or behind live).
 It is the focus hub: Select plays/pauses, Up reaches the badges, Down lands on the
 last-used card tab and opens its card. With the card closed only that one tab is
 focusable (VOD's `entryFocusTarget`, made structural); open, Left/Right walks
-Info · On Now · Stats · Guide and focus alone switches the card. Do not put
+Info · On Now · Guide and focus alone switches the card. Do not put
 `onMoveCommand` on the timeline: it swallowed the Down press.
 
 Channels change only on the remote's Channel Up / Down buttons (`.pageUp` /
@@ -353,8 +353,9 @@ Channels change only on the remote's Channel Up / Down buttons (`.pageUp` /
 Guide opens `LiveChannelGuideOverlay`, the player's own lineup over the playing
 picture. It is modelled on the Multiview picker but is not the browse guide:
 nothing retunes while browsing, it opens on the playing channel, and Menu returns
-focus to the timeline. Stats reads the engine's facts plus the origin's master
-playlist (`HLSPlaylistSummary`), fetched once when the tab opens and never logged.
+focus to the timeline. The Info card's Playback Info toggle shows the VOD
+player's diagnostics overlay (`PlaybackDiagnosticsOverlay`), sampled from the
+live engine while it is up.
 
 ## Where to look first
 
