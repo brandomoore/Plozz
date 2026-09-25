@@ -3,6 +3,17 @@ import XCTest
 
 @MainActor
 final class SubtitleStylePreferencesTests: XCTestCase {
+    func testFineSizeStepsAndBothRangeEndpointsPersistExactly() throws {
+        for scale in [0.2, 1.01, 1.37, 4.0] {
+            var style = SubtitleStyle.default
+            style.fontScale = scale
+            let saved = try JSONEncoder().encode(SubtitleStylePreferences(base: style, liveTV: style))
+            let restored = try JSONDecoder().decode(SubtitleStylePreferences.self, from: saved)
+            XCTAssertEqual(restored.base.fontScale, scale)
+            XCTAssertEqual(restored.liveTV?.fontScale, scale)
+        }
+    }
+
     func testExistingPreferencesInheritTheBaseForLiveTV() throws {
         let data = Data(#"{"base":{"fontScale":0.4}}"#.utf8)
         let preferences = try JSONDecoder().decode(SubtitleStylePreferences.self, from: data)

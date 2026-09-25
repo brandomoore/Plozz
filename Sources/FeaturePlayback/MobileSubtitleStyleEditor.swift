@@ -50,8 +50,8 @@ public struct MobileSubtitleStyleEditor: View {
                     MobileSubtitleSliderRow(
                         title: "Text Size",
                         value: subtitleStyleBinding(viewModel, \.fontScale),
-                        range: 0.4...2.5,
-                        step: 0.05,
+                        range: SubtitleStyle.fontScaleRange,
+                        step: SubtitleStyle.fontScaleStep,
                         formattedValue: {
                             "\((100 * $0).rounded().formatted())%"
                         }

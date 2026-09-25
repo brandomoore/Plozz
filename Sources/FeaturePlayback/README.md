@@ -114,6 +114,15 @@ toggle controls a sample, not playback track selection, and preserves its style
 when the sample is hidden. Selecting real tracks and adjusting synchronization
 remain playback operations rather than appearance preferences.
 
+Text size uses the shared `SubtitleStyle.fontScaleRange` and `fontScaleStep`:
+20% through 400%, in 1% increments. The TV editor's existing repeat ramp advances
+1, 2, 4, then at most 8 percentage points per event, resetting after an idle gap,
+direction change, or row change. Mobile uses the same range and step.
+Changing HDR Brightness enables `Apply HDR subtitle dimming` automatically. The preview labels
+the applied percentage and explains that 100% performs no dimming; it neither
+changes the saved brightness merely to demonstrate an effect nor switches the
+display into HDR.
+
 On TV, a separate compact Preview section sits below the editor. Focusing it
 reveals background, file-formatting, and HDR-preview controls; moving between
 those controls keeps it expanded. It collapses only after focus leaves the

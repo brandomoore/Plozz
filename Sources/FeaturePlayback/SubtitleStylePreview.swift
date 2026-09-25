@@ -14,6 +14,12 @@ final class SubtitlePreviewOptions {
     private(set) var backgroundPhase = 0
     @ObservationIgnored private var lastPaletteChange = ContinuousClock.now
 
+    func styleDidChange(from previous: SubtitleStyle, to current: SubtitleStyle) {
+        if previous.hdrLuminanceScale != current.hdrLuminanceScale {
+            showsHDRBrightness = true
+        }
+    }
+
     func advanceBackground(at instant: ContinuousClock.Instant = .now) {
         guard instant - lastPaletteChange >= .seconds(8) else { return }
         backgroundPhase = (backgroundPhase + 1) % SubtitlePreviewPalettes.cycle.count
@@ -44,7 +50,7 @@ struct SubtitleStylePreview: View {
                 #if os(iOS)
                 Menu("Preview options", systemImage: "slider.horizontal.3") {
                     Toggle("Preview file formatting", isOn: $options.showsFileFormatting)
-                    Toggle("Preview HDR brightness", isOn: $options.showsHDRBrightness)
+                    Toggle("Apply HDR subtitle dimming", isOn: $options.showsHDRBrightness)
                 }
                 .labelStyle(.iconOnly)
                 Button {
@@ -72,11 +78,31 @@ struct SubtitleStylePreview: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Subtitle preview")
-            Text("Size and position match the proportions of full-screen playback.")
-                .font(.caption)
-                .plozzForeground(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            SubtitlePreviewCaption(style: style, previewsHDR: options.showsHDRBrightness)
         }
+    }
+}
+
+private struct SubtitlePreviewCaption: View {
+    let style: SubtitleStyle
+    let previewsHDR: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if previewsHDR {
+                Text("HDR subtitle dimming preview: \(style.hdrLuminanceScale, format: .percent.precision(.fractionLength(0)))")
+                if style.hdrLuminanceScale == 1 {
+                    Text("100% keeps normal brightness. Lower HDR Brightness to preview dimmer subtitles.")
+                } else {
+                    Text("This previews subtitle dimming, not HDR video.")
+                }
+            } else {
+                Text("Size and position match the proportions of full-screen playback.")
+            }
+        }
+        .font(.caption)
+        .plozzForeground(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 

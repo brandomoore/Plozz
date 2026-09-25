@@ -232,6 +232,11 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
     public var fontWeight: SubtitleFontWeight
     /// Multiplier on the base caption size (1.0 == default).
     public var fontScale: Double
+    public static let fontScaleRange: ClosedRange<Double> = 0.2...4
+    public static let fontScaleStep: Double = 0.01
+    public static let fontScalePercentages = Array(
+        Int((fontScaleRange.lowerBound * 100).rounded())...Int((fontScaleRange.upperBound * 100).rounded())
+    )
     /// Vertical position measured upward from the screen bottom. The chosen
     /// anchor stays fixed as lines change.
     /// `0` aligns the block's bottom with the screen bottom, `1` aligns its top.

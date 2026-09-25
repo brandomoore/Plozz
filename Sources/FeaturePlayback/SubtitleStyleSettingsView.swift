@@ -77,9 +77,10 @@ public struct SubtitleStyleSettingsView: View {
         #else
         .navigationTitle(Text(pageTitle))
         #endif
-        .onChange(of: style, initial: true) { _, value in
+        .onChange(of: style, initial: true) { previous, value in
             controls.subtitleStyle = value
             controls.subtitlesRenderHDR = true
+            previewOptions.styleDidChange(from: previous, to: value)
             if value.secondary == nil { secondaryVisible = false }
         }
         .onAppear {

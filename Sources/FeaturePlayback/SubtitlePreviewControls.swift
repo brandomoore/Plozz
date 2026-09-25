@@ -41,7 +41,7 @@ struct SubtitlePreviewControls: View {
                 PlozzDivider().padding(.horizontal, 16).padding(.vertical, 4)
                 option("Animate background", selection: $options.animatesBackground, control: .background)
                 option("Preview file formatting", selection: $options.showsFileFormatting, control: .fileFormatting)
-                option("Preview HDR brightness", selection: $options.showsHDRBrightness, control: .hdrBrightness)
+                option("Apply HDR subtitle dimming", selection: $options.showsHDRBrightness, control: .hdrBrightness)
             }
         }
         .padding(.horizontal, 14)

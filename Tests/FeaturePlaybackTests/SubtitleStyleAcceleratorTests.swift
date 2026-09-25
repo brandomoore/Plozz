@@ -1,4 +1,5 @@
 import XCTest
+import CoreModels
 @testable import FeaturePlayback
 
 /// Tests the subtitle-style hold-to-accelerate ramp extracted from
@@ -6,6 +7,25 @@ import XCTest
 /// (idle timeout, direction flip, row change) so a held remote press covers a
 /// large range while a deliberate tap stays fine.
 final class SubtitleStyleAcceleratorTests: XCTestCase {
+    func testSizeUsesEveryPercentageFromTwentyThroughFourHundred() {
+        XCTAssertEqual(SubtitleStyle.fontScaleRange, 0.2...4)
+        XCTAssertEqual(SubtitleStyle.fontScaleStep, 0.01)
+        XCTAssertEqual(SubtitleStyle.fontScalePercentages, Array(20...400))
+    }
+
+    func testSizeHoldRampsToEightPercentagePointsAndNeverExceedsTheCap() {
+        var accelerator = SubtitleStyleAccelerator()
+        let start = Date()
+        let steps = (0..<100).map {
+            accelerator.magnitude(slot: 3, sign: 1, now: start.addingTimeInterval(Double($0) * 0.1))
+        }
+        XCTAssertEqual(Array(steps.prefix(3)), [1, 1, 1])
+        XCTAssertEqual(Array(steps.suffix(50)), Array(repeating: 8, count: 50))
+        XCTAssertLessThanOrEqual(steps.max() ?? 0, 8)
+        XCTAssertEqual(accelerator.magnitude(slot: 3, sign: -1, now: start.addingTimeInterval(10)), 1)
+        XCTAssertEqual(accelerator.magnitude(slot: 3, sign: 1, now: start.addingTimeInterval(11)), 1)
+    }
+
     func testRampCurveClimbsWithSustainedHold() {
         XCTAssertEqual(SubtitleStyleAccelerator.rampMagnitude(0), 1)
         XCTAssertEqual(SubtitleStyleAccelerator.rampMagnitude(2), 1)

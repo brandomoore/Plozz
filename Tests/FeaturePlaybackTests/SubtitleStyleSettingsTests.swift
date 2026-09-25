@@ -1,6 +1,7 @@
 #if canImport(UIKit)
 import CoreModels
 import CoreUI
+import Observation
 import SwiftUI
 import UIKit
 import XCTest
@@ -8,6 +9,91 @@ import XCTest
 
 @MainActor
 final class SubtitleStyleSettingsTests: XCTestCase {
+    func testEditingHDRBrightnessEnablesPreviewWithoutChangingTheSavedStyle() {
+        let options = SubtitlePreviewOptions()
+        var style = SubtitleStyle.default
+        options.styleDidChange(from: style, to: style)
+        XCTAssertFalse(options.showsHDRBrightness)
+        var changed = style
+        changed.fontScale = 1.01
+        options.styleDidChange(from: style, to: changed)
+        XCTAssertFalse(options.showsHDRBrightness)
+        changed.hdrLuminanceScale = 0.5
+        options.styleDidChange(from: style, to: changed)
+        XCTAssertTrue(options.showsHDRBrightness)
+        XCTAssertEqual(changed.hdrLuminanceScale, 0.5)
+        options.showsHDRBrightness = false
+        style = changed
+        changed.textColor = .cyan
+        options.styleDidChange(from: style, to: changed)
+        XCTAssertFalse(options.showsHDRBrightness, "Other edits must respect a manual SDR-preview choice.")
+    }
+
+    func testHDRPreviewToggleUsesConfiguredBrightnessOnTheExistingRenderer() async throws {
+        let model = HDRSubtitlePreviewFixtureModel()
+        let host = UIHostingController(rootView: HDRSubtitlePreviewFixture(model: model))
+        host.safeAreaRegions = []
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 960, height: 700))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true; window.rootViewController = nil }
+        host.view.frame = window.bounds
+
+        func firstLine(in view: UIView) -> SubtitleLineView? {
+            if let line = view as? SubtitleLineView { return line }
+            return view.subviews.lazy.compactMap { firstLine(in: $0) }.first
+        }
+        func waitForBrightness(_ expected: Double) async throws -> SubtitleLineView {
+            let deadline = ContinuousClock.now + .seconds(3)
+            while ContinuousClock.now < deadline {
+                await Task.yield()
+                host.view.layoutIfNeeded()
+                if let line = firstLine(in: host.view), line.bounds.width > 0,
+                   abs(try self.maximumGlyphBrightness(line) - expected) < 3 {
+                    return line
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let line = try XCTUnwrap(firstLine(in: host.view))
+            XCTAssertEqual(try maximumGlyphBrightness(line), expected, accuracy: 3)
+            return line
+        }
+
+        let original = try await waitForBrightness(255)
+        model.options.showsHDRBrightness = true
+        let fullBrightness = try await waitForBrightness(255)
+        XCTAssertTrue(fullBrightness === original, "100% deliberately looks identical in SDR and HDR preview.")
+        model.style.hdrLuminanceScale = 0.5
+        let dimmed = try await waitForBrightness(128)
+        XCTAssertTrue(dimmed === original)
+        model.options.showsHDRBrightness = false
+        let standard = try await waitForBrightness(255)
+        XCTAssertTrue(standard === original)
+        model.options.showsHDRBrightness = true
+        model.style.hdrLuminanceScale = 0.2
+        _ = try await waitForBrightness(51)
+    }
+
+    private func maximumGlyphBrightness(_ line: SubtitleLineView) throws -> Double {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(bounds: line.bounds, format: format).image { _ in line.draw(line.bounds) }
+        let bitmap = try XCTUnwrap(image.cgImage)
+        var pixels = [UInt8](repeating: 0, count: bitmap.width * bitmap.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: bitmap.width, height: bitmap.height,
+                bitsPerComponent: 8, bytesPerRow: bitmap.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            ))
+            context.draw(bitmap, in: CGRect(x: 0, y: 0, width: bitmap.width, height: bitmap.height))
+        }
+        let opaque = stride(from: 0, to: pixels.count, by: 4).filter { pixels[$0 + 3] > 250 }
+        return Double(try XCTUnwrap(opaque.map { pixels[$0] }.max()))
+    }
+
     func testInlineAndFullScreenPreviewShareBackgroundPhaseWithoutDoubleAdvancing() {
         let options = SubtitlePreviewOptions()
         let tick = ContinuousClock.now.advanced(by: .seconds(9))
@@ -56,15 +142,18 @@ final class SubtitleStyleSettingsTests: XCTestCase {
         style.fontFamily = .system
         style.verticalPosition = 0.18
         style.secondary = .init(placement: .above)
-        let full = try subtitleFrames(style: style, width: 1920)
-        let half = try subtitleFrames(style: style, width: 960)
-        XCTAssertEqual(full.count, 2)
-        XCTAssertEqual(half.count, 2)
-        for (large, small) in zip(full, half) {
-            XCTAssertEqual(small.minX, large.minX / 2, accuracy: 1)
-            XCTAssertEqual(small.minY, large.minY / 2, accuracy: 1)
-            XCTAssertEqual(small.width, large.width / 2, accuracy: 1)
-            XCTAssertEqual(small.height, large.height / 2, accuracy: 1)
+        for scale in [SubtitleStyle.fontScaleRange.lowerBound, 1, SubtitleStyle.fontScaleRange.upperBound] {
+            style.fontScale = scale
+            let full = try subtitleFrames(style: style, width: 1920)
+            let half = try subtitleFrames(style: style, width: 960)
+            XCTAssertEqual(full.count, 2)
+            XCTAssertEqual(half.count, 2)
+            for (large, small) in zip(full, half) {
+                XCTAssertEqual(small.minX, large.minX / 2, accuracy: 1)
+                XCTAssertEqual(small.minY, large.minY / 2, accuracy: 1)
+                XCTAssertEqual(small.width, large.width / 2, accuracy: 1)
+                XCTAssertEqual(small.height, large.height / 2, accuracy: 1)
+            }
         }
     }
 
@@ -101,6 +190,35 @@ final class SubtitleStyleSettingsTests: XCTestCase {
             return view.subviews.flatMap(lines)
         }
         return lines(host.view).map { $0.convert($0.bounds, to: host.view) }
+    }
+}
+
+@MainActor @Observable
+private final class HDRSubtitlePreviewFixtureModel {
+    var style: SubtitleStyle = {
+        var style = SubtitleStyle.default
+        style.fontFamily = .system
+        style.background.isEnabled = false
+        style.border.isEnabled = false
+        style.edge.style = .none
+        return style
+    }()
+    let options: SubtitlePreviewOptions = {
+        let options = SubtitlePreviewOptions()
+        options.animatesBackground = false
+        return options
+    }()
+}
+
+private struct HDRSubtitlePreviewFixture: View {
+    let model: HDRSubtitlePreviewFixtureModel
+
+    var body: some View {
+        SubtitleStylePreview(
+            style: model.style, secondaryVisible: false,
+            referenceSize: SubtitleStylePreviewMetrics.televisionCanvas,
+            options: model.options
+        )
     }
 }
 #endif

@@ -567,7 +567,7 @@ struct SubtitleStylePanel: View {
     // MARK: Option grids
 
     // Precise, numeric option grids — no "low / high" buckets.
-    private static let sizeOptions: [Int] = Array(stride(from: 40, through: 250, by: 5))
+    private static let sizeOptions = SubtitleStyle.fontScalePercentages
     private static let positionOptions = SubtitleStyle.verticalPositionOptions.map {
         Int(($0 / SubtitleStyle.verticalPositionStep).rounded())
     }
