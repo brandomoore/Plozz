@@ -92,6 +92,7 @@ and outline).
 Settings > Playback > Subtitle style > Customize subtitle style opens the actual
 player appearance editor beside a live preview. The Live TV style entry opens the
 same page with the independent Live TV binding. TV reuses `SubtitleStylePanel`;
+the player and Settings share its `panelWidth` rather than separate layout widths.
 mobile's existing forms live in `MobileSubtitleStyleEditor`, shared by Settings
 and the player through `SubtitleStyleEditingContext`. There is no reduced second
 set of settings or separate preference store.
@@ -112,6 +113,14 @@ mode retains its usual ownership of font/color/effects. The second-subtitle
 toggle controls a sample, not playback track selection, and preserves its style
 when the sample is hidden. Selecting real tracks and adjusting synchronization
 remain playback operations rather than appearance preferences.
+
+On TV, a separate compact Preview section sits below the editor. Focusing it
+reveals background, file-formatting, and HDR-preview controls; moving between
+those controls keeps it expanded. It collapses only after focus leaves the
+section. The picture itself is non-focusable, so Left/Right stay dedicated to
+adjusting editor values and Down reaches preview controls. Select on the Preview
+header opens an actual full-screen canvas at playback scale; Back returns focus
+to that header without losing the chosen appearance or preview options.
 
 ## Mobile streaming quality
 

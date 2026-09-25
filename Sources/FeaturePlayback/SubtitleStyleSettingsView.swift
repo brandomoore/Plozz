@@ -9,6 +9,7 @@ public struct SubtitleStyleSettingsView: View {
     @State private var controls = PlayerControlsModel()
     @State private var secondaryVisible = false
     @State private var prepared = false
+    @State private var previewOptions = SubtitlePreviewOptions()
     #if os(tvOS)
     @Environment(\.dismiss) private var dismiss
     @State private var screen = PlayerControls.SubtitleScreen.style
@@ -31,13 +32,18 @@ public struct SubtitleStyleSettingsView: View {
                 )
                 #if os(tvOS)
                 HStack(alignment: .center, spacing: 44) {
-                    TelevisionSubtitleStyleEditor(context: context, screen: $screen)
-                        .frame(width: geometry.size.width * 0.38)
+                    TelevisionSubtitleStyleColumn(
+                        context: context, screen: $screen, style: style,
+                        secondaryVisible: secondaryVisible, previewOptions: previewOptions
+                    )
+                        .frame(width: SubtitleStylePanel.panelWidth)
                     SubtitleStylePreview(
                         style: style, secondaryVisible: secondaryVisible,
-                        referenceSize: SubtitleStylePreviewMetrics.televisionCanvas
+                        referenceSize: SubtitleStylePreviewMetrics.televisionCanvas,
+                        options: previewOptions
                     )
                     .frame(maxWidth: .infinity)
+                    .allowsHitTesting(false)
                 }
                 #else
                 let width = max(geometry.size.width, geometry.size.height)
@@ -46,7 +52,10 @@ public struct SubtitleStyleSettingsView: View {
                     ? AnyLayout(HStackLayout(alignment: .top, spacing: 24))
                     : AnyLayout(VStackLayout(alignment: .leading, spacing: 20))
                 layout {
-                    SubtitleStylePreview(style: style, secondaryVisible: secondaryVisible, referenceSize: reference)
+                    SubtitleStylePreview(
+                        style: style, secondaryVisible: secondaryVisible,
+                        referenceSize: reference, options: previewOptions
+                    )
                         .frame(maxWidth: .infinity)
                     NavigationStack {
                         MobileSubtitleStyleEditor(viewModel: context)
@@ -107,6 +116,26 @@ public struct SubtitleStyleSettingsView: View {
 }
 
 #if os(tvOS)
+private struct TelevisionSubtitleStyleColumn: View {
+    let context: SubtitleStyleEditingContext
+    @Binding var screen: PlayerControls.SubtitleScreen
+    let style: SubtitleStyle
+    let secondaryVisible: Bool
+    let previewOptions: SubtitlePreviewOptions
+    @FocusState private var previewFocus: SubtitlePreviewControl?
+    @State private var fullscreenPresented = false
+
+    var body: some View {
+        VStack(spacing: 20) {
+            TelevisionSubtitleStyleEditor(context: context, screen: $screen)
+            SubtitlePreviewControls(
+                style: style, secondaryVisible: secondaryVisible, options: previewOptions,
+                fullscreenPresented: $fullscreenPresented, focus: $previewFocus
+            )
+        }
+    }
+}
+
 private struct TelevisionSubtitleStyleEditor: View {
     let context: SubtitleStyleEditingContext
     @Binding var screen: PlayerControls.SubtitleScreen

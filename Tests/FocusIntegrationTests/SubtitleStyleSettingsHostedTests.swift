@@ -40,13 +40,16 @@ final class SubtitleStyleSettingsHostedTests: XCTestCase {
             }
             try await waitUntil {
                 guard let frame = self.focusFrame(in: window) else { return false }
-                return frame.width > 500 && frame.midX < window.bounds.midX
+                return abs(frame.width - (SubtitleStylePanel.panelWidth - 28)) < 1
+                    && frame.midX < window.bounds.midX
             }
             try await Task.sleep(for: .milliseconds(300))
             let image = DetailTransitionSnapshot.image(of: window)
             let bitmap = try XCTUnwrap(image.cgImage)
             let pixels = try rgbaPixels(bitmap)
             let focused = try XCTUnwrap(focusFrame(in: window))
+            XCTAssertEqual(focused.width, SubtitleStylePanel.panelWidth - 28, accuracy: 1,
+                           "Settings must use the player's panel width and shared row insets.")
             let focusFill = rgb(pixels, x: Int(focused.maxX - 12), y: Int(focused.midY), width: bitmap.width)
             let menuFill = rgb(pixels, x: Int(focused.minX - 10), y: Int(focused.midY), width: bitmap.width)
             let pageFill = rgb(pixels, x: bitmap.width - 10, y: bitmap.height / 2, width: bitmap.width)

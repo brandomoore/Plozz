@@ -2,7 +2,24 @@
 import CoreModels
 import CoreNetworking
 import CoreUI
+import Observation
 import SwiftUI
+
+@MainActor
+@Observable
+final class SubtitlePreviewOptions {
+    var showsFileFormatting = false
+    var showsHDRBrightness = false
+    var animatesBackground = true
+    private(set) var backgroundPhase = 0
+    @ObservationIgnored private var lastPaletteChange = ContinuousClock.now
+
+    func advanceBackground(at instant: ContinuousClock.Instant = .now) {
+        guard instant - lastPaletteChange >= .seconds(8) else { return }
+        backgroundPhase = (backgroundPhase + 1) % SubtitlePreviewPalettes.cycle.count
+        lastPaletteChange = instant
+    }
+}
 
 enum SubtitleStylePreviewMetrics {
     static let televisionCanvas = CGSize(width: 1920, height: 1080)
@@ -17,9 +34,7 @@ struct SubtitleStylePreview: View {
     let style: SubtitleStyle
     let secondaryVisible: Bool
     let referenceSize: CGSize
-    @State private var showsFileFormatting = false
-    @State private var showsHDRBrightness = false
-    @State private var isPaused = false
+    @Bindable var options: SubtitlePreviewOptions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -28,24 +43,25 @@ struct SubtitleStylePreview: View {
                 Spacer()
                 #if os(iOS)
                 Menu("Preview options", systemImage: "slider.horizontal.3") {
-                    Toggle("Preview file formatting", isOn: $showsFileFormatting)
-                    Toggle("Preview HDR brightness", isOn: $showsHDRBrightness)
+                    Toggle("Preview file formatting", isOn: $options.showsFileFormatting)
+                    Toggle("Preview HDR brightness", isOn: $options.showsHDRBrightness)
                 }
                 .labelStyle(.iconOnly)
-                #endif
                 Button {
-                    isPaused.toggle()
+                    options.animatesBackground.toggle()
                 } label: {
-                    Label(isPaused ? "Animate background" : "Pause background",
-                          systemImage: isPaused ? "play.fill" : "pause.fill")
+                    Label(options.animatesBackground ? "Pause background" : "Animate background",
+                          systemImage: options.animatesBackground ? "pause.fill" : "play.fill")
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.plain)
+                #endif
             }
             SubtitleStylePreviewCanvas(
                 style: style, secondaryVisible: secondaryVisible,
-                referenceSize: referenceSize, showsFileFormatting: showsFileFormatting,
-                showsHDRBrightness: showsHDRBrightness, animate: !isPaused
+                referenceSize: referenceSize, showsFileFormatting: options.showsFileFormatting,
+                showsHDRBrightness: options.showsHDRBrightness, animate: options.animatesBackground,
+                backgroundOptions: options
             )
             .aspectRatio(16 / 9, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -60,10 +76,6 @@ struct SubtitleStylePreview: View {
                 .font(.caption)
                 .plozzForeground(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            #if os(tvOS)
-            Toggle("Preview file formatting", isOn: $showsFileFormatting)
-            Toggle("Preview HDR brightness", isOn: $showsHDRBrightness)
-            #endif
         }
     }
 }
@@ -75,11 +87,12 @@ struct SubtitleStylePreviewCanvas: View {
     var showsFileFormatting = false
     var showsHDRBrightness = false
     var animate = true
+    var backgroundOptions: SubtitlePreviewOptions? = nil
 
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                SubtitlePreviewBackground(animate: animate)
+                SubtitlePreviewBackground(animate: animate, options: backgroundOptions)
                 SubtitleOverlayView(
                     primary: primary,
                     secondary: [.init(id: 2, start: 0, end: 60, body: .text(.init(
@@ -135,6 +148,7 @@ enum SubtitlePreviewPalettes {
 
 private struct SubtitlePreviewBackground: View {
     let animate: Bool
+    let options: SubtitlePreviewOptions?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var isVisible = false
@@ -144,7 +158,8 @@ private struct SubtitlePreviewBackground: View {
 
     var body: some View {
         LiquidArtworkBackground(
-            palette: reduceMotion ? SubtitlePreviewPalettes.comparison : SubtitlePreviewPalettes.cycle[phase],
+            palette: reduceMotion ? SubtitlePreviewPalettes.comparison
+                : SubtitlePreviewPalettes.cycle[options?.backgroundPhase ?? phase],
             animate: isAnimating,
             style: .dark,
             paletteCrossfade: reduceMotion ? 0 : 3,
@@ -157,7 +172,8 @@ private struct SubtitlePreviewBackground: View {
             do {
                 while true {
                     try await Task.sleep(for: .seconds(8))
-                    phase = (phase + 1) % SubtitlePreviewPalettes.cycle.count
+                    if let options { options.advanceBackground() }
+                    else { phase = (phase + 1) % SubtitlePreviewPalettes.cycle.count }
                 }
             } catch is CancellationError {
                 // The page left the screen or motion was disabled.

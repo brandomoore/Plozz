@@ -1481,6 +1481,7 @@ struct PlayerControls: View {
         // other menus, and the title marquee-scrolls the rest on focus, so it needs
         // room to be readable without being absurdly wide.
         case .subtitles where subtitleScreen == .download: return 860
+        case .subtitles: return SubtitleStylePanel.panelWidth
         default: return 520
         }
     }

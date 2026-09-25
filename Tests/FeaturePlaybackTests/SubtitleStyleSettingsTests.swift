@@ -8,6 +8,17 @@ import XCTest
 
 @MainActor
 final class SubtitleStyleSettingsTests: XCTestCase {
+    func testInlineAndFullScreenPreviewShareBackgroundPhaseWithoutDoubleAdvancing() {
+        let options = SubtitlePreviewOptions()
+        let tick = ContinuousClock.now.advanced(by: .seconds(9))
+        options.advanceBackground(at: tick)
+        XCTAssertEqual(options.backgroundPhase, 1)
+        options.advanceBackground(at: tick)
+        XCTAssertEqual(options.backgroundPhase, 1)
+        options.animatesBackground = false
+        XCTAssertEqual(options.backgroundPhase, 1, "Pausing or changing preview size must retain the current palette.")
+    }
+
     func testEditorUsesTheSameProfileStyleAndKeepsLiveTVSeparate() throws {
         let name = "SubtitleStyleSettingsTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

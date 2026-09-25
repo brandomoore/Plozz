@@ -15,6 +15,8 @@ import CoreModels
 /// focus write). Edits funnel through `updateStyle` -> `actions.setSubtitleStyle`
 /// exactly as before, so live preview + profile persistence are unchanged.
 struct SubtitleStylePanel: View {
+    static let panelWidth: CGFloat = 520
+
     /// Which style sub-screen to render (style / styleFont / styleOutline /
     /// styleBackground / styleDual). Non-style screens are never routed here.
     let screen: PlayerControls.SubtitleScreen
