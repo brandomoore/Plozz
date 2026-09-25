@@ -1,5 +1,6 @@
 #if canImport(SwiftUI) && canImport(UIKit)
 import CoreModels
+import CoreUI
 import SwiftUI
 
 struct LiveChannelSubtitleSurface: View {
@@ -36,7 +37,7 @@ public struct LiveChannelNetworkStatus: View {
         .foregroundStyle(.white)
         .padding(20)
         .frame(maxWidth: 420)
-        .background(.black.opacity(0.88), in: RoundedRectangle(cornerRadius: 20))
+        .modifier(PanelGlassBackground(cornerRadius: PlozzTheme.Metrics.playerPanelCornerRadius))
         .padding(16)
         .accessibilityElement(children: .combine)
     }

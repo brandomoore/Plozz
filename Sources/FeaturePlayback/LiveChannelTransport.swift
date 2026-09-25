@@ -545,8 +545,10 @@ struct LiveChannelOverlay: View {
     private var tabRow: some View {
         HStack(spacing: 20) {
             ForEach(availableTabs, id: \.self) { tab in
-                Button { toggleCard(tab) } label: { Text(tab.title) }
-                    .buttonStyle(LiveChannelTabButtonStyle(selected: cardOpen && cardTab == tab) { focused in
+                Button { toggleCard(tab) } label: {
+                    // The label reports the tab's own native focus, so the card
+                    // follows focus without waiting for a Select press.
+                    FocusReporting { focused in
                         if focused {
                             tabFocused(tab)
                             focusedPill = tab
@@ -559,7 +561,16 @@ struct LiveChannelOverlay: View {
                                 if focusedPill == nil, focus != .cardExit { tabFocusedAt = nil }
                             }
                         }
-                    })
+                    } content: {
+                        Text(tab.title)
+                    }
+                }
+                    // Applied as a style, as VOD's tab row does, so it reads the
+                    // player's environment: with glass off for performance the
+                    // tabs frost along with every panel and card.
+                    .buttonStyle(PlayerTabButtonStyle(
+                        focused: focusedPill == tab, selected: cardOpen && cardTab == tab
+                    ))
                     .focused($focus, equals: .cardTab(tab))
                     .disabled(!isFocusable(.cardTab(tab)))
                     .accessibilityIdentifier(tab.identifier)
@@ -654,8 +665,22 @@ struct LiveChannelOverlay: View {
         .colorScheme(.dark)
     }
 
-    @ViewBuilder
+    /// The EPG grid in the Info card's container — the same panel surface,
+    /// padding and corner as every other card, so the Guide reads as one of
+    /// them rather than a grid laid straight over the picture.
     private func guideCard(_ content: (LiveChannelGuideEmbedding) -> AnyView) -> some View {
+        guideGrid(content)
+            .padding(metrics.contentPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // Concentric with the panel: its radius less the padding inside it.
+            .clipShape(RoundedRectangle(
+                cornerRadius: max(0, metrics.panelCornerRadius - metrics.contentPadding), style: .continuous
+            ))
+            .modifier(PanelGlassBackground(cornerRadius: metrics.panelCornerRadius))
+    }
+
+    @ViewBuilder
+    private func guideGrid(_ content: (LiveChannelGuideEmbedding) -> AnyView) -> some View {
         let grid = content(LiveChannelGuideEmbedding(
             back: { focus = .cardTab(.guide) },
             didTune: {
@@ -687,7 +712,7 @@ struct LiveChannelOverlay: View {
             LinearGradient(
                 stops: [
                     .init(color: .black, location: 0),
-                    .init(color: .black, location: 0.72),
+                    .init(color: .black, location: 0.8),
                     .init(color: .clear, location: 1)
                 ],
                 startPoint: .top, endPoint: .bottom
@@ -717,7 +742,7 @@ struct LiveChannelOverlay: View {
 
     /// Focus alone opens the card, or switches it when it is already up.
     ///
-    /// Driven from the tab's own native focus (see `LiveChannelTabButtonStyle`)
+    /// Driven from the tab's own native focus (its label reports it)
     /// as well as the shared focus state: the state is written by the parent
     /// view, and arriving here through it alone left the card closed until
     /// Select was pressed.
@@ -1619,30 +1644,6 @@ private struct LiveChannelTimelineButtonStyle: ButtonStyle {
     }
 }
 
-/// VOD's tab look, reporting its own native focus so the card follows focus
-/// without waiting for a Select press.
-private struct LiveChannelTabButtonStyle: ButtonStyle {
-    let selected: Bool
-    let focusChanged: (Bool) -> Void
-
-    func makeBody(configuration: Configuration) -> some View {
-        TabBody(configuration: configuration, selected: selected, focusChanged: focusChanged)
-    }
-
-    private struct TabBody: View {
-        let configuration: ButtonStyle.Configuration
-        let selected: Bool
-        let focusChanged: (Bool) -> Void
-        @Environment(\.isFocused) private var isFocused
-
-        var body: some View {
-            PlayerTabButtonStyle(focused: isFocused, selected: selected)
-                .makeBody(configuration: configuration)
-                .onChange(of: isFocused, initial: true) { _, focused in focusChanged(focused) }
-        }
-    }
-}
-
 /// Calls back whenever the enclosing focusable's native focus changes.
 private struct FocusReporting<Content: View>: View {
     let focusChanged: (Bool) -> Void
@@ -1848,6 +1849,7 @@ private struct LiveChannelOnNowPanel: View {
     let select: (LiveChannelOnNowItem) -> Void
 
     @Environment(\.playerCardMetrics) private var metrics
+    @Environment(\.plozzMetrics) private var cardMetrics
 
     var body: some View {
         if items.isEmpty {
@@ -1874,7 +1876,7 @@ private struct LiveChannelOnNowPanel: View {
                             item: item, isCurrent: item.channelID == currentChannelID, now: now
                         )
                     }
-                    .buttonStyle(LiveChannelCardButtonStyle(cornerRadius: metrics.panelCornerRadius))
+                    .buttonStyle(LiveChannelCardButtonStyle(cornerRadius: cardMetrics.landscapeCardCornerRadius))
                     .disabled(!isCardOpen)
                     .focused($focus, equals: .onNowItem(item.id))
                     .accessibilityIdentifier("live-channel-on-now-\(item.channelID)")
@@ -1917,14 +1919,20 @@ private struct LiveChannelOnNowCard: View {
     let now: Date
 
     @Environment(\.playerCardMetrics) private var metrics
+    /// The app's media-card rule, as Home's landscape cards and the Up Next card
+    /// follow it: art inset by `cardInset` on every side with a concentric outer
+    /// corner, and the caption held further in so it clears that corner.
+    @Environment(\.plozzMetrics) private var cardMetrics
     @Environment(\.isFocused) private var focused
 
-    private static let spacing: CGFloat = 10
     #if os(tvOS)
     private static let progressHeight: CGFloat = 6
     #else
     private static let progressHeight: CGFloat = 4
     #endif
+
+    private var inset: CGFloat { cardMetrics.cardInset }
+    private var captionInset: CGFloat { cardMetrics.landscapeCaptionInset }
 
     /// Everything under the art, so the art takes exactly what is left of the
     /// card's fixed height.
@@ -1932,45 +1940,69 @@ private struct LiveChannelOnNowCard: View {
         ((metrics.castNameSize + metrics.castRoleSize) * 1.25).rounded(.up) + 3
     }
 
-    /// One inset on every side: the card's content padding, as the Info card
-    /// it stands in for.
-    private var inset: CGFloat { metrics.contentPadding }
-
-    /// The art takes the card's full height less its insets and the text, as
-    /// a Cast card's face does.
+    /// The card's full height less the art's inset above it, the caption below,
+    /// and the caption's own inset from the bottom corners.
     private var artHeight: CGFloat {
-        max(40, (metrics.cardHeight - inset * 2 - textHeight - Self.spacing).rounded())
+        let chrome = inset + cardMetrics.landscapeCaptionTopSpacing + textHeight + inset + captionInset
+        return max(40, (metrics.cardHeight - chrome).rounded())
     }
 
-    /// Concentric with the card: its radius less the inset between them.
-    private var artCornerRadius: CGFloat { max(8, metrics.panelCornerRadius - inset) }
+    private var artCornerRadius: CGFloat { PlozzTheme.Metrics.mediumMediaCornerRadius }
 
     private var artWidth: CGFloat { (artHeight * 16 / 9).rounded() }
 
+    /// The programme leads and the channel it's on follows, as the guide lists
+    /// them. A channel with no guide data, or whose guide only repeats its own
+    /// name, is named once.
+    private var headline: String { item.program?.title ?? item.channelName }
+
+    private var detail: Text? {
+        guard let program = item.program else { return nil }
+        if program.title.caseInsensitiveCompare(item.channelName) != .orderedSame {
+            return Text(verbatim: item.channelName)
+        }
+        if let subtitle = program.subtitle { return Text(verbatim: subtitle) }
+        let remaining = program.end.timeIntervalSince(now)
+        guard now >= program.start, remaining > 60 else { return nil }
+        let units = Duration.UnitsFormatStyle(allowedUnits: [.hours, .minutes], width: .abbreviated)
+        return Text(
+            "\(Duration.seconds(remaining).formatted(units)) left",
+            comment: "Time remaining in the live programme. The argument is a duration such as '32 min'."
+        )
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: Self.spacing) {
+        VStack(alignment: .leading, spacing: 0) {
             artwork
                 .overlay { progressOverlay }
             VStack(alignment: .leading, spacing: 3) {
-                MarqueeText(
-                    text: item.program?.title ?? item.channelName,
-                    font: metrics.castNameFont, isFocused: focused
-                )
-                .foregroundStyle(.white)
-                HStack(spacing: 6) {
-                    if isCurrent {
-                        Image(systemName: "play.fill")
-                            .accessibilityLabel(Text("Watching"))
-                    }
-                    Text(verbatim: item.channelName)
-                        .lineLimit(1)
+                MarqueeText(text: headline, font: metrics.castNameFont, isFocused: focused)
+                    .foregroundStyle(.white)
+                detailLine
+                    .font(metrics.castRoleFont)
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+            .padding(.horizontal, captionInset)
+            .padding(.top, cardMetrics.landscapeCaptionTopSpacing)
+        }
+        .padding([.top, .horizontal], inset)
+        .padding(.bottom, inset + captionInset)
+        .frame(width: artWidth + inset * 2, height: metrics.cardHeight, alignment: .topLeading)
+    }
+
+    /// The second line, marked when it's the channel being watched.
+    @ViewBuilder
+    private var detailLine: some View {
+        if detail != nil || isCurrent {
+            HStack(spacing: 6) {
+                if isCurrent {
+                    Image(systemName: "play.fill")
+                        .accessibilityLabel(Text("Watching"))
                 }
-                .font(metrics.castRoleFont)
-                .foregroundStyle(.white.opacity(0.6))
+                (detail ?? (isCurrent ? Text("Watching") : Text(verbatim: "")))
+                    .lineLimit(1)
             }
         }
-        .padding(inset)
-        .frame(width: artWidth + inset * 2, height: metrics.cardHeight, alignment: .topLeading)
     }
 
     /// The programme's progress across the bottom of its art, as a VOD

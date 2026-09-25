@@ -62,6 +62,7 @@ public struct LiveChannelPlayerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(GlassPerformanceModel.self) private var glassPerformance: GlassPerformanceModel?
     @State private var model: LiveChannelPlayerModel?
     @State private var sourceTask: Task<Void, Never>?
     @State private var fullscreenPresented = false
@@ -81,6 +82,10 @@ public struct LiveChannelPlayerView: View {
     /// The VOD player's Playback Info diagnostics, toggled from the Info card.
     @State private var diagnosticsEnabled = false
     @State private var diagnosticsSampler = PlaybackDiagnosticsSampler()
+    /// Whether this channel is holding the app's panels on their frosted, cheaper
+    /// surface, as a demanding VOD title does (`PlayerView`).
+    @State private var suspendedGlass = false
+    @State private var suspendedGlassWasHDR = false
     @FocusState private var focusedControl: LiveChannelControl?
 
     private var plozzChannelID: String? {
@@ -511,6 +516,10 @@ public struct LiveChannelPlayerView: View {
         }
         .onChange(of: tracksArePresented) { _, _ in autoHideRevision &+= 1 }
         .onChange(of: diagnosticsEnabled) { _, enabled in updateDiagnosticsSampling(enabled) }
+        .onChange(of: GlassDemandKey(
+            expanded: isExpanded, presentedFrame: model?.hasPresentedFrame ?? false, reportingID: reportingID
+        )) { _, _ in updateGlassSuspension() }
+        .onDisappear(perform: releaseGlassSuspension)
         .onChange(of: reportingID) { _, _ in updateDiagnosticsSampling(diagnosticsEnabled) }
         #if os(iOS)
         .sheet(isPresented: $diagnosticsEnabled) {
@@ -695,6 +704,7 @@ public struct LiveChannelPlayerView: View {
         sourceTask = nil
         diagnosticsEnabled = false
         diagnosticsSampler.stop()
+        releaseGlassSuspension()
         model?.stop()
         model = nil
     }
@@ -842,6 +852,38 @@ public struct LiveChannelPlayerView: View {
         onPlaybackStarted()
     }
 
+    /// Suspends glass while a demanding channel plays full screen, as the VOD
+    /// player does for a demanding title (`PlayerView.updateGlassSuspension`):
+    /// the controls, cards and panels drawn over it then take the frosted
+    /// surface. Judged from what the engine probed, since a live stream has no
+    /// provider metadata. A preview or Multiview tile draws no panels over it.
+    private func updateGlassSuspension() {
+        guard isExpanded, let model, model.hasPresentedFrame else {
+            releaseGlassSuspension()
+            return
+        }
+        let facts = model.engine.probedSourceFacts
+        let demand = GlassPerformanceBudget.demand(
+            for: nil, resolvedRange: facts?.range, probedWidth: facts?.videoWidth
+        )
+        guard demand.isDemanding != suspendedGlass else { return }
+        if demand.isDemanding {
+            glassPerformance?.beginDemandingPlayback(isHDR: demand.isHDR)
+            suspendedGlassWasHDR = demand.isHDR
+        } else {
+            glassPerformance?.endDemandingPlayback(isHDR: suspendedGlassWasHDR)
+            suspendedGlassWasHDR = false
+        }
+        suspendedGlass = demand.isDemanding
+    }
+
+    private func releaseGlassSuspension() {
+        guard suspendedGlass else { return }
+        suspendedGlass = false
+        glassPerformance?.endDemandingPlayback(isHDR: suspendedGlassWasHDR)
+        suspendedGlassWasHDR = false
+    }
+
     /// Samples the playing channel for Playback Info, as the VOD player does,
     /// only while it's showing: the sampler polls every second.
     private func updateDiagnosticsSampling(_ enabled: Bool) {
@@ -954,6 +996,13 @@ struct LiveChannelPlaybackStartPolicy<Source: Equatable> {
     mutating func resetViewing() {
         reportedSource = nil
     }
+}
+
+/// What the glass-suspension decision depends on, as one value to observe.
+private struct GlassDemandKey: Equatable {
+    let expanded: Bool
+    let presentedFrame: Bool
+    let reportingID: UUID?
 }
 
 enum LiveChannelControl: Hashable {
@@ -1073,7 +1122,7 @@ private struct LiveChannelActivityView: View {
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 22)
-        .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 22))
+        .modifier(PanelGlassBackground(cornerRadius: PlozzTheme.Metrics.playerPanelCornerRadius))
         .accessibilityElement(children: .combine)
     }
 }
@@ -1098,7 +1147,8 @@ private struct LiveChannelCompactStatusView: View {
         .foregroundStyle(.white.opacity(0.9))
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.black.opacity(0.72), in: Capsule())
+        // A capsule: the corner radius clamps to half the height.
+        .modifier(PanelGlassBackground(cornerRadius: 999))
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
     }
@@ -1121,7 +1171,7 @@ private struct LiveChannelStartupView: View {
                 .buttonStyle(InfoActionButtonStyle(prominent: false))
         }
         .padding(36)
-        .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 28))
+        .modifier(PanelGlassBackground(cornerRadius: PlozzTheme.Metrics.playerPanelCornerRadius))
     }
 }
 
@@ -1158,7 +1208,7 @@ private struct LiveChannelInterruptionView: View {
         }
         .foregroundStyle(.white)
         .padding(36)
-        .background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 28))
+        .modifier(PanelGlassBackground(cornerRadius: PlozzTheme.Metrics.playerPanelCornerRadius))
         .padding(40)
     }
 }
