@@ -2406,21 +2406,27 @@ private struct PlozziOSPlaybackSettingsView: View {
                 defaultValue: "Tracks",
                 comment: "Settings section for default audio and subtitle track selection. Media streams inside a video file, not music tracks."
             )) {
-                Picker("Preferred audio", selection: $model.settings.audioLanguagePreference) {
-                    ForEach(Self.audioOptions, id: \.self) { preference in
-                        audioName(preference).tag(preference)
+                // Set separately, "Everything else" takes over the one
+                // preference, so it isn't shown twice.
+                if audioPolicy.overrides.isEmpty {
+                    Picker("Preferred audio language", selection: $model.settings.audioLanguagePreference) {
+                        ForEach(Self.audioOptions, id: \.self) { preference in
+                            audioName(preference).tag(preference)
+                        }
                     }
                 }
-                Toggle("Different default per type", isOn: audioOverridesEnabled)
+                Toggle("Set separately for movies, TV shows & anime", isOn: audioOverridesEnabled)
                 if !audioPolicy.overrides.isEmpty {
-                    ForEach(Self.policyCategories, id: \.self) { category in
-                        Picker(
-                            category.displayName,
-                            selection: audioBinding(for: category)
+                    ForEach(Self.policyCategories + [.other], id: \.self) { category in
+                        Picker(selection: category == .other
+                            ? $model.settings.audioLanguagePreference
+                            : audioBinding(for: category)
                         ) {
                             ForEach(Self.audioOptions, id: \.self) { preference in
                                 audioName(preference).tag(preference)
                             }
+                        } label: {
+                            SeparateSettingLabel(category: category)
                         }
                     }
                 }
@@ -2512,18 +2518,27 @@ private struct PlozziOSSubtitleSettingsView: View {
             }
 
             SettingsSectionGroup("Behavior") {
-                Picker("Automatic subtitles", selection: $behavior.settings.subtitleMode) {
-                    ForEach(SubtitleMode.allCases, id: \.self) {
-                        Text($0.displayName).tag($0)
+                // Set separately, "Everything else" takes over the one mode,
+                // so it isn't shown twice.
+                if policy.overrides.isEmpty {
+                    Picker("Show subtitles", selection: $behavior.settings.subtitleMode) {
+                        ForEach(SubtitleMode.allCases, id: \.self) {
+                            Text($0.displayName).tag($0)
+                        }
                     }
-                    Toggle("Different default per type", isOn: subtitleOverridesEnabled)
-                    if !policy.overrides.isEmpty {
-                        ForEach(Self.policyCategories, id: \.self) { category in
-                            Picker(category.displayName, selection: modeBinding(for: category)) {
-                                ForEach(SubtitleMode.allCases, id: \.self) {
-                                    Text($0.displayName).tag($0)
-                                }
+                }
+                Toggle("Set separately for movies, TV shows & anime", isOn: subtitleOverridesEnabled)
+                if !policy.overrides.isEmpty {
+                    ForEach(Self.policyCategories + [.other], id: \.self) { category in
+                        Picker(selection: category == .other
+                            ? $behavior.settings.subtitleMode
+                            : modeBinding(for: category)
+                        ) {
+                            ForEach(SubtitleMode.allCases, id: \.self) {
+                                Text($0.displayName).tag($0)
                             }
+                        } label: {
+                            SeparateSettingLabel(category: category)
                         }
                     }
                 }
@@ -2596,6 +2611,22 @@ private struct PlozziOSSubtitleSettingsView: View {
                 policy.overrides[category] = rule
             }
         )
+    }
+}
+
+/// A per-type picker's name, with what "Everything else" covers beneath it.
+private struct SeparateSettingLabel: View {
+    let category: ContentCategory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(category.separateSettingTitle)
+            if let hint = category.separateSettingHint {
+                Text(hint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

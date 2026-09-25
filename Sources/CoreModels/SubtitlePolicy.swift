@@ -46,6 +46,27 @@ public enum SubtitleContentCategory: String, Codable, CaseIterable, Sendable, Ha
             )
         }
     }
+
+    /// The row name when subtitles or audio are set separately per type. The
+    /// named types get their own rows, so `.other` is everything they don't cover.
+    public var separateSettingTitle: LocalizedStringResource {
+        guard self == .other else { return displayName }
+        return LocalizedStringResource(
+            "contentCategory.separateSetting.other",
+            defaultValue: "Everything else",
+            comment: "Settings row for content that isn't a movie, TV show or anime, shown when subtitles or audio are set separately for each."
+        )
+    }
+
+    /// What the `.other` row covers; the named types need no explanation.
+    public var separateSettingHint: LocalizedStringResource? {
+        guard self == .other else { return nil }
+        return LocalizedStringResource(
+            "contentCategory.separateSetting.other.hint",
+            defaultValue: "Home videos, music videos and the rest",
+            comment: "Explains the Everything else row in per-type subtitle and audio settings."
+        )
+    }
 }
 
 // MARK: - Policy
