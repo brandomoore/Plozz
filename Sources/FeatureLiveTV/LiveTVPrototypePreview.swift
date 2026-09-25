@@ -23,6 +23,11 @@ struct PrototypePreviewLayout {
     /// The gap between the info bar, the toolbar and the guide.
     var sectionGap: CGFloat { short ? PrototypeLayout.smallGap : PrototypeLayout.sectionGap }
 
+    var heroArtworkSize: CGSize {
+        let height = min(heroHeight - PrototypeLayout.smallGap, compact ? 92 : 220)
+        return CGSize(width: (height * 16 / 9).rounded(), height: height.rounded())
+    }
+
     var sidebarWidth: CGFloat {
         guard contentFrame.width >= 960,
               contentFrame.height - heroHeight - PrototypeLayout.sectionGap >= 420 else { return 0 }
@@ -174,12 +179,15 @@ struct PrototypePreviewHero: View {
     let layout: PrototypePreviewLayout
     let watch: () -> Void
     var watchTitle: LocalizedStringResource?
+    var isLoading = false
     @Environment(\.themePalette) private var palette
     @Environment(\.locale) private var locale
 
     var body: some View {
         Group {
-            if let channel {
+            if isLoading {
+                PrototypePreviewHeroSkeleton(layout: layout)
+            } else if let channel {
                 if layout.compact {
                     compactBar(channel)
                 } else if layout.short {
@@ -235,8 +243,7 @@ struct PrototypePreviewHero: View {
     }
 
     private var artSize: CGSize {
-        let height = min(layout.heroHeight - PrototypeLayout.smallGap, layout.compact ? 92 : 220)
-        return CGSize(width: (height * 16 / 9).rounded(), height: height.rounded())
+        layout.heroArtworkSize
     }
 
     private var watchButton: some View {

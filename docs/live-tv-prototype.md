@@ -63,7 +63,11 @@ remain Debug-only; neither is a production default or a source offered to users.
 
 Source setup appears only after the initial source reload, server enrollment,
 and library-catalog restoration have established that there are no channels.
-Pending catalogs show loading instead of briefly offering setup; already-loaded
+Pending catalogs keep the page layout in place with non-focusable skeletons for
+the info artwork/text, category column, channel logos, and programme cells. They
+share the loaded guide's sizes/insets and Home's neutral fills/shimmer, including
+Reduce Motion behavior; normal startup never replaces the page with a loading
+message. The storage-opening stage uses that same layout. Already-loaded
 channels remain browsable while other sources finish. Library failures use the
 unavailable state and can retry both library and external sources.
 An empty configuration does not contact a public feed or play an unsolicited

@@ -65,7 +65,12 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
         let pending = try text(in: window)
         XCTAssertFalse(pending.contains("Add your channels"), pending)
         XCTAssertFalse(pending.contains("No channels available"), pending)
-        XCTAssertTrue(pending.contains("Loading"), pending)
+        XCTAssertFalse(pending.contains("Loading your channels"), pending)
+        XCTAssertFalse(pending.contains("Find your next channel"), pending)
+        let skeleton = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
+        skeleton.name = "Live TV loading layout"
+        skeleton.lifetime = .keepAlways
+        add(skeleton)
 
         try await cold.load()
         let deadline = ContinuousClock.now + .seconds(5)
@@ -79,6 +84,10 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
         }
         XCTAssertTrue(loaded.contains("Saved movie channel"), loaded)
         XCTAssertFalse(loaded.contains("Add your channels"), loaded)
+        let content = XCTAttachment(image: DetailTransitionSnapshot.image(of: window))
+        content.name = "Live TV loaded layout"
+        content.lifetime = .keepAlways
+        add(content)
 
         try definitions.save([])
         try await cold.load()

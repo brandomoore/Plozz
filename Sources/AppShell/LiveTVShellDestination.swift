@@ -98,7 +98,10 @@ struct LiveTVShellDestination: View {
     }
 
     private var liveTVContent: some View {
-        LiveTVCatalogStorageView(load: { try LiveTVCatalogStorage.cache(profileID: profileID) }) { cache in
+        LiveTVCatalogStorageView(
+            load: { try LiveTVCatalogStorage.cache(profileID: profileID) },
+            loading: AnyView(LiveTVLoadingSkeleton())
+        ) { cache in
             LiveTVLibraryRuntimeView(profileID: profileID, profiles: profiles, accounts: accountsProviders) { library in
                 liveTVContent(cache: cache, library: library)
             }
