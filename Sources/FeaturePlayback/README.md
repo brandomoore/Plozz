@@ -66,6 +66,9 @@ profile, applies the edit, and switches matching off; a no-op edit does not.
 Turning matching back on resumes the current device settings. New/default styles
 start with matching enabled, while persisted choices and legacy custom migration
 retain their existing behavior.
+Enabling matching over a custom style requires confirmation in both editors;
+Cancel leaves the style untouched. Disabling matching and the first custom edit
+remain immediate.
 Explicit system font, text-color and opacity overrides take precedence over
 the corresponding source formatting. Image-based subtitles retain their authored
 pixels. This maps Apple's public appearance settings, not its private layout
@@ -78,6 +81,10 @@ and all ten public source-override policies. Policies for attributes absent from
 Plozz's cue model remain preserved rather than being presented as parsed source
 data. Apple does not expose native padding, base point-size/layout rules, line
 spacing, or edge color/thickness; those controls remain explicitly Plozz values.
+The low-level per-field source policies are retained as compatibility data, not
+exposed as a long list of switches. The separate **Subtitle file formatting**
+page offers only supported controls: authored positions, colors, and bold/italic
+emphasis. The primary appearance page contains the viewer's own style controls.
 
 `Font > System` offers all eight native caption families plus the device's
 installed font families, discovered from UIKit rather than a fixed OS-specific

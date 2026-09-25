@@ -6,6 +6,7 @@ import SwiftUI
 public struct MobileSubtitleStyleEditor: View {
     let viewModel: SubtitleStyleEditingContext
     @Environment(\.locale) private var locale
+    @State private var systemStyleConfirmation = SystemCaptionStyleConfirmation()
 
     public init(viewModel: SubtitleStyleEditingContext) { self.viewModel = viewModel }
 
@@ -14,7 +15,14 @@ public struct MobileSubtitleStyleEditor: View {
             Section {
                 Toggle(
                     "Use System Caption Style",
-                    isOn: subtitleStyleBinding(viewModel, \.followsSystemStyle)
+                    isOn: Binding(
+                        get: { viewModel.controls.subtitleStyle.followsSystemStyle },
+                        set: { enabled in
+                            systemStyleConfirmation.request(
+                                enabled, currentlyMatching: viewModel.controls.subtitleStyle.followsSystemStyle
+                            ) { value in viewModel.editSubtitleStyle { $0.followsSystemStyle = value } }
+                        }
+                    )
                 )
             } footer: {
                 Text("Matching shows the current values from Settings › Accessibility › Subtitles & Captioning. Editing a value keeps this appearance and turns matching off.")
@@ -115,27 +123,6 @@ public struct MobileSubtitleStyleEditor: View {
                 }
             }
 
-            Section {
-                Toggle(
-                    "Use File Positions",
-                    isOn: subtitleStyleBinding(viewModel, \.usesSourcePosition)
-                )
-                Toggle(
-                    "Use File Colors",
-                    isOn: subtitleStyleBinding(viewModel, \.usesSourceColors)
-                )
-                if viewModel.effectiveStyle.captionSourceOverrides != nil {
-                    Toggle("Allow File Font", isOn: subtitleSourceBinding(viewModel, \.font))
-                    Toggle("Allow File Size", isOn: subtitleSourceBinding(viewModel, \.relativeSize))
-                    Toggle("Allow File Text Color", isOn: subtitleSourceBinding(viewModel, \.foregroundColor))
-                    Toggle("Allow File Text Opacity", isOn: subtitleSourceBinding(viewModel, \.foregroundOpacity))
-                }
-            } header: {
-                Text("From the Subtitle File")
-            } footer: {
-                Text("File override preferences apply only when a cue supplies that attribute. Lines without their own formatting use the values above.")
-            }
-
             Section("Details") {
                 NavigationLink("Shadow & Outline") {
                     MobileSubtitleShadowOutlineView(viewModel: viewModel)
@@ -158,6 +145,9 @@ public struct MobileSubtitleStyleEditor: View {
                         value: viewModel.hasSecondarySubtitle ? "On" : "Off"
                     )
                 }
+                NavigationLink("Subtitle file formatting") {
+                    MobileSubtitleFileFormattingView(viewModel: viewModel)
+                }
             }
 
             Section {
@@ -167,6 +157,28 @@ public struct MobileSubtitleStyleEditor: View {
             }
         }
         .navigationTitle("Appearance")
+        .navigationBarTitleDisplayMode(.inline)
+        .modifier(SystemCaptionStyleConfirmationDialog(
+            confirmation: systemStyleConfirmation,
+            apply: { enabled in viewModel.editSubtitleStyle { $0.followsSystemStyle = enabled } }
+        ))
+    }
+}
+
+private struct MobileSubtitleFileFormattingView: View {
+    let viewModel: SubtitleStyleEditingContext
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Use File Positions", isOn: subtitleStyleBinding(viewModel, \.usesSourcePosition))
+                Toggle("Use File Colors", isOn: subtitleStyleBinding(viewModel, \.usesSourceColors))
+                Toggle("Use Bold and Italic", isOn: subtitleStyleBinding(viewModel, \.usesSourceEmphasis))
+            } footer: {
+                Text("Some subtitle files specify colors, bold or italic text, or where a line should appear. Turn these off to use your chosen style instead.")
+            }
+        }
+        .navigationTitle("Subtitle file formatting")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -252,9 +264,6 @@ private struct MobileSubtitleShadowOutlineView: View {
                     range: 0...10, step: 1,
                     formattedValue: { $0.formatted(.number.precision(.fractionLength(0...3))) }
                 )
-                if viewModel.effectiveStyle.captionSourceOverrides != nil {
-                    Toggle("Allow File Edge", isOn: subtitleSourceBinding(viewModel, \.edge))
-                }
             } header: {
                 Text("Text Edge")
             } footer: {
@@ -376,19 +385,6 @@ private struct MobileSubtitleBackgroundView: View {
                     range: 0...1, step: 0.05,
                     formattedValue: { $0.formatted(.percent.precision(.fractionLength(0...3))) }
                 )
-            }
-            if viewModel.effectiveStyle.captionSourceOverrides != nil {
-                Section {
-                    Toggle("Allow File Line Color", isOn: subtitleSourceBinding(viewModel, \.backgroundColor))
-                    Toggle("Allow File Line Opacity", isOn: subtitleSourceBinding(viewModel, \.backgroundOpacity))
-                    Toggle("Allow File Window Color", isOn: subtitleSourceBinding(viewModel, \.windowColor))
-                    Toggle("Allow File Window Opacity", isOn: subtitleSourceBinding(viewModel, \.windowOpacity))
-                    Toggle("Allow File Window Corners", isOn: subtitleSourceBinding(viewModel, \.windowCornerRadius))
-                } header: {
-                    Text("From the Subtitle File")
-                } footer: {
-                    Text("File override preferences apply only when a cue supplies that attribute.")
-                }
             }
         }
         .navigationTitle("Background")
@@ -613,17 +609,6 @@ private func subtitleWeightBinding(_ viewModel: SubtitleStyleEditingContext) -> 
             guard let weight else { return }
             viewModel.editSubtitleStyle { $0.selectFontWeight(weight) }
         }
-    )
-}
-
-@MainActor
-private func subtitleSourceBinding(
-    _ viewModel: SubtitleStyleEditingContext,
-    _ keyPath: WritableKeyPath<SubtitleCaptionSourceOverrides, Bool>
-) -> Binding<Bool> {
-    Binding(
-        get: { viewModel.effectiveStyle.captionSourceOverrides?[keyPath: keyPath] ?? true },
-        set: { value in viewModel.editSubtitleStyle { $0.captionSourceOverrides?[keyPath: keyPath] = value } }
     )
 }
 

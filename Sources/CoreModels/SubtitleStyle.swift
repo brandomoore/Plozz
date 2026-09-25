@@ -227,6 +227,19 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
     /// viewer deliberately chooses a different family; weight edits preserve
     /// its other descriptor attributes.
     public var fontDescriptor: SubtitleFontDescriptor?
+    public var usesSourceEmphasis: Bool {
+        get { captionSourceOverrides?.font ?? true }
+        set {
+            guard newValue != usesSourceEmphasis else { return }
+            if captionSourceOverrides == nil {
+                var policy = SubtitleCaptionSourceOverrides()
+                policy.foregroundColor = usesSourceColors
+                policy.foregroundOpacity = usesSourceColors
+                captionSourceOverrides = policy
+            }
+            captionSourceOverrides?.font = newValue
+        }
+    }
     public var captionSourceOverrides: SubtitleCaptionSourceOverrides?
     /// Retains Apple's "undefined" or future edge preference independently of
     /// the drawable fallback in `edge`. Cleared when the edge is edited.

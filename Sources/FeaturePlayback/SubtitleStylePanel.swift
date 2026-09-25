@@ -34,28 +34,33 @@ struct SubtitleStylePanel: View {
     /// former PlayerControls home). Lives here because only `handleStyleMove`
     /// touches it.
     @State private var styleAccelerator = SubtitleStyleAccelerator()
+    @State private var systemStyleConfirmation = SystemCaptionStyleConfirmation()
     private var effectiveStyle: SubtitleStyle { SystemCaptionStyle.shared.resolved(model.subtitleStyle) }
 
-    @ViewBuilder
     var body: some View {
-        switch screen {
-        case .style:
-            // A bitmap primary (PGS/DVD/…) is pre-rendered by the source, so NONE
-            // of the appearance controls apply. Replace the whole editor with a
-            // centered explanation rather than showing dead knobs.
-            if let format = model.secondarySubtitleImagePrimaryFormat {
-                styleUnavailableForImageSubtitle(format: format)
-            } else {
-                let main = styleMainRows
-                styleScreen(main.rows, dividerBefore: main.dividerBefore)
+        Group {
+            switch screen {
+            case .style:
+                // Image-based captions cannot be restyled.
+                if let format = model.secondarySubtitleImagePrimaryFormat {
+                    styleUnavailableForImageSubtitle(format: format)
+                } else {
+                    let main = styleMainRows
+                    styleScreen(main.rows, dividerBefore: main.dividerBefore)
+                }
+            case .styleFont: styleFontScreen
+            case .styleSystemFont: systemFontScreen
+            case .styleOutline: styleScreen(styleOutlineRows)
+            case .styleBackground: styleScreen(styleBackgroundRows)
+            case .styleDual: styleScreen(styleDualRows)
+            case .styleFileFormatting: fileFormattingScreen
+            default: EmptyView()
             }
-        case .styleFont: styleFontScreen
-        case .styleSystemFont: systemFontScreen
-        case .styleOutline: styleScreen(styleOutlineRows)
-        case .styleBackground: styleScreen(styleBackgroundRows)
-        case .styleDual: styleScreen(styleDualRows)
-        default: EmptyView()
         }
+        .modifier(SystemCaptionStyleConfirmationDialog(
+            confirmation: systemStyleConfirmation,
+            apply: { enabled in updateStyle { $0.followsSystemStyle = enabled } }
+        ))
     }
 
 
@@ -228,7 +233,14 @@ struct SubtitleStylePanel: View {
         var rows: [StyleRowSpec] = []
         var slot = 0
 
-        rows.append(StyleRowSpec(slot: slot, title: "Use System Caption Style", kind: .toggle(isOn: s.followsSystemStyle, flip: { updateStyle { $0.followsSystemStyle.toggle() } }))); slot += 1
+        rows.append(StyleRowSpec(slot: slot, title: "Use System Caption Style", kind: .toggle(
+            isOn: s.followsSystemStyle,
+            flip: {
+                systemStyleConfirmation.request(!s.followsSystemStyle, currentlyMatching: s.followsSystemStyle) { enabled in
+                    updateStyle { $0.followsSystemStyle = enabled }
+                }
+            }
+        ))); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Font", kind: .submenu(summary: Text(verbatim: s.fontDisplayName), open: { openScreen(.styleFont) }))); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Weight", kind: .choice(
             value: Text(verbatim: s.fontWeightDisplayName),
@@ -242,7 +254,6 @@ struct SubtitleStylePanel: View {
             current: Int((s.verticalPosition / SubtitleStyle.verticalPositionStep).rounded()),
             label: { Text(Double($0) * SubtitleStyle.verticalPositionStep, format: .percent.precision(.fractionLength(0...1))) }
         ) { v in updateStyle { $0.verticalPosition = Double(v) * SubtitleStyle.verticalPositionStep } }); slot += 1
-        rows.append(StyleRowSpec(slot: slot, title: "Use File Positions", kind: .toggle(isOn: s.usesSourcePosition, flip: { updateStyle { $0.usesSourcePosition.toggle() } }))); slot += 1
         rows.append(choiceRow(
             slot,
             LocalizedStringResource(
@@ -255,15 +266,8 @@ struct SubtitleStylePanel: View {
         ) { v in updateStyle { $0.verticalAnchor = v } }); slot += 1
         rows.append(numberRow(slot, "Horizontal Offset", options: Self.hOffsetOptions, current: Int((s.horizontalOffset * 100).rounded()), label: { Text(PlayerControlsFormatting.hOffsetLabel($0)) }) { v in updateStyle { $0.horizontalOffset = Double(v) / 100 } }); slot += 1
         rows.append(colorRow(slot, "Text Color", options: Self.textColorOptions, current: s.textColor, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.textColor = c } }); slot += 1
-        rows.append(StyleRowSpec(slot: slot, title: "Use File Colors", kind: .toggle(isOn: s.usesSourceColors, flip: { updateStyle { $0.usesSourceColors.toggle() } }))); slot += 1
         rows.append(numberRow(slot, "Text Opacity", options: Self.alphaOptions, current: Int((s.textColor.alpha * 100).rounded()), displayValue: Text(s.textColor.alpha, format: .percent.precision(.fractionLength(0...3))), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.textColor.alpha = Double(v) / 100 } }); slot += 1
         rows.append(numberRow(slot, "Overall Opacity", options: Self.opacityOptions, current: Int((s.opacity * 100).rounded()), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.opacity = Double(v) / 100 } }); slot += 1
-        if s.captionSourceOverrides != nil {
-            rows.append(sourceOverrideRow(slot, "Allow File Font", keyPath: \.font)); slot += 1
-            rows.append(sourceOverrideRow(slot, "Allow File Size", keyPath: \.relativeSize)); slot += 1
-            rows.append(sourceOverrideRow(slot, "Allow File Text Color", keyPath: \.foregroundColor)); slot += 1
-            rows.append(sourceOverrideRow(slot, "Allow File Text Opacity", keyPath: \.foregroundOpacity)); slot += 1
-        }
         // Only affects HDR frames, so it appears exclusively while HDR is live —
         // mirroring how the bitmap-primary gate hides controls that can't act.
         if model.subtitlesRenderHDR {
@@ -275,8 +279,32 @@ struct SubtitleStylePanel: View {
         rows.append(StyleRowSpec(slot: slot, title: "Shadow & Outline", kind: .submenu(summary: Text(SubtitleStyleEditorValues.edgeName(s)), open: { openScreen(.styleOutline) }))); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Background", kind: .submenu(summary: s.background.isEnabled || s.glyphBackground.alpha > 0 ? Text("On") : Text("Off"), open: { openScreen(.styleBackground) }))); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Dual Subtitles", kind: .submenu(summary: hasSecondaryTrack ? Text("On") : Text("Off"), open: { openScreen(.styleDual) }))); slot += 1
+        rows.append(StyleRowSpec(slot: slot, title: "Subtitle file formatting", kind: .submenu(summary: Text(verbatim: ""), open: { openScreen(.styleFileFormatting) }))); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Reset to Default", kind: .action(run: { actions.setSubtitleStyle(.profileDefault) }))); slot += 1
         return (rows, dividerBefore)
+    }
+
+    private var fileFormattingScreen: some View {
+        let style = effectiveStyle
+        return VStack(alignment: .leading, spacing: 16) {
+            styleScreen([
+                StyleRowSpec(slot: 0, title: "Use File Positions", kind: .toggle(
+                    isOn: style.usesSourcePosition, flip: { updateStyle { $0.usesSourcePosition.toggle() } }
+                )),
+                StyleRowSpec(slot: 1, title: "Use File Colors", kind: .toggle(
+                    isOn: style.usesSourceColors, flip: { updateStyle { $0.usesSourceColors.toggle() } }
+                )),
+                StyleRowSpec(slot: 2, title: "Use Bold and Italic", kind: .toggle(
+                    isOn: style.usesSourceEmphasis, flip: { updateStyle { $0.usesSourceEmphasis.toggle() } }
+                ))
+            ])
+            Text("Some subtitle files specify colors, bold or italic text, or where a line should appear. Turn these off to use your chosen style instead.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 30)
+                .padding(.bottom, 12)
+        }
     }
 
     /// The Font picker: one selectable row per family, each rendered **in its own
@@ -380,9 +408,6 @@ struct SubtitleStylePanel: View {
         rows.append(choiceRow(slot, "Text Edge", options: Self.shadowStyleOptions, current: s.edge.style, displayValue: Text(SubtitleStyleEditorValues.edgeName(s)), label: { $0.displayName }) { v in updateStyle { $0.edge.style = v } }); slot += 1
         rows.append(colorRow(slot, "Edge Color", options: Self.textColorOptions, current: s.edge.color, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.edge.color = c } }); slot += 1
         rows.append(numberRow(slot, "Edge Thickness", options: Self.thicknessOptions, current: Int(s.edge.thickness.rounded()), displayValue: Text(s.edge.thickness, format: .number.precision(.fractionLength(0...3))), label: { Text(verbatim: "\($0)") }) { v in updateStyle { $0.edge.thickness = Double(v) } }); slot += 1
-        if s.captionSourceOverrides != nil {
-            rows.append(sourceOverrideRow(slot, "Allow File Edge", keyPath: \.edge)); slot += 1
-        }
 
         rows.append(StyleRowSpec(slot: slot, title: "Outline", kind: .toggle(isOn: s.border.isEnabled, flip: { updateStyle { $0.border.isEnabled.toggle() } }))); slot += 1
             rows.append(colorRow(slot, "Outline Color", options: Self.textColorOptions, current: s.border.color, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.border.color = c } }); slot += 1
@@ -404,13 +429,6 @@ struct SubtitleStylePanel: View {
         rows.append(numberRow(slot, "Vertical Padding (Plozz)", options: Self.paddingOptions, current: Int(s.background.verticalPadding.rounded()), label: { Text(verbatim: "\($0)") }) { v in updateStyle { $0.background.verticalPadding = Double(v) } }); slot += 1
         rows.append(colorRow(slot, "Line Background Color", options: Self.textColorOptions, current: s.glyphBackground, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.glyphBackground = c } }); slot += 1
         rows.append(numberRow(slot, "Line Background Opacity", options: Self.alphaOptions, current: Int((s.glyphBackground.alpha * 100).rounded()), displayValue: Text(s.glyphBackground.alpha, format: .percent.precision(.fractionLength(0...3))), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.glyphBackground.alpha = Double(v) / 100 } }); slot += 1
-        if s.captionSourceOverrides != nil {
-            rows.append(sourceOverrideRow(slot, "Allow File Line Color", keyPath: \.backgroundColor)); slot += 1
-            rows.append(sourceOverrideRow(slot, "Allow File Line Opacity", keyPath: \.backgroundOpacity)); slot += 1
-            rows.append(sourceOverrideRow(slot, "Allow File Window Color", keyPath: \.windowColor)); slot += 1
-            rows.append(sourceOverrideRow(slot, "Allow File Window Opacity", keyPath: \.windowOpacity)); slot += 1
-            rows.append(sourceOverrideRow(slot, "Allow File Window Corners", keyPath: \.windowCornerRadius)); slot += 1
-        }
         return rows
     }
 
@@ -574,16 +592,6 @@ struct SubtitleStylePanel: View {
     private func updateStyle(_ mutate: (inout SubtitleStyle) -> Void) {
         let next = SystemCaptionStyle.shared.editing(model.subtitleStyle, mutate)
         if next != model.subtitleStyle { actions.setSubtitleStyle(next) }
-    }
-
-    private func sourceOverrideRow(
-        _ slot: Int, _ title: LocalizedStringResource,
-        keyPath: WritableKeyPath<SubtitleCaptionSourceOverrides, Bool>
-    ) -> StyleRowSpec {
-        StyleRowSpec(slot: slot, title: title, kind: .toggle(
-            isOn: effectiveStyle.captionSourceOverrides?[keyPath: keyPath] ?? true,
-            flip: { updateStyle { $0.captionSourceOverrides?[keyPath: keyPath].toggle() } }
-        ))
     }
 
     // MARK: Option grids

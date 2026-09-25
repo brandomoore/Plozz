@@ -199,6 +199,7 @@ private struct TelevisionSubtitleStyleEditor: View {
         case .styleOutline: "Shadow & Outline"
         case .styleBackground: "Background"
         case .styleDual: "Dual Subtitles"
+        case .styleFileFormatting: "File Formatting"
         default: "Appearance"
         }
     }

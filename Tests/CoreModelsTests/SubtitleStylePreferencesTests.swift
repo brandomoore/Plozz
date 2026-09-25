@@ -3,6 +3,22 @@ import XCTest
 
 @MainActor
 final class SubtitleStylePreferencesTests: XCTestCase {
+    func testFileEmphasisSettingPreservesOtherCapturedSourcePolicies() {
+        var style = SubtitleStyle.default
+        style.usesSourceColors = false
+        XCTAssertTrue(style.usesSourceEmphasis)
+        style.usesSourceEmphasis = false
+        XCTAssertFalse(style.usesSourceEmphasis)
+        XCTAssertEqual(style.captionSourceOverrides?.foregroundColor, false)
+        XCTAssertEqual(style.captionSourceOverrides?.foregroundOpacity, false)
+        style.captionSourceOverrides?.windowCornerRadius = false
+        let previous = style.captionSourceOverrides
+        style.usesSourceEmphasis = true
+        XCTAssertEqual(style.captionSourceOverrides?.foregroundColor, previous?.foregroundColor)
+        XCTAssertEqual(style.captionSourceOverrides?.foregroundOpacity, previous?.foregroundOpacity)
+        XCTAssertEqual(style.captionSourceOverrides?.windowCornerRadius, false)
+    }
+
     func testNewProfilesDefaultToMatchingButOldMissingFieldsRemainCustom() throws {
         let name = "SubtitleStyleDefaultsTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

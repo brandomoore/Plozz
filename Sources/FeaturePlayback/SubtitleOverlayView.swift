@@ -494,7 +494,7 @@ struct StyledCueText: View {
     }
 
     private var allowsSourceFont: Bool {
-        style.captionSourceOverrides?.font ?? true
+        style.usesSourceEmphasis
     }
 
     private var fontDescriptor: UIFontDescriptor? {
