@@ -148,6 +148,11 @@ public final class SubtitleDownloadModel {
     /// the "Search for subtitles…" entry row.
     public var canSearch: Bool = false
 
+    /// Whether the Subtitles panel offers the Style editor. False while the
+    /// viewer's "Use native subtitles" preference hands text subtitles to the
+    /// native engine, which draws them in the system caption style.
+    public var canEditStyle: Bool = true
+
     /// State of the in-player subtitle search/download screen.
     public var state: SubtitleDownloadState = .idle
 

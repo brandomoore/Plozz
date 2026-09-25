@@ -958,6 +958,12 @@ private struct PlozziOSSubtitleOptionsSheet: View {
                     systemImage: "photo"
                 )
                 .plozzForeground(.secondary)
+            } else if !viewModel.controls.subtitleDownload.canEditStyle {
+                Label(
+                    "Subtitles use your system caption style.",
+                    systemImage: "captions.bubble"
+                )
+                .plozzForeground(.secondary)
             } else {
                 NavigationLink {
                     PlozziOSSubtitleAppearanceView(viewModel: viewModel)
@@ -1155,6 +1161,21 @@ private struct PlozziOSSubtitleAppearanceView: View {
                         }
                     )
                 }
+            }
+
+            Section {
+                Toggle(
+                    "Use File Positions",
+                    isOn: subtitleStyleBinding(viewModel, \.usesSourcePosition)
+                )
+                Toggle(
+                    "Use File Colors",
+                    isOn: subtitleStyleBinding(viewModel, \.usesSourceColors)
+                )
+            } header: {
+                Text("From the Subtitle File")
+            } footer: {
+                Text("When a subtitle places or colors text itself, show it that way. Lines without their own placement or color use the settings above.")
             }
 
             Section("Details") {

@@ -658,7 +658,7 @@ public final class PlayerViewModel {
             host: self,
             engineFactory: engineFactory,
             adopted: adoptedResolved,
-            initialStyle: style
+            initialStyle: engineSubtitleStyle
         )
         self.nowPlaying = VideoNowPlayingCoordinator(
             host: self, publisher: nowPlayingPublisher ?? NowPlayingSession()
@@ -703,6 +703,9 @@ public final class PlayerViewModel {
 
     private func configureEngineCallbacks() {
         let callbackEngineToken = engineToken
+        // Engines that can draw subtitles themselves (AVPlayer, or Plozzigen's
+        // remote-HLS route) take the same look on creation and after a swap.
+        engine.updateSubtitleStyle(engineSubtitleStyle)
         engine.onProgress = { [weak self] in
             guard let self, self.engineToken == callbackEngineToken else { return }
             // Jellyfin (non-idempotent) next-episode prefetch fires once the
@@ -1954,8 +1957,17 @@ public final class PlayerViewModel {
         style = newStyle
         liveSubtitles.style = newStyle
         controls.subtitleStyle = newStyle
-        engine.updateSubtitleStyle(newStyle)
+        engine.updateSubtitleStyle(engineSubtitleStyle)
         onSubtitleStyleChanged(newStyle)
+    }
+
+    /// The look handed to engines that draw subtitles themselves. "Use native
+    /// subtitles" defers to the system caption style, so it carries no in-app
+    /// overrides; the overlay keeps `style` either way.
+    private var engineSubtitleStyle: SubtitleStyle {
+        var engineStyle = style
+        if behavior.usesNativeSubtitles { engineStyle.followsSystemStyle = true }
+        return engineStyle
     }
 
     /// Toggles play/pause from the custom transport, keeping `controls` and the
@@ -2523,7 +2535,7 @@ extension PlayerViewModel: SubtitleTrackControllerHost {
 // MARK: - EngineHandoffCoordinatorHost
 
 extension PlayerViewModel: EngineHandoffCoordinatorHost {
-    var handoffStyle: SubtitleStyle { style }
+    var handoffStyle: SubtitleStyle { engineSubtitleStyle }
     var handoffRequest: PlaybackRequest? { request }
     var handoffItemID: String { itemID }
     var handoffStartPositionOverride: TimeInterval? { startPositionOverride }
