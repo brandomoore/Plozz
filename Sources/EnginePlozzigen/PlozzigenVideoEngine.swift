@@ -996,6 +996,23 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     /// the session reports itself ready again.
     private var wantsNativeSubtitles = false
 
+    /// Appearance for subtitles AVPlayer draws itself: the origin's renditions on
+    /// the remote-HLS bypass, and native renditions routed into Picture in
+    /// Picture. `nil` until the host pushes one; the overlay keeps its own copy.
+    private var avPlayerSubtitleStyle: SubtitleStyle?
+
+    public func updateSubtitleStyle(_ style: SubtitleStyle) {
+        avPlayerSubtitleStyle = style
+        applyAVPlayerSubtitleStyle(to: engine.currentAVPlayer)
+    }
+
+    /// Re-applied whenever the engine rebuilds its player or session, since the
+    /// rules live on the player item and a reload replaces it.
+    private func applyAVPlayerSubtitleStyle(to player: AVPlayer?) {
+        guard let avPlayerSubtitleStyle, let item = player?.currentItem else { return }
+        item.textStyleRules = avPlayerSubtitleStyle.textStyleRules()
+    }
+
     private func applyNativeSubtitleSelection() {
         guard wantsNativeSubtitles else {
             engine.setNativeSubtitleSelected(track: nil)
@@ -1021,6 +1038,46 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
     #endif
 
+    // MARK: - Cue bridging
+
+    /// One Aether text run as plain values. The bridge closures build these
+    /// inline because the engine class shares its module's name, which makes
+    /// Aether's own cue types unnameable in this file.
+    struct AetherRunFacts {
+        var text: String
+        var rgb: (UInt8, UInt8, UInt8)?
+        var isItalic = false
+        var isBold = false
+    }
+
+    /// Maps an Aether text cue into Plozz's model, keeping the colour runs and
+    /// the `\an`/`\pos` placement the renderer can honour (both gated by the
+    /// viewer's style). Whole-cue emphasis is kept when every visible run has it.
+    nonisolated static func bridgedText(
+        _ runs: [AetherRunFacts], alignment: Int?, position: CGPoint?
+    ) -> CoreModels.SubtitleText {
+        let visible = runs.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let layout: SubtitleCueLayout?
+        if alignment != nil || position != nil {
+            layout = SubtitleCueLayout(
+                alignment: alignment.flatMap(SubtitleAlignment.init(rawValue:)) ?? .bottomCenter,
+                anchor: position
+            )
+        } else {
+            layout = nil
+        }
+        return CoreModels.SubtitleText(
+            runs: runs.map { run in
+                CoreModels.SubtitleTextRun(run.text, color: run.rgb.map { rgb in
+                    SubtitleColor(red: Double(rgb.0) / 255, green: Double(rgb.1) / 255, blue: Double(rgb.2) / 255)
+                })
+            },
+            isItalic: !visible.isEmpty && visible.allSatisfy(\.isItalic),
+            isBold: !visible.isEmpty && visible.allSatisfy(\.isBold),
+            layout: layout
+        )
+    }
+
     // MARK: - Engine Observation (Combine)
 
     private func observeEngine() {
@@ -1042,6 +1099,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 #endif
                 player.allowsExternalPlayback = true
                 player.usesExternalPlaybackWhileExternalScreenIsActive = true
+                self?.applyAVPlayerSubtitleStyle(to: player)
                 // A new player means a new layer. Announce it on the next turn so
                 // the engine has finished attaching the layer to the bound view
                 // before a host reads it back.
@@ -1057,7 +1115,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             .filter { $0 }
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.applyNativeSubtitleSelection()
+                guard let self else { return }
+                self.applyNativeSubtitleSelection()
+                self.applyAVPlayerSubtitleStyle(to: self.engine.currentAVPlayer)
             }
             .store(in: &cancellables)
 
@@ -1183,12 +1243,20 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                     let body: CoreModels.SubtitleCue.Body
                     switch cue.body {
                     case .text(let string):
-                        body = .text(CoreModels.SubtitleText(string))
+                        body = .text(Self.bridgedText(
+                            [AetherRunFacts(text: string)],
+                            alignment: cue.placement?.alignment, position: cue.placement?.position
+                        ))
                     case .richText(let runs):
-                        // Plozz's cue model has no coloured-run case; flatten to plain text the
-                        // same way AetherEngine's own `SubtitleCue.text` accessor does, so
-                        // teletext/ASS colour-tagged cues still render instead of being dropped.
-                        body = .text(CoreModels.SubtitleText(runs.map(\.text).joined()))
+                        body = .text(Self.bridgedText(
+                            runs.map {
+                                AetherRunFacts(
+                                    text: $0.text, rgb: $0.color.map { ($0.r, $0.g, $0.b) },
+                                    isItalic: $0.isItalic, isBold: $0.isBold
+                                )
+                            },
+                            alignment: cue.placement?.alignment, position: cue.placement?.position
+                        ))
                     case .image(let image):
                         body = .image(CoreModels.SubtitleImage(
                             cgImage: image.cgImage,
@@ -1221,10 +1289,20 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                     let body: CoreModels.SubtitleCue.Body
                     switch cue.body {
                     case .text(let string):
-                        body = .text(CoreModels.SubtitleText(string))
+                        body = .text(Self.bridgedText(
+                            [AetherRunFacts(text: string)],
+                            alignment: cue.placement?.alignment, position: cue.placement?.position
+                        ))
                     case .richText(let runs):
-                        // See the primary channel above: flatten coloured runs to plain text.
-                        body = .text(CoreModels.SubtitleText(runs.map(\.text).joined()))
+                        body = .text(Self.bridgedText(
+                            runs.map {
+                                AetherRunFacts(
+                                    text: $0.text, rgb: $0.color.map { ($0.r, $0.g, $0.b) },
+                                    isItalic: $0.isItalic, isBold: $0.isBold
+                                )
+                            },
+                            alignment: cue.placement?.alignment, position: cue.placement?.position
+                        ))
                     case .image(let image):
                         body = .image(CoreModels.SubtitleImage(
                             cgImage: image.cgImage,

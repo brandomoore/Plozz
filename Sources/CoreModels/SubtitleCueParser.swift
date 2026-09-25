@@ -310,54 +310,11 @@ public enum SubtitleCueParser {
 
     // MARK: - Text cleanup
 
-    /// Strips markup to plain display text while capturing whole-cue italic/bold
-    /// emphasis (the renderer applies emphasis per cue; per-run colour/karaoke is
-    /// a later ``SubtitleText/rawASS`` pass). Decodes the handful of HTML/XML
-    /// entities subtitle files actually use.
+    /// Strips markup to display text, keeping the formatting the renderer can
+    /// honour: `<font color>`/WebVTT colour classes as runs, whole-cue
+    /// `<i>`/`<b>` emphasis, and an SRT `{\an8}` plane (see ``SubtitleMarkup``).
     private static func cleanText(_ raw: String) -> SubtitleText {
-        let lowered = raw.lowercased()
-        let isItalic = lowered.contains("<i>") || lowered.contains("<i ")
-        let isBold = lowered.contains("<b>") || lowered.contains("<b ")
-
-        let stripped = stripTags(raw)
-        let decoded = decodeEntities(stripped)
-        let trimmed = decoded
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return SubtitleText(trimmed, isItalic: isItalic, isBold: isBold)
-    }
-
-    /// Removes any `<...>` tag (`<i>`, `<b>`, `<c.classname>`, `<v Speaker>`,
-    /// `<ruby>`/`<rt>`, `<00:00:01.000>` karaoke timestamps, …) without touching
-    /// the surrounding text. A lone `<` that isn't a tag is preserved.
-    private static func stripTags(_ text: String) -> String {
-        guard text.contains("<") else { return text }
-        var result = ""
-        result.reserveCapacity(text.count)
-        var inTag = false
-        for ch in text {
-            if ch == "<" {
-                inTag = true
-            } else if ch == ">" {
-                inTag = false
-            } else if !inTag {
-                result.append(ch)
-            }
-        }
-        return result
-    }
-
-    private static func decodeEntities(_ text: String) -> String {
-        guard text.contains("&") else { return text }
-        var result = text
-        let map: [(String, String)] = [
-            ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
-            ("&quot;", "\""), ("&apos;", "'"), ("&nbsp;", "\u{00A0}"),
-            ("&lrm;", "\u{200E}"), ("&rlm;", "\u{200F}")
-        ]
-        for (entity, replacement) in map {
-            result = result.replacingOccurrences(of: entity, with: replacement)
-        }
-        return result
+        SubtitleMarkup.parseSubRip(raw)
     }
 
     // MARK: - ASS / SSA events
@@ -377,6 +334,7 @@ public enum SubtitleCueParser {
         // ASS v4+ default Events column order, overridden by the section's
         // `Format:` line (SSA orders Start/End/Text the same, so the defaults
         // also cover headerless files).
+        let playResolution = SubtitleMarkup.playResolution(in: lines)
         var startIdx = 1, endIdx = 2, textIdx = 9
         var inEvents = false
         var parsed: [(start: Double, end: Double, text: SubtitleText)] = []
@@ -411,7 +369,7 @@ public enum SubtitleCueParser {
                   let end = parseASSTimestamp(fields[endIdx]),
                   end > start else { continue }
 
-            let body = cleanASSText(fields[textIdx])
+            let body = cleanASSText(fields[textIdx], playResolution: playResolution)
             guard !body.string.isEmpty else { continue }
             parsed.append((start, end, body))
         }
@@ -433,37 +391,11 @@ public enum SubtitleCueParser {
         return h * 3600 + m * 60 + s
     }
 
-    /// Strips ASS override blocks (`{\…}`) and converts ASS line breaks to plain
-    /// display text, capturing whole-cue italic/bold (`{\i1}`/`{\b1}`) the way the
-    /// SRT/VTT path captures `<i>`/`<b>`. The untouched event text is kept as
-    /// `rawASS` for a future rich pass.
-    private static func cleanASSText(_ raw: String) -> SubtitleText {
-        let lowered = raw.lowercased()
-        let isItalic = lowered.contains("\\i1")
-        let isBold = lowered.contains("\\b1")
-
-        // Drop `{...}` override blocks (depth-counted for the rare nested case).
-        var withoutOverrides = ""
-        withoutOverrides.reserveCapacity(raw.count)
-        var depth = 0
-        for ch in raw {
-            if ch == "{" {
-                depth += 1
-            } else if ch == "}" {
-                if depth > 0 { depth -= 1 }
-            } else if depth == 0 {
-                withoutOverrides.append(ch)
-            }
-        }
-
-        // ASS line breaks: `\N` (hard) and `\n` (soft) → newline; `\h` → NBSP.
-        let text = withoutOverrides
-            .replacingOccurrences(of: "\\N", with: "\n")
-            .replacingOccurrences(of: "\\n", with: "\n")
-            .replacingOccurrences(of: "\\h", with: "\u{00A0}")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return SubtitleText(text, isItalic: isItalic, isBold: isBold, rawASS: raw)
+    /// Converts an ASS event's text to display text, keeping inline `\c`
+    /// colour runs and the `\an`/`\pos` placement (see ``SubtitleMarkup``). The
+    /// untouched event text is kept as `rawASS`.
+    private static func cleanASSText(_ raw: String, playResolution: CGSize) -> SubtitleText {
+        SubtitleMarkup.parseASS(raw, playResolution: playResolution)
     }
 }
 

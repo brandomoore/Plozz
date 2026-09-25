@@ -8,6 +8,10 @@ public struct LiveTVViewSettings: Equatable, Sendable {
     public var favoritesOnly: Bool
     public var guideOnly: Bool
     public var wifiOnly: Bool
+    /// Keep the channel playing behind the guide after leaving fullscreen.
+    public var previewAfterWatching: Bool
+    /// Show the Recently watched row at the top of the guide.
+    public var showsRecentChannels: Bool
 
     public init(
         sortByName: Bool = false,
@@ -15,7 +19,9 @@ public struct LiveTVViewSettings: Equatable, Sendable {
         keepWatchingWhileBrowsing: Bool = false,
         favoritesOnly: Bool = false,
         guideOnly: Bool = false,
-        wifiOnly: Bool = false
+        wifiOnly: Bool = false,
+        previewAfterWatching: Bool = true,
+        showsRecentChannels: Bool = true
     ) {
         self.sortByName = sortByName
         self.autoPreview = autoPreview
@@ -23,6 +29,8 @@ public struct LiveTVViewSettings: Equatable, Sendable {
         self.favoritesOnly = favoritesOnly
         self.guideOnly = guideOnly
         self.wifiOnly = wifiOnly
+        self.previewAfterWatching = previewAfterWatching
+        self.showsRecentChannels = showsRecentChannels
     }
 }
 
@@ -43,6 +51,8 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
     static let favoritesOnlyKey = "com.plozz.liveTV.view.favoritesOnly"
     static let guideOnlyKey = "com.plozz.liveTV.view.guideOnly"
     static let wifiOnlyKey = "com.plozz.liveTV.view.wifiOnly"
+    static let previewAfterWatchingKey = "com.plozz.liveTV.view.previewAfterWatching"
+    static let showsRecentChannelsKey = "com.plozz.liveTV.view.showsRecentChannels"
 
     private let defaults: UserDefaults
     private let sortByNameKey: String
@@ -51,6 +61,8 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
     private let favoritesOnlyKey: String
     private let guideOnlyKey: String
     private let wifiOnlyKey: String
+    private let previewAfterWatchingKey: String
+    private let showsRecentChannelsKey: String
 
     /// - Parameter namespace: per-profile scope. `nil` (the default/primary
     ///   profile) uses un-suffixed keys; other profiles pass their `Profile.id`.
@@ -64,6 +76,8 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
         self.favoritesOnlyKey = SettingsKey.scoped(Self.favoritesOnlyKey, namespace: namespace)
         self.guideOnlyKey = SettingsKey.scoped(Self.guideOnlyKey, namespace: namespace)
         self.wifiOnlyKey = SettingsKey.scoped(Self.wifiOnlyKey, namespace: namespace)
+        self.previewAfterWatchingKey = SettingsKey.scoped(Self.previewAfterWatchingKey, namespace: namespace)
+        self.showsRecentChannelsKey = SettingsKey.scoped(Self.showsRecentChannelsKey, namespace: namespace)
     }
 
     public func load() -> LiveTVViewSettings {
@@ -76,7 +90,9 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
             ),
             favoritesOnly: value(forKey: favoritesOnlyKey, default: fallback.favoritesOnly),
             guideOnly: value(forKey: guideOnlyKey, default: fallback.guideOnly),
-            wifiOnly: value(forKey: wifiOnlyKey, default: fallback.wifiOnly)
+            wifiOnly: value(forKey: wifiOnlyKey, default: fallback.wifiOnly),
+            previewAfterWatching: value(forKey: previewAfterWatchingKey, default: fallback.previewAfterWatching),
+            showsRecentChannels: value(forKey: showsRecentChannelsKey, default: fallback.showsRecentChannels)
         )
     }
 
@@ -87,6 +103,8 @@ public final class LiveTVViewSettingsStore: LiveTVViewSettingsStoring, @unchecke
         defaults.set(settings.favoritesOnly, forKey: favoritesOnlyKey)
         defaults.set(settings.guideOnly, forKey: guideOnlyKey)
         defaults.set(settings.wifiOnly, forKey: wifiOnlyKey)
+        defaults.set(settings.previewAfterWatching, forKey: previewAfterWatchingKey)
+        defaults.set(settings.showsRecentChannels, forKey: showsRecentChannelsKey)
         NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 

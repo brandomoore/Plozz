@@ -23,38 +23,61 @@ struct PrototypeBrowseToolbar: View {
                 Button(action: search) {
                     Label(isSearching ? "Back to guide" : "Search", systemImage: isSearching ? "chevron.backward" : "magnifyingglass")
                         .labelStyle(PrototypeToolbarLabelStyle(compact: compact))
-                        .padding(.horizontal, compact ? 12 : 20)
-                        .frame(minWidth: 44, minHeight: PrototypeLayout.controlHeight)
+                        .padding(.horizontal, compact ? 12 : Self.labelPadding)
+                        .frame(minWidth: Self.controlHeight, minHeight: Self.controlHeight)
                 }
                 .focused($focused, equals: .search)
                 .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
                 .accessibilityValue(model.query)
                 .accessibilityIdentifier("live-tv-search")
-                Button(action: filters) {
-                    HStack(spacing: 8) {
-                        if let category = model.category { Text(category) }
-                        else { Text("Categories") }
-                        Image(systemName: "chevron.down").font(.caption2)
+                #if os(iOS)
+                // Touch picks a category in one step; the rest of the filters
+                // stay one item away rather than fronting every choice.
+                Menu {
+                    Picker("Category", selection: $model.category) {
+                        Text("All categories").tag(String?.none)
+                        ForEach(model.categories, id: \.self) { category in
+                            Text(category).tag(Optional(category))
+                        }
                     }
-                    .padding(.horizontal, compact ? 12 : 20)
-                    .frame(minHeight: PrototypeLayout.controlHeight)
-                    .frame(maxWidth: compact ? .infinity : 280)
+                    .pickerStyle(.inline)
+                    Divider()
+                    Button("More filters", systemImage: "line.3.horizontal.decrease", action: filters)
+                } label: {
+                    categoryLabel
                 }
-                .focused($focused, equals: .filters)
-                .buttonStyle(PrototypeButtonStyle(
-                    selected: model.category != nil || model.guideOnly || model.source != nil
-                        || model.language != nil || model.country != nil || model.favoritesOnly,
-                    padded: false, surface: .control
-                ))
+                .menuOrder(.fixed)
+                .buttonStyle(PrototypeButtonStyle(selected: hasActiveFilters, padded: false, surface: .control))
                 .accessibilityIdentifier("live-tv-category")
+                #else
+                Button(action: filters) { categoryLabel }
+                    .focused($focused, equals: .filters)
+                    .buttonStyle(PrototypeButtonStyle(selected: hasActiveFilters, padded: false, surface: .control))
+                    .accessibilityIdentifier("live-tv-category")
+                #endif
             }
-            .padding(PrototypeLayout.controlInset)
+            .padding(Self.controlInset)
             .background { PrototypeControlSurface() }
             if let multiviews {
+                #if os(iOS)
+                Button(action: multiviews) {
+                    Label("Multiviews", systemImage: "rectangle.split.2x2")
+                        .padding(.horizontal, Self.labelPadding)
+                        .frame(minHeight: Self.controlHeight)
+                }
+                .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
+                .padding(Self.controlInset)
+                .background { PrototypeControlSurface() }
+                .accessibilityIdentifier("live-tv-multiview-favorites")
+                #else
                 Button("Multiviews", systemImage: "rectangle.split.2x2", action: multiviews)
                     .buttonStyle(PrototypeButtonStyle(surface: .control))
                     .accessibilityIdentifier("live-tv-multiview-favorites")
+                #endif
             }
+            #if os(iOS)
+            if compact { Spacer(minLength: 0) }
+            #endif
             if !compact {
                 Spacer(minLength: 0)
                 Text(model.now, format: .dateTime.hour().minute())
@@ -62,7 +85,11 @@ struct PrototypeBrowseToolbar: View {
                     .foregroundStyle(palette.secondaryText)
             }
         }
+        #if os(iOS)
+        .font(.footnote.weight(.medium))
+        #else
         .font(.subheadline.weight(.medium))
+        #endif
         .lineLimit(1)
         .buttonStyle(PrototypeButtonStyle(padded: false, surface: .control))
         .focusEffectDisabled()
@@ -74,7 +101,135 @@ struct PrototypeBrowseToolbar: View {
         }
         .onChange(of: focusRequest) { _, _ in focused = .search }
     }
+
+    private var categoryLabel: some View {
+        HStack(spacing: 8) {
+            if let category = model.category { Text(category) }
+            else { Text("Categories") }
+            Image(systemName: "chevron.down").font(.caption2)
+        }
+        .padding(.horizontal, compact ? 12 : Self.labelPadding)
+        .frame(minHeight: Self.controlHeight)
+        #if os(tvOS)
+        .frame(maxWidth: compact ? .infinity : 280)
+        #endif
+    }
+
+    // Touch controls are a size down from the TV's: the guide wants the room.
+    #if os(iOS)
+    static let controlHeight: CGFloat = 32
+    private static let labelPadding: CGFloat = 12
+    private static let controlInset: CGFloat = 3
+    #else
+    static let controlHeight = PrototypeLayout.controlHeight
+    private static let labelPadding: CGFloat = 20
+    private static let controlInset = PrototypeLayout.controlInset
+    #endif
+
+    private var hasActiveFilters: Bool {
+        model.category != nil || model.guideOnly || model.source != nil
+            || model.language != nil || model.country != nil || model.favoritesOnly
+    }
 }
+
+#if os(iOS)
+/// Touch: the guide's top-row controls as a cluster of icon buttons, level
+/// with the profile avatar — Search, the category filter, Multiviews, and
+/// "now", which brings the timeline back to the current programme after
+/// scrolling away. Icons rather than labelled pills so the row fits a phone
+/// without truncating.
+struct PrototypeTouchBrowseBar: View {
+    @Bindable var model: LiveTVPrototypeModel
+    var isSearching = false
+    let search: () -> Void
+    let filters: () -> Void
+    var multiviews: (() -> Void)?
+    let goToNow: () -> Void
+    @Environment(\.themePalette) private var palette
+
+    static let diameter: CGFloat = 40
+
+    var body: some View {
+        HStack(spacing: PrototypeLayout.smallGap) {
+            Button(action: search) {
+                Label(isSearching ? "Back to guide" : "Search",
+                      systemImage: isSearching ? "chevron.backward" : "magnifyingglass")
+                    .labelStyle(.iconOnly)
+                    .circleControl(active: false, palette: palette)
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(model.query)
+            .accessibilityIdentifier("live-tv-search")
+
+            Menu {
+                Picker("Category", selection: $model.category) {
+                    Text("All categories").tag(String?.none)
+                    ForEach(model.categories, id: \.self) { category in
+                        Text(category).tag(Optional(category))
+                    }
+                }
+                .pickerStyle(.inline)
+                Divider()
+                Button("More filters", systemImage: "line.3.horizontal.decrease", action: filters)
+            } label: {
+                Label("Categories", systemImage: hasActiveFilters
+                      ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
+                    .labelStyle(.iconOnly)
+                    .circleControl(active: hasActiveFilters, palette: palette)
+            }
+            .menuOrder(.fixed)
+            .accessibilityValue(Text(verbatim: model.category ?? ""))
+            .accessibilityIdentifier("live-tv-category")
+
+            if let multiviews {
+                Button(action: multiviews) {
+                    Label("Multiviews", systemImage: "rectangle.split.2x2")
+                        .labelStyle(.iconOnly)
+                        .circleControl(active: false, palette: palette)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("live-tv-multiview-favorites")
+            }
+
+            if !isSearching {
+                Button(action: goToNow) {
+                    Label {
+                        Text("Now", comment: "Guide button that scrolls the timeline back to the programmes airing now.")
+                    } icon: {
+                        Image(systemName: "arrow.right.and.line.vertical.and.arrow.left")
+                    }
+                    .labelStyle(.iconOnly)
+                    .circleControl(active: false, palette: palette)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("live-tv-guide-now")
+            }
+        }
+        .font(.body.weight(.medium))
+    }
+
+    private var hasActiveFilters: Bool {
+        model.category != nil || model.guideOnly || model.source != nil
+            || model.language != nil || model.country != nil || model.favoritesOnly
+    }
+}
+
+private extension View {
+    func circleControl(active: Bool, palette: ThemePalette) -> some View {
+        self
+            .foregroundStyle(active ? palette.onAccent : palette.primaryText)
+            .frame(width: PrototypeTouchBrowseBar.diameter, height: PrototypeTouchBrowseBar.diameter)
+            .background {
+                if active {
+                    Circle().fill(palette.accent)
+                } else {
+                    PrototypeControlSurface().clipShape(Circle())
+                }
+            }
+            .contentShape(Circle())
+    }
+}
+#endif
 
 private struct PrototypeToolbarLabelStyle: LabelStyle {
     let compact: Bool

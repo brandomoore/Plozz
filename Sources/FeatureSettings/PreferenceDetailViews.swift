@@ -482,14 +482,18 @@ struct PlaybackDetailView: View {
             SettingsSplitRow(
                 id: "subtitle-default",
                 title: "Show subtitles",
-                description: "What Plozz does with subtitles when playback starts."
+                description: "What Plozz does with subtitles when playback starts. Native subtitles let the system draw text subtitles in your Accessibility caption style when possible, instead of Plozz's subtitle style."
             ) {
-                SubtitleModeControl(
-                    baseMode: $subtitleBehavior.settings.subtitleMode,
-                    perTypeEnabled: perContentTypeBinding,
-                    categories: Self.policyCategories,
-                    categoryMode: { modeBinding(for: $0) }
-                )
+                VStack(alignment: .leading, spacing: 40) {
+                    SubtitleModeControl(
+                        baseMode: $subtitleBehavior.settings.subtitleMode,
+                        perTypeEnabled: perContentTypeBinding,
+                        categories: Self.policyCategories,
+                        categoryMode: { modeBinding(for: $0) }
+                    )
+                    Toggle("Use native subtitles where available", isOn: $subtitleBehavior.settings.usesNativeSubtitles)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             },
             SettingsSplitRow(
                 id: "subtitle-language",

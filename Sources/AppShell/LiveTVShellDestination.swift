@@ -175,7 +175,11 @@ struct LiveTVShellDestination: View {
                 isMultiview: playback.isMultiview,
                 trackPreferences: library.trackPreferences,
                 isAuthorized: playback.isAuthorized,
-                onOpenLibraryItem: playback.openLibraryItem
+                onOpenLibraryItem: playback.openLibraryItem,
+                program: playback.program,
+                loadOnNow: playback.onNow,
+                onTuneChannel: playback.tuneChannel,
+                guideOverlay: playback.guideOverlay
             )
         }
         .id(profileID)

@@ -376,6 +376,18 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
     /// in-app style overrides are applied).
     public var followsSystemStyle: Bool
 
+    // MARK: Source formatting
+
+    /// Draw text cues where the subtitle file places them (ASS `\an`/`\pos`,
+    /// SRT `{\an8}`, WebVTT `line`/`position`). Off seats every cue in the
+    /// dialogue lane at ``verticalPosition``. Cues without placement always
+    /// use that lane.
+    public var usesSourcePosition: Bool
+    /// Draw text in the colours the subtitle file specifies (ASS `\c`, SRT
+    /// `<font color>`, WebVTT colour classes). Off paints everything in
+    /// ``textColor``. Uncoloured text always uses ``textColor``.
+    public var usesSourceColors: Bool
+
     public init(
         fontFamily: SubtitleFontFamily = .atkinson,
         fontWeight: SubtitleFontWeight = .regular,
@@ -390,7 +402,9 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
         edge: Edge = Edge(),
         border: Border = Border(),
         secondary: Secondary? = nil,
-        followsSystemStyle: Bool = false
+        followsSystemStyle: Bool = false,
+        usesSourcePosition: Bool = true,
+        usesSourceColors: Bool = true
     ) {
         self.fontFamily = fontFamily
         self.fontWeight = fontWeight
@@ -406,6 +420,8 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
         self.border = border
         self.secondary = secondary
         self.followsSystemStyle = followsSystemStyle
+        self.usesSourcePosition = usesSourcePosition
+        self.usesSourceColors = usesSourceColors
     }
 
     /// The curated default look: white Atkinson with a **true outer outline** and
@@ -519,6 +535,7 @@ extension SubtitleStyle {
         case fontFamily, fontWeight, fontScale, verticalPosition, verticalAnchor, horizontalOffset
         case textColor, opacity, hdrLuminanceScale
         case background, edge, border, secondary, followsSystemStyle
+        case usesSourcePosition, usesSourceColors
     }
 
     /// Custom decoder so a style persisted by an older build (missing keys added
@@ -540,7 +557,9 @@ extension SubtitleStyle {
             edge: try c.decodeIfPresent(Edge.self, forKey: .edge) ?? d.edge,
             border: try c.decodeIfPresent(Border.self, forKey: .border) ?? d.border,
             secondary: try c.decodeIfPresent(Secondary.self, forKey: .secondary),
-            followsSystemStyle: try c.decodeIfPresent(Bool.self, forKey: .followsSystemStyle) ?? d.followsSystemStyle
+            followsSystemStyle: try c.decodeIfPresent(Bool.self, forKey: .followsSystemStyle) ?? d.followsSystemStyle,
+            usesSourcePosition: try c.decodeIfPresent(Bool.self, forKey: .usesSourcePosition) ?? d.usesSourcePosition,
+            usesSourceColors: try c.decodeIfPresent(Bool.self, forKey: .usesSourceColors) ?? d.usesSourceColors
         )
         foldUniformEdgeIntoBorder()
     }

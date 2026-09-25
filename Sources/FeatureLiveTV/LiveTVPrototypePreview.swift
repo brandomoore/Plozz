@@ -1,3 +1,4 @@
+import CoreModels
 import CoreUI
 import FeatureLiveTVCore
 import SwiftUI
@@ -10,6 +11,17 @@ struct PrototypePreviewLayout {
     let fadeEnd: CGFloat
     let metadataWidth: CGFloat
     let compact: Bool
+    /// A phone on its side: wide enough for the TV's side-by-side info bar,
+    /// but with so little height that the bar has to be one short strip and
+    /// the gaps tighten, or the guide below it shows barely a row.
+    let short: Bool
+    /// How far the phone's guide reaches past the content margins on each
+    /// side, halving the dead space beside the logos and the trailing fade.
+    /// Nothing where the edge is a notch or rounded-corner inset.
+    let guideSideBleed: CGFloat
+
+    /// The gap between the info bar, the toolbar and the guide.
+    var sectionGap: CGFloat { short ? PrototypeLayout.smallGap : PrototypeLayout.sectionGap }
 
     var sidebarWidth: CGFloat {
         guard contentFrame.width >= 960,
@@ -33,7 +45,15 @@ struct PrototypePreviewLayout {
         #if os(tvOS)
         max(0, bounds.maxX - contentFrame.maxX)
         #else
+        guideSideBleed
+        #endif
+    }
+
+    var guideLeadingExtension: CGFloat {
+        #if os(tvOS)
         0
+        #else
+        guideSideBleed
         #endif
     }
 
@@ -53,8 +73,10 @@ struct PrototypePreviewLayout {
         let leading = navigationInset > 0 ? max(side + PrototypeLayout.inset, safeAreaInsets.leading) : side
         let top = max(32, safeAreaInsets.top)
         let bottom: CGFloat = 20
+        guideSideBleed = 0
         #else
         let side = max(16, max(safeAreaInsets.leading, safeAreaInsets.trailing))
+        guideSideBleed = side == 16 && navigationInset == 0 ? 14 : 0
         let leading = side
         let top = max(12, safeAreaInsets.top)
         let bottom = max(12, safeAreaInsets.bottom)
@@ -64,9 +86,18 @@ struct PrototypePreviewLayout {
             width: max(1, bounds.width - leading - side - navigationInset),
             height: max(1, bounds.height - top - bottom)
         )
-        let browsingHeroHeight = min(
+        #if os(tvOS)
+        short = false
+        #else
+        short = !compact && !largeText && contentFrame.height < 500
+        #endif
+        let browsingHeroHeight = short ? 100 : min(
             contentFrame.height * (largeText ? 0.48 : 0.30),
-            largeText ? 440 : (compact ? 220 : 300)
+            // Just the info bar: the art and its gap on a TV (no dead band above
+            // it), and on a phone the art row plus three lines of text.
+            // (184 on a phone is its bar's content exactly: art row, title,
+            // timing and two lines of summary, with no dead band above.)
+            largeText ? 440 : (compact ? 184 : 236)
         )
         heroHeight = isSearching
             ? min(browsingHeroHeight, largeText ? 230 : (compact ? 140 : 180))
@@ -134,6 +165,9 @@ struct PrototypePreviewScrim: View {
     }
 }
 
+/// The guide's info bar: the programme's art (the channel's logo when the guide
+/// has none) with the channel, title, a progress bar between the start and end
+/// times, and "subtitle – description" beside it.
 struct PrototypePreviewHero: View {
     let channel: LiveTVPrototypeChannel?
     let program: LiveTVPrototypeProgram?
@@ -144,47 +178,186 @@ struct PrototypePreviewHero: View {
     @Environment(\.locale) private var locale
 
     var body: some View {
-        VStack(alignment: .leading, spacing: layout.compact ? PrototypeLayout.smallGap : PrototypeLayout.rowGap) {
+        Group {
             if let channel {
-                HStack(spacing: PrototypeLayout.gap) {
-                    PrototypeStationMark(channel: channel, size: layout.compact ? 48 : 72)
-                    if program != nil { Text(channel.name).lineLimit(1) }
-                }
-                .font(.caption.weight(.medium))
-                .foregroundStyle(palette.secondaryText)
-                Text(program?.title ?? channel.name)
-                    .font((layout.compact ? Font.title2 : Font.title).weight(.semibold))
-                    .lineLimit(2)
-                HStack(spacing: PrototypeLayout.gap) {
-                    Text(channel.category).lineLimit(1)
-                    if let program {
-                        Text(verbatim: "\(program.start.formatted(.dateTime.hour().minute().locale(locale))) – \(program.end.formatted(.dateTime.hour().minute().locale(locale)))")
-                            .monospacedDigit().lineLimit(1)
+                if layout.compact {
+                    compactBar(channel)
+                } else if layout.short {
+                    shortBar(channel)
+                } else {
+                    // Top-aligned in a box the art's height, so the art and the
+                    // first line of text sit in the same place whatever the text
+                    // or the image's own proportions turn out to be.
+                    VStack(alignment: .leading, spacing: PrototypeLayout.smallGap) {
+                        HStack(alignment: .top, spacing: PrototypeLayout.sectionGap) {
+                            artwork(channel)
+                            details(channel)
+                                .frame(maxWidth: .infinity, maxHeight: artSize.height, alignment: .topLeading)
+                                .clipped()
+                        }
+                        .frame(height: artSize.height, alignment: .top)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        #if os(iOS)
+                        watchButton
+                        #endif
                     }
                 }
-                .font(.caption)
-                .foregroundStyle(palette.secondaryText)
-                #if os(iOS)
-                Button(action: watch) {
-                    Label {
-                        Text(watchTitle ?? "Watch channel")
-                    } icon: {
-                        Image(systemName: watchTitle == nil ? "arrow.up.left.and.arrow.down.right" : "rectangle.split.2x2")
-                    }
-                }
-                    .font(.subheadline)
-                    .plozzGlassPillButton()
-                #endif
             } else {
-                Text("Find your next channel")
-                    .font(.title.weight(.semibold))
-                Text("Browse by channel, genre or what's on.")
-                    .font(.subheadline).foregroundStyle(palette.secondaryText)
+                VStack(alignment: .leading, spacing: PrototypeLayout.rowGap) {
+                    Text("Find your next channel")
+                        .font(.title.weight(.semibold))
+                    Text("Browse by channel, genre or what's on.")
+                        .font(.subheadline).foregroundStyle(palette.secondaryText)
+                }
+                .frame(width: layout.metadataWidth, alignment: .leading)
             }
         }
-        .frame(width: layout.metadataWidth, alignment: .leading)
         .frame(width: layout.contentFrame.width, height: layout.heroHeight, alignment: .bottomLeading)
         .clipped()
+    }
+
+    /// The TV's info bar squeezed into a phone's landscape strip: art, then
+    /// the details, then Watch, all on one line so none of it needs a row of
+    /// its own.
+    private func shortBar(_ channel: LiveTVPrototypeChannel) -> some View {
+        HStack(alignment: .center, spacing: PrototypeLayout.gap) {
+            artwork(channel)
+            details(channel)
+                .frame(maxWidth: layout.metadataWidth, maxHeight: artSize.height, alignment: .leading)
+                .clipped()
+            #if os(iOS)
+            watchButton
+                .fixedSize()
+            #endif
+            Spacer(minLength: 0)
+        }
+        .frame(height: layout.heroHeight, alignment: .center)
+    }
+
+    private var artSize: CGSize {
+        let height = min(layout.heroHeight - PrototypeLayout.smallGap, layout.compact ? 92 : 220)
+        return CGSize(width: (height * 16 / 9).rounded(), height: height.rounded())
+    }
+
+    private var watchButton: some View {
+        Button(action: watch) {
+            Label {
+                Text(watchTitle ?? "Watch channel")
+            } icon: {
+                Image(systemName: watchTitle == nil ? "play.fill" : "rectangle.split.2x2")
+            }
+        }
+        .font(.subheadline.weight(.semibold))
+        .plozzGlassPillButton()
+        .accessibilityIdentifier("live-tv-info-watch")
+    }
+
+    /// The phone's info bar, top to bottom: the art beside its channel and the
+    /// Watch button, then the title, the progress bar between its times, and
+    /// "subtitle – description". Every line keeps its place whether or not the
+    /// guide has it, so tapping from programme to programme never reflows.
+    private func compactBar(_ channel: LiveTVPrototypeChannel) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: PrototypeLayout.gap) {
+                artwork(channel)
+                VStack(alignment: .leading, spacing: PrototypeLayout.smallGap) {
+                    Text(channel.name)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(2)
+                    watchButton
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Text(program?.title ?? channel.name)
+                .font(.headline)
+                .lineLimit(1)
+            Group {
+                if let program {
+                    timing(program)
+                } else {
+                    Text(channel.category).lineLimit(1)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(palette.secondaryText)
+            Text(program?.playerInfo.summary ?? " ")
+                .font(.caption)
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(2, reservesSpace: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    /// A fixed 16:9 plate with the art fitted inside it, never cropped or
+    /// resized to the image: a poster and a wide still occupy the same box.
+    private func artwork(_ channel: LiveTVPrototypeChannel) -> some View {
+        let size = artSize
+        return ZStack {
+            palette.primaryText.opacity(0.06)
+            if let url = program?.details?.artworkURL {
+                FallbackAsyncImage(references: [.remote(url)]) { image in
+                    image.resizable().scaledToFit()
+                } placeholder: {
+                    logo(channel, size: size)
+                }
+            } else {
+                logo(channel, size: size)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: PrototypeLayout.logoRadius, style: .continuous))
+        .accessibilityHidden(true)
+    }
+
+    private func logo(_ channel: LiveTVPrototypeChannel, size: CGSize) -> some View {
+        PrototypeStationMark(channel: channel, plateSize: size)
+    }
+
+    private func details(_ channel: LiveTVPrototypeChannel) -> some View {
+        VStack(alignment: .leading, spacing: layout.compact ? 2 : PrototypeLayout.smallGap) {
+            Text(program == nil ? channel.category : channel.name)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(1)
+            Text(program?.title ?? channel.name)
+                .font((layout.compact ? Font.headline : Font.title3).weight(.semibold))
+                .lineLimit(1)
+            if let program {
+                timing(program)
+                if let summary = program.playerInfo.summary {
+                    Text(summary)
+                        .font(.caption)
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(layout.compact || layout.short ? 2 : 3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    /// Start time, how far through the programme we are, end time.
+    private func timing(_ program: LiveTVPrototypeProgram) -> some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            HStack(spacing: PrototypeLayout.gap) {
+                Text(verbatim: program.start.formatted(.dateTime.hour().minute().locale(locale)))
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(palette.secondaryText.opacity(0.35))
+                        Capsule().fill(palette.primaryText)
+                            .frame(width: geometry.size.width * program.progress(at: context.date))
+                    }
+                }
+                .frame(maxWidth: layout.compact ? .infinity : 220)
+                .frame(height: 6)
+                Text(verbatim: program.end.formatted(.dateTime.hour().minute().locale(locale)))
+            }
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(palette.secondaryText)
+            .lineLimit(1)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: "\(program.start.formatted(.dateTime.hour().minute().locale(locale))) – \(program.end.formatted(.dateTime.hour().minute().locale(locale)))"))
+        }
     }
 }
 

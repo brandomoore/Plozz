@@ -824,26 +824,18 @@ final class LiveChannelPlayerModelTests: XCTestCase {
 }
 
 final class LiveChannelPlaybackFocusPolicyTests: XCTestCase {
-    func testPlaybackPrefersPlayPauseWhenAvailable() {
-        let availability = LiveChannelPlaybackFocusPolicy.Availability(
-            isPresented: true,
-            canPlayPause: true,
-            canGoLive: false,
-            canToggleFavorite: true
-        )
+    func testPlaybackPrefersTheTimelineWhateverElseIsAvailable() {
+        for canPlayPause in [true, false] {
+            let availability = LiveChannelPlaybackFocusPolicy.Availability(
+                isPresented: true,
+                canPlayPause: canPlayPause,
+                canGoLive: false,
+                canToggleFavorite: true
+            )
 
-        XCTAssertEqual(availability.preferredControl, .playPause)
-    }
-
-    func testPlaybackFallsBackToNextWhenPlayPauseIsUnavailable() {
-        let availability = LiveChannelPlaybackFocusPolicy.Availability(
-            isPresented: true,
-            canPlayPause: false,
-            canGoLive: false,
-            canToggleFavorite: true
-        )
-
-        XCTAssertEqual(availability.preferredControl, .next)
+            XCTAssertEqual(availability.preferredControl, .timeline)
+            XCTAssertTrue(availability.contains(availability.preferredControl))
+        }
     }
 
     func testNewPlayPauseAvailabilityDoesNotInvalidateExistingTransportFocus() {
@@ -856,7 +848,8 @@ final class LiveChannelPlaybackFocusPolicyTests: XCTestCase {
 
         XCTAssertTrue(availability.contains(.next))
         XCTAssertTrue(availability.contains(.previous))
-        XCTAssertTrue(availability.contains(.tracks))
+        XCTAssertTrue(availability.contains(.audio))
+        XCTAssertTrue(availability.contains(.subtitles))
     }
 
     func testPlaybackEligibilityExcludesMissingAndEscapeControls() {
@@ -871,7 +864,8 @@ final class LiveChannelPlaybackFocusPolicyTests: XCTestCase {
         XCTAssertTrue(availability.contains(.goLive))
         XCTAssertTrue(availability.contains(.next))
         XCTAssertTrue(availability.contains(.favorite))
-        XCTAssertTrue(availability.contains(.tracks))
+        XCTAssertTrue(availability.contains(.audio))
+        XCTAssertTrue(availability.contains(.subtitles))
         XCTAssertFalse(availability.contains(.playPause))
         XCTAssertFalse(availability.contains(.surface))
         XCTAssertFalse(availability.contains(.close))
@@ -881,7 +875,7 @@ final class LiveChannelPlaybackFocusPolicyTests: XCTestCase {
             LiveChannelPlaybackFocusPolicy.Availability.hidden.contains(.next)
         )
         XCTAssertFalse(
-            LiveChannelPlaybackFocusPolicy.Availability.hidden.contains(.tracks)
+            LiveChannelPlaybackFocusPolicy.Availability.hidden.contains(.timeline)
         )
     }
 

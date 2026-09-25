@@ -34,6 +34,15 @@ final class SubtitleBehaviorPreferenceTests: XCTestCase {
         XCTAssertTrue(decoded.autoDownloadSubtitles)
         XCTAssertEqual(decoded.hearingImpairedPreference, .preferNonSDH)
         XCTAssertEqual(decoded.forcedSearchPreference, .preferNonForced)
+        XCTAssertFalse(decoded.usesNativeSubtitles)
+    }
+
+    func testNativeSubtitlesPreferenceRoundTrips() throws {
+        var behavior = SubtitleBehavior.default
+        XCTAssertFalse(behavior.usesNativeSubtitles)
+        behavior.usesNativeSubtitles = true
+        let data = try JSONEncoder().encode(behavior)
+        XCTAssertTrue(try JSONDecoder().decode(SubtitleBehavior.self, from: data).usesNativeSubtitles)
     }
 
     func testPlexParameterValuesMirrorPlexLevels() {

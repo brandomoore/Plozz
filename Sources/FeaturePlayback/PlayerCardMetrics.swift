@@ -338,6 +338,34 @@ struct PlayerCardMetrics: Equatable {
         #endif
     }
 
+    #if !os(tvOS)
+    /// The live player's cards on touch.
+    ///
+    /// Every live card is a band — the Info card, a row of On Now cards, the
+    /// Stats columns, the guide grid — with no column form, so a phone stood
+    /// up keeps the horizontal layout rather than VOD's vertical one, at about
+    /// the same height as landscape's. Landscape is VOD's, slightly smaller.
+    static func liveTouch(forWidth width: CGFloat, height: CGFloat) -> PlayerCardMetrics {
+        guard width > 0, height > 0 else { return .horizontalWide }
+        if width > height || width >= horizontalBlend.upperBound {
+            var metrics = resolved(forWidth: width, height: height)
+            // A touch smaller than VOD's: live cards sit over a picture that is
+            // still moving, and there's no scrub row between them and it.
+            metrics.contentHeight = max((metrics.contentHeight * 0.9).rounded(), 96)
+            return metrics
+        }
+        var metrics = interpolate(
+            from: horizontalNarrow,
+            to: horizontalWide,
+            at: progress(width, in: verticalBlend)
+        )
+        // Roughly landscape's band: portrait's height to spare goes to the
+        // video, not the card.
+        metrics.contentHeight = min(max(height * 0.15, 100), 150).rounded()
+        return metrics
+    }
+    #endif
+
     /// Where `value` sits across `range`, as 0…1.
     private static func progress(_ value: CGFloat, in range: ClosedRange<CGFloat>) -> CGFloat {
         guard range.upperBound > range.lowerBound else { return 1 }

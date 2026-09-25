@@ -130,6 +130,10 @@ public final class NativeVideoEngine: VideoEngine {
     /// time-to-first-frame; cancelled on teardown so a stale selection never
     /// applies to a replaced player item.
     @ObservationIgnored private var defaultSubtitleSelectionTask: Task<Void, Never>?
+    /// The text track the view model asked AVPlayer to draw itself (embedded, or
+    /// "Use native subtitles"), or `nil` for none. Kept across item rebuilds so a
+    /// transcode-fallback reload restores it instead of disabling the draw.
+    @ObservationIgnored private var requestedLegibleTrack: MediaTrack?
     /// Off-critical-path preferred-audio-language pick (per-series memory /
     /// prefer-original-language). AVPlayer otherwise just plays the asset's default
     /// audio track, so without this the audio half of those features no-ops on the
@@ -375,11 +379,13 @@ public final class NativeVideoEngine: VideoEngine {
         // critical path because resolving the asset's `AVMediaSelectionGroup`
         // involves extra I/O the first video frame must not wait on. Cancelled in
         // `teardownPlayer` so it never applies to a replaced player item.
-        defaultSubtitleSelectionTask?.cancel()
-        defaultSubtitleSelectionTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.disableLegibleSubtitleSelection(for: item)
+        // The one exception is a track the view model explicitly handed to
+        // AVPlayer (still present in this request), which is re-applied instead.
+        if let requested = requestedLegibleTrack,
+           !request.subtitleTracks.contains(where: { $0.id == requested.id }) {
+            requestedLegibleTrack = nil
         }
+        applyLegibleSelection(for: item)
 
         // Apply the resolved audio-language preference (per-series memory /
         // prefer-original-language) the same off-critical-path way. AVPlayer has no
@@ -1146,8 +1152,8 @@ public final class NativeVideoEngine: VideoEngine {
 
     // MARK: - Subtitle / audio track selection
 
-    /// Disables AVPlayer's legible (subtitle) selection on the player item so the
-    /// engine never draws a subtitle itself. Plozz routes the user's default and
+    /// Applies ``requestedLegibleTrack`` to the player item's legible group —
+    /// usually `nil`, so the engine never draws a subtitle itself. Plozz routes the user's default and
     /// manual subtitle choices through its own SDR overlay
     /// (`PlayerViewModel.applyInitialSubtitleSelectionIfReady` /
     /// `selectSubtitleOption`), which fetches/decodes the same track and renders
@@ -1155,9 +1161,33 @@ public final class NativeVideoEngine: VideoEngine {
     /// `default`/`autoselect`/forced characteristic the asset (or an injected HLS
     /// rendition) would otherwise honour. Best-effort: failure simply leaves
     /// AVPlayer's own selection untouched and never affects playback.
-    private func disableLegibleSubtitleSelection(for item: AVPlayerItem) async {
-        guard let group = await legibleGroup(for: item.asset) else { return }
-        item.select(nil, in: group)
+    private func applyLegibleSelection(for item: AVPlayerItem) {
+        let track = requestedLegibleTrack
+        defaultSubtitleSelectionTask?.cancel()
+        defaultSubtitleSelectionTask = Task { @MainActor [weak self] in
+            guard let self, let group = await self.legibleGroup(for: item.asset),
+                  !Task.isCancelled else { return }
+            item.select(track.flatMap { Self.legibleOption(for: $0, in: group) }, in: group)
+        }
+    }
+
+    /// Finds the legible option AVPlayer exposes for a provider track. An
+    /// injected sidecar rendition carries the track's display title as its HLS
+    /// `NAME`, so match that first; otherwise fall back to canonicalised language
+    /// matching (`eng` ⇄ `en`), preferring the same forced-ness.
+    private static func legibleOption(
+        for track: MediaTrack, in group: AVMediaSelectionGroup
+    ) -> AVMediaSelectionOption? {
+        if let named = group.options.first(where: { $0.displayName == track.displayTitle }) {
+            return named
+        }
+        guard let language = track.language else { return nil }
+        let candidates = AVMediaSelectionGroup.mediaSelectionOptions(
+            from: group.options, filteredAndSortedAccordingToPreferredLanguages: [language]
+        )
+        return candidates.first {
+            $0.hasMediaCharacteristic(.containsOnlyForcedSubtitles) == track.isForced
+        } ?? candidates.first
     }
 
     /// Selects the audible track best matching an ordered list of preferred
@@ -1186,17 +1216,14 @@ public final class NativeVideoEngine: VideoEngine {
         try? await asset.loadMediaSelectionGroup(for: .legible)
     }
 
-    /// Best-effort manual subtitle selection by matching the track's language
-    /// against the asset's legible options. Currently the native
-    /// `AVPlayerViewController` picker drives subtitle changes, so this is unused
-    /// by the UI; it exists so a future custom picker (or non-native engine) can
-    /// switch tracks through the `VideoEngine` abstraction.
+    /// Asks AVPlayer to draw `track` itself (an embedded text track, or any
+    /// reachable text track under "Use native subtitles"), or to draw nothing
+    /// when `nil` because the overlay owns the subtitle. Best-effort: an
+    /// unmatched track leaves AVPlayer drawing nothing.
     public func selectSubtitleTrack(_ track: MediaTrack?) {
-        guard let player, let item = player.currentItem else { return }
-        Task { [weak self] in
-            guard let self, let group = await self.legibleGroup(for: item.asset) else { return }
-            self.select(track: track, in: group, on: item)
-        }
+        requestedLegibleTrack = track
+        guard let item = player?.currentItem else { return }
+        applyLegibleSelection(for: item)
     }
 
     /// Re-applies subtitle styling to the *current* player item so an in-player

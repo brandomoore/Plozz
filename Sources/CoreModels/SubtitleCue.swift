@@ -100,6 +100,10 @@ public struct SubtitleText: Sendable, Equatable {
     /// with the cue stream's *metadata* (introduced with the Plozzigen adapter),
     /// not on every cue.
     public var rawASS: String?
+    /// Colour spans the source declared (ASS `\c`, SRT `<font color>`, WebVTT
+    /// colour classes), in order; their texts concatenate to ``string``. `nil`
+    /// when the cue is one colour. A run with a `nil` colour uses the style's.
+    public var runs: [SubtitleTextRun]?
 
     /// The `\an`-style plane of this cue's layout, or `nil` for default-lane
     /// dialogue. Computed passthrough so existing call sites keep working while
@@ -137,6 +141,33 @@ public struct SubtitleText: Sendable, Equatable {
         self.isBold = isBold
         self.layout = layout
         self.rawASS = rawASS
+    }
+}
+
+/// One same-colour span of a text cue. `color == nil` means "the style's text
+/// colour", so uncoloured spans follow the viewer's appearance settings.
+public struct SubtitleTextRun: Sendable, Equatable {
+    public var text: String
+    public var color: SubtitleColor?
+
+    public init(_ text: String, color: SubtitleColor? = nil) {
+        self.text = text
+        self.color = color
+    }
+}
+
+public extension SubtitleText {
+    /// Builds a cue from colour runs, keeping ``string`` their concatenation and
+    /// leaving ``runs`` `nil` when no span actually carries a colour.
+    init(
+        runs: [SubtitleTextRun],
+        isItalic: Bool = false,
+        isBold: Bool = false,
+        layout: SubtitleCueLayout? = nil,
+        rawASS: String? = nil
+    ) {
+        self.init(runs.map(\.text).joined(), isItalic: isItalic, isBold: isBold, layout: layout, rawASS: rawASS)
+        if runs.contains(where: { $0.color != nil }) { self.runs = runs }
     }
 }
 

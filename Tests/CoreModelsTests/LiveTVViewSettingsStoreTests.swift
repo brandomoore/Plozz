@@ -19,6 +19,8 @@ final class LiveTVViewSettingsStoreTests: XCTestCase {
         XCTAssertFalse(settings.favoritesOnly)
         XCTAssertFalse(settings.guideOnly)
         XCTAssertFalse(settings.wifiOnly)
+        XCTAssertTrue(settings.previewAfterWatching)
+        XCTAssertTrue(settings.showsRecentChannels)
     }
 
     func testAllValuesRoundTripAcrossStoreInstances() {
@@ -29,7 +31,9 @@ final class LiveTVViewSettingsStoreTests: XCTestCase {
             keepWatchingWhileBrowsing: true,
             favoritesOnly: true,
             guideOnly: true,
-            wifiOnly: true
+            wifiOnly: true,
+            previewAfterWatching: false,
+            showsRecentChannels: false
         )
 
         LiveTVViewSettingsStore(defaults: defaults).save(settings)
