@@ -92,45 +92,4 @@ public extension SubtitleStyle {
     }
 }
 
-/// Shared native menu content for Settings; the player keeps its own preview rows.
-public struct SubtitleFontSettingsPicker: View {
-    @Binding private var style: SubtitleStyle
-
-    public init(style: Binding<SubtitleStyle>) { _style = style }
-
-    public var body: some View {
-        Menu {
-            ForEach(SubtitleFontFamily.allCases, id: \.self) { family in
-                Button {
-                    style.systemFont = nil
-                    style.fontFamily = family
-                } label: {
-                    label(family.displayName, selected: style.systemFont == nil && style.fontFamily == family)
-                }
-            }
-            Menu("System") {
-                ForEach(SubtitleSystemFonts.all) { entry in
-                    Button {
-                        style.systemFont = entry.id
-                    } label: {
-                        label(entry.name, selected: style.systemFont == entry.id)
-                    }
-                }
-            }
-        } label: {
-            HStack {
-                Text("Font")
-                Spacer()
-                Text(verbatim: style.fontDisplayName)
-            }
-        }
-    }
-
-    private func label(_ name: String, selected: Bool) -> some View {
-        HStack {
-            Text(verbatim: name)
-            if selected { Image(systemName: "checkmark") }
-        }
-    }
-}
 #endif

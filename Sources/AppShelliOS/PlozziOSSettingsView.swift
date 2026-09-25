@@ -2,6 +2,7 @@
 import AppRuntime
 import CoreModels
 import CoreUI
+import FeaturePlayback
 import FeatureSettings
 import FeatureSyncSetup
 import SwiftUI
@@ -2495,7 +2496,9 @@ private struct PlozziOSSubtitleSettingsView: View {
     var body: some View {
         List {
             SettingsSectionGroup("Appearance") {
-                SubtitleAppearanceSettings(style: $style.style)
+                NavigationLink("Customize subtitle style") {
+                    SubtitleStyleSettingsView(style: $style.style)
+                }
             }
             SettingsSectionGroup("Live TV subtitle style") {
                 Toggle("Use a separate style for Live TV", isOn: $style.usesSeparateLiveTVStyle)
@@ -2503,7 +2506,9 @@ private struct PlozziOSSubtitleSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if style.usesSeparateLiveTVStyle {
-                    SubtitleAppearanceSettings(style: $style.resolvedLiveTVStyle)
+                    NavigationLink("Customize Live TV subtitles") {
+                        SubtitleStyleSettingsView(style: $style.resolvedLiveTVStyle, isLiveTV: true)
+                    }
                 }
             }
 

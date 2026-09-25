@@ -569,10 +569,10 @@ struct PlaybackDetailView: View {
         rows.append(SettingsSplitRow(
             id: "subtitle-style",
             title: "Subtitle style",
-            description: "How subtitles look. Change the font, size and colors from the Subtitles menu while watching."
+            description: "Use the full player controls to customize subtitles, with a live preview."
         ) {
             VStack(alignment: .leading, spacing: 24) {
-                SubtitleAppearanceSettings(style: $subtitleStyle.style)
+                NavigationLink("Customize subtitle style", value: SettingsRoute.subtitleStyle(liveTV: false))
             }
         })
 
@@ -584,7 +584,7 @@ struct PlaybackDetailView: View {
             VStack(alignment: .leading, spacing: 24) {
                 Toggle("Use a separate style for Live TV", isOn: $subtitleStyle.usesSeparateLiveTVStyle)
                 if subtitleStyle.usesSeparateLiveTVStyle {
-                    SubtitleAppearanceSettings(style: $subtitleStyle.resolvedLiveTVStyle)
+                    NavigationLink("Customize Live TV subtitles", value: SettingsRoute.subtitleStyle(liveTV: true))
                 }
             }
         })

@@ -87,6 +87,32 @@ not a user-selectable routing preference. Native text styling supports fewer
 effects than the overlay (one edge treatment rather than independent shadow
 and outline).
 
+### Customizing without playback
+
+Settings > Playback > Subtitle style > Customize subtitle style opens the actual
+player appearance editor beside a live preview. The Live TV style entry opens the
+same page with the independent Live TV binding. TV reuses `SubtitleStylePanel`;
+mobile's existing forms live in `MobileSubtitleStyleEditor`, shared by Settings
+and the player through `SubtitleStyleEditingContext`. There is no reduced second
+set of settings or separate preference store.
+
+The preview renders real `SubtitleCue` data through `SubtitleOverlayView`. On TV,
+it lays out a 1920x1080 playback canvas and scales the entire result into the
+16:9 preview, including glyph size, outlines, padding, and positioning. Its
+background reuses the music player's liquid mesh with restrained two-color
+palettes cycling through blue, pale neutral, and dark surfaces, with no theme
+scrim. The page, menu, and focus colors still follow the app theme; only the
+preview is theme-independent. Animation is confined to that background,
+stops off-screen/inactive, and uses a static light/dark comparison for Reduce
+Motion. Optional samples demonstrate file formatting and the HDR brightness
+adjustment; the latter is not a claim that the preview changes display HDR mode.
+
+All edits use the normal profile persistence path immediately. System-style
+mode retains its usual ownership of font/color/effects. The second-subtitle
+toggle controls a sample, not playback track selection, and preserves its style
+when the sample is hidden. Selecting real tracks and adjusting synchronization
+remain playback operations rather than appearance preferences.
+
 ## Mobile streaming quality
 
 iPhone/iPad movie and episode playback opts into `StreamingQualityProviding`.

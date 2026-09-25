@@ -130,6 +130,7 @@ public struct SettingsView: View {
     private let activeProfile: Profile
     private let liveTVPreferencesNamespace: String?
     @Environment(LiveTVSettingsSources.self) private var liveTVSources: LiveTVSettingsSources?
+    @Environment(SubtitleStyleSettingsDestination.self) private var subtitleStyleDestination: SubtitleStyleSettingsDestination?
     private let askProfileOnStartup: Bool
     private let appVersion: String
     private let appBuild: String
@@ -1064,6 +1065,22 @@ public struct SettingsView: View {
                 audioPolicy: audioPolicy,
                 canDownloadSubtitles: activeProfileCanDownloadSubtitles
             )
+        case .subtitleStyle(let liveTV):
+            if let subtitleStyleDestination {
+                subtitleStyleDestination.content(
+                    style: Binding(
+                        get: { liveTV ? subtitleStyle.resolvedLiveTVStyle : subtitleStyle.style },
+                        set: {
+                            if liveTV { subtitleStyle.resolvedLiveTVStyle = $0 }
+                            else { subtitleStyle.style = $0 }
+                        }
+                    ),
+                    isLiveTV: liveTV
+                )
+                .id(activeProfile.id)
+            } else {
+                Text("The subtitle style editor is unavailable.")
+            }
         case .spoilers:
             SpoilersDetailView(spoilers: spoilers)
         case .integrations:

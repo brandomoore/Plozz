@@ -5,8 +5,8 @@ import SwiftUI
 ///
 /// The default tvOS focus effect on a `.plain` button is oversized for these
 /// compact rows. This mirrors the Settings drill-in rows instead: on focus the
-/// row gets a rounded highlight sized to the row itself (an inverted white card,
-/// black foreground) rather than a big system halo. Deliberately *no* drop
+/// row gets a rounded highlight sized to the row itself (white in dark mode,
+/// black in light mode, with the opposite foreground) rather than a big system halo. Deliberately *no* drop
 /// shadow — a soft shadow forces a per-frame offscreen blur recomposited over
 /// the Dolby Vision / HDR video behind the panel, which drops frames on Apple TV
 /// (the same problem we removed from the panel container).
@@ -22,13 +22,17 @@ struct PlayerMenuRowButtonStyle: ButtonStyle {
 private struct PlayerMenuRowBody: View {
     let configuration: ButtonStyle.Configuration
     @Environment(\.isFocused) private var isFocused
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        let focusFill = colorScheme == .dark ? Color.white : Color.black
+        let focusForeground = colorScheme == .dark ? Color.black : Color.white
         configuration.label
             // Propagate focus to leaf content (checkmarks, subtitles) so they
             // can flip to legible colors on the inverted white card.
             .environment(\.playerMenuRowIsFocused, isFocused)
-            .foregroundStyle(isFocused ? AnyShapeStyle(Color.black) : AnyShapeStyle(.primary))
+            .environment(\.playerMenuRowFocusForeground, focusForeground)
+            .foregroundStyle(isFocused ? AnyShapeStyle(focusForeground) : AnyShapeStyle(.primary))
             .background(
                 // Concentric focus card: inset 4 within the row (which already sits
                 // 14 from the panel edge) → an 18 gutter on every side, matching the
@@ -38,7 +42,7 @@ private struct PlayerMenuRowBody: View {
                 // right. Text stays anchored by the row's own padding so titles still
                 // line up under the section header.
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isFocused ? Color.white : Color.clear)
+                    .fill(isFocused ? focusFill : Color.clear)
                     .padding(.horizontal, 4)
             )
             .opacity(configuration.isPressed ? 0.9 : 1)
@@ -56,32 +60,41 @@ private struct PlayerMenuRowIsFocusedKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct PlayerMenuRowFocusForegroundKey: EnvironmentKey {
+    static let defaultValue = Color.black
+}
+
 extension EnvironmentValues {
     var playerMenuRowIsFocused: Bool {
         get { self[PlayerMenuRowIsFocusedKey.self] }
         set { self[PlayerMenuRowIsFocusedKey.self] = newValue }
     }
+    var playerMenuRowFocusForeground: Color {
+        get { self[PlayerMenuRowFocusForegroundKey.self] }
+        set { self[PlayerMenuRowFocusForegroundKey.self] = newValue }
+    }
 }
 
-/// Secondary text (row subtitles) — dims to a dark tone on the focused white
-/// card so it stays readable instead of vanishing.
+/// Secondary text follows the focus card's inverted foreground.
 private struct PlayerMenuRowSecondaryStyle: ViewModifier {
     @Environment(\.playerMenuRowIsFocused) private var focused
+    @Environment(\.playerMenuRowFocusForeground) private var focusForeground
     func body(content: Content) -> some View {
-        content.foregroundStyle(focused ? Color.black.opacity(0.6) : Color.secondary)
+        content.foregroundStyle(focused ? focusForeground.opacity(0.6) : Color.secondary)
     }
 }
 
 /// Selection mark (checkmark / radio circle). On the focused white card the
-/// accent would clash, so selected marks go black and unselected go a dim black;
+/// accent would clash, so marks use the inverted foreground;
 /// off focus they use the accent / secondary as before.
 private struct PlayerMenuRowMarkStyle: ViewModifier {
     let isSelected: Bool
     let accent: Color
     @Environment(\.playerMenuRowIsFocused) private var focused
+    @Environment(\.playerMenuRowFocusForeground) private var focusForeground
     func body(content: Content) -> some View {
         let color: Color = {
-            if focused { return isSelected ? .black : Color.black.opacity(0.45) }
+            if focused { return isSelected ? focusForeground : focusForeground.opacity(0.45) }
             return isSelected ? accent : Color.secondary
         }()
         return content.foregroundStyle(color)
@@ -102,9 +115,10 @@ extension View {
 /// reads on both.
 struct ExternalSubtitleBadge: View {
     @Environment(\.playerMenuRowIsFocused) private var focused
+    @Environment(\.playerMenuRowFocusForeground) private var focusForeground
 
     var body: some View {
-        let fill = focused ? Color.black.opacity(0.62) : Color.white.opacity(0.6)
+        let fill = focused ? focusForeground.opacity(0.62) : Color.primary.opacity(0.6)
         Text("EXTERNAL")
             .modifier(SubtitleBadgeStyle(fill: fill))
             .accessibilityLabel("External subtitle")
@@ -115,6 +129,7 @@ struct ExternalSubtitleBadge: View {
 public struct SubtitleFileMatchBadge: View {
     private let isHashMatch: Bool
     @Environment(\.playerMenuRowIsFocused) private var focused
+    @Environment(\.playerMenuRowFocusForeground) private var focusForeground
 
     #if os(tvOS)
     private static let fontSize: CGFloat = 14
@@ -138,7 +153,7 @@ public struct SubtitleFileMatchBadge: View {
             .labelStyle(CompactSubtitleBadgeLabelStyle())
             #endif
             .modifier(SubtitleBadgeStyle(
-                fill: focused ? Color.black.opacity(0.62) : Color.primary.opacity(0.6),
+                fill: focused ? focusForeground.opacity(0.62) : Color.primary.opacity(0.6),
                 fontSize: Self.fontSize
             ))
             .fixedSize()

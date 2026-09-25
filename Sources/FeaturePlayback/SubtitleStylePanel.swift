@@ -26,6 +26,7 @@ struct SubtitleStylePanel: View {
     /// morph and defers the focus write. Kept in the parent so the fragile
     /// focus-restore choreography is unchanged by this extraction.
     let openScreen: (PlayerControls.SubtitleScreen) -> Void
+    var secondaryPreview: Binding<Bool>? = nil
 
     /// Hold-to-accelerate state for the numeric style rows (see the field in the
     /// former PlayerControls home). Lives here because only `handleStyleMove`
@@ -89,8 +90,7 @@ struct SubtitleStylePanel: View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(rows) { row in
                 if let d = dividerBefore, row.slot == d {
-                    Divider()
-                        .background(.white.opacity(0.12))
+                    PlozzDivider()
                         .padding(.horizontal, 16)
                         .padding(.vertical, 6)
                 }
@@ -402,6 +402,7 @@ struct SubtitleStylePanel: View {
     /// True when a real (non-"Off") second subtitle track is currently selected,
     /// so the main Style screen can label "Dual Subtitles" On/Off correctly.
     private var hasSecondaryTrack: Bool {
+        if let secondaryPreview { return secondaryPreview.wrappedValue }
         guard let sel = model.secondarySubtitleOptions.first(where: { $0.isSelected }) else { return false }
         return sel.id != PlayerTrackOption.offID
     }
@@ -420,7 +421,8 @@ struct SubtitleStylePanel: View {
             actions.selectSecondarySubtitle(next.id)
         }
         let selected = secOptions.first(where: { $0.isSelected })
-        let hasTrack = selected != nil && selected?.id != PlayerTrackOption.offID
+        let hasTrack = secondaryPreview?.wrappedValue
+            ?? (selected != nil && selected?.id != PlayerTrackOption.offID)
         // Base value = the selected option's label; when a real track is selected,
         // annotate it with the live load status so the viewer can see whether it's
         // fetching, has no lines in this file, or the sidecar was unavailable —
@@ -442,13 +444,18 @@ struct SubtitleStylePanel: View {
             baseValue = secOptions[currentIdx].title
         }
         let trackValue = hasTrack ? baseValue + Self.secondaryStatusSuffix(model.secondarySubtitleStatus) : baseValue
-        var rows: [StyleRowSpec] = [
-            StyleRowSpec(slot: 0, title: "Second Track", kind: .choice(
+        var rows: [StyleRowSpec]
+        if let secondaryPreview {
+            rows = [StyleRowSpec(slot: 0, title: "Show second subtitle", kind: .toggle(
+                isOn: secondaryPreview.wrappedValue, flip: { secondaryPreview.wrappedValue.toggle() }
+            ))]
+        } else {
+            rows = [StyleRowSpec(slot: 0, title: "Second Track", kind: .choice(
                 value: trackValue,
                 prev: { step(-1) },
                 next: { step(1) }
-            )),
-        ]
+            ))]
+        }
         if hasTrack, let sec = s.secondary {
             var slot = 1
             rows.append(choiceRow(slot, "Placement", options: SubtitleStyle.Secondary.Placement.allCases, current: sec.placement, label: { $0 == .above ? "Above" : "Below" }) { v in updateStyle { $0.secondary?.placement = v } }); slot += 1

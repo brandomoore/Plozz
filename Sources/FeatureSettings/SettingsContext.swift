@@ -121,6 +121,7 @@ public enum SettingsRoute: Hashable {
     case detailPage
     case nightShift
     case playback
+    case subtitleStyle(liveTV: Bool)
     case spoilers
     case integrations
     case metadata

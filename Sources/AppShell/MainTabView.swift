@@ -261,6 +261,9 @@ struct MainTabView: View {
     let syncServices: SyncServices
     private var subtitleBehaviorModel: SubtitleBehaviorModel { profileSettings.subtitleBehaviorModel }
     private var subtitleStyleModel: SubtitleStyleModel { profileSettings.subtitleStyleModel }
+    private static let subtitleStyleDestination = SubtitleStyleSettingsDestination { style, isLiveTV in
+        AnyView(SubtitleStyleSettingsView(style: style, isLiveTV: isLiveTV))
+    }
     private var spoilerModel: SpoilerSettingsModel { profileSettings.spoilerModel }
     private var playbackModel: PlaybackSettingsModel { profileSettings.playbackModel }
     /// Per-profile per-content-type subtitle policy overrides, threaded into the
@@ -1032,6 +1035,7 @@ struct MainTabView: View {
                 navigation: settingsNavigation
             )
             .background { SettingsPageBackground() }
+            .environment(Self.subtitleStyleDestination)
     }
 
 
