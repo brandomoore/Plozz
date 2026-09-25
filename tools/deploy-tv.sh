@@ -9,6 +9,7 @@
 # Usage:
 #   tools/deploy-tv.sh                 # build → install → launch on the Apple TV
 #   tools/deploy-tv.sh --build-only    # build ONLY (compile check, no install)
+#   tools/deploy-tv.sh --unoptimized   # debugger-oriented device build (-Onone)
 #   tools/deploy-tv.sh --regen         # run `xcodegen generate` first (only when
 #                                      #   files were ADDED / REMOVED / RENAMED)
 #   tools/deploy-tv.sh --sim-build     # compile for a tvOS Simulator (fast sanity,
@@ -42,6 +43,8 @@
 #   the next ordinary launch is back to normal.
 #
 # Notes:
+#   * Device builds keep Debug diagnostics but optimize Swift, including packages.
+#     --unoptimized opts out; --sim-build retains unoptimized simulator behavior.
 #   * Editing an EXISTING file does NOT need --regen; SPM globs the module dirs.
 #   * Never `rm -rf` the shared SwiftPM cache — only --clean (per-worktree
 #     DerivedData) is safe. See the BUILD PRE-FLIGHT block in AGENTS.local.md.
@@ -57,6 +60,7 @@ DEVICE_ID="${PLOZZ_TV_ID:-DE913871-CC2D-5F75-B4F2-0D6F44AA30DE}"
 PROJECT="Plozz.xcodeproj"
 SCHEME="Plozz"
 CONFIG="Debug"
+OPTIMIZATION_LEVEL="-O"
 BOUNDED=(/usr/bin/python3 tools/run-bounded.py)
 BUILD_TIMEOUT="${PLOZZ_BUILD_TIMEOUT:-240}"
 SETTINGS_TIMEOUT="${PLOZZ_BUILD_SETTINGS_TIMEOUT:-30}"
@@ -81,6 +85,7 @@ PSEUDO=""
 for arg in "$@"; do
   case "$arg" in
     --build-only) BUILD_ONLY=1 ;;
+    --unoptimized) OPTIMIZATION_LEVEL="-Onone" ;;
     --regen)      REGEN=1 ;;
     --no-regen)   REGEN=0 ;;
     --sim-build)  SIM_BUILD=1 ;;
@@ -92,6 +97,9 @@ for arg in "$@"; do
     *) echo "Unknown flag: $arg (try --help)"; exit 2 ;;
   esac
 done
+
+if [[ "$SIM_BUILD" == "1" ]]; then OPTIMIZATION_LEVEL="-Onone"; fi
+BUILD_SETTING_OVERRIDES=("SWIFT_OPTIMIZATION_LEVEL=$OPTIMIZATION_LEVEL")
 
 # --- BUILD PRE-FLIGHT (mandatory, see AGENTS.local.md) -----------------------
 # The host injects `safe.bareRepository=explicit`; without this export SwiftPM's
@@ -213,6 +221,7 @@ PREBUILD_APP_PATH="$(
   "${BOUNDED[@]}" "$SETTINGS_TIMEOUT" "tvOS build-settings lookup" -- \
     xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIG" \
     -destination "$DESTINATION" "${PACKAGE_RESOLUTION_ARGS[@]}" \
+    "${BUILD_SETTING_OVERRIDES[@]}" \
     -showBuildSettings 2>/dev/null \
     | awk -F' = ' '/ CODESIGNING_FOLDER_PATH / { print $2; exit }'
 )"
@@ -227,6 +236,7 @@ set -o pipefail
   -configuration "$CONFIG" \
   -destination "$DESTINATION" \
   "${PACKAGE_RESOLUTION_ARGS[@]}" \
+  "${BUILD_SETTING_OVERRIDES[@]}" \
   build \
   | { command -v xcbeautify >/dev/null 2>&1 && xcbeautify || cat; }
 
@@ -246,6 +256,7 @@ if [[ -z "$APP_PATH" ]]; then
     "${BOUNDED[@]}" "$SETTINGS_TIMEOUT" "post-build tvOS app-path lookup" -- \
       xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIG" \
       -destination "$DESTINATION" "${PACKAGE_RESOLUTION_ARGS[@]}" \
+      "${BUILD_SETTING_OVERRIDES[@]}" \
       -showBuildSettings 2>/dev/null \
       | awk -F' = ' '/ CODESIGNING_FOLDER_PATH /{print $2; exit}'
   )"

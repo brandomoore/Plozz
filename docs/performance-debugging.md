@@ -72,6 +72,11 @@ tools/deploy-tv.sh
 ```
 
 Notes:
+- Device deployment wrappers use optimized Debug builds by default. Use
+  `--unoptimized` explicitly for debugger work, not performance acceptance.
+  Keep the configuration and optimization level in every comparison record:
+  an unoptimized byte-by-byte metadata scan can starve the media producer even
+  when the same source and features play smoothly with optimization enabled.
 - Use `tools/generate-project.sh` when adding/removing files; never bare XcodeGen,
   which skips version baking. The deploy script generates a missing project.
 - `swift build` does **not** work (AetherEngine's FFmpeg xcframeworks are

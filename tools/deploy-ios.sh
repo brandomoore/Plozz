@@ -9,6 +9,7 @@
 #   tools/deploy-ios.sh --iphone        # iPhone only
 #   tools/deploy-ios.sh --ipad          # iPad only
 #   tools/deploy-ios.sh --build-only    # compile, do not install
+#   tools/deploy-ios.sh --unoptimized   # debugger-oriented build (-Onone)
 #   tools/deploy-ios.sh --no-build      # reinstall the latest built app
 #   tools/deploy-ios.sh --regen         # regenerate the Xcode project first
 #   tools/deploy-ios.sh --metadata-keys # explicitly include TMDb/OMDb keys
@@ -40,6 +41,7 @@ ROOT="$(pwd)"
 PROJECT="Plozz.xcodeproj"
 SCHEME="PlozziOS"
 CONFIG="Debug"
+OPTIMIZATION_LEVEL="-O"
 BOUNDED=(/usr/bin/python3 tools/run-bounded.py)
 BUILD_TIMEOUT="${PLOZZ_BUILD_TIMEOUT:-240}"
 SETTINGS_TIMEOUT="${PLOZZ_BUILD_SETTINGS_TIMEOUT:-30}"
@@ -69,6 +71,7 @@ for arg in "$@"; do
     --iphone) DEPLOY_IPHONE=1; DEPLOY_IPAD=0 ;;
     --ipad) DEPLOY_IPHONE=0; DEPLOY_IPAD=1 ;;
     --build-only) BUILD_ONLY=1 ;;
+    --unoptimized) OPTIMIZATION_LEVEL="-Onone" ;;
     --no-build) NO_BUILD=1; REGEN=0 ;;
     --regen) REGEN=1 ;;
     --no-regen) REGEN=0 ;;
@@ -150,7 +153,7 @@ if [[ -f "$ASC_KEY_PATH" ]]; then
   )
 fi
 
-BUILD_SETTING_OVERRIDES=()
+BUILD_SETTING_OVERRIDES=("SWIFT_OPTIMIZATION_LEVEL=$OPTIMIZATION_LEVEL")
 if [[ "$INCLUDE_METADATA_KEYS" != "1" ]]; then
   # Only when --keyless is passed explicitly, to exercise the no-key path.
   BUILD_SETTING_OVERRIDES+=("TMDB_BEARER_TOKEN=" "OMDB_API_KEY=")

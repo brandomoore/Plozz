@@ -50,6 +50,13 @@ tools/deploy-tv.sh                # build, install, launch on an Apple TV
 tools/deploy-ios.sh --ipad        # iPad
 ```
 
+Device deployment builds use the Debug configuration with Swift optimization
+enabled (`-O`), including package dependencies. This retains diagnostics without
+making hot media-processing loops run at unoptimized debugger speed. Pass
+`--unoptimized` when stepping through code or inspecting locals is more important
+than playback performance. The tvOS `--sim-build` compile-check path remains
+unoptimized.
+
 To install a branch's build **alongside** the canonical app rather than
 replacing it, add `--branded`:
 
