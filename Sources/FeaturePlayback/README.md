@@ -18,11 +18,10 @@ and the diagnostics overlay.
     selection, scrub state, resume, and progress reporting.
   - `PlayerView` + `CustomPlayerContainer` host the engine's vended
     bare video surface and overlay the shared transport chrome.
-- **Subtitle rendering** — `SubtitleStyleRules` translates
-  `CoreModels.SubtitleStyle` (font, size, colour, opacity, background,
-  edge / outline) into `AVPlayer` text style rules for the native draw path;
-  the custom `SubtitleOverlayView` renders the full styled look (including
-  dual subtitles) on the overlay path.
+- **Subtitle rendering** — `SubtitleOverlayView` draws in-app captions from
+  sidecars, Plozzigen decoders, and `NativeSubtitleCueOutput` for native legible
+  tracks. `SubtitleStyleRules` remains the reduced AVPlayer styling adapter
+  for system-owned external presentation.
 - **Subtitles** — `SubtitleHLSComposer`, `SubtitleInjectingResourceLoader`,
   `WebVTTNormalizer`: inject external sidecar subtitles into the
   AVPlayer pipeline as a synthesized HLS variant and normalize timing /
@@ -103,11 +102,51 @@ inheritance. This applies to IPTV and library-generated channels, including
 retained multiview panes. Saved edits update active panes without retuning.
 
 Live playback sends the selected style to both the owned overlay and the engine.
-AVPlayer-rendered captions use `SubtitleStyleRules`; following the system clears
-Plozz's native text overrides. Native rendering remains owned by the engine,
-not a user-selectable routing preference. Native text styling supports fewer
-effects than the overlay (one edge treatment rather than independent shadow
-and outline).
+In-app native captions are extracted rather than painted by AVPlayer. PiP and
+external presentation retain their native rendition handoff and
+`SubtitleStyleRules`; the app overlay must not draw a second copy. System-owned
+rendering supports fewer effects than the overlay.
+
+### Caption timing and control avoidance
+
+`NativeSubtitleCueOutput` receives complete caption presentation states from
+AVFoundation, including empty states that clear the display. They are scheduled
+at the supplied **item presentation time**, never callback arrival time or a
+timestamp guessed from the source file. Successive states close the preceding
+intervals, including overlapping lines. Selection replaces the output to fence
+old callbacks; seeks flush its state; teardown detaches it. In-app drawing is
+suppressed at the native output, with an explicit selected-rendition handoff
+for external presentation. The Plozzigen remote-HLS bypass uses the same bridge
+for tracks it identifies as natively rendered; its decoded tracks keep their
+existing cue pipeline.
+
+`VideoEngine.subtitlePresentationTime` is separate from scrub/resume time:
+Plozzigen-decoded cues use the engine's source-picture clock, whereas native
+presentation events retain AVFoundation's item clock. Both VOD and Live TV use
+this contract, including scheduled-library wrappers.
+Visible live captions have a display-link clock independent of the 250ms
+transport/status monitor, so routing native events through the overlay does not
+introduce a quarter-second presentation delay.
+
+Presentation callbacks do not supply seekable subtitle history, and advance
+delivery is best-effort. They therefore **do not newly advertise manual subtitle
+offsets or dual native-track decoding**. Complete sidecar timelines and
+Plozzigen-decoded tracks retain those controls. An existing sidecar offset
+must not silently delay a native event stream. This preserves native timing
+while gaining the shared visual renderer instead of offering controls that fail
+after a seek.
+
+Visible bottom transport bounds are measured separately from the full-screen
+scrim. Only intersecting captions lift above those bounds: dialogue and dual
+lanes move together, while bitmap and authored-position cues are checked at
+their own positions. Hiding the controls restores normal placement; style
+editing, previews, and saved position values are unchanged. The normal dialogue
+percentage remains screen-relative. Captions already encoded into video pixels
+cannot be repositioned.
+
+Coverage: `NativeSubtitleCueOutputTests`, `SubtitleOverlayGeometryTests`,
+`SubtitleLineRenderingTests`, and the shared tvOS/iOS app-hosted
+`NativeSubtitlePresentationTests` / `SubtitleControlAvoidanceHostedTests`.
 
 ### Customizing without playback
 

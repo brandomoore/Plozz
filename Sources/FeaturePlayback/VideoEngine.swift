@@ -213,6 +213,9 @@ public protocol VideoEngine: AnyObject {
 
     /// Current playback position in seconds (`0` when unknown).
     var currentTime: TimeInterval { get }
+    /// Clock on the emitted subtitle cues' axis, following the presented picture
+    /// rather than a transport position advanced to a pending seek target.
+    var subtitlePresentationTime: TimeInterval { get }
 
     /// Whether position is settled enough for corrective seeks. A decoder can
     /// report ready before its initial frame/seek or a retained reload settles.
@@ -273,6 +276,9 @@ public protocol VideoEngine: AnyObject {
 
     /// Selects a subtitle track (or `nil` to disable subtitles).
     func selectSubtitleTrack(_ track: MediaTrack?)
+    /// Presentation callbacks alone cannot reconstruct an offset's earlier
+    /// history after an arbitrary seek. Only complete/seekable cue sources opt in.
+    func supportsSubtitleTimingAdjustments(for track: MediaTrack) -> Bool
 
     /// Selects a *secondary* subtitle track for the dual/second line (or `nil` to
     /// clear it). Only meaningful on engines advertising
@@ -349,6 +355,8 @@ public protocol VideoEngine: AnyObject {
 }
 
 public extension VideoEngine {
+    var subtitlePresentationTime: TimeInterval { currentTime }
+    func supportsSubtitleTimingAdjustments(for track: MediaTrack) -> Bool { true }
     var streamingFailure: StreamingPlaybackFailure? { nil }
     var streamingOutputDynamicRange: SourceDynamicRange? { nil }
     var streamingOutputVideoCodec: DirectPlayVideoCodec? { nil }

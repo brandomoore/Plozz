@@ -503,8 +503,8 @@ final class SubtitleTrackController {
 
         // Text subtitle on the native engine. With a sidecar URL we render it
         // through the overlay (styling, HDR luminance, live offset all apply),
-        // suppressing AVPlayer's draw. WITHOUT a sidecar (embedded text) the
-        // overlay has no cue source, so let AVPlayer draw the track natively.
+        // suppressing AVPlayer's draw. Embedded text comes from the native
+        // legible-output bridge on the item's presentation timeline.
         if !track.isImageBasedSubtitle, host.trackEngineKind == .native {
             selectedSubtitleTrackID = id
             if track.deliverySource != nil {
@@ -514,10 +514,14 @@ final class SubtitleTrackController {
                 #endif
                 host.trackSubtitleOverlay.loadPrimary(track)
             } else {
-                host.trackSubtitleOverlay.clearPrimary()
+                host.trackSubtitleOverlay.cancelPrimary()
+                host.trackLiveSubtitles.beginLiveFeed(
+                    permitsTimingOffsets: engine.supportsSubtitleTimingAdjustments(for: track)
+                )
+                host.trackRefreshSubtitleDelayAvailability()
                 engine.selectSubtitleTrack(track)
                 #if DEBUG
-                setPrimarySubtitleDiagnostic(route: "avplayer-draw")
+                setPrimarySubtitleDiagnostic(route: "native-cues")
                 #endif
             }
             loadTrackOptions()
@@ -528,7 +532,9 @@ final class SubtitleTrackController {
         // route them through the owned overlay (live-feed mode) so text *and*
         // bitmap subs draw on the same SDR renderer as native.
         host.trackSubtitleOverlay.cancelPrimary()
-        host.trackLiveSubtitles.beginLiveFeed()
+        host.trackLiveSubtitles.beginLiveFeed(
+            permitsTimingOffsets: engine.supportsSubtitleTimingAdjustments(for: track)
+        )
         host.trackRefreshSubtitleDelayAvailability()
         engine.selectSubtitleTrack(track)
         selectedSubtitleTrackID = id

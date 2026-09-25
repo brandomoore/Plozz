@@ -9,6 +9,20 @@ import UIKit
 
 @MainActor
 final class StreamingPlaybackTests: XCTestCase {
+    func testCueArrivalUsesThePresentationClockBeforeTheNextDisplayTick() async {
+        let (model, engine, _) = make(options: .init(quality: .original))
+        await model.load()
+        model.selectSubtitleOption(id: 6)
+        model.liveSubtitles.tick(0)
+        engine.currentTime = 75
+        engine.onSubtitleCues?([
+            .init(id: 1, start: 74, end: 76, body: .text(.init("Current picture"))),
+            .init(id: 2, start: 0, end: 2, body: .text(.init("Previous clock")))
+        ])
+        XCTAssertEqual(model.liveSubtitles.primary.compactMap(\.text), ["Current picture"])
+        await model.stop()
+    }
+
     func testCustomSelectionRetainsTracksPositionPauseSpeedAndVersionContinuation() async throws {
         let quality = try StreamingQuality.custom(maximumHeight: 1080, bitrateKbps: 2_000)
         let (model, engine, provider) = make()

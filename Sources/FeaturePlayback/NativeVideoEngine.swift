@@ -79,10 +79,8 @@ public final class NativeVideoEngine: VideoEngine {
     public var onProgress: (@MainActor () -> Void)?
     public var onFailure: (@MainActor (AppError) -> Void)?
     public var onEnded: (@MainActor () -> Void)?
-    /// Native tracks are known synchronously and AVPlayer draws its own
-    /// subtitles (legible group) / Plozz draws sidecar cues via the VM, so the
-    /// native engine never fires either of these. Declared to satisfy the
-    /// protocol.
+    /// Provider tracks are known synchronously; native text is emitted as timed
+    /// cues while sidecars remain owned by the view model.
     public var onTracksChanged: (@MainActor () -> Void)?
     public var onProbedSourceFactsChanged: (@MainActor (EngineProbedSourceFacts) -> Void)?
     public var onSubtitleCues: (@MainActor ([SubtitleCue]) -> Void)?
@@ -125,15 +123,14 @@ public final class NativeVideoEngine: VideoEngine {
     /// Retains the resource-loader delegate that serves injected subtitle
     /// playlists; `AVAssetResourceLoader` holds it only weakly.
     @ObservationIgnored private var subtitleLoader: SubtitleInjectingResourceLoader?
+    @ObservationIgnored private var nativeSubtitleOutput: NativeSubtitleCueOutput?
     /// Off-critical-path default-subtitle pick. Runs concurrently with playback
     /// startup so resolving the asset's `AVMediaSelectionGroup` never extends the
     /// time-to-first-frame; cancelled on teardown so a stale selection never
     /// applies to a replaced player item.
     @ObservationIgnored private var defaultSubtitleSelectionTask: Task<Void, Never>?
-    /// The text track the view model asked AVPlayer to draw itself (an embedded
-    /// text track the overlay has no cue source for), or `nil` for none. Kept
-    /// across item rebuilds so a transcode-fallback reload restores it instead
-    /// of disabling the draw.
+    /// The legible track extracted into the owned overlay, or nil for Off/a
+    /// sidecar. Retained across item rebuilds when that track still exists.
     @ObservationIgnored private var requestedLegibleTrack: MediaTrack?
     /// Off-critical-path preferred-audio-language pick (per-series memory /
     /// prefer-original-language). AVPlayer otherwise just plays the asset's default
@@ -303,11 +300,16 @@ public final class NativeVideoEngine: VideoEngine {
 
         let player = AVPlayer(playerItem: item)
         player.isMuted = startsMuted
+        player.appliesMediaSelectionCriteriaAutomatically = false
         #if os(iOS)
         player.audiovisualBackgroundPlaybackPolicy = backgroundAudioEnabled ? .continuesIfPossible : .automatic
         #endif
         player.allowsExternalPlayback = true
         self.player = player
+        nativeSubtitleOutput = NativeSubtitleCueOutput(player: player, item: item, style: style) { [weak self, weak player] cues in
+            guard let self, let player, self.loadGeneration == generation, self.player === player else { return }
+            self.onSubtitleCues?(cues)
+        }
         if HandoffDiagnostics.isEnabled {
             lifecycleDiagnostics = NativePlaybackLifecycleDiagnostics(player: player, request: request)
         }
@@ -370,18 +372,9 @@ public final class NativeVideoEngine: VideoEngine {
         isPaused = false
         player.playImmediately(atRate: Float(currentPlaybackRate))
 
-        // Plozz owns subtitle SELECTION and DRAWING through its SDR overlay (see
-        // PlayerViewModel.applyInitialSubtitleSelectionIfReady). The native engine
-        // must therefore NOT enable any AVPlayer legible option — otherwise
-        // AVPlayer would paint the asset's default/forced/autoselect subtitle into
-        // the (HDR) video signal in parallel with the overlay: a double-draw that
-        // also defeats HDR-safe rendering. Disable the legible group on load so
-        // the overlay stays the single source of truth. Detached from load()'s
-        // critical path because resolving the asset's `AVMediaSelectionGroup`
-        // involves extra I/O the first video frame must not wait on. Cancelled in
-        // `teardownPlayer` so it never applies to a replaced player item.
-        // The one exception is a track the view model explicitly handed to
-        // AVPlayer (still present in this request), which is re-applied instead.
+        // The model owns selection; the suppressed native output supplies cues.
+        // Resolve the group off the startup path and retain only a selection
+        // that still exists in this request.
         if let requested = requestedLegibleTrack,
            !request.subtitleTracks.contains(where: { $0.id == requested.id }) {
             requestedLegibleTrack = nil
@@ -994,6 +987,8 @@ public final class NativeVideoEngine: VideoEngine {
         preferredAudioSelectionTask?.cancel()
         preferredAudioSelectionTask = nil
         subtitleLoader = nil
+        nativeSubtitleOutput?.detach()
+        nativeSubtitleOutput = nil
         if let endOfPlaybackObserver {
             NotificationCenter.default.removeObserver(endOfPlaybackObserver)
         }
@@ -1153,22 +1148,24 @@ public final class NativeVideoEngine: VideoEngine {
 
     // MARK: - Subtitle / audio track selection
 
-    /// Applies ``requestedLegibleTrack`` to the player item's legible group —
-    /// usually `nil`, so the engine never draws a subtitle itself. Plozz routes the user's default and
-    /// manual subtitle choices through its own SDR overlay
-    /// (`PlayerViewModel.applyInitialSubtitleSelectionIfReady` /
-    /// `selectSubtitleOption`), which fetches/decodes the same track and renders
-    /// it HDR-safely on top of the video. Selecting `nil` here also overrides any
-    /// `default`/`autoselect`/forced characteristic the asset (or an injected HLS
-    /// rendition) would otherwise honour. Best-effort: failure simply leaves
-    /// AVPlayer's own selection untouched and never affects playback.
+    /// Selects the requested rendition for extraction. Replacing the output
+    /// fences the previous track's queued callbacks, including during a reload.
     private func applyLegibleSelection(for item: AVPlayerItem) {
         let track = requestedLegibleTrack
         defaultSubtitleSelectionTask?.cancel()
         defaultSubtitleSelectionTask = Task { @MainActor [weak self] in
             guard let self, let group = await self.legibleGroup(for: item.asset),
-                  !Task.isCancelled else { return }
-            item.select(track.flatMap { Self.legibleOption(for: $0, in: group) }, in: group)
+                  !Task.isCancelled, self.player?.currentItem === item else { return }
+            let option: AVMediaSelectionOption?
+            if let track { option = await Self.legibleOption(for: track, in: group) }
+            else { option = nil }
+            guard !Task.isCancelled, self.player?.currentItem === item else { return }
+            item.select(nil, in: group)
+            self.nativeSubtitleOutput?.select(enabled: option != nil)
+            item.select(option, in: group)
+            if track != nil, option == nil {
+                PlozzLog.playback.error("The selected native subtitle track is unavailable in the current stream.")
+            }
         }
     }
 
@@ -1178,10 +1175,24 @@ public final class NativeVideoEngine: VideoEngine {
     /// matching (`eng` ⇄ `en`), preferring the same forced-ness.
     private static func legibleOption(
         for track: MediaTrack, in group: AVMediaSelectionGroup
-    ) -> AVMediaSelectionOption? {
+    ) async -> AVMediaSelectionOption? {
+        // HLS displayName is localized from LANGUAGE, not the playlist NAME.
+        // Preserve same-language rendition identity before language fallback.
+        let nameIdentifier = AVMetadataIdentifier(rawValue: "m3u8/NAME")
+        for option in group.options {
+            for metadata in option.commonMetadata where metadata.identifier == nameIdentifier {
+                do {
+                    if try await metadata.load(.stringValue) == track.displayTitle { return option }
+                } catch {
+                    if Task.isCancelled { return nil }
+                    PlozzLog.playback.debug("Native subtitle rendition name could not be read.")
+                }
+            }
+        }
         if let named = group.options.first(where: { $0.displayName == track.displayTitle }) {
             return named
         }
+        if group.options.count == 1 { return group.options[0] }
         guard let language = track.language else { return nil }
         let candidates = AVMediaSelectionGroup.mediaSelectionOptions(
             from: group.options, filteredAndSortedAccordingToPreferredLanguages: [language]
@@ -1217,23 +1228,22 @@ public final class NativeVideoEngine: VideoEngine {
         try? await asset.loadMediaSelectionGroup(for: .legible)
     }
 
-    /// Asks AVPlayer to draw `track` itself (an embedded text track), or to draw
-    /// nothing when `nil` because the overlay owns the subtitle. Best-effort: an
-    /// unmatched track leaves AVPlayer drawing nothing.
+    /// Selects the legible track for timed extraction, not in-app native drawing.
     public func selectSubtitleTrack(_ track: MediaTrack?) {
         requestedLegibleTrack = track
         guard let item = player?.currentItem else { return }
         applyLegibleSelection(for: item)
     }
 
-    /// Re-applies subtitle styling to the *current* player item so an in-player
-    /// Style edit updates an embedded text track AVFoundation draws itself (e.g. an
-    /// MKV SRT on Plex direct-play, which has no sidecar the overlay could redraw).
-    /// Harmless for overlay-drawn subtitles: AVFoundation's legible selection is off
-    /// in that case, so it isn't rendering a track for these rules to affect.
+    public func supportsSubtitleTimingAdjustments(for track: MediaTrack) -> Bool {
+        track.deliverySource != nil
+    }
+
+    /// Retains native style rules for external presentation. In-app appearance
+    /// is applied by the shared overlay, not baked into extracted source text.
     public func updateSubtitleStyle(_ style: SubtitleStyle) {
         self.style = style
-        player?.currentItem?.textStyleRules = style.textStyleRules()
+        nativeSubtitleOutput?.updateStyle(style)
     }
 
     /// Best-effort manual audio selection. As with subtitles, the native picker

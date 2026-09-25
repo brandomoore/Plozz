@@ -41,6 +41,7 @@ public final class LiveSubtitleModel {
     /// On-screen rect of the video image (for bitmap cues / precise placement);
     /// `nil` fills the container, which is correct for text dialogue.
     public var videoRect: CGRect?
+    public let controlsLayout = SubtitleControlsLayout()
 
     @ObservationIgnored private var primaryTimeline: SubtitleCueTimeline?
     @ObservationIgnored private var secondaryTimeline: SubtitleCueTimeline?
@@ -51,6 +52,7 @@ public final class LiveSubtitleModel {
     /// pushed buffer — the engine emits the decoded *read-ahead* cue set (not just
     /// the on-screen line), so the model selects the cues active at the playhead.
     @ObservationIgnored private var isLiveFeed = false
+    @ObservationIgnored private var liveFeedPermitsTimingOffsets = true
     /// The full decoded cue buffer most recently pushed by a live engine feed.
     @ObservationIgnored private var liveCues: [SubtitleCue] = []
     /// IDs of the currently-seated live cues, so we only republish `primary` when
@@ -75,14 +77,13 @@ public final class LiveSubtitleModel {
         primaryTimeline != nil || secondaryTimeline != nil || isLiveFeed || isSecondaryLiveFeed
     }
 
-    /// `true` when the overlay owns the **primary** subtitle — either a sidecar
-    /// timeline we drive or an engine live-feed we time-filter. This is exactly
-    /// when ``offset`` (app-side subtitle sync) actually shifts the on-screen
-    /// track, so the host gates the in-player "Sync" control on it. False for
-    /// subtitles-off and for embedded text the underlying player draws itself
-    /// (where the app can't shift the timeline).
+    /// Whether the overlay owns the primary subtitle. Native presentation
+    /// events can be drawn here without promising seek-safe timing offsets.
     public var rendersPrimary: Bool {
         primaryTimeline != nil || isLiveFeed
+    }
+    public var supportsPrimaryTimingOffset: Bool {
+        primaryTimeline != nil || (isLiveFeed && liveFeedPermitsTimingOffsets)
     }
 
     /// Global sync offset in seconds (positive = show subtitles later). Applied to
@@ -112,8 +113,9 @@ public final class LiveSubtitleModel {
     /// lets an engine push its decoded cue buffer via ``updateLiveCues(_:)``, which
     /// ``tick(_:)`` then time-filters against the playhead. Used by Plozzigen
     /// (AetherEngine), which decodes subtitles itself.
-    public func beginLiveFeed() {
+    public func beginLiveFeed(permitsTimingOffsets: Bool = true) {
         isLiveFeed = true
+        liveFeedPermitsTimingOffsets = permitsTimingOffsets
         primaryTimeline = nil
         liveCues = []
         liveActiveIDs = []
@@ -137,7 +139,7 @@ public final class LiveSubtitleModel {
     /// Seats the live cues visible at `time` (engine playhead), republishing
     /// `primary` only when the active set changes.
     private func recomputeLiveActive(at time: Double) {
-        let active = liveCues.active(at: time, offset: storedOffset)
+        let active = liveCues.active(at: time, offset: liveFeedPermitsTimingOffsets ? storedOffset : 0)
         let ids = active.map(\.id)
         if ids != liveActiveIDs {
             liveActiveIDs = ids
@@ -236,6 +238,7 @@ public final class LiveSubtitleModel {
 /// transport controls) in the player container.
 struct LiveSubtitleOverlay: View {
     let model: LiveSubtitleModel
+    let controls: PlayerControlsModel
 
     var body: some View {
         SubtitleOverlayView(
@@ -244,7 +247,8 @@ struct LiveSubtitleOverlay: View {
             secondaryActive: model.hasSecondaryTrack,
             style: SystemCaptionStyle.shared.resolved(model.style),
             isHDR: model.isHDR,
-            videoRect: model.videoRect
+            videoRect: model.videoRect,
+            controlsFrame: controls.subtitleLayout.frame
         )
         .ignoresSafeArea()
     }

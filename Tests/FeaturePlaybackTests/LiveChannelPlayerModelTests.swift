@@ -19,6 +19,53 @@ private final class LiveChannelObservationChanges: @unchecked Sendable {
 
 @MainActor
 final class LiveChannelPlayerModelTests: XCTestCase {
+    func testLiveSubtitlesFollowThePresentedFrameInsteadOfTheSeekTarget() async {
+        let engine = LiveEngineSpy()
+        engine.presentedSubtitleTime = 50
+        engine.liveSnapshot.position = 100
+        let model = makeModel(engine: engine)
+        defer { model.stop() }
+        await model.start()
+        model.subtitles.beginLiveFeed()
+        model.subtitles.updateLiveCues([
+            .init(id: 1, start: 49, end: 52, body: .text(.init("Held picture"))),
+            .init(id: 2, start: 99, end: 102, body: .text(.init("Seek target")))
+        ])
+        model.refreshFromEngine()
+        XCTAssertEqual(model.subtitles.primary.compactMap(\.text), ["Held picture"])
+        XCTAssertEqual(engine.currentTime, 100)
+        engine.presentedSubtitleTime = 100
+        model.refreshFromEngine()
+        XCTAssertEqual(model.subtitles.primary.compactMap(\.text), ["Seek target"])
+        let wrapper = LibraryLiveChannelEngine(engine: engine)
+        XCTAssertEqual(wrapper.subtitlePresentationTime, 100)
+    }
+
+    func testVODDisplayLinkAlsoUsesThePresentedSubtitleClock() async throws {
+        let engine = LiveEngineSpy()
+        engine.presentedSubtitleTime = 50
+        engine.liveSnapshot.position = 100
+        let subtitles = LiveSubtitleModel()
+        subtitles.beginLiveFeed()
+        subtitles.updateLiveCues([
+            .init(id: 1, start: 49, end: 52, body: .text(.init("Held picture"))),
+            .init(id: 2, start: 99, end: 102, body: .text(.init("Seek target")))
+        ])
+        let controller = PlayerInputViewController(
+            engine: engine, model: PlayerControlsModel(), actions: PlayerActions()
+        )
+        controller.loadViewIfNeeded()
+        controller.attachSubtitleOverlay(subtitles)
+        controller.viewDidAppear(false)
+        defer { controller.viewDidDisappear(false) }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while subtitles.primary.isEmpty, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(subtitles.primary.compactMap(\.text), ["Held picture"])
+        XCTAssertEqual(engine.currentTime, 100)
+    }
+
     func testPausingAtTheEdgeKeepsTimeShiftIntentWhileTheDelayGrows() async {
         let engine = LiveEngineSpy()
         engine.liveSnapshot.behindLiveSeconds = 1
@@ -1311,6 +1358,8 @@ final class LiveEngineSpy: LiveChannelEngine {
     var status: VideoEngineStatus = .ready
     var isPaused = false
     var currentTime: TimeInterval { liveSnapshot.position }
+    var presentedSubtitleTime: TimeInterval?
+    var subtitlePresentationTime: TimeInterval { presentedSubtitleTime ?? currentTime }
     var duration: TimeInterval { 0 }
     var furthestObservedPosition: TimeInterval { 0 }
     var audioTracks: [MediaTrack] = []

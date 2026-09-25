@@ -79,8 +79,8 @@ WebVTT is a separate subtitle rendition, not a subtitle muxed into ordinary
 MP4. Text tracks use automatic delivery instead of forced burn-in; bitmap
 tracks still require burn-in for a server transcode, and Off remains explicit.
 Existing fetchable text sidecars retain their original format and authenticated
-delivery source for Plozz's styled overlay. Embedded HLS text uses the native
-player's legible rendition and existing caption style rules. Selecting a different
+delivery source for Plozz's styled overlay. Embedded HLS text is extracted from
+the native player's legible rendition into that same overlay. Selecting a different
 embedded track prepares a new server rendition while preserving position, pause,
 speed, quality limits, and the selected media version. Off and a text rendition
 already prepared by the current session can switch locally.

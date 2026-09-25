@@ -680,6 +680,9 @@ struct PlayerControls: View {
                 // whole reason the engine can't overrule us (see `entryFocusTarget`).
                 .disabled(!infoMode || entryFocusTarget != nil)
         }
+        .reportSubtitleControlsFrame(isVisible: model.controlsVisible && !chromeHidden) {
+            model.subtitleLayout.frame = $0
+        }
         // THE reveal: the entire cluster — options slot, track controls, scrub bar,
         // tab and card — travels as one rigid unit. At rest it's parked far enough
         // down that the card clears the bottom edge; revealed it sits at its natural

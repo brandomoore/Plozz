@@ -475,6 +475,11 @@ targets:
     sources:
       - path: Tests/iOSPresentationTests
       - path: Tests/AuthPresentationSupport
+      - path: Tests/SubtitlePresentationSupport
+        excludes: ["Fixtures"]
+      - path: Tests/SubtitlePresentationSupport/Fixtures
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.PresentationTests
@@ -503,6 +508,11 @@ targets:
     sources:
       - path: Tests/FocusIntegrationTests
       - path: Tests/AuthPresentationSupport
+      - path: Tests/SubtitlePresentationSupport
+        excludes: ["Fixtures"]
+      - path: Tests/SubtitlePresentationSupport/Fixtures
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.FocusTests

@@ -1281,7 +1281,7 @@ private final class LiveChannelPlayerTrackState {
         if let track {
             preferences.subtitleMode = .all
             if let language = track.language { preferences.subtitleLanguage = language }
-            subtitles.beginLiveFeed()
+            subtitles.beginLiveFeed(permitsTimingOffsets: engine.supportsSubtitleTimingAdjustments(for: track))
         } else {
             preferences.subtitleMode = .off
             subtitles.clear()
@@ -1321,7 +1321,11 @@ private final class LiveChannelPlayerTrackState {
         guard isReady, !hasSentSubtitlePreference else { return }
         hasSentSubtitlePreference = true
         let chosen = selectedSubtitleForSource.flatMap { id in captions.first { $0.id == id } }
-        if chosen != nil { subtitles.beginLiveFeed() } else { subtitles.clear() }
+        if let chosen {
+            subtitles.beginLiveFeed(permitsTimingOffsets: engine.supportsSubtitleTimingAdjustments(for: chosen))
+        } else {
+            subtitles.clear()
+        }
         engine.selectSubtitleTrack(chosen)
     }
 
@@ -1973,6 +1977,7 @@ final class LiveChannelPlayerModel {
         }
         engine.onSubtitleCues = { [weak self] cues in
             guard let self, !self.stopped, self.attemptGeneration == generation else { return }
+            self.subtitles.tick(self.engine.subtitlePresentationTime)
             self.subtitles.updateLiveCues(cues)
         }
         trackState.refreshStyle(engine: engine)
@@ -2008,7 +2013,7 @@ final class LiveChannelPlayerModel {
         }
 
         let snapshot = engine.liveSnapshot
-        subtitles.tick(snapshot.position)
+        subtitles.tick(engine.subtitlePresentationTime)
         diagnostics.sample(snapshot, uptime: uptime(), attempt: attemptCount)
         if isLoading {
             phase = .loading

@@ -81,6 +81,18 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private var liveSourceResetCancellable: AnyCancellable?
 
     public var currentTime: TimeInterval { engine.currentTime }
+    public var subtitlePresentationTime: TimeInterval {
+        if usesNativeSubtitleCues, let time = engine.currentAVPlayer?.currentTime().seconds, time.isFinite {
+            return time
+        }
+        return engine.sourceTime
+    }
+    private var nativeSubtitleOutput: NativeSubtitleCueOutput?
+    private weak var nativeSubtitleItem: AVPlayerItem?
+    private var nativeSubtitleSelectionID: Int?
+    private var usesNativeSubtitleCues: Bool {
+        engine.subtitleTracks.first { $0.id == engine.activeSubtitleTrackIndex }?.isNativelyRenderedSubtitle == true
+    }
     public var hasPresentedVideoFrame: Bool {
         status == .ready && engine.isSessionReady && engine.hasFirstFrameReadyForDisplay
     }
@@ -218,7 +230,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     public var displayName: String { "Plozzigen" }
 
     public var capabilities: PlayerEngineCapabilities {
-        [.playbackSpeed, .dualSubtitleDecode]
+        engine.videoRoute == .remoteBypass ? [.playbackSpeed] : [.playbackSpeed, .dualSubtitleDecode]
     }
 
     deinit {
@@ -849,6 +861,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func stopEngine(resetDisplayCriteria: Bool) {
+        nativeSubtitleOutput?.detach()
+        nativeSubtitleOutput = nil
+        nativeSubtitleItem = nil
+        nativeSubtitleSelectionID = nil
         outputLoadGeneration = UUID()
         outputPolicyReload?.cancel()
         outputPolicyReload = nil
@@ -898,11 +914,21 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public func selectSubtitleTrack(_ track: MediaTrack?) {
+        synchronizeNativeSubtitleOutput()
+        if nativeSubtitleOutput != nil {
+            nativeSubtitleSelectionID = track?.id
+            let native = engine.subtitleTracks.first { $0.id == track?.id }?.isNativelyRenderedSubtitle == true
+            nativeSubtitleOutput?.select(enabled: native)
+        }
         if let track {
             engine.selectSubtitleTrack(index: track.id)
         } else {
             engine.clearSubtitle()
         }
+    }
+
+    public func supportsSubtitleTimingAdjustments(for track: MediaTrack) -> Bool {
+        engine.subtitleTracks.first { $0.id == track.id }?.isNativelyRenderedSubtitle != true
     }
 
     public func selectSecondarySubtitleTrack(_ track: MediaTrack?) {
@@ -985,6 +1011,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     /// the way out and then double-draws with the overlay on the way back.
     public func setNativeSubtitlesActive(_ active: Bool) {
         wantsNativeSubtitles = active
+        nativeSubtitleOutput?.setSystemPresentation(active)
         applyNativeSubtitleSelection()
     }
 
@@ -1010,10 +1037,17 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     /// rules live on the player item and a reload replaces it.
     private func applyAVPlayerSubtitleStyle(to player: AVPlayer?) {
         guard let avPlayerSubtitleStyle, let item = player?.currentItem else { return }
+        if item === nativeSubtitleItem, let nativeSubtitleOutput {
+            nativeSubtitleOutput.updateStyle(avPlayerSubtitleStyle)
+            return
+        }
         item.textStyleRules = avPlayerSubtitleStyle.textStyleRules()
     }
 
     private func applyNativeSubtitleSelection() {
+        // The bypass's origin track remains selected to feed the cue output.
+        // PiP changes its drawing owner, not its language or identity.
+        if engine.videoRoute == .remoteBypass, nativeSubtitleOutput != nil { return }
         guard wantsNativeSubtitles else {
             engine.setNativeSubtitleSelected(track: nil)
             return
@@ -1080,7 +1114,46 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     // MARK: - Engine Observation (Combine)
 
+    private func synchronizeNativeSubtitleOutput() {
+        guard engine.videoRoute == .remoteBypass,
+              let player = engine.currentAVPlayer, let item = player.currentItem else {
+            nativeSubtitleOutput?.detach()
+            nativeSubtitleOutput = nil
+            nativeSubtitleItem = nil
+            nativeSubtitleSelectionID = nil
+            return
+        }
+        if nativeSubtitleItem !== item {
+            nativeSubtitleOutput?.detach()
+            nativeSubtitleItem = item
+            nativeSubtitleSelectionID = nil
+            #if canImport(UIKit)
+            let style = avPlayerSubtitleStyle ?? .default
+            #else
+            let style = SubtitleStyle.default
+            #endif
+            nativeSubtitleOutput = NativeSubtitleCueOutput(player: player, item: item, style: style) { [weak self, weak item] cues in
+                guard let self, let item, self.nativeSubtitleItem === item,
+                      self.engine.currentAVPlayer?.currentItem === item,
+                      self.usesNativeSubtitleCues else { return }
+                self.onSubtitleCues?(cues)
+            }
+            #if canImport(UIKit)
+            nativeSubtitleOutput?.setSystemPresentation(wantsNativeSubtitles)
+            #endif
+        }
+        if nativeSubtitleSelectionID != engine.activeSubtitleTrackIndex {
+            nativeSubtitleSelectionID = engine.activeSubtitleTrackIndex
+            nativeSubtitleOutput?.select(enabled: usesNativeSubtitleCues)
+            if !usesNativeSubtitleCues { onSubtitleCues?([]) }
+        }
+    }
+
     private func observeEngine() {
+        engine.$currentAVPlayerItem.combineLatest(engine.$videoRoute, engine.$activeSubtitleTrackIndex)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.synchronizeNativeSubtitleOutput() }
+            .store(in: &cancellables)
         // AirPlay: opt the engine's AVPlayer into external playback as it is
         // (re)created. The engine republishes `currentAVPlayer` on every audio
         // track reload, so a one-shot assignment at load would go stale and the
@@ -1211,7 +1284,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             .store(in: &cancellables)
         engine.$subtitleTracks
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.syncTracks() }
+            .sink { [weak self] _ in
+                self?.synchronizeNativeSubtitleOutput()
+                self?.syncTracks()
+            }
             .store(in: &cancellables)
 
         // AetherEngine resolves its active audio track asynchronously at load
@@ -1234,7 +1310,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         engine.$subtitleCues
             .receive(on: DispatchQueue.main)
             .sink { [weak self] cues in
-                guard let self else { return }
+                guard let self, !self.usesNativeSubtitleCues else { return }
                 // Map AetherEngine cues → Plozz's cue model inline so the
                 // element type is inferred (the module and the engine class share
                 // the name `AetherEngine`, so naming `AetherEngine.SubtitleCue`

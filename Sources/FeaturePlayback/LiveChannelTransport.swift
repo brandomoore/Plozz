@@ -312,6 +312,7 @@ struct LiveChannelOverlay: View {
                 .offset(y: cardOpen ? 0 : Self.cardCatchUp)
                 .disabled(!cardOpen)
         }
+        .reportSubtitleControlsFrame(isVisible: !styleEditing) { tracks.subtitles.controlsLayout.frame = $0 }
         // THE reveal: one transform over a fixed stage (VOD rule 2).
         .offset(y: cardOpen ? 0 : cardLift)
         .animation(revealClock, value: cardOpen)
@@ -1166,6 +1167,7 @@ extension LiveChannelOverlay {
                     .transition(.scale(scale: 0.94, anchor: .bottom).combined(with: .opacity))
             }
         }
+        .reportSubtitleControlsFrame { tracks.subtitles.controlsLayout.frame = $0 }
         .padding(.horizontal, Self.horizontalMargin)
         .padding(.bottom, Self.bottomMargin)
         .frame(maxWidth: .infinity, alignment: .leading)

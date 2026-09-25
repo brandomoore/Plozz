@@ -3,6 +3,58 @@ import XCTest
 @testable import FeaturePlayback
 
 final class SubtitleOverlayGeometryTests: XCTestCase {
+    func testOnlyAnOverlappingSubtitleMovesAboveTheVisibleControls() {
+        let bounds = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let controls = CGRect(x: 60, y: 840, width: 1800, height: 240)
+        let subtitle = CGRect(x: 600, y: 940, width: 720, height: 80)
+        XCTAssertEqual(SubtitleOverlayGeometry.upwardOffset(
+            for: subtitle, avoiding: controls, in: bounds, clearance: 24
+        ), -204)
+        XCTAssertEqual(SubtitleOverlayGeometry.upwardOffset(
+            for: subtitle, avoiding: nil, in: bounds, clearance: 24
+        ), 0)
+        XCTAssertEqual(SubtitleOverlayGeometry.upwardOffset(
+            for: subtitle.offsetBy(dx: 0, dy: -300), avoiding: controls, in: bounds
+        ), 0)
+        XCTAssertEqual(SubtitleOverlayGeometry.upwardOffset(
+            for: CGRect(x: 0, y: 940, width: 40, height: 80), avoiding: controls, in: bounds
+        ), 0)
+    }
+
+    func testOffscreenHiddenCardAndInvalidGeometryDoNotLiftCaptions() {
+        let bounds = CGRect(x: 0, y: 0, width: 844, height: 390)
+        let subtitle = CGRect(x: 200, y: 300, width: 400, height: 60)
+        for controls in [CGRect(x: 0, y: 390, width: 844, height: 200), .null, .zero,
+                         CGRect(x: 0, y: CGFloat.infinity, width: 100, height: 100)] {
+            XCTAssertEqual(SubtitleOverlayGeometry.upwardOffset(
+                for: subtitle, avoiding: controls, in: bounds
+            ), 0)
+        }
+    }
+
+    func testOversizedCaptionsRemainInsideTheTopEdgeWhenThereIsTooLittleRoom() {
+        let bounds = CGRect(x: 0, y: 0, width: 844, height: 390)
+        let subtitle = CGRect(x: 40, y: 120, width: 760, height: 260)
+        let lift = SubtitleOverlayGeometry.upwardOffset(
+            for: subtitle, avoiding: CGRect(x: 20, y: 220, width: 800, height: 170),
+            in: bounds, clearance: 12
+        )
+        XCTAssertEqual(lift, -120)
+        XCTAssertEqual(subtitle.minY + lift, 0)
+    }
+
+    func testLetterboxedBitmapUsesDisplaySpaceForControlIntersection() throws {
+        let bounds = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let video = try XCTUnwrap(SubtitleOverlayGeometry.aspectFitRect(in: bounds, aspectRatio: 2.4))
+        let subtitle = SubtitleOverlayGeometry.bitmapRect(
+            normalizedRect: CGRect(x: 0.2, y: 0.9, width: 0.6, height: 0.06),
+            canvasSize: .zero, videoRect: video
+        )
+        let controls = CGRect(x: 60, y: 840, width: 1800, height: 240)
+        let lift = SubtitleOverlayGeometry.upwardOffset(for: subtitle, avoiding: controls, in: bounds, clearance: 24)
+        XCTAssertEqual(subtitle.maxY + lift, controls.minY - 24, accuracy: 0.001)
+    }
+
     func testAspectFitVideoRectUsesFullPortraitWidth() throws {
         let rect = try XCTUnwrap(
             SubtitleOverlayGeometry.aspectFitRect(

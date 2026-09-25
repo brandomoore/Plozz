@@ -405,7 +405,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     /// display-link then drives the cue timeline off the engine clock.
     func attachSubtitleOverlay(_ model: LiveSubtitleModel) {
         subtitleModel = model
-        let host = UIHostingController(rootView: LiveSubtitleOverlay(model: model))
+        let host = UIHostingController(rootView: LiveSubtitleOverlay(model: model, controls: self.model))
         host.view.backgroundColor = .clear
         host.view.isUserInteractionEnabled = false
         host.view.frame = view.bounds
@@ -441,7 +441,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
 
     @objc private func tickSubtitleClock() {
         updateSubtitleVideoRect()
-        subtitleModel?.tick(engine.currentTime)
+        subtitleModel?.tick(engine.subtitlePresentationTime)
     }
 
     /// Hosts the combined transport + focusable control bar. It stays attached

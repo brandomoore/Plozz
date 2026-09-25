@@ -23,6 +23,10 @@ public final class LibraryLiveChannelEngine: LiveChannelEngine {
     }
     public var currentLibraryItem: LibraryChannelItem? { librarySession?.navigationItem }
     public var isPlaybackPositionReady: Bool { status == .ready && underlyingEngine.isPlaybackPositionReady }
+    public var subtitlePresentationTime: TimeInterval { underlyingEngine.subtitlePresentationTime }
+    public func supportsSubtitleTimingAdjustments(for track: MediaTrack) -> Bool {
+        underlyingEngine.supportsSubtitleTimingAdjustments(for: track)
+    }
 
     private let librarySessionFactory: LibrarySessionFactory?
     private var generation = UUID()

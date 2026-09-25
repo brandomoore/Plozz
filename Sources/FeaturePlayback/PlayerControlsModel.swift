@@ -468,6 +468,8 @@ public final class PlayerControlsModel {
 
     // MARK: Transport UI state (written by the input controller)
     public var controlsVisible: Bool = false
+    /// Transient global bounds of visible bottom controls, excluding the scrim.
+    public let subtitleLayout = SubtitleControlsLayout()
     public var isScrubbing: Bool = false
     public var scrubSeconds: TimeInterval = 0
     /// The trickplay frame for `scrubSeconds`, shown above the scrub head.

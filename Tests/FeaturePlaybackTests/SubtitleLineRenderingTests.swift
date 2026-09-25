@@ -380,7 +380,7 @@ final class SubtitleLineRenderingTests: XCTestCase {
         try registerFonts()
         let screen = CGSize(width: 960, height: 540)
         let model = LiveSubtitleModel()
-        let host = UIHostingController(rootView: LiveSubtitleOverlay(model: model))
+        let host = UIHostingController(rootView: LiveSubtitleOverlay(model: model, controls: PlayerControlsModel()))
         host.safeAreaRegions = []
         let window = UIWindow(frame: CGRect(origin: .zero, size: screen))
         window.rootViewController = host
@@ -469,17 +469,82 @@ final class SubtitleLineRenderingTests: XCTestCase {
         }
     }
 
+    func testControlsLiftMeasuredTextAndDualLanesWithoutChangingFontOrSpacing() throws {
+        try registerFonts()
+        let screen = CGSize(width: 960, height: 540)
+        let controls = CGRect(x: 30, y: 410, width: 900, height: 130)
+        for family in SubtitleFontFamily.allCases {
+            for placement: SubtitleStyle.Secondary.Placement? in [nil, .above, .below] {
+                var style = SubtitleStyle.default
+                style.fontFamily = family
+                style.verticalPosition = 0.06
+                style.secondary = placement.map { .init(placement: $0, differentiate: true, relativeScale: 0.7) }
+                let normal = dialogueFrames(style: style, primary: "A subtitle gyp.\nAnother line.",
+                                            secondary: "Second language.", screen: screen)
+                let lifted = dialogueFrames(style: style, primary: "A subtitle gyp.\nAnother line.",
+                                            secondary: "Second language.", screen: screen, controls: controls)
+                XCTAssertEqual(normal.count, lifted.count)
+                XCTAssertEqual(try XCTUnwrap(lifted.map(\.maxY).max()),
+                               controls.minY - SubtitleOverlayGeometry.controlsClearance, accuracy: 1, "\(family)")
+                let displacement = try XCTUnwrap(lifted.first).minY - XCTUnwrap(normal.first).minY
+                for (before, after) in zip(normal, lifted) {
+                    XCTAssertEqual(before.size.width, after.size.width, accuracy: 1)
+                    XCTAssertEqual(before.size.height, after.size.height, accuracy: 1)
+                    XCTAssertEqual(after.minY - before.minY, displacement, accuracy: 1)
+                }
+                XCTAssertEqual(style.verticalPosition, 0.06)
+            }
+        }
+    }
+
+    func testClearDialogueAndAuthoredTopSignsKeepTheirOriginalPlacement() throws {
+        try registerFonts()
+        let screen = CGSize(width: 960, height: 540)
+        let controls = CGRect(x: 30, y: 410, width: 900, height: 130)
+        for layout: SubtitleCueLayout? in [nil, .init(alignment: .topCenter),
+                                          .init(alignment: .topLeft, anchor: CGPoint(x: 0.3, y: 0.2))] {
+            var style = SubtitleStyle.default
+            style.verticalPosition = 0.6
+            let original = dialogueFrames(style: style, primary: "Already clear", secondary: "",
+                                         screen: screen, primaryLayout: layout)
+            let withControls = dialogueFrames(style: style, primary: "Already clear", secondary: "",
+                                             screen: screen, controls: controls, primaryLayout: layout)
+            XCTAssertEqual(original.count, withControls.count)
+            XCTAssertEqual(try XCTUnwrap(original.first).minY, try XCTUnwrap(withControls.first).minY, accuracy: 1)
+            XCTAssertEqual(try XCTUnwrap(original.first).minX, try XCTUnwrap(withControls.first).minX, accuracy: 1)
+        }
+    }
+
+    func testAnEmptyReservedDualLaneDoesNotLiftAlreadyClearVisibleText() throws {
+        try registerFonts()
+        var style = SubtitleStyle.default
+        style.fontFamily = .system
+        style.verticalPosition = 0.06
+        style.secondary = .init(placement: .below)
+        let screen = CGSize(width: 960, height: 540)
+        let controls = CGRect(x: 30, y: 475, width: 900, height: 65)
+        let original = dialogueFrames(style: style, primary: "Clear primary", secondary: "", screen: screen)
+            .filter { $0.height > 0 }
+        let lifted = dialogueFrames(style: style, primary: "Clear primary", secondary: "",
+                                    screen: screen, controls: controls)
+            .filter { $0.height > 0 }
+        XCTAssertLessThan(try XCTUnwrap(original.first).maxY, controls.minY)
+        XCTAssertEqual(try XCTUnwrap(original.first).maxY, try XCTUnwrap(lifted.first).maxY, accuracy: 1)
+    }
+
     private func dialogueFrames(
-        style: SubtitleStyle, primary: String, secondary: String, screen: CGSize
+        style: SubtitleStyle, primary: String, secondary: String, screen: CGSize,
+        controls: CGRect? = nil, primaryLayout: SubtitleCueLayout? = nil
     ) -> [CGRect] {
         let overlay = SubtitleOverlayView(
-            primary: [.init(id: 0, start: 0, end: 10, body: .text(SubtitleText(primary)))],
+            primary: [.init(id: 0, start: 0, end: 10, body: .text(SubtitleText(primary, layout: primaryLayout)))],
             secondary: style.secondary == nil ? [] : [
                 .init(id: 1, start: 0, end: 10, body: .text(SubtitleText(secondary)))
             ],
             secondaryActive: style.secondary != nil,
             style: style,
-            videoRect: CGRect(x: 0, y: 70, width: screen.width, height: screen.height - 140)
+            videoRect: CGRect(x: 0, y: 70, width: screen.width, height: screen.height - 140),
+            controlsFrame: controls
         )
         let host = UIHostingController(rootView: overlay)
         host.safeAreaRegions = []

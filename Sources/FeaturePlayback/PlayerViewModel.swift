@@ -762,6 +762,7 @@ public final class PlayerViewModel {
         // a Plozzigen subtitle is actually selected.
         engine.onSubtitleCues = { [weak self] cues in
             guard let self, self.engineToken == callbackEngineToken else { return }
+            self.liveSubtitles.tick(self.engine.subtitlePresentationTime)
             self.liveSubtitles.updateLiveCues(cues)
             #if DEBUG
             if self.subtitleController.selectedSubtitleTrackID != nil {
@@ -776,6 +777,7 @@ public final class PlayerViewModel {
         // `beginSecondaryLiveFeed()` has been called (guarded inside the model).
         engine.onSecondarySubtitleCues = { [weak self] cues in
             guard let self, self.engineToken == callbackEngineToken else { return }
+            self.liveSubtitles.tick(self.engine.subtitlePresentationTime)
             self.liveSubtitles.updateSecondaryLiveCues(cues)
             if self.subtitleController.selectedSecondarySubtitleTrackID != nil {
                 self.controls.secondarySubtitleStatus = .loaded(cueCount: cues.count)
@@ -1935,7 +1937,7 @@ public final class PlayerViewModel {
     /// hidden for subtitles-off and player-drawn embedded text. Call after any
     /// change to the primary overlay stream.
     private func refreshSubtitleDelayAvailability() {
-        controls.subtitleDelayAdjustable = liveSubtitles.rendersPrimary
+        controls.subtitleDelayAdjustable = liveSubtitles.supportsPrimaryTimingOffset
     }
 
     public func setDialogEnhanceEnabled(_ enabled: Bool) {
