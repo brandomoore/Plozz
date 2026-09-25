@@ -929,13 +929,17 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     )
                 }
             } else if model.channels.isEmpty, let automaticChannels,
-                      automaticChannels.needsEmptyState, canManageLibraryChannels {
+                      automaticChannels.needsEmptyState, canManageLibraryChannels,
+                      automaticChannels.isWorking || !isInitialCatalogLoading {
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: canvasWidth) {
                     LiveTVAutomaticChannelsEmptyView(state: automaticChannels) {
                         managesLibraryChannels = true
                         sheet = .sources
                     }
                 }
+            } else if model.channels.isEmpty,
+                      isInitialCatalogLoading || libraryIssue != nil || libraryGuideIssue != nil {
+                catalogGuideContent(layout, canvasWidth: canvasWidth)
             } else if model.channels.isEmpty, blockedPlaylistCount > 0 {
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: canvasWidth) {
                     ContentUnavailableView {
@@ -1109,6 +1113,19 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     private var canManageLibraryChannels: Bool {
         libraryService != nil && libraryHistory != nil
+    }
+
+    private var isInitialCatalogLoading: Bool {
+        guard model.channels.isEmpty else { return false }
+        // An empty saved source list is not final while enrollment or library
+        // hydration/publication can still supply channels.
+        if loadedRequest != reloadRequest || imports.catalogPhase == .loading
+            || automaticChannels?.isWorking == true {
+            return true
+        }
+        guard libraryIssue == nil, libraryGuideIssue == nil,
+              let catalog = libraryCatalogRevision else { return false }
+        return !catalog.isLoaded || !catalog.channels.isEmpty
     }
 
     private func publishLibraryGuide(channelIDs: Set<String>, range: DateInterval) {
@@ -1390,9 +1407,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 controlsActive = true
                 toolbarFocusRequest &+= 1
             },
-            isLoading: model.channels.isEmpty && (imports.catalogPhase == .idle || imports.catalogPhase == .loading),
-            loadFailed: imports.catalogPhase == .failed,
-            reload: { reloadRequest += 1 },
+            isLoading: isInitialCatalogLoading,
+            loadFailed: imports.catalogPhase == .failed || libraryIssue != nil || libraryGuideIssue != nil,
+            reload: { reloadLibrary?(); reloadRequest += 1 },
             hideChannel: hideChannel,
             selectionAction: multiviewSelection?.title,
             selectedChannelIDs: multiviewSelection == nil ? [] : Set(multiview.panes.compactMap { $0.channel?.id }),

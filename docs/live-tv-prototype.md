@@ -61,8 +61,13 @@ remain Debug-only; neither is a production default or a source offered to users.
 
 ## Try
 
-An empty configuration opens source setup; it does not contact a public feed or
-play an unsolicited channel. Add your own M3U playlist or use an authorized
+Source setup appears only after the initial source reload, server enrollment,
+and library-catalog restoration have established that there are no channels.
+Pending catalogs show loading instead of briefly offering setup; already-loaded
+channels remain browsable while other sources finish. Library failures use the
+unavailable state and can retry both library and external sources.
+An empty configuration does not contact a public feed or play an unsolicited
+channel. Add your own M3U playlist or use an authorized
 connected server. Plozz does not provide or offer a public channel catalog.
 Setup uses matching source cards with an icon, description and explicit action.
 Cards share their width and height in a row, and stack when space or larger text
