@@ -484,8 +484,8 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
         border: Border(isEnabled: true, color: .black, width: 2.5)
     )
 
-    /// New profiles and explicit Reset use current device captions. `.default`
-    /// remains the historical custom baseline for decoding and custom presets.
+    /// New profiles use current device captions. Explicit Reset uses `.default`,
+    /// Plozz's own appearance, without enabling system matching.
     public static let profileDefault: SubtitleStyle = {
         var style = SubtitleStyle.default
         style.followsSystemStyle = true

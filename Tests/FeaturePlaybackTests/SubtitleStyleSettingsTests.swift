@@ -56,8 +56,11 @@ final class SubtitleStyleSettingsTests: XCTestCase {
         context.editSubtitleStyle { $0.followsSystemStyle = true }
         XCTAssertTrue(profile.style.followsSystemStyle)
         XCTAssertEqual(context.effectiveStyle.fontScale, 0.73)
-        context.applySubtitleStyle(.profileDefault)
-        XCTAssertEqual(store.load().base, .profileDefault)
+        context.applySubtitleStyle(.default)
+        XCTAssertEqual(store.load().base, .default)
+        XCTAssertFalse(store.load().base.followsSystemStyle)
+        XCTAssertEqual(store.load().base.fontFamily, .atkinson)
+        XCTAssertNil(store.load().base.fontDescriptor)
         XCTAssertTrue(SubtitleStyleStore(defaults: defaults, namespace: "other").load().base.followsSystemStyle)
     }
 

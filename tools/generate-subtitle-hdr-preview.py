@@ -18,7 +18,32 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "Sources/FeaturePlayback/Resources/SubtitleHDRPreview.mp4"
-DURATION = 8
+DURATION = 16
+SHADOW = (0.6, 1.8, 4.5)
+BLUE = (22, 45, 85)
+HIGHLIGHT = (1000, 1000, 1000)
+PEAK_LUMINANCE = sum(weight * value for weight, value in zip((0.2627, 0.678, 0.0593), HIGHLIGHT))
+
+
+def scene_nits(x, y, seconds):
+    phase = 2 * math.pi * seconds / DURATION
+    center = 0.45 + 0.22 * math.sin(phase) + 0.16 * math.sin(2.8 * x - 0.55 * math.cos(phase))
+    distance = y - center
+    wash = math.exp(-(distance / 0.38) ** 2)
+    glint = (
+        math.exp(-((distance - 0.08) / 0.045) ** 2)
+        * (0.72 + 0.28 * math.cos(2 * math.pi * (x - 0.5 - 0.12 * math.cos(phase))))
+    )
+    base = [low + (high - low) * wash for low, high in zip(SHADOW, BLUE)]
+    return tuple(value + (peak - value) * glint for value, peak in zip(base, HIGHLIGHT))
+
+
+def authored_average(seconds):
+    samples = [
+        scene_nits(x / 128, y / 72, seconds)
+        for y in range(72) for x in range(128)
+    ]
+    return sum(0.2627 * r + 0.678 * g + 0.0593 * b for r, g, b in samples) / len(samples)
 
 
 def pq_expression(nits):
@@ -64,9 +89,17 @@ def verify(output, ffmpeg, ffprobe):
         for i in range(0, plane, 509)
     ]
     average = sum(samples) / len(samples)
-    if not 900 < peak < 1100 or not 90 < average < 130:
+    highlights = sum(value > 400 for value in samples) / len(samples)
+    expected_average = authored_average(0)
+    if not 900 < peak < 1100 or abs(average - expected_average) > 5 or not 0.02 < highlights < 0.12:
         raise SystemExit(f"HDR pixel verification failed: peak={peak}, mean={average} nits.")
-    return {"stream": stream, "decodedPeakNits": peak, "sampledFrameAverageNits": average}
+    if not PEAK_LUMINANCE * 0.9 < max(samples) < PEAK_LUMINANCE * 1.1:
+        raise SystemExit("The decoded scene must retain actual luminance above SDR reference white.")
+    if abs(float(stream["duration"]) - DURATION) > 0.02:
+        raise SystemExit("Unexpected HDR loop duration.")
+    return {"stream": stream, "decodedPeakChannelNits": peak, "sampledPeakLuminanceNits": max(samples),
+            "sampledFrameAverageNits": average,
+            "highlightFractionAbove400Nits": highlights}
 
 
 def generate(output, verify_only=False):
@@ -79,13 +112,19 @@ def generate(output, verify_only=False):
         return
     output.parent.mkdir(parents=True, exist_ok=True)
     # A low-frequency field can be authored at 640x360 and smoothly upsampled.
-    # Both phases are periodic in eight seconds, including their derivatives.
-    wave = (
-        f"(2+sin(2*PI*X/W+0.8*sin(2*PI*T/{DURATION}))"
-        f"+cos(2*PI*Y/H+0.7*cos(2*PI*T/{DURATION})))/4"
+    # A broad blue wash and a luminous crease move together, without circular hotspots.
+    phase = f"(2*PI*T/{DURATION})"
+    center = f"(0.45+0.22*sin({phase})+0.16*sin(2.8*X/W-0.55*cos({phase})))"
+    distance = f"(Y/H-{center})"
+    wash = f"exp(-pow({distance}/0.38,2))"
+    glint = (
+        f"exp(-pow(({distance}-0.08)/0.045,2))"
+        f"*(0.72+0.28*cos(2*PI*(X/W-0.5-0.12*cos({phase}))))"
     )
-    intensity = f"pow(({wave}),6)"
-    components = [pq_expression(f"{floor}+(1000-{floor})*{intensity}") for floor in (0.2, 0.7, 1.8)]
+    components = []
+    for low, high, peak in zip(SHADOW, BLUE, HIGHLIGHT):
+        base = f"({low}+({high}-{low})*{wash})"
+        components.append(pq_expression(f"{base}+({peak}-{base})*{glint}"))
     video_filter = (
         f"nullsrc=s=640x360:r=60:d={DURATION},format=gbrp16le,"
         f"geq=r='{components[0]}':g='{components[1]}':b='{components[2]}',"
@@ -93,18 +132,9 @@ def generate(output, verify_only=False):
         "in_color_matrix=bt2020:out_color_matrix=bt2020:in_range=full:out_range=tv,"
         "format=yuv420p10le"
     )
-    # The source's frame-average luminance is invariant under the periodic shifts.
-    moment = 0.0
-    for i in range(0, 7, 2):
-        for j in range(0, 7 - i, 2):
-            k = 6 - i - j
-            moment += (
-                math.factorial(6) / (math.factorial(i) * math.factorial(j) * math.factorial(k))
-                * 2**k * math.comb(i, i // 2) / 2**i
-                * math.comb(j, j // 2) / 2**j / 4**6
-            )
-    average_nits = 0.63388 + (1000 - 0.63388) * moment
-    max_fall = math.ceil(average_nits + 2)
+    averages = [authored_average(index / 4) for index in range(DURATION * 4)]
+    average_nits = averages[0]
+    max_fall = math.ceil(max(averages) + 2)
     subprocess.run([
         ffmpeg, "-hide_banner", "-loglevel", "warning", "-y",
         "-f", "lavfi", "-i", video_filter,
@@ -116,12 +146,12 @@ def generate(output, verify_only=False):
         "pools=4:frame-threads=2:log-level=error:repeat-headers=1:"
         "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:"
         "master-display=G(8500,39850)B(6550,2300)R(35400,14600)WP(15635,16450)L(10000000,1):"
-        f"max-cll=1000,{max_fall}",
+        f"max-cll={math.ceil(PEAK_LUMINANCE)},{max_fall}",
         "-movflags", "+faststart", str(output),
     ], check=True, timeout=600)
     report = verify(output, ffmpeg, ffprobe)
     print(json.dumps({"asset": str(output), "bytes": output.stat().st_size,
-                      "authoredPeakNits": 1000, "authoredAverageNits": average_nits,
+                      "authoredPeakLuminanceNits": PEAK_LUMINANCE, "authoredAverageNits": average_nits,
                       **report}, indent=2))
 
 

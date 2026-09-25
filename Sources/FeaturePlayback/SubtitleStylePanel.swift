@@ -103,12 +103,22 @@ struct SubtitleStylePanel: View {
                         .padding(.vertical, 6)
                 }
                 styleRow(row)
+                if screen == .style, row.slot == 0 {
+                    if focus == .row(0) {
+                        Text("Matching shows your device’s caption appearance. Editing a value keeps this look and turns system matching off.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                    }
+                    PlozzDivider()
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                }
             }
-            if screen == .style {
-                Text("Matching shows the device’s current values. Editing a value keeps this appearance and turns matching off.")
-                    .font(.footnote).playerMenuRowSecondary().padding(16)
-            } else if screen == .styleBackground {
-                Text("Window padding is set by Plozz. Apple does not expose caption padding or line spacing. File override preferences apply only when a cue supplies that attribute.")
+            if screen == .styleBackground {
+                Text("Window padding is set by Plozz. Apple does not expose caption padding or line spacing.")
                     .font(.footnote).playerMenuRowSecondary().padding(16)
             } else if screen == .styleOutline {
                 Text("Apple supplies the text edge style, including Uniform Outline, but not its color or thickness. Those are Plozz rendering values.")
@@ -280,7 +290,7 @@ struct SubtitleStylePanel: View {
         rows.append(StyleRowSpec(slot: slot, title: "Background", kind: .submenu(summary: s.background.isEnabled || s.glyphBackground.alpha > 0 ? Text("On") : Text("Off"), open: { openScreen(.styleBackground) }))); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Dual Subtitles", kind: .submenu(summary: hasSecondaryTrack ? Text("On") : Text("Off"), open: { openScreen(.styleDual) }))); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Subtitle file formatting", kind: .submenu(summary: Text(verbatim: ""), open: { openScreen(.styleFileFormatting) }))); slot += 1
-        rows.append(StyleRowSpec(slot: slot, title: "Reset to Default", kind: .action(run: { actions.setSubtitleStyle(.profileDefault) }))); slot += 1
+        rows.append(StyleRowSpec(slot: slot, title: "Reset to App Default", kind: .action(run: { actions.setSubtitleStyle(.default) }))); slot += 1
         return (rows, dividerBefore)
     }
 

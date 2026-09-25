@@ -25,7 +25,7 @@ final class SubtitleHDRPreviewTests: XCTestCase {
         let frameRate = try await track.load(.nominalFrameRate)
         XCTAssertEqual(frameRate, 60, accuracy: 0.01)
         let duration = try await asset.load(.duration)
-        XCTAssertEqual(duration.seconds, 8, accuracy: 0.02)
+        XCTAssertEqual(duration.seconds, 16, accuracy: 0.02)
     }
 
     func testMissingAssetIsAnExplicitFailureAndDoesNotClaimHDRReadiness() {

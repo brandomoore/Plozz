@@ -66,6 +66,8 @@ profile, applies the edit, and switches matching off; a no-op edit does not.
 Turning matching back on resumes the current device settings. New/default styles
 start with matching enabled, while persisted choices and legacy custom migration
 retain their existing behavior.
+`Reset to App Default` restores Plozz's own Atkinson/outline appearance and turns
+matching off; it is intentionally different from the new-profile default.
 Enabling matching over a custom style requires confirmation in both editors;
 Cancel leaves the style untouched. Disabling matching and the first custom edit
 remain immediate.
@@ -152,10 +154,12 @@ to that header without losing the chosen appearance or preview options.
 
 `HDR preview` plays the bundled, original `Resources/SubtitleHDRPreview.mp4`:
 silent 1080p60 HEVC Main 10, BT.2020/ST 2084 (PQ), with HDR10 mastering and content
-light metadata. Its procedural scene contains approximately 1000-nit highlights,
+light metadata. Its slow blue ribbon carries a flowing, approximately 1000-nit white highlight,
 not SDR pixels carrying an HDR label. Generate or verify it locally with
 `python3 tools/generate-subtitle-hdr-preview.py [--verify-only]`; verification
 checks the encoded format and decodes pixel values through the PQ EOTF.
+The sixteen-second loop sweeps a luminous ribbon through dark and blue regions.
+It retains useful HDR glare without filling the scene with circular white blobs.
 
 `SubtitleHDRPreview` owns one muted AVQueuePlayer/loop and one video surface
 across inline/full-screen transitions. It does not configure an audio session

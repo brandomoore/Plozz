@@ -151,8 +151,8 @@ public struct MobileSubtitleStyleEditor: View {
             }
 
             Section {
-                Button("Reset to Default", role: .destructive) {
-                    viewModel.applySubtitleStyle(.profileDefault)
+                Button("Reset to App Default", role: .destructive) {
+                    viewModel.applySubtitleStyle(.default)
                 }
             }
         }
