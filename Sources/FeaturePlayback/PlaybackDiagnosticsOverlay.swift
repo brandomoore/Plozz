@@ -199,7 +199,7 @@ struct PlaybackDiagnosticsOverlay: View {
                     row("Estimated bitrate", PlaybackDiagnostics.formatBitrate(bitrate))
                 }
             } else {
-                optionalRow("Bitrate", videoBitrateCombined(d))
+                optionalRow("Bitrate", PlaybackDiagnostics.formatBitrate(d.videoBitrate))
             }
             // HDR format + Dolby Vision profile folded into a single HDR row.
             optionalRow("HDR", hdrCombined(d))
@@ -244,18 +244,17 @@ struct PlaybackDiagnosticsOverlay: View {
 
     @ViewBuilder
     private func playbackSection(_ d: PlaybackDiagnostics) -> some View {
-        // Live FPS + Network bitrate moved up into the VIDEO rows they mirror, so
-        // PLAYBACK is just the session-state facts.
+        // Transport measurements stay separate from source video/audio facts.
         section("PLAYBACK") {
-            optionalRow("Position", d.positionText)
-            optionalRow("Seekable", seekWindowText(d.seekWindowFacts))
+            optionalRow(d.mode == .plozzigen ? "AVPlayer time" : "Position", d.positionText)
+            optionalRow(d.mode == .plozzigen ? "AVPlayer window" : "Seekable", seekWindowText(d.seekWindowFacts))
             optionalRow("State", d.playbackStateText)
             row("Buffer", bufferStatusText(d.bufferStatusFacts))
+            optionalRow("Engine buffer", PlaybackDiagnostics.formatBuffer(d.engineBufferedSecondsAhead))
+            optionalRow("Stalls", d.stallCount.map(String.init) ?? PlaybackDiagnostics.placeholder)
             row("Dropped", "\(d.droppedFramesText) frames")
-            if d.mode == .transcode {
-                optionalRow("Declared stream bitrate", d.indicatedBitrateText)
-                optionalRow("Network throughput", d.observedBitrateText)
-            }
+            optionalRow("Declared stream bitrate", d.indicatedBitrateText)
+            optionalRow("Network throughput", d.observedBitrateText)
         }
     }
 
@@ -438,11 +437,6 @@ struct PlaybackDiagnosticsOverlay: View {
     /// Nominal frame rate with the live observed FPS folded in.
     private func frameRateCombined(_ d: PlaybackDiagnostics) -> String {
         withLive(nominal: d.frameRateText, live: d.observedFpsText)
-    }
-
-    /// Indicated (source) video bitrate with the live network bitrate folded in.
-    private func videoBitrateCombined(_ d: PlaybackDiagnostics) -> String {
-        withLive(nominal: d.indicatedBitrateText, live: d.observedBitrateText)
     }
 
     /// HDR format folded with its Dolby Vision profile so the HUD shows one HDR

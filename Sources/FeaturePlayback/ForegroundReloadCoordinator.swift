@@ -2,6 +2,7 @@
 import Foundation
 import Observation
 import CoreModels
+import CoreNetworking
 
 // MARK: - Host seam
 
@@ -28,6 +29,9 @@ protocol ForegroundReloadCoordinatorHost: AnyObject {
     var reloadIntendsPlayback: Bool { get }
     /// The speed to re-program on the rebuilt engine.
     var reloadPlaybackSpeed: Double { get }
+    var reloadPlaybackIdentity: UInt { get }
+    var reloadPosition: TimeInterval { get }
+    func reloadRestorePosition(_ position: TimeInterval) async throws
 
     /// Re-applies the remembered audio/subtitle selections to a freshly rebuilt
     /// Plozzigen engine.
@@ -69,6 +73,20 @@ final class ForegroundReloadCoordinator {
     /// from rebuilding the same playback session more than once.
     private var backgroundGeneration = 0
     private var pendingForegroundReloadGeneration: Int?
+    private struct Suspension {
+        let engine: UUID
+        let playback: UInt
+        var position: TimeInterval
+        var recoveryArmed = false
+    }
+    private var suspension: Suspension?
+
+    var preservedPosition: TimeInterval? {
+        guard let host, let suspension,
+              host.reloadEngineToken == suspension.engine,
+              host.reloadPlaybackIdentity == suspension.playback else { return nil }
+        return suspension.position
+    }
 
     /// Keeps the full-screen loading indicator visible while a suspended engine
     /// rebuilds its media pipeline at the preserved position.
@@ -81,8 +99,30 @@ final class ForegroundReloadCoordinator {
     /// Marks a genuine tvOS background entry, arming exactly one pending
     /// foreground recovery.
     func markEnteredBackground() {
-        backgroundGeneration += 1
-        pendingForegroundReloadGeneration = backgroundGeneration
+        if preservedPosition != nil { suspension?.recoveryArmed = true }
+        if pendingForegroundReloadGeneration == nil {
+            backgroundGeneration += 1
+            pendingForegroundReloadGeneration = backgroundGeneration
+        }
+    }
+
+    /// Capture before pausing/teardown can erase the engine's clock. A continuing
+    /// PiP/background-audio session deliberately never enters this path.
+    func captureBeforeSuspension() {
+        guard let host, !host.reloadDidStop, host.reloadPhase == .ready else { return }
+        if preservedPosition != nil { return }
+        let position = host.reloadPosition
+        guard position.isFinite, position >= 0 else {
+            PlozzLog.playback.error("Cannot preserve an invalid playback position before suspension.")
+            return
+        }
+        suspension = .init(engine: host.reloadEngineToken, playback: host.reloadPlaybackIdentity, position: position)
+        HandoffDiagnostics.emit("foreground CHECKPOINT position=\(String(format: "%.3f", position)) playback=\(host.reloadPlaybackIdentity)")
+    }
+
+    func noteUserSeek(to position: TimeInterval) {
+        guard preservedPosition != nil, position.isFinite, position >= 0 else { return }
+        suspension?.position = position
     }
 
     /// Restores the engine after a real background round-trip while preserving
@@ -91,6 +131,23 @@ final class ForegroundReloadCoordinator {
     /// same engine seam at their existing position and session URL.
     func resume() async {
         guard let host else { return }
+        if pendingForegroundReloadGeneration == nil {
+            guard !isRecovering else { return }
+            // Scene delivery can coalesce inactive -> background -> active.
+            // Only a demonstrated clock reset may recover without a background
+            // notification; an ordinary inactive-only pause stays a no-op.
+            if suspension?.recoveryArmed != true,
+               host.reloadPhase == .ready, !host.reloadDidStop,
+               let position = preservedPosition, position > 2,
+               host.reloadEngine.currentTime.isFinite,
+               (0...1).contains(host.reloadEngine.currentTime) {
+                markEnteredBackground()
+                HandoffDiagnostics.emit("foreground CLOCK_RESET_WITHOUT_BACKGROUND saved=\(String(format: "%.3f", position))")
+            } else {
+                if suspension?.recoveryArmed != true { suspension = nil }
+                return
+            }
+        }
         guard let generation = pendingForegroundReloadGeneration else { return }
 
         // Background can interrupt initial bring-up. Wait for that load to settle,
@@ -107,8 +164,10 @@ final class ForegroundReloadCoordinator {
 
         pendingForegroundReloadGeneration = nil
         let recoveringEngine = host.reloadEngine
-        guard recoveringEngine.needsBackgroundReload else { return }
+        let needsReload = recoveringEngine.needsBackgroundReload
+        guard needsReload || preservedPosition != nil else { return }
         let recoveringEngineToken = host.reloadEngineToken
+        let playbackIdentity = host.reloadPlaybackIdentity
         isRecovering = true
         defer {
             if backgroundGeneration == generation {
@@ -117,27 +176,41 @@ final class ForegroundReloadCoordinator {
         }
 
         do {
-            try await recoveringEngine.reloadAfterForeground()
+            if needsReload { try await recoveringEngine.reloadAfterForeground() }
+            guard backgroundGeneration == generation,
+                  host.reloadEngineToken == recoveringEngineToken,
+                  host.reloadPlaybackIdentity == playbackIdentity else { return }
+            guard !host.reloadDidStop else {
+                recoveringEngine.stop()
+                return
+            }
+            recoveringEngine.setPlaybackSpeed(host.reloadPlaybackSpeed)
+            if host.reloadIsPlozzigenEngine {
+                host.reloadReapplyTrackSelections(to: recoveringEngine)
+            }
+            if let position = preservedPosition {
+                try await host.reloadRestorePosition(position)
+            }
         } catch {
             guard backgroundGeneration == generation,
                   host.reloadEngineToken == recoveringEngineToken,
+                  host.reloadPlaybackIdentity == playbackIdentity,
                   !host.reloadDidStop else { return }
+            recoveringEngine.pause()
+            HandoffDiagnostics.emit("foreground RESTORE_FAILED position=\(preservedPosition.map { String(format: "%.3f", $0) } ?? "unknown")")
             let appError = (error as? AppError) ?? .unknown(String(describing: error))
             host.reloadFail(appError)
             return
         }
 
         guard backgroundGeneration == generation,
-              host.reloadEngineToken == recoveringEngineToken else { return }
+              host.reloadEngineToken == recoveringEngineToken,
+              host.reloadPlaybackIdentity == playbackIdentity else { return }
         guard !host.reloadDidStop else {
             recoveringEngine.stop()
             return
         }
 
-        recoveringEngine.setPlaybackSpeed(host.reloadPlaybackSpeed)
-        if host.reloadIsPlozzigenEngine {
-            host.reloadReapplyTrackSelections(to: recoveringEngine)
-        }
         // A play press can arrive while the async rebuild is in flight. Reconcile
         // last, after restoring speed/tracks that may restart AVPlayer, and avoid a
         // duplicate pause/unpause report; the genuine user action already sent it.
@@ -148,6 +221,8 @@ final class ForegroundReloadCoordinator {
         }
         host.reloadReconcilePaused(!host.reloadIntendsPlayback)
         host.reloadLoadTrackOptions()
+        HandoffDiagnostics.emit("foreground RESTORED position=\(String(format: "%.3f", recoveringEngine.currentTime)) paused=\(!host.reloadIntendsPlayback)")
+        suspension = nil
     }
 }
 

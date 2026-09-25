@@ -490,7 +490,8 @@ public struct PlayerView: View {
         let token = model.diagnosticsToken
         let playerID = model.playerInstanceID
         diagnosticsSampler.start(
-            player: viewModel.player,
+            player: model.diagnosticsPlayer,
+            playerProvider: { [weak model] in model?.diagnosticsPlayer },
             mode: viewModel.deliveryMode,
             metadata: viewModel.sourceMetadata,
             engineName: viewModel.engineDisplayName,
@@ -499,8 +500,8 @@ public struct PlayerView: View {
             serverName: viewModel.serverName,
             sourceFileName: viewModel.diagnosticsSourceFileName,
             streamURL: viewModel.diagnosticsStreamURL,
-            engineTelemetry: { viewModel.engineLiveTelemetry },
-            probedFacts: { viewModel.engineProbedFacts },
+            engineTelemetry: { [weak model] in model?.engineLiveTelemetry },
+            probedFacts: { [weak model] in model?.engineProbedFacts },
             includesSystemMetrics: viewModel.controls.diagnosticsEnabled,
             onStreamDetails: { [weak model] details in
                 model?.updateCurrentStreamDetails(details, token: token, playerID: playerID)

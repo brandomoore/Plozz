@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 
 /// Seam back to the owner (``PlayerViewModel``) for the pieces of transport
@@ -119,6 +120,8 @@ final class SeekScrubCoordinator {
     /// to a stale `engine.currentTime` while the seek resolves.
     func requestSeek(to seconds: TimeInterval) {
         let target = clampedSeekTarget(seconds)
+        lastRequestedTarget = target
+        requestRevision &+= 1
         let intendsPlayback = host?.seekIntendsPlayback ?? true
         if let engine {
             PlaybackTrace.note("requestSeek to=\(String(format: "%.2f", target)) from=\(String(format: "%.2f", controls.currentSeconds)) dir=\(target < controls.currentSeconds ? "BACK" : "fwd") engineState curr=\(String(format: "%.2f", engine.currentTime)) dur=\(String(format: "%.2f", engine.duration))")
@@ -361,6 +364,7 @@ final class SeekScrubCoordinator {
     /// Teardown: cancels the commit timer, the drain loop and the resume
     /// confirmation. Called from ``PlayerViewModel/stop(preserveDisplayMode:)``.
     func cancelAll() {
+        requestRevision &+= 1
         cancelSeekCommit()
         seekTask?.cancel()
         seekTask = nil
@@ -376,10 +380,56 @@ final class SeekScrubCoordinator {
     /// Legacy direct-seek path retained for callers (e.g. resume on load) that
     /// want a one-shot await. New transport input goes through `requestSeek`.
     func seek(to seconds: TimeInterval) async {
+        lastRequestedTarget = max(0, seconds)
+        requestRevision &+= 1
         controls.isSeeking = true
         controls.currentSeconds = max(0, seconds)
         controls.pendingSeekTarget = max(0, seconds)
         await engine?.seek(to: seconds, kind: .exact)
         controls.isSeeking = false
+    }
+
+    private var lastRequestedTarget: TimeInterval?
+    private var requestRevision = 0
+
+    /// Shares the normal latest-wins seek queue with transport input. Do not
+    /// report successful recovery until the real engine position has landed.
+    func restoreAfterReload(to position: TimeInterval, timeout: Duration = .seconds(30)) async throws {
+        guard let recoveringEngine = engine else { throw CancellationError() }
+        var deadline = ContinuousClock.now + timeout
+        while !recoveringEngine.isPlaybackPositionReady {
+            try Task.checkCancellation()
+            guard engine === recoveringEngine else { throw CancellationError() }
+            guard ContinuousClock.now < deadline else {
+                PlozzLog.playback.error("Foreground playback did not become ready to restore its position.")
+                throw AppError.invalidResponse
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let target = controls.pendingSeekTarget ?? clampedSeekTarget(position)
+        if !controls.isSeeking, abs(recoveringEngine.currentTime - target) <= 1 { return }
+        if !controls.isSeeking { requestSeek(to: target) }
+        var revision = requestRevision
+        while controls.isSeeking {
+            try Task.checkCancellation()
+            guard engine === recoveringEngine else { throw CancellationError() }
+            if requestRevision != revision {
+                revision = requestRevision
+                deadline = ContinuousClock.now + timeout
+            }
+            guard ContinuousClock.now < deadline else {
+                PlozzLog.playback.error("Foreground position restoration did not finish.")
+                throw AppError.invalidResponse
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard engine === recoveringEngine else { throw CancellationError() }
+        let expected = lastRequestedTarget ?? target
+        guard recoveringEngine.isPlaybackPositionReady,
+              recoveringEngine.currentTime.isFinite,
+              abs(recoveringEngine.currentTime - expected) <= 2 else {
+            HandoffDiagnostics.emit("foreground SEEK_MISSED target=\(String(format: "%.3f", expected)) actual=\(String(format: "%.3f", recoveringEngine.currentTime))")
+            throw AppError.invalidResponse
+        }
     }
 }

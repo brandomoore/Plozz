@@ -335,6 +335,7 @@ final class PlayerViewModelEOFTests: XCTestCase {
         for _ in 0..<10 { await Task.yield() }
 
         XCTAssertEqual(engine.reloadAfterForegroundCount, 1)
+        XCTAssertEqual(engine.currentTime, 30)
         XCTAssertTrue(engine.isPaused)
         XCTAssertTrue(viewModel.controls.isPaused)
         let reports = await provider.reports

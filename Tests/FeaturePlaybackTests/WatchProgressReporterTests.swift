@@ -60,6 +60,22 @@ final class WatchProgressReporterTests: XCTestCase {
 
     // MARK: report + scrobble fan-out
 
+    func testPausedOrSuspendedHeartbeatCannotOverwriteResumeWithZero() async {
+        let (sut, host, provider, scrobbler, _) = makeSUT()
+        host.engineCurrentTime = 4780.41
+        await sut.report(event: .pause, isPaused: true)
+        host.engineCurrentTime = 0.07
+        host.engineIsPaused = true
+        sut.reportProgress()
+        await Task.yield()
+        let events = await provider.events
+        XCTAssertEqual(events.map(\.event), [.pause])
+        XCTAssertEqual(events.first?.position, 4780.41)
+        let scrobbles = await scrobbler.calls
+        XCTAssertEqual(scrobbles.map(\.event), [.pause])
+    }
+
+
     func testLibraryChannelRequestSuppressesEveryOrdinaryMutationIncludingStop() async {
         let (sut, host, provider, scrobbler, recorder) = makeSUT()
         host.request?.suppressOrdinaryWatchReporting = true

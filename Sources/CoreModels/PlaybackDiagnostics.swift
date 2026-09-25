@@ -160,6 +160,8 @@ public struct PlaybackDiagnostics: Equatable, Sendable {
     public var engineName: String?
     /// Seconds of media buffered ahead of the current playback position.
     public var bufferedSecondsAhead: Double?
+    public var engineBufferedSecondsAhead: Double?
+    public var stallCount: Int?
     /// Cumulative dropped video frames reported by the access log.
     public var droppedVideoFrames: Int?
     /// Nominal frame rate of the video track, in frames/sec.
@@ -248,6 +250,8 @@ public struct PlaybackDiagnostics: Equatable, Sendable {
         hdr: HDRFormat = .unknown,
         engineName: String? = nil,
         bufferedSecondsAhead: Double? = nil,
+        engineBufferedSecondsAhead: Double? = nil,
+        stallCount: Int? = nil,
         droppedVideoFrames: Int? = nil,
         frameRate: Double? = nil,
         observedFps: Double? = nil,
@@ -293,6 +297,8 @@ public struct PlaybackDiagnostics: Equatable, Sendable {
         self.hdr = hdr
         self.engineName = engineName
         self.bufferedSecondsAhead = bufferedSecondsAhead
+        self.engineBufferedSecondsAhead = engineBufferedSecondsAhead
+        self.stallCount = stallCount
         self.droppedVideoFrames = droppedVideoFrames
         self.frameRate = frameRate
         self.observedFps = observedFps
@@ -990,18 +996,13 @@ public extension PlaybackDiagnostics {
         thermalState?.displayName
     }
 
-    /// Live-instance line, e.g. `Players 1 · AVPlayer 1`. Outside the player both
-    /// should read 0; during playback exactly one player session + one AVPlayer
-    /// engine. Values that climb and never fall as you leave/re-enter the player
-    /// name a leak; a count that climbs then "corrects down" names
-    /// over-construction (throwaway instances built on the render path).
-    /// `Players` counts live `PlayerViewModel`s; `AVPlayer` counts
-    /// `NativeVideoEngine`s.
+    /// Counts app-owned view models and NativeVideoEngine adapters, not every
+    /// AVPlayer allocated inside a third-party engine.
     var liveInstancesText: String {  // l10n:content — developer-facing diagnostic (leak-detection instrumentation, not meant for translation)
         guard liveViewModels != nil || liveNativeEngines != nil else {
             return Self.placeholder
         }
-        return "Players \(liveViewModels ?? 0) · AVPlayer \(liveNativeEngines ?? 0)"
+        return "Players \(liveViewModels ?? 0) · Native engines \(liveNativeEngines ?? 0)"
     }
 }
 

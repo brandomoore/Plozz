@@ -1,6 +1,20 @@
 import XCTest
 @testable import CoreModels
 
+final class PlaybackDiagnosticsEngineMetricsTests: XCTestCase {
+    func testPlayerBufferEngineCacheAndStallCountRemainDistinctFacts() {
+        let diagnostics = PlaybackDiagnostics(
+            bufferedSecondsAhead: 0, engineBufferedSecondsAhead: 42, stallCount: 26,
+            liveViewModels: 1, liveNativeEngines: 0
+        )
+        XCTAssertEqual(diagnostics.bufferedSecondsAhead, 0)
+        XCTAssertEqual(diagnostics.engineBufferedSecondsAhead, 42)
+        XCTAssertEqual(diagnostics.stallCount, 26)
+        XCTAssertEqual(diagnostics.liveInstancesText, "Players 1 · Native engines 0")
+        XCTAssertNil(PlaybackDiagnostics().stallCount)
+    }
+}
+
 final class PlaybackDiagnosticsHDRTests: XCTestCase {
     typealias HDR = PlaybackDiagnostics.HDRFormat
 

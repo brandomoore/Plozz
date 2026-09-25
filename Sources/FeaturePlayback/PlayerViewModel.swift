@@ -1845,6 +1845,7 @@ public final class PlayerViewModel {
             return
         }
         #endif
+        foregroundReload.captureBeforeSuspension()
         // Key off intent, not `engine.isPaused`: if we mean to be playing (even
         // while the engine is mid post-seek settle), pause for real — this also
         // routes through `cancelResumeConfirm()` so a recovery loop can't wake the
@@ -1894,12 +1895,14 @@ public final class PlayerViewModel {
                 + " recovering=\(isRecoveringAfterForeground)"
         )
         seekCoordinator.requestSeek(to: seconds)
+        foregroundReload.noteUserSeek(to: controls.pendingSeekTarget ?? seconds)
         nowPlaying?.refresh()
     }
 
     /// Legacy direct-seek path retained for callers (e.g. resume on load) that
     /// want a one-shot await. New transport input goes through `requestSeek`.
     public func seek(to seconds: TimeInterval) async {
+        foregroundReload.noteUserSeek(to: seconds)
         await seekCoordinator.seek(to: seconds)
         nowPlaying?.refresh()
     }
@@ -2018,6 +2021,7 @@ public final class PlayerViewModel {
     private var didReachNaturalEnd = false
 
     private func currentResumePosition() -> TimeInterval {
+        if let position = foregroundReload.preservedPosition { return position }
         if case .failed = phase, let position = streamingResumePosition { return position }
         let current = engine.currentTime
         if current.isFinite, current >= 0 {
@@ -2030,6 +2034,7 @@ public final class PlayerViewModel {
     /// resume point, then tear the engine down.
     public func stop(preserveDisplayMode: Bool = false) async {
         guard !didStop else { return }
+        let suspendedPosition = foregroundReload.preservedPosition
         HandoffDiagnostics.emit(
             "session STOP_INTENT origin=player-stop vm=\(instanceID)"
                 + " session=\(HandoffDiagnostics.correlationID(request?.playSessionID))"
@@ -2071,7 +2076,7 @@ public final class PlayerViewModel {
         // the resume position up front since the engine is torn down here.
         let finalPosition = didReachNaturalEnd
             ? max(engine.furthestObservedPosition, engine.currentTime)
-            : currentResumePosition()
+            : suspendedPosition ?? currentResumePosition()
         let finalDuration = progressReporter.knownPlaybackDuration()
         let percent = progressReporter.watchedPercent(at: finalPosition)
         engine.stop(preserveDisplayMode: preserveDisplayMode)
@@ -2117,6 +2122,7 @@ public final class PlayerViewModel {
     /// AVFoundation-specific diagnostics sampler and the system player view.
     /// Returns `nil` for a non-AVFoundation engine (diagnostics is best-effort).
     public var player: AVPlayer? { (engine as? NativeVideoEngine)?.underlyingPlayer }
+    public var diagnosticsPlayer: AVPlayer? { player ?? engine.nowPlayingPlayer }
 
     #if os(iOS)
     /// The active engine when it can present Picture in Picture, else nil.
@@ -2384,9 +2390,9 @@ extension PlayerViewModel: SeekScrubCoordinatorHost {
 }
 
 extension PlayerViewModel: WatchProgressReporterHost {
-    var reporterEngineCurrentTime: TimeInterval { engine.currentTime }
+    var reporterEngineCurrentTime: TimeInterval { foregroundReload.preservedPosition ?? engine.currentTime }
     var reporterEngineDuration: TimeInterval { engine.duration }
-    var reporterEngineIsPaused: Bool { engine.isPaused }
+    var reporterEngineIsPaused: Bool { !intendsPlayback || isRecoveringAfterForeground || engine.isPaused }
     var reporterControlsDuration: TimeInterval { controls.duration }
     var reporterRequest: PlaybackRequest? { request }
     var reporterResumePosition: TimeInterval { currentResumePosition() }
@@ -2625,6 +2631,13 @@ extension PlayerViewModel: ForegroundReloadCoordinatorHost {
     var reloadIsPlozzigenEngine: Bool { currentEngineKind == .plozzigen }
     var reloadIntendsPlayback: Bool { intendsPlayback }
     var reloadPlaybackSpeed: Double { controls.playbackSpeed }
+    var reloadPlaybackIdentity: UInt { dynamicRangeLoadGeneration }
+    var reloadPosition: TimeInterval {
+        controls.pendingSeekTarget ?? (engine.isPlaybackPositionReady ? currentResumePosition() : controls.currentSeconds)
+    }
+    func reloadRestorePosition(_ position: TimeInterval) async throws {
+        try await seekCoordinator.restoreAfterReload(to: position)
+    }
 
     func reloadReapplyTrackSelections(to engine: any VideoEngine) {
         subtitleController.reapplyTrackSelections(to: engine)

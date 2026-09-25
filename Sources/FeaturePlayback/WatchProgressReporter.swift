@@ -134,7 +134,11 @@ final class WatchProgressReporter {
 
     /// Reports a mid-play progress heartbeat (from the engine's onProgress).
     func reportProgress() {
-        Task { await report(event: .progress, isPaused: false) }
+        guard host?.reporterEngineIsPaused == false else { return }
+        Task {
+            guard host?.reporterEngineIsPaused == false else { return }
+            await report(event: .progress, isPaused: false)
+        }
     }
 
     // MARK: - Duration / percent

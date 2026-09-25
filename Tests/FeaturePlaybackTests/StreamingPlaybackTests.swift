@@ -9,6 +9,40 @@ import UIKit
 
 @MainActor
 final class StreamingPlaybackTests: XCTestCase {
+    func testStoppingAfterBackgroundClockResetReportsThePreservedPosition() async {
+        let (model, engine, provider) = make(options: .init(quality: .original))
+        await model.load()
+        engine.currentTime = 123
+        model.suspendForBackground()
+        engine.currentTime = 0.07
+        await model.stop()
+        let reports = await provider.playbackReports
+        XCTAssertEqual(reports.last { $0.event == .stop }?.progress.positionSeconds, 123)
+    }
+
+    func testBackgroundReturnPreservesPositionAcrossClockResetAndLateSourceProbe() async {
+        let (model, engine, _) = make(options: .init(quality: .original))
+        await model.load()
+        engine.currentTime = 123
+        engine.onPause = { [weak engine] in
+            engine?.currentTime = 0
+            engine?.onPause = nil
+        }
+        model.suspendForBackground()
+        XCTAssertEqual(engine.currentTime, 0)
+        let diagnosticsBeforeProbe = model.diagnosticsToken
+        engine.onProbedSourceFactsChanged?(.init(range: .hdr10))
+        XCTAssertNotEqual(model.diagnosticsToken, diagnosticsBeforeProbe)
+        XCTAssertEqual(model.continuationForVersionChange().position, 123)
+        model.didEnterBackground()
+        await model.resumeAfterBackground()
+        XCTAssertEqual(engine.currentTime, 123)
+        XCTAssertTrue(engine.isPaused)
+        XCTAssertTrue(model.controls.intendsPause)
+        XCTAssertEqual(model.phase, .ready)
+        await model.stop()
+    }
+
     func testCueArrivalUsesThePresentationClockBeforeTheNextDisplayTick() async {
         let (model, engine, _) = make(options: .init(quality: .original))
         await model.load()
@@ -679,6 +713,7 @@ private actor QualityDecisionGate {
 
 private actor QualityPlaybackProvider: StreamingQualityProviding {
     struct Call: Sendable { let item: String; let source: String?; let options: StreamingPlaybackOptions }
+    struct Report: Sendable { let progress: PlaybackProgress; let event: PlaybackEvent }
     nonisolated let kind: ProviderKind = .plex
     nonisolated let session = UserSession(
         server: .init(id: "server", name: "Server", baseURL: URL(string: "https://fixture.test")!, provider: .plex),
@@ -687,6 +722,7 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
     private(set) var calls: [Call] = []
     private(set) var ordinaryCalls = 0
     private(set) var released: [String] = []
+    private(set) var playbackReports: [Report] = []
     private var refusesQuality = false
     private var hevcFailure: (any Error & Sendable)?
     private var negotiatedCodec: DirectPlayVideoCodec?
@@ -745,7 +781,9 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
         .init(items: [], startIndex: 0, totalCount: 0)
     }
     func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
-    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {
+        playbackReports.append(.init(progress: progress, event: event))
+    }
     nonisolated func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
 }
 
@@ -766,6 +804,8 @@ private final class QualityEngine: VideoEngine {
     var subtitleTracks: [MediaTrack] = []
     var currentAudioTrackID: Int?
     var selectedSubtitleID: Int?
+    var onPause: (@MainActor () -> Void)?
+    var isPlaybackPositionReady: Bool { status == .ready }
     var positions: [TimeInterval] = []
     var loadedQualities: [StreamingQuality] = []
     var onProgress: (@MainActor () -> Void)?
@@ -789,7 +829,7 @@ private final class QualityEngine: VideoEngine {
         status = .ready
     }
     func play() { isPaused = false }
-    func pause() { isPaused = true }
+    func pause() { isPaused = true; onPause?() }
     func seek(to seconds: TimeInterval) async { currentTime = seconds }
     func stop() { status = .idle; currentTime = 0; isPaused = true }
     func selectAudioTrack(_ track: MediaTrack?) { currentAudioTrackID = track?.id }

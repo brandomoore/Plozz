@@ -26,6 +26,8 @@ public final class PlaybackDiagnosticsSampler {
     public private(set) var latest: PlaybackDiagnostics?
 
     private weak var player: AVPlayer?
+    private var playerProvider: (@MainActor () -> AVPlayer?)?
+    private weak var stallItem: AVPlayerItem?
     /// Original-playback baseline and immutable session/device facts.
     private var staticDiagnostics = PlaybackDiagnostics()
     /// Live engine telemetry source (dropped frames / FPS / bitrate). Used to fill
@@ -77,13 +79,12 @@ public final class PlaybackDiagnosticsSampler {
     ///   - engineName: the engine decoding the stream (e.g. `AVPlayer`, `VLCKit`),
     ///     shown in the overlay so the user can see which engine is active.
     ///
-    /// `player` is optional: a non-AVFoundation engine (Plozzigen) has no
-    /// `AVPlayer`, so the live per-tick metrics (observed bitrate, dropped frames,
-    /// presentation size) are skipped, but the source baseline from
-    /// `metadata` — container, codecs, HDR, mode, and the engine name — is still
-    /// published so the overlay works on every engine.
+    /// `playerProvider` follows engines that create or replace their internal
+    /// AVPlayer later. Software-only paths can still supply engine telemetry
+    /// without fabricating AVFoundation measurements.
     public func start(
         player: AVPlayer?,
+        playerProvider: (@MainActor () -> AVPlayer?)? = nil,
         mode: PlaybackDiagnostics.PlaybackMode,
         metadata: MediaSourceMetadata? = nil,
         engineName: String? = nil,
@@ -99,6 +100,7 @@ public final class PlaybackDiagnosticsSampler {
     ) {
         stop()
         self.player = player
+        self.playerProvider = playerProvider
         self.engineTelemetry = engineTelemetry
         self.probedFacts = probedFacts
         self.onStreamDetails = onStreamDetails
@@ -123,10 +125,7 @@ public final class PlaybackDiagnosticsSampler {
         staticDiagnostics = base
         latest = staticDiagnostics
 
-        // Plozzigen exposes no AVFoundation item, but we still run the timer so
-        // the system metrics (memory / thermal / live-instance counts) refresh
-        // ~1s on *every* engine — that's what surfaces a leak on the HDR/DoVi
-        // (Plozzigen) path, which otherwise published a single static snapshot.
+        // Keep sampling even before a player exists and on software-only paths.
         if let item = player?.currentItem, mode != .transcode {
             let generation = generation
             staticInfoTask = Task { await loadStaticInfo(item: item, generation: generation) }
@@ -153,6 +152,8 @@ public final class PlaybackDiagnosticsSampler {
         streamMetadata = .init()
         onStreamDetails = nil
         player = nil
+        playerProvider = nil
+        stallItem = nil
         engineTelemetry = nil
         probedFacts = nil
     }
@@ -178,8 +179,14 @@ public final class PlaybackDiagnosticsSampler {
         let observedMbps = event.observedBitrate > 0 ? event.observedBitrate / 1_000_000 : -1
         let indicatedMbps = event.indicatedBitrate > 0 ? event.indicatedBitrate / 1_000_000 : -1
         let buffered = bufferedSecondsAhead(in: item) ?? -1
+        let engineBuffered = engineTelemetry?()?.bufferedSecondsAhead ?? -1
         let pos = item.currentTime().seconds
         let posValue = pos.isFinite ? pos : -1
+        HandoffDiagnostics.emit(String(
+            format: "playback STALL engine=%@ count=%d playerBuffer=%.3fs engineBuffer=%.3fs deliveryMbps=%.3f scope=%@ position=%.3f",
+            staticDiagnostics.engineName ?? "unknown", stalls, buffered, engineBuffered, observedMbps,
+            staticDiagnostics.mode == .plozzigen ? "engine-delivery" : "network-delivery", posValue
+        ))
         Self.playbackLog.error("""
             remux-stall: stalls=\(stalls, privacy: .public) \
             observed=\(observedMbps, format: .fixed(precision: 1), privacy: .public)Mbps \
@@ -196,6 +203,7 @@ public final class PlaybackDiagnosticsSampler {
     }
 
     func sampleTick() {
+        refreshPlayer()
         var diagnostics = staticDiagnostics
         if diagnostics.mode == .transcode, player?.currentItem == nil {
             streamInfoTask?.cancel()
@@ -204,8 +212,12 @@ public final class PlaybackDiagnosticsSampler {
             streamMetadata = .init()
         }
 
-        // Per-tick AVFoundation metrics (native engine only; Plozzigen has no item).
+        // Per-tick AVFoundation metrics from whichever engine owns this item.
         if let item = player?.currentItem {
+            if stallItem !== item {
+                stallItem = item
+                lastLoggedStallCount = 0
+            }
             if diagnostics.mode == .transcode {
                 updateStreamInfo(item: item)
                 let stream = PlaybackDiagnostics.base(from: streamMetadata, mode: .transcode)
@@ -232,11 +244,15 @@ public final class PlaybackDiagnosticsSampler {
             }
 
             if let event = item.accessLog()?.events.last {
-                if event.indicatedBitrate > 0 { diagnostics.indicatedBitrate = event.indicatedBitrate }
-                if event.observedBitrate > 0 { diagnostics.observedBitrate = event.observedBitrate }
+                // Plozzigen's loopback rate is not the media server's network rate.
+                if diagnostics.mode != .plozzigen {
+                    if event.indicatedBitrate > 0 { diagnostics.indicatedBitrate = event.indicatedBitrate }
+                    if event.observedBitrate > 0 { diagnostics.observedBitrate = event.observedBitrate }
+                }
                 if event.numberOfDroppedVideoFrames >= 0 {
                     diagnostics.droppedVideoFrames = event.numberOfDroppedVideoFrames
                 }
+                if event.numberOfStalls >= 0 { diagnostics.stallCount = event.numberOfStalls }
                 logNewStalls(event: event, item: item)
             }
 
@@ -264,9 +280,8 @@ public final class PlaybackDiagnosticsSampler {
             }
         }
 
-        // Engines without an AVPlayer (Plozzigen) have no access log, so the
-        // dropped-frames/FPS/bitrate fields stay blank above. Fill them from the
-        // engine's own live telemetry; only overwrite where the access log didn't.
+        // Software decoders supply their own render metrics. An engine's encoded
+        // bitrate is deliberately not used as a network-throughput fallback.
         if let t = engineTelemetry?() {
             if let drops = t.droppedFrameCount, diagnostics.droppedVideoFrames == nil {
                 diagnostics.droppedVideoFrames = drops
@@ -274,8 +289,12 @@ public final class PlaybackDiagnosticsSampler {
             if let fps = t.observedFps, diagnostics.observedFps == nil {
                 diagnostics.observedFps = fps
             }
-            if let bitrate = t.observedBitrate, diagnostics.observedBitrate == nil {
-                diagnostics.observedBitrate = bitrate
+            if let buffered = t.bufferedSecondsAhead, buffered.isFinite, buffered >= 0 {
+                if player == nil {
+                    diagnostics.bufferedSecondsAhead = buffered
+                } else {
+                    diagnostics.engineBufferedSecondsAhead = buffered
+                }
             }
         }
 
@@ -304,6 +323,26 @@ public final class PlaybackDiagnosticsSampler {
         latest = diagnostics
         if diagnostics.mode == .transcode {
             onStreamDetails?(.init(metadata: streamMetadata, declaredBitrate: diagnostics.indicatedBitrate))
+        }
+    }
+
+    private func refreshPlayer() {
+        let current: AVPlayer?
+        if let playerProvider { current = playerProvider() }
+        else { current = player }
+        guard player !== current || stallItem !== current?.currentItem else { return }
+        player = current
+        staticInfoTask?.cancel()
+        staticInfoTask = nil
+        streamInfoTask?.cancel()
+        streamInfoTask = nil
+        sampledItem = nil
+        streamMetadata = .init()
+        stallItem = current?.currentItem
+        lastLoggedStallCount = 0
+        if let item = current?.currentItem, staticDiagnostics.mode != .transcode {
+            let generation = generation
+            staticInfoTask = Task { await loadStaticInfo(item: item, generation: generation) }
         }
     }
 
@@ -424,7 +463,7 @@ public final class PlaybackDiagnosticsSampler {
                 return max(0, end - current)
             }
         }
-        return nil
+        return item.status == .readyToPlay ? 0 : nil
     }
 
     // MARK: Static (one-shot) track info

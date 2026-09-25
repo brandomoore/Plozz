@@ -51,6 +51,25 @@ and the diagnostics overlay.
 - **No secrets in URLs logged.** Stream URLs frequently embed tokens —
   `PlayerViewModel` redacts before logging.
 
+Foreground recovery captures a request- and engine-scoped position before
+suspension can reset the decoder clock. An internal engine recovery at zero is
+not proof that the correct position survived. Restoration uses the normal
+latest-wins seek queue and verifies the landing before reconciling play/pause;
+an explicit user seek supersedes the saved point. Continuing PiP/background-audio
+sessions are not rewound. Paused/recovering heartbeat callbacks cannot report
+false playback at zero, and a stop retains the saved position even after load
+generation invalidation.
+
+Diagnostics resolve the active internal AVPlayer on each sample, including
+Plozzigen player/item replacements. The player buffer, engine cache frontier,
+stall count, and dropped-frame count are separate measurements; unavailable
+values remain unknown. A ready player with no contiguous loaded range reports
+zero buffered seconds. Loopback delivery throughput is not labelled as media
+server/network throughput, and encoded stream bitrate is not a network rate.
+The instance counter labels native adapters rather than claiming to count every
+AVPlayer hidden inside third-party engines. New stall records retain measured
+player/engine buffer context in the existing playback journal.
+
 ## Subtitle appearance
 
 `Use System Caption Style` reads the device's caption appearance through

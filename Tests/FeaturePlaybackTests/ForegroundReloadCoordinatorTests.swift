@@ -35,6 +35,103 @@ final class ForegroundReloadCoordinatorTests: XCTestCase {
 
     // MARK: - Arming / no-op
 
+    func testIndependentCheckpointSurvivesEngineResetAndReload() async {
+        let (sut, host, engine) = makeSUT(intendsPlayback: false)
+        engine.currentTime = 4780.41
+        sut.captureBeforeSuspension()
+        engine.currentTime = 0.07
+        sut.captureBeforeSuspension()
+        sut.markEnteredBackground()
+        engine.onReload = { engine.currentTime = 0 }
+        XCTAssertEqual(sut.preservedPosition, 4780.41)
+        await sut.resume()
+        XCTAssertEqual(engine.seekTargets, [4780.41])
+        XCTAssertEqual(engine.currentTime, 4780.41)
+        XCTAssertEqual(engine.playCount, 0)
+        XCTAssertEqual(host.reconcilePausedValue, true)
+        XCTAssertNil(sut.preservedPosition)
+    }
+
+    func testInternallyRecoveredEngineStillMustReturnToTheSavedPosition() async {
+        let (sut, _, engine) = makeSUT(intendsPlayback: false)
+        engine.currentTime = 4780.41
+        sut.captureBeforeSuspension()
+        sut.markEnteredBackground()
+        engine.currentTime = 0.07
+        engine.needsBackgroundReload = false
+        await sut.resume()
+        XCTAssertEqual(engine.reloadCount, 0)
+        XCTAssertEqual(engine.seekTargets, [4780.41])
+        XCTAssertTrue(engine.isPaused)
+    }
+
+    func testCoalescedBackgroundNotificationCannotHideADemonstratedClockReset() async {
+        let (sut, _, engine) = makeSUT(intendsPlayback: false)
+        engine.currentTime = 4780.41
+        sut.captureBeforeSuspension()
+        engine.currentTime = 0.07
+        engine.needsBackgroundReload = false
+        await sut.resume()
+        XCTAssertEqual(engine.reloadCount, 0)
+        XCTAssertEqual(engine.seekTargets, [4780.41])
+        XCTAssertTrue(engine.isPaused)
+    }
+
+    func testExplicitSeekDuringReloadReplacesThePreservedPosition() async {
+        let (sut, _, engine) = makeSUT(intendsPlayback: false)
+        engine.currentTime = 400
+        sut.captureBeforeSuspension()
+        sut.markEnteredBackground()
+        engine.onReload = {
+            sut.noteUserSeek(to: 0)
+            engine.currentTime = 20
+        }
+        await sut.resume()
+        XCTAssertEqual(engine.seekTargets, [0])
+        XCTAssertEqual(engine.currentTime, 0)
+    }
+
+    func testNewPlaybackOnTheSameEngineCannotInheritThePreviousPosition() async {
+        let (sut, host, engine) = makeSUT()
+        engine.currentTime = 400
+        sut.captureBeforeSuspension()
+        sut.markEnteredBackground()
+        engine.onReload = { host.playbackIdentity &+= 1 }
+        await sut.resume()
+        XCTAssertTrue(engine.seekTargets.isEmpty)
+        XCTAssertEqual(engine.playCount, 0)
+        XCTAssertNil(sut.preservedPosition)
+    }
+
+    func testFailedPositionRestorationKeepsTheCheckpointAndDoesNotPlayAtZero() async {
+        let (sut, host, engine) = makeSUT()
+        engine.currentTime = 400
+        sut.captureBeforeSuspension()
+        sut.markEnteredBackground()
+        engine.currentTime = 0
+        host.restoreError = AppError.invalidResponse
+        await sut.resume()
+        XCTAssertEqual(host.failedError, .invalidResponse)
+        XCTAssertEqual(engine.playCount, 0)
+        XCTAssertTrue(engine.isPaused)
+        XCTAssertEqual(sut.preservedPosition, 400)
+        await sut.resume()
+        XCTAssertEqual(sut.preservedPosition, 400, "A duplicate active notification must not erase failed recovery state")
+    }
+
+    func testDuplicateActiveNotificationDuringRecoveryKeepsTheCheckpoint() async {
+        let (sut, _, engine) = makeSUT(intendsPlayback: false)
+        engine.currentTime = 400
+        sut.captureBeforeSuspension()
+        sut.markEnteredBackground()
+        engine.currentTime = 0
+        engine.onReloadAsync = { await sut.resume() }
+        await sut.resume()
+        XCTAssertEqual(engine.reloadCount, 1)
+        XCTAssertEqual(engine.seekTargets, [400])
+        XCTAssertTrue(engine.isPaused)
+    }
+
     func testResumeWithoutBackgroundEntryIsNoOp() async {
         let (sut, host, engine) = makeSUT()
         await sut.resume()
@@ -202,6 +299,8 @@ private final class ReloadSpyHost: ForegroundReloadCoordinatorHost {
     var intendsPlaybackValue: Bool
     var playbackSpeedValue: Double
     var tokenValue = UUID()
+    var playbackIdentity: UInt = 0
+    var restoreError: AppError?
 
     private(set) var reapplyCalled = false
     private(set) var reapplyEngine: (any VideoEngine)?
@@ -242,6 +341,12 @@ private final class ReloadSpyHost: ForegroundReloadCoordinatorHost {
     var reloadIsPlozzigenEngine: Bool { isPlozzigenValue }
     var reloadIntendsPlayback: Bool { intendsPlaybackValue }
     var reloadPlaybackSpeed: Double { playbackSpeedValue }
+    var reloadPlaybackIdentity: UInt { playbackIdentity }
+    var reloadPosition: TimeInterval { engine.currentTime }
+    func reloadRestorePosition(_ position: TimeInterval) async throws {
+        if let restoreError { throw restoreError }
+        await engine.seek(to: position)
+    }
 
     func reloadReapplyTrackSelections(to engine: any VideoEngine) {
         reapplyCalled = true
@@ -287,12 +392,14 @@ private final class ReloadSpyEngine: VideoEngine {
     var pauseCount = 0
     var stopCount = 0
     var lastPlaybackSpeed: Double?
+    var seekTargets: [TimeInterval] = []
 
     /// Thrown from `reloadAfterForeground` when set.
     var reloadError: Error?
     /// Runs *inside* `reloadAfterForeground` (before it may throw) so a test can
     /// mutate host state mid-flight (engine swap / dismissal).
     var onReload: (@MainActor () -> Void)?
+    var onReloadAsync: (@MainActor () async -> Void)?
 
     func load(request: PlaybackRequest, startPosition: TimeInterval) async {
         status = .ready
@@ -305,10 +412,11 @@ private final class ReloadSpyEngine: VideoEngine {
     func reloadAfterForeground() async throws {
         reloadCount += 1
         onReload?()
+        if let onReloadAsync { await onReloadAsync() }
         if let reloadError { throw reloadError }
     }
 
-    func seek(to seconds: TimeInterval) async { currentTime = seconds }
+    func seek(to seconds: TimeInterval) async { seekTargets.append(seconds); currentTime = seconds }
 
     func stop() { stopCount += 1; status = .idle }
 

@@ -145,15 +145,20 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         )
     }
 
-    /// Bridge AetherEngine's live telemetry into the diagnostics overlay so the
-    /// Plozzigen path shows real dropped frames / observed FPS / bitrate instead
-    /// of `-` (it has no `AVPlayer`, so the access-log path never fires).
+    /// Render telemetry and the engine's contiguous cache frontier complement
+    /// the internal AVPlayer's own buffer/access-log measurements.
     public var liveTelemetry: EngineLiveTelemetry? {
-        guard let t = engine.liveTelemetry else { return nil }
+        let t = engine.liveTelemetry
+        let buffered = engine.clock.bufferedPosition
+        let position = engine.currentTime
+        let bufferAhead: TimeInterval? = engine.isSessionReady && buffered.isFinite && position.isFinite
+            ? max(0, buffered - position) : nil
+        guard t != nil || bufferAhead != nil else { return nil }
         return EngineLiveTelemetry(
-            droppedFrameCount: t.droppedFrameCount,
-            observedFps: t.observedFps,
-            observedBitrate: t.instantBitrateMbps.map { $0 * 1_000_000 }
+            droppedFrameCount: t?.droppedFrameCount,
+            observedFps: t?.observedFps,
+            observedBitrate: t?.instantBitrateMbps.map { $0 * 1_000_000 },
+            bufferedSecondsAhead: bufferAhead
         )
     }
 
@@ -800,9 +805,14 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         status = .loading
         do {
             try Task.checkCancellation()
-            try await engine.reloadAtCurrentPosition { options in
+            let resumesPlaying = !intendsPause
+            let correction = try await engine.reloadAtCurrentPosition { options in
                 Self.applyLiveOutputPolicy(outputPolicy, to: &options)
+                options.autoplay = resumesPlaying
             }
+            // Autoplay alone can be session-owned and return without rebuilding.
+            // This caller asked for actual recovery, not just an option change.
+            if !correction.rebuilt { try await engine.reloadAtCurrentPosition() }
             try Task.checkCancellation()
             // Custom-source reloads report failure through `state = .error` and
             // return normally. Drain the adapter's queued Combine delivery, then

@@ -9,6 +9,42 @@ import XCTest
 
 @MainActor
 final class NativeSubtitlePresentationTests: XCTestCase {
+    func testPlozzigenVODReloadPreservesPauseAndDiagnosticsFollowTheNewItem() async throws {
+        let server = try SubtitleFixtureServer(directory: fixtureDirectory())
+        let port = try await server.start()
+        defer { server.stop() }
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/master.m3u8"))
+        let engine = try PlozzigenVideoEngine()
+        engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        let model = LiveSubtitleModel()
+        let window = try await mount(engine, subtitles: model)
+        let sampler = PlaybackDiagnosticsSampler()
+        defer { sampler.stop(); engine.stop(); window.isHidden = true; window.rootViewController = nil }
+        await engine.load(request: request(url, tracks: []), startPosition: 0)
+        try await waitUntil(timeout: 30) { engine.isPlaybackPositionReady }
+        engine.pause()
+        await engine.seek(to: 2.5)
+        let previous = try XCTUnwrap(engine.nowPlayingPlayer?.currentItem)
+        sampler.start(
+            player: nil, playerProvider: { [weak engine] in engine?.nowPlayingPlayer },
+            mode: .plozzigen, engineTelemetry: { [weak engine] in engine?.liveTelemetry },
+            includesSystemMetrics: false
+        )
+        sampler.sampleTick()
+        XCTAssertNotNil(sampler.latest?.bufferedSecondsAhead)
+        XCTAssertNotNil(sampler.latest?.playbackState)
+        XCTAssertNil(sampler.latest?.observedBitrate, "A loopback access log is not server-network throughput")
+        try await engine.reloadAfterForeground()
+        try await waitUntil(timeout: 30) { engine.isPlaybackPositionReady }
+        XCTAssertTrue(engine.isPaused)
+        XCTAssertEqual(engine.currentTime, 2.5, accuracy: 0.15)
+        XCTAssertFalse(engine.nowPlayingPlayer?.currentItem === previous)
+        sampler.sampleTick()
+        XCTAssertEqual(try XCTUnwrap(sampler.latest?.positionSeconds), engine.nowPlayingPlayer?.currentTime().seconds ?? -1,
+                       accuracy: 0.05)
+        XCTAssertNotNil(sampler.latest?.bufferedSecondsAhead)
+    }
+
     func testEmbeddedMP4CaptionsUseTheOwnedOverlayAcrossPauseAndBackwardSeek() async throws {
         let url = try fixtureURL("embedded.mp4")
         let engine = NativeVideoEngine(startsMuted: true)

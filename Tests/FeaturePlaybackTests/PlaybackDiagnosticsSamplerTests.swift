@@ -6,6 +6,53 @@ import CoreModels
 
 @MainActor
 final class PlaybackDiagnosticsSamplerTests: XCTestCase {
+    func testLateInternalPlayerAndReplacementAreSampledWithoutRestartingTheHUD() {
+        let sampler = PlaybackDiagnosticsSampler()
+        defer { sampler.stop() }
+        var supplied: AVPlayer?
+        sampler.start(player: nil, playerProvider: { supplied }, mode: .plozzigen,
+                      metadata: .init(video: .init(codec: "hevc", bitrate: 57_400_000)),
+                      includesSystemMetrics: false)
+        sampler.sampleTick()
+        XCTAssertNil(sampler.latest?.positionSeconds)
+        supplied = AVPlayer(playerItem: AVPlayerItem(asset: AVMutableComposition()))
+        sampler.sampleTick()
+        XCTAssertNotNil(sampler.latest?.positionSeconds)
+        XCTAssertNotNil(sampler.latest?.playbackState)
+        XCTAssertEqual(sampler.latest?.videoBitrate, 57_400_000)
+        supplied = AVPlayer()
+        sampler.sampleTick()
+        XCTAssertNil(sampler.latest?.positionSeconds)
+        XCTAssertNil(sampler.latest?.playbackState)
+        supplied?.replaceCurrentItem(with: AVPlayerItem(asset: AVMutableComposition()))
+        sampler.sampleTick()
+        XCTAssertNotNil(sampler.latest?.playbackState)
+        supplied = nil
+        sampler.sampleTick()
+        XCTAssertNil(sampler.latest?.positionSeconds)
+        XCTAssertNil(sampler.latest?.bufferedSecondsAhead)
+        XCTAssertNil(sampler.latest?.droppedVideoFrames)
+    }
+
+    func testEngineCacheIsDistinctFromThePlayerBufferAndNotNetworkThroughput() {
+        let sampler = PlaybackDiagnosticsSampler()
+        defer { sampler.stop() }
+        var supplied: AVPlayer?
+        sampler.start(
+            player: nil, playerProvider: { supplied }, mode: .plozzigen,
+            engineTelemetry: { .init(observedBitrate: 500_000_000, bufferedSecondsAhead: 42) },
+            includesSystemMetrics: false
+        )
+        sampler.sampleTick()
+        XCTAssertEqual(sampler.latest?.bufferedSecondsAhead, 42)
+        XCTAssertNil(sampler.latest?.observedBitrate, "Encoded-stream telemetry is not a server network-rate measurement")
+        supplied = AVPlayer(playerItem: AVPlayerItem(asset: AVMutableComposition()))
+        sampler.sampleTick()
+        XCTAssertEqual(sampler.latest?.engineBufferedSecondsAhead, 42)
+        XCTAssertNil(sampler.latest?.observedBitrate)
+        XCTAssertNil(sampler.latest?.droppedVideoFrames, "No access-log measurement is not zero dropped frames")
+    }
+
     func testAutomaticSampleUsesEngineSourceRange() async {
         let sampler = PlaybackDiagnosticsSampler()
         defer { sampler.stop() }
