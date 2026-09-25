@@ -242,7 +242,7 @@ struct LiveSubtitleOverlay: View {
             primary: model.primary,
             secondary: model.secondary,
             secondaryActive: model.hasSecondaryTrack,
-            style: model.style,
+            style: SystemCaptionStyle.shared.resolved(model.style),
             isHDR: model.isHDR,
             videoRect: model.videoRect
         )

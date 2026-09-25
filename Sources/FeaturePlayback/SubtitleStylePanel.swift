@@ -208,15 +208,21 @@ struct SubtitleStylePanel: View {
     /// submenu groups (outline/border, background box, dual subtitles) and Reset.
     /// The submenus own the quick control as their first row *and* echo its current
     /// value as their summary, so there is exactly one entry per concern here.
+    /// While the system caption style is followed, it decides the look (font,
+    /// size, colour, opacity, edge, box), so only placement rows remain.
     private var styleMainRows: (rows: [StyleRowSpec], dividerBefore: Int) {
         let s = model.subtitleStyle
         let weights = s.fontFamily.availableWeights
+        let editsLook = !s.followsSystemStyle
         var rows: [StyleRowSpec] = []
         var slot = 0
 
-        rows.append(StyleRowSpec(slot: slot, title: "Font", kind: .submenu(summary: Text(verbatim: s.fontFamily.displayName), open: { openScreen(.styleFont) }))); slot += 1
-        rows.append(choiceRow(slot, "Weight", options: weights, current: s.fontWeight.snapped(to: weights), label: { $0.displayName }) { v in updateStyle { $0.fontWeight = v } }); slot += 1
-        rows.append(numberRow(slot, "Text Size", options: Self.sizeOptions, current: Int((s.fontScale * 100).rounded()), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.fontScale = Double(v) / 100 } }); slot += 1
+        rows.append(StyleRowSpec(slot: slot, title: "Use System Caption Style", kind: .toggle(isOn: s.followsSystemStyle, flip: { updateStyle { $0.followsSystemStyle.toggle() } }))); slot += 1
+        if editsLook {
+            rows.append(StyleRowSpec(slot: slot, title: "Font", kind: .submenu(summary: Text(verbatim: s.fontFamily.displayName), open: { openScreen(.styleFont) }))); slot += 1
+            rows.append(choiceRow(slot, "Weight", options: weights, current: s.fontWeight.snapped(to: weights), label: { $0.displayName }) { v in updateStyle { $0.fontWeight = v } }); slot += 1
+            rows.append(numberRow(slot, "Text Size", options: Self.sizeOptions, current: Int((s.fontScale * 100).rounded()), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.fontScale = Double(v) / 100 } }); slot += 1
+        }
         rows.append(numberRow(
             slot, "Position",
             options: Self.positionOptions,
@@ -235,9 +241,13 @@ struct SubtitleStylePanel: View {
             label: { $0.displayName }
         ) { v in updateStyle { $0.verticalAnchor = v } }); slot += 1
         rows.append(numberRow(slot, "Horizontal Offset", options: Self.hOffsetOptions, current: Int((s.horizontalOffset * 100).rounded()), label: { Text(PlayerControlsFormatting.hOffsetLabel($0)) }) { v in updateStyle { $0.horizontalOffset = Double(v) / 100 } }); slot += 1
-        rows.append(colorRow(slot, "Text Color", options: Self.textColorOptions, current: s.textColor, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.textColor = c } }); slot += 1
+        if editsLook {
+            rows.append(colorRow(slot, "Text Color", options: Self.textColorOptions, current: s.textColor, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.textColor = c } }); slot += 1
+        }
         rows.append(StyleRowSpec(slot: slot, title: "Use File Colors", kind: .toggle(isOn: s.usesSourceColors, flip: { updateStyle { $0.usesSourceColors.toggle() } }))); slot += 1
-        rows.append(numberRow(slot, "Opacity", options: Self.opacityOptions, current: Int((s.opacity * 100).rounded()), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.opacity = Double(v) / 100 } }); slot += 1
+        if editsLook {
+            rows.append(numberRow(slot, "Opacity", options: Self.opacityOptions, current: Int((s.opacity * 100).rounded()), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.opacity = Double(v) / 100 } }); slot += 1
+        }
         // Only affects HDR frames, so it appears exclusively while HDR is live —
         // mirroring how the bitmap-primary gate hides controls that can't act.
         if model.subtitlesRenderHDR {
@@ -246,8 +256,10 @@ struct SubtitleStylePanel: View {
 
         // The submenu group + Reset sit under a divider, wherever the knobs above end.
         let dividerBefore = slot
-        rows.append(StyleRowSpec(slot: slot, title: "Shadow & Outline", kind: .submenu(summary: Text(verbatim: PlayerControlsFormatting.edgeSummary(s)), open: { openScreen(.styleOutline) }))); slot += 1
-        rows.append(StyleRowSpec(slot: slot, title: "Background", kind: .submenu(summary: s.background.isEnabled ? Text("On") : Text("Off"), open: { openScreen(.styleBackground) }))); slot += 1
+        if editsLook {
+            rows.append(StyleRowSpec(slot: slot, title: "Shadow & Outline", kind: .submenu(summary: Text(verbatim: PlayerControlsFormatting.edgeSummary(s)), open: { openScreen(.styleOutline) }))); slot += 1
+            rows.append(StyleRowSpec(slot: slot, title: "Background", kind: .submenu(summary: s.background.isEnabled ? Text("On") : Text("Off"), open: { openScreen(.styleBackground) }))); slot += 1
+        }
         rows.append(StyleRowSpec(slot: slot, title: "Dual Subtitles", kind: .submenu(summary: hasSecondaryTrack ? Text("On") : Text("Off"), open: { openScreen(.styleDual) }))); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Reset to Default", kind: .action(run: { updateStyle { $0 = .default } }))); slot += 1
         return (rows, dividerBefore)

@@ -25,27 +25,19 @@ public struct SubtitleBehavior: Codable, Equatable, Sendable {
     /// How forced (foreign-passage-only) subtitles are treated when searching/
     /// auto-downloading. Prefer-non-forced by default (mirrors Plex).
     public var forcedSearchPreference: ForcedSubtitlePreference
-    /// When true, text subtitles the native (AVPlayer) engine can reach are drawn
-    /// by AVPlayer itself, following the system caption style (Settings ›
-    /// Accessibility › Subtitles & Captioning) instead of Plozz's overlay and
-    /// in-app appearance. Plozzigen playback, image-based and dual subtitles
-    /// still use the overlay. Off by default.
-    public var usesNativeSubtitles: Bool
 
     public init(
         subtitleMode: SubtitleMode = .all,
         preferredSubtitleLanguage: String? = nil,
         autoDownloadSubtitles: Bool = false,
         hearingImpairedPreference: HearingImpairedPreference = .preferNonSDH,
-        forcedSearchPreference: ForcedSubtitlePreference = .preferNonForced,
-        usesNativeSubtitles: Bool = false
+        forcedSearchPreference: ForcedSubtitlePreference = .preferNonForced
     ) {
         self.subtitleMode = subtitleMode
         self.preferredSubtitleLanguage = preferredSubtitleLanguage
         self.autoDownloadSubtitles = autoDownloadSubtitles
         self.hearingImpairedPreference = hearingImpairedPreference
         self.forcedSearchPreference = forcedSearchPreference
-        self.usesNativeSubtitles = usesNativeSubtitles
     }
 
     /// The combined SDH + Forced search preference for this profile.
@@ -84,7 +76,7 @@ public extension SubtitleBehavior {
 extension SubtitleBehavior {
     private enum CodingKeys: String, CodingKey {
         case subtitleMode, preferredSubtitleLanguage, autoDownloadSubtitles
-        case hearingImpairedPreference, forcedSearchPreference, usesNativeSubtitles
+        case hearingImpairedPreference, forcedSearchPreference
     }
 
     /// Custom decoder so behaviour persisted by an older build (missing keys added
@@ -97,8 +89,7 @@ extension SubtitleBehavior {
             preferredSubtitleLanguage: try c.decodeIfPresent(String.self, forKey: .preferredSubtitleLanguage),
             autoDownloadSubtitles: try c.decodeIfPresent(Bool.self, forKey: .autoDownloadSubtitles) ?? d.autoDownloadSubtitles,
             hearingImpairedPreference: try c.decodeIfPresent(HearingImpairedPreference.self, forKey: .hearingImpairedPreference) ?? d.hearingImpairedPreference,
-            forcedSearchPreference: try c.decodeIfPresent(ForcedSubtitlePreference.self, forKey: .forcedSearchPreference) ?? d.forcedSearchPreference,
-            usesNativeSubtitles: try c.decodeIfPresent(Bool.self, forKey: .usesNativeSubtitles) ?? d.usesNativeSubtitles
+            forcedSearchPreference: try c.decodeIfPresent(ForcedSubtitlePreference.self, forKey: .forcedSearchPreference) ?? d.forcedSearchPreference
         )
     }
 }

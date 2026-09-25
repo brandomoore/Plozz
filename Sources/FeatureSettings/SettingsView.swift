@@ -103,6 +103,7 @@ public struct SettingsView: View {
     private static let contentMaxWidth: CGFloat = PlozzTheme.Metrics.settingsContentMaxWidth
 
     private let subtitleBehavior: SubtitleBehaviorModel
+    private let subtitleStyle: SubtitleStyleModel
     private let spoilers: SpoilerSettingsModel
     private let playback: PlaybackSettingsModel
     private let subtitlePolicy: SubtitlePolicyModel
@@ -210,6 +211,7 @@ public struct SettingsView: View {
 
     public init(
         subtitleBehavior: SubtitleBehaviorModel,
+        subtitleStyle: SubtitleStyleModel,
         spoilers: SpoilerSettingsModel,
         playback: PlaybackSettingsModel,
         subtitlePolicy: SubtitlePolicyModel,
@@ -278,6 +280,7 @@ public struct SettingsView: View {
         navigation: SettingsNavigationModel
     ) {
         self.subtitleBehavior = subtitleBehavior
+        self.subtitleStyle = subtitleStyle
         self.spoilers = spoilers
         self.playback = playback
         self.subtitlePolicy = subtitlePolicy
@@ -1056,6 +1059,7 @@ public struct SettingsView: View {
             PlaybackDetailView(
                 playback: playback,
                 subtitleBehavior: subtitleBehavior,
+                subtitleStyle: subtitleStyle,
                 subtitlePolicy: subtitlePolicy,
                 audioPolicy: audioPolicy,
                 canDownloadSubtitles: activeProfileCanDownloadSubtitles

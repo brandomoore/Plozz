@@ -2495,29 +2495,36 @@ private struct PlozziOSSubtitleSettingsView: View {
     var body: some View {
         List {
             SettingsSectionGroup("Appearance") {
-                Toggle(
-                    "Use native subtitles where available",
-                    isOn: $behavior.settings.usesNativeSubtitles
-                )
-                Picker("Font", selection: $style.style.fontFamily) {
-                    ForEach(SubtitleFontFamily.allCases, id: \.self) {
-                        Text($0.displayName).tag($0)
+                Toggle(isOn: $style.style.followsSystemStyle) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Use System Caption Style")
+                        Text("Draw subtitles in the style set in Settings › Accessibility › Subtitles & Captioning.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                Picker("Weight", selection: $style.style.fontWeight) {
-                    ForEach(style.style.fontFamily.availableWeights, id: \.self) {
-                        Text($0.displayName).tag($0)
+                // The device style decides these while it's followed.
+                if !style.style.followsSystemStyle {
+                    Picker("Font", selection: $style.style.fontFamily) {
+                        ForEach(SubtitleFontFamily.allCases, id: \.self) {
+                            Text($0.displayName).tag($0)
+                        }
                     }
+                    Picker("Weight", selection: $style.style.fontWeight) {
+                        ForEach(style.style.fontFamily.availableWeights, id: \.self) {
+                            Text($0.displayName).tag($0)
+                        }
+                    }
+                    LabeledContent("Size") {
+                        Slider(value: $style.style.fontScale, in: 0.4...2.0)
+                            .frame(maxWidth: 360)
+                    }
+                    LabeledContent("Opacity") {
+                        Slider(value: $style.style.opacity, in: 0.2...1.0)
+                            .frame(maxWidth: 360)
+                    }
+                    Toggle("Background", isOn: $style.style.background.isEnabled)
                 }
-                LabeledContent("Size") {
-                    Slider(value: $style.style.fontScale, in: 0.4...2.0)
-                        .frame(maxWidth: 360)
-                }
-                LabeledContent("Opacity") {
-                    Slider(value: $style.style.opacity, in: 0.2...1.0)
-                        .frame(maxWidth: 360)
-                }
-                Toggle("Background", isOn: $style.style.background.isEnabled)
                 Toggle("Use File Positions", isOn: $style.style.usesSourcePosition)
                 Toggle("Use File Colors", isOn: $style.style.usesSourceColors)
             }

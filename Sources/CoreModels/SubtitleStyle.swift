@@ -372,8 +372,11 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
 
     // MARK: Behaviour
 
-    /// When true, defer entirely to the system/Settings caption style (no
-    /// in-app style overrides are applied).
+    /// "Use System Caption Style": draw subtitles in the caption style set for
+    /// the whole device (Settings › Accessibility › Subtitles & Captioning). The
+    /// device decides the typeface, size, colours, box and edge, for every
+    /// engine; placement, file formatting, HDR brightness and dual subtitles
+    /// still come from this style.
     public var followsSystemStyle: Bool
 
     // MARK: Source formatting

@@ -109,7 +109,7 @@ struct LiveChannelSubtitleSurface: View {
         GeometryReader { geometry in
             SubtitleOverlayView(
                 primary: model.subtitles.primary,
-                style: model.subtitles.style,
+                style: SystemCaptionStyle.shared.resolved(model.subtitles.style),
                 isHDR: model.subtitles.isHDR,
                 videoRect: SubtitleOverlayGeometry.aspectFitRect(
                     in: CGRect(origin: .zero, size: geometry.size),

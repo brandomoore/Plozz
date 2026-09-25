@@ -97,44 +97,6 @@ final class SubtitleTrackControllerTests: XCTestCase {
         XCTAssertEqual(engine.lastSelectedSubtitleID, 4)
     }
 
-    // MARK: - "Use native subtitles"
-
-    private func directPlayRequest(runtime: TimeInterval? = 3_600) -> PlaybackRequest {
-        var item = MediaItem(id: "m1", title: "Movie", kind: .movie)
-        item.runtime = runtime
-        return PlaybackRequest(
-            item: item, streamURL: URL(string: "https://example.test/m.mkv")!, isTranscoding: false
-        )
-    }
-
-    func testNativePreferenceHandsInjectedSidecarToAVPlayer() {
-        let (sut, host, engine) = makeSUT(engineKind: .native)
-        host.behavior.usesNativeSubtitles = true
-        host.request = directPlayRequest()
-        engine.subtitleTracks = [textSidecar(3)]
-        sut.selectSubtitleOption(id: 3)
-        XCTAssertEqual(engine.lastSelectedSubtitleID, 3, "AVPlayer draws the injected sidecar")
-        XCTAssertFalse(host.controls.subtitleDownload.canEditStyle, "system style owns the look")
-    }
-
-    func testNativePreferenceKeepsOverlayWhenSidecarIsNotInjected() {
-        let (sut, host, engine) = makeSUT(engineKind: .native)
-        host.behavior.usesNativeSubtitles = true
-        host.request = directPlayRequest(runtime: nil)  // no runtime → no HLS wrap
-        engine.subtitleTracks = [textSidecar(3)]
-        sut.selectSubtitleOption(id: 3)
-        XCTAssertTrue(engine.lastSubtitleSelectionCleared, "AVPlayer can't see it, so the overlay draws")
-    }
-
-    func testNativePreferenceDoesNotApplyOnPlozzigen() {
-        let (sut, host, engine) = makeSUT(engineKind: .plozzigen)
-        host.behavior.usesNativeSubtitles = true
-        engine.subtitleTracks = [embeddedText(7)]
-        sut.selectSubtitleOption(id: 7)
-        XCTAssertTrue(host.liveSubtitles.rendersPrimary, "Plozzigen still feeds the overlay")
-        XCTAssertTrue(host.controls.subtitleDownload.canEditStyle)
-    }
-
     // MARK: - Image-based on native → Plozzigen swap
 
     func testImageSubtitleOnNativeTriggersEngineSwap() async {

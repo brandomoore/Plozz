@@ -958,12 +958,6 @@ private struct PlozziOSSubtitleOptionsSheet: View {
                     systemImage: "photo"
                 )
                 .plozzForeground(.secondary)
-            } else if !viewModel.controls.subtitleDownload.canEditStyle {
-                Label(
-                    "Subtitles use your system caption style.",
-                    systemImage: "captions.bubble"
-                )
-                .plozzForeground(.secondary)
             } else {
                 NavigationLink {
                     PlozziOSSubtitleAppearanceView(viewModel: viewModel)
@@ -1068,39 +1062,54 @@ private struct PlozziOSSubtitleAppearanceView: View {
     let viewModel: PlayerViewModel
     @Environment(\.locale) private var locale
 
+    /// The device style decides the look (font, size, colours, box, edge) while
+    /// it's followed, so only placement and HDR brightness stay editable here.
+    private var followsSystemStyle: Bool { viewModel.controls.subtitleStyle.followsSystemStyle }
+
     var body: some View {
         Form {
+            Section {
+                Toggle(
+                    "Use System Caption Style",
+                    isOn: subtitleStyleBinding(viewModel, \.followsSystemStyle)
+                )
+            } footer: {
+                Text("Draw subtitles in the style set in Settings › Accessibility › Subtitles & Captioning.")
+            }
+
             Section("Text") {
-                NavigationLink {
-                    PlozziOSSubtitleFontView(viewModel: viewModel)
-                } label: {
-                    LabeledContent(
-                        "Font",
-                        value: viewModel.controls.subtitleStyle.fontFamily.displayName
+                if !followsSystemStyle {
+                    NavigationLink {
+                        PlozziOSSubtitleFontView(viewModel: viewModel)
+                    } label: {
+                        LabeledContent(
+                            "Font",
+                            value: viewModel.controls.subtitleStyle.fontFamily.displayName
+                        )
+                    }
+
+                    Picker(
+                        "Weight",
+                        selection: subtitleStyleBinding(viewModel, \.fontWeight)
+                    ) {
+                        ForEach(
+                            viewModel.controls.subtitleStyle.fontFamily.availableWeights,
+                            id: \.self
+                        ) {
+                            Text($0.displayName).tag($0)
+                        }
+                    }
+
+                    PlozziOSSubtitleSliderRow(
+                        title: "Text Size",
+                        value: subtitleStyleBinding(viewModel, \.fontScale),
+                        range: 0.4...2.5,
+                        step: 0.05,
+                        formattedValue: {
+                            "\((100 * $0).rounded().formatted())%"
+                        }
                     )
                 }
-
-                Picker(
-                    "Weight",
-                    selection: subtitleStyleBinding(viewModel, \.fontWeight)
-                ) {
-                    ForEach(
-                        viewModel.controls.subtitleStyle.fontFamily.availableWeights,
-                        id: \.self
-                    ) {
-                        Text($0.displayName).tag($0)
-                    }
-                }
-
-                PlozziOSSubtitleSliderRow(
-                    title: "Text Size",
-                    value: subtitleStyleBinding(viewModel, \.fontScale),
-                    range: 0.6...2.5,
-                    step: 0.05,
-                    formattedValue: {
-                        "\((100 * $0).rounded().formatted())%"
-                    }
-                )
                 PlozziOSSubtitleSliderRow(
                     title: "Position",
                     value: subtitleStyleBinding(viewModel, \.verticalPosition),
@@ -1132,21 +1141,23 @@ private struct PlozziOSSubtitleAppearanceView: View {
                             : "\(percent > 0 ? "+" : "")\(percent)%"
                     }
                 )
-                subtitleColorPicker(
-                    "Text Color",
-                    viewModel: viewModel,
-                    keyPath: \.textColor,
-                    options: SubtitleColor.presets
-                )
-                PlozziOSSubtitleSliderRow(
-                    title: "Opacity",
-                    value: subtitleStyleBinding(viewModel, \.opacity),
-                    range: 0.2...1,
-                    step: 0.05,
-                    formattedValue: {
-                        "\((100 * $0).rounded().formatted())%"
-                    }
-                )
+                if !followsSystemStyle {
+                    subtitleColorPicker(
+                        "Text Color",
+                        viewModel: viewModel,
+                        keyPath: \.textColor,
+                        options: SubtitleColor.presets
+                    )
+                    PlozziOSSubtitleSliderRow(
+                        title: "Opacity",
+                        value: subtitleStyleBinding(viewModel, \.opacity),
+                        range: 0.2...1,
+                        step: 0.05,
+                        formattedValue: {
+                            "\((100 * $0).rounded().formatted())%"
+                        }
+                    )
+                }
                 if viewModel.controls.subtitlesRenderHDR {
                     PlozziOSSubtitleSliderRow(
                         title: "HDR Brightness",
@@ -1179,18 +1190,20 @@ private struct PlozziOSSubtitleAppearanceView: View {
             }
 
             Section("Details") {
-                NavigationLink("Shadow & Outline") {
-                    PlozziOSSubtitleShadowOutlineView(viewModel: viewModel)
-                }
-                NavigationLink {
-                    PlozziOSSubtitleBackgroundView(viewModel: viewModel)
-                } label: {
-                    LabeledContent(
-                        "Background",
-                        value: viewModel.controls.subtitleStyle.background.isEnabled
-                            ? "On"
-                            : "Off"
-                    )
+                if !followsSystemStyle {
+                    NavigationLink("Shadow & Outline") {
+                        PlozziOSSubtitleShadowOutlineView(viewModel: viewModel)
+                    }
+                    NavigationLink {
+                        PlozziOSSubtitleBackgroundView(viewModel: viewModel)
+                    } label: {
+                        LabeledContent(
+                            "Background",
+                            value: viewModel.controls.subtitleStyle.background.isEnabled
+                                ? "On"
+                                : "Off"
+                        )
+                    }
                 }
                 NavigationLink {
                     PlozziOSSubtitleDualView(viewModel: viewModel)

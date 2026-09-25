@@ -1750,20 +1750,16 @@ struct PlayerControls: View {
                     .focusEffectDisabled()
                     .focused($focus, equals: .subSync)
                 }
-                // Hidden while native subtitles draw in the system caption style,
-                // which in-app appearance can't change.
-                if model.subtitleDownload.canEditStyle {
-                    Button {
-                        openSubtitleScreen(.style)
-                    } label: {
-                        Label("Style", systemImage: "paintpalette")
-                    }
-                    .buttonStyle(PlozzPanelHeaderButtonStyle())
-                    .focusEffectDisabled()
-                    .focused($focus, equals: .edit)
-                    // Mirror the back chip: hug the trailing edge, ignoring the gutter.
-                    .padding(.trailing, -10)
+                Button {
+                    openSubtitleScreen(.style)
+                } label: {
+                    Label("Style", systemImage: "paintpalette")
                 }
+                .buttonStyle(PlozzPanelHeaderButtonStyle())
+                .focusEffectDisabled()
+                .focused($focus, equals: .edit)
+                // Mirror the back chip: hug the trailing edge, ignoring the gutter.
+                .padding(.trailing, -10)
             }
         }
         .padding(.horizontal, 28)

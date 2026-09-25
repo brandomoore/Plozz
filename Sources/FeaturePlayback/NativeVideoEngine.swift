@@ -130,9 +130,10 @@ public final class NativeVideoEngine: VideoEngine {
     /// time-to-first-frame; cancelled on teardown so a stale selection never
     /// applies to a replaced player item.
     @ObservationIgnored private var defaultSubtitleSelectionTask: Task<Void, Never>?
-    /// The text track the view model asked AVPlayer to draw itself (embedded, or
-    /// "Use native subtitles"), or `nil` for none. Kept across item rebuilds so a
-    /// transcode-fallback reload restores it instead of disabling the draw.
+    /// The text track the view model asked AVPlayer to draw itself (an embedded
+    /// text track the overlay has no cue source for), or `nil` for none. Kept
+    /// across item rebuilds so a transcode-fallback reload restores it instead
+    /// of disabling the draw.
     @ObservationIgnored private var requestedLegibleTrack: MediaTrack?
     /// Off-critical-path preferred-audio-language pick (per-series memory /
     /// prefer-original-language). AVPlayer otherwise just plays the asset's default
@@ -1216,9 +1217,8 @@ public final class NativeVideoEngine: VideoEngine {
         try? await asset.loadMediaSelectionGroup(for: .legible)
     }
 
-    /// Asks AVPlayer to draw `track` itself (an embedded text track, or any
-    /// reachable text track under "Use native subtitles"), or to draw nothing
-    /// when `nil` because the overlay owns the subtitle. Best-effort: an
+    /// Asks AVPlayer to draw `track` itself (an embedded text track), or to draw
+    /// nothing when `nil` because the overlay owns the subtitle. Best-effort: an
     /// unmatched track leaves AVPlayer drawing nothing.
     public func selectSubtitleTrack(_ track: MediaTrack?) {
         requestedLegibleTrack = track

@@ -177,7 +177,6 @@ final class SubtitleTrackController {
     /// menu behaves identically across engines.
     func loadTrackOptions() {
         guard let host else { return }
-        host.trackControls.subtitleDownload.canEditStyle = !prefersNativeRendering
         registerProviderSidecars()
         let engine = host.trackEngine
         // Enrich the engine's demuxed tracks with the provider's probe of the
@@ -506,10 +505,9 @@ final class SubtitleTrackController {
         // through the overlay (styling, HDR luminance, live offset all apply),
         // suppressing AVPlayer's draw. WITHOUT a sidecar (embedded text) the
         // overlay has no cue source, so let AVPlayer draw the track natively.
-        // "Use native subtitles" also hands AVPlayer the sidecars it can reach.
         if !track.isImageBasedSubtitle, host.trackEngineKind == .native {
             selectedSubtitleTrackID = id
-            if track.deliverySource != nil, !(prefersNativeRendering && nativeEngineCarriesSidecars) {
+            if track.deliverySource != nil {
                 engine.selectSubtitleTrack(nil)
                 #if DEBUG
                 setPrimarySubtitleDiagnostic(route: "overlay")
@@ -538,21 +536,6 @@ final class SubtitleTrackController {
         setPrimarySubtitleDiagnostic(route: "live-feed")
         #endif
         loadTrackOptions()
-    }
-
-    /// The viewer asked for AVPlayer's own subtitle drawing and the native engine
-    /// is active, so text subtitles follow the system caption style.
-    private var prefersNativeRendering: Bool {
-        guard let host else { return false }
-        return host.trackBehavior.usesNativeSubtitles && host.trackEngineKind == .native
-    }
-
-    /// Whether the native engine injected provider sidecars into its asset as
-    /// selectable renditions (mirrors `NativeVideoEngine.makeAsset`): only for a
-    /// direct-played file with a known runtime. Otherwise AVPlayer can't see them.
-    private var nativeEngineCarriesSidecars: Bool {
-        guard let request = host?.trackRequest else { return false }
-        return !request.isManifestStream && (request.item.runtime ?? 0) > 0
     }
 
     func resolveSubtitleDeliveryURL(_ track: MediaTrack) async throws -> URL? {

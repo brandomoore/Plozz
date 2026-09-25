@@ -959,6 +959,7 @@ struct MainTabView: View {
     private var settingsViewContent: some View {
             SettingsView(
                 subtitleBehavior: subtitleBehaviorModel,
+                subtitleStyle: subtitleStyleModel,
                 spoilers: spoilerModel,
                 playback: playbackModel,
                 subtitlePolicy: subtitlePolicyModel,

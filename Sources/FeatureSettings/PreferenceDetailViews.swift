@@ -316,6 +316,10 @@ struct PlaybackDetailView: View {
     /// The profile base subtitle mode/language now lives in `SubtitleBehavior`
     /// (behaviour half of the retired `CaptionSettings`).
     @Bindable var subtitleBehavior: SubtitleBehaviorModel
+    /// The profile's subtitle appearance. The look itself is edited in the
+    /// player (where it can be previewed); Settings offers only whether it
+    /// follows the device's caption style.
+    @Bindable var subtitleStyle: SubtitleStyleModel
     /// Per-content-type overrides ("forced-only on movies, full subs on anime").
     @Bindable var subtitlePolicy: SubtitlePolicyModel
     /// Per-content-type audio-language overrides ("original audio for anime,
@@ -482,18 +486,14 @@ struct PlaybackDetailView: View {
             SettingsSplitRow(
                 id: "subtitle-default",
                 title: "Show subtitles",
-                description: "What Plozz does with subtitles when playback starts. Native subtitles let the system draw text subtitles in your Accessibility caption style when possible, instead of Plozz's subtitle style."
+                description: "What Plozz does with subtitles when playback starts."
             ) {
-                VStack(alignment: .leading, spacing: 40) {
-                    SubtitleModeControl(
-                        baseMode: $subtitleBehavior.settings.subtitleMode,
-                        perTypeEnabled: perContentTypeBinding,
-                        categories: Self.policyCategories,
-                        categoryMode: { modeBinding(for: $0) }
-                    )
-                    Toggle("Use native subtitles where available", isOn: $subtitleBehavior.settings.usesNativeSubtitles)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                SubtitleModeControl(
+                    baseMode: $subtitleBehavior.settings.subtitleMode,
+                    perTypeEnabled: perContentTypeBinding,
+                    categories: Self.policyCategories,
+                    categoryMode: { modeBinding(for: $0) }
+                )
             },
             SettingsSplitRow(
                 id: "subtitle-language",
@@ -566,6 +566,21 @@ struct PlaybackDetailView: View {
             description: "Reuse the subtitle you pick for the rest of a series."
         ) {
             Toggle("Remember per series", isOn: $playback.settings.rememberSubtitleTrackPerSeries)
+        })
+
+        rows.append(SettingsSplitRow(
+            id: "subtitle-style",
+            title: "Subtitle style",
+            description: "How subtitles look. Change the font, size and colors from the Subtitles menu while watching."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("Use System Caption Style", isOn: $subtitleStyle.style.followsSystemStyle)
+                Text("Draw subtitles in the style set in Settings › Accessibility › Subtitles & Captioning.")
+                    .font(.callout)
+                    .plozzForeground(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         })
 
         return rows
