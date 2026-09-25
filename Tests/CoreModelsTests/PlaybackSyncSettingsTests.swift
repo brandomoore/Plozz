@@ -26,7 +26,7 @@ final class PlaybackSyncSettingsTests: XCTestCase {
         settings.syncWatchAcrossServers = false
         store.save(settings)
         XCTAssertFalse(store.load().syncWatchAcrossServers)
-        XCTAssertEqual(store.load().skipIntros, .off, "Unrelated fields stay intact")
+        XCTAssertEqual(store.load().skipIntros, PlaybackSettings.default.skipIntros, "Unrelated fields stay intact")
     }
 
     func testLegacyPayloadWithoutFieldDecodesToOn() throws {

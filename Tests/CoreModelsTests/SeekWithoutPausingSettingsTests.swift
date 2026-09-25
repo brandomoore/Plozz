@@ -26,7 +26,7 @@ final class SeekWithoutPausingSettingsTests: XCTestCase {
         settings.seekWithoutPausing = false
         store.save(settings)
         XCTAssertFalse(store.load().seekWithoutPausing)
-        XCTAssertEqual(store.load().skipIntros, .off, "Unrelated fields stay intact")
+        XCTAssertEqual(store.load().skipIntros, PlaybackSettings.default.skipIntros, "Unrelated fields stay intact")
         XCTAssertTrue(store.load().syncWatchAcrossServers, "Unrelated fields stay intact")
     }
 

@@ -27,7 +27,7 @@ final class AutoPlayNextEpisodeSettingsTests: XCTestCase {
         store.save(settings)
         XCTAssertFalse(store.load().autoPlayNextEpisode)
         XCTAssertTrue(store.load().showUpNextCard, "Unrelated fields stay intact")
-        XCTAssertEqual(store.load().skipIntros, .off, "Unrelated fields stay intact")
+        XCTAssertEqual(store.load().skipIntros, PlaybackSettings.default.skipIntros, "Unrelated fields stay intact")
     }
 
     func testLegacyPayloadWithoutFieldDecodesToOn() throws {

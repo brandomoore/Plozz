@@ -7,29 +7,20 @@ import Foundation
 /// sync. Modelled as data so defaults can move with real feedback and
 /// finer-grained toggles can be added later without a rewrite.
 public struct PlaybackSettings: Codable, Equatable, Sendable {
-    /// How intro markers are handled. Off by default — opt-in, and a no-op on
-    /// items with no intro marker. (Historically this one setting covered credits
-    /// too; ``skipCredits`` now owns those and migrates from it — see the decoder.)
+    /// How skip markers are handled: one mode for intros, credits, recaps,
+    /// previews and commercials alike, unless ``skipModeOverrides`` sets a kind
+    /// separately. On (a Skip button) by default, and a no-op on items without
+    /// markers. Named for the intros it once covered alone.
     public var skipIntros: SkipIntrosMode
 
-    /// How closing-credits markers are handled. Installs that predate the split
-    /// inherit their old ``skipIntros`` choice so behaviour doesn't change.
-    public var skipCredits: SkipIntrosMode
+    /// The kinds the viewer set separately from ``skipIntros``. Empty unless they
+    /// asked for different settings per kind.
+    public var skipModeOverrides: [MediaSegment.Kind: SkipIntrosMode]
 
-    /// How "next time on" / preview markers are handled. Off by default.
-    public var skipPreviews: SkipIntrosMode
-
-    /// How commercial markers (e.g. DVR recordings) are handled. Off by default.
-    public var skipCommercials: SkipIntrosMode
-
-    /// Whether to look up community markers on IntroDB (introdb.app) as a backup
-    /// to the server's own markers. Queried whether or not the server has markers;
-    /// server markers win for any kind both provide. Needs an IMDb id.
-    public var useIntroDB: Bool
-
-    /// Whether to look up community markers on TheIntroDB (theintrodb.org) as a
-    /// backup to the server's own markers (and IntroDB's). Needs a TMDB or IMDb id.
-    public var useTheIntroDB: Bool
+    /// Whether to look up community markers (IntroDB, then TheIntroDB) for items
+    /// whose server has no intro or credits marker. Sends the title's IMDb or TMDB
+    /// id to those databases. The server's own markers always win.
+    public var useCommunityMarkers: Bool
 
     /// How many seconds a left-press on the Siri Remote skips backward.
     public var skipBackwardInterval: SkipInterval
@@ -139,12 +130,9 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
     public var fadeOnFrameRateChange: Bool
 
     public init(
-        skipIntros: SkipIntrosMode = .off,
-        skipCredits: SkipIntrosMode = .off,
-        skipPreviews: SkipIntrosMode = .off,
-        skipCommercials: SkipIntrosMode = .off,
-        useIntroDB: Bool = true,
-        useTheIntroDB: Bool = true,
+        skipIntros: SkipIntrosMode = .on,
+        skipModeOverrides: [MediaSegment.Kind: SkipIntrosMode] = [:],
+        useCommunityMarkers: Bool = true,
         skipBackwardInterval: SkipInterval = .ten,
         skipForwardInterval: SkipInterval = .ten,
         resumeRewindInterval: ResumeRewindInterval = .five,
@@ -162,11 +150,8 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
         streaming: StreamingQualitySettings = .default
     ) {
         self.skipIntros = skipIntros
-        self.skipCredits = skipCredits
-        self.skipPreviews = skipPreviews
-        self.skipCommercials = skipCommercials
-        self.useIntroDB = useIntroDB
-        self.useTheIntroDB = useTheIntroDB
+        self.skipModeOverrides = skipModeOverrides
+        self.useCommunityMarkers = useCommunityMarkers
         self.skipBackwardInterval = skipBackwardInterval
         self.skipForwardInterval = skipForwardInterval
         self.resumeRewindInterval = resumeRewindInterval
@@ -186,18 +171,10 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
 
     public static let `default` = PlaybackSettings()
 
-    /// The per-kind skip modes, as the player consumes them.
+    /// The skip mode for each marker kind, as the player consumes them.
     public var skipMarkerModes: SkipMarkerModes {
-        SkipMarkerModes(
-            intro: skipIntros,
-            credits: skipCredits,
-            preview: skipPreviews,
-            commercial: skipCommercials
-        )
+        SkipMarkerModes(base: skipIntros, overrides: skipModeOverrides)
     }
-
-    /// Whether any community marker source is enabled.
-    public var usesCommunityMarkers: Bool { useIntroDB || useTheIntroDB }
 
     /// Selectable values (seconds) for ``upNextLeadSeconds`` in Settings. A small,
     /// curated set — err late (never interrupt real content) with room to go
@@ -210,11 +187,8 @@ public struct PlaybackSettings: Codable, Equatable, Sendable {
 public extension PlaybackSettings {
     private enum CodingKeys: String, CodingKey {
         case skipIntros
-        case skipCredits
-        case skipPreviews
-        case skipCommercials
-        case useIntroDB
-        case useTheIntroDB
+        case skipModeOverrides
+        case useCommunityMarkers
         case skipBackwardInterval
         case skipForwardInterval
         case resumeRewindInterval
@@ -237,7 +211,8 @@ public extension PlaybackSettings {
 
     /// Decodes leniently so a payload written before a field existed (or in the
     /// older boolean shape) still loads instead of resetting to defaults. The
-    /// legacy `{"skipIntros": true/false}` boolean maps to `.on` / `.off`.
+    /// legacy `{"skipIntros": true/false}` boolean maps to `.on` / `.off`, and a
+    /// stored mode is kept as is: only a profile with none gets the `.on` default.
     /// `syncWatchAcrossServers` defaults to `true` when absent so installs that
     /// predate the toggle keep today's cross-server sync behaviour.
     /// `seekWithoutPausing` likewise defaults to `true` so existing installs keep
@@ -259,23 +234,16 @@ public extension PlaybackSettings {
         } else {
             self.skipIntros = defaults.skipIntros
         }
-        // Credits used to share the intro setting; an install that predates the
-        // split keeps whatever it had for both.
-        self.skipCredits =
-            (try? container.decodeIfPresent(SkipIntrosMode.self, forKey: .skipCredits))
-            .flatMap { $0 } ?? self.skipIntros
-        self.skipPreviews =
-            (try? container.decodeIfPresent(SkipIntrosMode.self, forKey: .skipPreviews))
-            .flatMap { $0 } ?? defaults.skipPreviews
-        self.skipCommercials =
-            (try? container.decodeIfPresent(SkipIntrosMode.self, forKey: .skipCommercials))
-            .flatMap { $0 } ?? defaults.skipCommercials
-        self.useIntroDB =
-            (try? container.decodeIfPresent(Bool.self, forKey: .useIntroDB))
-            .flatMap { $0 } ?? defaults.useIntroDB
-        self.useTheIntroDB =
-            (try? container.decodeIfPresent(Bool.self, forKey: .useTheIntroDB))
-            .flatMap { $0 } ?? defaults.useTheIntroDB
+        // Keyed by kind name; a kind this build doesn't know is dropped.
+        let storedOverrides =
+            (try? container.decodeIfPresent([String: SkipIntrosMode].self, forKey: .skipModeOverrides))
+            .flatMap { $0 } ?? [:]
+        self.skipModeOverrides = Dictionary(uniqueKeysWithValues: storedOverrides.compactMap { key, mode in
+            MediaSegment.Kind(rawValue: key).flatMap { $0.isSkippable ? ($0, mode) : nil }
+        })
+        self.useCommunityMarkers =
+            (try? container.decodeIfPresent(Bool.self, forKey: .useCommunityMarkers))
+            .flatMap { $0 } ?? defaults.useCommunityMarkers
         self.skipBackwardInterval =
             (try? container.decodeIfPresent(SkipInterval.self, forKey: .skipBackwardInterval))
             .flatMap { $0 } ?? defaults.skipBackwardInterval
@@ -337,11 +305,11 @@ public extension PlaybackSettings {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(skipIntros, forKey: .skipIntros)
-        try container.encode(skipCredits, forKey: .skipCredits)
-        try container.encode(skipPreviews, forKey: .skipPreviews)
-        try container.encode(skipCommercials, forKey: .skipCommercials)
-        try container.encode(useIntroDB, forKey: .useIntroDB)
-        try container.encode(useTheIntroDB, forKey: .useTheIntroDB)
+        try container.encode(
+            Dictionary(uniqueKeysWithValues: skipModeOverrides.map { ($0.key.rawValue, $0.value) }),
+            forKey: .skipModeOverrides
+        )
+        try container.encode(useCommunityMarkers, forKey: .useCommunityMarkers)
         try container.encode(skipBackwardInterval, forKey: .skipBackwardInterval)
         try container.encode(skipForwardInterval, forKey: .skipForwardInterval)
         try container.encode(resumeRewindInterval, forKey: .resumeRewindInterval)

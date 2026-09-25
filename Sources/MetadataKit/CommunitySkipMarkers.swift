@@ -104,8 +104,10 @@ public protocol CommunitySkipMarkerFetching: Sendable {
     func segments(for query: CommunitySkipMarkerQuery, sources: CommunitySkipMarkerSources) async -> [MediaSegment]
 }
 
-/// Queries the enabled community databases concurrently and merges them: IntroDB
-/// first, TheIntroDB filling any kind IntroDB lacks.
+/// Asks the enabled community databases in turn: IntroDB first, then TheIntroDB
+/// only when IntroDB lacks an intro or credits marker, filling the kinds it lacks.
+/// One at a time rather than both at once, so a title IntroDB already covers is
+/// never sent to TheIntroDB too.
 public struct CommunitySkipMarkerService: CommunitySkipMarkerFetching {
     public init() {}
 
@@ -113,11 +115,11 @@ public struct CommunitySkipMarkerService: CommunitySkipMarkerFetching {
         for query: CommunitySkipMarkerQuery,
         sources: CommunitySkipMarkerSources
     ) async -> [MediaSegment] {
-        async let introDB: [MediaSegment] = sources.contains(.introDB)
-            ? IntroDBClient.segments(for: query) : []
-        async let theIntroDB: [MediaSegment] = sources.contains(.theIntroDB)
-            ? TheIntroDBClient.segments(for: query) : []
-        return await introDB.filling(from: theIntroDB)
+        var segments = sources.contains(.introDB) ? await IntroDBClient.segments(for: query) : []
+        if sources.contains(.theIntroDB), !segments.coversIntroAndCredits, !Task.isCancelled {
+            segments = segments.filling(from: await TheIntroDBClient.segments(for: query))
+        }
+        return segments
     }
 }
 

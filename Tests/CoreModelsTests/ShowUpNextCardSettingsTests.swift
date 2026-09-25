@@ -26,7 +26,7 @@ final class ShowUpNextCardSettingsTests: XCTestCase {
         settings.showUpNextCard = false
         store.save(settings)
         XCTAssertFalse(store.load().showUpNextCard)
-        XCTAssertEqual(store.load().skipIntros, .off, "Unrelated fields stay intact")
+        XCTAssertEqual(store.load().skipIntros, PlaybackSettings.default.skipIntros, "Unrelated fields stay intact")
         XCTAssertTrue(store.load().seekWithoutPausing, "Unrelated fields stay intact")
     }
 

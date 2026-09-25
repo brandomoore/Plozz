@@ -51,8 +51,8 @@ final class SeekLandingClassifierTests: XCTestCase {
     }
 
     func testNonSkippableSegmentIsIgnored() {
-        // A recap is detected but not skippable, so a landing inside it is nil.
-        let segs = [segment(id: "recap", kind: .recap, start: 100, end: 180)]
+        // An unrecognised segment is not skippable, so a landing inside it is nil.
+        let segs = [segment(id: "unknown", kind: .unknown, start: 100, end: 180)]
         XCTAssertNil(SeekLandingClassifier.landing(forTarget: 120, in: segs))
     }
 

@@ -1696,18 +1696,18 @@ public final class PlayerViewModel {
 
     // MARK: - Skip markers
 
-    /// Fetches skip segments when any per-kind skip mode is on, **or** when the Up
+    /// Fetches skip segments when any kind's skip mode is on, **or** when the Up
     /// Next card is enabled (the card triggers off the closing-credits marker, so
-    /// we need the markers even with skip off). The server's own markers are
-    /// layered over community ones (IntroDB / TheIntroDB, when enabled): the
-    /// community databases are always queried — not only when the server has no
-    /// markers — and fill any kind the server lacks. Publishes the result to the
-    /// controls model. Failures degrade silently to fewer markers. Runs once per
-    /// load.
+    /// we need the markers even with skip off). Publishes the server's markers as
+    /// soon as they arrive. Then, only when skipping is on, community markers are
+    /// enabled and the server has no intro or credits marker, looks those up and
+    /// publishes again with the kinds the server lacks filled in; the server's own
+    /// markers always win. Failures degrade silently to fewer markers. Runs once
+    /// per load.
     private func loadSkipSegmentsIfEnabled() {
         // Mirrored before the marker guard, not after: it describes the profile,
-        // not the segments, and a viewer with every skip mode and the Up Next
-        // card off would otherwise leave the container reading a stale default.
+        // not the segments, and a viewer with skipping and the Up Next card off
+        // would otherwise leave the container reading a stale default.
         controls.upNextCard.autoPlayEnabled = playbackSettings.autoPlayNextEpisode
         let modes = playbackSettings.skipMarkerModes
         let wantsMarkers = modes.fetchesMarkers || playbackSettings.showUpNextCard
@@ -1716,22 +1716,22 @@ public final class PlayerViewModel {
         segmentsTask?.cancel()
         let provider = provider
         let itemID = itemID
-        var sources: CommunitySkipMarkerSources = []
-        if playbackSettings.useIntroDB { sources.insert(.introDB) }
-        if playbackSettings.useTheIntroDB { sources.insert(.theIntroDB) }
+        let looksUpCommunity = modes.fetchesMarkers && playbackSettings.useCommunityMarkers
         let item = request?.item
         let duration = controls.duration > 0 ? controls.duration : nil
         let seriesIDResolver = seriesIDResolver
         let community = communitySkipMarkers
         segmentsTask = Task { @MainActor [weak self] in
-            async let server = (try? await provider.mediaSegments(for: itemID)) ?? []
-            async let fallback = Self.communitySegments(
-                for: item, sources: sources, duration: duration,
+            let server = (try? await provider.mediaSegments(for: itemID)) ?? []
+            guard !Task.isCancelled else { return }
+            self?.controls.skipSegments.segments = server.filter(\.isSkippable)
+            guard looksUpCommunity, !server.coversIntroAndCredits else { return }
+            let fallback = await Self.communitySegments(
+                for: item, sources: [.introDB, .theIntroDB], duration: duration,
                 provider: provider, seriesIDResolver: seriesIDResolver, service: community
             )
-            let segments = await server.filling(from: fallback)
-            guard let self, !Task.isCancelled else { return }
-            self.controls.skipSegments.segments = segments.filter(\.isSkippable)
+            guard !Task.isCancelled, !fallback.isEmpty else { return }
+            self?.controls.skipSegments.segments = server.filling(from: fallback).filter(\.isSkippable)
         }
     }
 

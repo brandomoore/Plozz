@@ -57,7 +57,7 @@ final class SkipIntervalSettingsTests: XCTestCase {
         XCTAssertEqual(loaded.skipForwardInterval, .thirty)
         XCTAssertEqual(loaded.skipBackwardInterval, .five)
         // Unrelated fields stay intact
-        XCTAssertEqual(loaded.skipIntros, .off)
+        XCTAssertEqual(loaded.skipIntros, PlaybackSettings.default.skipIntros)
         XCTAssertTrue(loaded.syncWatchAcrossServers)
     }
 

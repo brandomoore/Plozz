@@ -13,9 +13,7 @@ import Foundation
 /// Times are stored in **seconds** so the player can compare them directly
 /// against the engine's `currentTime` without unit juggling.
 public struct MediaSegment: Codable, Equatable, Sendable, Identifiable {
-    /// The kind of segment. Intros, credits, previews and commercials are
-    /// "skippable" (each has its own skip mode in settings); recaps and unknown
-    /// segments are modelled so the data is ready if more behaviours are added.
+    /// The kind of segment. Every kind except `.unknown` is skippable.
     public enum Kind: String, Codable, CaseIterable, Sendable {
         case intro
         case credits
@@ -23,6 +21,70 @@ public struct MediaSegment: Codable, Equatable, Sendable, Identifiable {
         case preview
         case commercial
         case unknown
+
+        /// The skippable kinds, in the order Settings lists them.
+        public static let skippable: [Kind] = [.intro, .credits, .recap, .preview, .commercial]
+
+        public var isSkippable: Bool { self != .unknown }
+
+        /// This kind's name in Settings, where each kind can get its own skip mode.
+        public var settingsTitle: LocalizedStringResource {
+            switch self {
+            case .intro:
+                return LocalizedStringResource(
+                    "skipMarkers.kind.intro", defaultValue: "Intros",
+                    comment: "Settings > Playback > Skip intros, credits & more: row for opening titles."
+                )
+            case .credits:
+                return LocalizedStringResource(
+                    "skipMarkers.kind.credits", defaultValue: "Credits",
+                    comment: "Settings > Playback > Skip intros, credits & more: row for closing credits."
+                )
+            case .recap:
+                return LocalizedStringResource(
+                    "skipMarkers.kind.recap", defaultValue: "Recaps",
+                    comment: "Settings > Playback > Skip intros, credits & more: row for 'previously on' recaps."
+                )
+            case .preview:
+                return LocalizedStringResource(
+                    "skipMarkers.kind.preview", defaultValue: "Previews",
+                    comment: "Settings > Playback > Skip intros, credits & more: row for 'next time on' previews."
+                )
+            case .commercial:
+                return LocalizedStringResource(
+                    "skipMarkers.kind.commercial", defaultValue: "Commercials",
+                    comment: "Settings > Playback > Skip intros, credits & more: row for ad breaks in TV recordings."
+                )
+            case .unknown:
+                return LocalizedStringResource(
+                    "skipMarkers.kind.unknown", defaultValue: "Other",
+                    comment: "Settings > Playback > Skip intros, credits & more: unrecognised marker kind (not normally shown)."
+                )
+            }
+        }
+
+        /// What this kind is, for the kinds whose name alone doesn't say.
+        public var settingsHint: LocalizedStringResource? {
+            switch self {
+            case .recap:
+                return LocalizedStringResource(
+                    "skipMarkers.kind.recap.hint", defaultValue: "“Previously on…”",
+                    comment: "Explains the Recaps row in skip settings: the recap at the start of an episode."
+                )
+            case .preview:
+                return LocalizedStringResource(
+                    "skipMarkers.kind.preview.hint", defaultValue: "“Next time on…”",
+                    comment: "Explains the Previews row in skip settings: the preview of the next episode."
+                )
+            case .commercial:
+                return LocalizedStringResource(
+                    "skipMarkers.kind.commercial.hint", defaultValue: "Ad breaks in TV recordings",
+                    comment: "Explains the Commercials row in skip settings."
+                )
+            case .intro, .credits, .unknown:
+                return nil
+            }
+        }
 
         /// The label shown on the in-player skip button for this kind.
         public var skipActionLabel: LocalizedStringResource {
@@ -65,14 +127,8 @@ public struct MediaSegment: Codable, Equatable, Sendable, Identifiable {
         self.end = end
     }
 
-    /// Segments the skip feature can offer a button for — the kinds with their
-    /// own skip setting. Recaps are detected but not offered.
-    public var isSkippable: Bool {
-        switch kind {
-        case .intro, .credits, .preview, .commercial: return true
-        case .recap, .unknown: return false
-        }
-    }
+    /// Whether the skip feature can offer a button for this segment.
+    public var isSkippable: Bool { kind.isSkippable }
 
     /// Whether `position` (seconds) falls inside this segment's window. A small
     /// trailing margin is excluded so the button doesn't linger for the final
@@ -118,6 +174,12 @@ public extension Array where Element == MediaSegment {
     func filling(from fallback: [MediaSegment]) -> [MediaSegment] {
         let present = Set(map(\.kind))
         return self + fallback.filter { !present.contains($0.kind) }
+    }
+
+    /// Whether this list already has an intro and a credits marker, the two kinds
+    /// community markers are looked up for.
+    var coversIntroAndCredits: Bool {
+        contains { $0.kind == .intro } && contains { $0.kind == .credits }
     }
 
     /// The skippable segment whose window currently contains `position`, if any.

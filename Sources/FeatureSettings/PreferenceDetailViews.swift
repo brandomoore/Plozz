@@ -603,30 +603,38 @@ struct PlaybackDetailView: View {
         [
             SettingsSplitRow(
                 id: "skip-intros-mode",
-                title: "Skip Markers",
-                description: "Uses intro, credit, preview and commercial markers from your server, plus community markers when enabled below. Server markers require Plex Pass on Plex, or Media Segments / Intro Skipper on Jellyfin.",
+                title: "Skip intros, credits & more",
+                description: "Show a Skip button, or skip automatically, during intros, credits, recaps, previews and commercials.",
             ) {
-                SkipMarkerModesControl(
-                    rows: [
-                        .init(id: 0, title: "Intros", selection: $playback.settings.skipIntros),
-                        .init(id: 1, title: "Credits", selection: $playback.settings.skipCredits),
-                        .init(id: 2, title: "Previews", selection: $playback.settings.skipPreviews),
-                        .init(id: 3, title: "Commercials", selection: $playback.settings.skipCommercials)
-                    ]
+                SkipModeControl(
+                    baseMode: $playback.settings.skipIntros,
+                    perKindEnabled: perKindSkipBinding,
+                    kindMode: { skipModeBinding(for: $0) },
+                    useCommunityMarkers: $playback.settings.useCommunityMarkers
                 )
-            },
-            SettingsSplitRow(
-                id: "skip-community-markers",
-                title: "Community Markers",
-                description: "Also look up markers from community databases, whether or not your server has its own. Your server's markers win when both have one. Sends the title's IMDb or TMDB ID to the database.",
-            ) {
-                VStack(alignment: .leading, spacing: 28) {
-                    Toggle("IntroDB", isOn: $playback.settings.useIntroDB)
-                    Toggle("TheIntroDB", isOn: $playback.settings.useTheIntroDB)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
         ]
+    }
+
+    /// On seeds every kind with the current mode, so turning it on changes
+    /// nothing until a kind is set; off returns every kind to the one mode.
+    private var perKindSkipBinding: Binding<Bool> {
+        Binding(
+            get: { !playback.settings.skipModeOverrides.isEmpty },
+            set: { on in
+                let base = playback.settings.skipIntros
+                playback.settings.skipModeOverrides = on
+                    ? Dictionary(uniqueKeysWithValues: MediaSegment.Kind.skippable.map { ($0, base) })
+                    : [:]
+            }
+        )
+    }
+
+    private func skipModeBinding(for kind: MediaSegment.Kind) -> Binding<SkipIntrosMode> {
+        Binding(
+            get: { playback.settings.skipMarkerModes.mode(for: kind) },
+            set: { playback.settings.skipModeOverrides[kind] = $0 }
+        )
     }
 
     private var skipIntervalRows: [SettingsSplitRow] {
@@ -796,62 +804,89 @@ private struct DescribedSegmentedPicker<Option: Hashable>: View {
     }
 }
 
-/// The per-kind skip controls: an Off / On / Auto (delay) / Auto (instant)
-/// picker for each marker kind, with ONE live description beneath that follows
-/// focus across all of them (the options mean the same thing on every row, so
-/// repeating the line four times would just be noise). Falls back to the first
-/// row's selection when focus is outside the pickers.
-private struct SkipMarkerModesControl: View {
-    struct Row: Identifiable {
-        let id: Int
-        let title: LocalizedStringResource
-        let selection: Binding<SkipIntrosMode>
-    }
+/// The "Skip intros, credits & more" control: one Off / On / Auto (delay) / Auto
+/// (instant) picker for every kind of marker, with its explanation directly
+/// beneath. "Set each marker separately" swaps it for a picker per kind; the focused
+/// kind's picker shows the same explanation beneath it. Community markers are one
+/// switch below.
+private struct SkipModeControl: View {
+    @Binding var baseMode: SkipIntrosMode
+    @Binding var perKindEnabled: Bool
+    let kindMode: (MediaSegment.Kind) -> Binding<SkipIntrosMode>
+    @Binding var useCommunityMarkers: Bool
 
-    let rows: [Row]
-
+    /// The kind whose picker has focus, and the option focused in it.
+    @State private var focusedKind: MediaSegment.Kind?
     @State private var focusedMode: SkipIntrosMode?
-    @State private var focusOwner: Int?
 
-    private var describedMode: SkipIntrosMode {
-        focusedMode ?? rows.first?.selection.wrappedValue ?? .off
-    }
-
-    private func reportFocus(owner id: Int, mode: SkipIntrosMode?) {
+    private func reportFocus(kind: MediaSegment.Kind, mode: SkipIntrosMode?) {
         if let mode {
-            focusOwner = id
+            focusedKind = kind
             focusedMode = mode
-        } else if focusOwner == id {
-            focusOwner = nil
+        } else if focusedKind == kind {
+            // Only the picker that owns focus may clear it: the next one may
+            // already have reported in the same update.
+            focusedKind = nil
             focusedMode = nil
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            // Label stacked above each picker: four segments don't fit beside a
-            // fixed label column in the split layout's detail pane.
-            ForEach(rows) { row in
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(row.title)
-                        .font(.headline.weight(.semibold))
-                    SettingsSegmentedPicker(
-                        options: SkipIntrosMode.allCases,
-                        selection: row.selection,
-                        title: { $0.title },
-                        onFocusedOptionChange: { reportFocus(owner: row.id, mode: $0) }
-                    )
+        VStack(alignment: .leading, spacing: 32) {
+            if !perKindEnabled {
+                DescribedSegmentedPicker(
+                    options: SkipIntrosMode.allCases,
+                    selection: $baseMode,
+                    title: { $0.title },
+                    detail: { $0.detail }
+                )
+                .transition(.opacity)
+            }
+
+            SettingsRevealSection(isOn: $perKindEnabled, masterLabel: "Set each marker separately") {
+                ForEach(MediaSegment.Kind.skippable, id: \.self) { kind in
+                    // Label stacked above the picker: four segments don't fit
+                    // beside a label column in the split layout's detail pane.
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(kind.settingsTitle)
+                                .font(.headline.weight(.semibold))
+                            if let hint = kind.settingsHint {
+                                Text(hint)
+                                    .font(.callout)
+                                    .plozzForeground(.secondary)
+                            }
+                        }
+                        SettingsSegmentedPicker(
+                            options: SkipIntrosMode.allCases,
+                            selection: kindMode(kind),
+                            title: { $0.title },
+                            onFocusedOptionChange: { reportFocus(kind: kind, mode: $0) }
+                        )
+                        if focusedKind == kind, let focusedMode {
+                            Text(focusedMode.detail)
+                                .font(.callout)
+                                .plozzForeground(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .transition(.opacity)
+                        }
+                    }
+                    .padding(.top, 8)
+                    .animation(.easeInOut(duration: 0.18), value: focusedKind == kind ? focusedMode : nil)
                 }
             }
 
-            Text(describedMode.detail)
-                .font(.callout)
-                .plozzForeground(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .contentTransition(.opacity)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("Use community markers", isOn: $useCommunityMarkers)
+                Text("When your server has no intro or credits marker, Plozz looks one up on IntroDB and TheIntroDB, sending them the title’s IMDb or TMDB ID.")
+                    .font(.callout)
+                    .plozzForeground(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        .animation(.easeInOut(duration: 0.18), value: describedMode)
+        .animation(.easeInOut(duration: 0.22), value: perKindEnabled)
     }
 }
 
