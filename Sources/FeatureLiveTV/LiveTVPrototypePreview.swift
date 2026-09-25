@@ -74,8 +74,9 @@ struct PrototypePreviewLayout {
         compact = bounds.width < 650
         #if os(tvOS)
         let side: CGFloat = 32
-        // The pinned rail's published inset is additional to the title-safe area.
-        let leading = navigationInset > 0 ? max(side + PrototypeLayout.inset, safeAreaInsets.leading) : side
+        // The rail and guide share physical-screen coordinates. Title-safe insets
+        // can change during mounting and must not move or resize the pinned guide.
+        let leading = side + (navigationInset > 0 ? PrototypeLayout.inset : 0)
         let top = max(32, safeAreaInsets.top)
         let bottom: CGFloat = 20
         guideSideBleed = 0
@@ -222,6 +223,9 @@ struct PrototypePreviewHero: View {
         }
         .frame(width: layout.contentFrame.width, height: layout.heroHeight, alignment: .bottomLeading)
         .clipped()
+        #if DEBUG
+        .anchorPreference(key: PrototypeHeroBoundsKey.self, value: .bounds) { [isLoading ? "loading" : "content": $0] }
+        #endif
     }
 
     /// The TV's info bar squeezed into a phone's landscape strip: art, then

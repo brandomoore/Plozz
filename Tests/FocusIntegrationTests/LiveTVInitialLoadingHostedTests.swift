@@ -1,7 +1,9 @@
 import CoreModels
+@testable import AppShell
 @testable import CoreUI
 @testable import FeatureLiveTV
 import FeatureLiveTVCore
+import Observation
 import SwiftUI
 import UIKit
 import Vision
@@ -10,6 +12,18 @@ import XCTest
 @MainActor
 final class LiveTVInitialLoadingHostedTests: XCTestCase {
     func testSavedLibraryChannelsNeverShowSetupWhileTheirCatalogIsPending() async throws {
+        try await exerciseLoading(pinned: false)
+    }
+
+    func testPinnedRailKeepsLiveTVInPlaceAcrossLoadingStages() async throws {
+        try await exerciseLoading(pinned: true)
+    }
+
+    func testPinnedRailKeepsLiveTVInPlaceWhenContainerSafeAreaSettles() async throws {
+        try await exerciseLoading(pinned: true, changesSafeArea: true)
+    }
+
+    private func exerciseLoading(pinned: Bool, changesSafeArea: Bool = false) async throws {
         let profileID = ProfileStore.defaultProfileID
         let definitions = InitialLibraryDefinitions()
         let cache = LibraryChannelSnapshotStore(databaseURL: nil)
@@ -42,13 +56,15 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
         let approval = LiveTVSourceApprovalContext(
             profile: Profile(id: profileID, name: "Fixture"), parentalPIN: nil, activeAccountIDs: ["account"]
         )
-        let host = UIHostingController(rootView: LiveTVPrototypeView(
+        let geometry = LiveTVLoadingGeometry()
+        let page = LiveTVPrototypeView(
             sourceStore: sources,
             profileID: profileID, preferencesNamespace: name,
             libraryService: cold,
             libraryHistory: LibraryChannelHistorySettings(defaults: defaults),
             sourceApprovalContext: { approval }
         ) { _ in Color.black }
+        let host = UIHostingController(rootView: LiveTVPinnedLoadingFixture(pinned: pinned, geometry: geometry, content: page)
             .environment(\.themePalette, .dark)
             .environment(\.colorScheme, .dark))
         window.rootViewController = host
@@ -59,6 +75,19 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
             defaults.removePersistentDomain(forName: name)
         }
+        if pinned {
+            try await Task.sleep(for: .milliseconds(100))
+            geometry.selection = .liveTV
+        }
+        try await Task.sleep(for: .milliseconds(150))
+        if changesSafeArea {
+            let regions = host.safeAreaRegions
+            host.safeAreaRegions = []
+            try await Task.sleep(for: .milliseconds(150))
+            host.safeAreaRegions = regions
+            try await Task.sleep(for: .milliseconds(150))
+        }
+        geometry.cacheReady = true
         // The persisted-source read finishes first; library loading is held here.
         try await Task.sleep(for: .milliseconds(300))
         window.layoutIfNeeded()
@@ -88,6 +117,24 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
         content.name = "Live TV loaded layout"
         content.lifetime = .keepAlways
         add(content)
+        if pinned {
+            let frames = geometry.frames.values.flatMap { $0 }
+            XCTAssertTrue(geometry.frames.keys.contains("storage"))
+            XCTAssertTrue(geometry.frames.keys.contains("loading"))
+            XCTAssertTrue(geometry.frames.keys.contains("content"))
+            let positions = frames.map(\.minX)
+            let minimum = try XCTUnwrap(positions.min())
+            let maximum = try XCTUnwrap(positions.max())
+            let history = XCTAttachment(string: String(describing: geometry.frames))
+            history.name = "Pinned Live TV mounted frame history"
+            history.lifetime = .keepAlways
+            add(history)
+            XCTAssertEqual(maximum, minimum, accuracy: 1,
+                           "Pinned Live TV must not shift between mounted loading/content frames: \(geometry.frames)")
+            let widths = frames.map(\.width)
+            XCTAssertEqual(try XCTUnwrap(widths.max()), try XCTUnwrap(widths.min()), accuracy: 1,
+                           "The guide must not resize when its container's safe area settles.")
+        }
 
         try definitions.save([])
         try await cold.load()
@@ -120,6 +167,66 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
         }
         return try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
+    }
+}
+
+@MainActor @Observable
+private final class LiveTVLoadingGeometry {
+    var cacheReady = false
+    var selection = NavigationRailDestination.home
+    @ObservationIgnored var frames: [String: [CGRect]] = [:]
+
+    func record(_ value: [String: CGRect]) {
+        for (phase, frame) in value where frame.width > 100 && frame.height > 20 {
+            if frames[phase]?.last != frame { frames[phase, default: []].append(frame) }
+        }
+    }
+}
+
+private struct LiveTVPinnedLoadingFixture<Content: View>: View {
+    let pinned: Bool
+    let geometry: LiveTVLoadingGeometry
+    let content: Content
+    @State private var chrome = NavigationChromeModel()
+
+    var body: some View {
+        @Bindable var geometry = geometry
+        Group {
+            if pinned {
+                NavigationRailShell(
+                    profile: Profile(id: "fixture", name: "Fixture"), entries: [],
+                    destinations: [.home, .liveTV, .settings], selection: $geometry.selection,
+                    onOpenProfileSwitcher: {}, chrome: chrome,
+                    content: retainedContent, contentDestination: geometry.selection
+                )
+            } else {
+                loadingContent
+            }
+        }
+        .overlayPreferenceValue(PrototypeHeroBoundsKey.self) { anchors in
+            GeometryReader { proxy in
+                let origin = proxy.frame(in: .global).origin
+                let frames = anchors.mapValues { proxy[$0].offsetBy(dx: origin.x, dy: origin.y) }
+                Color.clear
+                    .onChange(of: frames, initial: true) { _, frames in geometry.record(frames) }
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    private var retainedContent: some View {
+        let active = geometry.selection == .liveTV
+        return ZStack {
+            Color.clear
+            RetainedLiveTVDestination(isActive: active) { loadingContent }
+                .opacity(active ? 1 : 0)
+                .disabled(!active)
+        }
+    }
+
+    @ViewBuilder private var loadingContent: some View {
+        if geometry.cacheReady { content }
+        else { LiveTVLoadingSkeleton() }
     }
 }
 

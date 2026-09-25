@@ -102,12 +102,7 @@ enum NavigationRailMetrics {
     /// destination's vertical rhythm.
     static let profileRowHeight: CGFloat = rowContentHeight
     static let verticalPadding: CGFloat = 14
-    /// Height of the invisible focus walls at each end of the rail.
-    ///
-    /// They sit IN the stack, so whatever height they take pushes the profile down
-    /// and Settings up by the same amount. Only enough is needed for the focus
-    /// engine to find one directly beyond the end row — it picks the nearest
-    /// candidate in the direction of travel, and nothing else is closer.
+    /// Non-focusable breathing room at the rail's outer boundaries.
     static let edgeSpacerHeight: CGFloat = 10
     /// How far the destination list dissolves at its top and bottom edges. Roughly
     /// one row tall, so a row is fully gone by the time it reaches either edge.
@@ -434,22 +429,16 @@ struct NavigationRailView: View {
         // cut mid-glyph. It overhangs horizontally so a focused row's pill and
         // shadow stay intact.
         //
-        // Each end fades in continuously as content travels beneath it. The mask
-        // always keeps the same view structure and geometry, avoiding the flicker
-        // caused by inserting/removing a gradient at a one-point threshold.
-        .verticalEdgeFadeMask(
-            fadeHeight: NavigationRailMetrics.listEdgeFade,
-            topStrength: libraryListFade.top,
-            bottomStrength: libraryListFade.bottom,
-            horizontalOverhang: NavigationRailMetrics.listFadeHorizontalOverhang
-        )
+        // Grow the feather with overflow, but always reach transparency at a
+        // clipping edge. Reducing opacity strength would leave a visible cut.
+        .mask(libraryListFade.mask)
         .onScrollGeometryChange(for: ListEdgeFade.self) { geometry in
             let top = geometry.contentOffset.y + geometry.contentInsets.top
             let bottom = geometry.contentSize.height
                 - (geometry.contentOffset.y + geometry.containerSize.height)
             return ListEdgeFade(
-                top: ListEdgeFade.strength(for: top),
-                bottom: ListEdgeFade.strength(for: bottom)
+                top: ListEdgeFade.height(for: top),
+                bottom: ListEdgeFade.height(for: bottom)
             )
         } action: { _, fade in
             libraryListFade = fade
@@ -691,19 +680,24 @@ struct NavigationRailView: View {
     )
 }
 
-/// What can hold focus inside the rail. The profile row isn't a destination, so it
-/// needs its own case rather than being folded into ``NavigationRailDestination``.
-/// Normalized fade strength at each edge of the scrolling library list.
-private struct ListEdgeFade: Equatable {
+/// Feather height at each edge of the scrolling destination list.
+struct ListEdgeFade: Equatable {
     var top: CGFloat = 0
     var bottom: CGFloat = 0
 
-    static func strength(for overflow: CGFloat) -> CGFloat {
-        let progress = min(max(overflow / NavigationRailMetrics.listEdgeFade, 0), 1)
-        return progress * progress * (3 - 2 * progress)
+    var mask: VerticalEdgeFadeMask {
+        VerticalEdgeFadeMask(
+            topFade: top, bottomFade: bottom,
+            horizontalOverhang: NavigationRailMetrics.listFadeHorizontalOverhang
+        )
+    }
+
+    static func height(for overflow: CGFloat) -> CGFloat {
+        min(max(overflow, 0), NavigationRailMetrics.listEdgeFade)
     }
 }
 
+/// The profile is focusable but is not a navigation destination.
 private enum RailFocusTarget: Hashable {
     case profile
     case destination(NavigationRailDestination)

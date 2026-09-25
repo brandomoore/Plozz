@@ -70,6 +70,9 @@ Reduce Motion behavior; normal startup never replaces the page with a loading
 message. The storage-opening stage uses that same layout. Already-loaded
 channels remain browsable while other sources finish. Library failures use the
 unavailable state and can retry both library and external sources.
+On Apple TV, the pinned guide's horizontal gutter is measured from the physical
+viewport, like the rail itself, so title-safe-area changes during entry do not
+shift or resize the skeleton or loaded guide.
 An empty configuration does not contact a public feed or play an unsolicited
 channel. Add your own M3U playlist or use an authorized
 connected server. Plozz does not provide or offer a public channel catalog.
