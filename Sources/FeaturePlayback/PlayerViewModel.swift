@@ -1470,6 +1470,19 @@ public final class PlayerViewModel {
             let marker = track.isDefault ? "default" : "other"
             return "\(track.id):\(language):\(marker):\(track.displayTitle)"
         }.joined(separator: " | ")
+        if HandoffDiagnostics.isEnabled {
+            let inventory = request.audioTracks.prefix(32).map { track in
+                "\(track.id):\(HandoffDiagnostics.redactedDetail(track.language ?? "unknown"))"
+                    + ":\(HandoffDiagnostics.redactedDetail(track.codec ?? "unknown"))"
+                    + ":\(track.channels.map(String.init) ?? "unknown"):\(track.isDefault ? "default" : "other")"
+            }.joined(separator: ",")
+            HandoffDiagnostics.emit(
+                "audio POLICY vm=\(instanceID) provider=\(provider.kind.rawValue) item=\(HandoffDiagnostics.correlationID(item.id))"
+                    + " preference=\(HandoffDiagnostics.redactedDetail(preference.token)) preferred=\(HandoffDiagnostics.redactedDetail(preferred))"
+                    + " fallback=\(request.preferredAudioTrackID.map(String.init) ?? "none")"
+                    + " trackCount=\(request.audioTracks.count) inventory=[\(inventory)]"
+            )
+        }
         PlozzLog.boot(
             "AudioLanguage title=\(item.title) item=\(item.id) "
                 + "pref=\(preference.token) remembered=\(remembered) "

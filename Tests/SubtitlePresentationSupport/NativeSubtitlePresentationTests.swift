@@ -9,6 +9,33 @@ import XCTest
 
 @MainActor
 final class NativeSubtitlePresentationTests: XCTestCase {
+    func testEngineMetricsAreJournaledWithoutOpeningPlaybackInfo() async throws {
+        let tracing = HandoffDiagnostics.isEnabled
+        HandoffDiagnostics.setEnabled(true)
+        defer { HandoffDiagnostics.setEnabled(tracing) }
+        let previous = Set(HandoffDiagnostics.persistentPlaybackLogText().components(separatedBy: .newlines))
+        let engine = try PlozzigenVideoEngine()
+        engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        let model = LiveSubtitleModel()
+        let window = try await mount(engine, subtitles: model)
+        defer { engine.stop(); window.isHidden = true; window.rootViewController = nil }
+        await engine.load(request: request(try fixtureURL("embedded.mp4"), tracks: []), startPosition: 0)
+        let route = engine.liveSnapshot.route == .software ? "software" : "loopback"
+        var line: String?
+        try await waitUntil(timeout: 30) {
+            line = HandoffDiagnostics.persistentPlaybackLogText().components(separatedBy: .newlines).last {
+                !previous.contains($0) && $0.contains("playback PIPELINE") && $0.contains("route=\(route)")
+            }
+            return line != nil
+        }
+        let captured = try XCTUnwrap(line)
+        XCTAssertTrue(captured.contains("sourceBytes="))
+        XCTAssertTrue(captured.contains("muxBytes="))
+        XCTAssertTrue(captured.contains("servedBytes="))
+        XCTAssertTrue(captured.contains("audioID="))
+        XCTAssertTrue(captured.contains("audioCodec=aac"))
+    }
+
     func testPlozzigenVODReloadPreservesPauseAndDiagnosticsFollowTheNewItem() async throws {
         let server = try SubtitleFixtureServer(directory: fixtureDirectory())
         let port = try await server.start()

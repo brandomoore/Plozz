@@ -70,6 +70,16 @@ The instance counter labels native adapters rather than claiming to count every
 AVPlayer hidden inside third-party engines. New stall records retain measured
 player/engine buffer context in the existing playback journal.
 
+Diagnostic builds also journal cached Plozzigen pipeline snapshots at most once
+every two seconds, independent of whether Playback Info is open. These read the
+engine's existing off-main telemetry rather than issuing additional synchronous
+AVFoundation reads. The record separates source bytes fetched, muxed bytes,
+served bytes, reader-window bytes, and cached media; the native consumer's
+loopback throughput must not be called the media server's network rate.
+`audio POLICY` records language/default-selection inputs and `audio SELECTED`
+plus the pipeline snapshot identify the engine's actual audio track and delivery
+path. None of these diagnostics change the audio selection policy.
+
 ## Subtitle appearance
 
 `Use System Caption Style` reads the device's caption appearance through
