@@ -161,10 +161,15 @@ enum SubtitleMarkup {
             } else if lowered.hasPrefix("pos("), lowered.hasSuffix(")") {
                 let numbers = lowered.dropFirst(4).dropLast().split(separator: ",")
                     .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-                if numbers.count == 2 { result.position = CGPoint(x: numbers[0], y: numbers[1]) }
+                if numbers.count == 2, numbers.allSatisfy(\.isFinite) {
+                    result.position = CGPoint(x: numbers[0], y: numbers[1])
+                }
             } else if lowered.hasPrefix("1c&h") || lowered.hasPrefix("c&h") {
                 let hex = lowered.drop { $0 != "h" }.dropFirst().prefix { $0.isHexDigit }
                 result.color = SubtitleColor(assBGR: String(hex))
+            } else if lowered == "c" || lowered == "1c" {
+                result.resetsColor = true
+                result.color = nil
             } else if lowered == "r" || (lowered.hasPrefix("r") && !lowered.hasPrefix("rnd")) {
                 result.resetsColor = true
                 result.color = nil
@@ -184,9 +189,10 @@ enum SubtitleMarkup {
             if trimmed.lowercased().hasPrefix("[events]") { break }
             let parts = trimmed.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
             guard parts.count == 2 else { continue }
+            guard let value = Double(parts[1]), value.isFinite, value > 0 else { continue }
             switch parts[0].lowercased() {
-            case "playresx": x = Double(parts[1])
-            case "playresy": y = Double(parts[1])
+            case "playresx": x = value
+            case "playresy": y = value
             default: break
             }
         }

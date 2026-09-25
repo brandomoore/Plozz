@@ -316,9 +316,7 @@ struct PlaybackDetailView: View {
     /// The profile base subtitle mode/language now lives in `SubtitleBehavior`
     /// (behaviour half of the retired `CaptionSettings`).
     @Bindable var subtitleBehavior: SubtitleBehaviorModel
-    /// The profile's subtitle appearance. The look itself is edited in the
-    /// player (where it can be previewed); Settings offers only whether it
-    /// follows the device's caption style.
+    /// Profile appearance shared by Settings and the in-player editor.
     @Bindable var subtitleStyle: SubtitleStyleModel
     /// Per-content-type overrides ("forced-only on movies, full subs on anime").
     @Bindable var subtitlePolicy: SubtitlePolicyModel
@@ -573,13 +571,21 @@ struct PlaybackDetailView: View {
             title: "Subtitle style",
             description: "How subtitles look. Change the font, size and colors from the Subtitles menu while watching."
         ) {
-            VStack(alignment: .leading, spacing: 12) {
-                Toggle("Use System Caption Style", isOn: $subtitleStyle.style.followsSystemStyle)
-                Text("Draw subtitles in the style set in Settings › Accessibility › Subtitles & Captioning.")
-                    .font(.callout)
-                    .plozzForeground(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 24) {
+                SubtitleAppearanceSettings(style: $subtitleStyle.style)
+            }
+        })
+
+        rows.append(SettingsSplitRow(
+            id: "live-subtitle-style",
+            title: "Live TV subtitle style",
+            description: "Use the same subtitle appearance everywhere, or choose a separate look for Live TV."
+        ) {
+            VStack(alignment: .leading, spacing: 24) {
+                Toggle("Use a separate style for Live TV", isOn: $subtitleStyle.usesSeparateLiveTVStyle)
+                if subtitleStyle.usesSeparateLiveTVStyle {
+                    SubtitleAppearanceSettings(style: $subtitleStyle.resolvedLiveTVStyle)
+                }
             }
         })
 

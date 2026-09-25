@@ -52,6 +52,41 @@ and the diagnostics overlay.
 - **No secrets in URLs logged.** Stream URLs frequently embed tokens —
   `PlayerViewModel` redacts before logging.
 
+## Subtitle appearance
+
+`Use System Caption Style` reads the device's caption appearance through
+MediaAccessibility and applies it to Plozz's text overlay, including Plozzigen
+playback. The actual system typeface is retained even when it is not in Plozz's
+font picker, including descriptor features such as small capitals. Text-line
+backgrounds and the enclosing window keep separate colors/opacities; the window
+also retains its corner radius. System appearance changes and foreground return
+refresh the overlay; custom preferences remain saved for switching back.
+Explicit system font, text-color and opacity overrides take precedence over
+the corresponding source formatting. Image-based subtitles retain their authored
+pixels. This maps Apple's public appearance settings, not its private layout
+algorithm or pixel-identical glyph/effect rendering.
+
+`Font > System` offers all eight native caption families plus the device's
+installed font families, discovered from UIKit rather than a fixed OS-specific
+list. The main list retains Plozz's curated fonts. Selecting a system font alone
+does not enable system appearance or overwrite other style controls. Its choice
+persists per profile and independently for Live TV; a named font unavailable on
+another device logs a diagnostic and uses the saved Plozz fallback.
+
+Settings exposes the same appearance controls on tvOS and iOS. Live TV inherits
+the profile's library appearance by default. Enabling `Use a separate style for
+Live TV` starts from the current look and saves an independent override, including
+its own system-style choice. Disabling it removes that override and resumes
+inheritance. This applies to IPTV and library-generated channels, including
+retained multiview panes. Saved edits update active panes without retuning.
+
+Live playback sends the selected style to both the owned overlay and the engine.
+AVPlayer-rendered captions use `SubtitleStyleRules`; following the system clears
+Plozz's native text overrides. Native rendering remains owned by the engine,
+not a user-selectable routing preference. Native text styling supports fewer
+effects than the overlay (one edge treatment rather than independent shadow
+and outline).
+
 ## Mobile streaming quality
 
 iPhone/iPad movie and episode playback opts into `StreamingQualityProviding`.

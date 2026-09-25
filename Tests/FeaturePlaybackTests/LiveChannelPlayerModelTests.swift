@@ -19,6 +19,51 @@ private final class LiveChannelObservationChanges: @unchecked Sendable {
 
 @MainActor
 final class LiveChannelPlayerModelTests: XCTestCase {
+    func testLiveStyleRefreshesOverlayAndNativeRendererWithoutRetuning() async throws {
+        let name = "LiveCaptionStyle.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let settings = SubtitleStyleModel(store: SubtitleStyleStore(defaults: defaults, namespace: "viewer"))
+        settings.style.textColor = .yellow
+        settings.usesSeparateLiveTVStyle = true
+        settings.resolvedLiveTVStyle.fontScale = 0.4
+        let preferences = LiveChannelTrackPreferences(namespace: "viewer", defaults: defaults)
+        let engine = LiveEngineSpy()
+        let model = LiveChannelPlayerModel(
+            engine: engine, streamURL: URL(string: "https://example.invalid/channel.m3u8")!,
+            trackPreferences: preferences
+        )
+        defer { model.stop() }
+        await model.start()
+        model.refreshFromEngine()
+        XCTAssertEqual(model.subtitles.style.fontScale, 0.4)
+        XCTAssertEqual(engine.subtitleStyles.last, settings.resolvedLiveTVStyle)
+
+        settings.resolvedLiveTVStyle.followsSystemStyle = true
+        model.refreshFromEngine()
+        XCTAssertTrue(model.subtitles.style.followsSystemStyle)
+        XCTAssertEqual(engine.subtitleStyles.last, settings.resolvedLiveTVStyle)
+        XCTAssertFalse(settings.style.followsSystemStyle)
+        let count = engine.subtitleStyles.count
+        model.refreshFromEngine()
+        XCTAssertEqual(engine.subtitleStyles.count, count)
+
+        let other = SubtitleStyleModel(store: SubtitleStyleStore(defaults: defaults, namespace: "other"))
+        other.style.textColor = .pink
+        model.refreshFromEngine()
+        XCTAssertEqual(engine.subtitleStyles.count, count)
+
+        settings.usesSeparateLiveTVStyle = false
+        model.refreshFromEngine()
+        XCTAssertEqual(model.subtitles.style, settings.style)
+        XCTAssertEqual(engine.subtitleStyles.last, settings.style)
+        XCTAssertEqual(engine.liveLoads, 1)
+        engine.onProgrammeChanged?()
+        model.refreshFromEngine()
+        XCTAssertEqual(engine.subtitleStyles.last, settings.style)
+        XCTAssertEqual(engine.subtitleStyles.count, count + 2)
+    }
+
     func testLiveFailureCopyDoesNotAskPublicChannelViewersToSignInAgain() {
         let messages: [(AppError, String)] = [
             (.notFound, "playlist link may be outdated"),
@@ -1257,6 +1302,8 @@ final class LiveEngineSpy: LiveChannelEngine {
     var externalPlaybackRouteName: String?
     var onPresentationLayerChanged: (() -> Void)?
     var nativeSubtitlesActive = false
+    var subtitleStyles: [SubtitleStyle] = []
+    func updateSubtitleStyle(_ style: SubtitleStyle) { subtitleStyles.append(style) }
     func pictureInPicturePlayerLayer() -> AVPlayerLayer? { nil }
     func setPictureInPictureActive(_ active: Bool) { continuesPlaybackInBackground = active }
     func setNativeSubtitlesActive(_ active: Bool) { nativeSubtitlesActive = active }

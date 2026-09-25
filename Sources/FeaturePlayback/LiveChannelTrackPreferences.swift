@@ -11,6 +11,7 @@ public final class LiveChannelTrackPreferences {
     public var subtitleMode: SubtitleMode
     public var subtitleLanguage: String?
     public var subtitleStyle: SubtitleStyle
+    @ObservationIgnored private var styleObserver: NSObjectProtocol?
 
     public init(
         audioLanguage: String? = nil,
@@ -24,9 +25,10 @@ public final class LiveChannelTrackPreferences {
         self.subtitleStyle = subtitleStyle
     }
 
-    public convenience init(namespace: String?) {
-        let playback = PlaybackSettingsStore(namespace: namespace).load()
-        let subtitles = SubtitleBehaviorStore(namespace: namespace).load()
+    public convenience init(namespace: String?, defaults: UserDefaults = .standard) {
+        let playback = PlaybackSettingsStore(defaults: defaults, namespace: namespace).load()
+        let subtitles = SubtitleBehaviorStore(defaults: defaults, namespace: namespace).load()
+        let styleStore = SubtitleStyleStore(defaults: defaults, namespace: namespace)
         self.init(
             audioLanguage: AudioLanguagePolicy.preferredAudioLanguages(
                 remembered: nil,
@@ -36,8 +38,19 @@ public final class LiveChannelTrackPreferences {
             ).first,
             subtitleMode: subtitles.subtitleMode,
             subtitleLanguage: subtitles.preferredSubtitleLanguage ?? LanguageMatch.deviceLanguageCode,
-            subtitleStyle: SubtitleStyleStore(namespace: namespace).load().base
+            subtitleStyle: styleStore.load().resolvedLiveTV
         )
+        styleObserver = NotificationCenter.default.addObserver(
+            forName: SubtitleStyleStore.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.subtitleStyle = styleStore.load().resolvedLiveTV
+            }
+        }
+    }
+
+    deinit {
+        if let styleObserver { NotificationCenter.default.removeObserver(styleObserver) }
     }
 }
 #endif

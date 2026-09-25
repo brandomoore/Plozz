@@ -1,5 +1,6 @@
 #if canImport(UIKit) && canImport(SwiftUI)
 import CoreModels
+import CoreUI
 import CoreText
 import SwiftUI
 import UIKit
@@ -8,6 +9,42 @@ import XCTest
 
 @MainActor
 final class SubtitleLineRenderingTests: XCTestCase {
+    func testSystemCaptionFontKeepsTheActualTypefaceInsteadOfFallingBackToSF() {
+        var c = config(family: .system, size: 42, text: "System captions")
+        c.systemFontDescriptor = UIFont(name: "Courier", size: 42)?.fontDescriptor
+        let font = SubtitleLineView().makeCTFont(c)
+        XCTAssertTrue((CTFontCopyFamilyName(font) as String).contains("Courier"))
+        XCTAssertEqual(CTFontGetSize(font), 42)
+    }
+
+    func testNativeCaptionDescriptorsKeepSmallCapitalFeatures() throws {
+        let descriptor = try XCTUnwrap(SubtitleSystemFonts.descriptor(for: .caption(.smallCapitals)))
+        var c = config(family: .system, size: 42, text: "Small Capitals")
+        c.systemFontDescriptor = descriptor
+        let font = SubtitleLineView().makeCTFont(c)
+        XCTAssertEqual(CTFontCopyAttribute(font, kCTFontFeatureSettingsAttribute) as? NSArray,
+                       descriptor.object(forKey: .featureSettings) as? NSArray)
+        XCTAssertGreaterThan(try render(c).ink.width, 0)
+    }
+
+    func testSourceColorOpacityIsNotPaintedOverAnOpaqueDefaultFill() throws {
+        var c = config(family: .system, size: 80, text: "MMMM")
+        c.fillSpans = [.init(location: 0, length: 4, color: UIColor.red.withAlphaComponent(0.5))]
+        let pixels = try render(c).pixels
+        let maximumAlpha = stride(from: 3, to: pixels.count, by: 4).map { pixels[$0] }.max()
+        XCTAssertEqual(Double(try XCTUnwrap(maximumAlpha)), 128, accuracy: 1)
+    }
+
+    func testGlyphBackgroundAndWindowBothRenderInTheirOwnColors() throws {
+        var c = config(family: .system, size: 60, text: "MMMM\nI")
+        c.glyphBackground = .red
+        c.background = .init(color: .blue, cornerRadius: 0, horizontalPadding: 14, verticalPadding: 6)
+        let pixels = try render(c).pixels
+        let offsets = stride(from: 0, to: pixels.count, by: 4)
+        XCTAssertGreaterThan(offsets.filter { pixels[$0] > 240 && pixels[$0 + 2] < 10 }.count, 100)
+        XCTAssertGreaterThan(offsets.filter { pixels[$0 + 2] > 240 && pixels[$0] < 10 }.count, 100)
+    }
+
     func testAvenirNextUsesBuiltInFacesForEveryWeightAndSlant() throws {
         let view = SubtitleLineView()
         let faces: [(SubtitleFontWeight, String, String)] = [
@@ -382,7 +419,7 @@ final class SubtitleLineRenderingTests: XCTestCase {
     /// rather than silently clipped by the snapshot itself.
     private func render(
         _ c: SubtitleLineView.Config, maxWidth: CGFloat = 900
-    ) throws -> (size: CGSize, ink: CGRect) {
+    ) throws -> (size: CGSize, ink: CGRect, pixels: [UInt8]) {
         let view = SubtitleLineView()
         view.configure(c)
         let size = view.measure(maxWidth: maxWidth)
@@ -418,7 +455,7 @@ final class SubtitleLineRenderingTests: XCTestCase {
             }
         }
         XCTAssertFalse(ink.isNull, "\(c.family): \(c.text)")
-        return (size, ink.offsetBy(dx: -margin, dy: -margin))
+        return (size, ink.offsetBy(dx: -margin, dy: -margin), pixels)
     }
 }
 #endif

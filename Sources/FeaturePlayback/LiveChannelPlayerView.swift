@@ -1338,6 +1338,7 @@ private final class LiveChannelPlayerTrackState {
     private var selectedAudioForSource: Int?
     private var selectedSubtitleForSource: Int?
     private var didApplySubtitlePreference = false
+    private var appliedStyle: SubtitleStyle?
 
     init(preferences: LiveChannelTrackPreferences) {
         self.preferences = preferences
@@ -1369,6 +1370,7 @@ private final class LiveChannelPlayerTrackState {
     }
 
     func refresh(engine: any LiveChannelEngine) {
+        refreshStyle(engine: engine)
         let audio = engine.audioTracks
         let captions = engine.subtitleTracks
         if audio != audioTracks { audioTracks = audio }
@@ -1393,7 +1395,16 @@ private final class LiveChannelPlayerTrackState {
         engine.selectSubtitleTrack(chosen)
     }
 
+    func refreshStyle(engine: any LiveChannelEngine) {
+        let style = preferences.subtitleStyle
+        guard appliedStyle != style else { return }
+        appliedStyle = style
+        subtitles.style = style
+        engine.updateSubtitleStyle(style)
+    }
+
     func resetProgramme() {
+        appliedStyle = nil
         audioTracks = []
         subtitleTracks = []
         selectedAudioForSource = nil
@@ -2011,6 +2022,7 @@ final class LiveChannelPlayerModel {
 
     func refreshFromEngine() {
         refreshExternalContinuation()
+        trackState.refreshStyle(engine: engine)
         guard networkBlock == nil else { return }
         guard !stopped, !phase.isInterrupted || isRecoveringProgramme else {
             idleSleepGuard.allowSleep()

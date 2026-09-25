@@ -1,22 +1,24 @@
 import Foundation
 import Observation
 
-/// The persisted appearance envelope: a global `base` style plus a
-/// (currently-empty) per-content-type `overrides` map. Persisting the container
-/// shape *now* — rather than a bare `SubtitleStyle` — is deliberate: it makes
-/// per-content-type appearance a **zero-migration** drop-in later (start writing
-/// `overrides` entries; existing blobs already decode the empty map).
+/// Profile appearance, optional library-category overrides, and an independent
+/// Live TV look. Live TV inherits the base until explicitly customized.
 public struct SubtitleStylePreferences: Codable, Equatable, Sendable {
     /// The profile-wide appearance, applied to any category without an override.
     public var base: SubtitleStyle
     /// Per-content-type appearance overrides. Empty today (global-only); a present
     /// entry replaces `base` whole for that category.
     public var overrides: [SubtitleContentCategory: SubtitleStyle]
+    public var liveTV: SubtitleStyle?
+
+    public var resolvedLiveTV: SubtitleStyle { liveTV ?? base }
 
     public init(base: SubtitleStyle = .default,
-                overrides: [SubtitleContentCategory: SubtitleStyle] = [:]) {
+                overrides: [SubtitleContentCategory: SubtitleStyle] = [:],
+                liveTV: SubtitleStyle? = nil) {
         self.base = base
         self.overrides = overrides
+        self.liveTV = liveTV
     }
 
     /// The appearance for a category: its override if present, else the base.
@@ -26,7 +28,7 @@ public struct SubtitleStylePreferences: Codable, Equatable, Sendable {
 
     public static let `default` = SubtitleStylePreferences()
 
-    private enum CodingKeys: String, CodingKey { case base, overrides }
+    private enum CodingKeys: String, CodingKey { case base, overrides, liveTV }
 
     /// Tolerant decode so a blob written before `overrides` existed (or with a
     /// missing `base`) still decodes — each missing key falling back to default.
@@ -34,6 +36,7 @@ public struct SubtitleStylePreferences: Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.base = try c.decodeIfPresent(SubtitleStyle.self, forKey: .base) ?? .default
         self.overrides = try c.decodeIfPresent([SubtitleContentCategory: SubtitleStyle].self, forKey: .overrides) ?? [:]
+        self.liveTV = try c.decodeIfPresent(SubtitleStyle.self, forKey: .liveTV)
     }
 }
 
@@ -52,6 +55,7 @@ public final class SubtitleStyleStore: SubtitleStyleStoring, @unchecked Sendable
 
     /// The `UserDefaults` base key subtitle appearance persists under.
     public static let storageKey = "com.plozz.subtitleStyle"
+    public static let didChangeNotification = Notification.Name("com.plozz.subtitleStyle.changed")
 
     /// - Parameter namespace: per-profile scope. `nil` (the default/primary
     ///   profile) uses the un-suffixed key; other profiles pass their `Profile.id`.
@@ -73,6 +77,7 @@ public final class SubtitleStyleStore: SubtitleStyleStoring, @unchecked Sendable
     public func save(_ preferences: SubtitleStylePreferences) {
         if let data = try? JSONEncoder().encode(preferences) {
             defaults.set(data, forKey: key)
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
         }
     }
 
@@ -92,8 +97,7 @@ public final class SubtitleStyleStore: SubtitleStyleStoring, @unchecked Sendable
 
 /// Observable wrapper so the settings screen / in-player editor can two-way bind
 /// the subtitle appearance and have changes persisted + broadcast to the live
-/// renderer. `style` is the global base; `overrides` is the future per-category
-/// seam (empty today).
+/// renderer. `style` is the library base; Live TV can inherit it or use its own look.
 @MainActor
 @Observable
 public final class SubtitleStyleModel {
@@ -107,6 +111,25 @@ public final class SubtitleStyleModel {
     public private(set) var overrides: [SubtitleContentCategory: SubtitleStyle] {
         didSet { persist() }
     }
+    public var liveTVStyle: SubtitleStyle? {
+        didSet { persist() }
+    }
+
+    public var usesSeparateLiveTVStyle: Bool {
+        get { liveTVStyle != nil }
+        set {
+            if newValue {
+                if liveTVStyle == nil { liveTVStyle = style }
+            } else {
+                liveTVStyle = nil
+            }
+        }
+    }
+
+    public var resolvedLiveTVStyle: SubtitleStyle {
+        get { liveTVStyle ?? style }
+        set { liveTVStyle = newValue }
+    }
 
     private let store: SubtitleStyleStoring
 
@@ -115,6 +138,7 @@ public final class SubtitleStyleModel {
         let prefs = store.load()
         self.style = prefs.base
         self.overrides = prefs.overrides
+        self.liveTVStyle = prefs.liveTV
     }
 
     /// The appearance to render for a content category: its override if present,
@@ -124,6 +148,6 @@ public final class SubtitleStyleModel {
     }
 
     private func persist() {
-        store.save(SubtitleStylePreferences(base: style, overrides: overrides))
+        store.save(SubtitleStylePreferences(base: style, overrides: overrides, liveTV: liveTVStyle))
     }
 }

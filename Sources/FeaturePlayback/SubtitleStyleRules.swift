@@ -3,22 +3,41 @@ import Foundation
 import AVFoundation
 import CoreMedia
 import CoreModels
+import UIKit
 
 /// Converts the platform-neutral `SubtitleStyle` into AVFoundation styling.
 extension SubtitleStyle {
     /// Builds `AVTextStyleRule`s to apply to an `AVPlayerItem`.
     /// Returns `nil` when following the system style (no overrides).
-    public func textStyleRules() -> [AVTextStyleRule]? {
+    @MainActor public func textStyleRules() -> [AVTextStyleRule]? {
         guard !followsSystemStyle else { return nil }
 
         // Honour the explicit background toggle: a disabled box renders fully
         // transparent even though the stored colour keeps its own alpha (so the
         // user's last box colour survives a toggle off/on).
-        let backgroundColor = background.isEnabled ? background.color : .clear
+        var backgroundColor = background.isEnabled ? background.color : .clear
+        backgroundColor.alpha *= opacity
+        var foregroundColor = textColor
+        foregroundColor.alpha *= opacity
 
         var styles: [String: Any] = [:]
-        styles[kCMTextMarkupAttribute_ForegroundColorARGB as String] = textColor.argbArray
+        styles[kCMTextMarkupAttribute_ForegroundColorARGB as String] = foregroundColor.argbArray
         styles[kCMTextMarkupAttribute_BackgroundColorARGB as String] = backgroundColor.argbArray
+        styles[kCMTextMarkupAttribute_BoldStyle as String] = fontWeight == .bold || fontWeight == .semibold
+        switch systemFont {
+        case .caption(let family):
+            styles[kCMTextMarkupAttribute_GenericFontFamilyName as String] = family.cmFontName
+        case .named(let name):
+            styles[kCMTextMarkupAttribute_FontFamilyName as String] = UIFont(name: name, size: 30)?.familyName ?? name
+        case nil:
+            if let face = fontFamily.postScriptNameCandidates(weight: fontWeight).first {
+                styles[kCMTextMarkupAttribute_FontFamilyName as String] = UIFont(name: face, size: 30)?.familyName ?? face
+            }
+        }
+        if !usesSourcePosition {
+            styles[kCMTextMarkupAttribute_OrthogonalLinePositionPercentageRelativeToWritingDirection as String] =
+                min(max((1 - verticalPosition) * 100, 0), 100)
+        }
         styles[kCMTextMarkupAttribute_BaseFontSizePercentageRelativeToVideoHeight as String] =
             max(1.0, 5.0 * fontScale)
         // AVFoundation supports only ONE character edge style, so this fallback
@@ -32,6 +51,21 @@ extension SubtitleStyle {
 
         guard let rule = AVTextStyleRule(textMarkupAttributes: styles) else { return nil }
         return [rule]
+    }
+}
+
+private extension SubtitleSystemFont.CaptionFamily {
+    var cmFontName: String {
+        switch self {
+        case .default: kCMTextMarkupGenericFontName_Default as String
+        case .monospacedSerif: kCMTextMarkupGenericFontName_MonospaceSerif as String
+        case .proportionalSerif: kCMTextMarkupGenericFontName_ProportionalSerif as String
+        case .monospacedSansSerif: kCMTextMarkupGenericFontName_MonospaceSansSerif as String
+        case .proportionalSansSerif: kCMTextMarkupGenericFontName_ProportionalSansSerif as String
+        case .casual: kCMTextMarkupGenericFontName_Casual as String
+        case .cursive: kCMTextMarkupGenericFontName_Cursive as String
+        case .smallCapitals: kCMTextMarkupGenericFontName_SmallCapital as String
+        }
     }
 }
 

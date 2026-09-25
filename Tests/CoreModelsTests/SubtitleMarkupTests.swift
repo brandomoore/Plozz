@@ -79,6 +79,21 @@ final class SubtitleMarkupTests: XCTestCase {
         XCTAssertEqual(anchor.y, 0.1, accuracy: 0.001)
     }
 
+    func testASSBareColorOverrideRestoresViewerColor() throws {
+        for reset in ["\\c", "\\1c"] {
+            let t = try text(assHeader + "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{\\c&H0000FF&}Red{\(reset)} plain\n")
+            XCTAssertEqual(t.runs?.first?.color, SubtitleColor(red: 1, green: 0, blue: 0))
+            XCTAssertNil(t.runs?.last?.color)
+        }
+    }
+
+    func testASSInvalidCoordinatesDoNotReachTheRenderer() {
+        XCTAssertNil(SubtitleMarkup.assOverrides(in: "\\pos(nan,10)").position)
+        XCTAssertNil(SubtitleMarkup.assOverrides(in: "\\pos(10,inf)").position)
+        XCTAssertEqual(SubtitleMarkup.playResolution(in: ["PlayResX: nan", "PlayResY: -1"]),
+                       CGSize(width: 384, height: 288))
+    }
+
     func testASSLineBreaksAndPlainEventsStayUnformatted() throws {
         let t = try text(assHeader + "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{\\i1}One\\NTwo\n")
         XCTAssertEqual(t.string, "One\nTwo")

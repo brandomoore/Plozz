@@ -46,6 +46,7 @@ struct SubtitleStylePanel: View {
                 styleScreen(main.rows, dividerBefore: main.dividerBefore)
             }
         case .styleFont: styleFontScreen
+        case .styleSystemFont: systemFontScreen
         case .styleOutline: styleScreen(styleOutlineRows)
         case .styleBackground: styleScreen(styleBackgroundRows)
         case .styleDual: styleScreen(styleDualRows)
@@ -212,14 +213,14 @@ struct SubtitleStylePanel: View {
     /// size, colour, opacity, edge, box), so only placement rows remain.
     private var styleMainRows: (rows: [StyleRowSpec], dividerBefore: Int) {
         let s = model.subtitleStyle
-        let weights = s.fontFamily.availableWeights
+        let weights = s.availableFontWeights
         let editsLook = !s.followsSystemStyle
         var rows: [StyleRowSpec] = []
         var slot = 0
 
         rows.append(StyleRowSpec(slot: slot, title: "Use System Caption Style", kind: .toggle(isOn: s.followsSystemStyle, flip: { updateStyle { $0.followsSystemStyle.toggle() } }))); slot += 1
         if editsLook {
-            rows.append(StyleRowSpec(slot: slot, title: "Font", kind: .submenu(summary: Text(verbatim: s.fontFamily.displayName), open: { openScreen(.styleFont) }))); slot += 1
+            rows.append(StyleRowSpec(slot: slot, title: "Font", kind: .submenu(summary: Text(verbatim: s.fontDisplayName), open: { openScreen(.styleFont) }))); slot += 1
             rows.append(choiceRow(slot, "Weight", options: weights, current: s.fontWeight.snapped(to: weights), label: { $0.displayName }) { v in updateStyle { $0.fontWeight = v } }); slot += 1
             rows.append(numberRow(slot, "Text Size", options: Self.sizeOptions, current: Int((s.fontScale * 100).rounded()), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.fontScale = Double(v) / 100 } }); slot += 1
         }
@@ -275,8 +276,15 @@ struct SubtitleStylePanel: View {
         let current = model.subtitleStyle.fontFamily
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(SubtitleFontFamily.allCases.enumerated()), id: \.offset) { idx, family in
-                fontChoiceRow(family, index: idx, isSelected: family == current)
+                fontChoiceRow(family, index: idx, isSelected: model.subtitleStyle.systemFont == nil && family == current)
             }
+            styleRow(StyleRowSpec(
+                slot: SubtitleFontFamily.allCases.count, title: "System",
+                kind: .submenu(
+                    summary: Text(verbatim: model.subtitleStyle.systemFont.map(SubtitleSystemFonts.displayName) ?? ""),
+                    open: { openScreen(.styleSystemFont) }
+                )
+            ))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
@@ -286,7 +294,7 @@ struct SubtitleStylePanel: View {
     @ViewBuilder
     private func fontChoiceRow(_ family: SubtitleFontFamily, index: Int, isSelected: Bool) -> some View {
         Button {
-            updateStyle { $0.fontFamily = family }
+            updateStyle { $0.fontFamily = family; $0.systemFont = nil }
             openScreen(.style)
         } label: {
             HStack(spacing: 10) {
@@ -306,6 +314,34 @@ struct SubtitleStylePanel: View {
         .buttonStyle(PlayerMenuRowButtonStyle())
         .focusEffectDisabled()
         .focused($focus, equals: .row(index))
+    }
+
+    private var systemFontScreen: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(SubtitleSystemFonts.all.enumerated()), id: \.element.id) { index, entry in
+                Button {
+                    updateStyle { $0.systemFont = entry.id }
+                    openScreen(.style)
+                } label: {
+                    HStack(spacing: 10) {
+                        Text(verbatim: entry.name).font(entry.preview).lineLimit(1).minimumScaleFactor(0.5)
+                        Spacer(minLength: 8)
+                        Image(systemName: model.subtitleStyle.systemFont == entry.id ? "checkmark.circle.fill" : "circle")
+                            .font(.body)
+                            .playerMenuRowMark(isSelected: model.subtitleStyle.systemFont == entry.id, accent: palette.accent)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(PlayerMenuRowButtonStyle())
+                .focusEffectDisabled()
+                .focused($focus, equals: .row(index))
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     /// A SwiftUI `Font` that renders a family's name in that family's own Regular

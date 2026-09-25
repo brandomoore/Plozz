@@ -480,16 +480,28 @@ private struct StyledCueText: View {
             family: style.fontFamily,
             weight: style.fontWeight,
             fontSize: fontSize,
-            isBold: text.isBold,
-            isItalic: text.isItalic,
+            isBold: allowsSourceFont && text.isBold,
+            isItalic: allowsSourceFont && text.isItalic,
             fill: UIColor(fillColor),
             outline: outlineUIColor,
             outlineWidth: visibleOutlineWidth,
             shadow: shadowSpec,
             background: backgroundSpec,
             alignment: nsAlignment,
-            fillSpans: fillSpans
+            fillSpans: fillSpans,
+            systemFontDescriptor: fontDescriptor,
+            glyphBackground: style.followsSystemStyle
+                ? SystemCaptionStyle.shared.appearance.background.map(uiColor) : nil
         )
+    }
+
+    private var allowsSourceFont: Bool {
+        !style.followsSystemStyle || SystemCaptionStyle.shared.appearance.allowsSourceFont
+    }
+
+    private var fontDescriptor: UIFontDescriptor? {
+        if style.followsSystemStyle { return SystemCaptionStyle.shared.appearance.fontDescriptor }
+        return style.systemFont.flatMap { SubtitleSystemFonts.descriptor(for: $0, weight: style.fontWeight) }
     }
 
     /// The file's colour spans, as UTF-16 ranges, when the style honours them.
@@ -502,9 +514,11 @@ private struct StyledCueText: View {
             let length = (run.text as NSString).length
             if let c = run.color {
                 let k = colorScale
+                let alpha = style.followsSystemStyle && !SystemCaptionStyle.shared.appearance.allowsSourceOpacity
+                    ? SystemCaptionStyle.shared.appearance.textColor.alpha : c.alpha
                 spans.append(SubtitleFillSpan(
                     location: location, length: length,
-                    color: UIColor(red: c.red * k, green: c.green * k, blue: c.blue * k, alpha: c.alpha)
+                    color: UIColor(red: c.red * k, green: c.green * k, blue: c.blue * k, alpha: alpha)
                 ))
             }
             location += length

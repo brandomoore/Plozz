@@ -62,6 +62,8 @@ struct CoreTextSubtitleLine: UIViewRepresentable {
     let background: SubtitleBackgroundSpec?
     let alignment: NSTextAlignment
     var fillSpans: [SubtitleFillSpan] = []
+    var systemFontDescriptor: UIFontDescriptor? = nil
+    var glyphBackground: UIColor? = nil
 
     func makeUIView(context: Context) -> SubtitleLineView { SubtitleLineView() }
 
@@ -71,7 +73,8 @@ struct CoreTextSubtitleLine: UIViewRepresentable {
             isBold: isBold, isItalic: isItalic,
             fill: fill, outline: outline, outlineWidth: outlineWidth,
             shadow: shadow, background: background, alignment: alignment,
-            fillSpans: fillSpans))
+            fillSpans: fillSpans, systemFontDescriptor: systemFontDescriptor,
+            glyphBackground: glyphBackground))
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: SubtitleLineView, context: Context) -> CGSize? {
@@ -100,6 +103,8 @@ final class SubtitleLineView: UIView {
         var background: SubtitleBackgroundSpec?
         var alignment: NSTextAlignment
         var fillSpans: [SubtitleFillSpan] = []
+        var systemFontDescriptor: UIFontDescriptor? = nil
+        var glyphBackground: UIColor? = nil
     }
 
     private struct Layout {
@@ -108,6 +113,8 @@ final class SubtitleLineView: UIView {
         var totalSize: CGSize     // text size + outline/shadow/background insets
         var colorGlyphs: [ColorGlyph]  // emoji / colour glyphs (no vector path) drawn on top
         var background: BackgroundFill?  // rounded box hugging the text, drawn first
+        var glyphBackgrounds: [CGRect] = []
+        var defaultFillPath: CGPath? = nil
     }
 
     /// Glyphs of one source-coloured span, in the same coordinates as `path`.
@@ -209,11 +216,16 @@ final class SubtitleLineView: UIView {
             ctx.setFillColor(bg.color.cgColor)
             ctx.fillPath()
         }
+        if let color = c.glyphBackground {
+            ctx.setFillColor(color.cgColor)
+            for rect in l.glyphBackgrounds { ctx.fill(rect) }
+        }
 
         // 1. Soft shadow: fill the glyph silhouette with a live shadow so the
         //    blurred/offset copy shows behind everything else.
         if let sh = c.shadow {
             ctx.saveGState()
+            clipOutsideGlyphs(path, in: ctx)
             // UIKit shadow offsets stay in device space even after the text
             // coordinate flip; positive height still means down on screen.
             ctx.setShadow(offset: sh.offset, blur: sh.blur, color: sh.color.cgColor)
@@ -227,6 +239,7 @@ final class SubtitleLineView: UIView {
         //    the outer half remains once the fill is painted over it.
         if let outline = c.outline, c.outlineWidth > 0 {
             ctx.saveGState()
+            clipOutsideGlyphs(path, in: ctx)
             ctx.addPath(path)
             ctx.setStrokeColor(outline.cgColor)
             ctx.setLineWidth(c.outlineWidth * 2)
@@ -236,8 +249,8 @@ final class SubtitleLineView: UIView {
             ctx.restoreGState()
         }
 
-        // 3. Fill on top, then repaint source-coloured spans over their glyphs.
-        ctx.addPath(path)
+        // Each glyph receives one fill, so translucent source colors stay translucent.
+        ctx.addPath(l.defaultFillPath ?? path)
         ctx.setFillColor(c.fill.cgColor)
         ctx.fillPath()
         for span in l.spanFills {
@@ -260,6 +273,12 @@ final class SubtitleLineView: UIView {
     }
 
     // MARK: - Layout
+
+    private func clipOutsideGlyphs(_ path: CGPath, in context: CGContext) {
+        context.addRect(bounds)
+        context.addPath(path)
+        context.clip(using: .evenOdd)
+    }
 
     private func buildLayout(_ c: Config, maxWidth: CGFloat) -> Layout {
         let font = makeCTFont(c)
@@ -292,7 +311,8 @@ final class SubtitleLineView: UIView {
         let frame = CTFramesetterCreateFrame(
             fs, CFRange(location: 0, length: attr.length),
             CGPath(rect: boxRect, transform: nil), nil)
-        let (rawPath, rawColorGlyphs, rawSpanFills) = Self.combinedGlyphPath(frame: frame)
+        let (rawPath, rawDefaultFill, rawColorGlyphs, rawSpanFills) = Self.combinedGlyphPath(frame: frame)
+        let glyphBackgrounds = c.glyphBackground == nil ? [] : Self.lineBackgroundRects(frame: frame)
 
         // Font ascent/descent/leading are layout metrics, not visible padding.
         // Anchor to actual ink (including fallback/colour glyphs), otherwise
@@ -310,6 +330,7 @@ final class SubtitleLineView: UIView {
         guard !ink.isNull else {
             return Layout(path: rawPath, spanFills: [], totalSize: .zero, colorGlyphs: [], background: nil)
         }
+        let backgroundBounds = glyphBackgrounds.reduce(ink) { $0.union($1) }
 
         // Grow the ink by the per-side reach to get the full drawn rect, union in
         // the optional background box (which hugs the text box at the user's
@@ -319,9 +340,10 @@ final class SubtitleLineView: UIView {
             y: ink.minY - padB,                       // flipped coords: bottom = min y
             width:  ink.width  + padL + padR,
             height: ink.height + padT + padB)
+        drawn = drawn.union(backgroundBounds)
         var bgPre: CGRect?
         if let bg = c.background {
-            let r = ink.insetBy(dx: -bg.horizontalPadding, dy: -bg.verticalPadding)
+            let r = backgroundBounds.insetBy(dx: -bg.horizontalPadding, dy: -bg.verticalPadding)
             bgPre = r
             drawn = drawn.union(r)
         }
@@ -345,7 +367,23 @@ final class SubtitleLineView: UIView {
                       spanFills: spanFills,
                       totalSize: CGSize(width: ceil(drawn.width), height: ceil(drawn.height)),
                       colorGlyphs: colorGlyphs,
-                      background: background)
+                      background: background,
+                      glyphBackgrounds: glyphBackgrounds.map { $0.offsetBy(dx: -drawn.minX, dy: -drawn.minY) },
+                      defaultFillPath: rawDefaultFill.copy(using: &shift) ?? rawDefaultFill)
+    }
+
+    static func lineBackgroundRects(frame: CTFrame) -> [CGRect] {
+        let lines = CTFrameGetLines(frame) as? [CTLine] ?? []
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        return lines.enumerated().compactMap { index, line in
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            let width = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+            guard width > 0, ascent + descent > 0 else { return nil }
+            return CGRect(x: origins[index].x, y: origins[index].y - descent,
+                          width: width, height: ascent + descent)
+        }
     }
 
     /// How far the soft shadow reaches beyond the glyph ink on each side.
@@ -360,11 +398,12 @@ final class SubtitleLineView: UIView {
             right:  blur + max(0,  sh.offset.width))
     }
 
-    private static func combinedGlyphPath(frame: CTFrame) -> (CGPath, [ColorGlyph], [SpanFill]) {
+    private static func combinedGlyphPath(frame: CTFrame) -> (CGPath, CGPath, [ColorGlyph], [SpanFill]) {
         let combined = CGMutablePath()
+        let defaultFill = CGMutablePath()
         var colorGlyphs: [ColorGlyph] = []
         var spanPaths: [(path: CGMutablePath, color: UIColor)] = []
-        guard let lines = CTFrameGetLines(frame) as? [CTLine] else { return (combined, [], []) }
+        guard let lines = CTFrameGetLines(frame) as? [CTLine] else { return (combined, defaultFill, [], []) }
         var origins = [CGPoint](repeating: .zero, count: lines.count)
         CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
 
@@ -401,6 +440,7 @@ final class SubtitleLineView: UIView {
                         let placed = CGAffineTransform(translationX: pos.x, y: pos.y)
                         combined.addPath(gp, transform: placed)
                         spanPath?.addPath(gp, transform: placed)
+                        if spanPath == nil { defaultFill.addPath(gp, transform: placed) }
                         continue
                     }
                     // No vector outline. This is *usually* whitespace (a space has
@@ -416,7 +456,7 @@ final class SubtitleLineView: UIView {
                 }
             }
         }
-        return (combined, colorGlyphs, spanPaths.map { SpanFill(path: $0.path, color: $0.color) })
+        return (combined, defaultFill, colorGlyphs, spanPaths.map { SpanFill(path: $0.path, color: $0.color) })
     }
 
     // MARK: - Font
@@ -464,10 +504,16 @@ final class SubtitleLineView: UIView {
         "AppleColorEmoji"
     ]
 
-    private func makeCTFont(_ c: Config) -> CTFont {
+    func makeCTFont(_ c: Config) -> CTFont {
         let size = c.fontSize
         let baseDescriptor: CTFontDescriptor
-        if let ps = postScriptName(c) {
+        if let systemDescriptor = c.systemFontDescriptor {
+            let descriptor = systemDescriptor as CTFontDescriptor
+            var traits = CTFontGetSymbolicTraits(CTFontCreateWithFontDescriptor(descriptor, size, nil))
+            if c.isBold { traits.insert(.traitBold) }
+            if c.isItalic { traits.insert(.traitItalic) }
+            baseDescriptor = CTFontDescriptorCreateCopyWithSymbolicTraits(descriptor, traits, traits) ?? descriptor
+        } else if let ps = postScriptName(c) {
             baseDescriptor = CTFontDescriptorCreateWithNameAndSize(ps as CFString, size)
             #if DEBUG
             // Core Text silently substitutes a fallback when a named font isn't
@@ -507,7 +553,7 @@ final class SubtitleLineView: UIView {
         // letterforms). makeAttributed restores fallback runs to nominal size.
         let reference = CTFontCreateWithName("AtkinsonHyperlegible-Regular" as CFString, size, nil)
         let capHeight = CTFontGetCapHeight(baseFont)
-        let normalizedSize = capHeight > 0
+        let normalizedSize = c.systemFontDescriptor == nil && capHeight > 0
             ? size * CTFontGetCapHeight(reference) / capHeight
             : size
         let systemDefault =

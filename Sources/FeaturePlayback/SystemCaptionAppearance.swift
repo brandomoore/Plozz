@@ -1,10 +1,12 @@
 #if canImport(MediaAccessibility) && canImport(SwiftUI)
 import CoreGraphics
 import CoreModels
+import CoreNetworking
 import CoreText
 import Foundation
 import MediaAccessibility
 import Observation
+import UIKit
 
 /// The caption look set for the whole device (Settings › Accessibility ›
 /// Subtitles & Captioning), as the parts of a ``SubtitleStyle`` it decides.
@@ -14,12 +16,18 @@ struct SystemCaptionAppearance: Equatable {
     var textColor: SubtitleColor
     /// The typeface family the device names, or `nil` for the system font.
     var fontFamilyName: String?
+    var fontDescriptor: UIFontDescriptor? = nil
+    var allowsSourceColors: Bool = true
+    var allowsSourceOpacity: Bool = true
+    var allowsSourceFont: Bool = true
     var isBold: Bool
     /// Text size relative to the device's normal caption size (1 = normal).
     var relativeSize: Double
     var edge: SubtitleEdgeStyle
-    /// The box behind the text, or `nil` for none.
+    /// Text-line background and enclosing window are independent Apple settings.
     var background: SubtitleColor?
+    var windowColor: SubtitleColor? = nil
+    var windowCornerRadius: Double = 0
 
     /// `style` drawn in this appearance. The device decides the typeface, size,
     /// colours, background and edge; `style` keeps where subtitles sit, the
@@ -29,14 +37,23 @@ struct SystemCaptionAppearance: Equatable {
         var resolved = style
         resolved.fontFamily = Self.family(named: fontFamilyName)
         resolved.fontWeight = isBold ? .bold : .regular
-        resolved.fontScale = min(max(relativeSize, 0.4), 2.5)
+        if relativeSize.isFinite, relativeSize > 0 {
+            resolved.fontScale = relativeSize
+        } else {
+            PlozzLog.playback.error("System caption size is invalid; using the normal caption size.")
+            resolved.fontScale = 1
+        }
         resolved.textColor = textColor
+        resolved.usesSourceColors = style.usesSourceColors && allowsSourceColors
         resolved.opacity = 1
         resolved.edge = SubtitleStyle.Edge(style: edge)
         // The device's uniform edge is its outline; it has no second one.
         resolved.border.isEnabled = false
-        resolved.background.isEnabled = background != nil
-        if let background { resolved.background.color = background }
+        resolved.background = SubtitleStyle.Background(
+            isEnabled: windowColor != nil,
+            color: windowColor ?? .clear,
+            cornerRadius: windowCornerRadius
+        )
         return resolved
     }
 
@@ -56,10 +73,15 @@ struct SystemCaptionAppearance: Equatable {
 
     /// The appearance as the device has it now.
     static func current() -> SystemCaptionAppearance {
-        let font = MACaptionAppearanceCopyFontDescriptorForStyle(.user, nil, .default).takeRetainedValue()
+        var fontBehavior = MACaptionAppearanceBehavior.useValue
+        let font = MACaptionAppearanceCopyFontDescriptorForStyle(.user, &fontBehavior, .default).takeRetainedValue()
         let family = CTFontDescriptorCopyAttribute(font, kCTFontFamilyNameAttribute) as? String
         let traits = CTFontDescriptorCopyAttribute(font, kCTFontTraitsAttribute) as? [CFString: Any]
         let symbolic = (traits?[kCTFontSymbolicTrait] as? UInt32) ?? 0
+        var foregroundBehavior = MACaptionAppearanceBehavior.useValue
+        var opacityBehavior = MACaptionAppearanceBehavior.useValue
+        let foreground = MACaptionAppearanceCopyForegroundColor(.user, &foregroundBehavior).takeRetainedValue()
+        let foregroundOpacity = MACaptionAppearanceGetForegroundOpacity(.user, &opacityBehavior)
 
         let textBackground = color(
             MACaptionAppearanceCopyBackgroundColor(.user, nil).takeRetainedValue(),
@@ -71,15 +93,20 @@ struct SystemCaptionAppearance: Equatable {
         )
         return SystemCaptionAppearance(
             textColor: color(
-                MACaptionAppearanceCopyForegroundColor(.user, nil).takeRetainedValue(),
-                opacity: MACaptionAppearanceGetForegroundOpacity(.user, nil)
+                foreground,
+                opacity: foregroundOpacity
             ),
             fontFamilyName: family,
+            fontDescriptor: font as UIFontDescriptor,
+            allowsSourceColors: foregroundBehavior == .useContentIfAvailable,
+            allowsSourceOpacity: opacityBehavior == .useContentIfAvailable,
+            allowsSourceFont: fontBehavior == .useContentIfAvailable,
             isBold: symbolic & CTFontSymbolicTraits.traitBold.rawValue != 0,
             relativeSize: Double(MACaptionAppearanceGetRelativeCharacterSize(.user, nil)),
             edge: edgeStyle(MACaptionAppearanceGetTextEdgeStyle(.user, nil)),
-            // Plozz draws one box: the text's own background, else the window.
-            background: [textBackground, window].first { $0.alpha > 0.01 }
+            background: textBackground.alpha > 0 ? textBackground : nil,
+            windowColor: window.alpha > 0 ? window : nil,
+            windowCornerRadius: Double(MACaptionAppearanceGetWindowRoundedCornerRadius(.user, nil))
         )
     }
 
@@ -112,15 +139,28 @@ struct SystemCaptionAppearance: Equatable {
 final class SystemCaptionStyle {
     static let shared = SystemCaptionStyle()
 
-    private(set) var appearance = SystemCaptionAppearance.current()
+    private(set) var appearance: SystemCaptionAppearance
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private let notifications: NotificationCenter
 
-    private init() {
-        NotificationCenter.default.addObserver(
-            forName: Notification.Name(kMACaptionAppearanceSettingsChangedNotification as String),
-            object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.appearance = .current() }
+    init(
+        readAppearance: @escaping @MainActor () -> SystemCaptionAppearance = { .current() },
+        notifications: NotificationCenter = .default
+    ) {
+        self.notifications = notifications
+        appearance = readAppearance()
+        for name in [
+            Notification.Name(kMACaptionAppearanceSettingsChangedNotification as String),
+            UIApplication.didBecomeActiveNotification
+        ] {
+            observers.append(notifications.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.appearance = readAppearance() }
+            })
         }
+    }
+
+    deinit {
+        for observer in observers { notifications.removeObserver(observer) }
     }
 
     /// The style subtitles are drawn in: `style` itself, or the device's caption

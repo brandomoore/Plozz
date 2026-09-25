@@ -221,6 +221,11 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
 
     /// The subtitle typeface. Defaults to bundled Atkinson Hyperlegible.
     public var fontFamily: SubtitleFontFamily
+    /// An optional device font, independent of following the complete system style.
+    public var systemFont: SubtitleSystemFont?
+    public var availableFontWeights: [SubtitleFontWeight] {
+        systemFont == nil ? fontFamily.availableWeights : SubtitleFontWeight.allCases
+    }
     /// The global typeface weight. The active family snaps this to the nearest
     /// weight it actually bundles, so the value persists across family switches
     /// even when a family (e.g. Atkinson) offers fewer weights.
@@ -393,6 +398,7 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
 
     public init(
         fontFamily: SubtitleFontFamily = .atkinson,
+        systemFont: SubtitleSystemFont? = nil,
         fontWeight: SubtitleFontWeight = .regular,
         fontScale: Double = 1.0,
         verticalPosition: Double = 0.06,
@@ -410,6 +416,7 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
         usesSourceColors: Bool = true
     ) {
         self.fontFamily = fontFamily
+        self.systemFont = systemFont
         self.fontWeight = fontWeight
         self.fontScale = fontScale
         self.verticalPosition = verticalPosition
@@ -535,7 +542,7 @@ public extension SubtitleStyle {
 
 extension SubtitleStyle {
     private enum CodingKeys: String, CodingKey {
-        case fontFamily, fontWeight, fontScale, verticalPosition, verticalAnchor, horizontalOffset
+        case fontFamily, systemFont, fontWeight, fontScale, verticalPosition, verticalAnchor, horizontalOffset
         case textColor, opacity, hdrLuminanceScale
         case background, edge, border, secondary, followsSystemStyle
         case usesSourcePosition, usesSourceColors
@@ -548,6 +555,7 @@ extension SubtitleStyle {
         let d = SubtitleStyle.default
         self.init(
             fontFamily: try c.decodeIfPresent(SubtitleFontFamily.self, forKey: .fontFamily) ?? d.fontFamily,
+            systemFont: try c.decodeIfPresent(SubtitleSystemFont.self, forKey: .systemFont),
             fontWeight: try c.decodeIfPresent(SubtitleFontWeight.self, forKey: .fontWeight) ?? d.fontWeight,
             fontScale: try c.decodeIfPresent(Double.self, forKey: .fontScale) ?? d.fontScale,
             verticalPosition: try c.decodeIfPresent(Double.self, forKey: .verticalPosition) ?? d.verticalPosition,

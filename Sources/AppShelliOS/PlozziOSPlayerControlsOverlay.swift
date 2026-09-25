@@ -964,7 +964,7 @@ private struct PlozziOSSubtitleOptionsSheet: View {
                 } label: {
                     LabeledContent(
                         "Style",
-                        value: viewModel.controls.subtitleStyle.fontFamily.displayName
+                        value: viewModel.controls.subtitleStyle.fontDisplayName
                     )
                 }
             }
@@ -1084,7 +1084,7 @@ private struct PlozziOSSubtitleAppearanceView: View {
                     } label: {
                         LabeledContent(
                             "Font",
-                            value: viewModel.controls.subtitleStyle.fontFamily.displayName
+                            value: viewModel.controls.subtitleStyle.fontDisplayName
                         )
                     }
 
@@ -1093,7 +1093,7 @@ private struct PlozziOSSubtitleAppearanceView: View {
                         selection: subtitleStyleBinding(viewModel, \.fontWeight)
                     ) {
                         ForEach(
-                            viewModel.controls.subtitleStyle.fontFamily.availableWeights,
+                            viewModel.controls.subtitleStyle.availableFontWeights,
                             id: \.self
                         ) {
                             Text($0.displayName).tag($0)
@@ -1237,6 +1237,7 @@ private struct PlozziOSSubtitleFontView: View {
                 Button {
                     var style = viewModel.controls.subtitleStyle
                     style.fontFamily = family
+                    style.systemFont = nil
                     style.fontWeight = style.fontWeight.snapped(
                         to: family.availableWeights
                     )
@@ -1246,12 +1247,33 @@ private struct PlozziOSSubtitleFontView: View {
                         Text(family.displayName)
                             .font(subtitlePreviewFont(for: family))
                         Spacer()
-                        if family ==
+                        if viewModel.controls.subtitleStyle.systemFont == nil, family ==
                             viewModel.controls.subtitleStyle.fontFamily {
                             Image(systemName: "checkmark")
                         }
                     }
                 }
+            }
+            NavigationLink("System") {
+                List {
+                    ForEach(SubtitleSystemFonts.all) { entry in
+                        Button {
+                            var style = viewModel.controls.subtitleStyle
+                            style.systemFont = entry.id
+                            viewModel.applySubtitleStyle(style)
+                        } label: {
+                            HStack {
+                                Text(verbatim: entry.name).font(entry.preview)
+                                Spacer()
+                                if viewModel.controls.subtitleStyle.systemFont == entry.id {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("System")
+                .navigationBarTitleDisplayMode(.inline)
             }
         }
         .navigationTitle("Font")
