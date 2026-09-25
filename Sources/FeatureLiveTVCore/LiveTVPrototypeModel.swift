@@ -148,6 +148,29 @@ public struct LiveTVPrototypeProgram: Codable, Identifiable, Equatable, Sendable
     }
 }
 
+extension LiveTVPrototypeChannel {
+    /// The channel as the player lists it.
+    public func playerItem(program: LiveChannelProgramInfo?) -> LiveChannelOnNowItem {
+        LiveChannelOnNowItem(
+            channelID: id, channelName: name, number: number, logoURL: logoURL,
+            plozzChannelID: source == .plozz ? id : nil, program: program
+        )
+    }
+}
+
+extension LiveTVPrototypeProgram {
+    /// The programme as the player shows it.
+    public var playerInfo: LiveChannelProgramInfo {
+        LiveChannelProgramInfo(
+            title: title,
+            subtitle: subtitle.isEmpty ? details?.episode : subtitle,
+            description: details?.description,
+            start: start, end: end,
+            artworkURL: details?.artworkURL
+        )
+    }
+}
+
 public struct LiveTVProgramDetails: Codable, Equatable, Sendable {
     public var description: String?
     public var episode: String?
@@ -272,6 +295,15 @@ public final class LiveTVPrototypeModel {
         didSet {
             guard guideOnly != oldValue else { return }
             refreshVisibleChannels()
+        }
+    }
+
+    /// Whether the guide opens with a Recently watched row. Recents are still
+    /// recorded while it is off, so turning it back on restores the row.
+    public var showsRecentChannels = true {
+        didSet {
+            guard showsRecentChannels != oldValue else { return }
+            refreshGuideChannels()
         }
     }
 
@@ -990,7 +1022,7 @@ public final class LiveTVPrototypeModel {
 
     private func refreshGuideChannels() {
         let visibleByID = Dictionary(uniqueKeysWithValues: visibleChannels.map { ($0.id, $0) })
-        let recent = recentChannelIDs.compactMap { visibleByID[$0] }
+        let recent = showsRecentChannels ? recentChannelIDs.compactMap { visibleByID[$0] } : []
         let orderedIDs = Set(favoriteOrder)
         let favorites = favoriteOrder.compactMap { visibleByID[$0] }
             + visibleChannels.filter { favoriteIDs.contains($0.id) && !orderedIDs.contains($0.id) }

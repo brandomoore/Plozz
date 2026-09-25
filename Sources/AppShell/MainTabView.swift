@@ -717,6 +717,18 @@ struct MainTabView: View {
         }
     }
 
+    /// The remote's Guide button: bring Live TV forward, then let the player —
+    /// if one is fullscreen — raise its guide over the picture.
+    private func openLiveTVGuide() {
+        guard activeNavigationDestinations.contains(.liveTV) else { return }
+        if navigationStyle == .tabBar {
+            selectedTab.wrappedValue = .liveTV
+        } else {
+            libraryNavigationSelection.wrappedValue = .liveTV
+        }
+        NotificationCenter.default.post(name: LiveTVGuideButton.pressed, object: nil)
+    }
+
     private func destination(for tab: MainTab) -> NavigationRailDestination {
         switch tab {
         case .home: return .home
@@ -1538,6 +1550,9 @@ struct MainTabView: View {
             settleFreshLaunch()
             settleStandaloneStartup()
         }
+        #if os(tvOS)
+        .onContinueUserActivity(LiveTVGuideButton.activityType) { _ in openLiveTVGuide() }
+        #endif
         .background {
             // Switching tabs is `MainTabView`'s job, so the capture rig's tab
             // requests are consumed here rather than in either shell. A leaf

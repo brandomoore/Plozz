@@ -157,6 +157,36 @@ private struct SubtitlePreviewCaption: View {
     }
 }
 
+enum SubtitlePreviewSample: CaseIterable {
+    case primary, secondary, positioned
+
+    var resource: LocalizedStringResource {
+        switch self {
+        case .primary:
+            LocalizedStringResource(
+                "Keep going. We're almost there.\nThe train leaves at 9:45.",
+                comment: "Two-line sample subtitle in the style editor preview, not dialogue from a film."
+            )
+        case .secondary:
+            LocalizedStringResource(
+                "This is how a second subtitle appears.",
+                comment: "Sample subtitle shown in the style editor preview, not dialogue from a film."
+            )
+        case .positioned:
+            LocalizedStringResource(
+                "A sign placed by the subtitle file",
+                comment: "Sample source-positioned subtitle in the style editor preview, not dialogue from a film."
+            )
+        }
+    }
+
+    func resolve(locale: Locale) -> String {
+        var resource = self.resource
+        resource.locale = locale
+        return String(localized: resource) // l10n:content — CoreText cue boundary; app-authored preview copy resolved with the current environment locale on every update
+    }
+}
+
 struct SubtitleStylePreviewCanvas: View {
     let style: SubtitleStyle
     let secondaryVisible: Bool
@@ -167,6 +197,7 @@ struct SubtitleStylePreviewCanvas: View {
     var backgroundOptions: SubtitlePreviewOptions? = nil
     var hdrVideo: SubtitleHDRPreview? = nil
     var hostsHDRVideo = true
+    @Environment(\.locale) private var locale
 
     var body: some View {
         GeometryReader { geometry in
@@ -181,13 +212,15 @@ struct SubtitleStylePreviewCanvas: View {
                     SubtitleOverlayView(
                         primary: primary,
                         secondary: [.init(id: 2, start: 0, end: 60, body: .text(.init(
-                            String(localized: "This is how a second subtitle appears.",
-                                   comment: "Sample subtitle shown in the style editor preview, not dialogue from a film.")
+                            SubtitlePreviewSample.secondary.resolve(locale: locale)
                         )))],
                         secondaryActive: secondaryVisible,
                         style: SystemCaptionStyle.shared.resolved(style),
                         isHDR: showsHDRBrightness
                     )
+                    // Cue equality uses identity/timing, not text. Refresh only
+                    // passive captions; keep video, background and editor alive.
+                    .id(locale.identifier)
                 }
                 if let hdrVideo {
                     switch hdrVideo.state {
@@ -214,12 +247,11 @@ struct SubtitleStylePreviewCanvas: View {
 
     private var primary: [SubtitleCue] {
         var cues = [SubtitleCue(id: 0, start: 0, end: 60, body: .text(.init(
-            String(localized: "Keep going. We're almost there.\nThe train leaves at 9:45.",
-                   comment: "Two-line sample subtitle in the style editor preview, not dialogue from a film.")
+            SubtitlePreviewSample.primary.resolve(locale: locale)
         )))]
         if showsFileFormatting {
             cues.append(.init(id: 1, start: 0, end: 60, body: .text(.init(
-                runs: [.init(String(localized: "A sign placed by the subtitle file"), color: .yellow)],
+                runs: [.init(SubtitlePreviewSample.positioned.resolve(locale: locale), color: .yellow)],
                 layout: SubtitleCueLayout(alignment: .topCenter)
             ))))
         }

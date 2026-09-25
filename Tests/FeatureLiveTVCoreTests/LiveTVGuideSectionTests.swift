@@ -31,6 +31,21 @@ final class LiveTVGuideSectionTests: XCTestCase {
         XCTAssertEqual(model.recentChannelIDs, ["0"])
     }
 
+    func testTurningOffRecentlyWatchedHidesTheRowButKeepsTheHistory() {
+        let model = makeModel()
+        for id in ["2", "1"] {
+            model.tune(id)
+            XCTAssertTrue(model.recordWatched(id))
+        }
+        model.showsRecentChannels = false
+        XCTAssertFalse(model.guideChannels.contains { $0.section == .recent })
+        XCTAssertEqual(model.recentChannelIDs, ["1", "2"])
+        model.tune("3")
+        XCTAssertTrue(model.recordWatched("3"))
+        model.showsRecentChannels = true
+        XCTAssertEqual(model.guideChannels.prefix(3).map(\.channel.id), ["3", "1", "2"])
+    }
+
     func testRecentHistoryIsUniqueBoundedAndMostRecentFirst() {
         let model = makeModel()
         for id in ["0", "1", "2", "3", "1", "1"] {

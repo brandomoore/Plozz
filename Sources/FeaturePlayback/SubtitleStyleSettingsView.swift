@@ -28,7 +28,8 @@ public struct SubtitleStyleSettingsView: View {
             #endif
             GeometryReader { geometry in
                 let context = SubtitleStyleEditingContext(
-                    controls: controls, style: $style, secondaryPreview: secondaryPreview
+                    controls: controls, style: $style, secondaryPreview: secondaryPreview,
+                    offersDualSubtitles: !isLiveTV
                 )
                 #if os(tvOS)
                 HStack(alignment: .center, spacing: 44) {
@@ -86,7 +87,7 @@ public struct SubtitleStyleSettingsView: View {
         .onAppear {
             guard !prepared else { return }
             prepared = true
-            secondaryVisible = style.secondary != nil
+            secondaryVisible = !isLiveTV && style.secondary != nil
         }
     }
 
@@ -167,7 +168,8 @@ private struct TelevisionSubtitleStyleEditor: View {
                     actions: PlayerOptionsActions(setSubtitleStyle: context.applySubtitleStyle),
                     focus: $focus,
                     openScreen: { screen = $0 },
-                    secondaryPreview: context.secondaryPreview
+                    secondaryPreview: context.secondaryPreview,
+                    offersDualSubtitles: context.offersDualSubtitles
                 )
             }
             .clipped()

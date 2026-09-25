@@ -54,10 +54,15 @@ public struct LiveChannelPlayerView: View {
     private let isAuthorized: Bool
     private let onStopPlayback: @MainActor () -> Void
     private let onOpenLibraryItem: ((LibraryChannelItem) -> Void)?
+    private let program: LiveChannelProgramInfo?
+    private let loadOnNow: @MainActor () -> [LiveChannelOnNowItem]
+    private let onTuneChannel: ((String) -> Void)?
+    private let guideOverlay: ((LiveChannelGuideEmbedding) -> AnyView)?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(GlassPerformanceModel.self) private var glassPerformance: GlassPerformanceModel?
     @State private var model: LiveChannelPlayerModel?
     @State private var sourceTask: Task<Void, Never>?
     @State private var fullscreenPresented = false
@@ -70,6 +75,17 @@ public struct LiveChannelPlayerView: View {
     @State private var hudInactivity = PlaybackControlsInactivity()
     @State private var focusRevision = 0
     @State private var playbackStartPolicy = LiveChannelPlaybackStartPolicy<LiveChannelSource>()
+    /// The Guide card is up, and its grid owns focus through its own state.
+    @State private var guidePresented = false
+    /// Set by the remote's Guide button for the transport to act on.
+    @State private var pendingGuideOpen = false
+    /// The VOD player's Playback Info diagnostics, toggled from the Info card.
+    @State private var diagnosticsEnabled = false
+    @State private var diagnosticsSampler = PlaybackDiagnosticsSampler()
+    /// Whether this channel is holding the app's panels on their frosted, cheaper
+    /// surface, as a demanding VOD title does (`PlayerView`).
+    @State private var suspendedGlass = false
+    @State private var suspendedGlassWasHDR = false
     @FocusState private var focusedControl: LiveChannelControl?
 
     private var plozzChannelID: String? {
@@ -120,7 +136,11 @@ public struct LiveChannelPlayerView: View {
         onExternalContinuationChanged: @escaping @MainActor (Bool) -> Void = { _ in },
         onRestoreUI: @escaping @MainActor () async -> Bool = { false },
         onStopPlayback: @escaping @MainActor () -> Void = {},
-        onOpenLibraryItem: ((LibraryChannelItem) -> Void)? = nil
+        onOpenLibraryItem: ((LibraryChannelItem) -> Void)? = nil,
+        program: LiveChannelProgramInfo? = nil,
+        loadOnNow: @escaping @MainActor () -> [LiveChannelOnNowItem] = { [] },
+        onTuneChannel: ((String) -> Void)? = nil,
+        guideOverlay: ((LiveChannelGuideEmbedding) -> AnyView)? = nil
     ) {
         self.channelID = channelID
         self.title = title
@@ -157,6 +177,10 @@ public struct LiveChannelPlayerView: View {
         self.onRestoreUI = onRestoreUI
         self.onStopPlayback = onStopPlayback
         self.onOpenLibraryItem = onOpenLibraryItem
+        self.program = program
+        self.loadOnNow = loadOnNow
+        self.onTuneChannel = onTuneChannel
+        self.guideOverlay = guideOverlay
     }
 
     public init(
@@ -195,7 +219,11 @@ public struct LiveChannelPlayerView: View {
         onExternalContinuationChanged: @escaping @MainActor (Bool) -> Void = { _ in },
         onRestoreUI: @escaping @MainActor () async -> Bool = { false },
         onStopPlayback: @escaping @MainActor () -> Void = {},
-        onOpenLibraryItem: ((LibraryChannelItem) -> Void)? = nil
+        onOpenLibraryItem: ((LibraryChannelItem) -> Void)? = nil,
+        program: LiveChannelProgramInfo? = nil,
+        loadOnNow: @escaping @MainActor () -> [LiveChannelOnNowItem] = { [] },
+        onTuneChannel: ((String) -> Void)? = nil,
+        guideOverlay: ((LiveChannelGuideEmbedding) -> AnyView)? = nil
     ) {
         self.init(
             channelID: channelID, title: title,
@@ -213,7 +241,8 @@ public struct LiveChannelPlayerView: View {
             networkBlock: networkBlock, isAuthorized: isAuthorized, presentationControls: presentationControls,
             onExternalContinuationChanged: onExternalContinuationChanged,
             onRestoreUI: onRestoreUI, onStopPlayback: onStopPlayback,
-            onOpenLibraryItem: onOpenLibraryItem
+            onOpenLibraryItem: onOpenLibraryItem, program: program, loadOnNow: loadOnNow,
+            onTuneChannel: onTuneChannel, guideOverlay: guideOverlay
         )
     }
 
@@ -235,6 +264,17 @@ public struct LiveChannelPlayerView: View {
                     LiveChannelSubtitleSurface(model: model)
                         .allowsHitTesting(false)
                 }
+
+                #if os(tvOS)
+                if isExpanded, diagnosticsEnabled, sourceMatches, model.hasPresentedFrame {
+                    PlaybackDiagnosticsOverlay(diagnostics: diagnosticsSampler.latest)
+                        // Pinned to the top-left corner, as the VOD player's is.
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .allowsHitTesting(false)
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                }
+                #endif
 
                 if !sourceMatches || !model.hasPresentedFrame || (!isExpanded && model.interruption != nil) {
                     Rectangle()
@@ -261,25 +301,35 @@ public struct LiveChannelPlayerView: View {
                             title: title,
                             logoURL: logoURL,
                             plozzChannelID: plozzChannelID,
+                            channelID: channelID,
+                            input: input,
+                            program: program,
                             libraryItem: sourceMatches ? model.engine.currentLibraryItem : nil,
                             openLibraryItem: onOpenLibraryItem,
                             phase: sourceMatches ? model.phase : .loading,
                             isAtLiveEdge: sourceMatches ? model.isAtLiveEdge : true,
+                            behindLiveSeconds: sourceMatches ? model.behindLiveSeconds : 0,
                             canPause: sourceMatches && model.canPause,
                             canGoLive: sourceMatches && model.canGoLive,
-                            isFavorite: isFavorite,
-                            canToggleFavorite: canToggleFavorite,
                             focus: $focusedControl,
                             onClose: dismissPlayer,
                             onPrevious: channelPrevious,
                             onPlayPause: togglePlayPause,
                             onGoLive: goLive,
                             onNext: channelNext,
-                            onToggleFavorite: toggleFavorite,
                             onMultiview: model.engine.supportsConcurrentPlayback ? onMultiview : nil,
+                            guideContent: guideOverlay,
+                            pendingGuideOpen: pendingGuideOpen,
+                            consumeGuideOpen: { pendingGuideOpen = false },
+                            onGuideCardChange: { guidePresented = $0 },
+                            loadOnNow: loadOnNow,
+                            onTuneChannel: onTuneChannel.map { tune in { (id: String) in noteInteraction(); tune(id) } },
                             tracks: model,
+                            diagnosticsEnabled: diagnosticsEnabled,
+                            toggleDiagnostics: { diagnosticsEnabled.toggle() },
                             onTracksPresentationChange: { tracksArePresented = $0 },
-                            onControlActivity: noteControlNavigation
+                            onControlActivity: noteControlNavigation,
+                            onDismissControls: dismissControls
                         )
                         .onAppear(perform: focusPlaybackControlIfNeeded)
                         .transition(.opacity)
@@ -293,7 +343,7 @@ public struct LiveChannelPlayerView: View {
                             onRetry: retry,
                             onClose: dismissPlayer
                         )
-                    } else if !sourceMatches || model.showsActivityIndicator {
+                    } else if !sourceMatches || model.showsActivityIndicator, !overlayShowsActivity {
                         LiveChannelActivityView(
                             phase: sourceMatches ? model.phase : .loading
                         )
@@ -334,8 +384,15 @@ public struct LiveChannelPlayerView: View {
                         }
                     ))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    #if os(iOS)
+                    // Beside the overlay's close button, as VOD's top bar.
+                    .padding(.top, LiveChannelOverlay.touchTopBarInset)
+                    .padding(.leading, LiveChannelOverlay.touchPresentationLeadingInset)
+                    .modifier(WindowSafeAreaPadding(isEnabled: isExpanded))
+                    #else
                     .padding(.top, 112)
                     .padding(.horizontal, 16)
+                    #endif
                 }
             } else if engineInitializationFailed {
                 if isExpanded {
@@ -378,6 +435,15 @@ public struct LiveChannelPlayerView: View {
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: controlsVisible)
         #if os(tvOS)
+        .onReceive(NotificationCenter.default.publisher(for: LiveTVGuideButton.pressed)) { _ in
+            guard isExpanded, isActive, guideOverlay != nil else { return }
+            openGuide()
+        }
+        .background(LiveChannelRemotePresses(
+            isEnabled: isExpanded && isActive,
+            channelUp: channelNext,
+            channelDown: channelPrevious
+        ))
         .onExitCommand {
             guard isExpanded else { return }
             dismissPlayer()
@@ -390,7 +456,8 @@ public struct LiveChannelPlayerView: View {
         .task(id: autoHideRevision) {
             let startedAt = ProcessInfo.processInfo.systemUptime
             while !Task.isCancelled {
-                guard isExpanded, controlsVisible, !tracksArePresented, model?.phase == .playing else { return }
+                guard isExpanded, controlsVisible, !tracksArePresented, !guidePresented,
+                      model?.phase == .playing else { return }
                 let remaining = hudInactivity.remainingDelay(
                     startedAt: startedAt,
                     now: ProcessInfo.processInfo.systemUptime
@@ -450,6 +517,26 @@ public struct LiveChannelPlayerView: View {
             onVideoAspectRatioChange(ratio)
         }
         .onChange(of: tracksArePresented) { _, _ in autoHideRevision &+= 1 }
+        .onChange(of: diagnosticsEnabled) { _, enabled in updateDiagnosticsSampling(enabled) }
+        .onChange(of: GlassDemandKey(
+            expanded: isExpanded, presentedFrame: model?.hasPresentedFrame ?? false, reportingID: reportingID
+        )) { _, _ in updateGlassSuspension() }
+        .onDisappear(perform: releaseGlassSuspension)
+        .onChange(of: reportingID) { _, _ in updateDiagnosticsSampling(diagnosticsEnabled) }
+        #if os(iOS)
+        .sheet(isPresented: $diagnosticsEnabled) {
+            NavigationStack {
+                PlaybackDiagnosticsOverlay(diagnostics: diagnosticsSampler.latest, presentation: .mobile)
+                    .navigationTitle("Playback Diagnostics")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { diagnosticsEnabled = false }
+                        }
+                    }
+            }
+        }
+        #endif
         .onChange(of: isExpanded) { _, expanded in
             expansionChanged(expanded)
         }
@@ -495,6 +582,8 @@ public struct LiveChannelPlayerView: View {
             }
         } else {
             playbackStartPolicy.resetViewing()
+            guidePresented = false
+            pendingGuideOpen = false
             focusedControl = nil
         }
     }
@@ -615,6 +704,9 @@ public struct LiveChannelPlayerView: View {
     private func stopPlayback() {
         sourceTask?.cancel()
         sourceTask = nil
+        diagnosticsEnabled = false
+        diagnosticsSampler.stop()
+        releaseGlassSuspension()
         model?.stop()
         model = nil
     }
@@ -642,7 +734,8 @@ public struct LiveChannelPlayerView: View {
     }
 
     private var playbackFocusAvailability: LiveChannelPlaybackFocusPolicy.Availability {
-        guard isExpanded, controlsVisible, let model else {
+        // The guide owns focus while it is up.
+        guard isExpanded, controlsVisible, !guidePresented, let model else {
             return .hidden
         }
         let sourceMatches = sourceMatchesCurrentModel
@@ -685,6 +778,24 @@ public struct LiveChannelPlayerView: View {
     private func revealControls() {
         noteInteraction()
         focusPlaybackControlIfNeeded()
+    }
+
+    /// On touch the play / pause button turns into the spinner while the
+    /// transport is up and no card or menu covers it; the centred panel would
+    /// sit on top of it.
+    private var overlayShowsActivity: Bool {
+        #if os(iOS)
+        controlsVisible && !tracksArePresented
+        #else
+        false
+        #endif
+    }
+
+    /// A tap on the bare video, as VOD's touch player: whatever the phase.
+    private func dismissControls() {
+        guard isExpanded else { return }
+        focusedControl = nil
+        controlsVisible = false
     }
 
     private func hideControls() {
@@ -743,6 +854,62 @@ public struct LiveChannelPlayerView: View {
         onPlaybackStarted()
     }
 
+    /// Suspends glass while a demanding channel plays full screen, as the VOD
+    /// player does for a demanding title (`PlayerView.updateGlassSuspension`):
+    /// the controls, cards and panels drawn over it then take the frosted
+    /// surface. Judged from what the engine probed, since a live stream has no
+    /// provider metadata. A preview or Multiview tile draws no panels over it.
+    private func updateGlassSuspension() {
+        guard isExpanded, let model, model.hasPresentedFrame else {
+            releaseGlassSuspension()
+            return
+        }
+        let facts = model.engine.probedSourceFacts
+        let demand = GlassPerformanceBudget.demand(
+            for: nil, resolvedRange: facts?.range, probedWidth: facts?.videoWidth
+        )
+        guard demand.isDemanding != suspendedGlass else { return }
+        if demand.isDemanding {
+            glassPerformance?.beginDemandingPlayback(isHDR: demand.isHDR)
+            suspendedGlassWasHDR = demand.isHDR
+        } else {
+            glassPerformance?.endDemandingPlayback(isHDR: suspendedGlassWasHDR)
+            suspendedGlassWasHDR = false
+        }
+        suspendedGlass = demand.isDemanding
+    }
+
+    private func releaseGlassSuspension() {
+        guard suspendedGlass else { return }
+        suspendedGlass = false
+        glassPerformance?.endDemandingPlayback(isHDR: suspendedGlassWasHDR)
+        suspendedGlassWasHDR = false
+    }
+
+    /// Samples the playing channel for Playback Info, as the VOD player does,
+    /// only while it's showing: the sampler polls every second.
+    private func updateDiagnosticsSampling(_ enabled: Bool) {
+        guard enabled, let model else {
+            diagnosticsSampler.stop()
+            return
+        }
+        let engine = model.engine
+        let mode: PlaybackDiagnostics.PlaybackMode = switch engine.liveSnapshot.route {
+        case .nativeHLS: .directPlay
+        case .localHLS, .software: .plozzigen
+        case .none, .audio: .unknown
+        }
+        let streamURL: URL? = if case .stream(let url, _) = input { url } else { nil }
+        diagnosticsSampler.start(
+            player: engine.nowPlayingPlayer,
+            mode: mode,
+            engineName: engine.displayName,
+            streamURL: streamURL,
+            engineTelemetry: { engine.liveTelemetry },
+            probedFacts: { engine.probedSourceFacts }
+        )
+    }
+
     private func togglePlayPause() {
         guard let model else { return }
         noteInteraction()
@@ -771,10 +938,10 @@ public struct LiveChannelPlayerView: View {
         onNextChannel()
     }
 
-    private func toggleFavorite() {
-        guard canToggleFavorite else { return }
+    /// The remote's Guide button: bring the controls up on the Guide card.
+    private func openGuide() {
         noteInteraction()
-        onToggleFavorite()
+        pendingGuideOpen = true
     }
 
     private func dismissPlayer() {
@@ -833,6 +1000,13 @@ struct LiveChannelPlaybackStartPolicy<Source: Equatable> {
     }
 }
 
+/// What the glass-suspension decision depends on, as one value to observe.
+private struct GlassDemandKey: Equatable {
+    let expanded: Bool
+    let presentedFrame: Bool
+    let reportingID: UUID?
+}
+
 enum LiveChannelControl: Hashable {
     case surface
     case close
@@ -843,8 +1017,19 @@ enum LiveChannelControl: Hashable {
     case favorite
     case retry
     case multiview
-    case tracks
     case openLibraryTitle
+    /// The transport's hub, as the scrub bar is for VOD.
+    case timeline
+    case audio
+    case subtitles
+    case cardTab(LiveChannelCardTab)
+    /// Invisible strip above the open card's tab row. Focusing it IS the
+    /// "leave the card" gesture, as VOD's `infoExit`.
+    case cardExit
+    case onNowItem(String)
+    case trackRow(Int)
+    /// The Info card's Playback Info toggle.
+    case playbackInfo
 }
 
 struct LiveChannelFavoriteControlState: Equatable {
@@ -876,14 +1061,15 @@ enum LiveChannelPlaybackFocusPolicy {
             canToggleFavorite: false
         )
 
-        var preferredControl: LiveChannelControl {
-            canPlayPause ? .playPause : .next
-        }
+        /// The timeline, whatever else is available: like VOD's scrub bar it is
+        /// always present, and every other control is one press from it.
+        var preferredControl: LiveChannelControl { .timeline }
 
         func contains(_ control: LiveChannelControl?) -> Bool {
             guard isPresented, let control else { return false }
             switch control {
-            case .previous, .next, .tracks:
+            case .previous, .next, .timeline, .audio, .subtitles, .cardTab, .cardExit,
+                 .onNowItem, .trackRow, .playbackInfo:
                 return true
             case .playPause:
                 return canPlayPause
@@ -924,291 +1110,6 @@ private struct LiveChannelRevealSurface: View {
     }
 }
 
-private struct LiveChannelOverlay: View {
-    let title: String // l10n:content — provider-supplied channel name
-    let logoURL: URL?
-    let plozzChannelID: String?
-    let libraryItem: LibraryChannelItem?
-    let openLibraryItem: ((LibraryChannelItem) -> Void)?
-    let phase: LiveChannelPlaybackPhase
-    let isAtLiveEdge: Bool
-    let canPause: Bool
-    let canGoLive: Bool
-    let isFavorite: Bool
-    let canToggleFavorite: Bool
-    @FocusState.Binding var focus: LiveChannelControl?
-    let onClose: () -> Void
-    let onPrevious: () -> Void
-    let onPlayPause: () -> Void
-    let onGoLive: () -> Void
-    let onNext: () -> Void
-    let onToggleFavorite: () -> Void
-    let onMultiview: (() -> Void)?
-    let tracks: LiveChannelPlayerModel
-    let onTracksPresentationChange: (Bool) -> Void
-    let onControlActivity: () -> Void
-
-    var body: some View {
-        VStack(spacing: 24) {
-            LiveChannelHeader(
-                title: title,
-                logoURL: logoURL,
-                plozzChannelID: plozzChannelID,
-                libraryItem: libraryItem,
-                openLibraryItem: openLibraryItem,
-                status: phase.statusLabel(
-                    isAtLiveEdge: isAtLiveEdge, isScheduledChannel: plozzChannelID != nil
-                ),
-                statusColor: phase.statusColor(isAtLiveEdge: isAtLiveEdge),
-                focus: $focus,
-                onClose: onClose
-            )
-            Spacer()
-            VStack(spacing: 12) {
-                LiveChannelTrackMenu(
-                    model: tracks, focus: $focus,
-                    onPresentationChange: onTracksPresentationChange
-                )
-                LiveChannelTransport(
-                isPaused: phase == .paused,
-                canPause: canPause,
-                canGoLive: canGoLive,
-                isFavorite: isFavorite,
-                canToggleFavorite: canToggleFavorite,
-                focus: $focus,
-                onPrevious: onPrevious,
-                onPlayPause: onPlayPause,
-                onGoLive: onGoLive,
-                onNext: onNext,
-                onToggleFavorite: onToggleFavorite,
-                onMultiview: onMultiview,
-                isScheduledChannel: plozzChannelID != nil
-                )
-            }
-        }
-        #if os(tvOS)
-        .padding(.horizontal, 48)
-        #else
-        .padding(.horizontal, 16)
-        #endif
-        .padding(.vertical, 32)
-        .background(
-            LinearGradient(
-                stops: [
-                    .init(color: .black.opacity(0.72), location: 0),
-                    .init(color: .clear, location: 0.36),
-                    .init(color: .clear, location: 0.58),
-                    .init(color: .black.opacity(0.78), location: 1),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-        )
-        #if os(tvOS)
-        .background(TVFocusActivityObserver(onActivity: onControlActivity))
-        #endif
-    }
-}
-
-private struct LiveChannelHeader: View {
-    let title: String // l10n:content — provider-supplied channel name
-    let logoURL: URL?
-    let plozzChannelID: String?
-    let libraryItem: LibraryChannelItem?
-    let openLibraryItem: ((LibraryChannelItem) -> Void)?
-    let status: LocalizedStringResource
-    let statusColor: Color
-    @FocusState.Binding var focus: LiveChannelControl?
-    let onClose: () -> Void
-
-    var body: some View {
-        HStack(spacing: 18) {
-            ChannelLogoArtwork(
-                name: title,
-                logoURL: logoURL,
-                size: logoSize,
-                cornerRadius: 12,
-                plozzChannelID: plozzChannelID
-            )
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title)
-                    .font(.title2.weight(.semibold))
-                    .lineLimit(2)
-                Text(status)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(statusColor)
-            }
-
-            Spacer()
-
-            if let libraryItem, let openLibraryItem {
-                LibraryChannelNavigationButton(item: libraryItem, action: openLibraryItem)
-                    .focused($focus, equals: .openLibraryTitle)
-                    .buttonStyle(InfoActionButtonStyle(prominent: false))
-            }
-
-            #if os(iOS)
-            Button(action: onClose) {
-                Label("Close", systemImage: "xmark")
-            }
-            .labelStyle(.iconOnly)
-            .accessibilityIdentifier("live-channel-close")
-            .focused($focus, equals: .close)
-            .buttonStyle(InfoActionButtonStyle(prominent: false))
-            #endif
-        }
-        .foregroundStyle(.white)
-        #if os(tvOS)
-        .focusSection()
-        #endif
-    }
-
-    private var logoSize: CGSize {
-        #if os(tvOS)
-        CGSize(width: 108, height: 74)
-        #else
-        CGSize(width: 76, height: 54)
-        #endif
-    }
-}
-
-private struct LiveChannelTransport: View {
-    let isPaused: Bool
-    let canPause: Bool
-    let canGoLive: Bool
-    let isFavorite: Bool
-    let canToggleFavorite: Bool
-    @FocusState.Binding var focus: LiveChannelControl?
-    let onPrevious: () -> Void
-    let onPlayPause: () -> Void
-    let onGoLive: () -> Void
-    let onNext: () -> Void
-    let onToggleFavorite: () -> Void
-    let onMultiview: (() -> Void)?
-    var isScheduledChannel = false
-
-    var body: some View {
-        transportButtons
-            .font(.body.weight(.semibold))
-            #if os(tvOS)
-            .padding(.horizontal, 24)
-            #else
-            .padding(.horizontal, 12)
-            #endif
-            .padding(.vertical, 18)
-            .background(.black.opacity(0.58), in: Capsule())
-    }
-
-    @ViewBuilder
-    private var transportButtons: some View {
-        #if os(tvOS)
-        // One set of focus targets with the normal player's instant, paired
-        // foreground/background focus treatment.
-        fullWidthButtons
-        #else
-        ViewThatFits(in: .horizontal) {
-            fullWidthButtons
-            VStack(spacing: 12) {
-                HStack(spacing: 12) {
-                    previousButton.labelStyle(.iconOnly)
-                    if canPause || isPaused {
-                        playPauseButton.labelStyle(.iconOnly)
-                    }
-                    nextButton.labelStyle(.iconOnly)
-                }
-                HStack(spacing: 12) {
-                    if canGoLive {
-                        goLiveButton.labelStyle(.iconOnly)
-                    }
-                    favoriteButton.labelStyle(.iconOnly)
-                    multiviewButton.labelStyle(.iconOnly)
-                }
-            }
-        }
-        #endif
-    }
-
-    private var fullWidthButtons: some View {
-        HStack(spacing: 18) {
-            previousButton
-            if canPause || isPaused { playPauseButton }
-            if canGoLive { goLiveButton }
-            nextButton
-            favoriteButton
-            multiviewButton
-        }
-    }
-
-    private var previousButton: some View {
-        Button(action: onPrevious) {
-            Label("Previous Channel", systemImage: "backward.end.fill")
-        }
-        .focused($focus, equals: .previous)
-        .buttonStyle(InfoActionButtonStyle(prominent: false))
-    }
-
-    private var playPauseButton: some View {
-        Button(action: onPlayPause) {
-            if isPaused {
-                Label("Play", systemImage: "play.fill")
-            } else {
-                Label("Pause", systemImage: "pause.fill")
-            }
-        }
-        .focused($focus, equals: .playPause)
-        .buttonStyle(InfoActionButtonStyle(prominent: false))
-    }
-
-    private var goLiveButton: some View {
-        Button(action: onGoLive) {
-            Label {
-                Text(LibraryChannelPlaybackCopy.returnToCurrentTitle(isScheduledChannel: isScheduledChannel))
-            } icon: {
-                Image(systemName: isScheduledChannel ? "clock.arrow.circlepath" : "dot.radiowaves.left.and.right")
-            }
-        }
-        .focused($focus, equals: .goLive)
-        .buttonStyle(InfoActionButtonStyle(prominent: true))
-    }
-
-    private var nextButton: some View {
-        Button(action: onNext) {
-            Label("Next Channel", systemImage: "forward.end.fill")
-        }
-        .focused($focus, equals: .next)
-        .buttonStyle(InfoActionButtonStyle(prominent: false))
-    }
-
-    private var favoriteButton: some View {
-        let state = LiveChannelFavoriteControlState(
-            isFavorite: isFavorite,
-            canToggle: canToggleFavorite
-        )
-        return Button(action: onToggleFavorite) {
-            Label(state.title, systemImage: state.systemImage)
-        }
-        .focused($focus, equals: .favorite)
-        .disabled(!state.canToggle)
-        // Keep one button style while this focused action changes state.
-        .buttonStyle(InfoActionButtonStyle(prominent: false))
-        .accessibilityIdentifier("live-channel-favorite")
-    }
-
-    @ViewBuilder
-    private var multiviewButton: some View {
-        if let onMultiview {
-            Button(action: onMultiview) {
-                Label("Multiview", systemImage: "rectangle.split.2x1")
-            }
-            .focused($focus, equals: .multiview)
-            .buttonStyle(InfoActionButtonStyle(prominent: false))
-            .accessibilityIdentifier("live-channel-multiview")
-        }
-    }
-}
-
 private struct LiveChannelActivityView: View {
     let phase: LiveChannelPlaybackPhase
 
@@ -1223,7 +1124,7 @@ private struct LiveChannelActivityView: View {
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 22)
-        .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 22))
+        .modifier(PanelGlassBackground(cornerRadius: PlozzTheme.Metrics.playerPanelCornerRadius))
         .accessibilityElement(children: .combine)
     }
 }
@@ -1248,7 +1149,8 @@ private struct LiveChannelCompactStatusView: View {
         .foregroundStyle(.white.opacity(0.9))
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.black.opacity(0.72), in: Capsule())
+        // A capsule: the corner radius clamps to half the height.
+        .modifier(PanelGlassBackground(cornerRadius: 999))
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
     }
@@ -1271,7 +1173,7 @@ private struct LiveChannelStartupView: View {
                 .buttonStyle(InfoActionButtonStyle(prominent: false))
         }
         .padding(36)
-        .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 28))
+        .modifier(PanelGlassBackground(cornerRadius: PlozzTheme.Metrics.playerPanelCornerRadius))
     }
 }
 
@@ -1308,7 +1210,7 @@ private struct LiveChannelInterruptionView: View {
         }
         .foregroundStyle(.white)
         .padding(36)
-        .background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 28))
+        .modifier(PanelGlassBackground(cornerRadius: PlozzTheme.Metrics.playerPanelCornerRadius))
         .padding(40)
     }
 }
@@ -1320,6 +1222,10 @@ private final class LiveChannelPlayerPlaybackState {
     var hasPresentedFrame = false
     var seekableWindow: LiveSeekableWindow?
     var isAtLiveEdge = true
+    var behindLiveSeconds: TimeInterval = 0
+    /// The viewer paused, so being behind the live edge is their doing until
+    /// they go back to live.
+    var timeShifted = false
     var manualRetryCount = 0
     var isLoading = false
     var userPaused = false
@@ -1339,10 +1245,23 @@ private final class LiveChannelPlayerTrackState {
     private var selectedSubtitleForSource: Int?
     private var didApplySubtitlePreference = false
     private var appliedStyle: SubtitleStyle?
+    /// Whether the engine has actually been told the preferred subtitle. Kept
+    /// apart from `didApplySubtitlePreference` (the choice is made) because a
+    /// selection sent while the channel is still loading can be dropped by the
+    /// engine — the menu then showed subtitles on with nothing drawn until the
+    /// viewer selected them again.
+    private var hasSentSubtitlePreference = false
 
     init(preferences: LiveChannelTrackPreferences) {
         self.preferences = preferences
         subtitles.style = preferences.subtitleStyle
+    }
+
+    /// An edit from the Style screen: previewed on the overlay at once, pushed
+    /// to subtitles the engine draws itself, and kept as live TV's style.
+    func setSubtitleStyle(_ style: SubtitleStyle, engine: any LiveChannelEngine) {
+        preferences.setSubtitleStyle(style)
+        refreshStyle(engine: engine)
     }
 
     func selectAudio(_ track: MediaTrack, engine: any LiveChannelEngine) {
@@ -1358,6 +1277,7 @@ private final class LiveChannelPlayerTrackState {
         selectedSubtitleForSource = track?.id
         selectedSubtitleID = track?.id
         didApplySubtitlePreference = true
+        hasSentSubtitlePreference = true
         if let track {
             preferences.subtitleMode = .all
             if let language = track.language { preferences.subtitleLanguage = language }
@@ -1369,7 +1289,9 @@ private final class LiveChannelPlayerTrackState {
         engine.selectSubtitleTrack(track)
     }
 
-    func refresh(engine: any LiveChannelEngine) {
+    /// - Parameter isReady: the channel has loaded and presented a frame, so a
+    ///   subtitle selection sent now will be honoured.
+    func refresh(engine: any LiveChannelEngine, isReady: Bool = true) {
         refreshStyle(engine: engine)
         let audio = engine.audioTracks
         let captions = engine.subtitleTracks
@@ -1383,15 +1305,23 @@ private final class LiveChannelPlayerTrackState {
         }
         selectedAudioID = engine.currentAudioTrackID ?? selectedAudioForSource
             ?? audio.first(where: \.isDefault)?.id
-        guard !captions.isEmpty, !didApplySubtitlePreference else { return }
-        let chosen = captions.defaultSubtitleSelection(
-            mode: preferences.subtitleMode,
-            preferredLanguage: preferences.subtitleLanguage
-        )
-        didApplySubtitlePreference = true
-        selectedSubtitleForSource = chosen?.id
-        selectedSubtitleID = chosen?.id
-        if chosen != nil { subtitles.beginLiveFeed() }
+        guard !captions.isEmpty else { return }
+        if !didApplySubtitlePreference {
+            let chosen = captions.defaultSubtitleSelection(
+                mode: preferences.subtitleMode,
+                preferredLanguage: preferences.subtitleLanguage
+            )
+            didApplySubtitlePreference = true
+            selectedSubtitleForSource = chosen?.id
+            selectedSubtitleID = chosen?.id
+        }
+        // Sent once the channel can act on it — on or off, so an engine that
+        // auto-selected a default rendition is also told when the viewer
+        // wants subtitles off.
+        guard isReady, !hasSentSubtitlePreference else { return }
+        hasSentSubtitlePreference = true
+        let chosen = selectedSubtitleForSource.flatMap { id in captions.first { $0.id == id } }
+        if chosen != nil { subtitles.beginLiveFeed() } else { subtitles.clear() }
         engine.selectSubtitleTrack(chosen)
     }
 
@@ -1412,6 +1342,7 @@ private final class LiveChannelPlayerTrackState {
         selectedSubtitleForSource = nil
         selectedSubtitleID = nil
         didApplySubtitlePreference = false
+        hasSentSubtitlePreference = false
         subtitles.clear()
     }
 }
@@ -1436,7 +1367,16 @@ final class LiveChannelPlayerModel {
     }
     private(set) var seekableWindow: LiveSeekableWindow? {
         get { playbackState.seekableWindow }
-        set { playbackState.seekableWindow = newValue }
+        set {
+            playbackState.seekableWindow = newValue
+            // No window, no delay to measure: whatever was playing is gone.
+            if newValue == nil { playbackState.behindLiveSeconds = 0 }
+        }
+    }
+    /// How far playback trails the live edge, for the transport's timeline.
+    private(set) var behindLiveSeconds: TimeInterval {
+        get { playbackState.behindLiveSeconds }
+        set { playbackState.behindLiveSeconds = newValue }
     }
     private(set) var isAtLiveEdge: Bool {
         get { playbackState.isAtLiveEdge }
@@ -1453,6 +1393,11 @@ final class LiveChannelPlayerModel {
     private var userPaused: Bool {
         get { playbackState.userPaused }
         set { playbackState.userPaused = newValue }
+    }
+
+    private var timeShifted: Bool {
+        get { playbackState.timeShifted }
+        set { playbackState.timeShifted = newValue }
     }
     private var isRecoveringProgramme: Bool {
         get { playbackState.isRecoveringProgramme }
@@ -1612,6 +1557,21 @@ final class LiveChannelPlayerModel {
             || (hasPresentedFrame && supportsTimeShift))
     }
 
+    /// Within this of the newest segment is the live edge itself.
+    static let liveEdgeTolerance: TimeInterval = 3
+
+    /// Whether the viewer is behind live, as Go Live and the status pill show it.
+    ///
+    /// An HLS stream plays a few segments behind the newest, and that gap grows
+    /// by a segment and snaps back each time the playlist updates. Judged
+    /// against the 3s edge alone, a channel nobody touched flipped Go Live on
+    /// and off every few seconds. So being behind counts once the viewer paused
+    /// (their own time shift), or when the stream has fallen well past any
+    /// live delay on its own.
+    static func isBehindLive(_ behind: TimeInterval, timeShifted: Bool) -> Bool {
+        timeShifted ? behind > liveEdgeTolerance : behind >= 30
+    }
+
     var canGoLive: Bool {
         canPause && hasPresentedFrame && supportsTimeShift && !isAtLiveEdge
     }
@@ -1697,8 +1657,12 @@ final class LiveChannelPlayerModel {
         trackState.selectSubtitle(track, engine: engine)
     }
 
+    func setSubtitleStyle(_ style: SubtitleStyle) {
+        trackState.setSubtitleStyle(style, engine: engine)
+    }
+
     private func refreshTracks() {
-        trackState.refresh(engine: engine)
+        trackState.refresh(engine: engine, isReady: !isLoading && hasPresentedFrame)
     }
 
     func matchesSource(
@@ -1773,6 +1737,7 @@ final class LiveChannelPlayerModel {
         hasPresentedFrame = false
         seekableWindow = nil
         isAtLiveEdge = true
+        timeShifted = false
         attemptStartedAt = uptime()
         bufferingStartedAt = nil
         needsForegroundLoad = isSuspended
@@ -1830,6 +1795,7 @@ final class LiveChannelPlayerModel {
         } else {
             guard canPause else { return }
             userPaused = true
+            timeShifted = true
             diagnostics.event(.pause, attempt: attemptCount)
             if !isLoading { cancelRecovery() }
             engine.pause()
@@ -1843,6 +1809,7 @@ final class LiveChannelPlayerModel {
         guard canGoLive, !isSuspended, !isLoading else { return }
         let generation = attemptGeneration
         userPaused = false
+        timeShifted = false
         diagnostics.event(.seek, attempt: attemptCount)
         phase = .seeking
         bufferingStartedAt = uptime()
@@ -1946,6 +1913,7 @@ final class LiveChannelPlayerModel {
         hasPresentedFrame = false
         seekableWindow = nil
         isAtLiveEdge = true
+        timeShifted = false
         attemptStartedAt = uptime()
         firstFrameTimingStartedAt = attemptStartedAt
         bufferingStartedAt = nil
@@ -2007,6 +1975,7 @@ final class LiveChannelPlayerModel {
             guard let self, !self.stopped, self.attemptGeneration == generation else { return }
             self.subtitles.updateLiveCues(cues)
         }
+        trackState.refreshStyle(engine: engine)
     }
 
     private func startMonitor() {
@@ -2064,14 +2033,25 @@ final class LiveChannelPlayerModel {
         seekableWindow = snapshot.seekableRange.flatMap {
             LiveSeekableWindow(ranges: [(start: $0.lowerBound, duration: $0.upperBound - $0.lowerBound)])
         }
-        if let behind = snapshot.behindLiveSeconds, behind.isFinite {
-            isAtLiveEdge = behind <= 3
+        let behind: TimeInterval? = if let behind = snapshot.behindLiveSeconds, behind.isFinite {
+            behind
         } else {
-            isAtLiveEdge = seekableWindow?.isAtLiveEdge(currentTime: snapshot.position) ?? true
+            seekableWindow.map { $0.upperBound - snapshot.position }
+        }
+        if let behind, behind.isFinite {
+            // Back at the edge by any route ends the time shift.
+            if !userPaused, behind <= Self.liveEdgeTolerance { timeShifted = false }
+            isAtLiveEdge = !Self.isBehindLive(behind, timeShifted: timeShifted)
+            behindLiveSeconds = isAtLiveEdge ? 0 : max(0, behind)
+        } else {
+            isAtLiveEdge = true
+            behindLiveSeconds = 0
         }
         let hadPresentedFrame = hasPresentedFrame
         hasPresentedFrame = hasPresentedFrame || snapshot.firstFrameReady
         if !hadPresentedFrame, hasPresentedFrame {
+            // The first moment a subtitle selection is sure to be honoured.
+            refreshTracks()
             diagnostics.tuneToFirstFrame(
                 attempt: attemptCount,
                 startedAt: firstFrameTimingStartedAt,

@@ -184,6 +184,12 @@ final class ChannelLogoArtworkTests: XCTestCase {
         XCTAssertFalse(ChannelLogoPlate(tone: nil).isLight)
     }
 
+    func testBoxedLogosShowAsTilesAndCutOutInkDoesNot() {
+        XCTAssertTrue(ChannelLogoPlate.showsAsTile(ResolvedLogoTone(luminance: 0.4, coverage: 0.97)))
+        XCTAssertFalse(ChannelLogoPlate.showsAsTile(ResolvedLogoTone(luminance: 0.4, coverage: 0.4)))
+        XCTAssertFalse(ChannelLogoPlate.showsAsTile(nil), "no logo yet: the name, not a tile")
+    }
+
     func testDarkPlateHasAFirmCharcoalFloorInsteadOfFadingIntoBlack() {
         let plate = ChannelLogoPlate(tone: nil)
         XCTAssertGreaterThanOrEqual(min(plate.red, plate.green, plate.blue), 0.14)

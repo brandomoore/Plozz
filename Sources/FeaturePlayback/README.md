@@ -449,6 +449,52 @@ engine does not defer to a `@FocusState` value already in place, so the Info tab
 kept out of the focus order unless its card is open, and an entry narrows the order to
 the single control the pressed direction targets.
 
+## Live channel transport
+
+`LiveChannelTransport.swift` is the expanded live player's chrome, assembled from
+the VOD transport's parts rather than drawn separately: the title block and
+`playerGlassButton` badges (Audio · Subtitles · Multiview, plus Go Live when
+time-shifted), `PlayerScrubTrackSurface` for the timeline, `PlayerTabButtonStyle`
+tabs, the shared `PlayerOptionsPanel` for track/style menus, and
+`PlayerOverVideoCardStyle` cards. The card parks by one cluster offset exactly as
+rules 2–3 above describe, with the same constants on tvOS. Track menus live in
+their own layer, placed from the badges' measured GLOBAL top, never as an overlay
+on the badges (an overlay is sized from the badges' box and ended up over the
+timeline).
+
+Live has no arbitrary seek, so the timeline measures the airing programme (faint
+fill = aired, bright fill = on screen, trailing it while paused or behind live).
+It is the focus hub: Select plays/pauses, Up reaches the badges, Down lands on the
+last-used card tab and opens its card. With the card closed only that one tab is
+focusable (VOD's `entryFocusTarget`, made structural); open, Left/Right walks
+Info · On Now · Guide and focus alone switches the card. Do not put
+`onMoveCommand` on the timeline: it swallowed the Down press.
+
+Channels change only on the remote's Channel Up / Down buttons (`.pageUp` /
+`.pageDown`, see `LiveChannelRemotePresses`), never on Left/Right.
+
+Guide opens `LiveChannelGuideOverlay`, the player's own lineup over the playing
+picture. It is modelled on the Multiview picker but is not the browse guide:
+nothing retunes while browsing, it opens on the playing channel, and Menu returns
+focus to the timeline. The Info card's Playback Info toggle shows the VOD
+player's diagnostics overlay (`PlaybackDiagnosticsOverlay`), sampled from the
+live engine while it is up.
+
+Go Live ignores ordinary HLS segment latency: it appears after a deliberate
+pause leaves playback behind, or after at least 30 seconds of unrequested drift.
+A refresh near the live edge must not erase pause intent while still paused.
+Both channel-load paths reset that intent. TV Playback Info stays top-left;
+mobile uses the shared diagnostic sheet.
+
+Live style edits use the same profile-scoped `SubtitleStyleStore.liveTV`
+override as Settings, with changes propagated to already-created settings models
+and retained panes. The interim `com.plozz.liveSubtitleStyle` value is migrated
+once, without replacing a newer canonical override. There is no separate native
+subtitle preference: system matching belongs to the shared style. Dual-track
+selection is a host capability, not another tracked property on the controls
+model; live menus do not offer it. A subtitle download divider appears only when
+the download row itself is available.
+
 ## Where to look first
 
 - `VideoEngine.swift` — the protocol every engine implements.

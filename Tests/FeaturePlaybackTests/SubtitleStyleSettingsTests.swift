@@ -38,7 +38,9 @@ final class SubtitleStyleSettingsTests: XCTestCase {
         XCTAssertEqual(context.effectiveStyle.textColor, appearance.textColor)
         XCTAssertEqual(context.effectiveStyle.background.cornerRadius, 3.75)
         XCTAssertEqual(context.effectiveStyle.glyphBackground, appearance.background)
-        XCTAssertTrue(context.effectiveStyle.fontDisplayName.contains("Courier"))
+        let fontName = try XCTUnwrap(context.effectiveStyle.fontDescriptor).displayName
+        XCTAssertTrue(fontName.contains("Courier"))
+        XCTAssertEqual(context.effectiveStyle.fontDisplayName, Text(verbatim: fontName))
         XCTAssertEqual(writes, 0)
         context.editSubtitleStyle { $0.fontScale = 0.73 }
         XCTAssertEqual(writes, 0)

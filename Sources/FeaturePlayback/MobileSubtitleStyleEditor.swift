@@ -32,10 +32,11 @@ public struct MobileSubtitleStyleEditor: View {
                 NavigationLink {
                     MobileSubtitleFontView(viewModel: viewModel)
                 } label: {
-                    LabeledContent(
-                        "Font",
-                        value: viewModel.effectiveStyle.fontDisplayName
-                    )
+                    LabeledContent {
+                        viewModel.effectiveStyle.fontDisplayName
+                    } label: {
+                        Text("Font")
+                    }
                 }
 
                 Picker(
@@ -43,7 +44,7 @@ public struct MobileSubtitleStyleEditor: View {
                     selection: subtitleWeightBinding(viewModel)
                 ) {
                     if viewModel.effectiveStyle.fontDescriptor != nil {
-                        Text(verbatim: viewModel.effectiveStyle.fontWeightDisplayName).tag(Optional<SubtitleFontWeight>.none)
+                        Text(viewModel.effectiveStyle.fontWeightDisplayName(locale: locale)).tag(Optional<SubtitleFontWeight>.none)
                     }
                     ForEach(
                         viewModel.effectiveStyle.availableFontWeights,
@@ -137,13 +138,15 @@ public struct MobileSubtitleStyleEditor: View {
                             : "Off"
                     )
                 }
-                NavigationLink {
-                    MobileSubtitleDualView(viewModel: viewModel)
-                } label: {
-                    LabeledContent(
-                        "Dual Subtitles",
-                        value: viewModel.hasSecondarySubtitle ? "On" : "Off"
-                    )
+                if viewModel.offersDualSubtitles {
+                    NavigationLink {
+                        MobileSubtitleDualView(viewModel: viewModel)
+                    } label: {
+                        LabeledContent(
+                            "Dual Subtitles",
+                            value: viewModel.hasSecondarySubtitle ? "On" : "Off"
+                        )
+                    }
                 }
                 NavigationLink("Subtitle file formatting") {
                     MobileSubtitleFileFormattingView(viewModel: viewModel)
@@ -219,7 +222,7 @@ private struct MobileSubtitleFontView: View {
                             }
                         } label: {
                             HStack {
-                                Text(verbatim: entry.name).font(entry.preview)
+                                entry.name.font(entry.preview)
                                 Spacer()
                                 if viewModel.effectiveStyle.systemFont == entry.id {
                                     Image(systemName: "checkmark")

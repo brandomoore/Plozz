@@ -10,14 +10,14 @@ import UIKit
 public enum SubtitleSystemFonts {
     public struct Entry: Identifiable {
         public let id: SubtitleSystemFont
-        public let name: String
+        public let name: Text
         public let descriptor: UIFontDescriptor
 
         public var preview: Font { Font(UIFont(descriptor: descriptor, size: 30)) }
     }
 
     public static let captionFonts: [Entry] = SubtitleSystemFont.CaptionFamily.allCases.map {
-        Entry(id: .caption($0), name: String(localized: $0.displayName), descriptor: captionDescriptor($0))
+        Entry(id: .caption($0), name: Text($0.displayName), descriptor: captionDescriptor($0))
     }
 
     /// Use the installed font registry, not a hardcoded list from one OS release.
@@ -31,7 +31,7 @@ public enum SubtitleSystemFonts {
                 let font = faces.first { !$0.fontDescriptor.symbolicTraits.contains(.traitBold)
                     && !$0.fontDescriptor.symbolicTraits.contains(.traitItalic) } ?? faces.first
                 guard let font else { return nil }
-                return Entry(id: .named(font.fontName), name: family, descriptor: font.fontDescriptor)
+                return Entry(id: .named(font.fontName), name: Text(verbatim: family), descriptor: font.fontDescriptor)
             }
     }()
 
@@ -117,16 +117,45 @@ public enum SubtitleSystemFonts {
         return weights.reversed().first { Double(uiWeight($0).rawValue) < current - 0.001 } ?? last
     }
 
-    public static func weightDisplayName(_ weight: Double) -> String {
+    public static func weightDisplayName(_ weight: Double, locale: Locale) -> LocalizedStringResource {
         let names: [(UIFont.Weight, LocalizedStringResource)] = [
-            (.ultraLight, "Ultralight"), (.thin, "Thin"), (.light, "Light"),
-            (.regular, "Regular"), (.medium, "Medium"), (.semibold, "Semibold"),
-            (.bold, "Bold"), (.heavy, "Heavy"), (.black, "Black")
+            (.ultraLight, LocalizedStringResource(
+                "subtitleWeight.ultralight",
+                defaultValue: "Ultralight",
+                comment: "System subtitle font weight with extremely thin letter strokes; not brightness."
+            )),
+            (.thin, LocalizedStringResource(
+                "subtitleWeight.thin",
+                defaultValue: "Thin",
+                comment: "System subtitle font weight describing thin letter strokes."
+            )),
+            (.light, LocalizedStringResource(
+                "subtitleWeight.light",
+                defaultValue: "Light",
+                comment: "System subtitle font weight describing light, thin letter strokes; not brightness or a color."
+            )),
+            (.regular, SubtitleFontWeight.regular.displayName),
+            (.medium, SubtitleFontWeight.medium.displayName),
+            (.semibold, SubtitleFontWeight.semibold.displayName),
+            (.bold, SubtitleFontWeight.bold.displayName),
+            (.heavy, LocalizedStringResource(
+                "subtitleWeight.heavy",
+                defaultValue: "Heavy",
+                comment: "System subtitle font weight with thicker letter strokes than Bold."
+            )),
+            (.black, LocalizedStringResource(
+                "subtitleWeight.black",
+                defaultValue: "Black",
+                comment: "System subtitle font weight with very heavy letter strokes; not the color black."
+            ))
         ]
         if let match = names.first(where: { abs(Double($0.0.rawValue) - weight) < 0.001 }) {
-            return String(localized: match.1)
+            return match.1
         }
-        return String(localized: "Font weight \(weight.formatted(.number.precision(.fractionLength(0...3))))")
+        return LocalizedStringResource(
+            "Font weight \(weight.formatted(.number.precision(.fractionLength(0...3)).locale(locale)))",
+            comment: "A system font's normalized numeric weight when it does not match a named font weight."
+        )
     }
 
     private static func featureNames(font: CTFont, descriptor: UIFontDescriptor) -> [String] {
@@ -170,10 +199,10 @@ public enum SubtitleSystemFonts {
         }
     }
 
-    public static func displayName(for selection: SubtitleSystemFont) -> String {
+    public static func displayName(for selection: SubtitleSystemFont) -> Text {
         switch selection {
-        case .caption(let family): String(localized: family.displayName)
-        case .named(let name): UIFont(name: name, size: 30)?.familyName ?? name
+        case .caption(let family): Text(family.displayName)
+        case .named(let name): Text(verbatim: UIFont(name: name, size: 30)?.familyName ?? name)
         }
     }
 
@@ -201,13 +230,14 @@ public extension SubtitleStyle {
         }
     }
 
-    @MainActor var fontDisplayName: String {
-        fontDescriptor?.displayName ?? systemFont.map(SubtitleSystemFonts.displayName) ?? fontFamily.displayName
+    @MainActor var fontDisplayName: Text {
+        if let fontDescriptor { return Text(verbatim: fontDescriptor.displayName) }
+        return systemFont.map(SubtitleSystemFonts.displayName) ?? Text(verbatim: fontFamily.displayName)
     }
 
-    @MainActor var fontWeightDisplayName: String {
-        fontDescriptor.map { SubtitleSystemFonts.weightDisplayName($0.weight) }
-            ?? String(localized: fontWeight.displayName)
+    @MainActor func fontWeightDisplayName(locale: Locale) -> LocalizedStringResource {
+        fontDescriptor.map { SubtitleSystemFonts.weightDisplayName($0.weight, locale: locale) }
+            ?? fontWeight.displayName
     }
 
     @MainActor var resolvedFontDescriptor: UIFontDescriptor? {

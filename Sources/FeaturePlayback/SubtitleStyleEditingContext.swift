@@ -7,6 +7,7 @@ import SwiftUI
 @MainActor
 public struct SubtitleStyleEditingContext {
     public let controls: PlayerControlsModel
+    let offersDualSubtitles: Bool
     let secondaryPreview: Binding<Bool>?
     private let update: (SubtitleStyle) -> Void
     private let selectSecondary: (Int) -> Void
@@ -14,6 +15,7 @@ public struct SubtitleStyleEditingContext {
 
     public init(player: PlayerViewModel) {
         controls = player.controls
+        offersDualSubtitles = true
         systemCaptionStyle = .shared
         secondaryPreview = nil
         update = { player.applySubtitleStyle($0) }
@@ -22,9 +24,10 @@ public struct SubtitleStyleEditingContext {
 
     init(
         controls: PlayerControlsModel, style: Binding<SubtitleStyle>, secondaryPreview: Binding<Bool>,
-        systemCaptionStyle: SystemCaptionStyle = .shared
+        systemCaptionStyle: SystemCaptionStyle = .shared, offersDualSubtitles: Bool = true
     ) {
         self.controls = controls
+        self.offersDualSubtitles = offersDualSubtitles
         self.systemCaptionStyle = systemCaptionStyle
         self.secondaryPreview = secondaryPreview
         update = {
@@ -37,9 +40,9 @@ public struct SubtitleStyleEditingContext {
     }
 
     var hasSecondarySubtitle: Bool {
-        secondaryPreview?.wrappedValue ?? controls.secondarySubtitleOptions.contains {
+        offersDualSubtitles && (secondaryPreview?.wrappedValue ?? controls.secondarySubtitleOptions.contains {
             $0.isSelected && $0.id != PlayerTrackOption.offID
-        }
+        })
     }
 
     func applySubtitleStyle(_ style: SubtitleStyle) { update(style) }

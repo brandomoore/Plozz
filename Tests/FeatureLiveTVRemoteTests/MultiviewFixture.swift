@@ -101,6 +101,12 @@ private final class MultiviewFixtureState {
         return engine
     }
 
+    func playerItems(withPrograms: Bool) -> [LiveChannelOnNowItem] {
+        channels.map {
+            $0.playerItem(program: withPrograms ? guide.currentProgram(for: $0.id)?.playerInfo : nil)
+        }
+    }
+
     var metrics: String {
         "Engines \(engines.count) loads \(engines.reduce(0) { $0 + $1.loads }) " +
             "stops \(engines.reduce(0) { $0 + $1.stops }) " +
@@ -148,7 +154,18 @@ struct MultiviewFixture: View {
                             outputGroup: state.output, outputID: pane.id,
                             isAudible: pane.id == coordinator.audiblePaneID,
                             countsAsWatching: coordinator.isEnabled,
-                            isMultiview: coordinator.isEnabled
+                            isMultiview: coordinator.isEnabled,
+                            program: state.guide.currentProgram(for: prepared.channel.id)?.playerInfo,
+                            loadOnNow: { state.playerItems(withPrograms: true) },
+                            onTuneChannel: { _ in },
+                            guideOverlay: { embedding in
+                                AnyView(LiveTVPlayerGuideOverlay(
+                                    model: state.guide, imports: state.guideImports,
+                                    playingChannelID: prepared.channel.id,
+                                    libraryCatalog: nil, loadLibraryGuide: nil,
+                                    embedding: embedding, tune: { _ in }
+                                ))
+                            }
                         )
                         .frame(width: frame.width, height: frame.height)
                         .clipShape(RoundedRectangle(

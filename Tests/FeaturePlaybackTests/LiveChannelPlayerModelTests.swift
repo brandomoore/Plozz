@@ -19,6 +19,20 @@ private final class LiveChannelObservationChanges: @unchecked Sendable {
 
 @MainActor
 final class LiveChannelPlayerModelTests: XCTestCase {
+    func testPausingAtTheEdgeKeepsTimeShiftIntentWhileTheDelayGrows() async {
+        let engine = LiveEngineSpy()
+        engine.liveSnapshot.behindLiveSeconds = 1
+        let model = makeModel(engine: engine)
+        defer { model.stop() }
+        await model.start()
+        model.togglePlayPause()
+        model.refreshFromEngine()
+        XCTAssertFalse(model.canGoLive)
+        engine.liveSnapshot.behindLiveSeconds = 5
+        model.refreshFromEngine()
+        XCTAssertTrue(model.canGoLive, "An initial near-edge refresh must not forget the deliberate pause.")
+    }
+
     func testLiveStyleRefreshesOverlayAndNativeRendererWithoutRetuning() async throws {
         let name = "LiveCaptionStyle.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
@@ -629,6 +643,8 @@ final class LiveChannelPlayerModelTests: XCTestCase {
         let model = makeModel(engine: engine)
         defer { model.stop() }
         await model.start()
+        model.togglePlayPause()
+        model.refreshFromEngine()
         XCTAssertTrue(model.canGoLive)
         await model.goLive()
         XCTAssertEqual(engine.goLiveCount, 1)
@@ -641,8 +657,12 @@ final class LiveChannelPlayerModelTests: XCTestCase {
         let model = makeModel(engine: engine)
         defer { model.stop() }
         await model.start()
+        model.togglePlayPause()
+        model.refreshFromEngine()
+        XCTAssertTrue(model.canGoLive)
         engine.onGoLive = { model.togglePlayPause() }
         await model.goLive()
+        XCTAssertEqual(engine.goLiveCount, 1)
         model.refreshFromEngine()
         XCTAssertEqual(engine.playCount, 0)
         XCTAssertEqual(model.phase, .paused)
@@ -652,8 +672,12 @@ final class LiveChannelPlayerModelTests: XCTestCase {
         let engine = LiveEngineSpy()
         let model = makeModel(engine: engine)
         await model.start()
+        model.togglePlayPause()
+        model.refreshFromEngine()
+        XCTAssertTrue(model.canGoLive)
         engine.onGoLive = { model.stop() }
         await model.goLive()
+        XCTAssertEqual(engine.goLiveCount, 1)
         XCTAssertEqual(engine.playCount, 0)
         XCTAssertNil(engine.onLiveSourceReset)
     }
@@ -870,26 +894,18 @@ final class LiveChannelPlayerModelTests: XCTestCase {
 }
 
 final class LiveChannelPlaybackFocusPolicyTests: XCTestCase {
-    func testPlaybackPrefersPlayPauseWhenAvailable() {
-        let availability = LiveChannelPlaybackFocusPolicy.Availability(
-            isPresented: true,
-            canPlayPause: true,
-            canGoLive: false,
-            canToggleFavorite: true
-        )
+    func testPlaybackPrefersTheTimelineWhateverElseIsAvailable() {
+        for canPlayPause in [true, false] {
+            let availability = LiveChannelPlaybackFocusPolicy.Availability(
+                isPresented: true,
+                canPlayPause: canPlayPause,
+                canGoLive: false,
+                canToggleFavorite: true
+            )
 
-        XCTAssertEqual(availability.preferredControl, .playPause)
-    }
-
-    func testPlaybackFallsBackToNextWhenPlayPauseIsUnavailable() {
-        let availability = LiveChannelPlaybackFocusPolicy.Availability(
-            isPresented: true,
-            canPlayPause: false,
-            canGoLive: false,
-            canToggleFavorite: true
-        )
-
-        XCTAssertEqual(availability.preferredControl, .next)
+            XCTAssertEqual(availability.preferredControl, .timeline)
+            XCTAssertTrue(availability.contains(availability.preferredControl))
+        }
     }
 
     func testNewPlayPauseAvailabilityDoesNotInvalidateExistingTransportFocus() {
@@ -902,7 +918,8 @@ final class LiveChannelPlaybackFocusPolicyTests: XCTestCase {
 
         XCTAssertTrue(availability.contains(.next))
         XCTAssertTrue(availability.contains(.previous))
-        XCTAssertTrue(availability.contains(.tracks))
+        XCTAssertTrue(availability.contains(.audio))
+        XCTAssertTrue(availability.contains(.subtitles))
     }
 
     func testPlaybackEligibilityExcludesMissingAndEscapeControls() {
@@ -917,7 +934,8 @@ final class LiveChannelPlaybackFocusPolicyTests: XCTestCase {
         XCTAssertTrue(availability.contains(.goLive))
         XCTAssertTrue(availability.contains(.next))
         XCTAssertTrue(availability.contains(.favorite))
-        XCTAssertTrue(availability.contains(.tracks))
+        XCTAssertTrue(availability.contains(.audio))
+        XCTAssertTrue(availability.contains(.subtitles))
         XCTAssertFalse(availability.contains(.playPause))
         XCTAssertFalse(availability.contains(.surface))
         XCTAssertFalse(availability.contains(.close))
@@ -927,7 +945,7 @@ final class LiveChannelPlaybackFocusPolicyTests: XCTestCase {
             LiveChannelPlaybackFocusPolicy.Availability.hidden.contains(.next)
         )
         XCTAssertFalse(
-            LiveChannelPlaybackFocusPolicy.Availability.hidden.contains(.tracks)
+            LiveChannelPlaybackFocusPolicy.Availability.hidden.contains(.timeline)
         )
     }
 

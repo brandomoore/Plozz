@@ -962,10 +962,11 @@ private struct PlozziOSSubtitleOptionsSheet: View {
                 NavigationLink {
                     MobileSubtitleStyleEditor(viewModel: .init(player: viewModel))
                 } label: {
-                    LabeledContent(
-                        "Style",
-                        value: viewModel.controls.subtitleStyle.fontDisplayName
-                    )
+                    LabeledContent {
+                        viewModel.controls.subtitleStyle.fontDisplayName
+                    } label: {
+                        Text("Style")
+                    }
                 }
             }
         }

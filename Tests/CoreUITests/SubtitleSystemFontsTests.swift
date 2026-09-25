@@ -1,6 +1,7 @@
 #if canImport(UIKit) && canImport(MediaAccessibility)
 import CoreModels
 import CoreText
+import SwiftUI
 import UIKit
 import XCTest
 @testable import CoreUI
@@ -41,9 +42,10 @@ final class SubtitleSystemFontsTests: XCTestCase {
 
         var style = SubtitleStyle.default
         style.fontDescriptor = decoded
-        XCTAssertEqual(style.fontDisplayName, snapshot.displayName)
-        XCTAssertEqual(style.fontWeightDisplayName, SubtitleSystemFonts.weightDisplayName(snapshot.weight))
-        XCTAssertNotEqual(style.fontWeightDisplayName, String(localized: SubtitleFontWeight.regular.displayName))
+        let locale = Locale(identifier: "en_US")
+        XCTAssertEqual(style.fontDisplayName, Text(verbatim: snapshot.displayName))
+        XCTAssertEqual(style.fontWeightDisplayName(locale: locale), SubtitleSystemFonts.weightDisplayName(snapshot.weight, locale: locale))
+        XCTAssertNotEqual(style.fontWeightDisplayName(locale: locale), SubtitleFontWeight.regular.displayName)
     }
 
     func testAWeightEditRetainsFeaturesMatrixCascadeAndSlant() throws {
@@ -78,6 +80,8 @@ final class SubtitleSystemFontsTests: XCTestCase {
         XCTAssertEqual(SubtitleSystemFonts.captionFonts.count, 8)
         for family in SubtitleSystemFont.CaptionFamily.allCases {
             let entry = try XCTUnwrap(SubtitleSystemFonts.captionFonts.first { $0.id == .caption(family) })
+            XCTAssertEqual(entry.name, Text(family.displayName))
+            XCTAssertEqual(SubtitleSystemFonts.displayName(for: entry.id), Text(family.displayName))
             let descriptor = try XCTUnwrap(SubtitleSystemFonts.descriptor(for: entry.id))
             let font = UIFont(descriptor: descriptor, size: 42)
             XCTAssertEqual(font.familyName, UIFont(descriptor: entry.descriptor, size: 42).familyName)
@@ -91,7 +95,15 @@ final class SubtitleSystemFontsTests: XCTestCase {
         let expected = Set(UIFont.familyNames.filter {
             !bundled.contains($0) && !UIFont.fontNames(forFamilyName: $0).isEmpty
         })
-        XCTAssertEqual(Set(SubtitleSystemFonts.installedFonts.map(\.name)), expected)
+        let installed = SubtitleSystemFonts.installedFonts
+        XCTAssertEqual(installed.count, expected.count)
+        for family in expected {
+            let faces = Set(UIFont.fontNames(forFamilyName: family))
+            XCTAssertTrue(installed.contains { entry in
+                guard case .named(let name) = entry.id else { return false }
+                return faces.contains(name) && entry.name == Text(verbatim: family)
+            }, family)
+        }
         XCTAssertEqual(Set(SubtitleSystemFonts.all.map(\.id)).count, SubtitleSystemFonts.all.count)
     }
 
@@ -101,9 +113,51 @@ final class SubtitleSystemFontsTests: XCTestCase {
         style.systemFont = .caption(.smallCapitals)
         XCTAssertFalse(style.followsSystemStyle)
         XCTAssertEqual(style.textColor, .yellow)
-        XCTAssertEqual(style.fontDisplayName, String(localized: SubtitleSystemFont.CaptionFamily.smallCapitals.displayName))
+        XCTAssertEqual(style.fontDisplayName, Text(SubtitleSystemFont.CaptionFamily.smallCapitals.displayName))
         XCTAssertNotNil(SubtitleSystemFonts.descriptor(for: try XCTUnwrap(style.systemFont)))
         XCTAssertNil(SubtitleSystemFonts.descriptor(for: .named("Plozz-test-unavailable-font")))
+    }
+
+    func testWeightResourcesKeepAppCopyAndUseTheSuppliedNumberLocale() {
+        let english = Locale(identifier: "en_US")
+        let german = Locale(identifier: "de_DE")
+        let englishWeight = SubtitleSystemFonts.weightDisplayName(0.1234, locale: english)
+        let germanWeight = SubtitleSystemFonts.weightDisplayName(0.1234, locale: german)
+        XCTAssertTrue(String(localized: englishWeight).contains("0.123"))
+        XCTAssertTrue(String(localized: germanWeight).contains("0,123"))
+        var style = SubtitleStyle.default
+        style.fontWeight = .semibold
+        XCTAssertEqual(style.fontWeightDisplayName(locale: german), SubtitleFontWeight.semibold.displayName)
+    }
+
+    func testStandardSystemWeightsReuseExistingSubtitleWeightResources() {
+        let pairs: [(UIFont.Weight, SubtitleFontWeight)] = [
+            (.regular, .regular), (.medium, .medium), (.semibold, .semibold), (.bold, .bold)
+        ]
+        for (system, subtitle) in pairs {
+            XCTAssertEqual(
+                SubtitleSystemFonts.weightDisplayName(Double(system.rawValue), locale: Locale(identifier: "en")),
+                subtitle.displayName
+            )
+        }
+    }
+
+    func testExtraSystemWeightNamesHaveFontSpecificKeysAndUnchangedEnglish() {
+        let names: [(UIFont.Weight, String, String)] = [
+            (.ultraLight, "subtitleWeight.ultralight", "Ultralight"),
+            (.thin, "subtitleWeight.thin", "Thin"),
+            (.light, "subtitleWeight.light", "Light"),
+            (.heavy, "subtitleWeight.heavy", "Heavy"),
+            (.black, "subtitleWeight.black", "Black")
+        ]
+        let english = Locale(identifier: "en")
+        for (weight, key, label) in names {
+            var resource = SubtitleSystemFonts.weightDisplayName(Double(weight.rawValue), locale: english)
+            XCTAssertEqual(resource.key, key)
+            XCTAssertNotEqual(resource.key, label, "Font weights must not share generic brightness/color keys.")
+            resource.locale = english
+            XCTAssertEqual(String(localized: resource), label)
+        }
     }
 }
 #endif

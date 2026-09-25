@@ -56,6 +56,7 @@ public final class SubtitleStyleStore: SubtitleStyleStoring, @unchecked Sendable
 
     /// The `UserDefaults` base key subtitle appearance persists under.
     public static let storageKey = "com.plozz.subtitleStyle"
+    public static let legacyLiveStyleStorageKey = "com.plozz.liveSubtitleStyle"
     public static let didChangeNotification = Notification.Name("com.plozz.subtitleStyle.changed")
 
     /// - Parameter namespace: per-profile scope. `nil` (the default/primary
@@ -65,6 +66,7 @@ public final class SubtitleStyleStore: SubtitleStyleStoring, @unchecked Sendable
         self.namespace = namespace
         self.key = SettingsKey.scoped(Self.storageKey, namespace: namespace)
         migrateFromLegacyIfNeeded()
+        migrateLegacyLiveStyleIfNeeded()
     }
 
     public func load() -> SubtitleStylePreferences {
@@ -89,6 +91,26 @@ public final class SubtitleStyleStore: SubtitleStyleStoring, @unchecked Sendable
             return
         }
         save(SubtitleStylePreferences(base: SubtitleStyle(from: legacy)))
+    }
+
+    private func migrateLegacyLiveStyleIfNeeded() {
+        let legacyKey = SettingsKey.scoped(Self.legacyLiveStyleStorageKey, namespace: namespace)
+        guard let legacy = defaults.data(forKey: legacyKey) else { return }
+        do {
+            var preferences = try defaults.data(forKey: key).map {
+                try JSONDecoder().decode(SubtitleStylePreferences.self, from: $0)
+            } ?? .default
+            if preferences.liveTV == nil {
+                preferences.liveTV = try JSONDecoder().decode(SubtitleStyle.self, from: legacy)
+                let data = try JSONEncoder().encode(preferences)
+                defaults.set(data, forKey: key)
+                NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+            }
+            // The canonical override wins, and disabling it must not revive the old key.
+            defaults.removeObject(forKey: legacyKey)
+        } catch {
+            NSLog("Plozz: could not migrate the legacy Live TV subtitle style; retained the original settings.")
+        }
     }
 }
 
@@ -131,6 +153,8 @@ public final class SubtitleStyleModel {
     }
 
     private let store: SubtitleStyleStoring
+    @ObservationIgnored private var storeObserver: NSObjectProtocol?
+    @ObservationIgnored private var applyingStoredValues = false
 
     public init(store: SubtitleStyleStoring = SubtitleStyleStore()) {
         self.store = store
@@ -138,6 +162,15 @@ public final class SubtitleStyleModel {
         self.style = prefs.base
         self.overrides = prefs.overrides
         self.liveTVStyle = prefs.liveTV
+        storeObserver = NotificationCenter.default.addObserver(
+            forName: SubtitleStyleStore.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reloadStoredValues() }
+        }
+    }
+
+    deinit {
+        if let storeObserver { NotificationCenter.default.removeObserver(storeObserver) }
     }
 
     /// The appearance to render for a content category: its override if present,
@@ -147,6 +180,19 @@ public final class SubtitleStyleModel {
     }
 
     private func persist() {
+        guard !applyingStoredValues else { return }
         store.save(SubtitleStylePreferences(base: style, overrides: overrides, liveTV: liveTVStyle))
+    }
+
+    private func reloadStoredValues() {
+        let preferences = store.load()
+        guard preferences.base != style || preferences.overrides != overrides || preferences.liveTV != liveTVStyle else {
+            return
+        }
+        applyingStoredValues = true
+        defer { applyingStoredValues = false }
+        style = preferences.base
+        overrides = preferences.overrides
+        liveTVStyle = preferences.liveTV
     }
 }

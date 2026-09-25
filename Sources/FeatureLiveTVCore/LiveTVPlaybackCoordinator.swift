@@ -203,9 +203,12 @@ public final class LiveTVPlaybackCoordinator {
         if !active { stop() }
     }
 
-    public func stop() {
+    /// - Parameter suppressingPreviewOf: a channel auto-preview must not
+    ///   restart until focus moves to another one — the one just left, when the
+    ///   viewer asked for no picture behind the guide.
+    public func stop(suppressingPreviewOf channelID: String? = nil) {
         lifecycle = UUID()
-        suppressPreview(of: pendingWatchChannelID ?? previewTaskChannelID)
+        suppressPreview(of: channelID ?? pendingWatchChannelID ?? previewTaskChannelID)
         cancelWatch()
         cancelPreviewPreparation()
         preparation.stop()

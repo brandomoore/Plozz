@@ -52,6 +52,13 @@ public struct LiveTVSettingsView: View {
                 .pickerStyle(.segmented)
             }
 
+            SettingsSectionGroup("Guide") {
+                Toggle("Preview after watching", isOn: $settings.previewAfterWatching)
+                Toggle("Recently watched", isOn: $settings.showsRecentChannels)
+            } footer: {
+                Text("Preview after watching keeps the channel playing behind the guide when you leave full screen. Recently watched shows the channels you watched last at the top of the guide.")
+            }
+
             SettingsSectionGroup("Filters") {
                 Toggle("Favorites only", isOn: $settings.favoritesOnly)
                 Toggle("With guide listings", isOn: $settings.guideOnly)
@@ -118,6 +125,22 @@ public struct LiveTVSettingsView: View {
                 Toggle("Keep watching while browsing", isOn: $settings.keepWatchingWhileBrowsing)
                     .toggleStyle(SettingsSwitchToggleStyle())
                     .disabled(!settings.autoPreview)
+            },
+            SettingsSplitRow(
+                id: "preview-after-watching",
+                title: "Preview after watching",
+                description: "Keep the channel playing behind the guide when you leave full screen."
+            ) {
+                Toggle("Preview after watching", isOn: $settings.previewAfterWatching)
+                    .toggleStyle(SettingsSwitchToggleStyle())
+            },
+            SettingsSplitRow(
+                id: "recently-watched",
+                title: "Recently watched",
+                description: "Show the channels you watched last at the top of the guide."
+            ) {
+                Toggle("Recently watched", isOn: $settings.showsRecentChannels)
+                    .toggleStyle(SettingsSwitchToggleStyle())
             },
             SettingsSplitRow(
                 id: "favorites-only",

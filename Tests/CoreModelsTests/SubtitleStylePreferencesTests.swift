@@ -3,6 +3,48 @@ import XCTest
 
 @MainActor
 final class SubtitleStylePreferencesTests: XCTestCase {
+    func testLegacyLiveStyleMigratesOnceWithoutOverwritingCanonicalChoices() throws {
+        let name = "LegacyLiveStyle.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        var old = SubtitleStyle.default
+        old.fontScale = 0.7
+        let legacyKey = SettingsKey.scoped(SubtitleStyleStore.legacyLiveStyleStorageKey, namespace: "viewer")
+        defaults.set(try JSONEncoder().encode(old), forKey: legacyKey)
+        let store = SubtitleStyleStore(defaults: defaults, namespace: "viewer")
+        XCTAssertEqual(store.load().liveTV, old)
+        XCTAssertNil(defaults.data(forKey: legacyKey))
+        var preferences = store.load()
+        preferences.liveTV = nil
+        store.save(preferences)
+        XCTAssertNil(SubtitleStyleStore(defaults: defaults, namespace: "viewer").load().liveTV)
+
+        var newer = SubtitleStyle.default
+        newer.fontScale = 1.37
+        store.save(.init(base: .default, liveTV: newer))
+        defaults.set(try JSONEncoder().encode(old), forKey: legacyKey)
+        XCTAssertEqual(SubtitleStyleStore(defaults: defaults, namespace: "viewer").load().liveTV, newer)
+        XCTAssertNil(defaults.data(forKey: legacyKey))
+        XCTAssertNil(SubtitleStyleStore(defaults: defaults, namespace: "other").load().liveTV)
+    }
+
+    func testLegacyLiveMigrationPreservesCorruptInputsAndTheDefaultProfileScope() throws {
+        let name = "LegacyLiveStyleSafety.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let corrupt = Data("invalid-json".utf8)
+        defaults.set(corrupt, forKey: SubtitleStyleStore.legacyLiveStyleStorageKey)
+        XCTAssertNil(SubtitleStyleStore(defaults: defaults).load().liveTV)
+        XCTAssertEqual(defaults.data(forKey: SubtitleStyleStore.legacyLiveStyleStorageKey), corrupt)
+
+        var style = SubtitleStyle.default
+        style.textColor = .cyan
+        defaults.set(try JSONEncoder().encode(style), forKey: SubtitleStyleStore.legacyLiveStyleStorageKey)
+        XCTAssertEqual(SubtitleStyleStore(defaults: defaults).load().liveTV, style)
+        XCTAssertNil(defaults.data(forKey: SubtitleStyleStore.legacyLiveStyleStorageKey))
+        XCTAssertNil(SubtitleStyleStore(defaults: defaults, namespace: "viewer").load().liveTV)
+    }
+
     func testFileEmphasisSettingPreservesOtherCapturedSourcePolicies() {
         var style = SubtitleStyle.default
         style.usesSourceColors = false

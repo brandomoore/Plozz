@@ -4,6 +4,9 @@ import FeaturePlayback
 import SwiftUI
 
 /// This node stays mounted when controls hide; it never creates a player.
+///
+/// Drawn as VOD's top bar (`PlozziOSPlayerTopBar`): glass circles in a row
+/// beside the live overlay's close button.
 struct PlozziOSLivePresentationControls: View {
     let context: LiveChannelPresentationContext
     @Environment(\.scenePhase) private var scenePhase
@@ -17,9 +20,10 @@ struct PlozziOSLivePresentationControls: View {
                         pictureInPicture.toggle()
                     } label: {
                         Label("Picture in Picture", systemImage: "pip.enter")
-                            .frame(minWidth: 44, minHeight: 44)
+                            .font(.headline)
                     }
                     .labelStyle(.iconOnly)
+                    .buttonStyle(PlayerGlassCircleButtonStyle(diameter: 44))
                     .accessibilityIdentifier("live-channel-pip")
                     .accessibilityValue(pictureInPicture.isStarting ? "Starting" :
                         pictureInPicture.isActive ? "Active" : "Inactive")
@@ -27,20 +31,22 @@ struct PlozziOSLivePresentationControls: View {
                 if nativePlayerAvailable {
                     LiveAirPlayRoutePicker()
                         .frame(width: 44, height: 44)
+                        .background { PlayerGlassCircleSurface() }
+                        .clipShape(Circle())
                         .accessibilityLabel(Text(verbatim: "AirPlay"))
                         .accessibilityValue(pictureInPicture.isAirPlayActive ? "Connected" : "Not connected")
                         .accessibilityIdentifier("live-channel-airplay")
                 }
                 Button(action: context.stopPlayback) {
                     Label("Stop playback", systemImage: "stop.fill")
-                        .frame(minWidth: 44, minHeight: 44)
+                        .font(.headline)
                 }
                 .labelStyle(.iconOnly)
+                .buttonStyle(PlayerGlassCircleButtonStyle(diameter: 44))
                 .accessibilityIdentifier("live-channel-stop")
             }
         }
         .foregroundStyle(.white)
-        .background(.black.opacity(0.6), in: Capsule())
         .opacity(context.showsControls ? 1 : 0)
         .allowsHitTesting(context.showsControls)
         .accessibilityHidden(!context.showsControls)

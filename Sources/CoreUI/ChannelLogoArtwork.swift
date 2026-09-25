@@ -52,7 +52,8 @@ public struct ChannelLogoArtwork: View {
                     name: name, image: current?.image,
                     plate: ChannelLogoPlate(tone: current?.tone, prefersLight: palette.isLight),
                     size: size, cornerRadius: cornerRadius, artworkInset: artworkInset,
-                    rendersInkLight: ChannelLogoPlate.rendersInkLight(current?.tone, prefersLight: palette.isLight)
+                    rendersInkLight: ChannelLogoPlate.rendersInkLight(current?.tone, prefersLight: palette.isLight),
+                    isTile: ChannelLogoPlate.showsAsTile(current?.tone)
                 )
             }
         }
@@ -150,6 +151,13 @@ struct ChannelLogoPlate: Equatable {
 
     private static let lightPlateLuminance = 0.55
 
+    /// A logo that fills its own box — square channel art, a badge on a solid
+    /// card — rather than ink on transparency. The same coverage line the logo
+    /// analysis draws between a boxed and a cut-out logo.
+    static func showsAsTile(_ tone: ResolvedLogoTone?) -> Bool {
+        (tone?.coverage ?? 0) >= 0.85
+    }
+
     var color: Color { Color(red: red, green: green, blue: blue) }
     var isLight: Bool { 0.2126 * red + 0.7152 * green + 0.0722 * blue > 0.55 }
 }
@@ -162,7 +170,21 @@ struct ChannelLogoPlateContent: View {
     let cornerRadius: CGFloat
     let artworkInset: CGFloat
     var rendersInkLight = false
+    /// Draw the logo as a tile: nearly the plate's full height, its corners
+    /// rounded concentric with the plate's. A boxed logo at the usual ink
+    /// inset read as a small, sharp-cornered square in the middle of the plate.
+    var isTile = false
     @Environment(\.colorSchemeContrast) private var contrast
+
+    /// A tile hugs the plate more closely than ink does.
+    private var inset: CGFloat {
+        isTile ? min(artworkInset, max(4, size.height * 8 / 128)) : artworkInset
+    }
+
+    /// Proportional to the tile itself, not concentric with the plate: a square
+    /// tile sits well inside a wide plate, so its corners don't nest in the
+    /// plate's, and the concentric remainder (a few points) barely read as round.
+    private var tileCornerRadius: CGFloat { max(4, (size.height - inset * 2) * 0.08) }
 
     var body: some View {
         ZStack {
@@ -173,6 +195,12 @@ struct ChannelLogoPlateContent: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundStyle(.white.opacity(0.92))
+                } else if isTile {
+                    Image(uiImage: image)
+                        .renderingMode(.original)
+                        .resizable()
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: tileCornerRadius, style: .continuous))
                 } else {
                     Image(uiImage: image)
                         .renderingMode(.original)
@@ -189,8 +217,8 @@ struct ChannelLogoPlateContent: View {
             }
         }
         .frame(
-            width: max(1, size.width - artworkInset * 2),
-            height: max(1, size.height - artworkInset * 2)
+            width: max(1, size.width - inset * 2),
+            height: max(1, size.height - inset * 2)
         )
         .frame(width: size.width, height: size.height)
         .background(plate.color)

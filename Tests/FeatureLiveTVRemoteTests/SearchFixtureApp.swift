@@ -1,4 +1,5 @@
 import FeatureLiveTVCore
+import FeaturePlayback
 import Foundation
 import SwiftUI
 @testable import FeatureLiveTV
@@ -6,6 +7,9 @@ import SwiftUI
 @main
 struct SearchFixtureApp: App {
     init() {
+        if let raw = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--live-surface=") }) {
+            LiveChannelScreenshotHook.pendingSurface = .init(rawValue: String(raw.dropFirst("--live-surface=".count)))
+        }
         if ProcessInfo.processInfo.arguments.contains("--source-fixture")
             || ProcessInfo.processInfo.arguments.contains("--live-root-fixture") {
             URLProtocol.registerClass(SourceSmokeNetworkBlocker.self)

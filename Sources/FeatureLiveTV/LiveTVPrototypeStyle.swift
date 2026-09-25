@@ -8,14 +8,30 @@ enum PrototypeLayout {
     static let smallGap = PlozzTheme.Spacing.xSmall
     static let radius = PlozzTheme.Metrics.cornerRadius
     static let sectionGap = PlozzTheme.Spacing.large
+    static let cellGap = PlozzTheme.Spacing.xSmall
+    // On touch the grid is one even mesh: rows, the logo column and programmes
+    // all sit a programme-gap apart. The TV keeps wider row and column gaps.
+    #if os(iOS)
+    static let rowGap = cellGap
+    static let columnGap = cellGap
+    #else
     static let rowGap = PlozzTheme.Spacing.medium
     static let columnGap = PlozzTheme.Spacing.small
-    static let cellGap = PlozzTheme.Spacing.xSmall
+    #endif
     static let rowInset = PlozzTheme.Spacing.medium
     static let logoRadius = PlozzTheme.Metrics.Radius.content
-    static let rowRadius = logoRadius + rowInset
+    /// Concentric with the logo plate on a TV and a tablet. A phone's short
+    /// rows (`compactRowHeight`) turned that radius into a full capsule, so
+    /// its cells get the TV's proportion instead: squarer, like the tvOS grid.
+    static var rowRadius: CGFloat {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone ? 14 : logoRadius + rowInset
+        #else
+        logoRadius + rowInset
+        #endif
+    }
     static let programInset: CGFloat = 0
-    static let programRadius = rowRadius - programInset
+    static var programRadius: CGFloat { rowRadius - programInset }
     static let horizontalFade = PlozzTheme.Spacing.large
     static let verticalFade = PlozzTheme.Spacing.xLarge
     static let minimumGuideOpacity = 0.05
@@ -28,7 +44,7 @@ enum PrototypeLayout {
         guideInset
         #endif
     }
-    static let guideRadius = rowRadius + guideInset
+    static var guideRadius: CGFloat { rowRadius + guideInset }
     static let controlRadius = PlozzTheme.Metrics.Radius.control
     static let controlInset = PlozzTheme.Spacing.xSmall
     static let controlGroupRadius = controlRadius + controlInset
@@ -52,7 +68,9 @@ enum PrototypeLayout {
         let bottom: CGFloat = 0
         let trailing: CGFloat = 0
         #else
-        let bottom = guideRadius
+        // Square along the bottom: the list fades out toward the tab bar
+        // (see the guide's scroll fade) rather than being cut by a curve.
+        let bottom: CGFloat = 0
         let trailing = guideRadius
         #endif
         return UnevenRoundedRectangle(
@@ -61,12 +79,71 @@ enum PrototypeLayout {
         )
     }
 
-    static func stationWidth(for _: CGFloat) -> CGFloat {
-        stationColumnWidth
+    /// Below this the guide is a phone's: a narrow channel column, shorter rows
+    /// and one hour of programmes across the screen.
+    static let compactWidth: CGFloat = 650
+
+    // The guide's own vertical rhythm on touch is a step tighter than the
+    // TV's: section labels and the time ruler read at arm's length, and every
+    // point they give back is guide.
+    #if os(iOS)
+    static let sectionLabelHeight: CGFloat = 22
+    static let rulerHeight: CGFloat = 28
+    static let sectionLabelGap: CGFloat = 2
+    static let toolbarGuideGap: CGFloat = 4
+    static let rulerGap: CGFloat = 4
+    #else
+    static let sectionLabelHeight: CGFloat = 44
+    static let rulerHeight: CGFloat = 44
+    static let sectionLabelGap: CGFloat = rowGap
+    static let toolbarGuideGap: CGFloat = sectionGap
+    static let rulerGap: CGFloat = gap
+    #endif
+    static let compactStationWidth: CGFloat = 88
+    static let compactRowHeight: CGFloat = 64
+
+    static func isCompact(_ width: CGFloat) -> Bool { width < compactWidth }
+
+    /// A phone keeps its short rows and narrow channel column on its side too:
+    /// landscape has no more height than portrait has width, so full-size rows
+    /// left room for barely one. The extra width goes to programme time
+    /// instead (`viewportSeconds` stays width-based).
+    static func usesCompactRows(_ width: CGFloat) -> Bool {
+        #if os(iOS)
+        isCompact(width) || UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        isCompact(width)
+        #endif
+    }
+
+    static func stationWidth(for width: CGFloat) -> CGFloat {
+        usesCompactRows(width) ? compactStationWidth : stationColumnWidth
     }
 
     static func timelineWidth(for width: CGFloat) -> CGFloat {
         max(1, width - stationWidth(for: width) - columnGap)
+    }
+
+    /// How much programme time the visible timeline spans: two half-hour slots
+    /// on a phone, four elsewhere.
+    static func viewportSeconds(for width: CGFloat) -> TimeInterval {
+        isCompact(width) ? 3_600 : 7_200
+    }
+
+    /// The scrollable guide holds six hours whatever the viewport.
+    static let timelineSpanSeconds: TimeInterval = 21_600
+
+    /// Horizontal distance for a stretch of programme time.
+    static func timelineX(_ seconds: TimeInterval, for width: CGFloat) -> CGFloat {
+        timelineWidth(for: width) * seconds / viewportSeconds(for: width)
+    }
+
+    static func timelineContentWidth(for width: CGFloat) -> CGFloat {
+        timelineX(timelineSpanSeconds, for: width)
+    }
+
+    static func maximumTimelineOffset(for width: CGFloat) -> CGFloat {
+        max(0, timelineContentWidth(for: width) - timelineWidth(for: width))
     }
 
     static func programHeight(in rowHeight: CGFloat) -> CGFloat {
@@ -220,6 +297,16 @@ private struct PrototypeButtonBody: View {
         }
     }
 
+    /// A tapped guide cell wears the focus outline, since touch has no focus
+    /// of its own to show which programme the info bar is describing.
+    private var showsTouchSelection: Bool {
+        #if os(iOS)
+        selected && (surface == .program || surface == .guide)
+        #else
+        false
+        #endif
+    }
+
     var body: some View {
         configuration.label
             .foregroundStyle(solidFocus ? palette.onAccent : palette.primaryText)
@@ -228,7 +315,7 @@ private struct PrototypeButtonBody: View {
                 fill, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             )
             .overlay {
-                if focused && !solidFocus {
+                if (focused || showsTouchSelection) && !solidFocus {
                     PrototypeFocusOutline(
                         cornerRadius: cornerRadius,
                         color: surface == .station ? .white : palette.primaryText,
@@ -242,7 +329,15 @@ private struct PrototypeButtonBody: View {
             .opacity(configuration.isPressed ? 0.75 : 1)
             // Directional entry gates remove candidates without dimming the rail.
             .transaction { $0.animation = nil }
-            .onChange(of: focused, initial: true) { _, value in focusChanged?(value) }
+            .onChange(of: focused, initial: true) { _, value in
+                #if os(iOS)
+                // Touch has no focus to lose: a tapped selection stands until
+                // another tap replaces it, even as its row scrolls away and back.
+                if value { focusChanged?(value) }
+                #else
+                focusChanged?(value)
+                #endif
+            }
     }
 }
 

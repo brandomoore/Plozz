@@ -24,17 +24,21 @@ struct SubtitleStylePanel: View {
     let palette: ThemePalette
     let actions: PlayerOptionsActions
     @FocusState.Binding var focus: PlayerControls.FocusSlot?
-    /// Forwards to `PlayerControls.openSubtitleScreen`, which animates the panel
-    /// morph and defers the focus write. Kept in the parent so the fragile
+    /// Forwards to the host's screen navigation, which animates the panel
+    /// morph and defers the focus write. Kept in the host so the fragile
     /// focus-restore choreography is unchanged by this extraction.
     let openScreen: (PlayerControls.SubtitleScreen) -> Void
     var secondaryPreview: Binding<Bool>? = nil
+    /// Whether the player can show a second subtitle line; where it can't (a
+    /// live channel) the Dual Subtitles entry is left out.
+    var offersDualSubtitles = true
 
     /// Hold-to-accelerate state for the numeric style rows (see the field in the
     /// former PlayerControls home). Lives here because only `handleStyleMove`
     /// touches it.
     @State private var styleAccelerator = SubtitleStyleAccelerator()
     @State private var systemStyleConfirmation = SystemCaptionStyleConfirmation()
+    @Environment(\.locale) private var locale
     private var effectiveStyle: SubtitleStyle { SystemCaptionStyle.shared.resolved(model.subtitleStyle) }
 
     var body: some View {
@@ -52,7 +56,7 @@ struct SubtitleStylePanel: View {
             case .styleSystemFont: systemFontScreen
             case .styleOutline: styleScreen(styleOutlineRows)
             case .styleBackground: styleScreen(styleBackgroundRows)
-            case .styleDual: styleScreen(styleDualRows)
+            case .styleDual where offersDualSubtitles: styleScreen(styleDualRows)
             case .styleFileFormatting: fileFormattingScreen
             default: EmptyView()
             }
@@ -238,7 +242,7 @@ struct SubtitleStylePanel: View {
     /// The submenus own the quick control as their first row *and* echo its current
     /// value as their summary, so there is exactly one entry per concern here.
     /// Controls always show the effective look, including while matching.
-    private var styleMainRows: (rows: [StyleRowSpec], dividerBefore: Int) {
+    var styleMainRows: (rows: [StyleRowSpec], dividerBefore: Int) {
         let s = effectiveStyle
         var rows: [StyleRowSpec] = []
         var slot = 0
@@ -251,9 +255,9 @@ struct SubtitleStylePanel: View {
                 }
             }
         ))); slot += 1
-        rows.append(StyleRowSpec(slot: slot, title: "Font", kind: .submenu(summary: Text(verbatim: s.fontDisplayName), open: { openScreen(.styleFont) }))); slot += 1
+        rows.append(StyleRowSpec(slot: slot, title: "Font", kind: .submenu(summary: s.fontDisplayName, open: { openScreen(.styleFont) }))); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Weight", kind: .choice(
-            value: Text(verbatim: s.fontWeightDisplayName),
+            value: Text(s.fontWeightDisplayName(locale: locale)),
             prev: { updateStyle { $0.selectFontWeight(SubtitleSystemFonts.adjacentWeight(for: s, forward: false)) } },
             next: { updateStyle { $0.selectFontWeight(SubtitleSystemFonts.adjacentWeight(for: s, forward: true)) } }
         ))); slot += 1
@@ -288,7 +292,9 @@ struct SubtitleStylePanel: View {
         let dividerBefore = slot
         rows.append(StyleRowSpec(slot: slot, title: "Shadow & Outline", kind: .submenu(summary: Text(SubtitleStyleEditorValues.edgeName(s)), open: { openScreen(.styleOutline) }))); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Background", kind: .submenu(summary: s.background.isEnabled || s.glyphBackground.alpha > 0 ? Text("On") : Text("Off"), open: { openScreen(.styleBackground) }))); slot += 1
-        rows.append(StyleRowSpec(slot: slot, title: "Dual Subtitles", kind: .submenu(summary: hasSecondaryTrack ? Text("On") : Text("Off"), open: { openScreen(.styleDual) }))); slot += 1
+        if offersDualSubtitles {
+            rows.append(StyleRowSpec(slot: slot, title: "Dual Subtitles", kind: .submenu(summary: hasSecondaryTrack ? Text("On") : Text("Off"), open: { openScreen(.styleDual) }))); slot += 1
+        }
         rows.append(StyleRowSpec(slot: slot, title: "Subtitle file formatting", kind: .submenu(summary: Text(verbatim: ""), open: { openScreen(.styleFileFormatting) }))); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Reset to App Default", kind: .action(run: { actions.setSubtitleStyle(.default) }))); slot += 1
         return (rows, dividerBefore)
@@ -332,7 +338,8 @@ struct SubtitleStylePanel: View {
             styleRow(StyleRowSpec(
                 slot: SubtitleFontFamily.allCases.count, title: "System",
                 kind: .submenu(
-                    summary: Text(verbatim: effectiveStyle.fontDescriptor?.displayName ?? effectiveStyle.systemFont.map(SubtitleSystemFonts.displayName) ?? ""),
+                    summary: effectiveStyle.fontDescriptor.map { Text(verbatim: $0.displayName) }
+                        ?? effectiveStyle.systemFont.map(SubtitleSystemFonts.displayName) ?? Text(verbatim: ""),
                     open: { openScreen(.styleSystemFont) }
                 )
             ))
@@ -375,7 +382,7 @@ struct SubtitleStylePanel: View {
                     openScreen(.style)
                 } label: {
                     HStack(spacing: 10) {
-                        Text(verbatim: entry.name).font(entry.preview).lineLimit(1).minimumScaleFactor(0.5)
+                        entry.name.font(entry.preview).lineLimit(1).minimumScaleFactor(0.5)
                         Spacer(minLength: 8)
                         Image(systemName: effectiveStyle.systemFont == entry.id ? "checkmark.circle.fill" : "circle")
                             .font(.body)
