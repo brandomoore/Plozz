@@ -3,6 +3,7 @@ import Foundation
 import AVFoundation
 import CoreMedia
 import CoreModels
+import CoreUI
 import UIKit
 
 /// Converts the platform-neutral `SubtitleStyle` into AVFoundation styling.
@@ -19,10 +20,13 @@ extension SubtitleStyle {
         backgroundColor.alpha *= opacity
         var foregroundColor = textColor
         foregroundColor.alpha *= opacity
+        var lineBackgroundColor = glyphBackground
+        lineBackgroundColor.alpha *= opacity
 
         var styles: [String: Any] = [:]
         styles[kCMTextMarkupAttribute_ForegroundColorARGB as String] = foregroundColor.argbArray
         styles[kCMTextMarkupAttribute_BackgroundColorARGB as String] = backgroundColor.argbArray
+        styles[kCMTextMarkupAttribute_CharacterBackgroundColorARGB as String] = lineBackgroundColor.argbArray
         styles[kCMTextMarkupAttribute_BoldStyle as String] = fontWeight == .bold || fontWeight == .semibold
         switch systemFont {
         case .caption(let family):
@@ -32,6 +36,15 @@ extension SubtitleStyle {
         case nil:
             if let face = fontFamily.postScriptNameCandidates(weight: fontWeight).first {
                 styles[kCMTextMarkupAttribute_FontFamilyName as String] = UIFont(name: face, size: 30)?.familyName ?? face
+            }
+            if fontDescriptor != nil, let descriptor = resolvedFontDescriptor {
+                // Native markup has no descriptor/variation/features or window-radius
+                // attribute. Preserve what it can express; the owned overlay uses the
+                // complete descriptor and remains the appearance-authoritative path.
+                styles[kCMTextMarkupAttribute_FontFamilyName as String] = UIFont(descriptor: descriptor, size: 30).familyName
+                styles[kCMTextMarkupAttribute_GenericFontFamilyName as String] = nil
+                styles[kCMTextMarkupAttribute_BoldStyle as String] = descriptor.symbolicTraits.contains(.traitBold)
+                styles[kCMTextMarkupAttribute_ItalicStyle as String] = descriptor.symbolicTraits.contains(.traitItalic)
             }
         }
         if !usesSourcePosition {

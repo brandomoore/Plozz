@@ -22,6 +22,10 @@ final class NativeDisplayCriteriaController {
     typealias Loader = @MainActor (AVAsset) async throws -> AVDisplayCriteria
 
     private let loadCriteria: Loader
+    private let requiresUnownedTarget: Bool
+    var onOwnershipConflict: (() -> Void)?
+    var onCriteriaRequested: (() -> Void)?
+    var onCriteriaFailure: (() -> Void)?
     private var task: Task<Void, Never>?
     private var generation: UInt = 0
     private var isConfigured = false
@@ -30,7 +34,11 @@ final class NativeDisplayCriteriaController {
     private weak var appliedTarget: (any NativeDisplayCriteriaTarget)?
     private var appliedCriteria: AVDisplayCriteria?
 
-    init(loadCriteria: @escaping Loader = { try await $0.load(.preferredDisplayCriteria) }) {
+    init(
+        requiresUnownedTarget: Bool = false,
+        loadCriteria: @escaping Loader = { try await $0.load(.preferredDisplayCriteria) }
+    ) {
+        self.requiresUnownedTarget = requiresUnownedTarget
         self.loadCriteria = loadCriteria
     }
 
@@ -53,6 +61,7 @@ final class NativeDisplayCriteriaController {
                    appliedTarget.playbackDisplayCriteria?.isEqual(appliedCriteria) != true {
                     // Another player took the window while AVFoundation was loading.
                     self.isConfigured = false
+                    self.onOwnershipConflict?()
                     return
                 }
                 self.pendingCriteria = criteria
@@ -63,6 +72,7 @@ final class NativeDisplayCriteriaController {
             } catch {
                 guard let self, !Task.isCancelled, self.generation == expectedGeneration else { return }
                 PlozzLog.playback.error("Native asset display criteria unavailable; retaining the source-hint fallback")
+                self.onCriteriaFailure?()
             }
         }
     }
@@ -94,12 +104,19 @@ final class NativeDisplayCriteriaController {
             clearOwnedCriteria()
             return
         }
+        if requiresUnownedTarget, let current = target.playbackDisplayCriteria,
+           appliedTarget !== target || appliedCriteria?.isEqual(current) != true {
+            isConfigured = false
+            onOwnershipConflict?()
+            return
+        }
         // Reparenting the same surface must not trigger another HDMI handshake.
         if target.playbackDisplayCriteria?.isEqual(pendingCriteria) != true {
             target.playbackDisplayCriteria = pendingCriteria
             appliedTarget = target
             appliedCriteria = pendingCriteria
         }
+        onCriteriaRequested?()
     }
 
     private func clearOwnedCriteria() {

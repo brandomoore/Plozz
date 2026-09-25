@@ -37,6 +37,111 @@ public enum SubtitleSystemFonts {
 
     public static var all: [Entry] { captionFonts + installedFonts }
     private static var unavailableFonts: Set<String> = []
+    private static var capturedDescriptors: [UIFontDescriptor: SubtitleFontDescriptor] = [:]
+    private static var restoredDescriptors: [Data: UIFontDescriptor] = [:]
+
+    public static func capture(_ descriptor: UIFontDescriptor) -> SubtitleFontDescriptor? {
+        if let cached = capturedDescriptors[descriptor] { return cached }
+        do {
+            let data = try NSKeyedArchiver.archivedData(withRootObject: descriptor, requiringSecureCoding: true)
+            let font = CTFontCreateWithFontDescriptor(descriptor as CTFontDescriptor, 30, nil)
+            let traits = CTFontCopyTraits(font) as NSDictionary
+            let weight = (traits[kCTFontWeightTrait] as? NSNumber)?.doubleValue ?? 0
+            let features = featureNames(font: font, descriptor: descriptor)
+            let name = ([CTFontCopyDisplayName(font) as String] + features).joined(separator: " · ")
+            let result = SubtitleFontDescriptor(
+                archive: data, postScriptName: CTFontCopyPostScriptName(font) as String,
+                displayName: name, weight: weight
+            )
+            if capturedDescriptors.count >= 64 { capturedDescriptors.removeAll() }
+            capturedDescriptors[descriptor] = result
+            return result
+        } catch {
+            PlozzLog.playback.error("Could not preserve the system caption font descriptor.")
+            return nil
+        }
+    }
+
+    public static func descriptor(for snapshot: SubtitleFontDescriptor) -> UIFontDescriptor? {
+        if let cached = restoredDescriptors[snapshot.archive] { return cached }
+        do {
+            if let descriptor = try NSKeyedUnarchiver.unarchivedObject(
+                ofClass: UIFontDescriptor.self, from: snapshot.archive
+            ) {
+                if restoredDescriptors.count >= 64 { restoredDescriptors.removeAll() }
+                restoredDescriptors[snapshot.archive] = descriptor
+                return descriptor
+            }
+        } catch {
+            PlozzLog.playback.error("Saved caption descriptor could not be restored; using its named face.")
+        }
+        return UIFont(name: snapshot.postScriptName, size: 30)?.fontDescriptor
+    }
+
+    public static func changingWeight(
+        of snapshot: SubtitleFontDescriptor, to weight: SubtitleFontWeight
+    ) -> SubtitleFontDescriptor? {
+        if abs(snapshot.weight - Double(uiWeight(weight).rawValue)) < 0.001 { return snapshot }
+        guard let descriptor = descriptor(for: snapshot) else { return nil }
+        var traits = descriptor.object(forKey: .traits) as? [UIFontDescriptor.TraitKey: Any] ?? [:]
+        traits[.weight] = uiWeight(weight)
+        // A bold symbolic trait must not pin a selected lighter weight.
+        var symbolic = descriptor.symbolicTraits
+        symbolic.remove(.traitBold)
+        if weight == .bold { symbolic.insert(.traitBold) }
+        traits[.symbolic] = symbolic.rawValue
+        var attributes = descriptor.fontAttributes
+        attributes[.traits] = traits
+        attributes[.family] = UIFont(descriptor: descriptor, size: 30).familyName
+        attributes[.name] = nil
+        attributes[.face] = nil
+        attributes[.visibleName] = nil
+        let variationKey = UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String)
+        if var variations = attributes[variationKey] as? [NSNumber: NSNumber] {
+            // "wght" is the edited axis. Width/optical-size/custom axes survive.
+            variations.removeValue(forKey: NSNumber(value: 0x77676874))
+            attributes[variationKey] = variations
+        }
+        return capture(UIFontDescriptor(fontAttributes: attributes))
+    }
+
+    public static func adjacentWeight(for style: SubtitleStyle, forward: Bool) -> SubtitleFontWeight {
+        let weights = style.availableFontWeights
+        guard let first = weights.first, let last = weights.last else {
+            preconditionFailure("Subtitle fonts must provide at least one weight.")
+        }
+        let current = style.fontDescriptor?.weight ?? Double(uiWeight(style.fontWeight).rawValue)
+        if forward {
+            return weights.first { Double(uiWeight($0).rawValue) > current + 0.001 } ?? first
+        }
+        return weights.reversed().first { Double(uiWeight($0).rawValue) < current - 0.001 } ?? last
+    }
+
+    public static func weightDisplayName(_ weight: Double) -> String {
+        let names: [(UIFont.Weight, LocalizedStringResource)] = [
+            (.ultraLight, "Ultralight"), (.thin, "Thin"), (.light, "Light"),
+            (.regular, "Regular"), (.medium, "Medium"), (.semibold, "Semibold"),
+            (.bold, "Bold"), (.heavy, "Heavy"), (.black, "Black")
+        ]
+        if let match = names.first(where: { abs(Double($0.0.rawValue) - weight) < 0.001 }) {
+            return String(localized: match.1)
+        }
+        return String(localized: "Font weight \(weight.formatted(.number.precision(.fractionLength(0...3))))")
+    }
+
+    private static func featureNames(font: CTFont, descriptor: UIFontDescriptor) -> [String] {
+        let settings = descriptor.object(forKey: .featureSettings) as? [[String: Any]] ?? []
+        let features = CTFontCopyFeatures(font) as? [[String: Any]] ?? []
+        return settings.compactMap { setting in
+            let type = setting[kCTFontFeatureTypeIdentifierKey as String] as? Int
+            let selector = setting[kCTFontFeatureSelectorIdentifierKey as String] as? Int
+            let feature = features.first { ($0[kCTFontFeatureTypeIdentifierKey as String] as? Int) == type }
+            let selectors = feature?[kCTFontFeatureTypeSelectorsKey as String] as? [[String: Any]]
+            return selectors?.first {
+                ($0[kCTFontFeatureSelectorIdentifierKey as String] as? Int) == selector
+            }?[kCTFontFeatureSelectorNameKey as String] as? String
+        }
+    }
 
     public static func descriptor(for selection: SubtitleSystemFont, weight: SubtitleFontWeight = .regular) -> UIFontDescriptor? {
         let descriptor: UIFontDescriptor
@@ -51,16 +156,18 @@ public enum SubtitleSystemFonts {
             }
             descriptor = font.fontDescriptor
         }
-        let value: UIFont.Weight
-        switch weight {
-        case .regular: value = .regular
-        case .medium: value = .medium
-        case .semibold: value = .semibold
-        case .bold: value = .bold
-        }
         var traits = descriptor.object(forKey: .traits) as? [UIFontDescriptor.TraitKey: Any] ?? [:]
-        traits[.weight] = value
+        traits[.weight] = uiWeight(weight)
         return descriptor.addingAttributes([.traits: traits])
+    }
+
+    private static func uiWeight(_ weight: SubtitleFontWeight) -> UIFont.Weight {
+        switch weight {
+        case .regular: .regular
+        case .medium: .medium
+        case .semibold: .semibold
+        case .bold: .bold
+        }
     }
 
     public static func displayName(for selection: SubtitleSystemFont) -> String {
@@ -87,8 +194,25 @@ public enum SubtitleSystemFonts {
 }
 
 public extension SubtitleStyle {
+    @MainActor mutating func selectFontWeight(_ weight: SubtitleFontWeight) {
+        fontWeight = weight
+        if let fontDescriptor {
+            self.fontDescriptor = SubtitleSystemFonts.changingWeight(of: fontDescriptor, to: weight)
+        }
+    }
+
     @MainActor var fontDisplayName: String {
-        systemFont.map(SubtitleSystemFonts.displayName) ?? fontFamily.displayName
+        fontDescriptor?.displayName ?? systemFont.map(SubtitleSystemFonts.displayName) ?? fontFamily.displayName
+    }
+
+    @MainActor var fontWeightDisplayName: String {
+        fontDescriptor.map { SubtitleSystemFonts.weightDisplayName($0.weight) }
+            ?? String(localized: fontWeight.displayName)
+    }
+
+    @MainActor var resolvedFontDescriptor: UIFontDescriptor? {
+        if let fontDescriptor { return SubtitleSystemFonts.descriptor(for: fontDescriptor) }
+        return systemFont.flatMap { SubtitleSystemFonts.descriptor(for: $0, weight: fontWeight) }
     }
 }
 

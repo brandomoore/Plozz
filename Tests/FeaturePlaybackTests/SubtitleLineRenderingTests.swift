@@ -9,6 +9,97 @@ import XCTest
 
 @MainActor
 final class SubtitleLineRenderingTests: XCTestCase {
+    func testFreezingSystemStyleAndRoundTripHavePixelIdenticalRenderedAppearance() throws {
+        let descriptor = try XCTUnwrap(SubtitleSystemFonts.descriptor(for: .caption(.smallCapitals)))
+        let appearance = SystemCaptionAppearance(
+            textColor: .init(red: 0.9, green: 0.8, blue: 0.2, alpha: 0.63),
+            fontFamilyName: nil, fontDescriptor: descriptor,
+            allowsSourceColors: false, allowsSourceOpacity: false, allowsSourceFont: false,
+            isBold: false, relativeSize: 1.13, edge: .uniform,
+            background: .init(red: 0.1, green: 0.3, blue: 0.6, alpha: 0.51),
+            windowColor: .init(red: 0.7, green: 0.2, blue: 0.1, alpha: 0.42),
+            windowCornerRadius: 7.25
+        )
+        let system = SystemCaptionStyle(readAppearance: { appearance }, notifications: NotificationCenter())
+        let matching = system.resolved(.profileDefault)
+        let frozen = system.editing(.profileDefault) { $0.followsSystemStyle = false }
+        let restored = try JSONDecoder().decode(SubtitleStyle.self, from: JSONEncoder().encode(frozen))
+        var text = SubtitleText("Small capitals\n日本語 gyp", isItalic: true, isBold: true)
+        text.runs = [.init(text.string, color: .cyan)]
+        let referenceConfig = styledConfig(matching, text: text)
+        XCTAssertFalse(referenceConfig.isBold)
+        XCTAssertFalse(referenceConfig.isItalic)
+        XCTAssertNotNil(referenceConfig.glyphBackground)
+        XCTAssertNotNil(referenceConfig.background)
+        XCTAssertNotNil(referenceConfig.outline)
+        XCTAssertTrue(referenceConfig.fillSpans.isEmpty)
+        let reference = try render(referenceConfig, maxWidth: 400)
+        for style in [frozen, restored] {
+            let config = styledConfig(style, text: text)
+            XCTAssertEqual(config, referenceConfig)
+            let result = try render(config, maxWidth: 400)
+            XCTAssertEqual(result.size, reference.size)
+            XCTAssertEqual(result.pixels, reference.pixels)
+        }
+    }
+
+    func testEditingOnlySizeKeepsRenderedSystemLayersAndSourcePolicy() throws {
+        let appearance = SystemCaptionAppearance(
+            textColor: .init(red: 0.7, green: 0.6, blue: 0.2, alpha: 0.7),
+            fontFamilyName: "Courier",
+            fontDescriptor: try XCTUnwrap(UIFont(name: "Courier-Oblique", size: 30)?.fontDescriptor),
+            allowsSourceColors: true, allowsSourceOpacity: false, allowsSourceFont: false,
+            isBold: false, relativeSize: 1.17, edge: .raised,
+            background: .init(red: 0.2, green: 0.1, blue: 0.5, alpha: 0.27),
+            windowColor: .init(red: 0, green: 0, blue: 0, alpha: 0.61),
+            windowCornerRadius: 5.5
+        )
+        let system = SystemCaptionStyle(readAppearance: { appearance }, notifications: NotificationCenter())
+        let edited = system.editing(.profileDefault) { $0.fontScale = 1.18 }
+        var expected = system.resolved(.profileDefault)
+        expected.fontScale = 1.18
+        var text = SubtitleText("MMMM", isItalic: false, isBold: true)
+        text.runs = [.init("MMMM", color: .init(red: 0.9, green: 0.3, blue: 0.1, alpha: 0.2))]
+        let beforeConfig = styledConfig(system.resolved(.profileDefault), text: text)
+        let editedConfig = styledConfig(edited, text: text)
+        let expectedConfig = styledConfig(expected, text: text)
+        XCTAssertEqual(editedConfig, expectedConfig)
+        XCTAssertEqual(editedConfig.glyphBackground, beforeConfig.glyphBackground)
+        XCTAssertEqual(editedConfig.background, beforeConfig.background)
+        XCTAssertEqual(editedConfig.fillSpans, beforeConfig.fillSpans)
+        XCTAssertEqual(editedConfig.fillSpans.first?.color.cgColor.alpha, 0.7)
+        XCTAssertEqual(try render(editedConfig).pixels, try render(expectedConfig).pixels)
+    }
+
+    func testSourceOpacityRemainsIndependentAfterFreezingAForcedTextColor() throws {
+        let appearance = SystemCaptionAppearance(
+            textColor: .init(red: 1, green: 0, blue: 0, alpha: 0.9),
+            fontFamilyName: nil, fontDescriptor: UIFont.systemFont(ofSize: 30).fontDescriptor,
+            allowsSourceColors: false, allowsSourceOpacity: true,
+            isBold: false, relativeSize: 1, edge: .none, background: nil
+        )
+        let system = SystemCaptionStyle(readAppearance: { appearance }, notifications: NotificationCenter())
+        let frozen = system.editing(.profileDefault) { $0.followsSystemStyle = false }
+        var text = SubtitleText("MMMM")
+        text.runs = [.init("MMMM", color: .init(red: 0, green: 0, blue: 1, alpha: 0.25))]
+        for style in [system.resolved(.profileDefault), frozen] {
+            let c = styledConfig(style, text: text)
+            XCTAssertEqual(c.fillSpans.first?.color, UIColor.red.withAlphaComponent(0.25))
+            let pixels = try render(c).pixels
+            XCTAssertEqual(Double(try XCTUnwrap(stride(from: 3, to: pixels.count, by: 4).map { pixels[$0] }.max())),
+                           64, accuracy: 1)
+        }
+    }
+
+    private func styledConfig(_ style: SubtitleStyle, text: SubtitleText) -> SubtitleLineView.Config {
+        StyledCueText(
+            text: text, fontSize: 42 * style.fontScale,
+            fillColor: Color(red: style.textColor.red, green: style.textColor.green,
+                             blue: style.textColor.blue, opacity: style.textColor.alpha),
+            style: style
+        ).renderedLine.configuration
+    }
+
     func testSystemCaptionFontKeepsTheActualTypefaceInsteadOfFallingBackToSF() {
         var c = config(family: .system, size: 42, text: "System captions")
         c.systemFontDescriptor = UIFont(name: "Courier", size: 42)?.fontDescriptor
@@ -33,6 +124,21 @@ final class SubtitleLineRenderingTests: XCTestCase {
         let pixels = try render(c).pixels
         let maximumAlpha = stride(from: 3, to: pixels.count, by: 4).map { pixels[$0] }.max()
         XCTAssertEqual(Double(try XCTUnwrap(maximumAlpha)), 128, accuracy: 1)
+    }
+
+    func testColorGlyphsHonorTextOpacityWithoutDimmingTheirBackground() throws {
+        var c = config(family: .system, size: 80, text: "🙂")
+        c.systemFontDescriptor = UIFont.systemFont(ofSize: 80).fontDescriptor
+        let opaque = try render(c).pixels
+        c.fill = UIColor.white.withAlphaComponent(0.25)
+        let transparent = try render(c).pixels
+        func maximumAlpha(_ pixels: [UInt8]) -> Double {
+            Double(stride(from: 3, to: pixels.count, by: 4).map { pixels[$0] }.max() ?? 0)
+        }
+        XCTAssertGreaterThan(maximumAlpha(opaque), 0)
+        XCTAssertEqual(maximumAlpha(transparent), maximumAlpha(opaque) * 0.25, accuracy: 2)
+        c.glyphBackground = .blue
+        XCTAssertEqual(maximumAlpha(try render(c).pixels), 255)
     }
 
     func testGlyphBackgroundAndWindowBothRenderInTheirOwnColors() throws {

@@ -34,6 +34,7 @@ struct SubtitleStylePanel: View {
     /// former PlayerControls home). Lives here because only `handleStyleMove`
     /// touches it.
     @State private var styleAccelerator = SubtitleStyleAccelerator()
+    private var effectiveStyle: SubtitleStyle { SystemCaptionStyle.shared.resolved(model.subtitleStyle) }
 
     @ViewBuilder
     var body: some View {
@@ -97,6 +98,16 @@ struct SubtitleStylePanel: View {
                         .padding(.vertical, 6)
                 }
                 styleRow(row)
+            }
+            if screen == .style {
+                Text("Matching shows the device’s current values. Editing a value keeps this appearance and turns matching off.")
+                    .font(.footnote).playerMenuRowSecondary().padding(16)
+            } else if screen == .styleBackground {
+                Text("Window padding is set by Plozz. Apple does not expose caption padding or line spacing. File override preferences apply only when a cue supplies that attribute.")
+                    .font(.footnote).playerMenuRowSecondary().padding(16)
+            } else if screen == .styleOutline {
+                Text("Apple supplies the text edge style, including Uniform Outline, but not its color or thickness. Those are Plozz rendering values.")
+                    .font(.footnote).playerMenuRowSecondary().padding(16)
             }
         }
         .padding(.horizontal, 14)
@@ -211,21 +222,20 @@ struct SubtitleStylePanel: View {
     /// submenu groups (outline/border, background box, dual subtitles) and Reset.
     /// The submenus own the quick control as their first row *and* echo its current
     /// value as their summary, so there is exactly one entry per concern here.
-    /// While the system caption style is followed, it decides the look (font,
-    /// size, colour, opacity, edge, box), so only placement rows remain.
+    /// Controls always show the effective look, including while matching.
     private var styleMainRows: (rows: [StyleRowSpec], dividerBefore: Int) {
-        let s = model.subtitleStyle
-        let weights = s.availableFontWeights
-        let editsLook = !s.followsSystemStyle
+        let s = effectiveStyle
         var rows: [StyleRowSpec] = []
         var slot = 0
 
         rows.append(StyleRowSpec(slot: slot, title: "Use System Caption Style", kind: .toggle(isOn: s.followsSystemStyle, flip: { updateStyle { $0.followsSystemStyle.toggle() } }))); slot += 1
-        if editsLook {
-            rows.append(StyleRowSpec(slot: slot, title: "Font", kind: .submenu(summary: Text(verbatim: s.fontDisplayName), open: { openScreen(.styleFont) }))); slot += 1
-            rows.append(choiceRow(slot, "Weight", options: weights, current: s.fontWeight.snapped(to: weights), label: { $0.displayName }) { v in updateStyle { $0.fontWeight = v } }); slot += 1
-            rows.append(numberRow(slot, "Text Size", options: Self.sizeOptions, current: Int((s.fontScale * 100).rounded()), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.fontScale = Double(v) / 100 } }); slot += 1
-        }
+        rows.append(StyleRowSpec(slot: slot, title: "Font", kind: .submenu(summary: Text(verbatim: s.fontDisplayName), open: { openScreen(.styleFont) }))); slot += 1
+        rows.append(StyleRowSpec(slot: slot, title: "Weight", kind: .choice(
+            value: Text(verbatim: s.fontWeightDisplayName),
+            prev: { updateStyle { $0.selectFontWeight(SubtitleSystemFonts.adjacentWeight(for: s, forward: false)) } },
+            next: { updateStyle { $0.selectFontWeight(SubtitleSystemFonts.adjacentWeight(for: s, forward: true)) } }
+        ))); slot += 1
+        rows.append(numberRow(slot, "Text Size", options: Self.sizeOptions, current: Int((s.fontScale * 100).rounded()), displayValue: Text(s.fontScale, format: .percent.precision(.fractionLength(0...3))), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.fontScale = Double(v) / 100 } }); slot += 1
         rows.append(numberRow(
             slot, "Position",
             options: Self.positionOptions,
@@ -244,12 +254,15 @@ struct SubtitleStylePanel: View {
             label: { $0.displayName }
         ) { v in updateStyle { $0.verticalAnchor = v } }); slot += 1
         rows.append(numberRow(slot, "Horizontal Offset", options: Self.hOffsetOptions, current: Int((s.horizontalOffset * 100).rounded()), label: { Text(PlayerControlsFormatting.hOffsetLabel($0)) }) { v in updateStyle { $0.horizontalOffset = Double(v) / 100 } }); slot += 1
-        if editsLook {
-            rows.append(colorRow(slot, "Text Color", options: Self.textColorOptions, current: s.textColor, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.textColor = c } }); slot += 1
-        }
+        rows.append(colorRow(slot, "Text Color", options: Self.textColorOptions, current: s.textColor, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.textColor = c } }); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Use File Colors", kind: .toggle(isOn: s.usesSourceColors, flip: { updateStyle { $0.usesSourceColors.toggle() } }))); slot += 1
-        if editsLook {
-            rows.append(numberRow(slot, "Opacity", options: Self.opacityOptions, current: Int((s.opacity * 100).rounded()), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.opacity = Double(v) / 100 } }); slot += 1
+        rows.append(numberRow(slot, "Text Opacity", options: Self.alphaOptions, current: Int((s.textColor.alpha * 100).rounded()), displayValue: Text(s.textColor.alpha, format: .percent.precision(.fractionLength(0...3))), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.textColor.alpha = Double(v) / 100 } }); slot += 1
+        rows.append(numberRow(slot, "Overall Opacity", options: Self.opacityOptions, current: Int((s.opacity * 100).rounded()), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.opacity = Double(v) / 100 } }); slot += 1
+        if s.captionSourceOverrides != nil {
+            rows.append(sourceOverrideRow(slot, "Allow File Font", keyPath: \.font)); slot += 1
+            rows.append(sourceOverrideRow(slot, "Allow File Size", keyPath: \.relativeSize)); slot += 1
+            rows.append(sourceOverrideRow(slot, "Allow File Text Color", keyPath: \.foregroundColor)); slot += 1
+            rows.append(sourceOverrideRow(slot, "Allow File Text Opacity", keyPath: \.foregroundOpacity)); slot += 1
         }
         // Only affects HDR frames, so it appears exclusively while HDR is live —
         // mirroring how the bitmap-primary gate hides controls that can't act.
@@ -259,12 +272,10 @@ struct SubtitleStylePanel: View {
 
         // The submenu group + Reset sit under a divider, wherever the knobs above end.
         let dividerBefore = slot
-        if editsLook {
-            rows.append(StyleRowSpec(slot: slot, title: "Shadow & Outline", kind: .submenu(summary: Text(verbatim: PlayerControlsFormatting.edgeSummary(s)), open: { openScreen(.styleOutline) }))); slot += 1
-            rows.append(StyleRowSpec(slot: slot, title: "Background", kind: .submenu(summary: s.background.isEnabled ? Text("On") : Text("Off"), open: { openScreen(.styleBackground) }))); slot += 1
-        }
+        rows.append(StyleRowSpec(slot: slot, title: "Shadow & Outline", kind: .submenu(summary: Text(SubtitleStyleEditorValues.edgeName(s)), open: { openScreen(.styleOutline) }))); slot += 1
+        rows.append(StyleRowSpec(slot: slot, title: "Background", kind: .submenu(summary: s.background.isEnabled || s.glyphBackground.alpha > 0 ? Text("On") : Text("Off"), open: { openScreen(.styleBackground) }))); slot += 1
         rows.append(StyleRowSpec(slot: slot, title: "Dual Subtitles", kind: .submenu(summary: hasSecondaryTrack ? Text("On") : Text("Off"), open: { openScreen(.styleDual) }))); slot += 1
-        rows.append(StyleRowSpec(slot: slot, title: "Reset to Default", kind: .action(run: { updateStyle { $0 = .default } }))); slot += 1
+        rows.append(StyleRowSpec(slot: slot, title: "Reset to Default", kind: .action(run: { actions.setSubtitleStyle(.profileDefault) }))); slot += 1
         return (rows, dividerBefore)
     }
 
@@ -275,15 +286,15 @@ struct SubtitleStylePanel: View {
     /// the renderer and the Weight row.
     @ViewBuilder
     private var styleFontScreen: some View {
-        let current = model.subtitleStyle.fontFamily
+        let current = effectiveStyle.fontFamily
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(SubtitleFontFamily.allCases.enumerated()), id: \.offset) { idx, family in
-                fontChoiceRow(family, index: idx, isSelected: model.subtitleStyle.systemFont == nil && family == current)
+                fontChoiceRow(family, index: idx, isSelected: effectiveStyle.fontDescriptor == nil && effectiveStyle.systemFont == nil && family == current)
             }
             styleRow(StyleRowSpec(
                 slot: SubtitleFontFamily.allCases.count, title: "System",
                 kind: .submenu(
-                    summary: Text(verbatim: model.subtitleStyle.systemFont.map(SubtitleSystemFonts.displayName) ?? ""),
+                    summary: Text(verbatim: effectiveStyle.fontDescriptor?.displayName ?? effectiveStyle.systemFont.map(SubtitleSystemFonts.displayName) ?? ""),
                     open: { openScreen(.styleSystemFont) }
                 )
             ))
@@ -296,7 +307,7 @@ struct SubtitleStylePanel: View {
     @ViewBuilder
     private func fontChoiceRow(_ family: SubtitleFontFamily, index: Int, isSelected: Bool) -> some View {
         Button {
-            updateStyle { $0.fontFamily = family; $0.systemFont = nil }
+            updateStyle { $0.fontFamily = family; $0.systemFont = nil; $0.fontDescriptor = nil }
             openScreen(.style)
         } label: {
             HStack(spacing: 10) {
@@ -322,15 +333,15 @@ struct SubtitleStylePanel: View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(SubtitleSystemFonts.all.enumerated()), id: \.element.id) { index, entry in
                 Button {
-                    updateStyle { $0.systemFont = entry.id }
+                    updateStyle { $0.systemFont = entry.id; $0.fontDescriptor = nil }
                     openScreen(.style)
                 } label: {
                     HStack(spacing: 10) {
                         Text(verbatim: entry.name).font(entry.preview).lineLimit(1).minimumScaleFactor(0.5)
                         Spacer(minLength: 8)
-                        Image(systemName: model.subtitleStyle.systemFont == entry.id ? "checkmark.circle.fill" : "circle")
+                        Image(systemName: effectiveStyle.systemFont == entry.id ? "checkmark.circle.fill" : "circle")
                             .font(.body)
-                            .playerMenuRowMark(isSelected: model.subtitleStyle.systemFont == entry.id, accent: palette.accent)
+                            .playerMenuRowMark(isSelected: effectiveStyle.systemFont == entry.id, accent: palette.accent)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -359,45 +370,47 @@ struct SubtitleStylePanel: View {
         return .system(size: size)
     }
 
-    /// Shadow (depth) + a single glyph Outline — two independent concerns that
-    /// compose freely (e.g. a drop shadow *and* an outline at once). Rows for each
-    /// group's colour/size reveal only when that group is active, so there are no
-    /// dead controls and never two competing "outline" concepts.
+    /// Apple's edge style includes uniform outline. The independent custom
+    /// outline remains available; all values stay visible, even when disabled.
     private var styleOutlineRows: [StyleRowSpec] {
-        let s = model.subtitleStyle
+        let s = effectiveStyle
         var rows: [StyleRowSpec] = []
         var slot = 0
 
-        rows.append(choiceRow(slot, "Shadow", options: Self.shadowStyleOptions, current: s.edge.style, label: { $0.displayName }) { v in updateStyle { $0.edge.style = v } }); slot += 1
-        if s.edge.style != .none {
-            rows.append(colorRow(slot, "Shadow Color", options: Self.textColorOptions, current: s.edge.color, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.edge.color = c } }); slot += 1
-            rows.append(numberRow(slot, "Shadow Thickness", options: Self.thicknessOptions, current: Int(s.edge.thickness.rounded()), label: { Text(verbatim: "\($0)") }) { v in updateStyle { $0.edge.thickness = Double(v) } }); slot += 1
+        rows.append(choiceRow(slot, "Text Edge", options: Self.shadowStyleOptions, current: s.edge.style, displayValue: Text(SubtitleStyleEditorValues.edgeName(s)), label: { $0.displayName }) { v in updateStyle { $0.edge.style = v } }); slot += 1
+        rows.append(colorRow(slot, "Edge Color", options: Self.textColorOptions, current: s.edge.color, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.edge.color = c } }); slot += 1
+        rows.append(numberRow(slot, "Edge Thickness", options: Self.thicknessOptions, current: Int(s.edge.thickness.rounded()), displayValue: Text(s.edge.thickness, format: .number.precision(.fractionLength(0...3))), label: { Text(verbatim: "\($0)") }) { v in updateStyle { $0.edge.thickness = Double(v) } }); slot += 1
+        if s.captionSourceOverrides != nil {
+            rows.append(sourceOverrideRow(slot, "Allow File Edge", keyPath: \.edge)); slot += 1
         }
 
         rows.append(StyleRowSpec(slot: slot, title: "Outline", kind: .toggle(isOn: s.border.isEnabled, flip: { updateStyle { $0.border.isEnabled.toggle() } }))); slot += 1
-        if s.border.isEnabled {
             rows.append(colorRow(slot, "Outline Color", options: Self.textColorOptions, current: s.border.color, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.border.color = c } }); slot += 1
             rows.append(numberRow(slot, "Outline Width", options: Self.thicknessOptions, current: Int(s.border.width.rounded()), label: { Text(verbatim: "\($0)") }) { v in updateStyle { $0.border.width = Double(v) } }); slot += 1
-        }
         return rows
     }
 
     /// Background box: colour, its own opacity, corner radius and padding.
     private var styleBackgroundRows: [StyleRowSpec] {
-        let s = model.subtitleStyle
+        let s = effectiveStyle
         var rows: [StyleRowSpec] = [
-            StyleRowSpec(slot: 0, title: "Show Box", kind: .toggle(isOn: s.background.isEnabled, flip: { updateStyle { $0.background.isEnabled.toggle() } })),
+            StyleRowSpec(slot: 0, title: "Show Window", kind: .toggle(isOn: s.background.isEnabled, flip: { updateStyle { $0.background.isEnabled.toggle() } })),
         ]
-        // The box's colour/opacity/shape only matter when it's shown; hide them
-        // while it's off so focus never lands on a control with no visible effect
-        // (matching the Outline and Dual screens' gating).
-        guard s.background.isEnabled else { return rows }
         var slot = 1
-        rows.append(colorRow(slot, "Color", options: Self.boxColorOptions, current: s.background.color, label: PlayerControlsFormatting.boxColorLabel) { c in updateStyle { $0.background.color = c } }); slot += 1
-        rows.append(numberRow(slot, "Box Opacity", options: Self.boxOpacityOptions, current: Int((s.background.color.alpha * 100).rounded()), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.background.color.alpha = Double(v) / 100 } }); slot += 1
-        rows.append(numberRow(slot, "Corner Radius", options: Self.cornerOptions, current: Int(s.background.cornerRadius.rounded()), label: { Text(PlayerControlsFormatting.cornerLabel($0)) }) { v in updateStyle { $0.background.cornerRadius = Double(v) } }); slot += 1
-        rows.append(numberRow(slot, "Horizontal Padding", options: Self.paddingOptions, current: Int(s.background.horizontalPadding.rounded()), label: { Text(verbatim: "\($0)") }) { v in updateStyle { $0.background.horizontalPadding = Double(v) } }); slot += 1
-        rows.append(numberRow(slot, "Vertical Padding", options: Self.paddingOptions, current: Int(s.background.verticalPadding.rounded()), label: { Text(verbatim: "\($0)") }) { v in updateStyle { $0.background.verticalPadding = Double(v) } }); slot += 1
+        rows.append(colorRow(slot, "Window Color", options: Self.boxColorOptions, current: s.background.color, label: PlayerControlsFormatting.boxColorLabel) { c in updateStyle { $0.background.color = c } }); slot += 1
+        rows.append(numberRow(slot, "Window Opacity", options: Self.alphaOptions, current: Int((s.background.color.alpha * 100).rounded()), displayValue: Text(s.background.color.alpha, format: .percent.precision(.fractionLength(0...3))), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.background.color.alpha = Double(v) / 100; $0.background.isEnabled = v > 0 } }); slot += 1
+        rows.append(numberRow(slot, "Corner Radius", options: Self.cornerOptions, current: Int(s.background.cornerRadius.rounded()), displayValue: Text(s.background.cornerRadius, format: .number.precision(.fractionLength(0...3))), label: { Text(PlayerControlsFormatting.cornerLabel($0)) }) { v in updateStyle { $0.background.cornerRadius = Double(v) } }); slot += 1
+        rows.append(numberRow(slot, "Horizontal Padding (Plozz)", options: Self.paddingOptions, current: Int(s.background.horizontalPadding.rounded()), label: { Text(verbatim: "\($0)") }) { v in updateStyle { $0.background.horizontalPadding = Double(v) } }); slot += 1
+        rows.append(numberRow(slot, "Vertical Padding (Plozz)", options: Self.paddingOptions, current: Int(s.background.verticalPadding.rounded()), label: { Text(verbatim: "\($0)") }) { v in updateStyle { $0.background.verticalPadding = Double(v) } }); slot += 1
+        rows.append(colorRow(slot, "Line Background Color", options: Self.textColorOptions, current: s.glyphBackground, label: PlayerControlsFormatting.colorLabel) { c in updateStyle { $0.glyphBackground = c } }); slot += 1
+        rows.append(numberRow(slot, "Line Background Opacity", options: Self.alphaOptions, current: Int((s.glyphBackground.alpha * 100).rounded()), displayValue: Text(s.glyphBackground.alpha, format: .percent.precision(.fractionLength(0...3))), label: { Text(verbatim: "\($0)%") }) { v in updateStyle { $0.glyphBackground.alpha = Double(v) / 100 } }); slot += 1
+        if s.captionSourceOverrides != nil {
+            rows.append(sourceOverrideRow(slot, "Allow File Line Color", keyPath: \.backgroundColor)); slot += 1
+            rows.append(sourceOverrideRow(slot, "Allow File Line Opacity", keyPath: \.backgroundOpacity)); slot += 1
+            rows.append(sourceOverrideRow(slot, "Allow File Window Color", keyPath: \.windowColor)); slot += 1
+            rows.append(sourceOverrideRow(slot, "Allow File Window Opacity", keyPath: \.windowOpacity)); slot += 1
+            rows.append(sourceOverrideRow(slot, "Allow File Window Corners", keyPath: \.windowCornerRadius)); slot += 1
+        }
         return rows
     }
 
@@ -413,7 +426,7 @@ struct SubtitleStylePanel: View {
     /// distinguish its look. The picker lists text tracks the overlay can draw
     /// (excluding the primary); its styling rows appear only once a track is on.
     private var styleDualRows: [StyleRowSpec] {
-        let s = model.subtitleStyle
+        let s = effectiveStyle
         let secOptions = model.secondarySubtitleOptions
         let count = secOptions.count
         let currentIdx = secOptions.firstIndex(where: { $0.isSelected }) ?? 0
@@ -515,15 +528,15 @@ struct SubtitleStylePanel: View {
 
     // MARK: Row constructors
 
-    /// Numeric stepper row over an Int grid; snaps a legacy off-grid value to the
-    /// nearest listed option so it still displays and steps cleanly. Steps by a
+    /// Numeric stepper row over an Int grid; preserves the displayed off-grid
+    /// value, snapping only the starting step index. Steps by a
     /// signed number of grid indices and clamps at both ends (no wrap), so a fast
     /// hold-to-accelerate run parks at Bottom/Top instead of jumping across.
-    private func numberRow(_ slot: Int, _ title: LocalizedStringResource, options: [Int], current: Int, label: @escaping (Int) -> Text, apply: @escaping (Int) -> Void) -> StyleRowSpec {
+    private func numberRow(_ slot: Int, _ title: LocalizedStringResource, options: [Int], current: Int, displayValue: Text? = nil, label: @escaping (Int) -> Text, apply: @escaping (Int) -> Void) -> StyleRowSpec {
         let n = options.count
         let idx = Self.nearestIndex(options, current)
         return StyleRowSpec(slot: slot, title: title, kind: .number(
-            value: label(options[idx]),
+            value: displayValue ?? label(current),
             step: { delta in
                 let target = min(max(idx + delta, 0), n - 1)
                 if target != idx { apply(options[target]) }
@@ -532,11 +545,11 @@ struct SubtitleStylePanel: View {
     }
 
     /// Cycle row over any small `Equatable` set; wraps at both ends.
-    private func choiceRow<V: Equatable>(_ slot: Int, _ title: LocalizedStringResource, options: [V], current: V, label: @escaping (V) -> LocalizedStringResource, apply: @escaping (V) -> Void) -> StyleRowSpec {
+    private func choiceRow<V: Equatable>(_ slot: Int, _ title: LocalizedStringResource, options: [V], current: V, displayValue: Text? = nil, label: @escaping (V) -> LocalizedStringResource, apply: @escaping (V) -> Void) -> StyleRowSpec {
         let n = options.count
         let idx = options.firstIndex(of: current) ?? 0
         return StyleRowSpec(slot: slot, title: title, kind: .choice(
-            value: Text(label(options[idx])),
+            value: displayValue ?? Text(label(current)),
             prev: { apply(options[(idx - 1 + n) % n]) },
             next: { apply(options[(idx + 1) % n]) }
         ))
@@ -550,7 +563,7 @@ struct SubtitleStylePanel: View {
         let idx = options.firstIndex(where: { $0.red == current.red && $0.green == current.green && $0.blue == current.blue }) ?? 0
         func withAlpha(_ c: SubtitleColor) -> SubtitleColor { SubtitleColor(red: c.red, green: c.green, blue: c.blue, alpha: current.alpha) }
         return StyleRowSpec(slot: slot, title: title, kind: .choice(
-            value: Text(verbatim: label(current)),
+            value: Text(verbatim: label(current) == "Custom" ? SubtitleStyleEditorValues.color(current) : label(current)),
             prev: { apply(withAlpha(options[(idx - 1 + n) % n])) },
             next: { apply(withAlpha(options[(idx + 1) % n])) }
         ))
@@ -559,9 +572,18 @@ struct SubtitleStylePanel: View {
     /// Reads the mirror, applies the mutation, and routes the result through the
     /// live-apply + persist funnel. Single write path for every appearance control.
     private func updateStyle(_ mutate: (inout SubtitleStyle) -> Void) {
-        var next = model.subtitleStyle
-        mutate(&next)
-        actions.setSubtitleStyle(next)
+        let next = SystemCaptionStyle.shared.editing(model.subtitleStyle, mutate)
+        if next != model.subtitleStyle { actions.setSubtitleStyle(next) }
+    }
+
+    private func sourceOverrideRow(
+        _ slot: Int, _ title: LocalizedStringResource,
+        keyPath: WritableKeyPath<SubtitleCaptionSourceOverrides, Bool>
+    ) -> StyleRowSpec {
+        StyleRowSpec(slot: slot, title: title, kind: .toggle(
+            isOn: effectiveStyle.captionSourceOverrides?[keyPath: keyPath] ?? true,
+            flip: { updateStyle { $0.captionSourceOverrides?[keyPath: keyPath].toggle() } }
+        ))
     }
 
     // MARK: Option grids
@@ -575,16 +597,14 @@ struct SubtitleStylePanel: View {
     /// 0 = centred. Lets subtitles dodge burned-in signage / letterbox furniture.
     private static let hOffsetOptions: [Int] = Array(stride(from: -100, through: 100, by: 5))
     private static let opacityOptions: [Int] = Array(stride(from: 20, through: 100, by: 5))
-    /// The box's own opacity floors lower than text opacity (down to 5%) so a
-    /// near-invisible scrim is possible without dragging the text there too.
-    private static let boxOpacityOptions: [Int] = Array(stride(from: 5, through: 100, by: 5))
+    /// Public foreground/background/window alpha includes fully transparent.
+    private static let alphaOptions: [Int] = Array(stride(from: 0, through: 100, by: 5))
     /// Subtitle HDR white-point scale, shown as a percentage. Mirrors the model's
     /// `hdrLuminanceScale` (0.2–1.0); only surfaced while HDR is live.
     private static let hdrBrightnessOptions: [Int] = Array(stride(from: 20, through: 100, by: 5))
     private static let thicknessOptions: [Int] = Array(stride(from: 0, through: 10, by: 1))
-    /// Shadow (depth) styles only — the outline is now its own toggle, so the old
-    /// `.uniform` case is intentionally not offered here.
-    private static let shadowStyleOptions: [SubtitleEdgeStyle] = [.none, .dropShadow, .raised, .depressed]
+    /// All public device edge styles, including uniform outline.
+    private static let shadowStyleOptions: [SubtitleEdgeStyle] = [.none, .dropShadow, .raised, .depressed, .uniform]
     /// Corner radius in points, then a large sentinel the box renderer clamps to a
     /// perfect capsule (`UIBezierPath` caps the radius at half the shorter side),
     /// so the top of the range always reads as "fully rounded" at any box size.

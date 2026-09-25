@@ -68,13 +68,17 @@ struct CoreTextSubtitleLine: UIViewRepresentable {
     func makeUIView(context: Context) -> SubtitleLineView { SubtitleLineView() }
 
     func updateUIView(_ view: SubtitleLineView, context: Context) {
-        view.configure(SubtitleLineView.Config(
+        view.configure(configuration)
+    }
+
+    var configuration: SubtitleLineView.Config {
+        SubtitleLineView.Config(
             text: text, family: family, weight: weight, fontSize: fontSize,
             isBold: isBold, isItalic: isItalic,
             fill: fill, outline: outline, outlineWidth: outlineWidth,
             shadow: shadow, background: background, alignment: alignment,
             fillSpans: fillSpans, systemFontDescriptor: systemFontDescriptor,
-            glyphBackground: glyphBackground))
+            glyphBackground: glyphBackground)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: SubtitleLineView, context: Context) -> CGSize? {
@@ -139,6 +143,7 @@ final class SubtitleLineView: UIView {
         var font: CTFont
         var glyph: CGGlyph
         var position: CGPoint
+        var opacity: CGFloat
     }
 
     private var config: Config?
@@ -267,7 +272,11 @@ final class SubtitleLineView: UIView {
             for cg in l.colorGlyphs {
                 var g = cg.glyph
                 var p = cg.position
+                ctx.saveGState()
+                ctx.setFillColor(UIColor.white.cgColor)
+                ctx.setAlpha(cg.opacity)
                 CTFontDrawGlyphs(cg.font, &g, &p, 1, ctx)
+                ctx.restoreGState()
             }
         }
     }
@@ -311,7 +320,9 @@ final class SubtitleLineView: UIView {
         let frame = CTFramesetterCreateFrame(
             fs, CFRange(location: 0, length: attr.length),
             CGPath(rect: boxRect, transform: nil), nil)
-        let (rawPath, rawDefaultFill, rawColorGlyphs, rawSpanFills) = Self.combinedGlyphPath(frame: frame)
+        let (rawPath, rawDefaultFill, rawColorGlyphs, rawSpanFills) = Self.combinedGlyphPath(
+            frame: frame, defaultOpacity: c.fill.cgColor.alpha
+        )
         let glyphBackgrounds = c.glyphBackground == nil ? [] : Self.lineBackgroundRects(frame: frame)
 
         // Font ascent/descent/leading are layout metrics, not visible padding.
@@ -355,7 +366,8 @@ final class SubtitleLineView: UIView {
         let colorGlyphs = rawColorGlyphs.map {
             ColorGlyph(font: $0.font, glyph: $0.glyph,
                        position: CGPoint(x: $0.position.x - drawn.minX,
-                                         y: $0.position.y - drawn.minY))
+                                         y: $0.position.y - drawn.minY),
+                       opacity: $0.opacity)
         }
         var background: BackgroundFill?
         if let bg = c.background, let r = bgPre {
@@ -398,7 +410,7 @@ final class SubtitleLineView: UIView {
             right:  blur + max(0,  sh.offset.width))
     }
 
-    private static func combinedGlyphPath(frame: CTFrame) -> (CGPath, CGPath, [ColorGlyph], [SpanFill]) {
+    private static func combinedGlyphPath(frame: CTFrame, defaultOpacity: CGFloat) -> (CGPath, CGPath, [ColorGlyph], [SpanFill]) {
         let combined = CGMutablePath()
         let defaultFill = CGMutablePath()
         var colorGlyphs: [ColorGlyph] = []
@@ -451,7 +463,10 @@ final class SubtitleLineView: UIView {
                     var inkBounds = CGRect.zero
                     CTFontGetBoundingRectsForGlyphs(runFont, .default, &g, &inkBounds, 1)
                     if inkBounds.width > 0 && inkBounds.height > 0 {
-                        colorGlyphs.append(ColorGlyph(font: runFont, glyph: glyphs[j], position: pos))
+                        colorGlyphs.append(ColorGlyph(
+                            font: runFont, glyph: glyphs[j], position: pos,
+                            opacity: (attrs[fillSpanKey] as? UIColor)?.cgColor.alpha ?? defaultOpacity
+                        ))
                     }
                 }
             }
@@ -512,7 +527,9 @@ final class SubtitleLineView: UIView {
             var traits = CTFontGetSymbolicTraits(CTFontCreateWithFontDescriptor(descriptor, size, nil))
             if c.isBold { traits.insert(.traitBold) }
             if c.isItalic { traits.insert(.traitItalic) }
-            baseDescriptor = CTFontDescriptorCreateCopyWithSymbolicTraits(descriptor, traits, traits) ?? descriptor
+            baseDescriptor = c.isBold || c.isItalic
+                ? CTFontDescriptorCreateCopyWithSymbolicTraits(descriptor, traits, traits) ?? descriptor
+                : descriptor
         } else if let ps = postScriptName(c) {
             baseDescriptor = CTFontDescriptorCreateWithNameAndSize(ps as CFString, size)
             #if DEBUG
@@ -558,7 +575,8 @@ final class SubtitleLineView: UIView {
             : size
         let systemDefault =
             (CTFontCopyDefaultCascadeListForLanguages(baseFont, nil) as? [CTFontDescriptor]) ?? []
-        let cascade = curated + systemDefault
+        let preservedCascade = CTFontDescriptorCopyAttribute(baseDescriptor, kCTFontCascadeListAttribute) as? [CTFontDescriptor] ?? []
+        let cascade = preservedCascade + (c.systemFontDescriptor == nil ? curated : []) + systemDefault
         let withCascade = CTFontDescriptorCreateCopyWithAttributes(
             baseDescriptor,
             [kCTFontCascadeListAttribute: cascade] as CFDictionary)
@@ -580,6 +598,9 @@ final class SubtitleLineView: UIView {
             guard range.location >= 0, range.length > 0, NSMaxRange(range) <= length else { continue }
             attributed.addAttribute(Self.fillSpanKey, value: span.color, range: range)
         }
+        // Device descriptors own their cascade sizing. The bundled-face
+        // cap-height compensation below must not rewrite it.
+        guard c.systemFontDescriptor == nil else { return attributed }
         // Core Text scales cascade fonts to the base size even when their
         // descriptors specify a size. Pin resolved fallback runs explicitly so
         // switching to OpenDyslexic doesn't shrink CJK, Arabic or emoji.

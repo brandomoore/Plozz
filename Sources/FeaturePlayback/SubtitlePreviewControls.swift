@@ -20,6 +20,7 @@ struct SubtitlePreviewControls: View {
     var body: some View {
         VStack(spacing: 2) {
             Button {
+                options.beginFullscreenPresentation()
                 fullscreenPresented = true
             } label: {
                 HStack {
@@ -41,7 +42,7 @@ struct SubtitlePreviewControls: View {
                 PlozzDivider().padding(.horizontal, 16).padding(.vertical, 4)
                 option("Animate background", selection: $options.animatesBackground, control: .background)
                 option("Preview file formatting", selection: $options.showsFileFormatting, control: .fileFormatting)
-                option("Apply HDR subtitle dimming", selection: $options.showsHDRBrightness, control: .hdrBrightness)
+                option("HDR preview", selection: $options.showsHDRBrightness, control: .hdrBrightness)
             }
         }
         .padding(.horizontal, 14)
@@ -58,12 +59,16 @@ struct SubtitlePreviewControls: View {
             }
         }
         .fullScreenCover(isPresented: $fullscreenPresented, onDismiss: {
+            options.finishFullscreenPresentation()
             focus = .header
         }) {
             FullscreenSubtitlePreview(
                 style: style, secondaryVisible: secondaryVisible, options: options,
                 close: { fullscreenPresented = false }
             )
+        }
+        .onChange(of: fullscreenPresented, initial: true) { _, presented in
+            if presented { options.beginFullscreenPresentation() }
         }
     }
 
@@ -97,6 +102,7 @@ private struct FullscreenSubtitlePreview: View {
     let options: SubtitlePreviewOptions
     let close: () -> Void
     @FocusState private var closeFocused: Bool
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         GeometryReader { geometry in
@@ -104,9 +110,10 @@ private struct FullscreenSubtitlePreview: View {
                 style: style, secondaryVisible: secondaryVisible,
                 referenceSize: geometry.size,
                 showsFileFormatting: options.showsFileFormatting,
-                showsHDRBrightness: options.showsHDRBrightness,
+                showsHDRBrightness: options.showsHDRBrightness && options.hdrPreview.state == .ready,
                 animate: options.animatesBackground,
-                backgroundOptions: options
+                backgroundOptions: options,
+                hdrVideo: options.showsHDRBrightness ? options.hdrPreview : nil
             )
         }
         .ignoresSafeArea()
@@ -121,7 +128,12 @@ private struct FullscreenSubtitlePreview: View {
             .focused($closeFocused)
             .padding(48)
         }
-        .onAppear { closeFocused = true }
+        .onAppear {
+            closeFocused = true
+            options.setVisible(true, fullscreen: true, sceneActive: scenePhase == .active)
+        }
+        .onDisappear { options.setVisible(false, fullscreen: true, sceneActive: scenePhase == .active) }
+        .onChange(of: scenePhase) { _, phase in options.setSceneActive(phase == .active) }
         .onExitCommand(perform: close)
     }
 }

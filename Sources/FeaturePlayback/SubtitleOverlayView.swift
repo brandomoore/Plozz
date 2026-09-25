@@ -385,7 +385,7 @@ public struct SubtitleOverlayView: View {
                             fillColor: secFill,
                             style: style,
                             colorScale: lumaScale,
-                            usesSourceColors: style.usesSourceColors && !sec.differentiate
+                            usesSourceColors: sec.differentiate ? false : nil
                         )
                     }
                 }
@@ -459,7 +459,7 @@ private extension SubtitleAlignment {
 ///   so it stays a constant fraction of the glyph height.
 /// * **Shadow** — the directional edge styles (`.dropShadow` / `.raised` /
 ///   `.depressed`) become a soft or hard offset shadow drawn behind the outline.
-private struct StyledCueText: View {
+struct StyledCueText: View {
     let text: SubtitleText
     let fontSize: CGFloat
     let fillColor: Color
@@ -470,11 +470,10 @@ private struct StyledCueText: View {
     var usesSourceColors: Bool? = nil
 
     var body: some View {
-        content
+        renderedLine
     }
 
-    @ViewBuilder
-    private var content: some View {
+    var renderedLine: CoreTextSubtitleLine {
         CoreTextSubtitleLine(
             text: text.string,
             family: style.fontFamily,
@@ -490,35 +489,31 @@ private struct StyledCueText: View {
             alignment: nsAlignment,
             fillSpans: fillSpans,
             systemFontDescriptor: fontDescriptor,
-            glyphBackground: style.followsSystemStyle
-                ? SystemCaptionStyle.shared.appearance.background.map(uiColor) : nil
+            glyphBackground: style.glyphBackground.alpha > 0 ? uiColor(style.glyphBackground) : nil
         )
     }
 
     private var allowsSourceFont: Bool {
-        !style.followsSystemStyle || SystemCaptionStyle.shared.appearance.allowsSourceFont
+        style.captionSourceOverrides?.font ?? true
     }
 
     private var fontDescriptor: UIFontDescriptor? {
-        if style.followsSystemStyle { return SystemCaptionStyle.shared.appearance.fontDescriptor }
-        return style.systemFont.flatMap { SubtitleSystemFonts.descriptor(for: $0, weight: style.fontWeight) }
+        style.resolvedFontDescriptor
     }
 
     /// The file's colour spans, as UTF-16 ranges, when the style honours them.
     /// Uncoloured spans are left to `fillColor`.
     private var fillSpans: [SubtitleFillSpan] {
-        guard usesSourceColors ?? style.usesSourceColors, let runs = text.runs else { return [] }
+        guard usesSourceColors != false, let runs = text.runs else { return [] }
         var spans: [SubtitleFillSpan] = []
         var location = 0
         for run in runs {
             let length = (run.text as NSString).length
-            if let c = run.color {
+            if let source = run.color, let c = style.sourceTextColor(source) {
                 let k = colorScale
-                let alpha = style.followsSystemStyle && !SystemCaptionStyle.shared.appearance.allowsSourceOpacity
-                    ? SystemCaptionStyle.shared.appearance.textColor.alpha : c.alpha
                 spans.append(SubtitleFillSpan(
                     location: location, length: length,
-                    color: UIColor(red: c.red * k, green: c.green * k, blue: c.blue * k, alpha: alpha)
+                    color: UIColor(red: c.red * k, green: c.green * k, blue: c.blue * k, alpha: c.alpha)
                 ))
             }
             location += length

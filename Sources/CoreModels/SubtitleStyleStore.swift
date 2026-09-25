@@ -13,7 +13,7 @@ public struct SubtitleStylePreferences: Codable, Equatable, Sendable {
 
     public var resolvedLiveTV: SubtitleStyle { liveTV ?? base }
 
-    public init(base: SubtitleStyle = .default,
+    public init(base: SubtitleStyle = .profileDefault,
                 overrides: [SubtitleContentCategory: SubtitleStyle] = [:],
                 liveTV: SubtitleStyle? = nil) {
         self.base = base
@@ -31,7 +31,8 @@ public struct SubtitleStylePreferences: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey { case base, overrides, liveTV }
 
     /// Tolerant decode so a blob written before `overrides` existed (or with a
-    /// missing `base`) still decodes — each missing key falling back to default.
+    /// missing `base`) still decodes using the historical custom baseline.
+    /// A saved blob is never treated as a newly created profile.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.base = try c.decodeIfPresent(SubtitleStyle.self, forKey: .base) ?? .default
@@ -67,11 +68,9 @@ public final class SubtitleStyleStore: SubtitleStyleStoring, @unchecked Sendable
     }
 
     public func load() -> SubtitleStylePreferences {
-        guard let data = defaults.data(forKey: key),
-              let prefs = try? JSONDecoder().decode(SubtitleStylePreferences.self, from: data) else {
-            return .default
-        }
-        return prefs
+        guard let data = defaults.data(forKey: key) else { return .default }
+        return (try? JSONDecoder().decode(SubtitleStylePreferences.self, from: data))
+            ?? SubtitleStylePreferences(base: .default)
     }
 
     public func save(_ preferences: SubtitleStylePreferences) {
@@ -83,7 +82,7 @@ public final class SubtitleStyleStore: SubtitleStyleStoring, @unchecked Sendable
 
     /// One-time seed from the retired `CaptionSettings` blob: if this profile has
     /// no persisted appearance yet but did save the old combined model, adopt its
-    /// look (size / colour / background / edge / follow-system) as the base.
+    /// custom look (size / colour / background / edge) as the base.
     private func migrateFromLegacyIfNeeded() {
         guard defaults.data(forKey: key) == nil,
               let legacy = LegacyCaptionSettings.load(from: defaults, namespace: namespace) else {

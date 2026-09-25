@@ -24,6 +24,7 @@ final class LiveChannelPlayerModelTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
         let settings = SubtitleStyleModel(store: SubtitleStyleStore(defaults: defaults, namespace: "viewer"))
+        settings.style.followsSystemStyle = false
         settings.style.textColor = .yellow
         settings.usesSeparateLiveTVStyle = true
         settings.resolvedLiveTVStyle.fontScale = 0.4

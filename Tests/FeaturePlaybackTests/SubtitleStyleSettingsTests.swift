@@ -9,6 +9,58 @@ import XCTest
 
 @MainActor
 final class SubtitleStyleSettingsTests: XCTestCase {
+    func testEditorDisplaysEffectiveValuesWithoutWritingUntilTheFirstRealEdit() throws {
+        let name = "SubtitleStyleEffectiveEditorTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = SubtitleStyleStore(defaults: defaults, namespace: "viewer")
+        let profile = SubtitleStyleModel(store: store)
+        profile.usesSeparateLiveTVStyle = true
+        let appearance = SystemCaptionAppearance(
+            textColor: .init(red: 0.31, green: 0.43, blue: 0.57, alpha: 0.67),
+            fontFamilyName: "Courier", fontDescriptor: UIFont(name: "Courier", size: 30)!.fontDescriptor,
+            allowsSourceFont: false, isBold: false, relativeSize: 0.73, edge: .uniform,
+            background: .init(red: 0.17, green: 0.29, blue: 0.41, alpha: 0.59),
+            windowColor: .init(red: 0.13, green: 0.23, blue: 0.37, alpha: 0.47),
+            windowCornerRadius: 3.75
+        )
+        let system = SystemCaptionStyle(readAppearance: { appearance }, notifications: NotificationCenter())
+        let controls = PlayerControlsModel()
+        controls.subtitleStyle = profile.style
+        var writes = 0
+        let context = SubtitleStyleEditingContext(
+            controls: controls,
+            style: Binding(get: { profile.style }, set: { writes += 1; profile.style = $0 }),
+            secondaryPreview: .constant(false), systemCaptionStyle: system
+        )
+        XCTAssertTrue(context.effectiveStyle.followsSystemStyle)
+        XCTAssertEqual(context.effectiveStyle.fontScale, 0.73)
+        XCTAssertEqual(context.effectiveStyle.textColor, appearance.textColor)
+        XCTAssertEqual(context.effectiveStyle.background.cornerRadius, 3.75)
+        XCTAssertEqual(context.effectiveStyle.glyphBackground, appearance.background)
+        XCTAssertTrue(context.effectiveStyle.fontDisplayName.contains("Courier"))
+        XCTAssertEqual(writes, 0)
+        context.editSubtitleStyle { $0.fontScale = 0.73 }
+        XCTAssertEqual(writes, 0)
+        context.editSubtitleStyle { $0.fontScale = 0.74 }
+        XCTAssertEqual(writes, 1)
+        XCTAssertFalse(profile.style.followsSystemStyle)
+        XCTAssertEqual(store.load().base.fontScale, 0.74)
+        XCTAssertEqual(store.load().base.textColor, appearance.textColor)
+        XCTAssertEqual(store.load().base.fontDescriptor, context.effectiveStyle.fontDescriptor)
+        XCTAssertEqual(store.load().liveTV, .profileDefault)
+        for value in [0.75, 0.76, 0.78, 0.82] { context.editSubtitleStyle { $0.fontScale = value } }
+        XCTAssertEqual(writes, 5)
+        XCTAssertEqual(profile.style.fontScale, 0.82)
+        XCTAssertEqual(profile.style.glyphBackground, appearance.background)
+        context.editSubtitleStyle { $0.followsSystemStyle = true }
+        XCTAssertTrue(profile.style.followsSystemStyle)
+        XCTAssertEqual(context.effectiveStyle.fontScale, 0.73)
+        context.applySubtitleStyle(.profileDefault)
+        XCTAssertEqual(store.load().base, .profileDefault)
+        XCTAssertTrue(SubtitleStyleStore(defaults: defaults, namespace: "other").load().base.followsSystemStyle)
+    }
+
     func testEditingHDRBrightnessEnablesPreviewWithoutChangingTheSavedStyle() {
         let options = SubtitlePreviewOptions()
         var style = SubtitleStyle.default
@@ -132,7 +184,7 @@ final class SubtitleStyleSettingsTests: XCTestCase {
         context.applySubtitleStyle(style)
         XCTAssertEqual(controls.subtitleStyle, style)
         XCTAssertEqual(store.load().base, style)
-        XCTAssertEqual(store.load().liveTV, .default)
+        XCTAssertEqual(store.load().liveTV, .profileDefault)
         XCTAssertTrue(context.hasSecondarySubtitle)
         XCTAssertTrue(controls.secondarySubtitleOptions.isEmpty, "Previewing a second line must not invent a playback track.")
     }
@@ -214,10 +266,11 @@ private struct HDRSubtitlePreviewFixture: View {
     let model: HDRSubtitlePreviewFixtureModel
 
     var body: some View {
-        SubtitleStylePreview(
+        SubtitleStylePreviewCanvas(
             style: model.style, secondaryVisible: false,
             referenceSize: SubtitleStylePreviewMetrics.televisionCanvas,
-            options: model.options
+            showsHDRBrightness: model.options.showsHDRBrightness,
+            animate: false
         )
     }
 }

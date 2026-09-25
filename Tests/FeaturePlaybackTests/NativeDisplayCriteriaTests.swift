@@ -9,6 +9,51 @@ import CoreModels
 final class NativeDisplayCriteriaTests: XCTestCase {
     private let asset = AVURLAsset(url: URL(fileURLWithPath: "/nonexistent/display-test.mp4"))
 
+    func testPreviewCannotTakeAnAlreadyOwnedDisplay() async throws {
+        let target = Target()
+        let otherPlayer = try criteria(rate: 24)
+        target.playbackDisplayCriteria = otherPlayer
+        let desired = try criteria(rate: 60)
+        var refused = false
+        let controller = NativeDisplayCriteriaController(requiresUnownedTarget: true) { _ in desired }
+        controller.onOwnershipConflict = { refused = true }
+        controller.attach(to: target)
+        controller.configure(asset: asset, fallback: nil)
+        await waitFor { refused }
+        controller.stop()
+        XCTAssertTrue(target.playbackDisplayCriteria === otherPlayer)
+        XCTAssertEqual(target.writeCount, 1)
+    }
+
+    func testPreviewRejectsAnOwnerThatArrivesWhileAssetCriteriaLoad() async throws {
+        let target = Target()
+        let loader = Loader()
+        var refused = false
+        let controller = NativeDisplayCriteriaController(requiresUnownedTarget: true, loadCriteria: loader.load)
+        controller.onOwnershipConflict = { refused = true }
+        controller.attach(to: target)
+        controller.configure(asset: asset, fallback: nil)
+        await waitFor { loader.waiters.count == 1 }
+        let otherPlayer = try criteria(rate: 24)
+        target.playbackDisplayCriteria = otherPlayer
+        loader.finish(0, with: .success(try criteria(rate: 60)))
+        await waitFor { refused }
+        controller.stop()
+        XCTAssertTrue(target.playbackDisplayCriteria === otherPlayer)
+        XCTAssertEqual(target.writeCount, 1)
+    }
+
+    func testPreviewReportsCriteriaFailureRatherThanWaitingForever() async {
+        var failed = false
+        let controller = NativeDisplayCriteriaController(requiresUnownedTarget: true) { _ in
+            throw URLError(.cannotDecodeContentData)
+        }
+        controller.onCriteriaFailure = { failed = true }
+        controller.configure(asset: asset, fallback: nil)
+        await waitFor { failed }
+        controller.stop()
+    }
+
     func testDefaultLoaderUsesAVFoundationsCriteriaFromAnActualAsset() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
         defer { try? FileManager.default.removeItem(at: file) }

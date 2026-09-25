@@ -17,12 +17,13 @@ final class SubtitleStyleSettingsHostedTests: XCTestCase {
             .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
         let appearances: [(String, ThemePalette, ColorScheme)] = [
-            ("dark", .dark, .dark), ("light", .light, .light)
+            ("dark", .dark, .dark), ("light", .light, .light), ("system", .dark, .dark)
         ]
         var previewSamples: [[UInt8]] = []
         for (name, palette, scheme) in appearances {
             let model = SubtitleStyleSettingsFixture()
             model.style.fontFamily = .system
+            if name == "system" { model.style = .profileDefault }
             let window = UIWindow(windowScene: scene)
             window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
             window.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
@@ -69,6 +70,8 @@ final class SubtitleStyleSettingsHostedTests: XCTestCase {
             let strings = (text.results ?? []).compactMap { $0.topCandidates(1).first?.string }
             XCTAssertTrue(strings.contains { $0.contains("Use System Caption Style") }, strings.joined(separator: "\n"))
             XCTAssertTrue(strings.contains { $0.contains("Preview") }, strings.joined(separator: "\n"))
+            XCTAssertTrue(strings.contains { $0.contains("Text Size") }, "Matching must not hide size controls.")
+            XCTAssertTrue(strings.contains { $0.contains("Weight") }, "Matching must not hide font controls.")
             XCTAssertTrue(strings.contains { $0.contains("almost there") || $0.contains("train leaves") },
                           "The preview must draw actual subtitle glyphs.")
             let selected = try XCTUnwrap(text.results?.first {
@@ -81,6 +84,7 @@ final class SubtitleStyleSettingsHostedTests: XCTestCase {
             attachment.name = "Subtitle customization - \(name)"
             attachment.lifetime = .keepAlways
             add(attachment)
+            if name == "system" { XCTAssertTrue(model.style.followsSystemStyle) }
         }
         for channel in 0..<3 {
             XCTAssertEqual(Double(previewSamples[0][channel]), Double(previewSamples[1][channel]), accuracy: 2,

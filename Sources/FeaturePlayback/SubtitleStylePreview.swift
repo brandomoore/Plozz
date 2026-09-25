@@ -9,14 +9,53 @@ import SwiftUI
 @Observable
 final class SubtitlePreviewOptions {
     var showsFileFormatting = false
-    var showsHDRBrightness = false
-    var animatesBackground = true
+    var showsHDRBrightness = false {
+        didSet { reconcileHDRPlayback() }
+    }
+    var animatesBackground = true {
+        didSet { reconcileHDRPlayback() }
+    }
+    private(set) var fullscreenPresented = false
+    @ObservationIgnored let hdrPreview = SubtitleHDRPreview()
+    @ObservationIgnored private var inlineVisible = false
+    @ObservationIgnored private var fullscreenVisible = false
+    @ObservationIgnored private var sceneActive = true
     private(set) var backgroundPhase = 0
     @ObservationIgnored private var lastPaletteChange = ContinuousClock.now
 
     func styleDidChange(from previous: SubtitleStyle, to current: SubtitleStyle) {
         if previous.hdrLuminanceScale != current.hdrLuminanceScale {
             showsHDRBrightness = true
+        }
+    }
+
+    func setVisible(_ visible: Bool, fullscreen: Bool, sceneActive: Bool) {
+        if fullscreen { fullscreenVisible = visible }
+        else { inlineVisible = visible }
+        self.sceneActive = sceneActive
+        reconcileHDRPlayback()
+    }
+
+    func setSceneActive(_ active: Bool) {
+        sceneActive = active
+        reconcileHDRPlayback()
+    }
+
+    func beginFullscreenPresentation() {
+        fullscreenPresented = true
+        reconcileHDRPlayback()
+    }
+
+    func finishFullscreenPresentation() {
+        // Retain playback across the presentation-completion/remount boundary.
+        fullscreenPresented = false
+    }
+
+    private func reconcileHDRPlayback() {
+        if showsHDRBrightness, sceneActive, inlineVisible || fullscreenVisible || fullscreenPresented {
+            hdrPreview.start(animate: animatesBackground)
+        } else {
+            hdrPreview.stop()
         }
     }
 
@@ -41,6 +80,7 @@ struct SubtitleStylePreview: View {
     let secondaryVisible: Bool
     let referenceSize: CGSize
     @Bindable var options: SubtitlePreviewOptions
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -50,7 +90,7 @@ struct SubtitleStylePreview: View {
                 #if os(iOS)
                 Menu("Preview options", systemImage: "slider.horizontal.3") {
                     Toggle("Preview file formatting", isOn: $options.showsFileFormatting)
-                    Toggle("Apply HDR subtitle dimming", isOn: $options.showsHDRBrightness)
+                    Toggle("HDR preview", isOn: $options.showsHDRBrightness)
                 }
                 .labelStyle(.iconOnly)
                 Button {
@@ -66,8 +106,10 @@ struct SubtitleStylePreview: View {
             SubtitleStylePreviewCanvas(
                 style: style, secondaryVisible: secondaryVisible,
                 referenceSize: referenceSize, showsFileFormatting: options.showsFileFormatting,
-                showsHDRBrightness: options.showsHDRBrightness, animate: options.animatesBackground,
-                backgroundOptions: options
+                showsHDRBrightness: options.showsHDRBrightness && options.hdrPreview.state == .ready,
+                animate: options.animatesBackground, backgroundOptions: options,
+                hdrVideo: options.showsHDRBrightness ? options.hdrPreview : nil,
+                hostsHDRVideo: !options.fullscreenPresented
             )
             .aspectRatio(16 / 9, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -78,23 +120,32 @@ struct SubtitleStylePreview: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Subtitle preview")
-            SubtitlePreviewCaption(style: style, previewsHDR: options.showsHDRBrightness)
+            SubtitlePreviewCaption(style: style, options: options)
         }
+        .onAppear { options.setVisible(true, fullscreen: false, sceneActive: scenePhase == .active) }
+        .onDisappear { options.setVisible(false, fullscreen: false, sceneActive: scenePhase == .active) }
+        .onChange(of: scenePhase) { _, phase in options.setSceneActive(phase == .active) }
     }
 }
 
 private struct SubtitlePreviewCaption: View {
     let style: SubtitleStyle
-    let previewsHDR: Bool
+    let options: SubtitlePreviewOptions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if previewsHDR {
-                Text("HDR subtitle dimming preview: \(style.hdrLuminanceScale, format: .percent.precision(.fractionLength(0)))")
-                if style.hdrLuminanceScale == 1 {
-                    Text("100% keeps normal brightness. Lower HDR Brightness to preview dimmer subtitles.")
-                } else {
-                    Text("This previews subtitle dimming, not HDR video.")
+            if options.showsHDRBrightness {
+                switch options.hdrPreview.state {
+                case .idle, .loading:
+                    Text("Preparing HDR preview…")
+                case .ready:
+                    Text("HDR10 test scene · Subtitle brightness: \(style.hdrLuminanceScale, format: .percent.precision(.fractionLength(0)))")
+                    #if os(tvOS)
+                    Text("For HDR output, enable Match Dynamic Range or use an HDR video format in Apple TV settings.")
+                    #endif
+                case .failed(let failure):
+                    Text(failure.message).foregroundStyle(.red)
+                    Text("Turn HDR preview off and on to retry.")
                 }
             } else {
                 Text("Size and position match the proportions of full-screen playback.")
@@ -114,21 +165,42 @@ struct SubtitleStylePreviewCanvas: View {
     var showsHDRBrightness = false
     var animate = true
     var backgroundOptions: SubtitlePreviewOptions? = nil
+    var hdrVideo: SubtitleHDRPreview? = nil
+    var hostsHDRVideo = true
 
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                SubtitlePreviewBackground(animate: animate, options: backgroundOptions)
-                SubtitleOverlayView(
-                    primary: primary,
-                    secondary: [.init(id: 2, start: 0, end: 60, body: .text(.init(
-                        String(localized: "This is how a second subtitle appears.",
-                               comment: "Sample subtitle shown in the style editor preview, not dialogue from a film.")
-                    )))],
-                    secondaryActive: secondaryVisible,
-                    style: SystemCaptionStyle.shared.resolved(style),
-                    isHDR: showsHDRBrightness
-                )
+                if let hdrVideo {
+                    Color.black
+                    if hostsHDRVideo { SubtitleHDRVideoSurface(preview: hdrVideo) }
+                } else {
+                    SubtitlePreviewBackground(animate: animate, options: backgroundOptions)
+                }
+                if hdrVideo == nil || hdrVideo?.state == .ready {
+                    SubtitleOverlayView(
+                        primary: primary,
+                        secondary: [.init(id: 2, start: 0, end: 60, body: .text(.init(
+                            String(localized: "This is how a second subtitle appears.",
+                                   comment: "Sample subtitle shown in the style editor preview, not dialogue from a film.")
+                        )))],
+                        secondaryActive: secondaryVisible,
+                        style: SystemCaptionStyle.shared.resolved(style),
+                        isHDR: showsHDRBrightness
+                    )
+                }
+                if let hdrVideo {
+                    switch hdrVideo.state {
+                    case .idle, .loading:
+                        ProgressView("Preparing HDR preview…")
+                            .tint(.white)
+                            .foregroundStyle(.white)
+                    case .failed(let failure):
+                        Text(failure.message).foregroundStyle(.white).padding(32)
+                    case .ready:
+                        EmptyView()
+                    }
+                }
             }
             .frame(width: referenceSize.width, height: referenceSize.height)
             .scaleEffect(SubtitleStylePreviewMetrics.scale(

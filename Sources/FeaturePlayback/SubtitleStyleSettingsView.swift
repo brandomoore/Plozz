@@ -177,14 +177,15 @@ private struct TelevisionSubtitleStyleEditor: View {
         .task(id: screen) {
             focus = nil
             await Task.yield()
+            let style = context.effectiveStyle
             switch screen {
             case .styleFont:
-                focus = .row(context.controls.subtitleStyle.systemFont == nil
-                    ? SubtitleFontFamily.allCases.firstIndex(of: context.controls.subtitleStyle.fontFamily) ?? 0
+                focus = .row(style.systemFont == nil && style.fontDescriptor == nil
+                    ? SubtitleFontFamily.allCases.firstIndex(of: style.fontFamily) ?? 0
                     : SubtitleFontFamily.allCases.count)
             case .styleSystemFont:
                 focus = .row(SubtitleSystemFonts.all.firstIndex {
-                    $0.id == context.controls.subtitleStyle.systemFont
+                    $0.id == style.systemFont
                 } ?? 0)
             default: focus = .row(0)
             }

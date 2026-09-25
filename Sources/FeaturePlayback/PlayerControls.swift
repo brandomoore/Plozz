@@ -245,6 +245,7 @@ struct PlayerControls: View {
     /// animates to this value; the rows themselves are always laid out at full
     /// size and clipped, so they never fade or spill during the height morph.
     @State private var styleBodyHeight: CGFloat = 0
+    @State private var panelHeaderHeight: CGFloat = 0
 
     /// Which panel `styleBodyHeight` was last measured for. Lets the height reader
     /// tell a *fresh open* (snap to natural size) apart from a *content morph within
@@ -1434,6 +1435,7 @@ struct PlayerControls: View {
             // steps into the card's actions.
             return .button(panel)
         case .subtitles:
+            let style = SystemCaptionStyle.shared.resolved(model.subtitleStyle)
             switch subtitleScreen {
             case .tracks:
                 return model.subtitleTrackListFocus
@@ -1450,11 +1452,11 @@ struct PlayerControls: View {
             case .style:
                 return model.secondarySubtitleImagePrimaryFormat == nil ? .row(0) : .subBack
             case .styleFont:
-                return .row(model.subtitleStyle.systemFont == nil
-                    ? SubtitleFontFamily.allCases.firstIndex(of: model.subtitleStyle.fontFamily) ?? 0
+                return .row(style.systemFont == nil && style.fontDescriptor == nil
+                    ? SubtitleFontFamily.allCases.firstIndex(of: style.fontFamily) ?? 0
                     : SubtitleFontFamily.allCases.count)
             case .styleSystemFont:
-                return .row(SubtitleSystemFonts.all.firstIndex { $0.id == model.subtitleStyle.systemFont } ?? 0)
+                return .row(SubtitleSystemFonts.all.firstIndex { $0.id == style.systemFont } ?? 0)
             case .styleOutline, .styleBackground, .styleDual:
                 return .row(0)
             }
@@ -1500,8 +1502,7 @@ struct PlayerControls: View {
     }
 
     /// The tallest a scrollable list (track list / Audio / Speed / Sync) may grow
-    /// before it clamps + scrolls, so a long list never overflows. The Style editor
-    /// is exempt — it grows to its full natural height.
+    /// before it clamps + scrolls. Style screens use the larger available viewport.
     private static let panelBodyMaxHeight: CGFloat = 440
 
     /// The floating options panel for every non-info category. A *single*
@@ -1513,9 +1514,7 @@ struct PlayerControls: View {
     ///   via `PanelBodyHeightKey`; that value drives the box height, animated in
     ///   `onPreferenceChange` (a plain `.animation(_, value:)` doesn't reliably fire
     ///   for preference-driven state — it settles a frame after layout).
-    /// - The Style editor (and sub-screens) is pinned to the top corner with room to
-    ///   spare, so it grows to full natural height with scrolling disabled — the
-    ///   morph reveals the rows top-down through the clip and nothing is cut off. The
+    /// - The Style editor is top-pinned and scrolls once it reaches the viewport. The
     ///   track / Audio / Speed / Sync lists clamp to `panelBodyMaxHeight` and scroll.
     /// - Because the track list and the Style editor share this one container, tapping
     ///   Edit *morphs* the box height from the track-list height up to the Style
@@ -1540,6 +1539,7 @@ struct PlayerControls: View {
         let styleFamily = category == .subtitles && subtitleScreen.isStyleFamily
         VStack(alignment: .leading, spacing: 0) {
             panelHeader(for: category)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { panelHeaderHeight = $0 }
             frostAwareDivider
             morphingBody(styleFamily: styleFamily, category: category) { panelBodyContent(for: category) }
         }
@@ -1623,6 +1623,9 @@ struct PlayerControls: View {
         category: Category,
         @ViewBuilder content: () -> Content
     ) -> some View {
+        let maximumHeight = styleFamily && availableHeight > 0
+            ? max(1, availableHeight - 2 * Self.horizontalMargin - panelHeaderHeight - PlozzFrostedSurface.dividerHeight)
+            : Self.panelBodyMaxHeight
         let body = VStack(alignment: .leading, spacing: 0) {
             content()
         }
@@ -1645,12 +1648,9 @@ struct PlayerControls: View {
                 body
             }
             .scrollIndicators(.hidden)
-            // The Style editor never scrolls (it grows to full height); disabling
-            // scroll keeps the height morph a clean top-down clip reveal with no
-            // bounce.
-            .scrollDisabled(styleFamily)
+            .scrollDisabled(styleBodyHeight <= maximumHeight)
             .frame(
-                height: styleFamily ? styleBodyHeight : min(styleBodyHeight, Self.panelBodyMaxHeight),
+                height: min(styleBodyHeight, maximumHeight),
                 alignment: .top
             )
         } else {
@@ -1670,7 +1670,7 @@ struct PlayerControls: View {
             // The GeometryReader still reports the true content height for the handoff
             // to the scrolling branch, which enables scrolling for over-cap lists.
             body
-                .frame(maxHeight: Self.panelBodyMaxHeight, alignment: .top)
+                .frame(maxHeight: maximumHeight, alignment: .top)
                 .fixedSize(horizontal: false, vertical: true)
                 .clipped()
         }

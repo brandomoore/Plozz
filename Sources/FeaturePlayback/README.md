@@ -60,11 +60,24 @@ playback. The actual system typeface is retained even when it is not in Plozz's
 font picker, including descriptor features such as small capitals. Text-line
 backgrounds and the enclosing window keep separate colors/opacities; the window
 also retains its corner radius. System appearance changes and foreground return
-refresh the overlay; custom preferences remain saved for switching back.
+refresh the overlay. All appearance controls remain visible and show effective
+system values. The first real edit freezes that complete appearance into the
+profile, applies the edit, and switches matching off; a no-op edit does not.
+Turning matching back on resumes the current device settings. New/default styles
+start with matching enabled, while persisted choices and legacy custom migration
+retain their existing behavior.
 Explicit system font, text-color and opacity overrides take precedence over
 the corresponding source formatting. Image-based subtitles retain their authored
 pixels. This maps Apple's public appearance settings, not its private layout
 algorithm or pixel-identical glyph/effect rendering.
+
+Frozen styles retain a securely archived font descriptor (traits, feature
+settings, variations and cascade), text opacity independently of overall
+opacity, line-background and window colors/opacities, window radius, edge style,
+and all ten public source-override policies. Policies for attributes absent from
+Plozz's cue model remain preserved rather than being presented as parsed source
+data. Apple does not expose native padding, base point-size/layout rules, line
+spacing, or edge color/thickness; those controls remain explicitly Plozz values.
 
 `Font > System` offers all eight native caption families plus the device's
 installed font families, discovered from UIKit rather than a fixed OS-specific
@@ -93,7 +106,7 @@ Settings > Playback > Subtitle style > Customize subtitle style opens the actual
 player appearance editor beside a live preview. The Live TV style entry opens the
 same page with the independent Live TV binding. TV reuses `SubtitleStylePanel`;
 the player and Settings share its `panelWidth` rather than separate layout widths.
-mobile's existing forms live in `MobileSubtitleStyleEditor`, shared by Settings
+Mobile's existing forms live in `MobileSubtitleStyleEditor`, shared by Settings
 and the player through `SubtitleStyleEditingContext`. There is no reduced second
 set of settings or separate preference store.
 
@@ -105,8 +118,7 @@ palettes cycling through blue, pale neutral, and dark surfaces, with no theme
 scrim. The page, menu, and focus colors still follow the app theme; only the
 preview is theme-independent. Animation is confined to that background,
 stops off-screen/inactive, and uses a static light/dark comparison for Reduce
-Motion. Optional samples demonstrate file formatting and the HDR brightness
-adjustment; the latter is not a claim that the preview changes display HDR mode.
+Motion. Optional samples demonstrate authored file formatting.
 
 All edits use the normal profile persistence path immediately. System-style
 mode retains its usual ownership of font/color/effects. The second-subtitle
@@ -118,10 +130,8 @@ Text size uses the shared `SubtitleStyle.fontScaleRange` and `fontScaleStep`:
 20% through 400%, in 1% increments. The TV editor's existing repeat ramp advances
 1, 2, 4, then at most 8 percentage points per event, resetting after an idle gap,
 direction change, or row change. Mobile uses the same range and step.
-Changing HDR Brightness enables `Apply HDR subtitle dimming` automatically. The preview labels
-the applied percentage and explains that 100% performs no dimming; it neither
-changes the saved brightness merely to demonstrate an effect nor switches the
-display into HDR.
+Changing HDR Brightness enables HDR preview automatically. The saved brightness
+is never changed merely to demonstrate an effect.
 
 On TV, a separate compact Preview section sits below the editor. Focusing it
 reveals background, file-formatting, and HDR-preview controls; moving between
@@ -130,6 +140,29 @@ section. The picture itself is non-focusable, so Left/Right stay dedicated to
 adjusting editor values and Down reaches preview controls. Select on the Preview
 header opens an actual full-screen canvas at playback scale; Back returns focus
 to that header without losing the chosen appearance or preview options.
+
+### Genuine HDR preview
+
+`HDR preview` plays the bundled, original `Resources/SubtitleHDRPreview.mp4`:
+silent 1080p60 HEVC Main 10, BT.2020/ST 2084 (PQ), with HDR10 mastering and content
+light metadata. Its procedural scene contains approximately 1000-nit highlights,
+not SDR pixels carrying an HDR label. Generate or verify it locally with
+`python3 tools/generate-subtitle-hdr-preview.py [--verify-only]`; verification
+checks the encoded format and decodes pixel values through the PQ EOTF.
+
+`SubtitleHDRPreview` owns one muted AVQueuePlayer/loop and one video surface
+across inline/full-screen transitions. It does not configure an audio session
+or keep the screen awake. Pause retains the displayed frame; backgrounding,
+disabling HDR, and leaving the page release playback. On tvOS it requests the
+asset's AVFoundation display criteria only for an unowned window and clears only
+its own request. Another player's display ownership or load failure is surfaced,
+not overwritten or disguised as a working HDR scene.
+
+The UI's **HDR10 test scene** label describes the content, not a measured HDMI
+signal. tvOS honors display criteria only when system settings permit it. Actual
+HDR output requires an HDR-capable display and Match Dynamic Range or an HDR
+system video format; otherwise AVPlayer can tone-map the scene. Neither source
+metadata nor EDR headroom is treated as proof of HDMI HDR output.
 
 ## Mobile streaming quality
 
