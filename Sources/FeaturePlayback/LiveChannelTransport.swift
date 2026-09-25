@@ -1270,8 +1270,8 @@ struct LiveChannelProgramArtwork: View {
 
     var body: some View {
         ZStack {
-            Color.white.opacity(0.08)
             if let artworkURL {
+                Color.white.opacity(0.08)
                 FallbackAsyncImage(references: [.remote(artworkURL)]) { image in
                     image.resizable().scaledToFit()
                 } placeholder: {
@@ -1286,11 +1286,12 @@ struct LiveChannelProgramArtwork: View {
         .accessibilityHidden(true)
     }
 
+    /// With no programme art, the channel's logo tile is the art: its own
+    /// backing plate across the whole frame, the logo as large as that allows.
     private var logo: some View {
         ChannelLogoArtwork(
-            name: channelName, logoURL: logoURL,
-            size: CGSize(width: size.height * 1.2, height: size.height * 0.62),
-            cornerRadius: 8, plozzChannelID: plozzChannelID
+            name: channelName, logoURL: logoURL, size: size,
+            cornerRadius: cornerRadius, plozzChannelID: plozzChannelID
         )
     }
 }
@@ -1353,8 +1354,6 @@ private struct LiveChannelInfoCard: View {
                         .font(metrics.bodyFont)
                         .foregroundStyle(.white.opacity(0.6))
                 }
-                Spacer(minLength: 0)
-                playbackInfoButton
             }
             .foregroundStyle(.white)
             .frame(maxWidth: metrics.textColumnMaxWidth, maxHeight: .infinity, alignment: .topLeading)
@@ -1362,6 +1361,17 @@ private struct LiveChannelInfoCard: View {
         }
         .padding(metrics.contentPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // VOD's Playback Info spot, bottom-right, in a row that spans the whole
+        // card and is its own focus section: a lone button over at the right
+        // sits under none of the tabs, so Down from Info found nothing.
+        .overlay(alignment: .bottom) {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                playbackInfoButton
+            }
+            .padding(metrics.contentPadding)
+            .plozzFocusSection()
+        }
         .modifier(PanelGlassBackground(cornerRadius: metrics.panelCornerRadius))
     }
 }
@@ -1866,14 +1876,18 @@ private struct LiveChannelOnNowPanel: View {
     }
 
     private func row(now: Date) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        // One shape for the whole row: a second line is reserved only when some
+        // card has one, so a lineup without guide data gets taller art instead.
+        let reservesDetailLine = items.contains { LiveChannelOnNowCard.detail(for: $0, now: now) != nil }
+        return ScrollView(.horizontal, showsIndicators: false) {
             // Not lazy, for the reason the cast row isn't: a bounded row, and
             // focus must be able to target any card.
             HStack(spacing: metrics.columnSpacing) {
                 ForEach(items) { item in
                     Button { select(item) } label: {
                         LiveChannelOnNowCard(
-                            item: item, isCurrent: item.channelID == currentChannelID, now: now
+                            item: item, isCurrent: item.channelID == currentChannelID, now: now,
+                            reservesDetailLine: reservesDetailLine
                         )
                     }
                     .buttonStyle(LiveChannelCardButtonStyle(cornerRadius: cardMetrics.landscapeCardCornerRadius))
@@ -1917,6 +1931,8 @@ private struct LiveChannelOnNowCard: View {
     let item: LiveChannelOnNowItem
     let isCurrent: Bool
     let now: Date
+    /// Whether the row keeps room for a second line under the title.
+    let reservesDetailLine: Bool
 
     @Environment(\.playerCardMetrics) private var metrics
     /// The app's media-card rule, as Home's landscape cards and the Up Next card
@@ -1937,7 +1953,8 @@ private struct LiveChannelOnNowCard: View {
     /// Everything under the art, so the art takes exactly what is left of the
     /// card's fixed height.
     private var textHeight: CGFloat {
-        ((metrics.castNameSize + metrics.castRoleSize) * 1.25).rounded(.up) + 3
+        guard reservesDetailLine else { return (metrics.castNameSize * 1.25).rounded(.up) }
+        return ((metrics.castNameSize + metrics.castRoleSize) * 1.25).rounded(.up) + 3
     }
 
     /// The card's full height less the art's inset above it, the caption below,
@@ -1956,7 +1973,9 @@ private struct LiveChannelOnNowCard: View {
     /// name, is named once.
     private var headline: String { item.program?.title ?? item.channelName }
 
-    private var detail: Text? {
+    /// The line under the title: the channel when a programme leads, else the
+    /// programme's episode line or time left; nil when there's nothing to add.
+    static func detail(for item: LiveChannelOnNowItem, now: Date) -> Text? {
         guard let program = item.program else { return nil }
         if program.title.caseInsensitiveCompare(item.channelName) != .orderedSame {
             return Text(verbatim: item.channelName)
@@ -1975,12 +1994,16 @@ private struct LiveChannelOnNowCard: View {
         VStack(alignment: .leading, spacing: 0) {
             artwork
                 .overlay { progressOverlay }
+                .overlay(alignment: .topLeading) { watchingBadge }
             VStack(alignment: .leading, spacing: 3) {
                 MarqueeText(text: headline, font: metrics.castNameFont, isFocused: focused)
                     .foregroundStyle(.white)
-                detailLine
-                    .font(metrics.castRoleFont)
-                    .foregroundStyle(.white.opacity(0.6))
+                if let detail = Self.detail(for: item, now: now) {
+                    detail
+                        .font(metrics.castRoleFont)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .lineLimit(1)
+                }
             }
             .padding(.horizontal, captionInset)
             .padding(.top, cardMetrics.landscapeCaptionTopSpacing)
@@ -1990,18 +2013,24 @@ private struct LiveChannelOnNowCard: View {
         .frame(width: artWidth + inset * 2, height: metrics.cardHeight, alignment: .topLeading)
     }
 
-    /// The second line, marked when it's the channel being watched.
+    /// The channel being watched, marked on its art rather than taking a line
+    /// of the caption.
     @ViewBuilder
-    private var detailLine: some View {
-        if detail != nil || isCurrent {
-            HStack(spacing: 6) {
-                if isCurrent {
-                    Image(systemName: "play.fill")
-                        .accessibilityLabel(Text("Watching"))
-                }
-                (detail ?? (isCurrent ? Text("Watching") : Text(verbatim: "")))
-                    .lineLimit(1)
+    private var watchingBadge: some View {
+        if isCurrent {
+            Label {
+                Text("Watching")
+            } icon: {
+                Image(systemName: "play.fill")
             }
+            .font(metrics.castRoleFont.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            // A capsule: the corner radius clamps to half its height.
+            .modifier(PanelGlassBackground(cornerRadius: 999))
+            // Concentric with the art's corner.
+            .padding(max(8, artCornerRadius / 2))
         }
     }
 
