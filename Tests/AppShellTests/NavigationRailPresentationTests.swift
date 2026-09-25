@@ -124,10 +124,22 @@ final class NavigationRailPresentationTests: XCTestCase {
                 XCTAssertFalse(presentation.isRailEnabled)
                 XCTAssertFalse(presentation.isEdgeNavigationEnabled())
                 XCTAssertFalse(presentation.showsPageButton)
-                XCTAssertEqual(presentation.contentInset, 0)
+                XCTAssertEqual(presentation.contentInset, NavigationRailMetrics.contentInset)
             }
         }
     }
+
+    func testLiveTVFocusHandoffsKeepGuideClearanceWhileOtherDetailsStayFullBleed() {
+        for destination in [NavigationRailDestination.liveTV, .home, .settings, .music, .library("movies")] {
+            let hidden = NavigationRailPresentation(
+                destination: destination, chromeHidden: true, isExpanded: false, isOpening: false
+            )
+            XCTAssertEqual(hidden.contentInset, destination == .liveTV ? make(destination).contentInset : 0)
+            XCTAssertFalse(hidden.isRailEnabled)
+            XCTAssertFalse(hidden.isEdgeNavigationEnabled())
+        }
+    }
+
     private func make(
         _ destination: NavigationRailDestination,
         expanded: Bool = false,

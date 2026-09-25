@@ -224,7 +224,7 @@ struct PrototypePreviewHero: View {
         .frame(width: layout.contentFrame.width, height: layout.heroHeight, alignment: .bottomLeading)
         .clipped()
         #if DEBUG
-        .anchorPreference(key: PrototypeHeroBoundsKey.self, value: .bounds) { [isLoading ? "loading" : "content": $0] }
+        .modifier(PrototypeHeroLayoutObservation(phase: isLoading ? "loading" : "content"))
         #endif
     }
 

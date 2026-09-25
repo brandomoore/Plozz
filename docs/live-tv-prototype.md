@@ -73,6 +73,9 @@ unavailable state and can retry both library and external sources.
 On Apple TV, the pinned guide's horizontal gutter is measured from the physical
 viewport, like the rail itself, so title-safe-area changes during entry do not
 shift or resize the skeleton or loaded guide.
+The shell keeps this clearance while Live TV temporarily suppresses navigation
+to focus its first channel or restore guide focus. Navigation visibility and input
+remain gated; the full-screen video and native Search use their own full bounds.
 An empty configuration does not contact a public feed or play an unsolicited
 channel. Add your own M3U playlist or use an authorized
 connected server. Plozz does not provide or offer a public channel catalog.

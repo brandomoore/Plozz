@@ -59,17 +59,27 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
         let geometry = LiveTVLoadingGeometry()
         let page = LiveTVPrototypeView(
             sourceStore: sources,
+            onExpandedChange: geometry.setNavigationSuppressed,
             profileID: profileID, preferencesNamespace: name,
             libraryService: cold,
             libraryHistory: LibraryChannelHistorySettings(defaults: defaults),
             sourceApprovalContext: { approval }
         ) { _ in Color.black }
         let host = UIHostingController(rootView: LiveTVPinnedLoadingFixture(pinned: pinned, geometry: geometry, content: page)
+            .environment(\.observesPrototypeLayout, true)
             .environment(\.themePalette, .dark)
             .environment(\.colorScheme, .dark))
         window.rootViewController = host
         window.makeKeyAndVisible()
+        let sampling = Task { @MainActor in
+            while !Task.isCancelled {
+                geometry.recordPresentation(in: window)
+                do { try await Task.sleep(for: .milliseconds(16)) }
+                catch { return }
+            }
+        }
         defer {
+            sampling.cancel()
             window.isHidden = true
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
@@ -77,6 +87,8 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
         }
         if pinned {
             try await Task.sleep(for: .milliseconds(100))
+            try XCTUnwrap(geometry.interaction).requestOpen()
+            try await Task.sleep(for: .milliseconds(250))
             geometry.selection = .liveTV
         }
         try await Task.sleep(for: .milliseconds(150))
@@ -118,6 +130,10 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
         content.lifetime = .keepAlways
         add(content)
         if pinned {
+            try await Task.sleep(for: .milliseconds(350))
+            XCTAssertTrue(geometry.navigationSuppressions.contains(true),
+                          "Exercise the real initial-channel focus handoff, not only catalog loading.")
+            XCTAssertEqual(geometry.navigationSuppressions.last, false)
             let frames = geometry.frames.values.flatMap { $0 }
             XCTAssertTrue(geometry.frames.keys.contains("storage"))
             XCTAssertTrue(geometry.frames.keys.contains("loading"))
@@ -134,6 +150,13 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
             let widths = frames.map(\.width)
             XCTAssertEqual(try XCTUnwrap(widths.max()), try XCTUnwrap(widths.min()), accuracy: 1,
                            "The guide must not resize when its container's safe area settles.")
+            let presentation = geometry.presentedFrames.values.flatMap { $0 }.map(\.minX)
+            let presentationHistory = XCTAttachment(string: String(describing: geometry.presentedFrames))
+            presentationHistory.name = "Pinned Live TV presentation frame history"
+            presentationHistory.lifetime = .keepAlways
+            add(presentationHistory)
+            XCTAssertEqual(try XCTUnwrap(presentation.max()), try XCTUnwrap(presentation.min()), accuracy: 1,
+                           "Visible frames must stay still, not just their final layout: \(geometry.presentedFrames)")
         }
 
         try definitions.save([])
@@ -172,14 +195,37 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
 
 @MainActor @Observable
 private final class LiveTVLoadingGeometry {
+    let chrome = NavigationChromeModel()
     var cacheReady = false
     var selection = NavigationRailDestination.home
     @ObservationIgnored var frames: [String: [CGRect]] = [:]
+    @ObservationIgnored var presentedFrames: [String: [CGRect]] = [:]
+    @ObservationIgnored var interaction: PlozzPinnedSidebarInteraction?
+    @ObservationIgnored var navigationSuppressions: [Bool] = []
+
+    func setNavigationSuppressed(_ suppressed: Bool) {
+        if navigationSuppressions.last != suppressed { navigationSuppressions.append(suppressed) }
+        chrome.setStackDepth(suppressed ? 1 : 0)
+    }
 
     func record(_ value: [String: CGRect]) {
         for (phase, frame) in value where frame.width > 100 && frame.height > 20 {
             if frames[phase]?.last != frame { frames[phase, default: []].append(frame) }
         }
+    }
+
+    func recordPresentation(in window: UIWindow) {
+        func visit(_ view: UIView) {
+            if let marker = view as? PrototypeHeroLayoutView {
+                let layer = marker.layer.presentation() ?? marker.layer
+                let frame = layer.convert(layer.bounds, to: window.layer.presentation() ?? window.layer)
+                if frame.width > 100, frame.height > 20, presentedFrames[marker.phase]?.last != frame {
+                    presentedFrames[marker.phase, default: []].append(frame)
+                }
+            }
+            view.subviews.forEach(visit)
+        }
+        visit(window)
     }
 }
 
@@ -187,7 +233,6 @@ private struct LiveTVPinnedLoadingFixture<Content: View>: View {
     let pinned: Bool
     let geometry: LiveTVLoadingGeometry
     let content: Content
-    @State private var chrome = NavigationChromeModel()
 
     var body: some View {
         @Bindable var geometry = geometry
@@ -196,7 +241,7 @@ private struct LiveTVPinnedLoadingFixture<Content: View>: View {
                 NavigationRailShell(
                     profile: Profile(id: "fixture", name: "Fixture"), entries: [],
                     destinations: [.home, .liveTV, .settings], selection: $geometry.selection,
-                    onOpenProfileSwitcher: {}, chrome: chrome,
+                    onOpenProfileSwitcher: {}, chrome: geometry.chrome,
                     content: retainedContent, contentDestination: geometry.selection
                 )
             } else {
@@ -222,11 +267,22 @@ private struct LiveTVPinnedLoadingFixture<Content: View>: View {
                 .opacity(active ? 1 : 0)
                 .disabled(!active)
         }
+        .background { LiveTVLoadingInteractionCapture(geometry: geometry) }
     }
 
     @ViewBuilder private var loadingContent: some View {
         if geometry.cacheReady { content }
         else { LiveTVLoadingSkeleton() }
+    }
+}
+
+private struct LiveTVLoadingInteractionCapture: View {
+    let geometry: LiveTVLoadingGeometry
+    @Environment(\.plozzPinnedSidebarInteraction) private var interaction
+
+    var body: some View {
+        Color.clear
+            .onAppear { geometry.interaction = interaction }
     }
 }
 

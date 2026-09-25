@@ -27,7 +27,7 @@ public struct LiveTVLoadingSkeleton: View {
                         PrototypePreviewHeroSkeleton(layout: layout)
                             .frame(height: layout.heroHeight, alignment: .bottomLeading)
                             #if DEBUG
-                            .anchorPreference(key: PrototypeHeroBoundsKey.self, value: .bounds) { ["storage": $0] }
+                            .modifier(PrototypeHeroLayoutObservation(phase: "storage"))
                             #endif
                         HStack(alignment: .top, spacing: PrototypeLayout.sectionGap) {
                             if layout.sidebarWidth > 0 {
