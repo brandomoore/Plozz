@@ -6,6 +6,7 @@ import SwiftUI
 import UIKit
 import XCTest
 @testable import FeaturePlayback
+@testable import CoreUI
 
 @MainActor
 final class NativeSubtitlePresentationTests: XCTestCase {
@@ -99,6 +100,29 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         XCTAssertTrue(engine.isPaused)
         XCTAssertEqual(engine.underlyingPlayer?.rate, 0)
         XCTAssertEqual(engine.currentTime, 6.5, accuracy: 1.0 / 24)
+        let originalStyle = model.style
+        let originalCaption = try XCTUnwrap(captionFrames(in: window, relativeTo: window).first)
+        model.style.followsSystemStyle = false
+        model.style.fontScale = 1.4
+        model.style.textColor = .yellow
+        model.style.verticalPosition = 0.35
+        try await waitUntil {
+            window.layoutIfNeeded()
+            guard let frame = self.captionFrames(in: window, relativeTo: window).first else { return false }
+            return frame.height > originalCaption.height * 1.2
+                && abs(frame.maxY - window.bounds.height * 0.65) <= 1
+        }
+        XCTAssertEqual(engine.currentTime, 6.5, accuracy: 1.0 / 24)
+        XCTAssertEqual(model.primary.compactMap(\.text), ["Repeated"])
+        try assertOnlySuppressedOutput(engine)
+        let styled = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
+        let attachment = XCTAttachment(image: styled)
+        attachment.name = "Native embedded caption restyled while paused"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        model.style = originalStyle
         await engine.seek(to: 0)
         try await waitUntil {
             return model.primary.isEmpty
@@ -221,6 +245,11 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         XCTAssertEqual(outputs.count, 1)
         XCTAssertEqual(outputs.first?.suppressesPlayerRendering, true)
         XCTAssertNil(item.textStyleRules, "Owned captions must not bake Apple's final styling into the source cues")
+    }
+
+    private func captionFrames(in view: UIView, relativeTo window: UIWindow) -> [CGRect] {
+        if let line = view as? SubtitleLineView { return [line.convert(line.bounds, to: window)] }
+        return view.subviews.flatMap { captionFrames(in: $0, relativeTo: window) }
     }
 
     private func request(_ url: URL, tracks: [MediaTrack]) -> PlaybackRequest {

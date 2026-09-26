@@ -301,18 +301,23 @@ struct LiveChannelOverlay: View {
             VStack(alignment: .leading, spacing: Self.stackSpacing) {
                 titleAndBadgesRow
                 timelineRow
+                    .reportSubtitleControlsFrame(
+                        in: tracks.subtitles.controlsLayout, region: .timeline, isVisible: !cardOpen && !styleEditing
+                    )
                     // Steps aside for the card, in place, so nothing reflows.
                     .opacity(cardOpen ? 0 : 1)
                     .allowsHitTesting(!cardOpen)
                 tabRow
             }
             card
+                .reportSubtitleControlsFrame(
+                    in: tracks.subtitles.controlsLayout, region: .card, isVisible: cardOpen && !styleEditing
+                )
                 .padding(.top, Self.cardGap - Self.stackSpacing)
                 .padding(.bottom, Self.cardBottomPad)
                 .offset(y: cardOpen ? 0 : Self.cardCatchUp)
                 .disabled(!cardOpen)
         }
-        .reportSubtitleControlsFrame(isVisible: !styleEditing) { tracks.subtitles.controlsLayout.frame = $0 }
         // THE reveal: one transform over a fixed stage (VOD rule 2).
         .offset(y: cardOpen ? 0 : cardLift)
         .animation(revealClock, value: cardOpen)
@@ -324,6 +329,10 @@ struct LiveChannelOverlay: View {
     private var titleAndBadgesRow: some View {
         HStack(alignment: .bottom, spacing: 32) {
             titleBlock
+                .reportSubtitleControlsFrame(
+                    in: tracks.subtitles.controlsLayout, region: .title,
+                    isVisible: openMenu == nil && !cardOpen && !styleEditing
+                )
                 .opacity(openMenu == nil && !cardOpen ? 1 : 0)
                 .animation(.easeInOut(duration: 0.28), value: openMenu == nil)
             badges
@@ -472,6 +481,7 @@ struct LiveChannelOverlay: View {
             // A live channel draws one subtitle line.
             offersDualSubtitles: false
         )
+        .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .menu, isVisible: !styleEditing)
         .id(kind)
         .plozzFocusSection()
     }
@@ -516,6 +526,9 @@ struct LiveChannelOverlay: View {
                     .accessibilityIdentifier("live-channel-multiview")
             }
         }
+        .reportSubtitleControlsFrame(
+            in: tracks.subtitles.controlsLayout, region: .trackControls, isVisible: !cardOpen && !styleEditing
+        )
         .opacity(cardOpen ? 0 : 1)
         .plozzFocusSection()
         // GLOBAL, so the reading includes the cluster's parking offset.
@@ -550,6 +563,7 @@ struct LiveChannelOverlay: View {
             if menuHangsBelowBadges {
                 VStack(spacing: 0) {
                     LiveChannelTrackPanel(kind: openMenu, model: tracks, focus: $focus, onSelect: closeMenu)
+                        .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .menu)
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -688,6 +702,9 @@ struct LiveChannelOverlay: View {
                     .focused($focus, equals: .cardTab(tab))
                     .disabled(!isFocusable(.cardTab(tab)))
                     .accessibilityIdentifier(tab.identifier)
+                    .reportSubtitleControlsFrame(
+                        in: tracks.subtitles.controlsLayout, region: .tab(tab.identifier), isVisible: !styleEditing
+                    )
             }
             Spacer(minLength: 20)
         }
@@ -1158,16 +1175,17 @@ extension LiveChannelOverlay {
                 timeline
                     .accessibilityIdentifier("live-channel-timeline")
                     .accessibilityElement(children: .combine)
+                    .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .timeline)
                     .transition(.opacity)
             }
             touchTabRow
             if cardOpen {
                 card
+                    .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .card)
                     // Grows upward out of the tabs, as VOD's touch card does.
                     .transition(.scale(scale: 0.94, anchor: .bottom).combined(with: .opacity))
             }
         }
-        .reportSubtitleControlsFrame { tracks.subtitles.controlsLayout.frame = $0 }
         .padding(.horizontal, Self.horizontalMargin)
         .padding(.bottom, Self.bottomMargin)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1199,6 +1217,10 @@ extension LiveChannelOverlay {
             }
         }
         .shadow(color: .black.opacity(0.4), radius: 4, y: 1)
+        .reportSubtitleControlsFrame(
+            in: tracks.subtitles.controlsLayout, region: .title,
+            isVisible: !cardOpen && (openMenu == nil || menuHangsBelowBadges)
+        )
         .frame(maxWidth: .infinity, alignment: .leading)
         // Hidden under an open track menu when it rises over it; stood up the
         // menu hangs from the top bar instead and leaves the title alone.
@@ -1212,6 +1234,7 @@ extension LiveChannelOverlay {
             touchGoLiveBadge
             touchTrackBadges
         }
+        .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .trackControls)
     }
 
     @ViewBuilder
@@ -1223,6 +1246,7 @@ extension LiveChannelOverlay {
                 prominent: true, action: onGoLive
             )
             .accessibilityIdentifier("live-channel-go-live")
+            .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .trackControls)
         }
     }
 
@@ -1296,6 +1320,7 @@ extension LiveChannelOverlay {
                     .disabled(openMenu != nil)
                     .accessibilityIdentifier(tab.identifier)
                     .accessibilityAddTraits(cardOpen && cardTab == tab ? .isSelected : [])
+                    .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .tab(tab.identifier))
             }
         }
     }

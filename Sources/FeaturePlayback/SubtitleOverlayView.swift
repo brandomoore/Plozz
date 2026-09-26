@@ -17,17 +17,29 @@ enum SubtitleOverlayGeometry {
         for subtitle: CGRect, avoiding controls: CGRect?, in bounds: CGRect,
         clearance: CGFloat = controlsClearance
     ) -> CGFloat {
-        guard let controls,
-              [subtitle, controls, bounds].allSatisfy({
-                  !$0.isNull && !$0.isEmpty
-                      && $0.minX.isFinite && $0.minY.isFinite
-                      && $0.width.isFinite && $0.height.isFinite
-              }) else { return 0 }
-        let visibleControls = controls.intersection(bounds)
-        guard !visibleControls.isNull, !visibleControls.isEmpty,
-              subtitle.intersects(visibleControls) else { return 0 }
-        let lift = visibleControls.minY - max(0, clearance) - subtitle.maxY
-        return min(0, max(lift, bounds.minY - subtitle.minY))
+        upwardOffset(for: subtitle, avoiding: controls.map { [$0] } ?? [], in: bounds, clearance: clearance)
+    }
+
+    static func upwardOffset(
+        for subtitle: CGRect, avoiding controls: [CGRect], in bounds: CGRect,
+        clearance: CGFloat = controlsClearance
+    ) -> CGFloat {
+        func valid(_ rect: CGRect) -> Bool {
+            !rect.isNull && !rect.isEmpty && rect.minX.isFinite && rect.minY.isFinite
+                && rect.width.isFinite && rect.height.isFinite
+        }
+        guard valid(subtitle), valid(bounds) else { return 0 }
+        let visible = controls.filter(valid).map { $0.intersection(bounds) }.filter(valid)
+        var moved = subtitle
+        var total: CGFloat = 0
+        for _ in visible {
+            guard let top = visible.filter({ moved.intersects($0) }).map(\.minY).min() else { break }
+            let lift = min(0, max(top - max(0, clearance) - moved.maxY, bounds.minY - moved.minY))
+            guard lift < 0 else { break }
+            moved = moved.offsetBy(dx: 0, dy: lift)
+            total += lift
+        }
+        return total
     }
 
     static func aspectFitRect(
@@ -105,7 +117,7 @@ private struct SubtitlePositionLayout: Layout {
     let verticalPosition: Double
     let verticalAnchor: SubtitleStyle.VerticalAnchor
     let spacing: CGFloat
-    let controlsFrame: CGRect?
+    let controlsFrames: [CGRect]
 
     private var anchorFraction: CGFloat {
         switch verticalAnchor {
@@ -158,7 +170,7 @@ private struct SubtitlePositionLayout: Layout {
             naturalY += heights[index] + spacing
         }
         let lift = SubtitleOverlayGeometry.upwardOffset(
-            for: visibleBlock, avoiding: controlsFrame,
+            for: visibleBlock, avoiding: controlsFrames,
             in: CGRect(origin: .zero, size: bounds.size)
         )
         var y = bounds.minY + origin - topInset + lift
@@ -173,7 +185,7 @@ private struct SubtitlePositionLayout: Layout {
 private struct SubtitleSourcePositionLayout: Layout {
     let layout: SubtitleCueLayout
     let videoRect: CGRect
-    let controlsFrame: CGRect?
+    let controlsFrames: [CGRect]
     let titleSafeFraction: CGFloat
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -193,8 +205,14 @@ private struct SubtitleSourcePositionLayout: Layout {
         let size = subview.sizeThatFits(contentProposal)
         let origin: CGPoint
         if let anchor = layout.anchor {
+            let horizontalAnchor: CGFloat
+            switch layout.alignment.horizontal {
+            case .leading: horizontalAnchor = 0
+            case .center: horizontalAnchor = 0.5
+            case .trailing: horizontalAnchor = 1
+            }
             origin = CGPoint(
-                x: videoRect.minX + anchor.x * videoRect.width - size.width / 2,
+                x: videoRect.minX + anchor.x * videoRect.width - width / 2 + (width - size.width) * horizontalAnchor,
                 y: videoRect.minY + anchor.y * videoRect.height - size.height / 2
             )
         } else {
@@ -213,7 +231,7 @@ private struct SubtitleSourcePositionLayout: Layout {
             origin = CGPoint(x: x, y: y)
         }
         let lift = SubtitleOverlayGeometry.upwardOffset(
-            for: CGRect(origin: origin, size: size), avoiding: controlsFrame,
+            for: CGRect(origin: origin, size: size), avoiding: controlsFrames,
             in: CGRect(origin: .zero, size: bounds.size)
         )
         subview.place(
@@ -264,6 +282,7 @@ public struct SubtitleOverlayView: View {
     public var videoRect: CGRect?
     /// Visible bottom controls in global coordinates; never a persisted position.
     public var controlsFrame: CGRect?
+    public var controlsFrames: [CGRect]
 
     public init(
         primary: [SubtitleCue],
@@ -272,7 +291,8 @@ public struct SubtitleOverlayView: View {
         style: SubtitleStyle,
         isHDR: Bool = false,
         videoRect: CGRect? = nil,
-        controlsFrame: CGRect? = nil
+        controlsFrame: CGRect? = nil,
+        controlsFrames: [CGRect] = []
     ) {
         self.primary = primary
         self.secondary = secondary
@@ -281,6 +301,7 @@ public struct SubtitleOverlayView: View {
         self.isHDR = isHDR
         self.videoRect = videoRect
         self.controlsFrame = controlsFrame
+        self.controlsFrames = controlsFrames
     }
 
     /// Platform baseline at `fontScale == 1.0`: 42 points for the 10-foot tvOS
@@ -300,7 +321,8 @@ public struct SubtitleOverlayView: View {
         GeometryReader { geo in
             let rect = videoRect ?? CGRect(origin: .zero, size: geo.size)
             let origin = geo.frame(in: .global).origin
-            let controls = controlsFrame?.offsetBy(dx: -origin.x, dy: -origin.y)
+            let controls = (controlsFrames + (controlsFrame.map { [$0] } ?? []))
+                .map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
             ZStack {
                 bitmapLayer(in: rect, bounds: CGRect(origin: .zero, size: geo.size), controls: controls)
                 textLayer(in: geo.size, videoRect: rect, controls: controls)
@@ -315,7 +337,7 @@ public struct SubtitleOverlayView: View {
     // MARK: - Bitmap cues (PGS / DVB / DVD)
 
     @ViewBuilder
-    private func bitmapLayer(in rect: CGRect, bounds: CGRect, controls: CGRect?) -> some View {
+    private func bitmapLayer(in rect: CGRect, bounds: CGRect, controls: [CGRect]) -> some View {
         ForEach(primary.filter(\.isImage)) { cue in
             if case .image(let img) = cue.body {
                 let frame = SubtitleOverlayGeometry.bitmapRect(
@@ -347,7 +369,7 @@ public struct SubtitleOverlayView: View {
     private static let titleSafeFraction: CGFloat = 0.05
 
     @ViewBuilder
-    private func textLayer(in size: CGSize, videoRect: CGRect, controls: CGRect?) -> some View {
+    private func textLayer(in size: CGSize, videoRect: CGRect, controls: [CGRect]) -> some View {
         let text = primary.filter { !$0.isImage }
         // A cue whose layout is source-positioned is a sign/caption placed
         // independently in its own plane (against the video rect). Everything
@@ -361,10 +383,9 @@ public struct SubtitleOverlayView: View {
                 verticalPosition: style.verticalPosition,
                 verticalAnchor: style.verticalAnchor,
                 spacing: secondaryActive ? style.secondary?.gap ?? 0 : 0,
-                controlsFrame: controls?.offsetBy(
-                    dx: -size.width * 0.04 - style.horizontalOffset * (size.width * 0.25),
-                    dy: 0
-                )
+                controlsFrames: controls.map {
+                    $0.offsetBy(dx: -size.width * 0.04 - style.horizontalOffset * (size.width * 0.25), dy: 0)
+                }
             ) {
                 dialogueStack(dialogue)
             }
@@ -385,11 +406,11 @@ public struct SubtitleOverlayView: View {
     /// its `\an` plane inset by the title-safe margin plus any source margins.
     @ViewBuilder
     private func positionedCue(
-        _ cue: SubtitleCue, videoRect: CGRect, bounds: CGRect, controls: CGRect?
+        _ cue: SubtitleCue, videoRect: CGRect, bounds: CGRect, controls: [CGRect]
     ) -> some View {
         if case .text(let t) = cue.body, let layout = t.layout {
             let a = layout.alignment
-            let styled = StyledCueText(
+            let text = StyledCueText(
                 text: t,
                 fontSize: Self.baseFontSize * style.fontScale,
                 fillColor: scaled(style.textColor),
@@ -397,12 +418,12 @@ public struct SubtitleOverlayView: View {
                 style: style,
                 colorScale: lumaScale
             )
-            .frame(maxWidth: videoRect.width * 0.92, alignment: a.frameTextAlignment)
-            if let controls {
+            let styled = text.frame(maxWidth: videoRect.width * 0.92, alignment: a.frameTextAlignment)
+            if !controls.isEmpty {
                 SubtitleSourcePositionLayout(
-                    layout: layout, videoRect: videoRect, controlsFrame: controls,
+                    layout: layout, videoRect: videoRect, controlsFrames: controls,
                     titleSafeFraction: Self.titleSafeFraction
-                ) { styled }
+                ) { text }
                 .frame(width: bounds.width, height: bounds.height)
             } else if let anchor = layout.anchor {
                 styled.position(

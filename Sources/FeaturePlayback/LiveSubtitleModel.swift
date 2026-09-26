@@ -248,7 +248,7 @@ struct LiveSubtitleOverlay: View {
             style: SystemCaptionStyle.shared.resolved(model.style),
             isHDR: model.isHDR,
             videoRect: model.videoRect,
-            controlsFrame: controls.subtitleLayout.frame
+            controlsFrames: controls.subtitleLayout.frames
         )
         .ignoresSafeArea()
     }

@@ -2,6 +2,7 @@ import CoreModels
 import Observation
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 @testable import CoreUI
 @testable import FeaturePlayback
@@ -112,6 +113,94 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
     }
 
     #if os(tvOS)
+    func testInfoEntryKeepsCenteredCaptionsJustAboveTheVisibleCard() async throws {
+        let scene = try await activeScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let subtitles = LiveSubtitleModel()
+        subtitles.style.fontFamily = .system
+        subtitles.style.followsSystemStyle = false
+        subtitles.style.verticalPosition = 0.06
+        subtitles.loadPrimary(SubtitleCueParser.parse(
+            "WEBVTT\n\n00:00:00.000 --> 00:01:00.000\nA centered caption.\n", id: 1
+        ))
+        subtitles.tick(1)
+        let model = PlayerControlsModel()
+        model.title = "Subtitle clearance fixture"
+        model.infoCard.headline = "Info card fixture"
+        model.infoCard.overview = "Visible card content with the title and scrubber still mounted but hidden above it."
+        let root = UIViewController()
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = root
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let captions = UIHostingController(rootView: LiveSubtitleOverlay(model: subtitles, controls: model))
+        let chrome = UIHostingController(rootView: PlayerControls(
+            model: model, palette: .dark, actions: PlayerOptionsActions(), onExitToSurface: {}
+        ).transaction {
+            $0.disablesAnimations = true
+            $0.animation = nil
+        })
+        captions.safeAreaRegions = []
+        chrome.safeAreaRegions = []
+        for host in [captions as UIViewController, chrome as UIViewController] {
+            root.addChild(host)
+            host.view.backgroundColor = .clear
+            host.view.frame = root.view.bounds
+            host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            root.view.addSubview(host.view)
+            host.didMove(toParent: root)
+        }
+        try await waitUntil { !self.frames(in: captions.view, relativeTo: window).isEmpty }
+        model.controlsVisible = true
+        model.controlBar.entry = .info
+        model.controlBarVisible = true
+        try await waitUntil {
+            window.layoutIfNeeded()
+            guard let card = model.subtitleLayout.frame(for: .card),
+                  let caption = self.frames(in: captions.view, relativeTo: window).first else { return false }
+            return abs(caption.maxY - (card.minY - SubtitleOverlayGeometry.controlsClearance)) <= 1
+        }
+        XCTAssertNil(model.subtitleLayout.frame(for: .title))
+        XCTAssertNil(model.subtitleLayout.frame(for: .timeline))
+        XCTAssertNil(model.subtitleLayout.frame(for: .trackControls))
+        let card = try XCTUnwrap(model.subtitleLayout.frame(for: .card))
+        let caption = try XCTUnwrap(frames(in: captions.view, relativeTo: window).first)
+        XCTAssertEqual(caption.maxY, card.minY - SubtitleOverlayGeometry.controlsClearance, accuracy: 1)
+        let info = try XCTUnwrap(model.subtitleLayout.frame(for: .tab("info")))
+        XCTAssertFalse(caption.intersects(info))
+        var paintedCard: UIImage?
+        let paintDeadline = ContinuousClock.now + .seconds(5)
+        repeat {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let recognition = VNRecognizeTextRequest()
+            recognition.recognitionLevel = .accurate
+            recognition.usesLanguageCorrection = false
+            recognition.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage), options: [:]).perform([recognition])
+            let words = (recognition.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            if words.localizedCaseInsensitiveContains("Info card fixture") {
+                paintedCard = image
+                break
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        } while ContinuousClock.now < paintDeadline
+        let image = try XCTUnwrap(paintedCard, "Capture must contain the actually painted Info card, not just its geometry")
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Caption clears the Info card, not invisible transport"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        model.controlBarVisible = false
+        model.controlsVisible = false
+        try await waitUntil { model.subtitleLayout.frames.isEmpty }
+        XCTAssertEqual(subtitles.style.verticalPosition, 0.06)
+    }
+
     func testRealTVTransportPublishesOnlyVisibleControlBounds() async throws {
         let scene = try await activeScene()
         let previous = scene.windows.first(where: \.isKeyWindow)

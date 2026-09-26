@@ -165,8 +165,10 @@ must not silently delay a native event stream. This preserves native timing
 while gaining the shared visual renderer instead of offering controls that fail
 after a seek.
 
-Visible bottom transport bounds are measured separately from the full-screen
-scrim. Only intersecting captions lift above those bounds: dialogue and dual
+Visible control pieces are measured separately from the full-screen scrim,
+hidden transport rows, and parked cards. Their rectangles remain separate, so
+a left-aligned Info pill does not lift a centered caption above empty space.
+Only intersecting captions lift above those bounds: dialogue and dual
 lanes move together, while bitmap and authored-position cues are checked at
 their own positions. Hiding the controls restores normal placement; style
 editing, previews, and saved position values are unchanged. The normal dialogue

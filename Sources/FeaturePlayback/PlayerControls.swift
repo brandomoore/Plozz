@@ -609,6 +609,10 @@ struct PlayerControls: View {
             VStack(alignment: .leading, spacing: 18) {
                 titleAndControlsRow
                 scrubberRow
+                    .reportSubtitleControlsFrame(
+                        in: model.subtitleLayout, region: .timeline,
+                        isVisible: model.controlsVisible && !chromeHidden && !infoMode
+                    )
                     // The transport steps aside for the Info card: faded in
                     // place rather than removed, so the tab and its card never
                     // shift as it goes.
@@ -655,6 +659,10 @@ struct PlayerControls: View {
             // reflows, so no part can arrive on its own clock. (Same approach as the
             // series-detail hero/browser reveal; see SeriesEpisodeBrowserLayout.)
             infoCard
+                .reportSubtitleControlsFrame(
+                    in: model.subtitleLayout, region: .card,
+                    isVisible: model.controlsVisible && !chromeHidden && infoMode
+                )
                 .plozzFocusSection()
                 // Widen the stack's 18pt gap to the cluster's bottom margin. That
                 // equality is load-bearing: it's what makes ONE offset put the
@@ -679,9 +687,6 @@ struct PlayerControls: View {
                 // card body. Narrowing the order to the entry's own target is the
                 // whole reason the engine can't overrule us (see `entryFocusTarget`).
                 .disabled(!infoMode || entryFocusTarget != nil)
-        }
-        .reportSubtitleControlsFrame(isVisible: model.controlsVisible && !chromeHidden) {
-            model.subtitleLayout.frame = $0
         }
         // THE reveal: the entire cluster — options slot, track controls, scrub bar,
         // tab and card — travels as one rigid unit. At rest it's parked far enough
@@ -782,6 +787,10 @@ struct PlayerControls: View {
     private var titleAndControlsRow: some View {
         HStack(alignment: .bottom, spacing: 32) {
             titleBlock
+                .reportSubtitleControlsFrame(
+                    in: model.subtitleLayout, region: .title,
+                    isVisible: model.controlsVisible && titleVisible && !chromeHidden && !infoMode
+                )
                 // Two separate reasons to hide, each on its own clock. Opening a MENU
                 // fades the title on the menus' curve (`titleVisible`); the Info
                 // reveal is a different motion and the title must travel with the
@@ -837,6 +846,10 @@ struct PlayerControls: View {
                 }
             }
         }
+        .reportSubtitleControlsFrame(
+            in: model.subtitleLayout, region: .trackControls,
+            isVisible: model.controlsVisible && !model.isScrubbing && !chromeHidden && !infoMode
+        )
         .opacity(model.isScrubbing ? 0 : 1)
         .offset(y: model.isScrubbing ? 8 : 0)
         .animation(Self.transportFadeAnimation(scrubbing: model.isScrubbing), value: model.isScrubbing)
@@ -1013,6 +1026,10 @@ struct PlayerControls: View {
                     .labelStyle(.titleOnly)
             }
             .buttonStyle(PlayerTabButtonStyle(focused: focus == .button(.info), selected: openPanel == .info))
+            .reportSubtitleControlsFrame(
+                in: model.subtitleLayout, region: .tab("info"),
+                isVisible: model.controlsVisible && !model.isScrubbing && !chromeHidden
+            )
             .focused($focus, equals: .button(.info))
             .disabled(!tabFocusable(.info))
             .onChange(of: focus) { _, slot in selectCardTab(focusedTo: slot) }
@@ -1028,6 +1045,10 @@ struct PlayerControls: View {
                         .labelStyle(.titleOnly)
                 }
                 .buttonStyle(PlayerTabButtonStyle(focused: focus == .button(.cast), selected: openPanel == .cast))
+                .reportSubtitleControlsFrame(
+                    in: model.subtitleLayout, region: .tab("cast"),
+                    isVisible: model.controlsVisible && !model.isScrubbing && !chromeHidden
+                )
                 .focused($focus, equals: .button(.cast))
                 .disabled(!tabFocusable(.cast))
             }
@@ -1163,6 +1184,9 @@ struct PlayerControls: View {
                     close: { openPanel = nil }, backRequest: panelBackRequest,
                     maximumHeight: max(0, availableHeight - Self.horizontalMargin
                         - (styleEditing ? Self.horizontalMargin : menuBottomInset))
+                )
+                .reportSubtitleControlsFrame(
+                    in: model.subtitleLayout, region: .menu, isVisible: model.controlsVisible && !styleEditing
                 )
                 // A fresh panel per menu, seeded from that menu's remembered height.
                 .id(panel)

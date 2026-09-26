@@ -532,9 +532,25 @@ final class SubtitleLineRenderingTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(original.first).maxY, try XCTUnwrap(lifted.first).maxY, accuracy: 1)
     }
 
+    func testSourcePositionedCenteredCaptionClearsCardWithoutFollowingTheLeftInfoPill() throws {
+        try registerFonts()
+        var style = SubtitleStyle.default
+        style.fontFamily = .system
+        let screen = CGSize(width: 960, height: 540)
+        let card = CGRect(x: 30, y: 410, width: 900, height: 130)
+        let tab = CGRect(x: 30, y: 335, width: 120, height: 60)
+        let frames = dialogueFrames(
+            style: style, primary: "A centered caption.", secondary: "", screen: screen,
+            primaryLayout: .init(alignment: .bottomCenter, anchor: CGPoint(x: 0.5, y: 0.95)),
+            controlsFrames: [card, tab]
+        )
+        XCTAssertEqual(try XCTUnwrap(frames.first).maxY,
+                       card.minY - SubtitleOverlayGeometry.controlsClearance, accuracy: 1)
+    }
+
     private func dialogueFrames(
         style: SubtitleStyle, primary: String, secondary: String, screen: CGSize,
-        controls: CGRect? = nil, primaryLayout: SubtitleCueLayout? = nil
+        controls: CGRect? = nil, primaryLayout: SubtitleCueLayout? = nil, controlsFrames: [CGRect] = []
     ) -> [CGRect] {
         let overlay = SubtitleOverlayView(
             primary: [.init(id: 0, start: 0, end: 10, body: .text(SubtitleText(primary, layout: primaryLayout)))],
@@ -544,7 +560,8 @@ final class SubtitleLineRenderingTests: XCTestCase {
             secondaryActive: style.secondary != nil,
             style: style,
             videoRect: CGRect(x: 0, y: 70, width: screen.width, height: screen.height - 140),
-            controlsFrame: controls
+            controlsFrame: controls,
+            controlsFrames: controlsFrames
         )
         let host = UIHostingController(rootView: overlay)
         host.safeAreaRegions = []

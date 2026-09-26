@@ -77,6 +77,7 @@ public struct PlayerTouchCardStrip: View {
             tabRow
             if let openPanel {
                 card(for: openPanel)
+                    .reportSubtitleControlsFrame(in: model.subtitleLayout, region: .card)
                     // Grows upward out of the tabs, matching tvOS. The card is
                     // laid out ABOVE its strip in the enclosing bottom-anchored
                     // stack, so a bottom anchor is what makes it read as opening
@@ -159,6 +160,7 @@ public struct PlayerTouchCardStrip: View {
             title
         }
         .buttonStyle(PlayerTabButtonStyle(focused: false, selected: openPanel == category))
+        .reportSubtitleControlsFrame(in: model.subtitleLayout, region: .tab(String(describing: category)))
         // Makes the whole pill tappable, including its padding.
         //
         // Without it only the glyph-sized label takes the tap and everything

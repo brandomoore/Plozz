@@ -3,6 +3,46 @@ import XCTest
 @testable import FeaturePlayback
 
 final class SubtitleOverlayGeometryTests: XCTestCase {
+    func testInfoPillAtTheLeftDoesNotRaiseCenteredTextAboveTheCardClearance() {
+        let bounds = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let caption = CGRect(x: 800, y: 950, width: 320, height: 70)
+        let card = CGRect(x: 60, y: 720, width: 1800, height: 320)
+        let info = CGRect(x: 60, y: 620, width: 140, height: 60)
+        for rectangles in [[info, card], [card, info]] {
+            let lift = SubtitleOverlayGeometry.upwardOffset(
+                for: caption, avoiding: rectangles, in: bounds, clearance: 24
+            )
+            XCTAssertEqual(caption.maxY + lift, card.minY - 24)
+        }
+    }
+
+    func testMovingAboveOneControlAlsoChecksControlsAtTheNewPosition() {
+        let bounds = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let caption = CGRect(x: 800, y: 950, width: 320, height: 70)
+        let lower = CGRect(x: 60, y: 900, width: 1800, height: 180)
+        let higher = CGRect(x: 700, y: 800, width: 500, height: 80)
+        for rectangles in [[higher, lower], [lower, higher]] {
+            let lift = SubtitleOverlayGeometry.upwardOffset(
+                for: caption, avoiding: rectangles, in: bounds, clearance: 24
+            )
+            XCTAssertEqual(caption.maxY + lift, higher.minY - 24)
+        }
+    }
+
+    @MainActor
+    func testRemovingAnOldRegionOwnerCannotClearItsReplacement() {
+        let layout = SubtitleControlsLayout()
+        let old = UUID(), current = UUID()
+        layout.setFrame(CGRect(x: 0, y: 700, width: 1000, height: 300), for: .card, owner: old)
+        let replacement = CGRect(x: 0, y: 750, width: 1000, height: 250)
+        layout.setFrame(replacement, for: .card, owner: current)
+        layout.setFrame(nil, for: .card, owner: old)
+        XCTAssertEqual(layout.frames, [replacement])
+        XCTAssertEqual(layout.frame(for: .card), replacement)
+        layout.setFrame(nil, for: .card, owner: current)
+        XCTAssertTrue(layout.frames.isEmpty)
+    }
+
     func testOnlyAnOverlappingSubtitleMovesAboveTheVisibleControls() {
         let bounds = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         let controls = CGRect(x: 60, y: 840, width: 1800, height: 240)

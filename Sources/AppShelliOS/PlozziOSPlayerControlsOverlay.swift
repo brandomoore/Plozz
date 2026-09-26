@@ -652,11 +652,13 @@ private struct PlozziOSPlayerTransport: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
+                .reportSubtitleControlsFrame(in: viewModel.controls.subtitleLayout, region: .title, isVisible: !isCardOpen)
 
                 Spacer(minLength: 12)
 
                 // Keep captions one tap away; secondary choices share one menu.
                 trackControls
+                    .reportSubtitleControlsFrame(in: viewModel.controls.subtitleLayout, region: .trackControls, isVisible: !isCardOpen)
             }
             .foregroundStyle(.white)
             .opacity(isCardOpen ? 0 : 1)
@@ -683,6 +685,7 @@ private struct PlozziOSPlayerTransport: View {
 
                 playbackTimeLabel("-\(playbackTime(max(viewModel.controls.duration - displayedSeconds, 0)))")
             }
+            .reportSubtitleControlsFrame(in: viewModel.controls.subtitleLayout, region: .timeline, isVisible: !isCardOpen)
             .opacity(isCardOpen ? 0 : 1)
             .allowsHitTesting(!isCardOpen)
 
@@ -707,7 +710,6 @@ private struct PlozziOSPlayerTransport: View {
             // button style until UIKit re-applied its own styling: the flash on
             // open. Each glyph now carries its own styling instead.
         }
-        .reportSubtitleControlsFrame { viewModel.controls.subtitleLayout.frame = $0 }
         .padding(.horizontal, 24)
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
