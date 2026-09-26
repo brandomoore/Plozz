@@ -107,6 +107,10 @@ public struct LeadingEdgeFadeMask: View {
 /// clipped focused cards at the row's left and right bounds despite drawing no fade.
 /// Branching in this dedicated view means native content receives no mask at all,
 /// while pinned-sidebar content keeps the exact safe-area + feather treatment.
+///
+/// `verticalOverhang` is the room the row reserves for a focused card's lift and
+/// shadow. It also sets how far short of the gutter the feather stops, since the
+/// same lift reaches back into the gutter from a card parked at its edge.
 public struct PinnedSidebarLeadingFade<Content: View>: View {
     private let isActive: Bool
     private let inset: CGFloat
@@ -133,8 +137,13 @@ public struct PinnedSidebarLeadingFade<Content: View>: View {
         if isActive {
             content
                 .safeAreaPadding(.leading, inset)
+                // The first card parks right at the gutter's inner edge, and
+                // focus grows it back across that edge. Ending the feather that
+                // much short of the edge leaves a focused first card and its
+                // shadow whole; cards scrolling out still dissolve before they
+                // pass under the sidebar.
                 .leadingEdgeFadeMask(
-                    fadeWidth: inset,
+                    fadeWidth: max(0, inset - verticalOverhang),
                     verticalOverhang: verticalOverhang,
                     horizontalOverhang: verticalOverhang
                 )

@@ -45,7 +45,7 @@ enum FocusHeroLayout {
     /// A backdrop's own shape. The art is sized to it rather than cropped to the
     /// screen, so the whole picture shows above the rows.
     static let artAspectRatio: CGFloat = 16.0 / 9.0
-    /// How far the art reaches past the tallest row's title. Its bottom fade is
+    /// How far the art reaches past the pinned row's title. Its bottom fade is
     /// all but transparent by then, so it meets the row without touching it.
     static let artOverhang: CGFloat = 24
     /// The soft edge above the pinned row's title. Narrower than the gap between
@@ -56,10 +56,6 @@ enum FocusHeroLayout {
     /// Clear space between the hero's last line and the pinned row's title.
     static let columnGap: CGFloat = 40
     static let columnTop: CGFloat = 56
-    /// The leading margin the classic Home's scroll view gives its content. The
-    /// rail publishes its inset on top of this rather than insetting the page, so
-    /// without a scroll view here the margin has to be applied by hand.
-    static let horizontalMargin: CGFloat = 80
     /// Smaller than the carousel's wordmark box: the column above a pinned poster
     /// row is short, and the description needs its lines more than the logo needs
     /// the extra size.
@@ -300,7 +296,6 @@ private struct FocusHeroRowStack<RowContent: View>: View {
             }
         }
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.leading, FocusHeroLayout.horizontalMargin)
         .focusScope(focusScope)
     }
 
@@ -377,11 +372,17 @@ private struct FocusHeroBackdropLayer: View {
     @Environment(\.plozzMetrics) private var metrics
 
     var body: some View {
-        // The art fills the space above the rows at a backdrop's own shape,
-        // rather than the whole screen, so none of it is cropped away behind
-        // the rows. It fades out just above the tallest row's title.
-        let height = model.slotTop(in: rows, rowSpacing: metrics.rowSpacing)
-            + FocusHeroLayout.artOverhang
+        // The art fills the space above the pinned row at a backdrop's own shape,
+        // rather than the whole screen, so none of it is cropped away behind the
+        // rows. It is laid out once at the size a shortest pinned row leaves room
+        // for and scaled down for taller rows: a transform the row spring carries,
+        // where a changing frame would re-lay out the image on every move.
+        let bottom = FocusHeroLayout.rowsBottom(rowSpacing: metrics.rowSpacing)
+        let heights = rows.compactMap { model.rowHeights[$0.id] }
+        let largest = heights.min().map { bottom - $0 } ?? FocusHeroLayout.lowestSlotTop
+        let height = largest + FocusHeroLayout.artOverhang
+        let pinned = bottom - model.activeHeight(in: rows) + FocusHeroLayout.artOverhang
+        let scale = heights.isEmpty ? 1 : min(1, max(0, pinned / height))
         let width = min(FocusHeroLayout.screenWidth, height * FocusHeroLayout.artAspectRatio)
         if let subject = model.subject {
             HomeHeroBackdrop(
@@ -396,6 +397,7 @@ private struct FocusHeroBackdropLayer: View {
                 transition: transition == .slide ? .wipe : .crossfade,
                 scrimStyle: .browse
             )
+            .scaleEffect(scale, anchor: .topTrailing)
             .allowsHitTesting(false)
         }
     }
@@ -436,7 +438,8 @@ private struct FocusHeroColumn: View {
         .frame(width: FocusHeroLayout.columnWidth, alignment: .bottomLeading)
         .frame(height: max(0, slotTop - FocusHeroLayout.columnGap - top), alignment: .bottomLeading)
         .padding(.top, top)
-        .padding(.leading, FocusHeroLayout.horizontalMargin + navigationContentInset)
+        // The TV's safe area and the rail's inset, exactly as the classic hero.
+        .padding(.leading, PlozzTheme.Metrics.heroLeadingPadding + navigationContentInset)
         .allowsHitTesting(false)
         .task(id: schedules.fetchKey(for: model.subject?.item)) {
             guard let item = model.subject?.item else { return }
@@ -563,8 +566,10 @@ struct FocusHeroSkeletonView: View {
                 onSelect: { _ in }
             )
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { firstRowHeight = $0 }
+            // A blank title keeps the peek at the real next row's height; its
+            // name isn't known until the rows arrive.
             MediaRowView(
-                title: nil,
+                title: Text(verbatim: " "),
                 items: [],
                 style: .poster,
                 loadingPlaceholderCount: Self.fallbackCount,
@@ -572,7 +577,6 @@ struct FocusHeroSkeletonView: View {
             )
         }
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.leading, FocusHeroLayout.horizontalMargin)
         // The first placeholder's bottom sits on the shared row line, where the
         // real Continue Watching cards will.
         .offset(y: bottom - firstRowHeight)
