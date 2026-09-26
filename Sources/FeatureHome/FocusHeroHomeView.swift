@@ -43,7 +43,15 @@ enum FocusHeroLayout {
     static let measurementTolerance: CGFloat = 0.5
     /// Clear space between the hero's last line and the pinned row's title.
     static let columnGap: CGFloat = 40
-    static let columnTop: CGFloat = 70
+    static let columnTop: CGFloat = 56
+    /// The leading margin the classic Home's scroll view gives its content. The
+    /// rail publishes its inset on top of this rather than insetting the page, so
+    /// without a scroll view here the margin has to be applied by hand.
+    static let horizontalMargin: CGFloat = 80
+    /// Smaller than the carousel's wordmark box: the column above a pinned poster
+    /// row is short, and the description needs its lines more than the logo needs
+    /// the extra size.
+    static let logoBox = CGSize(width: 440, height: 124)
     /// With the top tab bar the column starts below it: nothing scrolls here, so
     /// the bar never tucks away the way it does over the carousel.
     static let columnTopUnderTabBar: CGFloat = 150
@@ -187,7 +195,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
         .frame(width: FocusHeroLayout.columnWidth, alignment: .bottomLeading)
         .frame(height: max(0, pinnedY - FocusHeroLayout.columnGap - columnTop), alignment: .bottomLeading)
         .padding(.top, columnTop)
-        .padding(.leading, PlozzTheme.Metrics.heroLeadingPadding + navigationContentInset)
+        .padding(.leading, FocusHeroLayout.horizontalMargin + navigationContentInset)
         .allowsHitTesting(false)
     }
 
@@ -223,8 +231,8 @@ struct FocusHeroHomeView<RowContent: View>: View {
                 references: item.artworkReferences(for: .logo),
                 asyncFallbackURL: HomeHeroArtwork.logoFallback(for: item),
                 backgroundSample: HomeHeroArtwork.backgroundSample(for: item, references: references),
-                maxWidth: HeroLogoLayout.box.width,
-                maxHeight: HeroLogoLayout.box.height,
+                maxWidth: FocusHeroLayout.logoBox.width,
+                maxHeight: FocusHeroLayout.logoBox.height,
                 presentationPolicy: .onArrival(maximumWait: 0.25)
             ) {
                 title(for: item, hideText: hideText)
@@ -233,7 +241,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
                     .minimumScaleFactor(0.5)
                     .multilineTextAlignment(.leading)
             }
-            .padding(.bottom, 14)
+            .padding(.bottom, 6)
 
             HeroMetadataLine(item: item)
                 .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
@@ -292,6 +300,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, FocusHeroLayout.horizontalMargin)
                 .offset(y: pinnedY - top(ofRowAt: activeIndex))
                 .focusScope(focusScope)
             }
