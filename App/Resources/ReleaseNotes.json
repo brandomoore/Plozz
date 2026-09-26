@@ -2,6 +2,57 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/043",
+      "version": "2026.9.25",
+      "build": 43,
+      "releasedAt": "2026-09-25",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Customize subtitles from Settings with live previews, system fonts, and an HDR10 scene for checking subtitle brightness. Live TV can share your profile's style or use its own.",
+            {
+              "text": "Open subtitle previews full screen.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Use supported remotes' Guide button to open Live TV or its in-player guide.",
+              "platforms": ["tvOS"]
+            },
+            "Set separate skip behavior for intros, credits, recaps, previews, and commercials. New profiles show Skip buttons by default; existing skip choices are kept.",
+            "Community markers from IntroDB and TheIntroDB fill gaps in server markers. They are enabled by default and can be turned off in Settings.",
+            "Support for M3U channel links with their own User-Agent or Referer."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "More consistent text-subtitle styling across playback engines, with supported file formatting, 20-400% text sizes in 1% steps, and placement that stays clear of player controls.",
+            "System subtitle styling follows each device's own appearance settings. New profiles use it by default; existing custom styles are preserved, and each profile keeps its own preferences.",
+            "Live TV now has movie-style playback controls, Audio and Subtitles menus, program information, On Now, and an in-player guide, plus settings for previews after watching and recently watched channels. Live TV remains experimental.",
+            {
+              "text": "A denser iPhone/iPad Live TV guide with synchronized timeline scrolling, clearer channel logos, and tap-to-preview program details before watching.",
+              "platforms": ["iOS"]
+            },
+            "Improved text-subtitle delivery and track switching during Plex transcoding."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Returning after switching apps restores the saved playback position instead of jumping back to the beginning.",
+            "Corrected HTTP connections that could be blocked despite allowing unencrypted servers and streams.",
+            "Playback Info follows the active player and shows separate player and engine buffers instead of missing or misleading measurements.",
+            "Live TV no longer briefly shows empty-source setup while channels are still loading.",
+            {
+              "text": "Live TV stays in place during pinned-navigation focus changes, and scrolling navigation labels fade cleanly at the list edges.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/042",
       "version": "2026.9.23",
       "build": 42,

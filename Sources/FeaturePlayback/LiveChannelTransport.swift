@@ -331,7 +331,7 @@ struct LiveChannelOverlay: View {
             titleBlock
                 .reportSubtitleControlsFrame(
                     in: tracks.subtitles.controlsLayout, region: .title,
-                    isVisible: openMenu == nil && !cardOpen && !styleEditing
+                    isVisible: !cardOpen && !styleEditing
                 )
                 .opacity(openMenu == nil && !cardOpen ? 1 : 0)
                 .animation(.easeInOut(duration: 0.28), value: openMenu == nil)
@@ -1219,7 +1219,7 @@ extension LiveChannelOverlay {
         .shadow(color: .black.opacity(0.4), radius: 4, y: 1)
         .reportSubtitleControlsFrame(
             in: tracks.subtitles.controlsLayout, region: .title,
-            isVisible: !cardOpen && (openMenu == nil || menuHangsBelowBadges)
+            isVisible: !cardOpen
         )
         .frame(maxWidth: .infinity, alignment: .leading)
         // Hidden under an open track menu when it rises over it; stood up the

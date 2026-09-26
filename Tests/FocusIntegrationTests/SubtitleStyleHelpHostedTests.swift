@@ -29,10 +29,10 @@ final class SubtitleStyleHelpHostedTests: XCTestCase {
         try await waitUntil { model.focused == 0 && self.focusFrame(in: window) != nil }
         var observations = try recognize(window)
         let toggle = try XCTUnwrap(observations.first {
-            $0.topCandidates(1).first?.string.contains("Use System Caption Style") == true
+            $0.topCandidates(1).first?.string.contains("Use System Subtitle Style") == true
         })
         let help = try XCTUnwrap(observations.first {
-            $0.topCandidates(1).first?.string.contains("Matching shows") == true
+            $0.topCandidates(1).first?.string.contains("Matches the subtitle style") == true
         })
         XCTAssertLessThan(help.boundingBox.maxY, toggle.boundingBox.minY)
         XCTAssertLessThan(toggle.boundingBox.minY - help.boundingBox.maxY, 0.08)
@@ -43,7 +43,7 @@ final class SubtitleStyleHelpHostedTests: XCTestCase {
         window.layoutIfNeeded()
         observations = try recognize(window)
         XCTAssertFalse(observations.contains {
-            $0.topCandidates(1).first?.string.contains("Matching shows") == true
+            $0.topCandidates(1).first?.string.contains("Matches the subtitle style") == true
         })
         let font = try XCTUnwrap(observations.first { $0.topCandidates(1).first?.string == "Font" })
         let center = CGPoint(x: font.boundingBox.midX * window.bounds.width,

@@ -3,6 +3,40 @@ import XCTest
 
 @MainActor
 final class SubtitleStylePreferencesTests: XCTestCase {
+    func testSystemStyleChoiceAndCustomStyleTransferOnlyToTheSameProfile() throws {
+        let sourceName = "SubtitleProfileSource.\(UUID().uuidString)"
+        let targetName = "SubtitleProfileTarget.\(UUID().uuidString)"
+        let source = try XCTUnwrap(UserDefaults(suiteName: sourceName))
+        let target = try XCTUnwrap(UserDefaults(suiteName: targetName))
+        defer {
+            source.removePersistentDomain(forName: sourceName)
+            target.removePersistentDomain(forName: targetName)
+        }
+        var otherStyle = SubtitleStyle.default
+        otherStyle.fontFamily = .fredoka
+        otherStyle.fontScale = 1.6
+        let other = SubtitleStylePreferences(base: otherStyle)
+        let sourceOther = SubtitleStyleStore(defaults: source, namespace: "profile-b")
+        let targetOther = SubtitleStyleStore(defaults: target, namespace: "profile-b")
+        sourceOther.save(other)
+        targetOther.save(other)
+        let defaultBefore = SubtitleStyleStore(defaults: source).load()
+        let store = SubtitleStyleStore(defaults: source, namespace: "profile-a")
+        let model = SubtitleStyleModel(store: store)
+        for followsSystem in [false, true] {
+            model.style.followsSystemStyle = followsSystem
+            model.style.fontScale = 1.25
+            let settings = ProfileSettingsTransfer.capture(namespace: "profile-a", defaults: source)
+            ProfileSettingsTransfer.apply(settings, namespace: "profile-a", defaults: target)
+            let received = SubtitleStyleStore(defaults: target, namespace: "profile-a").load()
+            XCTAssertEqual(received.base.followsSystemStyle, followsSystem)
+            XCTAssertEqual(received.base.fontScale, 1.25)
+            XCTAssertEqual(sourceOther.load(), other)
+            XCTAssertEqual(targetOther.load(), other)
+            XCTAssertEqual(SubtitleStyleStore(defaults: source).load(), defaultBefore)
+        }
+    }
+
     func testLegacyLiveStyleMigratesOnceWithoutOverwritingCanonicalChoices() throws {
         let name = "LegacyLiveStyle.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

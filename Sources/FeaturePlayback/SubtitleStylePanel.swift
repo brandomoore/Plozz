@@ -109,7 +109,7 @@ struct SubtitleStylePanel: View {
                 styleRow(row)
                 if screen == .style, row.slot == 0 {
                     if focus == .row(0) {
-                        Text("Matching shows your device’s caption appearance. Editing a value keeps this look and turns system matching off.")
+                        Text("Matches the subtitle style set on this Apple TV.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -122,7 +122,7 @@ struct SubtitleStylePanel: View {
                 }
             }
             if screen == .styleBackground {
-                Text("Window padding is set by Plozz. Apple does not expose caption padding or line spacing.")
+                Text("Window padding is set by Plozz. Apple does not expose subtitle padding or line spacing.")
                     .font(.footnote).playerMenuRowSecondary().padding(16)
             } else if screen == .styleOutline {
                 Text("Apple supplies the text edge style, including Uniform Outline, but not its color or thickness. Those are Plozz rendering values.")
@@ -247,7 +247,7 @@ struct SubtitleStylePanel: View {
         var rows: [StyleRowSpec] = []
         var slot = 0
 
-        rows.append(StyleRowSpec(slot: slot, title: "Use System Caption Style", kind: .toggle(
+        rows.append(StyleRowSpec(slot: slot, title: "Use System Subtitle Style", kind: .toggle(
             isOn: s.followsSystemStyle,
             flip: {
                 systemStyleConfirmation.request(!s.followsSystemStyle, currentlyMatching: s.followsSystemStyle) { enabled in

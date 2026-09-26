@@ -241,7 +241,7 @@ final class PlayerOptionsPanelIntegrationTests: XCTestCase {
             }
             let rows = try XCTUnwrap(captured)
             XCTAssertEqual(rows.map(\.slot), Array(0..<rows.count))
-            XCTAssertEqual(rows.first?.title, LocalizedStringResource("Use System Caption Style"))
+            XCTAssertEqual(rows.first?.title, LocalizedStringResource("Use System Subtitle Style"))
             XCTAssertFalse(rows.contains { $0.title == LocalizedStringResource("Use File Positions") })
             XCTAssertFalse(rows.contains { $0.title == LocalizedStringResource("Use File Colors") })
             XCTAssertFalse(rows.contains { $0.title == LocalizedStringResource("Use Bold and Italic") })

@@ -113,6 +113,60 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
     }
 
     #if os(tvOS)
+    func testSubtitleMenuKeepsTheNormalTitleClearanceWhenItsTitleFades() async throws {
+        let normal = try await captionPosition(with: nil)
+        let menu = try await captionPosition(with: .subtitleTracks)
+        XCTAssertEqual(menu.minY, normal.minY, accuracy: 1)
+        XCTAssertEqual(menu.size, normal.size)
+    }
+
+    private func captionPosition(with panel: PlayerScreenshotHook.Panel?) async throws -> CGRect {
+        let scene = try await activeScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let subtitles = LiveSubtitleModel()
+        subtitles.style.fontFamily = .system
+        subtitles.style.followsSystemStyle = false
+        subtitles.loadPrimary(SubtitleCueParser.parse("WEBVTT\n\n00:00:00.000 --> 00:01:00.000\nStay here.\n", id: 1))
+        subtitles.tick(1)
+        let model = PlayerControlsModel()
+        model.controlsVisible = true
+        model.title = "A long title that reserves the normal subtitle clearance across the middle of the player"
+        model.subtitleOptions = [
+            .init(id: PlayerTrackOption.offID, title: Text("Off"), isSelected: false),
+            .init(id: 1, title: Text("English"), isSelected: true)
+        ]
+        PlayerScreenshotHook.pendingPanel = panel
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: ZStack {
+            LiveSubtitleOverlay(model: subtitles, controls: model)
+            PlayerControls(model: model, palette: .dark, actions: PlayerOptionsActions(), onExitToSurface: {})
+        }.transaction {
+            $0.disablesAnimations = true
+            $0.animation = nil
+        })
+        host.safeAreaRegions = []
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            PlayerScreenshotHook.pendingPanel = nil
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitUntil {
+            window.layoutIfNeeded()
+            return model.subtitleLayout.frame(for: .title) != nil
+                && !self.frames(in: host.view, relativeTo: window).isEmpty
+                && (panel == nil || (model.isPanelOpen && model.subtitleLayout.frame(for: .menu) != nil))
+        }
+        let caption = try XCTUnwrap(frames(in: host.view, relativeTo: window).first)
+        if panel != nil {
+            let panelFrame = try XCTUnwrap(model.subtitleLayout.frame(for: .menu))
+            XCTAssertFalse(caption.intersects(panelFrame), "This fixture compares an unobstructed caption")
+        }
+        return caption
+    }
+
     func testInfoEntryKeepsCenteredCaptionsJustAboveTheVisibleCard() async throws {
         let scene = try await activeScene()
         let previous = scene.windows.first(where: \.isKeyWindow)

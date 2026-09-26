@@ -14,7 +14,7 @@ public struct MobileSubtitleStyleEditor: View {
         Form {
             Section {
                 Toggle(
-                    "Use System Caption Style",
+                    "Use System Subtitle Style",
                     isOn: Binding(
                         get: { viewModel.controls.subtitleStyle.followsSystemStyle },
                         set: { enabled in
@@ -25,7 +25,7 @@ public struct MobileSubtitleStyleEditor: View {
                     )
                 )
             } footer: {
-                Text("Matching shows the current values from Settings › Accessibility › Subtitles & Captioning. Editing a value keeps this appearance and turns matching off.")
+                Text("Matches the subtitle style set on this device.")
             }
 
             Section("Text") {
@@ -378,7 +378,7 @@ private struct MobileSubtitleBackgroundView: View {
                 } header: {
                     Text("Window")
                 } footer: {
-                    Text("Window padding is set by Plozz. Apple does not expose caption padding or line spacing.")
+                    Text("Window padding is set by Plozz. Apple does not expose subtitle padding or line spacing.")
                 }
             Section("Line Background") {
                 subtitleColorPicker("Color", viewModel: viewModel, keyPath: \.glyphBackground, options: SubtitleColor.presets)

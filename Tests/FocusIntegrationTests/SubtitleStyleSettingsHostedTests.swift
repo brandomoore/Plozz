@@ -68,14 +68,14 @@ final class SubtitleStyleSettingsHostedTests: XCTestCase {
             text.recognitionLanguages = ["en-US"]
             try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([text])
             let strings = (text.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-            XCTAssertTrue(strings.contains { $0.contains("Use System Caption Style") }, strings.joined(separator: "\n"))
+            XCTAssertTrue(strings.contains { $0.contains("Use System Subtitle Style") }, strings.joined(separator: "\n"))
             XCTAssertTrue(strings.contains { $0.contains("Preview") }, strings.joined(separator: "\n"))
             XCTAssertTrue(strings.contains { $0.contains("Text Size") }, "Matching must not hide size controls.")
             XCTAssertTrue(strings.contains { $0.contains("Weight") }, "Matching must not hide font controls.")
             XCTAssertTrue(strings.contains { $0.contains("almost there") || $0.contains("train leaves") },
                           "The preview must draw actual subtitle glyphs.")
             let selected = try XCTUnwrap(text.results?.first {
-                $0.topCandidates(1).first?.string.contains("Use System Caption Style") == true
+                $0.topCandidates(1).first?.string.contains("Use System Subtitle Style") == true
             })
             let center = CGPoint(x: selected.boundingBox.midX * window.bounds.width,
                                  y: (1 - selected.boundingBox.midY) * window.bounds.height)

@@ -406,7 +406,7 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
 
     // MARK: Behaviour
 
-    /// "Use System Caption Style": draw subtitles in the caption style set for
+    /// "Use System Subtitle Style": draw subtitles in the style set for
     /// the whole device (Settings › Accessibility › Subtitles & Captioning). The
     /// device decides the typeface, size, colours, box and edge, for every
     /// engine using the owned overlay; source formatting follows the system's

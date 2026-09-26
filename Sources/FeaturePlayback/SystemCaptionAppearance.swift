@@ -11,7 +11,7 @@ import UIKit
 
 /// The caption look set for the whole device (Settings › Accessibility ›
 /// Subtitles & Captioning), as the parts of a ``SubtitleStyle`` it decides.
-/// "Use System Caption Style" draws Plozz's own subtitles with it, so the
+/// "Use System Subtitle Style" draws Plozz's own subtitles with it, so the
 /// device style applies to every title drawn by the owned overlay. Apple does
 /// not expose its native point-size baseline, padding, line spacing, edge color
 /// or edge dimensions; those remain renderer-defined, not sampled system values.

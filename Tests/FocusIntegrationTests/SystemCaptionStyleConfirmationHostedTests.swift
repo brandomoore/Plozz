@@ -33,7 +33,7 @@ final class SystemCaptionStyleConfirmationHostedTests: XCTestCase {
         confirmation.request(true, currentlyMatching: false) { style.followsSystemStyle = $0 }
         try await waitUntil { host.presentedViewController is UIAlertController }
         let alert = try XCTUnwrap(host.presentedViewController as? UIAlertController)
-        XCTAssertEqual(alert.message, "This will overwrite your custom subtitle appearance with your device's system caption settings.")
+        XCTAssertEqual(alert.message, "This will replace your custom subtitle style with your device's system subtitle style.")
         XCTAssertTrue(alert.actions.contains { $0.title == "Cancel" && $0.style == .cancel })
         XCTAssertTrue(alert.actions.contains { $0.title == "Use System Style" })
         XCTAssertEqual(style, original)

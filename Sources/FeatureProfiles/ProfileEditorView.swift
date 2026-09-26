@@ -378,7 +378,7 @@ public struct ProfileEditorView: View {
             Button("Delete Profile", role: .destructive) { onDelete?() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Deleting removes this profile's preferences (theme, captions, spoilers, Trakt) and which servers it includes. Signed-in server accounts stay in the household pool.")
+            Text("Deleting removes this profile's preferences (theme, subtitles, spoilers, Trakt) and which servers it includes. Signed-in server accounts stay in the household pool.")
         }
     }
 
@@ -1127,7 +1127,7 @@ extension ProfileEditorView {
             Button("Delete Profile", role: .destructive) { onDelete?() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Deleting removes this profile's preferences (theme, captions, spoilers, Trakt) and which servers it includes. Signed-in server accounts stay in the household pool.")
+            Text("Deleting removes this profile's preferences (theme, subtitles, spoilers, Trakt) and which servers it includes. Signed-in server accounts stay in the household pool.")
         }
     }
 }

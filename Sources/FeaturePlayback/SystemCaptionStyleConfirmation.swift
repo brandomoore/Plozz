@@ -35,11 +35,11 @@ struct SystemCaptionStyleConfirmationDialog: ViewModifier {
     let apply: (Bool) -> Void
 
     func body(content: Content) -> some View {
-        content.alert("Use System Caption Style?", isPresented: $confirmation.isPresented) {
+        content.alert("Use System Subtitle Style?", isPresented: $confirmation.isPresented) {
             Button("Cancel", role: .cancel) { confirmation.cancel() }
             Button("Use System Style", role: .destructive) { confirmation.confirm(apply: apply) }
         } message: {
-            Text("This will overwrite your custom subtitle appearance with your device's system caption settings.")
+            Text("This will replace your custom subtitle style with your device's system subtitle style.")
         }
     }
 }

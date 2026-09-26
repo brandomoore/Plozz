@@ -82,7 +82,7 @@ path. None of these diagnostics change the audio selection policy.
 
 ## Subtitle appearance
 
-`Use System Caption Style` reads the device's caption appearance through
+`Use System Subtitle Style` reads this device's subtitle appearance through
 MediaAccessibility and applies it to Plozz's text overlay, including Plozzigen
 playback. The actual system typeface is retained even when it is not in Plozz's
 font picker, including descriptor features such as small capitals. Text-line
@@ -91,6 +91,9 @@ also retains its corner radius. System appearance changes and foreground return
 refresh the overlay. All appearance controls remain visible and show effective
 system values. The first real edit freezes that complete appearance into the
 profile, applies the edit, and switches matching off; a no-op edit does not.
+The toggle and custom appearance remain profile-scoped and sync only with that
+same profile. Matching resolves against each device's own system settings; it
+does not copy one device's accessibility appearance to another profile/device.
 Turning matching back on resumes the current device settings. New/default styles
 start with matching enabled, while persisted choices and legacy custom migration
 retain their existing behavior.
@@ -166,11 +169,14 @@ while gaining the shared visual renderer instead of offering controls that fail
 after a seek.
 
 Visible control pieces are measured separately from the full-screen scrim,
-hidden transport rows, and parked cards. Their rectangles remain separate, so
+hidden Info/Cast transport rows, and parked cards. Their rectangles remain separate, so
 a left-aligned Info pill does not lift a centered caption above empty space.
 Only intersecting captions lift above those bounds: dialogue and dual
 lanes move together, while bitmap and authored-position cues are checked at
-their own positions. Hiding the controls restores normal placement; style
+their own positions. Ordinary track menus retain the normal title clearance
+while the title fades, preventing subtitles from dropping into its empty space.
+Info/Cast and full appearance editing release that reserved clearance.
+Hiding the controls restores normal placement; style
 editing, previews, and saved position values are unchanged. The normal dialogue
 percentage remains screen-relative. Captions already encoded into video pixels
 cannot be repositioned.

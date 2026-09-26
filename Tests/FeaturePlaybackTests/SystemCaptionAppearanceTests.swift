@@ -10,7 +10,7 @@ import XCTest
 
 @testable import FeaturePlayback
 
-/// "Use System Caption Style" draws Plozz's subtitles in the device's caption
+/// "Use System Subtitle Style" draws Plozz's subtitles in the device's
 /// look: the device decides how text looks, Plozz still decides where it sits.
 @MainActor
 final class SystemCaptionAppearanceTests: XCTestCase {

@@ -346,10 +346,11 @@ struct PlayerControls: View {
                 model.controlsVisible = true
                 model.isPanelOpen = true
                 openPanel = .version
-            case .subtitleStyle:
+            case .subtitleStyle, .subtitleTracks:
                 model.controlsVisible = true
                 model.isPanelOpen = true
                 openPanel = .subtitles
+                guard panel == .subtitleStyle else { return }
                 // A turn later, because opening a panel resets the subtitle
                 // sub-screen to the track list — setting both together lands the
                 // reset *after* the write and photographs the track list.
@@ -789,8 +790,10 @@ struct PlayerControls: View {
             titleBlock
                 .reportSubtitleControlsFrame(
                     in: model.subtitleLayout, region: .title,
-                    isVisible: model.controlsVisible && titleVisible && !chromeHidden && !infoMode
+                    isVisible: model.controlsVisible && !chromeHidden && !infoMode
                 )
+                // Ordinary menus fade this row without changing its clearance.
+                // Info/Cast and the style editor release it explicitly.
                 // Two separate reasons to hide, each on its own clock. Opening a MENU
                 // fades the title on the menus' curve (`titleVisible`); the Info
                 // reveal is a different motion and the title must travel with the
