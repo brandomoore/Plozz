@@ -1376,16 +1376,6 @@ public struct HomeView: View {
     }
 
     @ViewBuilder
-    private func focusHeroSkeleton(continueWatchingCount: Int) -> some View {
-        #if os(tvOS)
-        FocusHeroSkeletonView(
-            continueWatchingCount: continueWatchingCount,
-            continueWatchingShowsSeriesArtwork: visibility.continueWatchingShowsSeriesArtwork
-        )
-        #endif
-    }
-
-    @ViewBuilder
     private func focusHeroHome(
         rows: [HomeRow],
         content: HomeViewModel.Content,
