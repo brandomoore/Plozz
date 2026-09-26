@@ -23,6 +23,11 @@ struct PrototypePreviewLayout {
     /// The gap between the info bar, the toolbar and the guide.
     var sectionGap: CGFloat { short ? PrototypeLayout.smallGap : PrototypeLayout.sectionGap }
 
+    var heroArtworkSize: CGSize {
+        let height = min(heroHeight - PrototypeLayout.smallGap, compact ? 92 : 220)
+        return CGSize(width: (height * 16 / 9).rounded(), height: height.rounded())
+    }
+
     var sidebarWidth: CGFloat {
         guard contentFrame.width >= 960,
               contentFrame.height - heroHeight - PrototypeLayout.sectionGap >= 420 else { return 0 }
@@ -69,8 +74,9 @@ struct PrototypePreviewLayout {
         compact = bounds.width < 650
         #if os(tvOS)
         let side: CGFloat = 32
-        // The pinned rail's published inset is additional to the title-safe area.
-        let leading = navigationInset > 0 ? max(side + PrototypeLayout.inset, safeAreaInsets.leading) : side
+        // The rail and guide share physical-screen coordinates. Title-safe insets
+        // can change during mounting and must not move or resize the pinned guide.
+        let leading = side + (navigationInset > 0 ? PrototypeLayout.inset : 0)
         let top = max(32, safeAreaInsets.top)
         let bottom: CGFloat = 20
         guideSideBleed = 0
@@ -174,12 +180,15 @@ struct PrototypePreviewHero: View {
     let layout: PrototypePreviewLayout
     let watch: () -> Void
     var watchTitle: LocalizedStringResource?
+    var isLoading = false
     @Environment(\.themePalette) private var palette
     @Environment(\.locale) private var locale
 
     var body: some View {
         Group {
-            if let channel {
+            if isLoading {
+                PrototypePreviewHeroSkeleton(layout: layout)
+            } else if let channel {
                 if layout.compact {
                     compactBar(channel)
                 } else if layout.short {
@@ -214,6 +223,9 @@ struct PrototypePreviewHero: View {
         }
         .frame(width: layout.contentFrame.width, height: layout.heroHeight, alignment: .bottomLeading)
         .clipped()
+        #if DEBUG
+        .modifier(PrototypeHeroLayoutObservation(phase: isLoading ? "loading" : "content"))
+        #endif
     }
 
     /// The TV's info bar squeezed into a phone's landscape strip: art, then
@@ -235,8 +247,7 @@ struct PrototypePreviewHero: View {
     }
 
     private var artSize: CGSize {
-        let height = min(layout.heroHeight - PrototypeLayout.smallGap, layout.compact ? 92 : 220)
-        return CGSize(width: (height * 16 / 9).rounded(), height: height.rounded())
+        layout.heroArtworkSize
     }
 
     private var watchButton: some View {

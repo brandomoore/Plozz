@@ -120,6 +120,10 @@ enum PrototypeLayout {
         usesCompactRows(width) ? compactStationWidth : stationColumnWidth
     }
 
+    static func rowHeight(for width: CGFloat, scaledHeight: CGFloat) -> CGFloat {
+        usesCompactRows(width) ? scaledHeight * compactRowHeight / rowHeight : scaledHeight
+    }
+
     static func timelineWidth(for width: CGFloat) -> CGFloat {
         max(1, width - stationWidth(for: width) - columnGap)
     }

@@ -920,7 +920,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @ViewBuilder
     private func guideContent(_ layout: PrototypePreviewLayout, canvasWidth: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
-            if let sources, !sources.hasLoaded || sourceApplicationFailed {
+            if let sources, (!sources.hasLoaded && sources.loadIssue != nil) || sourceApplicationFailed {
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: canvasWidth) {
                     LiveTVSourceLoadState(
                         issue: sources.loadIssue,
@@ -928,14 +928,20 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         retry: { loadedRequest = nil; reloadRequest &+= 1 }
                     )
                 }
+            } else if isInitialCatalogLoading || sources?.hasLoaded == false {
+                catalogGuideContent(layout, canvasWidth: canvasWidth)
             } else if model.channels.isEmpty, let automaticChannels,
-                      automaticChannels.needsEmptyState, canManageLibraryChannels {
+                      automaticChannels.needsEmptyState, canManageLibraryChannels,
+                      automaticChannels.isWorking || !isInitialCatalogLoading {
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: canvasWidth) {
                     LiveTVAutomaticChannelsEmptyView(state: automaticChannels) {
                         managesLibraryChannels = true
                         sheet = .sources
                     }
                 }
+            } else if model.channels.isEmpty,
+                      isInitialCatalogLoading || libraryIssue != nil || libraryGuideIssue != nil {
+                catalogGuideContent(layout, canvasWidth: canvasWidth)
             } else if model.channels.isEmpty, blockedPlaylistCount > 0 {
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: canvasWidth) {
                     ContentUnavailableView {
@@ -1111,6 +1117,19 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         libraryService != nil && libraryHistory != nil
     }
 
+    private var isInitialCatalogLoading: Bool {
+        guard model.channels.isEmpty else { return false }
+        // An empty saved source list is not final while enrollment or library
+        // hydration/publication can still supply channels.
+        if loadedRequest != reloadRequest || imports.catalogPhase == .loading
+            || automaticChannels?.isWorking == true {
+            return true
+        }
+        guard libraryIssue == nil, libraryGuideIssue == nil,
+              let catalog = libraryCatalogRevision else { return false }
+        return !catalog.isLoaded || !catalog.channels.isEmpty
+    }
+
     private func publishLibraryGuide(channelIDs: Set<String>, range: DateInterval) {
         guard let libraryService else { return }
         installCatalogHooks()
@@ -1274,7 +1293,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 PrototypePreviewHero(
                     channel: heroChannel, program: heroProgram, layout: layout,
                     watch: { if let id = heroChannel?.id { tune(id) } },
-                    watchTitle: multiviewSelection?.title
+                    watchTitle: multiviewSelection?.title,
+                    isLoading: isInitialCatalogLoading
                 )
                 .opacity(isSearching ? 0 : 1)
                 .allowsHitTesting(!isSearching)
@@ -1327,15 +1347,21 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             }
             HStack(alignment: .top, spacing: PrototypeLayout.sectionGap) {
                 if layout.sidebarWidth > 0 {
-                    PrototypeBrowseSidebar(
-                        model: model, active: $controlsActive,
-                        focusRequest: toolbarFocusRequest, isSearching: isSearching,
-                        search: { if isSearching { closeSearch() } else { openSearch() } },
-                        enterGuide: enterGuide,
-                        multiviews: multiviewSelection == nil ? { sheet = .multiviewFavorites } : nil
-                    )
-                    .modifier(LiveTVMultiviewGuideExit(
-                        cancel: multiviewSelection == nil ? nil : finishMultiviewSelection))
+                    Group {
+                        if isInitialCatalogLoading {
+                            PrototypeLoadingSidebar()
+                        } else {
+                            PrototypeBrowseSidebar(
+                                model: model, active: $controlsActive,
+                                focusRequest: toolbarFocusRequest, isSearching: isSearching,
+                                search: { if isSearching { closeSearch() } else { openSearch() } },
+                                enterGuide: enterGuide,
+                                multiviews: multiviewSelection == nil ? { sheet = .multiviewFavorites } : nil
+                            )
+                            .modifier(LiveTVMultiviewGuideExit(
+                                cancel: multiviewSelection == nil ? nil : finishMultiviewSelection))
+                        }
+                    }
                     .frame(width: layout.sidebarWidth)
                     .disabled(blocksBrowseControls)
                 }
@@ -1390,9 +1416,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 controlsActive = true
                 toolbarFocusRequest &+= 1
             },
-            isLoading: model.channels.isEmpty && (imports.catalogPhase == .idle || imports.catalogPhase == .loading),
-            loadFailed: imports.catalogPhase == .failed,
-            reload: { reloadRequest += 1 },
+            isLoading: isInitialCatalogLoading,
+            loadFailed: imports.catalogPhase == .failed || libraryIssue != nil || libraryGuideIssue != nil,
+            reload: { reloadLibrary?(); reloadRequest += 1 },
             hideChannel: hideChannel,
             selectionAction: multiviewSelection?.title,
             selectedChannelIDs: multiviewSelection == nil ? [] : Set(multiview.panes.compactMap { $0.channel?.id }),
@@ -1506,6 +1532,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     private var heroChannel: LiveTVPrototypeChannel? {
         (selectedChannelID ?? model.playingChannelID).flatMap { model.channel(id: $0) }
+            ?? model.visibleChannels.first
     }
 
     private var blockedPlaylistCount: Int {

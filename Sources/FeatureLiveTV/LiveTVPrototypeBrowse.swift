@@ -64,12 +64,12 @@ struct PrototypeBrowser: View {
         GeometryReader { geometry in
             let focusReturnTarget = returnTarget
             VStack(spacing: PrototypeLayout.rulerGap) {
-                if !model.guideChannels.isEmpty {
+                if !model.guideChannels.isEmpty || isLoading {
                     if geometry.size.width > 0 {
                         PrototypeTimeRuler(
                             start: guideStart, now: model.now, width: geometry.size.width,
                             timelineOffset: timelineOffset, section: currentSection,
-                            showsNowMarker: !isLoading
+                            showsNowMarker: !isLoading, isLoading: isLoading
                         )
                         .disabled(railActive || isRestoringFocus)
                     } else {
@@ -78,11 +78,7 @@ struct PrototypeBrowser: View {
                     }
                 }
                 if isLoading {
-                    ContentUnavailableView {
-                        Label("Loading your channels", systemImage: "antenna.radiowaves.left.and.right")
-                    } description: {
-                        Text("Channels appear as each source loads. Guide listings follow without delaying playback.")
-                    }
+                    PrototypeGuideSkeletonRows(width: geometry.size.width)
                 } else if model.channels.isEmpty && loadFailed {
                     ContentUnavailableView {
                         Label("Channels unavailable", systemImage: "wifi.exclamationmark")
@@ -648,20 +644,29 @@ struct PrototypeGuideSectionLabel: View {
     }
 }
 
-private struct PrototypeTimeRuler: View {
+struct PrototypeTimeRuler: View {
     let start: Date
     let now: Date
     let width: CGFloat
     let timelineOffset: CGFloat
     let section: LiveTVGuideSection
     let showsNowMarker: Bool
+    var isLoading = false
     @Environment(\.themePalette) private var palette
     @ScaledMetric(relativeTo: .caption) private var height: CGFloat = PrototypeLayout.rulerHeight
 
     var body: some View {
         HStack(alignment: .center, spacing: PrototypeLayout.columnGap) {
-            PrototypeGuideSectionLabel(section: section)
-                .frame(width: PrototypeLayout.stationWidth(for: width), alignment: .leading)
+            Group {
+                if isLoading {
+                    PrototypeSkeletonText(font: .caption, fraction: 0.6)
+                        .padding(.horizontal, PrototypeLayout.rowInset)
+                        .frame(height: height)
+                } else {
+                    PrototypeGuideSectionLabel(section: section)
+                }
+            }
+            .frame(width: PrototypeLayout.stationWidth(for: width), alignment: .leading)
             GeometryReader { geometry in
                 HStack(spacing: 0) {
                     ForEach(0..<12, id: \.self) { tick in
@@ -796,9 +801,7 @@ struct PrototypeGuideRow: View {
     @ScaledMetric(relativeTo: .subheadline) private var scaledRowHeight: CGFloat = PrototypeLayout.rowHeight
 
     private var rowHeight: CGFloat {
-        PrototypeLayout.usesCompactRows(width)
-            ? scaledRowHeight * PrototypeLayout.compactRowHeight / PrototypeLayout.rowHeight
-            : scaledRowHeight
+        PrototypeLayout.rowHeight(for: width, scaledHeight: scaledRowHeight)
     }
 
     private var viewportSeconds: TimeInterval { PrototypeLayout.viewportSeconds(for: width) }

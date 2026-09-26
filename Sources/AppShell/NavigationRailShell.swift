@@ -328,7 +328,10 @@ struct NavigationRailPresentation: Equatable {
     var isRailEnabled: Bool { isRailVisible }
     var headerHeight: CGFloat { showsPageButton ? NavigationRailMetrics.searchHeaderHeight : 0 }
     var contentInset: CGFloat {
-        chromeHidden || usesPageButton ? 0 : NavigationRailMetrics.contentInset
+        // Live TV also suppresses navigation while handing focus to its guide.
+        // Keep that guide in place; its video and Search already use full bounds.
+        if destination == .liveTV { return NavigationRailMetrics.contentInset }
+        return chromeHidden || usesPageButton ? 0 : NavigationRailMetrics.contentInset
     }
 }
 #endif
