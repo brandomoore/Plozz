@@ -382,7 +382,11 @@ struct FocusHeroHomeView<RowContent: View>: View {
     }
 
     private func activate(_ row: FocusHeroRow) {
-        guard resolvedActiveRowID != row.id else { return }
+        // Compared with the recorded row, not the resolved one: before anything is
+        // recorded the first row stands in, and a row loading in above it (Continue
+        // Watching arriving after cached rows) must not take the pin from the row
+        // that actually holds focus.
+        guard activeRowID != row.id else { return }
         let from = rows.firstIndex { $0.id == resolvedActiveRowID } ?? 0
         let to = rows.firstIndex { $0.id == row.id } ?? 0
         movingForward = to >= from
