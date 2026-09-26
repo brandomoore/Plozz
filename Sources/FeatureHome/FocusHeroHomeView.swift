@@ -28,8 +28,10 @@ enum FocusHeroLayout {
     static var screenWidth: CGFloat { HomeHeroLayout.screenWidth }
     /// What shows of the next row under the pinned one: its title and the top
     /// edge of its cards. The focus engine only moves to something on screen, so
-    /// this sliver is also what lets Down reach it.
-    static let nextRowPeek: CGFloat = 84
+    /// this sliver is also what lets Down reach it. A row's cards start about 82pt
+    /// below its top (title, spacing and lift room), so this leaves roughly 30pt
+    /// of card on screen; much less and Down only works some of the time.
+    static let nextRowPeek: CGFloat = 112
     /// Keeps the hero column usable if a row ever measures unexpectedly tall.
     static let lowestSlotTop: CGFloat = 360
     /// The soft edge above the pinned row's title. Narrower than the gap between
