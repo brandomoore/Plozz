@@ -106,6 +106,9 @@ struct FocusHeroHomeView<RowContent: View>: View {
     @State private var activeRowID: String?
     @State private var subject: Subject?
     @State private var movingForward = true
+    /// Until the viewer focuses a title the hero stands in with the first row's
+    /// first, and has to follow it as Home swaps cached rows for live ones.
+    @State private var hasFocusedTitle = false
     /// Row heights, the only thing measured. Positions are derived from them, so
     /// moving the rows can never change what was measured.
     @State private var rowHeights: [String: CGFloat] = [:]
@@ -127,7 +130,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
             edges: navigationStyle == .rail ? [.vertical, .trailing] : .vertical
         )
         .onAppear(perform: seedSubjectIfNeeded)
-        .onChange(of: rows.map(\.id)) { _, _ in seedSubjectIfNeeded() }
+        .onChange(of: rows.map(\.itemIDs)) { _, _ in seedSubjectIfNeeded() }
         .task(id: rows.map(\.itemIDs)) {
             await schedules.loadCached(rows.compactMap(\.leadItem))
         }
@@ -382,6 +385,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
     }
 
     private func show(_ next: Subject, in row: FocusHeroRow) {
+        hasFocusedTitle = true
         guard next != subject else { return }
         if case .item(let item) = next, case .item(let current)? = subject,
            let from = row.itemIDs.firstIndex(of: current.id),
@@ -392,11 +396,13 @@ struct FocusHeroHomeView<RowContent: View>: View {
     }
 
     private func seedSubjectIfNeeded() {
-        if case .item(let item)? = subject,
-           rows.contains(where: { $0.itemIDs.contains(item.id) }) {
-            return
+        if hasFocusedTitle {
+            if case .item(let item)? = subject,
+               rows.contains(where: { $0.itemIDs.contains(item.id) }) {
+                return
+            }
+            if case .library? = subject { return }
         }
-        if case .library? = subject { return }
         let row = rows.first { $0.id == resolvedActiveRowID } ?? rows.first
         subject = row?.leadItem.map(Subject.item)
     }
