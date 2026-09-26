@@ -344,7 +344,16 @@ public struct HomeView: View {
             state: viewModel.state,
             emptyMessage: "Your libraries are empty. Add media on your media server to see it here.",
             onRetry: { Task { await viewModel.load() } },
-            loadingContent: { HomeSkeletonView(layout: viewModel.skeletonLayout, heroActive: carouselSettings?.isActive ?? false, continueWatchingShowsSeriesArtwork: visibility.continueWatchingShowsSeriesArtwork) }
+            loadingContent: {
+                if focusHeroSettings != nil {
+                    focusHeroSkeleton(
+                        continueWatchingCount: viewModel.skeletonLayout
+                            .first { $0.kind == .continueWatching }?.count ?? 0
+                    )
+                } else {
+                    HomeSkeletonView(layout: viewModel.skeletonLayout, heroActive: carouselSettings?.isActive ?? false, continueWatchingShowsSeriesArtwork: visibility.continueWatchingShowsSeriesArtwork)
+                }
+            }
         ) { content in
             // The screen is a data-driven list of rows. Both this loaded view and
             // the skeleton render from the same ordered `HomeRow`/`HomeRowKind`
@@ -445,12 +454,18 @@ public struct HomeView: View {
             // `onFocusGained`); nothing competes on the way up, so it sticks.
             Group {
                 if let focusHeroSettings {
-                    focusHeroHome(
-                        rows: rows,
-                        content: content,
-                        settings: focusHeroSettings,
-                        isAwaitingLiveContinueWatching: isAwaitingLiveContinueWatching
-                    )
+                    if isAwaitingLiveContinueWatching {
+                        // Cached rows would take focus and then have Continue
+                        // Watching arrive above them; wait and arrive once.
+                        focusHeroSkeleton(continueWatchingCount: cachedContinueWatchingLayout.count)
+                    } else {
+                        focusHeroHome(
+                            rows: rows,
+                            content: content,
+                            settings: focusHeroSettings,
+                            isAwaitingLiveContinueWatching: isAwaitingLiveContinueWatching
+                        )
+                    }
                 } else {
                     ScrollViewReader { heroScrollProxy in
                         ScrollView {
@@ -1299,6 +1314,16 @@ public struct HomeView: View {
             result.append(entry(libraries))
         }
         return result
+    }
+
+    @ViewBuilder
+    private func focusHeroSkeleton(continueWatchingCount: Int) -> some View {
+        #if os(tvOS)
+        FocusHeroSkeletonView(
+            continueWatchingCount: continueWatchingCount,
+            continueWatchingShowsSeriesArtwork: visibility.continueWatchingShowsSeriesArtwork
+        )
+        #endif
     }
 
     @ViewBuilder
