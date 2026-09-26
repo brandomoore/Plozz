@@ -78,6 +78,11 @@ public actor WatchStateReconciler {
     /// reload (both around app-foreground), and a short window guarantees a stale
     /// record can never override a genuine later play made on another client.
     private let resumeRecencyTTL: TimeInterval
+    /// How long an inconclusive twin expansion keeps being retried, from the first
+    /// attempt. A server that stays down or rejects sign-in for longer than this is
+    /// not coming back for this watch, and every retry probes every server; the
+    /// copies already found have been written, and the origin never waits on it.
+    private let expansionRetryWindow: TimeInterval
     private let onPersistenceFailure: @Sendable () -> Void
     private let onServerStateApplied: @Sendable (WatchMutation) -> Void
     private let onAuthorizationRejection: @Sendable (UUID, WatchMutationAuthorizationError) -> Void
@@ -104,6 +109,7 @@ public actor WatchStateReconciler {
         traktTTL: TimeInterval = 48 * 3600,
         clockTTL: TimeInterval = 30 * 24 * 3600,
         resumeRecencyTTL: TimeInterval = 30 * 60,
+        expansionRetryWindow: TimeInterval = 7 * 24 * 3600,
         onPersistenceFailure: @escaping @Sendable () -> Void = {},
         onServerStateApplied: @escaping @Sendable (WatchMutation) -> Void = { _ in },
         onAuthorizationRejection: @escaping @Sendable (UUID, WatchMutationAuthorizationError) -> Void = { _, _ in }
@@ -114,6 +120,7 @@ public actor WatchStateReconciler {
         self.traktTTL = traktTTL
         self.clockTTL = clockTTL
         self.resumeRecencyTTL = resumeRecencyTTL
+        self.expansionRetryWindow = expansionRetryWindow
         self.onPersistenceFailure = onPersistenceFailure
         self.onServerStateApplied = onServerStateApplied
         self.onAuthorizationRejection = onAuthorizationRejection
@@ -361,6 +368,10 @@ public actor WatchStateReconciler {
         // seed if the newer mutation lacked one (e.g. a mark-watched coalescing onto
         // a queued playback-stop).
         merged.expansionPending = incoming.expansionPending || existing.expansionPending
+        // The copies the older state reached still hold that older state, and the
+        // newer state gets its own full retry window.
+        merged.appliedTargetIDs = []
+        merged.expansionStartedAt = nil
         if merged.episodeOrigin == nil { merged.episodeOrigin = existing.episodeOrigin }
         merged.attempts = existing.attempts
         return merged
@@ -485,11 +496,22 @@ public actor WatchStateReconciler {
         // drain retries. The origin target is already present and is written below
         // regardless, so expansion never delays or risks the origin write.
         if mutation.expansionPending {
+            let started = mutation.expansionStartedAt ?? now()
+            mutation.expansionStartedAt = started
+            if now().timeIntervalSince(started) > expansionRetryWindow {
+                mutation.expansionPending = false
+                FanoutDiagnostics.emit(
+                    "drain.expand canonical=\(mutation.canonicalMediaID) -> retired(inconclusive past retry window)")
+            }
+        }
+        if mutation.expansionPending {
             let expansion = await applier.expandTargets(for: mutation)
             try await WatchMutationDeliveryAuthorization.check()
-            var seen = Set(mutation.targets.map(\.id))
+            var seen = Set(mutation.targets.map(\.id)).union(mutation.appliedTargetIDs)
+            var added = 0
             for target in expansion.targets where seen.insert(target.id).inserted {
                 mutation.targets.append(target)
+                added += 1
             }
             var optimisticSeen = Set(mutation.optimisticTargets.map(\.id))
             for target in expansion.targets where optimisticSeen.insert(target.id).inserted {
@@ -500,7 +522,8 @@ public actor WatchStateReconciler {
             }
             FanoutDiagnostics.emit(
                 "drain.expand canonical=\(mutation.canonicalMediaID) "
-                + "addedTwins=\(expansion.targets.count) conclusive=\(expansion.isConclusive) "
+                + "addedTwins=\(added) skipped=\(expansion.targets.count - added) "
+                + "conclusive=\(expansion.isConclusive) "
                 + "inconclusiveAccts=\(expansion.inconclusiveAccountIDs)")
         }
 
@@ -578,6 +601,7 @@ public actor WatchStateReconciler {
                 FanoutDiagnostics.emit(FanoutDiagnostics.drainTargetLine(
                     target,
                     outcome: outcome.isEmpty ? "noop(no state to write)" : outcome.trimmingCharacters(in: .whitespaces)))
+                mutation.appliedTargetIDs.insert(target.id)
                 if mutation.played != nil || mutation.resumePosition != nil || mutation.clearResume {
                     applied.append(target)
                 }

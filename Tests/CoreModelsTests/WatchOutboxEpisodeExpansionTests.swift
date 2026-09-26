@@ -36,6 +36,16 @@ private final class ExpandingFakeApplier: WatchMutationApplying, @unchecked Send
     var playedAccounts: Set<String> { lock.lock(); defer { lock.unlock() }; return Set(playedWrites.map(\.accountID)) }
 }
 
+private final class TestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+    init(_ value: Date) { self.value = value }
+    var now: Date {
+        get { lock.lock(); defer { lock.unlock() }; return value }
+        set { lock.lock(); value = newValue; lock.unlock() }
+    }
+}
+
 private func episodeMutation(
     canonical: String = "tvdb:85552",
     capturedAt: Date,
@@ -155,6 +165,126 @@ final class WatchOutboxEpisodeExpansionTests: XCTestCase {
         XCTAssertEqual(pending, 0)
     }
 
+    /// The reported "Continue Watching is out of order" loop: one household server
+    /// kept rejecting sign-in, so every expansion stayed inconclusive and every
+    /// drain re-added — and rewrote — twins it had already written. Plex stamps
+    /// "last viewed" on each write, so stale titles jumped to the front.
+    func testInconclusiveRetriesNeverRewriteATwinAlreadyWritten() async throws {
+        let applier = ExpandingFakeApplier()
+        applier.expansion = WatchTargetExpansion(
+            targets: [WatchMutationTarget(accountID: "B", itemID: "B-ep", providerKind: .plex)],
+            inconclusiveAccountIDs: ["C"]
+        )
+        let reconciler = WatchStateReconciler(store: InMemoryWatchMutationStore(), applier: applier)
+
+        await reconciler.enqueue(episodeMutation(capturedAt: Date()))
+        await reconciler.drain()
+        await reconciler.drain()
+        await reconciler.drain()
+
+        XCTAssertEqual(applier.playedWrites.filter { $0.accountID == "A" }.count, 1)
+        XCTAssertEqual(applier.playedWrites.filter { $0.accountID == "B" }.count, 1,
+                       "A twin already written must not be rewritten while another server stays unresolved")
+        XCTAssertEqual(applier.expandCallCount, 3, "The unresolved server is still retried")
+        let pending = await reconciler.pendingCount
+        XCTAssertEqual(pending, 1)
+
+        // The missing server comes back and resolves: only it is written.
+        applier.expansion = WatchTargetExpansion(targets: [
+            WatchMutationTarget(accountID: "B", itemID: "B-ep", providerKind: .plex),
+            WatchMutationTarget(accountID: "C", itemID: "C-ep"),
+        ])
+        await reconciler.drain()
+
+        XCTAssertEqual(applier.playedWrites.map(\.accountID), ["A", "B", "C"])
+        let drained = await reconciler.pendingCount
+        XCTAssertEqual(drained, 0)
+    }
+
+    func testNewerStateStillReachesTwinsTheOlderStateWasWrittenTo() async throws {
+        let applier = ExpandingFakeApplier()
+        applier.expansion = WatchTargetExpansion(
+            targets: [WatchMutationTarget(accountID: "B", itemID: "B-ep")],
+            inconclusiveAccountIDs: ["C"]
+        )
+        let reconciler = WatchStateReconciler(store: InMemoryWatchMutationStore(), applier: applier)
+        let start = Date()
+
+        await reconciler.enqueue(episodeMutation(capturedAt: start))
+        await reconciler.drain()
+
+        var unwatch = episodeMutation(capturedAt: start.addingTimeInterval(60))
+        unwatch.played = false
+        unwatch.clearResume = false
+        await reconciler.enqueue(unwatch)
+        await reconciler.drain()
+
+        let bWrites = applier.playedWrites.filter { $0.accountID == "B" }.map(\.played)
+        XCTAssertEqual(bWrites, [true, false], "The newer intent must be written to the twin once more")
+    }
+
+    func testInconclusiveExpansionRetiresAfterTheRetryWindow() async throws {
+        let applier = ExpandingFakeApplier()
+        applier.expansion = WatchTargetExpansion(inconclusiveAccountIDs: ["B"])
+        let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+        let reconciler = WatchStateReconciler(
+            store: InMemoryWatchMutationStore(),
+            applier: applier,
+            now: { clock.now },
+            expansionRetryWindow: 3600
+        )
+
+        await reconciler.enqueue(episodeMutation(capturedAt: clock.now))
+        await reconciler.drain()
+        let pendingInsideWindow = await reconciler.pendingCount
+        XCTAssertEqual(pendingInsideWindow, 1)
+
+        clock.now = clock.now.addingTimeInterval(3601)
+        await reconciler.drain()
+
+        XCTAssertEqual(applier.expandCallCount, 1, "Past the window the unreachable server is no longer probed")
+        XCTAssertEqual(applier.playedAccounts, ["A"])
+        let pending = await reconciler.pendingCount
+        XCTAssertEqual(pending, 0, "A server that never answers must not keep the watch queued forever")
+    }
+
+    /// Queued before the applied-target record existed, a mutation's twins had
+    /// been rewritten on every drain; reading it back must not schedule one more.
+    func testLegacyQueuedMutationTreatsTwinsItAlreadyReachedAsWritten() throws {
+        var queued = episodeMutation(capturedAt: Date(timeIntervalSince1970: 1_700_000_000))
+        queued.optimisticTargets = [
+            WatchMutationTarget(accountID: "A", itemID: "A-ep"),
+            WatchMutationTarget(accountID: "B", itemID: "B-ep"),
+        ]
+        queued.targets = [WatchMutationTarget(accountID: "A", itemID: "A-ep")]
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(queued)) as! [String: Any]
+        json.removeValue(forKey: "appliedTargetIDs")
+        let legacyData = try JSONSerialization.data(withJSONObject: json)
+
+        let decoded = try JSONDecoder().decode(WatchMutation.self, from: legacyData)
+        XCTAssertEqual(decoded.appliedTargetIDs, ["B:B-ep"], "Only the still-queued origin is unwritten")
+    }
+
+    func testRetryWindowStartsAtTheFirstAttemptNotTheWatch() async throws {
+        let applier = ExpandingFakeApplier()
+        applier.expansion = WatchTargetExpansion(inconclusiveAccountIDs: ["B"])
+        let clock = TestClock(Date(timeIntervalSince1970: 1_800_000_000))
+        let reconciler = WatchStateReconciler(
+            store: InMemoryWatchMutationStore(),
+            applier: applier,
+            now: { clock.now },
+            expansionRetryWindow: 3600
+        )
+
+        // Watched offline a day before the device reconnected.
+        await reconciler.enqueue(episodeMutation(capturedAt: clock.now.addingTimeInterval(-86_400)))
+        await reconciler.drain()
+
+        XCTAssertEqual(applier.expandCallCount, 1, "A late first drain still gets to look for twins")
+        let pending = await reconciler.pendingCount
+        XCTAssertEqual(pending, 1)
+    }
+
     func testLegacyOutboxMutationDecodesWithDefaultedExpansionFields() throws {
         // A pre-feature outbox entry has no `episodeOrigin` / `expansionPending` keys.
         let modern = WatchMutation(
@@ -167,11 +297,15 @@ final class WatchOutboxEpisodeExpansionTests: XCTestCase {
         var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(modern)) as! [String: Any]
         json.removeValue(forKey: "episodeOrigin")
         json.removeValue(forKey: "expansionPending")
+        json.removeValue(forKey: "appliedTargetIDs")
+        json.removeValue(forKey: "expansionStartedAt")
         let legacyData = try JSONSerialization.data(withJSONObject: json)
 
         let decoded = try JSONDecoder().decode(WatchMutation.self, from: legacyData)
         XCTAssertNil(decoded.episodeOrigin)
         XCTAssertFalse(decoded.expansionPending, "Legacy entries must not suddenly start cross-server probing")
+        XCTAssertEqual(decoded.appliedTargetIDs, [])
+        XCTAssertNil(decoded.expansionStartedAt)
         XCTAssertEqual(decoded.targets, modern.targets)
     }
 }

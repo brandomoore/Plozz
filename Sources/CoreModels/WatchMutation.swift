@@ -139,11 +139,26 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
     public var episodeOrigin: EpisodeOrigin?
     /// Whether cross-server **twin targets** still need resolving for this episode.
     /// Set when an episode mutation is created; cleared once a drain conclusively
-    /// expands the targets (every other server probed, none left inconclusive).
+    /// expands the targets (every other server probed, none left inconclusive), or
+    /// once the reconciler's retry window runs out from ``expansionStartedAt``.
     /// While `true` the mutation is never considered fully applied, so a drain that
     /// couldn't reach an asleep twin server retries later. Always `false` for
     /// non-episode mutations, so movie / single-target convergence is unaffected.
     public var expansionPending: Bool
+    /// Ids of the targets this intent has already been written to.
+    ///
+    /// While expansion is inconclusive it re-runs on every drain, and it returns
+    /// the twins it already found alongside any new ones. Without this record each
+    /// retry wrote them again, which is not the harmless no-op it looks like: Plex
+    /// stamps "last viewed" on every progress write, so a replayed write floated a
+    /// long-paused title to the front of Continue Watching, and a replayed "mark
+    /// unwatched" un-watched its episode again. Coalescing clears it, because a
+    /// newer desired state has to reach every copy.
+    public var appliedTargetIDs: Set<String>
+    /// When a drain first tried to expand this intent. The retry window runs from
+    /// here rather than from ``capturedAt``, so a watch that sat offline for days
+    /// still gets its full chance to reach the household's other servers.
+    public var expansionStartedAt: Date?
 
     /// The played title's cross-server ``MediaIdentity`` set, persisted so a drain
     /// can re-resolve the **identity index**'s full server set for the title — even
@@ -218,6 +233,7 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         self.attempts = attempts
         self.episodeOrigin = episodeOrigin
         self.expansionPending = expansionPending
+        self.appliedTargetIDs = []
         self.identities = identities
         self.kind = kind
         self.anchorTitle = anchorTitle
@@ -230,7 +246,7 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         case id, capturedAt, canonicalMediaID, seasonNumber, episodeNumber
         case resumePosition, played, clearResume, targets, optimisticTargets, trakt, traktPending
         case simklPending, anilistPending, malPending
-        case attempts, episodeOrigin, expansionPending, identities, kind
+        case attempts, episodeOrigin, expansionPending, appliedTargetIDs, expansionStartedAt, identities, kind
         case anchorTitle, anchorYear, authorization
     }
 
@@ -281,6 +297,12 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         attempts = try container.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
         episodeOrigin = try container.decodeIfPresent(EpisodeOrigin.self, forKey: .episodeOrigin)
         expansionPending = try container.decodeIfPresent(Bool.self, forKey: .expansionPending) ?? false
+        // Queued before this record existed. Until then every drain re-expanded and
+        // rewrote each twin it found, so the copies already reached hold this state;
+        // treating them as unreached would make the upgrade replay them once more.
+        appliedTargetIDs = try container.decodeIfPresent(Set<String>.self, forKey: .appliedTargetIDs)
+            ?? Set(optimisticTargets.map(\.id)).subtracting(targets.map(\.id))
+        expansionStartedAt = try container.decodeIfPresent(Date.self, forKey: .expansionStartedAt)
         identities = try container.decodeIfPresent([MediaIdentity].self, forKey: .identities) ?? []
         kind = try container.decodeIfPresent(MediaItemKind.self, forKey: .kind)
         anchorTitle = try container.decodeIfPresent(String.self, forKey: .anchorTitle)
@@ -316,6 +338,8 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         try container.encode(attempts, forKey: .attempts)
         try container.encodeIfPresent(episodeOrigin, forKey: .episodeOrigin)
         try container.encode(expansionPending, forKey: .expansionPending)
+        try container.encode(appliedTargetIDs, forKey: .appliedTargetIDs)
+        try container.encodeIfPresent(expansionStartedAt, forKey: .expansionStartedAt)
         try container.encode(identities, forKey: .identities)
         try container.encodeIfPresent(kind, forKey: .kind)
         try container.encodeIfPresent(anchorTitle, forKey: .anchorTitle)

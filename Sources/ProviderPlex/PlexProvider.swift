@@ -170,7 +170,27 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             endpoint: endpoint,
             requestedLimit: limit
         )
-        return items.map(map(metadata:)).map { stampingSeriesRecency($0, using: seriesDates) }
+        let mapped = items.map(map(metadata:))
+        let stamped = mapped.map { stampingSeriesRecency($0, using: seriesDates) }
+        logSeriesRecencyLifts(from: mapped, to: stamped)
+        return stamped
+    }
+
+    /// Names every card the show's activity moved ahead of its own date. The raw
+    /// feed line shows only the episode's date, so a card sitting far above where
+    /// that date puts it is otherwise unexplained. Gated; free when off.
+    private func logSeriesRecencyLifts(from mapped: [MediaItem], to stamped: [MediaItem]) {
+        guard ContinueWatchingDiagnostics.isEnabled else { return }
+        let lifts = zip(mapped, stamped).filter { $0.lastPlayedAt != $1.lastPlayedAt }
+        guard !lifts.isEmpty else { return }
+        let iso = ISO8601DateFormatter()
+        var line = "series-recency provider=plex account=\(accountID) lifted=\(lifts.count)"
+        for (own, lifted) in lifts {
+            line += "\n  LIFT id=\(own.id) title=\"\([own.parentTitle, own.title].compactMap { $0 }.joined(separator: " – "))\" "
+                + "own=\(own.lastPlayedAt.map(iso.string(from:)) ?? "nil") "
+                + "series=\(lifted.lastPlayedAt.map(iso.string(from:)) ?? "nil")"
+        }
+        ContinueWatchingDiagnostics.emit(line)
     }
 
     /// The best resume feed this server will give us, and which one it was.
