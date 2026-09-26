@@ -42,6 +42,12 @@ enum FocusHeroLayout {
     static let nextRowPeek: CGFloat = 112
     /// Keeps the hero column usable if a row ever measures unexpectedly tall.
     static let lowestSlotTop: CGFloat = 360
+    /// A backdrop's own shape. The art is sized to it rather than cropped to the
+    /// screen, so the whole picture shows above the rows.
+    static let artAspectRatio: CGFloat = 16.0 / 9.0
+    /// How far the art reaches past the tallest row's title. Its bottom fade is
+    /// all but transparent by then, so it meets the row without touching it.
+    static let artOverhang: CGFloat = 24
     /// The soft edge above the pinned row's title. Narrower than the gap between
     /// rows, so nothing of the row above survives it once it has lifted out.
     static let fadeBand: CGFloat = 16
@@ -242,6 +248,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
         ZStack(alignment: .topLeading) {
             FocusHeroBackdropLayer(
                 model: model,
+                rows: rows,
                 transition: settings.backdropTransition,
                 navigationStyle: navigationStyle,
                 isFrontmost: isFrontmost
@@ -362,22 +369,29 @@ private struct FocusHeroRowMask: ViewModifier {
 
 private struct FocusHeroBackdropLayer: View {
     let model: FocusHeroModel
+    let rows: [FocusHeroRow]
     let transition: HeroBackdropTransition
     let navigationStyle: NavigationStyle
     let isFrontmost: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.plozzMetrics) private var metrics
 
     var body: some View {
+        // The art fills the space above the rows at a backdrop's own shape,
+        // rather than the whole screen, so none of it is cropped away behind
+        // the rows. It fades out just above the tallest row's title.
+        let height = model.slotTop(in: rows, rowSpacing: metrics.rowSpacing)
+            + FocusHeroLayout.artOverhang
+        let width = min(FocusHeroLayout.screenWidth, height * FocusHeroLayout.artAspectRatio)
         if let subject = model.subject {
             HomeHeroBackdrop(
                 references: references(for: subject),
                 asyncFallbackURL: subject.item.flatMap(HomeHeroArtwork.backdropFallback(for:)),
                 slideID: subject.id,
                 forward: model.movingForward,
-                width: FocusHeroLayout.screenWidth,
-                height: FocusHeroLayout.screenHeight,
+                width: width,
+                height: height,
                 scrimTone: colorScheme == .dark ? .black : .white,
-                alignsArtworkToLeadingEdge: navigationStyle == .rail,
                 scrimOpacity: isFrontmost ? 1 : 0,
                 transition: transition == .slide ? .wipe : .crossfade,
                 scrimStyle: .browse
@@ -529,6 +543,7 @@ private struct FocusHeroColumn: View {
 struct FocusHeroSkeletonView: View {
     var continueWatchingCount: Int = 0
     var continueWatchingShowsSeriesArtwork: Bool = true
+    var showsCardCaptions: Bool = false
     @State private var firstRowHeight: CGFloat = 0
     @Environment(\.plozzMetrics) private var metrics
 
@@ -565,6 +580,7 @@ struct FocusHeroSkeletonView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea(.container, edges: .vertical)
         .allowsHitTesting(false)
+        .environment(\.plozzCardCaptionsHidden, !showsCardCaptions)
         .accessibilityLabel("Loading")
     }
 }

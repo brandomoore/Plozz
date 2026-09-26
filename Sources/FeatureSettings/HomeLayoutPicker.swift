@@ -8,17 +8,23 @@ import CoreUI
 struct HomeLayoutPicker: View {
     @Binding var layout: HeroStyle
     @Environment(\.themePalette) private var palette
+    @State private var width: CGFloat = 0
 
-    /// Matches the Continue Watching picker: each preview carries a whole screen's
-    /// worth of detail, and needs the room to read.
-    private let swatchHeight: CGFloat = 200
+    private static let spacing: CGFloat = 16
+
+    /// The previews are drawings of a TV screen, so each one is exactly 16:9 at
+    /// whatever width its card is given.
+    private var swatchHeight: CGFloat {
+        guard width > 0 else { return 200 }
+        let card = (width - Self.spacing) / 2
+        return max(0, card - PlozzTheme.Metrics.Radius.inset * 2) * 9 / 16
+    }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: Self.spacing) {
             ForEach(HeroStyle.allCases, id: \.self) { option in
                 PreviewCard(
                     title: option.layoutTitle,
-                    detail: option.layoutDetail,
                     isSelected: layout == option,
                     accent: palette.accent,
                     compact: true,
@@ -30,6 +36,7 @@ struct HomeLayoutPicker: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 }
 
@@ -40,13 +47,6 @@ extension HeroStyle {
         switch self {
         case .carousel: "Spotlight"
         case .followsFocus: "Immersive"
-        }
-    }
-
-    var layoutDetail: LocalizedStringResource {
-        switch self {
-        case .carousel: "A rotating showcase above your rows."
-        case .followsFocus: "What you're on fills the screen."
         }
     }
 }

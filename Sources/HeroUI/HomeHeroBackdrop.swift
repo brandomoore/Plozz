@@ -61,8 +61,10 @@ public struct HomeHeroBackdrop: View {
     public enum ScrimStyle: Sendable {
         /// The carousel's text sits low on the left over art that melts into rows.
         case carousel
-        /// Text sits high on the left above a pinned row, so the shading reaches
-        /// the top and runs the full height of the leading edge.
+        /// The art is fitted to the space above a pinned row and anchored to the
+        /// trailing edge, fading out to the left, where the text sits on the page,
+        /// and out at the bottom, before the row. More of the picture shows than
+        /// when it is cropped to fill the screen.
         case browse
     }
 
@@ -211,7 +213,8 @@ public struct HomeHeroBackdrop: View {
     /// spilling off-screen to the right. Leading-aligned, the artwork starts at the
     /// panel edge — which is what full-bleed means here.
     private var artworkAlignment: Alignment {
-        alignsArtworkToLeadingEdge ? .leading : .center
+        if scrimStyle == .browse { return .trailing }
+        return alignsArtworkToLeadingEdge ? .leading : .center
     }
 
     public var body: some View {
@@ -298,26 +301,14 @@ public struct HomeHeroBackdrop: View {
     /// The title, description and badges stack from near the top down to the
     /// pinned row, and the row itself sits over the lower half, so the leading
     /// edge darkens for the whole height and the top edge joins it.
+    /// The art already fades to the page on the left and at the bottom, so only
+    /// a light wash is left to do: where a long title runs into the picture.
     private var browseScrim: some View {
-        ZStack {
-            HeroLegibilityScrim(
-                tone: scrimTone,
-                edgePeak: 0.72,
-                edges: [.leading, .top, .bottom],
-                bottomFadeTop: 0.42
-            )
-            // The pinned row sits over the lower half, so the art recedes behind
-            // it: the cards read against the page, not against the picture.
-            LinearGradient(
-                stops: [
-                    .init(color: scrimTone.opacity(0), location: 0.38),
-                    .init(color: scrimTone.opacity(0.55), location: 0.6),
-                    .init(color: scrimTone.opacity(0.82), location: 1),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
+        HeroLegibilityScrim(
+            tone: scrimTone,
+            edgePeak: 0.4,
+            edges: [.leading]
+        )
     }
 
     @ViewBuilder
@@ -377,8 +368,28 @@ public struct HomeHeroBackdrop: View {
     /// right (the old left-weighted melt). When receded the melt begins higher so
     /// more of the backdrop blends into the rows below. Static per appearance; only
     /// `receded` and the theme change it.
+    @ViewBuilder
     private var dissolveMask: some View {
-        easedVerticalFade(start: receded ? recededMeltStart : meltStart)
+        switch scrimStyle {
+        case .carousel:
+            easedVerticalFade(start: receded ? recededMeltStart : meltStart)
+        case .browse:
+            // Clear at the art's left edge to solid by its middle, with the same
+            // eased shape as the bottom melt so the two corners meet smoothly.
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .white.opacity(0.1), location: 0.12),
+                    .init(color: .white.opacity(0.4), location: 0.26),
+                    .init(color: .white.opacity(0.78), location: 0.4),
+                    .init(color: .white, location: 0.52),
+                    .init(color: .white, location: 1),
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .mask(easedVerticalFade(start: 0.5))
+        }
     }
 
     /// Where the uniform melt begins when receded — higher up than at rest, so the

@@ -1377,7 +1377,8 @@ public struct HomeView: View {
         #if os(tvOS)
         FocusHeroSkeletonView(
             continueWatchingCount: continueWatchingCount,
-            continueWatchingShowsSeriesArtwork: visibility.continueWatchingShowsSeriesArtwork
+            continueWatchingShowsSeriesArtwork: visibility.continueWatchingShowsSeriesArtwork,
+            showsCardCaptions: focusHeroSettings?.showsCardCaptions ?? false
         )
         #endif
     }

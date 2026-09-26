@@ -117,6 +117,7 @@ public struct MediaRowView: View {
     /// spans the full width — which is what lets cards scroll *under* the rail and
     /// fade out there instead of being cut off at a narrowed viewport edge.
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
+    @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
     /// Keeps branch-specific masking completely out of native navigation styles.
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
 
@@ -819,11 +820,17 @@ public struct MediaRowView: View {
 
     @ViewBuilder
     private var loadingPlaceholder: some View {
+        // The same shape and caption the real cards will have, so nothing in
+        // the row moves when they arrive.
         switch presentation {
         case .poster:
-            SkeletonCardView(style: .poster)
+            SkeletonCardView(style: .poster, showsCaption: !captionsHidden)
         case .landscape:
-            SkeletonCardView(style: .landscape)
+            SkeletonCardView(
+                style: .landscape,
+                showsCaption: !captionsHidden && !showsSeriesArtwork,
+                showsSeriesArtwork: showsSeriesArtwork
+            )
         case .episodeColumn:
             EpisodeRowEntryPlaceholder()
         }
