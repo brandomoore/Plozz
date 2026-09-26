@@ -61,10 +61,10 @@ public struct HomeHeroBackdrop: View {
     public enum ScrimStyle: Sendable {
         /// The carousel's text sits low on the left over art that melts into rows.
         case carousel
-        /// The art is fitted to the space above a pinned row and anchored to the
-        /// trailing edge, fading out to the left, where the text sits on the page,
-        /// and out at the bottom, before the row. More of the picture shows than
-        /// when it is cropped to fill the screen.
+        /// The art is drawn at its own shape and anchored to the trailing edge,
+        /// fading out to the left, where the text sits on the page, and out at the
+        /// bottom, behind the rows. More of the picture shows than when it is
+        /// cropped to fill the screen.
         case browse
     }
 
@@ -388,7 +388,7 @@ public struct HomeHeroBackdrop: View {
                 startPoint: .leading,
                 endPoint: .trailing
             )
-            .mask(easedVerticalFade(start: 0.78))
+            .mask(easedVerticalFade(start: 0.7))
         }
     }
 

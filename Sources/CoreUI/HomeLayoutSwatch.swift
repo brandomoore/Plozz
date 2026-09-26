@@ -108,11 +108,10 @@ public struct HomeLayoutSwatch: View {
 
     private var immersive: some View {
         ZStack(alignment: .topLeading) {
-            // Fitted to the space above the pinned row at a backdrop's shape,
-            // anchored right, with short feathers into the page on the left and
-            // before the row at the bottom.
+            // Two thirds of the screen at a backdrop's shape, anchored right, with
+            // short feathers into the page on the left and behind the rows below.
             art
-                .frame(width: 990, height: 558)
+                .frame(width: 1280, height: 720)
                 .mask(
                     LinearGradient(
                         stops: [
@@ -125,13 +124,13 @@ public struct HomeLayoutSwatch: View {
                     )
                     .mask(
                         LinearGradient(
-                            stops: [.init(color: .white, location: 0.78), .init(color: .clear, location: 1)],
+                            stops: [.init(color: .white, location: 0.7), .init(color: .clear, location: 1)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
                 )
-                .offset(x: 930)
+                .offset(x: 640)
             block(144, 160, 420, 96, wordmark: true)
             block(144, 282, 300, 22)
             block(144, 326, 640, 18)

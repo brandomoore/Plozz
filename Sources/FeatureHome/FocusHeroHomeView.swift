@@ -45,9 +45,8 @@ enum FocusHeroLayout {
     /// A backdrop's own shape. The art is sized to it rather than cropped to the
     /// screen, so the whole picture shows above the rows.
     static let artAspectRatio: CGFloat = 16.0 / 9.0
-    /// How far the art reaches past the pinned row's title. Its bottom fade is
-    /// all but transparent by then, so it meets the row without touching it.
-    static let artOverhang: CGFloat = 24
+    /// How much of the screen's width the art takes.
+    static let artWidthFraction: CGFloat = 2.0 / 3.0
     /// The soft edge above the pinned row's title. Narrower than the gap between
     /// rows, so nothing of the row above survives it once it has lifted out.
     static let fadeBand: CGFloat = 16
@@ -165,6 +164,7 @@ final class FocusHeroModel {
         let known = rowHeights[rowID] ?? 0
         guard abs(known - height) > FocusHeroLayout.measurementTolerance else { return }
         rowHeights[rowID] = height
+        HeroFocusDiagnostics.emit("FHOME row height \(rowID)=\(height)")
     }
 
     func resolvedActiveRowID(in rows: [FocusHeroRow]) -> String? {
@@ -244,7 +244,6 @@ struct FocusHeroHomeView<RowContent: View>: View {
         ZStack(alignment: .topLeading) {
             FocusHeroBackdropLayer(
                 model: model,
-                rows: rows,
                 transition: settings.backdropTransition,
                 navigationStyle: navigationStyle,
                 isFrontmost: isFrontmost
@@ -364,26 +363,17 @@ private struct FocusHeroRowMask: ViewModifier {
 
 private struct FocusHeroBackdropLayer: View {
     let model: FocusHeroModel
-    let rows: [FocusHeroRow]
     let transition: HeroBackdropTransition
     let navigationStyle: NavigationStyle
     let isFrontmost: Bool
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.plozzMetrics) private var metrics
 
     var body: some View {
-        // The art fills the space above the pinned row at a backdrop's own shape,
-        // rather than the whole screen, so none of it is cropped away behind the
-        // rows. It is laid out once at the size a shortest pinned row leaves room
-        // for and scaled down for taller rows: a transform the row spring carries,
-        // where a changing frame would re-lay out the image on every move.
-        let bottom = FocusHeroLayout.rowsBottom(rowSpacing: metrics.rowSpacing)
-        let heights = rows.compactMap { model.rowHeights[$0.id] }
-        let largest = heights.min().map { bottom - $0 } ?? FocusHeroLayout.lowestSlotTop
-        let height = largest + FocusHeroLayout.artOverhang
-        let pinned = bottom - model.activeHeight(in: rows) + FocusHeroLayout.artOverhang
-        let scale = heights.isEmpty ? 1 : min(1, max(0, pinned / height))
-        let width = min(FocusHeroLayout.screenWidth, height * FocusHeroLayout.artAspectRatio)
+        // Two thirds of the screen, top right, at a backdrop's own shape: the
+        // whole picture shows, uncropped, and melts into the page on the left
+        // (under the title) and behind the rows at the bottom.
+        let width = FocusHeroLayout.screenWidth * FocusHeroLayout.artWidthFraction
+        let height = width / FocusHeroLayout.artAspectRatio
         if let subject = model.subject {
             HomeHeroBackdrop(
                 references: references(for: subject),
@@ -397,7 +387,6 @@ private struct FocusHeroBackdropLayer: View {
                 transition: transition == .slide ? .wipe : .crossfade,
                 scrimStyle: .browse
             )
-            .scaleEffect(scale, anchor: .topTrailing)
             .allowsHitTesting(false)
         }
     }
@@ -565,7 +554,10 @@ struct FocusHeroSkeletonView: View {
                     ? continueWatchingCount : Self.fallbackCount,
                 onSelect: { _ in }
             )
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { firstRowHeight = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                firstRowHeight = height
+                HeroFocusDiagnostics.emit("FHOME skeleton height continueWatching=\(height)")
+            }
             // A blank title keeps the peek at the real next row's height; its
             // name isn't known until the rows arrive.
             MediaRowView(

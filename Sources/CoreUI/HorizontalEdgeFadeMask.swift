@@ -73,15 +73,20 @@ public struct LeadingEdgeFadeMask: View {
     private let fadeWidth: CGFloat
     private let verticalOverhang: CGFloat
     private let horizontalOverhang: CGFloat
+    private let leadingShift: CGFloat
 
+    /// `leadingShift` moves a visible feather that far past the row's leading
+    /// edge, keeping its width, for content that grows back across that edge.
     public init(
         fadeWidth: CGFloat,
         verticalOverhang: CGFloat = 0,
-        horizontalOverhang: CGFloat = 0
+        horizontalOverhang: CGFloat = 0,
+        leadingShift: CGFloat = 0
     ) {
         self.fadeWidth = fadeWidth
         self.verticalOverhang = verticalOverhang
         self.horizontalOverhang = horizontalOverhang
+        self.leadingShift = leadingShift
     }
 
     public var body: some View {
@@ -94,7 +99,7 @@ public struct LeadingEdgeFadeMask: View {
         // pinned sidebar hides and fadeWidth reaches zero, extend the opaque mask
         // on BOTH sides so focused-card bloom remains unclipped. Trailing always
         // overhangs because no fade is drawn there.
-        .padding(.leading, fadeWidth > 0 ? 0 : -horizontalOverhang)
+        .padding(.leading, fadeWidth > 0 ? -leadingShift : -horizontalOverhang)
         .padding(.trailing, -horizontalOverhang)
     }
 }
@@ -138,14 +143,15 @@ public struct PinnedSidebarLeadingFade<Content: View>: View {
             content
                 .safeAreaPadding(.leading, inset)
                 // The first card parks right at the gutter's inner edge, and
-                // focus grows it back across that edge. Ending the feather that
-                // much short of the edge leaves a focused first card and its
-                // shadow whole; cards scrolling out still dissolve before they
-                // pass under the sidebar.
+                // focus grows it back across that edge. The feather keeps its
+                // full width but sits that much further left, so a focused first
+                // card and its shadow stay whole while cards scrolling out still
+                // dissolve smoothly before they pass under the sidebar.
                 .leadingEdgeFadeMask(
-                    fadeWidth: max(0, inset - verticalOverhang),
+                    fadeWidth: inset,
                     verticalOverhang: verticalOverhang,
-                    horizontalOverhang: verticalOverhang
+                    horizontalOverhang: verticalOverhang,
+                    leadingShift: verticalOverhang
                 )
         } else {
             content
@@ -290,13 +296,15 @@ public extension View {
     func leadingEdgeFadeMask(
         fadeWidth: CGFloat,
         verticalOverhang: CGFloat = 0,
-        horizontalOverhang: CGFloat = 0
+        horizontalOverhang: CGFloat = 0,
+        leadingShift: CGFloat = 0
     ) -> some View {
         mask {
             LeadingEdgeFadeMask(
                 fadeWidth: fadeWidth,
                 verticalOverhang: verticalOverhang,
-                horizontalOverhang: horizontalOverhang
+                horizontalOverhang: horizontalOverhang,
+                leadingShift: leadingShift
             )
         }
     }

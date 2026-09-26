@@ -179,6 +179,9 @@ public struct MediaRowView: View {
     /// came-in/resume episode. A stale id from another season is ignored because it
     /// won't exist in the current `items`.
     @State private var lastFocusedID: String?
+    /// The row's horizontal position, so returning to the first card can put the
+    /// row back exactly where it opened.
+    @State private var scrollPosition = ScrollPosition(edge: .leading)
     /// Whether the user has actually moved around this row since its target was
     /// last re-pointed. Latches the entry gate off — see `cardIsDisabled`.
     @State private var hasBrowsedSinceTargetChange = false
@@ -509,6 +512,7 @@ public struct MediaRowView: View {
                         .padding(.vertical, layoutMetrics.railShadowClearance)
                     }
                     .scrollClipDisabled()
+                    .scrollPosition($scrollPosition)
                     .padding(.top, layoutMetrics.railTopClearanceOffset)
                     .padding(.bottom, layoutMetrics.railBottomClearanceOffset)
                     .coordinateSpace(name: episodeEntrySpace)
@@ -1128,6 +1132,15 @@ public struct MediaRowView: View {
         // (focus actually left the row, up to the season bar).
         guard let newValue else { return }
         hasBrowsedSinceTargetChange = true
+        // Coming back to the first card, tvOS scrolls only until the card shows,
+        // which leaves it short of where the row opened — partly inside the
+        // pinned sidebar's feather. Put the row back at its start instead.
+        if itemIndexByID[newValue] == 0,
+           let previous = lastFocusedID, (itemIndexByID[previous] ?? 0) > 0 {
+            withAnimation(.smooth(duration: 0.3)) {
+                scrollPosition.scrollTo(edge: .leading)
+            }
+        }
         if let onCardFocused, let item = itemByID[newValue] { onCardFocused(item) }
         if !focusEngaged { onFocusEntered?() }
         lastFocusedID = newValue
