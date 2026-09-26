@@ -1372,14 +1372,46 @@ public struct HomeView: View {
         }
     }
 
+    /// The Immersive layout while Continue Watching is loading: the real view,
+    /// with the rows' own loading placeholders in them, so they sit exactly
+    /// where the loaded rows will. Nothing in it is focusable, and the hero stays
+    /// empty until a real title arrives.
     @ViewBuilder
     private func focusHeroSkeleton(continueWatchingCount: Int) -> some View {
         #if os(tvOS)
-        FocusHeroSkeletonView(
-            continueWatchingCount: continueWatchingCount,
-            continueWatchingShowsSeriesArtwork: visibility.continueWatchingShowsSeriesArtwork,
-            showsCardCaptions: focusHeroSettings?.showsCardCaptions ?? false
-        )
+        if let settings = focusHeroSettings {
+            let continueWatching = FocusHeroRow(id: "placeholder-continue", itemIDs: [], leadItem: nil)
+            let next = FocusHeroRow(id: "placeholder-next", itemIDs: [], leadItem: nil)
+            FocusHeroHomeView(
+                rows: [continueWatching, next],
+                settings: settings,
+                spoilerSettings: spoilerSettings,
+                navigationStyle: navigationStyle,
+                isFrontmost: heroIsFrontmost
+            ) { row, _ in
+                if row.id == continueWatching.id {
+                    MediaRowView(
+                        title: Text(HomeRowKind.continueWatching.title),
+                        items: [],
+                        style: .landscape,
+                        showsSeriesArtwork: visibility.continueWatchingShowsSeriesArtwork,
+                        loadingPlaceholderCount: continueWatchingCount > 0 ? continueWatchingCount : 8,
+                        onSelect: { _ in }
+                    )
+                } else {
+                    // A blank title keeps the peek at the real next row's height;
+                    // its name isn't known until the rows arrive.
+                    MediaRowView(
+                        title: Text(verbatim: " "),
+                        items: [],
+                        style: .poster,
+                        loadingPlaceholderCount: 8,
+                        onSelect: { _ in }
+                    )
+                }
+            }
+            .accessibilityLabel("Loading")
+        }
         #endif
     }
 
