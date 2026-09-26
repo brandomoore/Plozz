@@ -54,7 +54,8 @@ enum FocusHeroLayout {
     /// the bar never tucks away the way it does over the carousel.
     static let columnTopUnderTabBar: CGFloat = 150
     static let columnWidth: CGFloat = 900
-    static let rowAnimation = Animation.smooth(duration: 0.5)
+    /// Short enough that pressing Down repeatedly chains row to row.
+    static let rowAnimation = Animation.smooth(duration: 0.35)
     /// Quick enough to read as immediate as focus moves card to card, but not a cut.
     static let foregroundAnimation = Animation.easeOut(duration: 0.15)
 }

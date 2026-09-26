@@ -1352,6 +1352,7 @@ public struct HomeView: View {
                     showsSeriesArtwork: false,
                     onFocusEntered: reporter.entered,
                     onFocusChange: onFocusChange,
+                    onCardFocused: { _ in reporter.entered() },
                     playsOnSelect: true,
                     onSelect: onPlayItem
                 )
@@ -1363,6 +1364,7 @@ public struct HomeView: View {
                     spoilerSettings: spoilerSettings,
                     onFocusEntered: reporter.entered,
                     onFocusChange: onFocusChange,
+                    onCardFocused: { _ in reporter.entered() },
                     pendingRemovalIDs: pendingWatchlistRemovalIDs(
                         for: row.items,
                         revision: watchlistIntentRevision
@@ -1379,6 +1381,7 @@ public struct HomeView: View {
                     spoilerSettings: spoilerSettings,
                     onFocusEntered: reporter.entered,
                     onFocusChange: onFocusChange,
+                    onCardFocused: { _ in reporter.entered() },
                     onSelect: onSelectItem
                 )
             case .libraries:
@@ -1392,6 +1395,7 @@ public struct HomeView: View {
                 spoilerSettings: spoilerSettings,
                 onFocusEntered: reporter.entered,
                 onFocusChange: onFocusChange,
+                onCardFocused: { _ in reporter.entered() },
                 playsOnSelect: section.style == .landscape,
                 onSelect: section.style == .landscape ? onPlayItem : onSelectItem
             )

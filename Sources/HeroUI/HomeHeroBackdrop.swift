@@ -299,12 +299,25 @@ public struct HomeHeroBackdrop: View {
     /// pinned row, and the row itself sits over the lower half, so the leading
     /// edge darkens for the whole height and the top edge joins it.
     private var browseScrim: some View {
-        HeroLegibilityScrim(
-            tone: scrimTone,
-            edgePeak: 0.72,
-            edges: [.leading, .top, .bottom],
-            bottomFadeTop: 0.42
-        )
+        ZStack {
+            HeroLegibilityScrim(
+                tone: scrimTone,
+                edgePeak: 0.72,
+                edges: [.leading, .top, .bottom],
+                bottomFadeTop: 0.42
+            )
+            // The pinned row sits over the lower half, so the art recedes behind
+            // it: the cards read against the page, not against the picture.
+            LinearGradient(
+                stops: [
+                    .init(color: scrimTone.opacity(0), location: 0.38),
+                    .init(color: scrimTone.opacity(0.55), location: 0.6),
+                    .init(color: scrimTone.opacity(0.82), location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
     }
 
     @ViewBuilder
