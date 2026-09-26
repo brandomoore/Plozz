@@ -65,7 +65,7 @@ struct CustomizeHomeDetailView: View {
     // MARK: - Layout
 
     /// How Home is arranged, first because it decides what the rest applies to:
-    /// the Hero pane belongs to Spotlight alone, and Immersive's few options sit
+    /// the Hero pane belongs to Fullscreen Hero alone, and Showcase's few options sit
     /// under the picker here.
     private var layoutRows: [SettingsSplitRow] {
         [
@@ -330,7 +330,7 @@ struct CustomizeHomeDetailView: View {
         .animation(.easeInOut(duration: 0.22), value: hero.settings.isEnabled)
     }
 
-    /// Where the Spotlight's picks come from and how it rotates.
+    /// Where the Fullscreen Hero's picks come from and how it rotates.
     @ViewBuilder private var spotlightForm: some View {
         @Bindable var hero = hero
         VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {

@@ -70,6 +70,39 @@ final class FocusHeroModelTests: XCTestCase {
         XCTAssertEqual(model.rowHeights["watchlist"], 540)
     }
 
+    func testEveryTitleGetsTheSameFilledInDetails() async {
+        let metadata = FocusHeroMetadata()
+        let sparse = MediaItem(id: "arcane", title: "Arcane", kind: .series)
+        XCTAssertEqual(metadata.item(for: sparse).genres, [], "A title shows as it is until its details load")
+        await metadata.load(sparse) { items in
+            items.map { item in
+                var full = item
+                full.genres = ["Animation"]
+                full.officialRating = "TV-14"
+                return full
+            }
+        }
+        XCTAssertEqual(metadata.item(for: sparse).genres, ["Animation"])
+        XCTAssertEqual(metadata.item(for: sparse).officialRating, "TV-14")
+    }
+
+    func testAFocusThatMovesOnLoadsNothingAndCanLoadLater() async {
+        let metadata = FocusHeroMetadata()
+        let item = MediaItem(id: "dune", title: "Dune", kind: .movie)
+        let passing = Task { @MainActor in
+            await metadata.load(item) { items in
+                items.map { var full = $0; full.genres = ["Drama"]; return full }
+            }
+        }
+        passing.cancel()
+        await passing.value
+        XCTAssertNil(metadata.item(for: item).genres.first, "A card passed on the way isn't fetched")
+        await metadata.load(item) { items in
+            items.map { var full = $0; full.genres = ["Drama"]; return full }
+        }
+        XCTAssertEqual(metadata.item(for: item).genres, ["Drama"])
+    }
+
     func testTheHeroSkipsThePictureTheFocusedCardShows() {
         let main = ArtworkReference.remote(URL(string: "https://example.com/main.jpg")!)
         let second = ArtworkReference.remote(URL(string: "https://example.com/second.jpg")!)

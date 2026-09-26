@@ -41,12 +41,12 @@ struct HomeLayoutPicker: View {
 }
 
 extension HeroStyle {
-    /// The layout's name. Not "hero": Immersive has no hero section, every title
-    /// fills the screen in turn.
+    /// The layout's name: the full-screen hero with its buttons, or the
+    /// row-at-a-time Showcase whose top follows the focused card.
     var layoutTitle: LocalizedStringResource {
         switch self {
-        case .carousel: "Spotlight"
-        case .followsFocus: "Immersive"
+        case .carousel: "Fullscreen Hero"
+        case .followsFocus: "Showcase"
         }
     }
 }

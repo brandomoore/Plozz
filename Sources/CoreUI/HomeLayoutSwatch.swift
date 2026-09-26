@@ -21,10 +21,10 @@ private enum HomeLayoutPreviewColors {
 /// A drawing of Home in one ``HeroStyle``, laid out in the TV's own 1920 × 1080
 /// points and scaled to fit, so every piece sits where it does on screen.
 ///
-/// - `.carousel` ("Spotlight"): full-screen art, the wordmark, details, Play and
+/// - `.carousel` ("Fullscreen Hero"): full-screen art, the wordmark, details, Play and
 ///   the round actions low on the left, paging dots, and Continue Watching
 ///   peeking at the bottom.
-/// - `.followsFocus` ("Immersive"): the art fitted above the rows on the right,
+/// - `.followsFocus` ("Showcase"): the art fitted above the rows on the right,
 ///   fading left into the page; the title top left with no buttons; one row
 ///   pinned low with its focused card ringed, and the next row just peeking.
 public struct HomeLayoutSwatch: View {
@@ -62,7 +62,7 @@ public struct HomeLayoutSwatch: View {
         .accessibilityHidden(true)
     }
 
-    // MARK: Spotlight
+    // MARK: Fullscreen Hero
 
     private var spotlight: some View {
         ZStack(alignment: .topLeading) {
@@ -104,7 +104,7 @@ public struct HomeLayoutSwatch: View {
         }
     }
 
-    // MARK: Immersive
+    // MARK: Showcase
 
     private var immersive: some View {
         ZStack(alignment: .topLeading) {

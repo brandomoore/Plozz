@@ -1,10 +1,10 @@
 import XCTest
 
-/// Beside the pinned sidebar, a Home row puts its first card back exactly where
-/// the row opened after scrolling right and returning. tvOS parks a card returning
-/// left against the screen's safe area, which leaves the first card short of its
-/// place and inside the sidebar's feather unless the row corrects it. Runs the
-/// real Home against local fixture data in the isolated host.
+/// Beside the pinned sidebar, a card a Home row brings in from the left stops
+/// exactly where the row's first card opened, and the first card returns there.
+/// tvOS parks a card returning left against the screen's safe area, which leaves
+/// it short of that place and under the sidebar unless the row corrects it. Runs
+/// the real Home against local fixture data in the isolated host.
 @MainActor
 final class ImmersiveRowReturnTests: XCTestCase {
     func testFirstCardReturnsToWhereTheRowOpenedInImmersive() throws {
@@ -13,6 +13,14 @@ final class ImmersiveRowReturnTests: XCTestCase {
 
     func testFirstCardReturnsToWhereTheRowOpenedInSpotlight() throws {
         try exercise(arguments: [], name: "spotlight", leavesHero: true)
+    }
+
+    func testFramedCardsReturnToWhereTheRowOpenedInImmersive() throws {
+        try exercise(arguments: ["--immersive-home", "--framed-cards"], name: "immersive-framed")
+    }
+
+    func testFramedCardsReturnToWhereTheRowOpenedInSpotlight() throws {
+        try exercise(arguments: ["--framed-cards"], name: "spotlight-framed", leavesHero: true)
     }
 
     private func exercise(arguments: [String], name: String, leavesHero: Bool = false) throws {
@@ -44,10 +52,20 @@ final class ImmersiveRowReturnTests: XCTestCase {
                 XCUIRemote.shared.press(.right)
                 Thread.sleep(forTimeInterval: pause)
             }
-            for _ in 0..<depth {
+            // Back to the second card, which the row has to bring in from the
+            // left: it must stop where the first card opened, clear of the sidebar.
+            for _ in 0..<(depth - 1) {
                 XCUIRemote.shared.press(.left)
                 Thread.sleep(forTimeInterval: pause)
             }
+            Thread.sleep(forTimeInterval: 1.2)
+            let second = focusedCard(in: app)
+            let secondDrift = second.frame.minX - start
+            if abs(secondDrift) > 2 {
+                misses.append("trip \(trip) (\(depth) cards, \(pause)s): \(second.label) parked \(secondDrift)pt off")
+                attach(app, "\(name)-trip-\(trip)-second")
+            }
+            XCUIRemote.shared.press(.left)
             Thread.sleep(forTimeInterval: 1.2)
             let card = focusedCard(in: app)
             let drift = card.frame.minX - start
@@ -62,12 +80,12 @@ final class ImmersiveRowReturnTests: XCTestCase {
         #endif
     }
 
-    /// The focused card: the smallest focused element, since containers that hold
-    /// focus report it too.
+    /// The focused card: the smallest labelled focused element, since containers
+    /// that hold focus report it too.
     private func focusedCard(in app: XCUIApplication) -> XCUIElement {
         let focused = app.descendants(matching: .any)
             .matching(NSPredicate(format: "hasFocus == true")).allElementsBoundByIndex
-        return focused.filter { !$0.frame.isEmpty }
+        return focused.filter { !$0.frame.isEmpty && !$0.label.isEmpty }
             .min { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
             ?? app
     }

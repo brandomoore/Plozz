@@ -35,6 +35,28 @@ final class ImmersiveHomeLayoutTests: XCTestCase {
         #endif
     }
 
+    /// Captures a framed-card row scrolled mid-way beside the pinned sidebar, for
+    /// checking the feather against the navigation icons.
+    func testCaptureScrolledRowBesideTheSidebar() throws {
+        #if targetEnvironment(simulator)
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--production-home-fixture", "--pinned-home", "--framed-cards"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
+        Thread.sleep(forTimeInterval: 2)
+        XCUIRemote.shared.press(.down)
+        Thread.sleep(forTimeInterval: 1.5)
+        attach(app.screenshot(), "framed-opened")
+        for _ in 0..<6 { XCUIRemote.shared.press(.right); Thread.sleep(forTimeInterval: 0.5) }
+        for _ in 0..<3 { XCUIRemote.shared.press(.left); Thread.sleep(forTimeInterval: 0.5) }
+        Thread.sleep(forTimeInterval: 1.5)
+        attach(app.screenshot(), "framed-scrolled")
+        #else
+        throw XCTSkip("Uses the isolated host with local fixture data.")
+        #endif
+    }
+
     /// The first point along `y`, scanning right from `x`, where the picture
     /// changes sharply from the page behind it.
     private func artworkEdge(in image: UIImage, y: CGFloat, from x: CGFloat) -> CGFloat? {

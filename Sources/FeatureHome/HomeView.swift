@@ -152,9 +152,9 @@ public struct HomeView: View {
         return settings
     }
 
-    /// What the curator runs on. The carousel's settings, or — for the Immersive
+    /// What the curator runs on. The carousel's settings, or — for the Showcase
     /// layout's Discover row — the same settings narrowed to the Featured source,
-    /// so the row holds exactly the discovery picks the Spotlight would. `nil`
+    /// so the row holds exactly the discovery picks the Fullscreen Hero would. `nil`
     /// when nothing on screen needs curating.
     private var curationSettings: HeroSettings? {
         #if os(tvOS)
@@ -1372,7 +1372,7 @@ public struct HomeView: View {
         }
     }
 
-    /// The Immersive layout while Continue Watching is loading: the real view,
+    /// The Showcase layout while Continue Watching is loading: the real view,
     /// with the rows' own loading placeholders in them, so they sit exactly
     /// where the loaded rows will. Nothing in it is focusable, and the hero stays
     /// empty until a real title arrives.
@@ -1439,7 +1439,8 @@ public struct HomeView: View {
             settings: settings,
             spoilerSettings: spoilerSettings,
             navigationStyle: navigationStyle,
-            isFrontmost: heroIsFrontmost
+            isFrontmost: heroIsFrontmost,
+            enrich: heroMetadataEnricher
         ) { row, reporter in
             if let source = sources[row.id] {
                 focusHomeRowView(source, reporter: reporter)
@@ -2011,14 +2012,13 @@ private struct HomeShareScanRefreshObserver: View {
     }
 }
 
-/// Home's Libraries row. It tracks which tile holds focus so, beside a pinned
-/// sidebar, the row returns to where it opened when its first tile takes focus.
+/// Home's Libraries row: tiles beside a pinned sidebar park where the first
+/// tile opened, and focus is reported for a Home that follows it.
 private struct HomeLibrariesRow: View {
     let libraries: [AggregatedLibrary]
     let onSelectLibrary: (MediaLibrary) -> Void
     var onFocused: ((AggregatedLibrary) -> Void)?
 
-    @State private var focusedLibraryID: AggregatedLibrary.ID?
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
@@ -2033,7 +2033,7 @@ private struct HomeLibrariesRow: View {
                 isActive: pinnedSidebarActive,
                 inset: navigationContentInset,
                 verticalOverhang: metrics.railShadowClearance,
-                firstCardFocused: focusedLibraryID != nil && focusedLibraryID == libraries.first?.id
+                cardPitch: metrics.landscapeCardSlotWidth + metrics.cardSpacing
             ) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: metrics.cardSpacing) {
@@ -2043,12 +2043,7 @@ private struct HomeLibrariesRow: View {
                                 subtitle: HomeView.librarySubtitle(for: aggregated, in: libraries),
                                 action: { onSelectLibrary(aggregated.library) },
                                 onFocusChange: { focused in
-                                    if focused {
-                                        focusedLibraryID = aggregated.id
-                                        onFocused?(aggregated)
-                                    } else if focusedLibraryID == aggregated.id {
-                                        focusedLibraryID = nil
-                                    }
+                                    if focused { onFocused?(aggregated) }
                                 }
                             )
                         }

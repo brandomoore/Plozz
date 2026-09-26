@@ -225,6 +225,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
     let spoilerSettings: SpoilerSettings
     let navigationStyle: NavigationStyle
     let isFrontmost: Bool
+    let enrich: FocusHeroMetadata.Enrich?
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
 
     init(
@@ -233,6 +234,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
         spoilerSettings: SpoilerSettings,
         navigationStyle: NavigationStyle,
         isFrontmost: Bool,
+        enrich: FocusHeroMetadata.Enrich? = nil,
         @ViewBuilder rowContent: @escaping (FocusHeroRow, FocusHeroRowReporter) -> RowContent
     ) {
         self.rows = rows
@@ -240,10 +242,12 @@ struct FocusHeroHomeView<RowContent: View>: View {
         self.spoilerSettings = spoilerSettings
         self.navigationStyle = navigationStyle
         self.isFrontmost = isFrontmost
+        self.enrich = enrich
         self.rowContent = rowContent
     }
 
     @State private var model = FocusHeroModel()
+    @State private var metadata = FocusHeroMetadata()
 
     // Reads nothing from `model`: this body builds the rows, and must not run
     // again when the pinned row or the hero title changes.
@@ -257,6 +261,8 @@ struct FocusHeroHomeView<RowContent: View>: View {
             )
             FocusHeroColumn(
                 model: model,
+                metadata: metadata,
+                enrich: enrich,
                 rows: rows,
                 settings: settings,
                 spoilerSettings: spoilerSettings,
@@ -277,6 +283,37 @@ struct FocusHeroHomeView<RowContent: View>: View {
         )
         .onAppear { model.seed(from: rows) }
         .onChange(of: rows.map(\.itemIDs)) { _, _ in model.seed(from: rows) }
+    }
+}
+
+/// The hero's details for each title, filled in the way the classic hero fills
+/// its slides. Row records are sparse and differ by row, so without this one title
+/// shows genres and a rating and the next shows neither.
+@MainActor @Observable
+final class FocusHeroMetadata {
+    typealias Enrich = @Sendable ([MediaItem]) async -> [MediaItem]
+
+    private var details: [String: MediaItem] = [:]
+    @ObservationIgnored private var requested: Set<String> = []
+
+    /// The title with its full details once they have loaded.
+    func item(for item: MediaItem) -> MediaItem {
+        details[item.stablePresentationID] ?? item
+    }
+
+    /// Loads a title's details once focus has settled on it. Cards passed on the
+    /// way are left alone, and a load cut short is tried again next time.
+    func load(_ item: MediaItem, using enrich: Enrich) async {
+        let key = item.stablePresentationID
+        guard details[key] == nil, !requested.contains(key) else { return }
+        try? await Task.sleep(for: .milliseconds(250))
+        guard !Task.isCancelled, requested.insert(key).inserted else { return }
+        let enriched = await enrich([item]).first
+        guard !Task.isCancelled, let enriched else {
+            requested.remove(key)
+            return
+        }
+        withAnimation(FocusHeroLayout.foregroundAnimation) { details[key] = enriched }
     }
 }
 
@@ -414,6 +451,8 @@ private struct FocusHeroBackdropLayer: View {
 
 private struct FocusHeroColumn: View {
     let model: FocusHeroModel
+    let metadata: FocusHeroMetadata
+    let enrich: FocusHeroMetadata.Enrich?
     let rows: [FocusHeroRow]
     let settings: HeroSettings
     let spoilerSettings: SpoilerSettings
@@ -438,6 +477,10 @@ private struct FocusHeroColumn: View {
         // The TV's safe area and the rail's inset, exactly as the classic hero.
         .padding(.leading, PlozzTheme.Metrics.heroLeadingPadding + navigationContentInset)
         .allowsHitTesting(false)
+        .task(id: model.subject?.item?.stablePresentationID) {
+            guard let enrich, let item = model.subject?.item else { return }
+            await metadata.load(item, using: enrich)
+        }
         .task(id: schedules.fetchKey(for: model.subject?.item)) {
             guard let item = model.subject?.item else { return }
             await schedules.loadCached([item])
@@ -453,7 +496,7 @@ private struct FocusHeroColumn: View {
     private func content(for subject: FocusHeroSubject) -> some View {
         switch subject {
         case .item(let item):
-            itemColumn(item)
+            itemColumn(metadata.item(for: item))
         case .library(let library):
             VStack(alignment: .leading, spacing: 12) {
                 library.library.displayName

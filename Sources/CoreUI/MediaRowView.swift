@@ -156,8 +156,6 @@ public struct MediaRowView: View {
     private let itemByID: [String: MediaItem]
 
     @FocusState private var focusedID: String?
-    /// Whether the first card holds focus, for rows that don't track every card.
-    @FocusState private var leadingCardFocused: Bool
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
     @State private var didApplyInitialFocus = false
@@ -496,9 +494,7 @@ public struct MediaRowView: View {
                     isActive: pinnedSidebarActive,
                     inset: navigationContentInset,
                     verticalOverhang: layoutMetrics.railShadowClearance,
-                    firstCardFocused: tracksFocus
-                        ? focusedID.map { itemIndexByID[$0] == 0 } ?? false
-                        : leadingCardFocused
+                    cardPitch: presentation == .episodeColumn ? nil : cardSlotWidth + layoutMetrics.cardSpacing
                 ) {
                     ScrollViewReader { proxy in
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -819,8 +815,6 @@ public struct MediaRowView: View {
             card
                 .focused($focusedID, equals: item.stablePresentationID)
                 .disabled(cardIsDisabled(item))
-        } else if itemIndexByID[item.stablePresentationID] == 0 {
-            card.focused($leadingCardFocused)
         } else {
             card
         }

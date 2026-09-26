@@ -16,6 +16,12 @@ struct ProductionHomeFixture: View {
     @State private var nativeSidebarFocus = NavigationDestinationFocusHandoff()
 
     private var isPinned: Bool { ProcessInfo.processInfo.arguments.contains("--pinned-home") }
+    /// `--focus-style=<name>` picks a card focus style; native system focus otherwise.
+    private static var focusStyle: CardFocusStyle {
+        ProcessInfo.processInfo.arguments
+            .first { $0.hasPrefix("--focus-style=") }
+            .flatMap { CardFocusStyle(rawValue: String($0.dropFirst("--focus-style=".count))) } ?? .system
+    }
     private var isNativeSidebar: Bool {
         ProcessInfo.processInfo.arguments.contains("--native-sidebar-home")
     }
@@ -99,8 +105,8 @@ struct ProductionHomeFixture: View {
                 ProgressView("Preparing local Home data")
             }
         }
-        .environment(\.plozzCardFocusStyle, .system)
-        .environment(\.plozzCardStyle, .borderless)
+        .environment(\.plozzCardFocusStyle, Self.focusStyle)
+        .environment(\.plozzCardStyle, ProcessInfo.processInfo.arguments.contains("--framed-cards") ? .framed : .borderless)
         .task {
             guard fixture == nil else { return }
             fixture = await ProductionHomeState.load()

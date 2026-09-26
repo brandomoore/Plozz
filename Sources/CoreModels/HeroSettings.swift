@@ -58,8 +58,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     public var autoAdvanceSeconds: Int
 
     /// How Apple TV's Home is arranged. Other platforms always show the carousel.
-    /// Lives with the hero's settings because Spotlight is the carousel, but it is
-    /// a layout choice, not a hero option: Immersive has no hero section at all.
+    /// Lives with the hero's settings because Fullscreen Hero is the carousel, but it is
+    /// a layout choice, not a hero option: Showcase has no hero section at all.
     public var style: HeroStyle
 
     /// How the backdrop changes between titles when the hero follows focus.
@@ -69,8 +69,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// default: the hero already names whatever is focused.
     public var showsCardCaptions: Bool
 
-    /// Whether the Immersive layout adds a row of discovery picks — what the
-    /// Spotlight's Featured source would show. Off by default.
+    /// Whether the Showcase layout adds a row of discovery picks — what the
+    /// Fullscreen Hero's Featured source would show. Off by default.
     public var showsDiscoverRow: Bool
 
     /// Hero on, all content categories enabled, a modest rotation, all libraries
@@ -254,8 +254,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         isEnabled && !sources.isEmpty
     }
 
-    /// Whether Apple TV's Home uses the Immersive layout. Independent of the
-    /// hero's switch and sources, which belong to the Spotlight: every title here
+    /// Whether Apple TV's Home uses the Showcase layout. Independent of the
+    /// hero's switch and sources, which belong to the Fullscreen Hero: every title here
     /// comes from the rows.
     public var followsFocus: Bool {
         style == .followsFocus
