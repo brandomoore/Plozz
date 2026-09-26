@@ -1347,7 +1347,9 @@ public struct HomeView: View {
                     items: row.items,
                     style: posterStyle(row.style),
                     spoilerSettings: spoilerSettings,
-                    showsSeriesArtwork: visibility.continueWatchingShowsSeriesArtwork,
+                    // Episode stills rather than the show's art: the hero behind
+                    // the row is already showing that art full-screen.
+                    showsSeriesArtwork: false,
                     onFocusEntered: reporter.entered,
                     onFocusChange: onFocusChange,
                     playsOnSelect: true,

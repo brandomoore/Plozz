@@ -63,6 +63,10 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// How the backdrop changes between titles when the hero follows focus.
     public var backdropTransition: HeroBackdropTransition
 
+    /// Whether cards keep their title lines when the hero follows focus. Off by
+    /// default: the hero already names whatever is focused.
+    public var showsCardCaptions: Bool
+
     /// Hero on, all content categories enabled, a modest rotation, all libraries
     /// for Random, and gentle auto-advance. Optional discovery credits are hidden.
     /// Feed defaults are defined by ``HeroDiscoverySource/defaultSelection``.
@@ -97,7 +101,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         autoAdvance: Bool,
         autoAdvanceSeconds: Int,
         style: HeroStyle = .carousel,
-        backdropTransition: HeroBackdropTransition = .crossfade
+        backdropTransition: HeroBackdropTransition = .crossfade,
+        showsCardCaptions: Bool = false
     ) {
         self.isEnabled = isEnabled
         // De-duplicate while preserving order so the picker can't persist a
@@ -117,6 +122,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         self.autoAdvanceSeconds = autoAdvanceSeconds.clamped(to: HeroSettings.autoAdvanceRange)
         self.style = style
         self.backdropTransition = backdropTransition
+        self.showsCardCaptions = showsCardCaptions
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -125,7 +131,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         case discoverySources, showsDiscoverySources
         case ratingPreferences
         case randomLibraryKeys, autoAdvance, autoAdvanceSeconds
-        case style, backdropTransition
+        case style, backdropTransition, showsCardCaptions
         case offeredSourcesVersion
     }
 
@@ -163,7 +169,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
             autoAdvance: value(Bool.self, .autoAdvance, d.autoAdvance),
             autoAdvanceSeconds: value(Int.self, .autoAdvanceSeconds, d.autoAdvanceSeconds),
             style: value(HeroStyle.self, .style, d.style),
-            backdropTransition: value(HeroBackdropTransition.self, .backdropTransition, d.backdropTransition)
+            backdropTransition: value(HeroBackdropTransition.self, .backdropTransition, d.backdropTransition),
+            showsCardCaptions: value(Bool.self, .showsCardCaptions, d.showsCardCaptions)
         )
     }
 
@@ -222,6 +229,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         try c.encode(autoAdvanceSeconds, forKey: .autoAdvanceSeconds)
         try c.encode(style, forKey: .style)
         try c.encode(backdropTransition, forKey: .backdropTransition)
+        try c.encode(showsCardCaptions, forKey: .showsCardCaptions)
         try c.encode(Self.currentOfferedSourcesVersion, forKey: .offeredSourcesVersion)
     }
 

@@ -26,17 +26,12 @@ struct FocusHeroRowReporter {
 enum FocusHeroLayout {
     static var screenHeight: CGFloat { HomeHeroLayout.screenHeight }
     static var screenWidth: CGFloat { HomeHeroLayout.screenWidth }
-    /// How far the next row must reach on screen under the tallest pinned row:
-    /// its title and the top edge of its cards. The focus engine only moves to
-    /// something on screen, so this is what lets Down reach it.
-    static let nextRowReach: CGFloat = 90
-    /// How much of the next row is actually visible: its title and a sliver of
-    /// card. Anything further down stays in place for focus but is masked.
-    static let nextRowPeek: CGFloat = 64
-    /// Softens the bottom edge of the peek.
-    static let peekFade: CGFloat = 36
-    /// The pinned row's top edge stays inside these bounds whatever the row mix.
-    static let pinnedRange: ClosedRange<CGFloat> = 420...640
+    /// What shows of the next row under the pinned one: its title and the top
+    /// edge of its cards. The focus engine only moves to something on screen, so
+    /// this sliver is also what lets Down reach it.
+    static let nextRowPeek: CGFloat = 84
+    /// Keeps the hero column usable if a row ever measures unexpectedly tall.
+    static let lowestSlotTop: CGFloat = 360
     /// Height of the band a row fades through as it lifts out above the pinned row.
     static let fadeBand: CGFloat = 140
     /// Ignores sub-point measurement noise so a row settling can't re-lay itself out.
@@ -193,7 +188,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
         }
         .animation(FocusHeroLayout.foregroundAnimation, value: subject?.id)
         .frame(width: FocusHeroLayout.columnWidth, alignment: .bottomLeading)
-        .frame(height: max(0, pinnedY - FocusHeroLayout.columnGap - columnTop), alignment: .bottomLeading)
+        .frame(height: max(0, slotTop - FocusHeroLayout.columnGap - columnTop), alignment: .bottomLeading)
         .padding(.top, columnTop)
         .padding(.leading, FocusHeroLayout.horizontalMargin + navigationContentInset)
         .allowsHitTesting(false)
@@ -301,46 +296,45 @@ struct FocusHeroHomeView<RowContent: View>: View {
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, FocusHeroLayout.horizontalMargin)
-                .offset(y: pinnedY - top(ofRowAt: activeIndex))
+                .offset(y: rowsBottom - top(ofRowAt: activeIndex) - activeRowHeight)
                 .focusScope(focusScope)
             }
             .mask(rowsMask)
             .animation(FocusHeroLayout.rowAnimation, value: resolvedActiveRowID)
+            .environment(\.plozzCardCaptionsHidden, !settings.showsCardCaptions)
     }
 
-    /// Solid from the pinned row's title to a sliver of the next row, clear above
-    /// (through the band a lifting row fades out in) and below. A mask rather
-    /// than opacity: masked rows keep their focusability.
+    /// Clear above the pinned row, fading through the band a lifting row leaves
+    /// by, and solid from its title down through the next row's peek. A mask
+    /// rather than opacity: masked rows keep their focusability.
     private var rowsMask: some View {
         let height = FocusHeroLayout.screenHeight
-        let top = max(0, pinnedY - 12)
+        let top = max(0, rowsBottom - activeRowHeight - 12)
         let fadeTop = max(0, top - FocusHeroLayout.fadeBand)
-        let peekEnd = min(
-            height,
-            pinnedY + activeRowHeight + metrics.rowSpacing + FocusHeroLayout.nextRowPeek
-        )
-        let bottom = min(height, peekEnd + FocusHeroLayout.peekFade)
         return LinearGradient(
             stops: [
                 .init(color: .clear, location: 0),
                 .init(color: .clear, location: fadeTop / height),
                 .init(color: .black, location: top / height),
-                .init(color: .black, location: peekEnd / height),
-                .init(color: .clear, location: bottom / height),
-                .init(color: .clear, location: 1),
+                .init(color: .black, location: 1),
             ],
             startPoint: .top,
             endPoint: .bottom
         )
     }
 
-    /// Every row pins at one height, low enough for the tallest to fit with the
-    /// next one still reachable beneath it.
-    private var pinnedY: CGFloat {
+    /// Where every pinned row's cards end: low on the screen, with just the next
+    /// row's peek beneath. Rows are anchored by this edge, so a shorter row gets
+    /// room above its title instead of sitting higher than the others.
+    private var rowsBottom: CGFloat {
+        FocusHeroLayout.screenHeight - metrics.rowSpacing - FocusHeroLayout.nextRowPeek
+    }
+
+    /// The top of the space every row occupies: the tallest row's title. The
+    /// hero column always ends above it, whichever row is pinned.
+    private var slotTop: CGFloat {
         let tallest = rowHeights.values.max() ?? 0
-        guard tallest > 0 else { return FocusHeroLayout.pinnedRange.upperBound }
-        let fitted = FocusHeroLayout.screenHeight - tallest - metrics.rowSpacing - FocusHeroLayout.nextRowReach
-        return min(max(fitted, FocusHeroLayout.pinnedRange.lowerBound), FocusHeroLayout.pinnedRange.upperBound)
+        return max(FocusHeroLayout.lowestSlotTop, rowsBottom - tallest)
     }
 
     private var activeIndex: Int {

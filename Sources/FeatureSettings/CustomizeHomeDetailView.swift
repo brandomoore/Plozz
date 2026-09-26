@@ -275,6 +275,13 @@ struct CustomizeHomeDetailView: View {
                             title: { Text($0.settingsTitle) }
                         )
                     }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Show titles under cards", isOn: $hero.settings.showsCardCaptions)
+                            .toggleStyle(SettingsSwitchToggleStyle())
+                        Text("The hero already shows the title you're on.")
+                            .settingsHelperText()
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 Toggle("Show ratings", isOn: $hero.settings.showsRatings)

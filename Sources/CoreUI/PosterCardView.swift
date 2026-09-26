@@ -285,7 +285,7 @@ public struct PosterCardView: View {
                 .focused($isFocused.focusState)
                 .frame(maxWidth: .infinity)
             }
-            if !showsSeriesArtwork {
+            if showsCaption {
                 SystemPosterCaption(
                     title: nativePosterTitle, subtitle: subtitleText,
                     reservesSubtitleSpace: reservesSubtitleSpace, isFocused: isFocused
@@ -349,9 +349,11 @@ public struct PosterCardView: View {
                 .recordDetailTransitionArtwork(detailTransitionSource)
                 #endif
 
-            captionBlock(inset: metrics.posterCaptionInset, spacing: 2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, metrics.posterCaptionInset)
+            if !captionsHidden {
+                captionBlock(inset: metrics.posterCaptionInset, spacing: 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, metrics.posterCaptionInset)
+            }
         }
         .plozzFramedMediaCard(
             innerCornerRadius: PlozzTheme.Metrics.posterArtCornerRadius,
@@ -408,7 +410,7 @@ public struct PosterCardView: View {
             // caption under them at all. A card that is purely its art is the
             // point of the treatment; a reserved-but-empty caption slot would just
             // read as a rendering bug.
-            if !showsSeriesArtwork {
+            if showsCaption {
                 captionBlock(inset: metrics.landscapeCaptionInset, spacing: 4)
                     .padding(.bottom, metrics.landscapeCaptionInset)
                     .frame(width: size.width, alignment: .leading)
@@ -445,7 +447,7 @@ public struct PosterCardView: View {
             borderlessArtwork
             // See `landscapeCard`: a series-artwork card carries its text on the
             // artwork, so it has no caption.
-            if !showsSeriesArtwork {
+            if showsCaption {
                 BorderlessCardCaption(
                     title: primaryText,
                     subtitle: subtitleText,
@@ -715,6 +717,15 @@ public struct PosterCardView: View {
     /// badge on a poster. They show the shared full-width progress bar instead
     /// (see ``MediaCardPlaybackIndicators``), which needs no runtime metadata — so
     /// every in-progress card looks the same whether or not its runtime is known.
+    @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
+
+    /// Series-artwork cards carry their text on the art, and a surface can hide
+    /// captions outright when it names the title elsewhere.
+    private var showsCaption: Bool { !showsSeriesArtwork && !captionsHidden }
+
+    /// Whether the resume chip names the episode, because no caption will.
+    private var chipCarriesEpisode: Bool { showsSeriesArtwork || captionsHidden }
+
     private var showsResumeChip: Bool {
         (playsOnSelect || showsResumeChipOverride)
             && !hideThumbnail
@@ -738,7 +749,7 @@ public struct PosterCardView: View {
                 // where it is the only thing naming the episode. `ResumeChipOverlay`
                 // already draws exactly this case (see its `hasBottomChrome`); this
                 // outer gate simply never let it through.
-                || (showsSeriesArtwork && item.seasonEpisodeLabel != nil))
+                || (chipCarriesEpisode && item.seasonEpisodeLabel != nil))
     }
 
     /// The shared resume affordance — identical to the episode card's overlay.
@@ -752,7 +763,7 @@ public struct PosterCardView: View {
                 // Series-artwork cards carry the episode designation *in* the chip
                 // rather than in a caption under the card, so one glance covers
                 // which show (the logo), which episode, and how much is left.
-                detailText: showsSeriesArtwork ? item.seasonEpisodeLabel : nil,
+                detailText: chipCarriesEpisode ? item.seasonEpisodeLabel : nil,
                 showsPlayGlyphWhenIdle: showsSeriesArtwork,
                 // A Continue Watching card darkens over a much longer run,
                 // starting up in the picture and finishing lighter: it is not

@@ -104,6 +104,7 @@ final class HeroSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.style, .carousel)
         XCTAssertEqual(decoded.backdropTransition, .crossfade)
         XCTAssertFalse(decoded.followsFocus)
+        XCTAssertFalse(decoded.showsCardCaptions, "The hero names the focused title, so cards start without one")
     }
 
     func testAnUnknownStyleFallsBackWithoutResettingOtherSettings() throws {
@@ -118,12 +119,14 @@ final class HeroSettingsTests: XCTestCase {
         var settings = HeroSettings.default
         settings.style = .followsFocus
         settings.backdropTransition = .slide
+        settings.showsCardCaptions = true
         settings.sources = []
         let store = HeroSettingsStore(defaults: defaults)
         store.save(settings)
         let loaded = store.load()
         XCTAssertEqual(loaded.style, .followsFocus)
         XCTAssertEqual(loaded.backdropTransition, .slide)
+        XCTAssertTrue(loaded.showsCardCaptions)
         XCTAssertTrue(loaded.followsFocus, "Its titles come from the rows, not the carousel's sources")
 
         settings.isEnabled = false

@@ -301,7 +301,7 @@ public struct HomeHeroBackdrop: View {
     private var browseScrim: some View {
         HeroLegibilityScrim(
             tone: scrimTone,
-            edgePeak: 0.62,
+            edgePeak: 0.72,
             edges: [.leading, .top, .bottom],
             bottomFadeTop: 0.42
         )
