@@ -12,6 +12,8 @@ struct FocusHeroRow: Identifiable {
     let itemIDs: [String]
     /// What the hero shows before anything in the row has been focused.
     let leadItem: MediaItem?
+    /// The row's titles, so their details can load before focus reaches them.
+    var items: [MediaItem] = []
     /// The wide picture a card in this row leads with, for rows whose cards show
     /// wide art. The hero steers its backdrop off it. `nil` for poster rows.
     var cardArtwork: ((MediaItem) -> [ArtworkReference])? = nil
@@ -283,6 +285,11 @@ struct FocusHeroHomeView<RowContent: View>: View {
         )
         .onAppear { model.seed(from: rows) }
         .onChange(of: rows.map(\.itemIDs)) { _, _ in model.seed(from: rows) }
+        .task(id: rows.map(\.itemIDs)) {
+            guard let enrich else { return }
+            // Each row's opening titles, top row first: where focus goes next.
+            await metadata.prefetch(rows.flatMap { $0.items.prefix(12) }, using: enrich)
+        }
     }
 }
 
@@ -299,6 +306,30 @@ final class FocusHeroMetadata {
     /// The title with its full details once they have loaded.
     func item(for item: MediaItem) -> MediaItem {
         details[item.stablePresentationID] ?? item
+    }
+
+    func hasDetails(for item: MediaItem) -> Bool {
+        details[item.stablePresentationID] != nil
+    }
+
+    /// Loads the details of titles focus hasn't reached yet, a few at a time, so
+    /// they're usually ready by the time it does.
+    func prefetch(_ items: [MediaItem], using enrich: Enrich) async {
+        let wanted = items.filter {
+            details[$0.stablePresentationID] == nil && !requested.contains($0.stablePresentationID)
+        }
+        for batch in stride(from: 0, to: wanted.count, by: 8).map({ Array(wanted[$0..<min($0 + 8, wanted.count)]) }) {
+            let keys = batch.map(\.stablePresentationID).filter { requested.insert($0).inserted }
+            guard !keys.isEmpty else { continue }
+            let enriched = await enrich(batch)
+            guard !Task.isCancelled, enriched.count == batch.count else {
+                keys.forEach { requested.remove($0) }
+                return
+            }
+            for (original, full) in zip(batch, enriched) where keys.contains(original.stablePresentationID) {
+                details[original.stablePresentationID] = full
+            }
+        }
     }
 
     /// Loads a title's details once focus has settled on it. Cards passed on the
@@ -464,15 +495,17 @@ private struct FocusHeroColumn: View {
     var body: some View {
         let top = FocusHeroLayout.columnTop(for: navigationStyle)
         let slotTop = model.slotTop(in: rows, rowSpacing: FocusHeroLayout.rowSpacing)
-        ZStack(alignment: .bottomLeading) {
+        // Pinned to the top, so the logo holds one place from title to title and
+        // a longer description only reaches further down.
+        ZStack(alignment: .topLeading) {
             if let subject = model.subject {
                 content(for: subject)
                     .id(subject.id)
                     .transition(.opacity)
             }
         }
-        .frame(width: FocusHeroLayout.columnWidth, alignment: .bottomLeading)
-        .frame(height: max(0, slotTop - FocusHeroLayout.columnGap - top), alignment: .bottomLeading)
+        .frame(width: FocusHeroLayout.columnWidth, alignment: .topLeading)
+        .frame(height: max(0, slotTop - FocusHeroLayout.columnGap - top), alignment: .topLeading)
         .padding(.top, top)
         // The TV's safe area and the rail's inset, exactly as the classic hero.
         .padding(.leading, PlozzTheme.Metrics.heroLeadingPadding + navigationContentInset)
@@ -516,10 +549,10 @@ private struct FocusHeroColumn: View {
     private func itemColumn(_ item: MediaItem) -> some View {
         let hideText = spoilerSettings.shouldHideText(for: item)
         let references = HomeHeroArtwork.backdropReferences(for: item)
+        // Details show once, complete: a row's own record is sparser than what
+        // replaces it, so showing it first would change the text under the viewer.
+        let detailed = enrich == nil || metadata.hasDetails(for: item)
         return VStack(alignment: .leading, spacing: 12) {
-            if let scheduleLine = schedules.line(for: item) {
-                HeroScheduleBadge(text: scheduleLine)
-            }
             HeroLogoArtwork(
                 references: item.artworkReferences(for: .logo),
                 asyncFallbackURL: HomeHeroArtwork.logoFallback(for: item),
@@ -534,31 +567,39 @@ private struct FocusHeroColumn: View {
                     .minimumScaleFactor(0.5)
                     .multilineTextAlignment(.leading)
             }
+            // Every logo and title sits on the same line, whatever its shape.
+            .frame(height: FocusHeroLayout.logoBox.height, alignment: .bottomLeading)
             .padding(.bottom, 6)
 
-            HeroMetadataLine(item: item)
-                .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
-
-            if !hideText, let description = item.tagline ?? item.overview {
-                Text(description.overviewPlainText)
-                    .font(.system(size: 22))
-                    .foregroundStyle(.primary)
-                    .lineSpacing(2)
-                    .lineLimit(3)
-                    .frame(maxWidth: 820, alignment: .topLeading)
-                    .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
+            if let scheduleLine = schedules.line(for: item) {
+                HeroScheduleBadge(text: scheduleLine)
             }
 
-            if settings.shouldShowRatings(for: item, spoilerSettings: spoilerSettings) {
-                let presentation = HeroPresentation(item: item, artworkStyle: .landscape, surface: .home)
-                RatingsBadgeRow(
-                    ratings: settings.ratingPreferences.headerRatings(
-                        from: item.ratings, isAnime: presentation.isAnime, hidesRatings: false
-                    ),
-                    familyGuidanceAge: settings.ratingPreferences.headerFamilyGuidanceAge(
-                        from: presentation.familyGuidanceAge, hidesRatings: false
+            if detailed {
+                HeroMetadataLine(item: item)
+                    .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
+
+                if !hideText, let description = item.tagline ?? item.overview {
+                    Text(description.overviewPlainText)
+                        .font(.system(size: 22))
+                        .foregroundStyle(.primary)
+                        .lineSpacing(2)
+                        .lineLimit(3)
+                        .frame(maxWidth: 820, alignment: .topLeading)
+                        .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
+                }
+
+                if settings.shouldShowRatings(for: item, spoilerSettings: spoilerSettings) {
+                    let presentation = HeroPresentation(item: item, artworkStyle: .landscape, surface: .home)
+                    RatingsBadgeRow(
+                        ratings: settings.ratingPreferences.headerRatings(
+                            from: item.ratings, isAnime: presentation.isAnime, hidesRatings: false
+                        ),
+                        familyGuidanceAge: settings.ratingPreferences.headerFamilyGuidanceAge(
+                            from: presentation.familyGuidanceAge, hidesRatings: false
+                        )
                     )
-                )
+                }
             }
         }
     }

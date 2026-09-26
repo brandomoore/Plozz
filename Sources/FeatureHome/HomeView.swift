@@ -1313,6 +1313,7 @@ public struct HomeView: View {
                     id: "home-\(row.kind)",
                     itemIDs: row.items.map(\.id),
                     leadItem: row.items.first,
+                    items: row.items,
                     cardArtwork: row.style == .landscape
                         ? { PosterCardView.leadingLandscapeArtwork(for: $0, showsSeriesArtwork: seriesArtwork) }
                         : nil
@@ -1339,7 +1340,7 @@ public struct HomeView: View {
             let continueWatching = result.firstIndex { $0.row.id == "home-\(HomeRowKind.continueWatching)" }
             let index = continueWatching.map { $0 + 1 } ?? result.firstIndex { $0.row.id != "home-notice" } ?? result.count
             result.insert((
-                FocusHeroRow(id: "home-discover", itemIDs: discover.map(\.id), leadItem: discover.first),
+                FocusHeroRow(id: "home-discover", itemIDs: discover.map(\.id), leadItem: discover.first, items: discover),
                 .discover(discover)
             ), at: index)
         }
@@ -1359,6 +1360,7 @@ public struct HomeView: View {
                         id: "section-\(group.id)-\(section.id)",
                         itemIDs: section.items.map(\.id),
                         leadItem: section.items.first,
+                        items: section.items,
                         cardArtwork: section.style == .landscape
                             ? { PosterCardView.leadingLandscapeArtwork(for: $0, showsSeriesArtwork: false) }
                             : nil
