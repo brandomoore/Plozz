@@ -34,7 +34,8 @@
               "text": "A denser iPhone/iPad Live TV guide with synchronized timeline scrolling, clearer channel logos, and tap-to-preview program details before watching.",
               "platforms": ["iOS"]
             },
-            "Improved text-subtitle delivery and track switching during Plex transcoding."
+            "Improved text-subtitle delivery and track switching during Plex transcoding.",
+            "Thanks to @tresby for contributing to this release."
           ]
         },
         {
