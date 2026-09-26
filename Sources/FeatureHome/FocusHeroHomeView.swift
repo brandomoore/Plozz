@@ -32,8 +32,9 @@ enum FocusHeroLayout {
     static let nextRowPeek: CGFloat = 84
     /// Keeps the hero column usable if a row ever measures unexpectedly tall.
     static let lowestSlotTop: CGFloat = 360
-    /// Height of the band a row fades through as it lifts out above the pinned row.
-    static let fadeBand: CGFloat = 140
+    /// The soft edge above the pinned row's title. Narrower than the gap between
+    /// rows, so nothing of the row above survives it once it has lifted out.
+    static let fadeBand: CGFloat = 16
     /// Ignores sub-point measurement noise so a row settling can't re-lay itself out.
     static let measurementTolerance: CGFloat = 0.5
     /// Clear space between the hero's last line and the pinned row's title.
@@ -293,6 +294,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
                                 let known = rowHeights[row.id] ?? 0
                                 guard abs(known - height) > FocusHeroLayout.measurementTolerance else { return }
                                 rowHeights[row.id] = height
+                                HeroFocusDiagnostics.emit("FHOME height row=\(row.id) h=\(Int(height)) | \(layoutSummary)")
                             }
                             .prefersDefaultFocus(index == 0, in: focusScope)
                     }
@@ -312,7 +314,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
     /// rather than opacity: masked rows keep their focusability.
     private var rowsMask: some View {
         let height = FocusHeroLayout.screenHeight
-        let top = max(0, rowsBottom - activeRowHeight - 12)
+        let top = max(0, rowsBottom - activeRowHeight - 6)
         let fadeTop = max(0, top - FocusHeroLayout.fadeBand)
         return LinearGradient(
             stops: [
@@ -382,6 +384,17 @@ struct FocusHeroHomeView<RowContent: View>: View {
         let to = rows.firstIndex { $0.id == row.id } ?? 0
         movingForward = to >= from
         activeRowID = row.id
+        HeroFocusDiagnostics.emit("FHOME activate \(from)->\(to) row=\(row.id) | \(layoutSummary)")
+    }
+
+    /// Every row's id, height and top, plus where the pinned row lands, for
+    /// `PLZHFOCUS` diagnostics.
+    private var layoutSummary: String {
+        let parts = rows.enumerated().map { index, row in
+            "\(index):\(row.id) h=\(Int(rowHeights[row.id] ?? -1)) top=\(Int(top(ofRowAt: index)))"
+        }
+        return "active=\(activeIndex) rowsBottom=\(Int(rowsBottom)) slotTop=\(Int(slotTop)) "
+            + "offset=\(Int(rowsBottom - top(ofRowAt: activeIndex) - activeRowHeight)) rows=[\(parts.joined(separator: ", "))]"
     }
 
     private func show(_ next: Subject, in row: FocusHeroRow) {
