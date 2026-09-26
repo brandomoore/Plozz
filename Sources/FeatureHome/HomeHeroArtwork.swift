@@ -8,6 +8,19 @@ import MetadataKit
 /// that follows focus so both show the same art for the same title. Each mirrors
 /// `DetailHeroView`: server art first, and these only once it fails.
 enum HomeHeroArtwork {
+    /// The same candidates, with the picture a card beside the hero is showing
+    /// moved to the back: when the planner has another backdrop for the title,
+    /// the hero and the card no longer show the same picture. A title with only
+    /// one keeps it.
+    static func backdropReferences(
+        for item: MediaItem,
+        avoiding shown: [ArtworkReference]
+    ) -> [ArtworkReference] {
+        let references = backdropReferences(for: item)
+        guard let first = references.first, shown.contains(first) else { return references }
+        return references.filter { !shown.contains($0) } + references.filter { shown.contains($0) }
+    }
+
     /// The ordered backdrop candidates for a title with nothing resolved yet.
     static func backdropReferences(for item: MediaItem) -> [ArtworkReference] {
         let explicit = item.artworkReferences(for: .homeHero)

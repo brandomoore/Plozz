@@ -151,6 +151,23 @@ public struct HomeView: View {
         #endif
         return settings
     }
+
+    /// What the curator runs on. The carousel's settings, or — for the Immersive
+    /// layout's Discover row — the same settings narrowed to the Featured source,
+    /// so the row holds exactly the discovery picks the Spotlight would. `nil`
+    /// when nothing on screen needs curating.
+    private var curationSettings: HeroSettings? {
+        #if os(tvOS)
+        if let settings = heroSettings?.settings, settings.followsFocus {
+            guard settings.showsDiscoverRow else { return nil }
+            var discover = settings
+            discover.isEnabled = true
+            discover.sources = [.featured]
+            return discover
+        }
+        #endif
+        return carouselSettings
+    }
     private var heroBackground: HeroBackgroundSettingsModel
     private let heroTrailerController: HeroTrailerController
     /// Lets Home give the media shares a chance to notice new files while the
@@ -389,12 +406,12 @@ public struct HomeView: View {
             let layout = rows.map { HomeRowLayout(kind: $0.kind, count: $0.cardCount) }
             let randomLibraries = HeroRandomLibrarySelection.resolve(
                 content.libraries,
-                settings: carouselSettings,
+                settings: curationSettings,
                 isVisible: { visibility.isVisible($0) }
             )
             let heroRecomputeKey = HeroRecomputeKey(
                 content: heroContent,
-                settings: carouselSettings,
+                settings: curationSettings,
                 randomLibraries: randomLibraries,
                 externalRefreshRevision: heroRuntime.externalRefreshRevision,
                 freshnessRevision: heroRuntime.freshnessRefresh.revision,
@@ -713,17 +730,17 @@ public struct HomeView: View {
             }
         }
         .task(id: heroRuntime.freshnessRefresh.activityID(
-            isActive: heroIsFrontmost && scenePhase == .active && (carouselSettings?.isActive ?? false)
+            isActive: heroIsFrontmost && scenePhase == .active && (curationSettings?.isActive ?? false)
         )) {
             guard heroIsFrontmost, scenePhase == .active,
-                  carouselSettings?.isActive == true else { return }
+                  curationSettings?.isActive == true else { return }
             await heroRuntime.freshnessRefresh.runWhileVisible()
         }
         .onChange(of: visibility.visibility.disabledKeys) { _, disabled in
             heroRuntime.resetForSourceScopeChange()
             heroRuntime.hasHydratedCache = true
             heroRuntime.cachedDisabledLibraryKeys = disabled
-            if let settings = carouselSettings,
+            if let settings = curationSettings,
                let cached = viewModel.cachedHeroItems(for: settings) {
                 heroRuntime.cachedItems = cached
                 heroRuntime.cachedKey = HeroConfigurationKey(settings: settings)
@@ -860,7 +877,7 @@ public struct HomeView: View {
     }
 
     private var shouldRefreshAsyncWatchHistory: Bool {
-        carouselSettings?.requiresExternalWatchHistory ?? false
+        curationSettings?.requiresExternalWatchHistory ?? false
     }
 
     /// How far the rows are pulled up so the first row (Continue Watching) peeks
@@ -883,7 +900,7 @@ public struct HomeView: View {
     private func refreshHeroSourceEligibility() {
         guard let content = viewModel.state.value else { return }
         let libraries = HeroRandomLibrarySelection.resolve(
-            content.libraries, settings: carouselSettings,
+            content.libraries, settings: curationSettings,
             isVisible: { visibility.isVisible($0) }
         )
         heroRuntime.sourceEligibility = heroSourceEligibility(
@@ -905,7 +922,7 @@ public struct HomeView: View {
         let membershipIsReady = handler?.isDurableWatchlistPresentationReady() == true
             && handler?.durableWatchlistLoadingTargetCount() == nil
         return HeroSourceEligibility.capture(
-            settings: carouselSettings,
+            settings: curationSettings,
             candidates: candidates,
             continueWatching: content.continueWatching,
             recentlyAdded: content.latest,
@@ -938,7 +955,7 @@ public struct HomeView: View {
             return
         }
         let started = Date()
-        guard let settings = carouselSettings, settings.isActive else {
+        guard let settings = curationSettings, settings.isActive else {
             heroRuntime.items = []
             heroRuntime.completedKey = key
             return
@@ -1212,7 +1229,7 @@ public struct HomeView: View {
             requestableItems: heroRuntime.items.filter {
                 $0.availability != nil && heroRequestIdentity($0)
             },
-            settings: carouselSettings,
+            settings: curationSettings,
             isConfigured: heroSeerConnected,
             contextID: String(heroRuntime.scopeRevision),
             scopeID: ObjectIdentifier(heroRuntime)
@@ -1278,6 +1295,7 @@ public struct HomeView: View {
     private enum FocusHomeRowSource {
         case home(HomeRow)
         case section(LibrarySection)
+        case discover([MediaItem])
     }
 
     /// Home's rows in the order the classic layout shows them, merged or per
@@ -1287,33 +1305,74 @@ public struct HomeView: View {
         content: HomeViewModel.Content,
         isAwaitingLiveContinueWatching: Bool
     ) -> [(row: FocusHeroRow, source: FocusHomeRowSource)] {
+        let seriesArtwork = visibility.continueWatchingShowsSeriesArtwork
         func entry(_ row: HomeRow) -> (row: FocusHeroRow, source: FocusHomeRowSource) {
             (
-                FocusHeroRow(id: "home-\(row.kind)", itemIDs: row.items.map(\.id), leadItem: row.items.first),
+                FocusHeroRow(
+                    id: "home-\(row.kind)",
+                    itemIDs: row.items.map(\.id),
+                    leadItem: row.items.first,
+                    cardArtwork: row.style == .landscape
+                        ? { PosterCardView.leadingLandscapeArtwork(for: $0, showsSeriesArtwork: seriesArtwork) }
+                        : nil
+                ),
                 .home(row)
             )
         }
         let visible = rows.filter { !isAwaitingLiveContinueWatching || $0.kind != .continueWatching }
+        var result: [(row: FocusHeroRow, source: FocusHomeRowSource)]
         if content.mergeLibraries {
-            return visible.map(entry)
+            result = visible.map(entry)
+        } else {
+            result = visible.filter { $0.kind != .libraries }.map(entry)
+            appendLibrarySections(content: content, to: &result, libraries: visible.first { $0.kind == .libraries }, entry: entry)
         }
-        var result = visible.filter { $0.kind != .libraries }.map(entry)
+        // After Continue Watching, or first when there is none.
+        if focusHeroSettings?.showsDiscoverRow == true, !heroRuntime.items.isEmpty {
+            let discover = heroRuntime.items
+            let index = result.first?.row.id == "home-\(HomeRowKind.continueWatching)" ? 1 : 0
+            result.insert((
+                FocusHeroRow(id: "home-discover", itemIDs: discover.map(\.id), leadItem: discover.first),
+                .discover(discover)
+            ), at: index)
+        }
+        return result
+    }
+
+    private func appendLibrarySections(
+        content: HomeViewModel.Content,
+        to result: inout [(row: FocusHeroRow, source: FocusHomeRowSource)],
+        libraries: HomeRow?,
+        entry: (HomeRow) -> (row: FocusHeroRow, source: FocusHomeRowSource)
+    ) {
         for group in content.librarySections {
             for section in group.sections {
                 result.append((
                     FocusHeroRow(
                         id: "section-\(group.id)-\(section.id)",
                         itemIDs: section.items.map(\.id),
-                        leadItem: section.items.first
+                        leadItem: section.items.first,
+                        cardArtwork: section.style == .landscape
+                            ? { PosterCardView.leadingLandscapeArtwork(for: $0, showsSeriesArtwork: false) }
+                            : nil
                     ),
                     .section(section)
                 ))
             }
         }
-        if let libraries = visible.first(where: { $0.kind == .libraries }) {
+        if let libraries {
             result.append(entry(libraries))
         }
-        return result
+    }
+
+    @ViewBuilder
+    private func focusHeroSkeleton(continueWatchingCount: Int) -> some View {
+        #if os(tvOS)
+        FocusHeroSkeletonView(
+            continueWatchingCount: continueWatchingCount,
+            continueWatchingShowsSeriesArtwork: visibility.continueWatchingShowsSeriesArtwork
+        )
+        #endif
     }
 
     @ViewBuilder
@@ -1410,6 +1469,17 @@ public struct HomeView: View {
             case .libraries:
                 librariesRow(row.libraries, onFocused: reporter.focusedLibrary)
             }
+        case .discover(let items):
+            MediaRowView(
+                title: Text("Discover"),
+                items: items,
+                style: .poster,
+                spoilerSettings: spoilerSettings,
+                onFocusEntered: reporter.entered,
+                onFocusChange: onFocusChange,
+                onCardFocused: { _ in reporter.entered() },
+                onSelect: onSelectItem
+            )
         case .section(let section):
             MediaRowView(
                 title: Text(verbatim: section.title),

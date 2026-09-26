@@ -1627,4 +1627,24 @@ public extension MediaItem {
     }
 }
 
+
+public extension PosterCardView {
+    /// The wide pictures a landscape card for `item` leads with, best first: what
+    /// it will most likely show. A surface drawing the same title's backdrop
+    /// beside the card uses this to avoid showing the one picture twice.
+    static func leadingLandscapeArtwork(
+        for item: MediaItem,
+        showsSeriesArtwork: Bool,
+        policy: CardArtworkPolicy = .standard
+    ) -> [ArtworkReference] {
+        guard showsSeriesArtwork else { return policy.references(for: item, style: .landscape) }
+        let ladder = item.kind == .episode
+            ? item.seriesArtworkReferences(prefersPortrait: false)
+            : policy.references(for: item, style: .landscape)
+        return PosterCardPresentation.preferringTextless(
+            TextlessBackdropStore.shared.backdrop(for: item),
+            over: ladder
+        )
+    }
+}
 #endif

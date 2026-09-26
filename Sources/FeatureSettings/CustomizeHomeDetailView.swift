@@ -58,7 +58,68 @@ struct CustomizeHomeDetailView: View {
     }
 
     private var rows: [SettingsSplitRow] {
-        homeRowsRows + continueWatchingRows + heroRows
+        layoutRows + homeRowsRows + continueWatchingRows
+            + (hero.settings.style == .carousel ? heroRows : [])
+    }
+
+    // MARK: - Layout
+
+    /// How Home is arranged, first because it decides what the rest applies to:
+    /// the Hero pane belongs to Spotlight alone, and Immersive's few options sit
+    /// under the picker here.
+    private var layoutRows: [SettingsSplitRow] {
+        [
+            SettingsSplitRow(
+                id: "home-layout",
+                title: "Layout",
+                description: "How Home is arranged."
+            ) {
+                layoutForm
+            }
+        ]
+    }
+
+    @ViewBuilder private var layoutForm: some View {
+        @Bindable var hero = hero
+        VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
+            HomeLayoutPicker(layout: $hero.settings.style)
+
+            if hero.settings.style == .followsFocus {
+                SettingsDetailGroup(title: "Background transition") {
+                    SettingsOptionList(
+                        options: HeroBackdropTransition.allCases,
+                        selection: $hero.settings.backdropTransition,
+                        bordered: false,
+                        title: { Text($0.settingsTitle) }
+                    )
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Show titles under cards", isOn: $hero.settings.showsCardCaptions)
+                        .toggleStyle(SettingsSwitchToggleStyle())
+                    Text("The title you're on is already shown at the top of the screen.")
+                        .settingsHelperText()
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Toggle("Show ratings", isOn: $hero.settings.showsRatings)
+                    .toggleStyle(SettingsSwitchToggleStyle())
+                if hero.settings.showsRatings {
+                    Toggle("Show Common Sense age", isOn: $hero.settings.ratingPreferences.showsHeaderFamilyGuidance)
+                    HeaderReviewScoreCountPicker(settings: $hero.settings.ratingPreferences)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Show a Discover row", isOn: $hero.settings.showsDiscoverRow)
+                        .toggleStyle(SettingsSwitchToggleStyle())
+                    Text("Picks from outside your libraries, after Continue Watching.")
+                        .settingsHelperText()
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if hero.settings.showsDiscoverRow {
+                    FeaturedDiscoverySettings(sources: $hero.settings.discoverySources)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeInOut(duration: 0.22), value: hero.settings.style)
     }
 
     // MARK: - Rows on Home (one entry, grouped detail — leads with the Combine switch)
@@ -243,7 +304,7 @@ struct CustomizeHomeDetailView: View {
             SettingsSplitRow(
                 id: "hero",
                 title: "Hero",
-                description: "Full-screen artwork at the top of Home: a rotating spotlight, or whatever you're browsing.",
+                description: "A cinematic, rotating spotlight at the top of Home, with a Continue Watching row tucked under its lower edge.",
             ) {
                 heroForm
             }
@@ -257,51 +318,20 @@ struct CustomizeHomeDetailView: View {
                 .toggleStyle(SettingsSwitchToggleStyle())
 
             if hero.settings.isEnabled {
-                SettingsDetailGroup(title: "Style", description: hero.settings.style.settingsDescription) {
-                    SettingsOptionList(
-                        options: HeroStyle.allCases,
-                        selection: $hero.settings.style,
-                        bordered: false,
-                        title: { Text($0.settingsTitle) }
-                    )
-                }
-
-                if hero.settings.style == .followsFocus {
-                    SettingsDetailGroup(title: "Background transition") {
-                        SettingsOptionList(
-                            options: HeroBackdropTransition.allCases,
-                            selection: $hero.settings.backdropTransition,
-                            bordered: false,
-                            title: { Text($0.settingsTitle) }
-                        )
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Toggle("Show titles under cards", isOn: $hero.settings.showsCardCaptions)
-                            .toggleStyle(SettingsSwitchToggleStyle())
-                        Text("The hero already shows the title you're on.")
-                            .settingsHelperText()
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
                 Toggle("Show ratings", isOn: $hero.settings.showsRatings)
                     .toggleStyle(SettingsSwitchToggleStyle())
                 if hero.settings.showsRatings {
                     Toggle("Show Common Sense age", isOn: $hero.settings.ratingPreferences.showsHeaderFamilyGuidance)
                     HeaderReviewScoreCountPicker(settings: $hero.settings.ratingPreferences)
                 }
-                if hero.settings.style == .carousel {
-                    spotlightForm
-                }
+                spotlightForm
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(.easeInOut(duration: 0.22), value: hero.settings.isEnabled)
-        .animation(.easeInOut(duration: 0.22), value: hero.settings.style)
     }
 
-    /// What only the rotating spotlight uses: where its picks come from and how it
-    /// rotates. A hero that follows focus shows the rows' own titles instead.
+    /// Where the Spotlight's picks come from and how it rotates.
     @ViewBuilder private var spotlightForm: some View {
         @Bindable var hero = hero
         VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
@@ -464,33 +494,6 @@ struct CustomizeHomeDetailView: View {
         keys.formIntersection(allKeys)
         // Canonicalise "everything selected" back to empty.
         hero.settings.randomLibraryKeys = (keys == allKeys) ? [] : keys
-    }
-}
-
-private extension HeroStyle {
-    var settingsTitle: LocalizedStringResource {
-        switch self {
-        case .carousel: "Spotlight"
-        case .followsFocus: "Full-screen browsing"
-        }
-    }
-
-    var settingsDescription: LocalizedStringResource {
-        switch self {
-        case .carousel:
-            "Rotates through picks from the sources below, with Play and More Info, above your rows."
-        case .followsFocus:
-            "Whatever you move to fills the screen, and rows stay in one place as you browse."
-        }
-    }
-}
-
-private extension HeroBackdropTransition {
-    var settingsTitle: LocalizedStringResource {
-        switch self {
-        case .crossfade: "Crossfade"
-        case .slide: "Slide"
-        }
     }
 }
 

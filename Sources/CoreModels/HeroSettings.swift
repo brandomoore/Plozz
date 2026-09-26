@@ -57,7 +57,9 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// Seconds between auto-advances (clamped to ``autoAdvanceRange``).
     public var autoAdvanceSeconds: Int
 
-    /// How the hero behaves on Apple TV. Other platforms always show the carousel.
+    /// How Apple TV's Home is arranged. Other platforms always show the carousel.
+    /// Lives with the hero's settings because Spotlight is the carousel, but it is
+    /// a layout choice, not a hero option: Immersive has no hero section at all.
     public var style: HeroStyle
 
     /// How the backdrop changes between titles when the hero follows focus.
@@ -66,6 +68,10 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// Whether cards keep their title lines when the hero follows focus. Off by
     /// default: the hero already names whatever is focused.
     public var showsCardCaptions: Bool
+
+    /// Whether the Immersive layout adds a row of discovery picks — what the
+    /// Spotlight's Featured source would show. Off by default.
+    public var showsDiscoverRow: Bool
 
     /// Hero on, all content categories enabled, a modest rotation, all libraries
     /// for Random, and gentle auto-advance. Optional discovery credits are hidden.
@@ -102,7 +108,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         autoAdvanceSeconds: Int,
         style: HeroStyle = .carousel,
         backdropTransition: HeroBackdropTransition = .crossfade,
-        showsCardCaptions: Bool = false
+        showsCardCaptions: Bool = false,
+        showsDiscoverRow: Bool = false
     ) {
         self.isEnabled = isEnabled
         // De-duplicate while preserving order so the picker can't persist a
@@ -123,6 +130,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         self.style = style
         self.backdropTransition = backdropTransition
         self.showsCardCaptions = showsCardCaptions
+        self.showsDiscoverRow = showsDiscoverRow
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -131,7 +139,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         case discoverySources, showsDiscoverySources
         case ratingPreferences
         case randomLibraryKeys, autoAdvance, autoAdvanceSeconds
-        case style, backdropTransition, showsCardCaptions
+        case style, backdropTransition, showsCardCaptions, showsDiscoverRow
         case offeredSourcesVersion
     }
 
@@ -170,7 +178,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
             autoAdvanceSeconds: value(Int.self, .autoAdvanceSeconds, d.autoAdvanceSeconds),
             style: value(HeroStyle.self, .style, d.style),
             backdropTransition: value(HeroBackdropTransition.self, .backdropTransition, d.backdropTransition),
-            showsCardCaptions: value(Bool.self, .showsCardCaptions, d.showsCardCaptions)
+            showsCardCaptions: value(Bool.self, .showsCardCaptions, d.showsCardCaptions),
+            showsDiscoverRow: value(Bool.self, .showsDiscoverRow, d.showsDiscoverRow)
         )
     }
 
@@ -230,6 +239,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         try c.encode(style, forKey: .style)
         try c.encode(backdropTransition, forKey: .backdropTransition)
         try c.encode(showsCardCaptions, forKey: .showsCardCaptions)
+        try c.encode(showsDiscoverRow, forKey: .showsDiscoverRow)
         try c.encode(Self.currentOfferedSourcesVersion, forKey: .offeredSourcesVersion)
     }
 
@@ -244,10 +254,11 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         isEnabled && !sources.isEmpty
     }
 
-    /// Whether Apple TV's Home should show the full-screen hero that follows focus
-    /// in place of the carousel. Needs only the switch: its titles are the rows.
+    /// Whether Apple TV's Home uses the Immersive layout. Independent of the
+    /// hero's switch and sources, which belong to the Spotlight: every title here
+    /// comes from the rows.
     public var followsFocus: Bool {
-        isEnabled && style == .followsFocus
+        style == .followsFocus
     }
 
     public var usesDiscoveryWatchlistSeeds: Bool {

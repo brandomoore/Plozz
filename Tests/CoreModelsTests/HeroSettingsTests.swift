@@ -105,6 +105,7 @@ final class HeroSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.backdropTransition, .crossfade)
         XCTAssertFalse(decoded.followsFocus)
         XCTAssertFalse(decoded.showsCardCaptions, "The hero names the focused title, so cards start without one")
+        XCTAssertFalse(decoded.showsDiscoverRow)
     }
 
     func testAnUnknownStyleFallsBackWithoutResettingOtherSettings() throws {
@@ -120,6 +121,7 @@ final class HeroSettingsTests: XCTestCase {
         settings.style = .followsFocus
         settings.backdropTransition = .slide
         settings.showsCardCaptions = true
+        settings.showsDiscoverRow = true
         settings.sources = []
         let store = HeroSettingsStore(defaults: defaults)
         store.save(settings)
@@ -127,10 +129,11 @@ final class HeroSettingsTests: XCTestCase {
         XCTAssertEqual(loaded.style, .followsFocus)
         XCTAssertEqual(loaded.backdropTransition, .slide)
         XCTAssertTrue(loaded.showsCardCaptions)
+        XCTAssertTrue(loaded.showsDiscoverRow)
         XCTAssertTrue(loaded.followsFocus, "Its titles come from the rows, not the carousel's sources")
 
         settings.isEnabled = false
-        XCTAssertFalse(settings.followsFocus)
+        XCTAssertTrue(settings.followsFocus, "Immersive is a layout, not the Spotlight's switch")
     }
 
     func testInMemoryStoreRoundTrips() {

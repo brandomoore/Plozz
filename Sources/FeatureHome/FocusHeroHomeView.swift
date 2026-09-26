@@ -12,6 +12,14 @@ struct FocusHeroRow: Identifiable {
     let itemIDs: [String]
     /// What the hero shows before anything in the row has been focused.
     let leadItem: MediaItem?
+    /// The wide picture a card in this row leads with, for rows whose cards show
+    /// wide art. The hero steers its backdrop off it. `nil` for poster rows.
+    var cardArtwork: ((MediaItem) -> [ArtworkReference])? = nil
+
+    /// The picture a focused card in this row is most likely showing.
+    func shownArtwork(for item: MediaItem) -> [ArtworkReference] {
+        cardArtwork.map { Array($0(item).prefix(1)) } ?? []
+    }
 }
 
 /// What a row reports as focus moves through it.
@@ -101,6 +109,8 @@ enum FocusHeroSubject: Equatable {
 final class FocusHeroModel {
     private(set) var activeRowID: String?
     private(set) var subject: FocusHeroSubject?
+    /// The picture the focused card shows, which the backdrop avoids.
+    private(set) var shownArtwork: [ArtworkReference] = []
     private(set) var movingForward = true
     /// Row heights, the only thing measured. Positions are derived from them, so
     /// moving the rows can never change what was measured.
@@ -132,6 +142,7 @@ final class FocusHeroModel {
             movingForward = to >= from
         }
         withAnimation(FocusHeroLayout.foregroundAnimation) {
+            shownArtwork = next.item.map(row.shownArtwork(for:)) ?? []
             subject = next
         }
     }
@@ -144,6 +155,7 @@ final class FocusHeroModel {
             if case .library? = subject { return }
         }
         let row = rows.first { $0.id == resolvedActiveRowID(in: rows) } ?? rows.first
+        shownArtwork = row.flatMap { row in row.leadItem.map(row.shownArtwork(for:)) } ?? []
         subject = row?.leadItem.map(FocusHeroSubject.item)
     }
 
@@ -375,7 +387,7 @@ private struct FocusHeroBackdropLayer: View {
     private func references(for subject: FocusHeroSubject) -> [ArtworkReference] {
         switch subject {
         case .item(let item):
-            HomeHeroArtwork.backdropReferences(for: item)
+            HomeHeroArtwork.backdropReferences(for: item, avoiding: model.shownArtwork)
         case .library(let library):
             [library.library.imageURL].compactMap { $0 }.map(ArtworkReference.remote)
         }
@@ -508,23 +520,38 @@ private struct FocusHeroColumn: View {
 // MARK: - Loading
 
 /// What the Home that follows focus shows until Continue Watching is live: the
-/// same placeholders the classic Home uses, in the place the real rows will
-/// take. Nothing here is focusable, so focus arrives on a real card, once.
+/// real rows' own loading placeholders, in the place the real rows will take, so
+/// nothing shifts when they arrive. Nothing here is focusable, so focus arrives
+/// on a real card, once.
 struct FocusHeroSkeletonView: View {
     var continueWatchingCount: Int = 0
     var continueWatchingShowsSeriesArtwork: Bool = true
     @State private var firstRowHeight: CGFloat = 0
     @Environment(\.plozzMetrics) private var metrics
 
+    /// Enough to fill the row when last launch's count isn't known.
+    private static let fallbackCount = 8
+
     var body: some View {
         let bottom = FocusHeroLayout.rowsBottom(rowSpacing: metrics.rowSpacing)
         VStack(alignment: .leading, spacing: metrics.rowSpacing) {
-            HomeSkeletonRowView(
-                row: HomeRowLayout(kind: .continueWatching, count: continueWatchingCount),
-                continueWatchingShowsSeriesArtwork: continueWatchingShowsSeriesArtwork
+            MediaRowView(
+                title: Text(HomeRowKind.continueWatching.title),
+                items: [],
+                style: .landscape,
+                showsSeriesArtwork: continueWatchingShowsSeriesArtwork,
+                loadingPlaceholderCount: continueWatchingCount > 0
+                    ? continueWatchingCount : Self.fallbackCount,
+                onSelect: { _ in }
             )
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { firstRowHeight = $0 }
-            HomeSkeletonRowView(row: HomeRowLayout(kind: .watchlist))
+            MediaRowView(
+                title: nil,
+                items: [],
+                style: .poster,
+                loadingPlaceholderCount: Self.fallbackCount,
+                onSelect: { _ in }
+            )
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.leading, FocusHeroLayout.horizontalMargin)
