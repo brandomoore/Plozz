@@ -403,6 +403,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
     private func show(_ next: Subject, in row: FocusHeroRow) {
         hasFocusedTitle = true
         guard next != subject else { return }
+        HeroFocusDiagnostics.emit("FHOME show \(next.id) in row=\(row.id)")
         if case .item(let item) = next, case .item(let current)? = subject,
            let from = row.itemIDs.firstIndex(of: current.id),
            let to = row.itemIDs.firstIndex(of: item.id) {
@@ -421,6 +422,10 @@ struct FocusHeroHomeView<RowContent: View>: View {
         }
         let row = rows.first { $0.id == resolvedActiveRowID } ?? rows.first
         subject = row?.leadItem.map(Subject.item)
+        HeroFocusDiagnostics.emit(
+            "FHOME seed \(subject?.id ?? "none") from row=\(row?.id ?? "none") focused=\(hasFocusedTitle) "
+            + "lead=[\(rows.map { "\($0.id):\($0.leadItem?.title ?? "-")" }.joined(separator: ", "))]"
+        )
     }
 
     private var subjectItem: MediaItem? {
