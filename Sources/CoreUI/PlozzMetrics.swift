@@ -224,6 +224,17 @@ public struct PlozzMetrics: Equatable, Sendable {
         return artworkWidth + sideInset * 2
     }
 
+    /// The leading padding for a row's cards that lines the first card's visible
+    /// edge up with a title inset by `titleInset`. A borderless card's artwork
+    /// sits `borderlessCardSideMargin` inside its slot, so its slot starts that
+    /// much before the title; a framed card's surface fills its slot.
+    public func cardRowLeadingPadding(_ titleInset: CGFloat, cardStyle: CardStyle) -> CGFloat {
+        switch cardStyle {
+        case .framed: titleInset
+        case .borderless: titleInset - borderlessCardSideMargin
+        }
+    }
+
     // MARK: Concentric card corner radii (derived)
 
     /// Outer (glass) corner radius for a poster ("Browse") card: its fixed inner

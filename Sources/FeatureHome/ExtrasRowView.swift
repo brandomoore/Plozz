@@ -65,6 +65,7 @@ private struct ExtrasLoadingRow: View {
     let leadingInset: CGFloat
 
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzCardStyle) private var cardStyle
 
     var body: some View {
         VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
@@ -80,7 +81,7 @@ private struct ExtrasLoadingRow: View {
                             .frame(width: metrics.landscapeWidth)
                     }
                 }
-                .padding(.leading, leadingInset)
+                .padding(.leading, metrics.cardRowLeadingPadding(leadingInset, cardStyle: cardStyle))
                 .padding(.trailing, PlozzTheme.Metrics.screenPadding)
                 .padding(.vertical, metrics.railShadowClearance)
             }

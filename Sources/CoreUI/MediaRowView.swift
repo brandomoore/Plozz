@@ -118,6 +118,7 @@ public struct MediaRowView: View {
     /// fade out there instead of being cut off at a narrowed viewport edge.
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
     @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
+    @Environment(\.plozzCardStyle) private var cardStyle
     /// Keeps branch-specific masking completely out of native navigation styles.
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
 
@@ -155,6 +156,8 @@ public struct MediaRowView: View {
     private let itemByID: [String: MediaItem]
 
     @FocusState private var focusedID: String?
+    /// Whether the first card holds focus, for rows that don't track every card.
+    @FocusState private var leadingCardFocused: Bool
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
     @State private var didApplyInitialFocus = false
@@ -179,9 +182,6 @@ public struct MediaRowView: View {
     /// came-in/resume episode. A stale id from another season is ignored because it
     /// won't exist in the current `items`.
     @State private var lastFocusedID: String?
-    /// The row's horizontal position, so returning to the first card can put the
-    /// row back exactly where it opened.
-    @State private var scrollPosition = ScrollPosition(edge: .leading)
     /// Whether the user has actually moved around this row since its target was
     /// last re-pointed. Latches the entry gate off — see `cardIsDisabled`.
     @State private var hasBrowsedSinceTargetChange = false
@@ -459,12 +459,28 @@ public struct MediaRowView: View {
     private struct MediaRowHeader: View {
         let title: Text
         @Environment(\.plozzMetrics) private var metrics
+        @Environment(\.redactionReasons) private var redactionReasons
+        @Environment(\.themePalette) private var palette
 
         var body: some View {
-            title
+            let header = title
                 .font(PlozzRailTitle.font(
                     sectionHeaderFontSize: metrics.sectionHeaderFontSize
                 ))
+            if redactionReasons.contains(.placeholder) {
+                // A loading row keeps the title's exact height and draws Home's
+                // skeleton title pill in place of the words.
+                header
+                    .hidden()
+                    .overlay(alignment: .leading) {
+                        Capsule(style: .continuous)
+                            .fill(palette.fill)
+                            .frame(width: 220, height: 26)
+                    }
+                    .shimmering()
+            } else {
+                header
+            }
         }
     }
 
@@ -479,7 +495,10 @@ public struct MediaRowView: View {
                 PinnedSidebarLeadingFade(
                     isActive: pinnedSidebarActive,
                     inset: navigationContentInset,
-                    verticalOverhang: layoutMetrics.railShadowClearance
+                    verticalOverhang: layoutMetrics.railShadowClearance,
+                    firstCardFocused: tracksFocus
+                        ? focusedID.map { itemIndexByID[$0] == 0 } ?? false
+                        : leadingCardFocused
                 ) {
                     ScrollViewReader { proxy in
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -501,8 +520,9 @@ public struct MediaRowView: View {
                             }
                         }
                         // The row's ordinary page gutter, unchanged from before the
-                        // navigation rail existed.
-                        .padding(.leading, leadingInset)
+                        // navigation rail existed, with the first card's visible
+                        // edge under the title.
+                        .padding(.leading, cardsLeadingInset)
                         .padding(.trailing, PlozzTheme.Metrics.screenPadding)
                         // Reserve generous vertical room *inside* the clip so a
                         // focused card's lift + drop shadow are never cut. The
@@ -512,7 +532,6 @@ public struct MediaRowView: View {
                         .padding(.vertical, layoutMetrics.railShadowClearance)
                     }
                     .scrollClipDisabled()
-                    .scrollPosition($scrollPosition)
                     .padding(.top, layoutMetrics.railTopClearanceOffset)
                     .padding(.bottom, layoutMetrics.railBottomClearanceOffset)
                     .coordinateSpace(name: episodeEntrySpace)
@@ -800,13 +819,23 @@ public struct MediaRowView: View {
             card
                 .focused($focusedID, equals: item.stablePresentationID)
                 .disabled(cardIsDisabled(item))
+        } else if itemIndexByID[item.stablePresentationID] == 0 {
+            card.focused($leadingCardFocused)
         } else {
             card
         }
     }
 
+    /// Where the first card's slot starts, so its visible edge lines up with the
+    /// row's title.
+    private var cardsLeadingInset: CGFloat {
+        guard presentation != .episodeColumn else { return leadingInset }
+        return layoutMetrics.cardRowLeadingPadding(leadingInset, cardStyle: cardStyle)
+    }
+
     /// The layout width reserved for one card in the rail — its full glass-surface
     /// width, so `cardSpacing` lands as a true visible gap between cards.
+
     private var cardSlotWidth: CGFloat {
         switch presentation {
         case .poster:
@@ -1132,15 +1161,6 @@ public struct MediaRowView: View {
         // (focus actually left the row, up to the season bar).
         guard let newValue else { return }
         hasBrowsedSinceTargetChange = true
-        // Coming back to the first card, tvOS scrolls only until the card shows,
-        // which leaves it short of where the row opened — partly inside the
-        // pinned sidebar's feather. Put the row back at its start instead.
-        if itemIndexByID[newValue] == 0,
-           let previous = lastFocusedID, (itemIndexByID[previous] ?? 0) > 0 {
-            withAnimation(.smooth(duration: 0.3)) {
-                scrollPosition.scrollTo(edge: .leading)
-            }
-        }
         if let onCardFocused, let item = itemByID[newValue] { onCardFocused(item) }
         if !focusEngaged { onFocusEntered?() }
         lastFocusedID = newValue

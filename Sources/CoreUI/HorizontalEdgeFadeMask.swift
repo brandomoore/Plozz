@@ -116,21 +116,29 @@ public struct LeadingEdgeFadeMask: View {
 /// `verticalOverhang` is the room the row reserves for a focused card's lift and
 /// shadow. It also sets how far short of the gutter the feather stops, since the
 /// same lift reaches back into the gutter from a card parked at its edge.
+///
+/// `firstCardFocused` puts the row back where it opened once its first card
+/// holds focus. Returning left, tvOS parks the focused card against the screen's
+/// own safe area and ignores the gutter, so the first card would otherwise stop
+/// the gutter's width short of its opening place, inside the feather.
 public struct PinnedSidebarLeadingFade<Content: View>: View {
     private let isActive: Bool
     private let inset: CGFloat
     private let verticalOverhang: CGFloat
+    private let firstCardFocused: Bool
     private let content: Content
 
     public init(
         isActive: Bool,
         inset: CGFloat,
         verticalOverhang: CGFloat = 0,
+        firstCardFocused: Bool = false,
         @ViewBuilder content: () -> Content
     ) {
         self.isActive = isActive
         self.inset = inset
         self.verticalOverhang = verticalOverhang
+        self.firstCardFocused = firstCardFocused
         self.content = content()
     }
 
@@ -142,6 +150,7 @@ public struct PinnedSidebarLeadingFade<Content: View>: View {
         if isActive {
             content
                 .safeAreaPadding(.leading, inset)
+                .modifier(RowStartReturn(firstCardFocused: firstCardFocused))
                 // The first card parks right at the gutter's inner edge, and
                 // focus grows it back across that edge. The feather keeps its
                 // full width but sits that much further left, so a focused first
@@ -155,6 +164,44 @@ public struct PinnedSidebarLeadingFade<Content: View>: View {
                 )
         } else {
             content
+        }
+    }
+}
+
+/// Scrolls a horizontal row back to its opening place while its first card holds
+/// focus.
+///
+/// It scrolls as soon as the first card takes focus, and again whenever the row
+/// comes to rest short of its start, since on a slower device the focus engine's
+/// own scroll can land after this one and win.
+private struct RowStartReturn: ViewModifier {
+    let firstCardFocused: Bool
+    @State private var position = ScrollPosition(edge: .leading)
+    @State private var awayFromStart = false
+
+    func body(content: Content) -> some View {
+        content
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.x + geometry.contentInsets.leading > 0.5
+            } action: { _, away in
+                awayFromStart = away
+            }
+            .onScrollPhaseChange { _, phase, context in
+                guard phase == .idle,
+                      context.geometry.contentOffset.x + context.geometry.contentInsets.leading > 0.5
+                else { return }
+                returnToStart()
+            }
+            .onChange(of: firstCardFocused) { _, focused in
+                if focused, awayFromStart { returnToStart() }
+            }
+    }
+
+    private func returnToStart() {
+        guard firstCardFocused else { return }
+        withAnimation(.smooth(duration: 0.3)) {
+            position.scrollTo(edge: .leading)
         }
     }
 }

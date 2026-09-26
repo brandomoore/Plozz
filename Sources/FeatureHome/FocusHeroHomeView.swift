@@ -45,6 +45,13 @@ enum FocusHeroLayout {
     /// A backdrop's own shape. The art is sized to it rather than cropped to the
     /// screen, so the whole picture shows above the rows.
     static let artAspectRatio: CGFloat = 16.0 / 9.0
+    /// How far the rows' vertical mask reaches past their layout bounds sideways,
+    /// covering the safe area and a focused card's bloom at either edge.
+    static let maskHorizontalOverhang: CGFloat = 160
+    /// The gap between rows. Tighter than the classic Home's: rows here are
+    /// read one at a time, and every point saved lets the rows sit lower and
+    /// leaves the art more room.
+    static let rowSpacing: CGFloat = 8
     /// How much of the screen's width the art takes.
     static let artWidthFraction: CGFloat = 2.0 / 3.0
     /// The soft edge above the pinned row's title. Narrower than the gap between
@@ -282,10 +289,9 @@ private struct FocusHeroRowStack<RowContent: View>: View {
     let model: FocusHeroModel
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
     @Namespace private var focusScope
-    @Environment(\.plozzMetrics) private var metrics
 
     var body: some View {
-        VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+        VStack(alignment: .leading, spacing: FocusHeroLayout.rowSpacing) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 rowContent(row, reporter(for: row))
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
@@ -321,10 +327,9 @@ private struct FocusHeroRowStack<RowContent: View>: View {
 private struct FocusHeroRowOffset: ViewModifier {
     let model: FocusHeroModel
     let rows: [FocusHeroRow]
-    @Environment(\.plozzMetrics) private var metrics
 
     func body(content: Content) -> some View {
-        let spacing = metrics.rowSpacing
+        let spacing = FocusHeroLayout.rowSpacing
         let index = model.activeIndex(in: rows)
         let bottom = FocusHeroLayout.rowsBottom(rowSpacing: spacing)
         let y = bottom - model.top(ofRowAt: index, in: rows, rowSpacing: spacing) - model.activeHeight(in: rows)
@@ -337,11 +342,10 @@ private struct FocusHeroRowOffset: ViewModifier {
 private struct FocusHeroRowMask: ViewModifier {
     let model: FocusHeroModel
     let rows: [FocusHeroRow]
-    @Environment(\.plozzMetrics) private var metrics
 
     func body(content: Content) -> some View {
         let height = FocusHeroLayout.screenHeight
-        let bottom = FocusHeroLayout.rowsBottom(rowSpacing: metrics.rowSpacing)
+        let bottom = FocusHeroLayout.rowsBottom(rowSpacing: FocusHeroLayout.rowSpacing)
         let top = max(0, bottom - model.activeHeight(in: rows) - 6)
         let fadeTop = max(0, top - FocusHeroLayout.fadeBand)
         content.mask(
@@ -355,6 +359,11 @@ private struct FocusHeroRowMask: ViewModifier {
                 startPoint: .top,
                 endPoint: .bottom
             )
+            // Past the safe area on both sides. This mask only ever fades
+            // vertically; a row's own feather under the pinned sidebar runs to
+            // the left of the safe area, and stopping this mask there would cut
+            // that feather off hard.
+            .padding(.horizontal, -FocusHeroLayout.maskHorizontalOverhang)
         )
     }
 }
@@ -411,12 +420,11 @@ private struct FocusHeroColumn: View {
     let navigationStyle: NavigationStyle
     @State private var schedules = HeroScheduleLines()
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
 
     var body: some View {
         let top = FocusHeroLayout.columnTop(for: navigationStyle)
-        let slotTop = model.slotTop(in: rows, rowSpacing: metrics.rowSpacing)
+        let slotTop = model.slotTop(in: rows, rowSpacing: FocusHeroLayout.rowSpacing)
         ZStack(alignment: .bottomLeading) {
             if let subject = model.subject {
                 content(for: subject)

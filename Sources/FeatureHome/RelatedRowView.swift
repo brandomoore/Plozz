@@ -29,6 +29,7 @@ struct RelatedRowView: View {
     var onFocusEntered: (() -> Void)?
 
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzCardStyle) private var cardStyle
 
     var body: some View {
         Group {
@@ -79,7 +80,7 @@ struct RelatedRowView: View {
                             .frame(width: metrics.posterWidth)
                     }
                 }
-                .padding(.leading, leadingInset)
+                .padding(.leading, metrics.cardRowLeadingPadding(leadingInset, cardStyle: cardStyle))
                 .padding(.trailing, PlozzTheme.Metrics.screenPadding)
                 .padding(.vertical, metrics.railShadowClearance)
             }

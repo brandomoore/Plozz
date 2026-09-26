@@ -1389,25 +1389,27 @@ public struct HomeView: View {
                 navigationStyle: navigationStyle,
                 isFrontmost: heroIsFrontmost
             ) { row, _ in
+                // Redacted rows draw their names as skeleton pills at a real
+                // title's exact height.
                 if row.id == continueWatching.id {
                     MediaRowView(
-                        title: Text(HomeRowKind.continueWatching.title),
+                        title: Text(verbatim: "Continue Watching"),
                         items: [],
                         style: .landscape,
                         showsSeriesArtwork: visibility.continueWatchingShowsSeriesArtwork,
                         loadingPlaceholderCount: continueWatchingCount > 0 ? continueWatchingCount : 8,
                         onSelect: { _ in }
                     )
+                    .redacted(reason: .placeholder)
                 } else {
-                    // A blank title keeps the peek at the real next row's height;
-                    // its name isn't known until the rows arrive.
                     MediaRowView(
-                        title: Text(verbatim: " "),
+                        title: Text(verbatim: "Recently Added"),
                         items: [],
                         style: .poster,
                         loadingPlaceholderCount: 8,
                         onSelect: { _ in }
                     )
+                    .redacted(reason: .placeholder)
                 }
             }
             .accessibilityLabel("Loading")
@@ -1586,36 +1588,7 @@ public struct HomeView: View {
         _ libraries: [AggregatedLibrary],
         onFocused: ((AggregatedLibrary) -> Void)? = nil
     ) -> some View {
-        VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-            Text("Libraries")
-                .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
-                .padding(.leading, PlozzTheme.Metrics.screenPadding + navigationContentInset)
-            PinnedSidebarLeadingFade(
-                isActive: pinnedSidebarActive,
-                inset: navigationContentInset,
-                verticalOverhang: metrics.railShadowClearance
-            ) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: metrics.cardSpacing) {
-                        ForEach(libraries) { aggregated in
-                            LibraryCardView(
-                                aggregated: aggregated,
-                                subtitle: Self.librarySubtitle(for: aggregated, in: libraries),
-                                action: { onSelectLibrary(aggregated.library) },
-                                onFocused: onFocused.map { report in { report(aggregated) } }
-                            )
-                        }
-                    }
-                    .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
-                    // Reserve room *inside* the clip for the focused tile's lift +
-                    // shadow. The negative outer padding cancels that room in layout, so
-                    // the row's height and spacing are unchanged — only the clip grows.
-                    .padding(.vertical, metrics.railShadowClearance)
-                }
-                .padding(.top, metrics.railTopClearanceOffset)
-                .padding(.bottom, metrics.railBottomClearanceOffset)
-            }
-        }
+        HomeLibrariesRow(libraries: libraries, onSelectLibrary: onSelectLibrary, onFocused: onFocused)
     }
 
     /// The tile's secondary line. Library TILES are never merged across servers,
@@ -2038,6 +2011,62 @@ private struct HomeShareScanRefreshObserver: View {
     }
 }
 
+/// Home's Libraries row. It tracks which tile holds focus so, beside a pinned
+/// sidebar, the row returns to where it opened when its first tile takes focus.
+private struct HomeLibrariesRow: View {
+    let libraries: [AggregatedLibrary]
+    let onSelectLibrary: (MediaLibrary) -> Void
+    var onFocused: ((AggregatedLibrary) -> Void)?
+
+    @State private var focusedLibraryID: AggregatedLibrary.ID?
+    @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzCardStyle) private var cardStyle
+    @Environment(\.plozzNavigationContentInset) private var navigationContentInset
+    @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
+            Text("Libraries")
+                .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
+                .padding(.leading, PlozzTheme.Metrics.screenPadding + navigationContentInset)
+            PinnedSidebarLeadingFade(
+                isActive: pinnedSidebarActive,
+                inset: navigationContentInset,
+                verticalOverhang: metrics.railShadowClearance,
+                firstCardFocused: focusedLibraryID != nil && focusedLibraryID == libraries.first?.id
+            ) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: metrics.cardSpacing) {
+                        ForEach(libraries) { aggregated in
+                            LibraryCardView(
+                                aggregated: aggregated,
+                                subtitle: HomeView.librarySubtitle(for: aggregated, in: libraries),
+                                action: { onSelectLibrary(aggregated.library) },
+                                onFocusChange: { focused in
+                                    if focused {
+                                        focusedLibraryID = aggregated.id
+                                        onFocused?(aggregated)
+                                    } else if focusedLibraryID == aggregated.id {
+                                        focusedLibraryID = nil
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    .padding(.leading, metrics.cardRowLeadingPadding(PlozzTheme.Metrics.screenPadding, cardStyle: cardStyle))
+                    .padding(.trailing, PlozzTheme.Metrics.screenPadding)
+                    // Reserve room *inside* the clip for the focused tile's lift +
+                    // shadow. The negative outer padding cancels that room in layout, so
+                    // the row's height and spacing are unchanged — only the clip grows.
+                    .padding(.vertical, metrics.railShadowClearance)
+                }
+                .padding(.top, metrics.railTopClearanceOffset)
+                .padding(.bottom, metrics.railBottomClearanceOffset)
+            }
+        }
+    }
+}
+
 struct LibraryCardView: View {
     let aggregated: AggregatedLibrary
     let subtitle: String   // l10n:content — library card subtitle from the server
@@ -2046,8 +2075,8 @@ struct LibraryCardView: View {
     /// artwork are still filling in. Purely decorative (non-focusable).
     var isUpdating: Bool = false
     let action: () -> Void
-    /// Fired when the tile gains focus, for a Home that follows focus.
-    var onFocused: (() -> Void)? = nil
+    /// Fired when the tile gains or loses focus.
+    var onFocusChange: ((Bool) -> Void)? = nil
 
     @PlozzCardFocus private var isFocused: Bool
     @Environment(\.locale) private var locale
@@ -2081,7 +2110,7 @@ struct LibraryCardView: View {
 
     var body: some View {
         card.onChange(of: isFocused) { _, focused in
-            if focused { onFocused?() }
+            onFocusChange?(focused)
         }
     }
 

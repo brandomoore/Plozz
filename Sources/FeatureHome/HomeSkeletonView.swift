@@ -116,6 +116,7 @@ struct HomeSkeletonRowView: View {
     @State private var availableWidth: CGFloat = 0
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzCardStyle) private var profileCardStyle
 
     private static let fallbackWidth: CGFloat = 1920
     private var measuredWidth: CGFloat {
@@ -160,7 +161,11 @@ struct HomeSkeletonRowView: View {
                         .frame(width: cardWidth(for: kind))
                     }
                 }
-                .padding(.leading, PlozzTheme.Metrics.screenPadding + navigationContentInset)
+                .padding(
+                    .leading,
+                    metrics.cardRowLeadingPadding(PlozzTheme.Metrics.screenPadding, cardStyle: profileCardStyle)
+                        + navigationContentInset
+                )
                 .padding(.trailing, PlozzTheme.Metrics.screenPadding)
                 .padding(.top, metrics.railTopPadding)
                 .padding(.bottom, metrics.railVerticalPadding)

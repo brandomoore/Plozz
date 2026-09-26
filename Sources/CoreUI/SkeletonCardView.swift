@@ -70,6 +70,19 @@ public struct SkeletonCardView: View {
 
     @ViewBuilder
     public var body: some View {
+        #if os(tvOS)
+        if focusStyle.usesSystemEffect && cardStyle == .borderless {
+            nativeCard
+        } else {
+            styledBody
+        }
+        #else
+        styledBody
+        #endif
+    }
+
+    @ViewBuilder
+    private var styledBody: some View {
         switch cardStyle {
         case .framed:
             switch style {
@@ -129,6 +142,56 @@ public struct SkeletonCardView: View {
         .plozzGlassCard(cornerRadius: metrics.landscapeCardCornerRadius, isFocused: false)
         .shimmering()
     }
+
+    #if os(tvOS)
+    // MARK: Native (system focus, "Posters" style)
+
+    /// Mirrors `PosterCardView.nativePosterCard` at rest. The placeholder art is
+    /// a native poster itself, so it keeps the same clearance for focus growth
+    /// and the same corners as the real one.
+    private var nativeCard: some View {
+        VStack(spacing: metrics.nativePosterCaptionSpacing) {
+            NativePosterPlaceholder(
+                aspectRatio: borderlessAspectRatio,
+                fallbackWidth: nativeArtworkWidth,
+                fill: palette.fill
+            )
+            .frame(maxWidth: .infinity)
+            if showsCaption {
+                nativeCaption
+            }
+        }
+        .padding(.horizontal, metrics.borderlessCardSideMargin)
+    }
+
+    /// The artwork width a native poster is given: the card's own artwork width.
+    private var nativeArtworkWidth: CGFloat {
+        switch style {
+        case .poster: metrics.posterWidth
+        case .landscape: artworkSize.width
+        }
+    }
+
+    /// `SystemPosterCaption`'s footprint at rest: a line for each font, centred
+    /// pills in them, and the focus travel reserved beneath.
+    private var nativeCaption: some View {
+        let title = UIFont.systemFont(ofSize: metrics.cardTitleFontSize, weight: .semibold)
+        let subtitle = UIFont.systemFont(ofSize: metrics.cardSubtitleFontSize)
+        return VStack(spacing: 2) {
+            nativeCaptionLine(height: ceil(title.lineHeight), fraction: 0.7, pill: (16 * metrics.scale).rounded())
+            nativeCaptionLine(height: ceil(subtitle.lineHeight), fraction: 0.45, pill: (13 * metrics.scale).rounded())
+        }
+        .padding(.bottom, metrics.focusCaptionPush(for: .system))
+        .shimmering()
+    }
+
+    private func nativeCaptionLine(height: CGFloat, fraction: CGFloat, pill: CGFloat) -> some View {
+        Capsule(style: .continuous)
+            .fill(palette.fill)
+            .frame(width: (nativeArtworkWidth * fraction).rounded(), height: pill)
+            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
+    }
+    #endif
 
     // MARK: Borderless ("Posters" style)
 

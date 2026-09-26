@@ -599,4 +599,81 @@ struct NativeTVCardButtonStyle: PrimitiveButtonStyle {
         }
     }
 }
+
+/// A loading placeholder drawn by a real native poster of the card's shape, so
+/// it takes the same room (TVUIKit keeps clearance around the artwork for focus
+/// growth) and has the same corners as the poster that replaces it. The poster is
+/// disabled, so it never takes focus.
+struct NativePosterPlaceholder: UIViewRepresentable {
+    let aspectRatio: CGFloat
+    let fallbackWidth: CGFloat
+    let fill: Color
+
+    typealias Container = NativeTVPoster<EmptyView>.Container
+
+    /// The corner TVUIKit gives a poster's image: the same at every size, and
+    /// matched to within a pixel of the native one.
+    static let cornerRadius: CGFloat = 21
+
+    func makeUIView(context: Context) -> Container {
+        let size = CGSize(width: fallbackWidth, height: fallbackWidth / aspectRatio)
+        // TVUIKit sizes the clearance from the image, so it needs one of the
+        // artwork's size from the start.
+        let poster = NativeTVPoster<EmptyView>.Poster(image: Self.blank(size))
+        poster.contentSize = size
+        poster.isEnabled = false
+        poster.isUserInteractionEnabled = false
+        poster.isAccessibilityElement = false
+        // TVUIKit rounds a poster's image itself and leaves its overlay square,
+        // so the fill carries TVUIKit's corner.
+        let sheen = UIHostingConfiguration {
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .fill(fill)
+                .shimmering()
+                .environment(\.self, context.environment)
+        }
+        .margins(.all, 0)
+        .makeContentView()
+        let container = poster.imageView.overlayContentView
+        container.addSubview(sheen)
+        sheen.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            sheen.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            sheen.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            sheen.topAnchor.constraint(equalTo: container.topAnchor),
+            sheen.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+        return Container(poster: poster)
+    }
+
+    func updateUIView(_ container: Container, context: Context) {}
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: Container, context: Context) -> CGSize? {
+        let width = proposal.width ?? fallbackWidth
+        guard width.isFinite, width > 0 else { return nil }
+        let size = CGSize(width: width, height: width / aspectRatio)
+        let poster = uiView.poster
+        if poster.contentSize != size {
+            poster.contentSize = size
+            poster.image = Self.blank(size)
+            uiView.invalidateIntrinsicContentSize()
+            uiView.setNeedsLayout()
+        }
+        return uiView.intrinsicContentSize
+    }
+
+    /// A clear image of the artwork's size: TVUIKit sizes the clearance and the
+    /// corners from it, and the hosted fill draws inside those corners.
+    @MainActor private static var blanks: [String: UIImage] = [:]
+
+    @MainActor private static func blank(_ size: CGSize) -> UIImage {
+        let key = "\(size.width)x\(size.height)"
+        if let image = blanks[key] { return image }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in }
+        blanks[key] = image
+        return image
+    }
+}
 #endif
