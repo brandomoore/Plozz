@@ -1296,6 +1296,7 @@ public struct HomeView: View {
         case home(HomeRow)
         case section(LibrarySection)
         case discover([MediaItem])
+        case notice(HomeContentNotice)
     }
 
     /// Home's rows in the order the classic layout shows them, merged or per
@@ -1327,10 +1328,16 @@ public struct HomeView: View {
             result = visible.filter { $0.kind != .libraries }.map(entry)
             appendLibrarySections(content: content, to: &result, libraries: visible.first { $0.kind == .libraries }, entry: entry)
         }
+        // First, as in the classic layout: it names the setting hiding everything
+        // else, and is what keeps a Home with nothing else to focus escapable.
+        if let notice = contentNotice {
+            result.insert((FocusHeroRow(id: "home-notice", itemIDs: [], leadItem: nil), .notice(notice)), at: 0)
+        }
         // After Continue Watching, or first when there is none.
         if focusHeroSettings?.showsDiscoverRow == true, !heroRuntime.items.isEmpty {
             let discover = heroRuntime.items
-            let index = result.first?.row.id == "home-\(HomeRowKind.continueWatching)" ? 1 : 0
+            let continueWatching = result.firstIndex { $0.row.id == "home-\(HomeRowKind.continueWatching)" }
+            let index = continueWatching.map { $0 + 1 } ?? result.firstIndex { $0.row.id != "home-notice" } ?? result.count
             result.insert((
                 FocusHeroRow(id: "home-discover", itemIDs: discover.map(\.id), leadItem: discover.first),
                 .discover(discover)
@@ -1459,6 +1466,11 @@ public struct HomeView: View {
             case .libraries:
                 librariesRow(row.libraries, onFocused: reporter.focusedLibrary)
             }
+        case .notice(let notice):
+            HomeContentNoticeView(
+                notice: notice,
+                onReload: { Task { await viewModel.load() } }
+            )
         case .discover(let items):
             MediaRowView(
                 title: Text("Discover"),

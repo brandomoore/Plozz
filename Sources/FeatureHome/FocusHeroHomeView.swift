@@ -187,10 +187,11 @@ final class FocusHeroModel {
         }
     }
 
-    /// The top of the space every row occupies: the tallest row's title. The
-    /// hero column always ends above it, whichever row is pinned.
-    func slotTop(rowSpacing: CGFloat) -> CGFloat {
-        let tallest = rowHeights.values.max() ?? 0
+    /// The top of the space every row occupies: the tallest current row's title.
+    /// The hero column always ends above it, whichever row is pinned. Only rows
+    /// still on Home count, so a row that goes away can't hold the column short.
+    func slotTop(in rows: [FocusHeroRow], rowSpacing: CGFloat) -> CGFloat {
+        let tallest = rows.compactMap { rowHeights[$0.id] }.max() ?? 0
         return max(
             FocusHeroLayout.lowestSlotTop,
             FocusHeroLayout.rowsBottom(rowSpacing: rowSpacing) - tallest
@@ -247,6 +248,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
             )
             FocusHeroColumn(
                 model: model,
+                rows: rows,
                 settings: settings,
                 spoilerSettings: spoilerSettings,
                 navigationStyle: navigationStyle
@@ -398,6 +400,7 @@ private struct FocusHeroBackdropLayer: View {
 
 private struct FocusHeroColumn: View {
     let model: FocusHeroModel
+    let rows: [FocusHeroRow]
     let settings: HeroSettings
     let spoilerSettings: SpoilerSettings
     let navigationStyle: NavigationStyle
@@ -408,7 +411,7 @@ private struct FocusHeroColumn: View {
 
     var body: some View {
         let top = FocusHeroLayout.columnTop(for: navigationStyle)
-        let slotTop = model.slotTop(rowSpacing: metrics.rowSpacing)
+        let slotTop = model.slotTop(in: rows, rowSpacing: metrics.rowSpacing)
         ZStack(alignment: .bottomLeading) {
             if let subject = model.subject {
                 content(for: subject)

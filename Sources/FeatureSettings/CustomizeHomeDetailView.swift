@@ -71,8 +71,7 @@ struct CustomizeHomeDetailView: View {
         [
             SettingsSplitRow(
                 id: "home-layout",
-                title: "Layout",
-                description: "How Home is arranged."
+                title: "Home Layout"
             ) {
                 layoutForm
             }
