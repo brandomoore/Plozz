@@ -289,46 +289,15 @@ extension HomeHeroView {
     // MARK: - External-art fallbacks (mirror DetailHeroView)
 
     func backdropFallback(for item: MediaItem) -> (@Sendable () async -> URL?)? {
-        switch item.kind {
-        case .folder, .collection, .unknown: return nil
-        default: break
-        }
-        // art → TMDb hero → the item's own poster. Some titles (e.g. a Plex movie
-        // with a poster but no fanart/`art`) have no landscape backdrop anywhere;
-        // rather than leave the hero blank, fall back to the poster so the user
-        // still sees the artwork the server does have. Only reached when the
-        // primary backdrop URLs fail, so a title with real backdrop art is
-        // unaffected.
-        return {
-            await ArtworkRouter.shared.heroArtworkURL(
-                for: item,
-                placement: .homeHero
-            )
-        }
+        HomeHeroArtwork.backdropFallback(for: item)
     }
 
     func logoFallback(for item: MediaItem) -> (@Sendable () async -> URL?)? {
-        switch item.kind {
-        case .folder, .collection, .unknown: return nil
-        default: break
-        }
-        return { await ArtworkRouter.shared.artworkURL(.logo, for: item) }
+        HomeHeroArtwork.logoFallback(for: item)
     }
 
     func backgroundSample(for item: MediaItem) -> (@Sendable () async -> HeroBackgroundSample?)? {
-        #if canImport(UIKit)
-        let references = primaryBackdropReferences(for: item)
-        return {
-            if let sample = await HeroBackgroundSampler.sample(references: references) { return sample }
-            if let tmdb = await ArtworkRouter.shared.artworkURL(.hero, for: item),
-               let sample = await HeroBackgroundSampler.sample(urls: [tmdb]) { return sample }
-            if let poster = item.posterURL,
-               let sample = await HeroBackgroundSampler.sample(urls: [poster]) { return sample }
-            return nil
-        }
-        #else
-        return nil
-        #endif
+        HomeHeroArtwork.backgroundSample(for: item, references: primaryBackdropReferences(for: item))
     }
 
     struct HeroPreviewWarmTarget: Sendable {

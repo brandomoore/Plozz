@@ -48,6 +48,24 @@ private enum HomeBackdropCompositing {
 /// overscan breakout, vertical scroll parallax) — none of which changes between
 /// slides, so none of it animates.
 public struct HomeHeroBackdrop: View {
+    /// How the art changes when `slideID` does.
+    public enum Transition: Sendable {
+        /// The carousel's parallax wipe from the entering edge.
+        case wipe
+        /// A dissolve, for a hero that changes with every focus move: a wipe per
+        /// card reads as motion the viewer did not ask for.
+        case crossfade
+    }
+
+    /// Where the legibility shading sits.
+    public enum ScrimStyle: Sendable {
+        /// The carousel's text sits low on the left over art that melts into rows.
+        case carousel
+        /// Text sits high on the left above a pinned row, so the shading reaches
+        /// the top and runs the full height of the leading edge.
+        case browse
+    }
+
     /// Ordered candidate backdrop references for the **currently fronted** slide.
     let references: [ArtworkReference]
     /// Last-resort async art lookup (e.g. TMDb) when none of `urls` load.
@@ -92,6 +110,8 @@ public struct HomeHeroBackdrop: View {
     /// shared video underneath. The incoming detail hero supplies the one visible
     /// scrim, preventing the two dark overlays from stacking during handoff.
     var scrimOpacity: Double = 1
+    var transition: Transition = .wipe
+    var scrimStyle: ScrimStyle = .carousel
 
     public init(
         references: [ArtworkReference],
@@ -108,7 +128,9 @@ public struct HomeHeroBackdrop: View {
         ignoresHorizontalSafeArea: Bool = true,
         alignsArtworkToLeadingEdge: Bool = false,
         scrimOpacity: Double = 1,
-        sharedResolutionIdentity: String? = nil
+        sharedResolutionIdentity: String? = nil,
+        transition: Transition = .wipe,
+        scrimStyle: ScrimStyle = .carousel
     ) {
         self.references = references
         self.asyncFallbackURL = asyncFallbackURL
@@ -126,6 +148,8 @@ public struct HomeHeroBackdrop: View {
         self.ignoresHorizontalSafeArea = ignoresHorizontalSafeArea
         self.alignsArtworkToLeadingEdge = alignsArtworkToLeadingEdge
         self.scrimOpacity = scrimOpacity
+        self.transition = transition
+        self.scrimStyle = scrimStyle
     }
 
     public init(
@@ -143,7 +167,9 @@ public struct HomeHeroBackdrop: View {
         ignoresHorizontalSafeArea: Bool = true,
         alignsArtworkToLeadingEdge: Bool = false,
         scrimOpacity: Double = 1,
-        sharedResolutionIdentity: String? = nil
+        sharedResolutionIdentity: String? = nil,
+        transition: Transition = .wipe,
+        scrimStyle: ScrimStyle = .carousel
     ) {
         self.init(
             references: urls.map(ArtworkReference.remote),
@@ -160,7 +186,9 @@ public struct HomeHeroBackdrop: View {
             ignoresHorizontalSafeArea: ignoresHorizontalSafeArea,
             alignsArtworkToLeadingEdge: alignsArtworkToLeadingEdge,
             scrimOpacity: scrimOpacity,
-            sharedResolutionIdentity: sharedResolutionIdentity
+            sharedResolutionIdentity: sharedResolutionIdentity,
+            transition: transition,
+            scrimStyle: scrimStyle
         )
     }
 
@@ -243,6 +271,7 @@ public struct HomeHeroBackdrop: View {
             sharedResolutionIdentity: sharedResolutionIdentity,
             slideID: slideID,
             forward: forward,
+            transition: transition,
             width: width,
             height: height
         )
@@ -260,6 +289,26 @@ public struct HomeHeroBackdrop: View {
     /// revealed background. Static across slides, so it never animates.
     @ViewBuilder
     private var scrim: some View {
+        switch scrimStyle {
+        case .carousel: carouselScrim
+        case .browse: browseScrim
+        }
+    }
+
+    /// The title, description and badges stack from near the top down to the
+    /// pinned row, and the row itself sits over the lower half, so the leading
+    /// edge darkens for the whole height and the top edge joins it.
+    private var browseScrim: some View {
+        HeroLegibilityScrim(
+            tone: scrimTone,
+            edgePeak: 0.62,
+            edges: [.leading, .top, .bottom],
+            bottomFadeTop: 0.42
+        )
+    }
+
+    @ViewBuilder
+    private var carouselScrim: some View {
         // TEST: top and trailing dropped, matching the detail page. The hero's
         // logo, metadata and buttons all sit along the LEFT and the image melts
         // into the rows at the BOTTOM, so those are the only edges doing
@@ -407,6 +456,7 @@ private struct WipeImageView: UIViewRepresentable {
     let sharedResolutionIdentity: String?
     let slideID: String
     let forward: Bool
+    let transition: HomeHeroBackdrop.Transition
     let width: CGFloat
     let height: CGFloat
 
@@ -450,6 +500,7 @@ private struct WipeImageView: UIViewRepresentable {
             references: references,
             slideID: slideID,
             forward: forward,
+            transition: transition,
             asyncFallbackURL: asyncFallbackURL,
             prefersOnlineArtwork: prefersOnlineArtwork,
             sharedResolutionIdentity: sharedResolutionIdentity
@@ -464,6 +515,7 @@ private struct WipeImageView: UIViewRepresentable {
             references: references,
             slideID: slideID,
             forward: forward,
+            transition: transition,
             asyncFallbackURL: asyncFallbackURL,
             prefersOnlineArtwork: prefersOnlineArtwork,
             sharedResolutionIdentity: sharedResolutionIdentity
@@ -497,6 +549,7 @@ private struct WipeImageView: UIViewRepresentable {
         /// upgrade arriving mid-wipe can be applied when the wipe lands.
         private var targetReferences: [ArtworkReference] = []
         private var targetForward = true
+        private var transition: HomeHeroBackdrop.Transition = .wipe
         /// Monotonic load token; only the newest requested art may apply.
         private var loadToken = 0
         /// The one foreground artwork load that can still become visible. Paging
@@ -533,11 +586,13 @@ private struct WipeImageView: UIViewRepresentable {
             references: [ArtworkReference],
             slideID: String,
             forward: Bool,
+            transition: HomeHeroBackdrop.Transition,
             asyncFallbackURL: (@Sendable () async -> URL?)?,
             prefersOnlineArtwork: Bool,
             sharedResolutionIdentity: String?
         ) {
             targetForward = forward
+            self.transition = transition
             // Same slide already shown/targeted: this is one of the countless
             // non-paging SwiftUI updates (scroll, focus, parallax). Free — except
             // we opportunistically upgrade the *displayed* slide's art if a better
@@ -710,6 +765,10 @@ private struct WipeImageView: UIViewRepresentable {
 
         private func startWipe(to image: UIImage, reference: ArtworkReference, id: String, forward: Bool) {
             guard let container else { return }
+            if transition == .crossfade {
+                startCrossfade(to: image, id: id, in: container)
+                return
+            }
             let prepared = container.prepareWipe(incomingImage: image, forward: forward)
             let animationID = UUID()
 
@@ -772,6 +831,34 @@ private struct WipeImageView: UIViewRepresentable {
             incomingAnimator.startAnimation()
             outgoingAnimator?.startAnimation()
         }
+
+        /// Dissolves the new art in over whatever is showing, including a dissolve
+        /// still under way, so moving quickly across cards never snaps.
+        private func startCrossfade(to image: UIImage, id: String, in container: HeroWipeContainerView) {
+            let incoming = container.prepareCrossfade(incomingImage: image)
+            let animationID = UUID()
+            let animator = UIViewPropertyAnimator(
+                duration: Self.crossfadeDuration,
+                curve: .easeInOut
+            )
+            animator.addAnimations {
+                container.animateCrossfade(incoming)
+            }
+            animator.addCompletion { [weak self, weak container] _ in
+                guard let self, let container else { return }
+                container.finishWipe(incoming)
+                self.activeAnimations[animationID] = nil
+                if self.targetID == id {
+                    self.maybeUpgradeDisplayedArt(references: self.targetReferences)
+                }
+            }
+            activeAnimations[animationID] = ActiveAnimations(incoming: animator, outgoing: nil)
+            animator.startAnimation()
+        }
+
+        /// Long enough to read as a dissolve rather than a cut, short enough that
+        /// the art keeps up with a viewer moving card to card.
+        private static let crossfadeDuration: TimeInterval = 0.5
 
         private func resolveSameSlideUpgrade(
             references: [ArtworkReference],
@@ -981,6 +1068,27 @@ final class HeroWipeContainerView: UIView {
         )
     }
 
+    /// Stages the incoming page over the current art at full size and clear, for a
+    /// dissolve. Shares ``finishWipe(_:)``, which prunes what it now covers.
+    func prepareCrossfade(incomingImage: UIImage) -> WipeHandle {
+        if pages.isEmpty {
+            setInitialImage(nil)
+        }
+        let size = effectiveSize
+        let incoming = makePage(image: incomingImage)
+        incoming.setWindow(CGRect(origin: .zero, size: size), contentX: 0, size: size)
+        incoming.alpha = 0
+        incoming.layer.zPosition = CGFloat(pages.count)
+        addSubview(incoming)
+        pages.append(incoming)
+        revealingPages.insert(ObjectIdentifier(incoming))
+        return WipeHandle(page: incoming)
+    }
+
+    func animateCrossfade(_ handle: WipeHandle) {
+        handle.page.alpha = 1
+    }
+
     /// The animatable step, split so each page can ride its own timing curve.
     /// `animateIncoming` opens the reveal window to full-screen while the incoming
     /// content settles to center (driven ease-out); `animateOutgoing` translates a
@@ -1003,6 +1111,7 @@ final class HeroWipeContainerView: UIView {
         let size = effectiveSize
         let full = CGRect(origin: .zero, size: size)
         incoming.setWindow(full, contentX: 0, size: size)
+        incoming.alpha = 1
         revealingPages.remove(ObjectIdentifier(incoming))
 
         for obsolete in pages[..<incomingIndex] {

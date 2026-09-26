@@ -1410,46 +1410,12 @@ struct HomeHeroView: View {
     /// The air-schedule badge above the logo. Mirrors the detail hero's badge so a
     /// series reads the same on both screens; this is the SwiftUI fallback path,
     /// with the UIKit renderer drawing its own flat equivalent.
-    @ViewBuilder
     private func scheduleBadge(_ text: LocalizedStringResource) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
-        Text(text)
-            .font(.system(size: 24, weight: .semibold))
-            .foregroundStyle(Color.primary)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
-            .background {
-                if #available(tvOS 26.0, *) {
-                    shape.fill(.regularMaterial)
-                } else {
-                    shape.fill(.ultraThinMaterial)
-                }
-            }
-            .overlay { shape.stroke(Color.primary.opacity(0.16), lineWidth: 1) }
-            .contentTransition(.opacity)
-            .accessibilityLabel(text)
+        HeroScheduleBadge(text: text)
     }
 
-    @ViewBuilder
     private func metadataLine(for item: MediaItem) -> some View {
-        let metadata = GenreDisplayFormatter.displayNames(for: item.genres)
-        let badge = HeroForegroundModelBuilder.ratingBadgeText(for: item).map {
-            MediaBadge($0, style: .rating)
-        }
-        if badge != nil || !metadata.isEmpty {
-            HStack(alignment: .center, spacing: 16) {
-                if let badge {
-                    MediaBadgeChip(badge: badge)
-                }
-                if !metadata.isEmpty {
-                    Text(metadata.joined(separator: "  ·  "))
-                        .font(.system(size: 23, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .contentTransition(.opacity)
-                }
-            }
-        }
+        HeroMetadataLine(item: item)
     }
 
     // MARK: - Action row + focus/paging
@@ -2571,4 +2537,54 @@ struct HomeHeroView: View {
     }
 }
 
+/// The hero's content-rating chip and genre line, shared by the carousel and the
+/// hero that follows focus.
+struct HeroMetadataLine: View {
+    let item: MediaItem
+
+    var body: some View {
+        let metadata = GenreDisplayFormatter.displayNames(for: item.genres)
+        let badge = HeroForegroundModelBuilder.ratingBadgeText(for: item).map {
+            MediaBadge($0, style: .rating)
+        }
+        if badge != nil || !metadata.isEmpty {
+            HStack(alignment: .center, spacing: 16) {
+                if let badge {
+                    MediaBadgeChip(badge: badge)
+                }
+                if !metadata.isEmpty {
+                    Text(metadata.joined(separator: "  ·  "))
+                        .font(.system(size: 23, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .contentTransition(.opacity)
+                }
+            }
+        }
+    }
+}
+
+/// The air-schedule badge above a hero's logo ("New episode every Wednesday").
+struct HeroScheduleBadge: View {
+    let text: LocalizedStringResource
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        Text(text)
+            .font(.system(size: 24, weight: .semibold))
+            .foregroundStyle(Color.primary)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .background {
+                if #available(tvOS 26.0, *) {
+                    shape.fill(.regularMaterial)
+                } else {
+                    shape.fill(.ultraThinMaterial)
+                }
+            }
+            .overlay { shape.stroke(Color.primary.opacity(0.16), lineWidth: 1) }
+            .contentTransition(.opacity)
+            .accessibilityLabel(text)
+    }
+}
 #endif

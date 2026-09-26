@@ -1,0 +1,364 @@
+#if os(tvOS)
+import SwiftUI
+import CoreModels
+import CoreUI
+import FeatureHomeCore
+import HeroUI
+
+/// One row of the Home that follows focus, as the hero needs to know it.
+struct FocusHeroRow: Identifiable {
+    let id: String
+    /// Item ids in on-screen order, to tell which way the viewer moved.
+    let itemIDs: [String]
+    /// What the hero shows before anything in the row has been focused.
+    let leadItem: MediaItem?
+}
+
+/// What a row reports as focus moves through it.
+struct FocusHeroRowReporter {
+    /// Focus reached the row. Synchronous, so the row pins without waiting.
+    let entered: () -> Void
+    let focusedItem: (MediaItem) -> Void
+    let focusedLibrary: (AggregatedLibrary) -> Void
+}
+
+/// Geometry and timing for ``FocusHeroHomeView``.
+enum FocusHeroLayout {
+    static var screenHeight: CGFloat { HomeHeroLayout.screenHeight }
+    static var screenWidth: CGFloat { HomeHeroLayout.screenWidth }
+    static let rowSpace = "focus-hero-rows"
+    /// How much of the next row shows under the pinned one: its title and the top
+    /// of its cards. The focus engine only moves to something on screen, so this
+    /// sliver is also what makes Down reach it.
+    static let nextRowPeek: CGFloat = 96
+    /// The pinned row's top edge stays inside these bounds whatever the row mix.
+    static let pinnedRange: ClosedRange<CGFloat> = 430...640
+    /// Height of the band a row fades through as it lifts out above the pinned row.
+    static let fadeBand: CGFloat = 140
+    /// Clear space between the hero's last line and the pinned row's title.
+    static let columnGap: CGFloat = 40
+    static let columnTop: CGFloat = 70
+    static let columnWidth: CGFloat = 900
+    static let rowAnimation = Animation.smooth(duration: 0.5)
+    /// Quick enough to read as immediate as focus moves card to card, but not a cut.
+    static let foregroundAnimation = Animation.easeOut(duration: 0.15)
+}
+
+/// Apple TV Home where the hero is whatever is focused.
+///
+/// Every title gets the full-screen treatment the carousel gives its picks: its
+/// backdrop fills the screen and its logo, details and description sit top left.
+/// There are no hero buttons, because the rows are how you move through it.
+///
+/// The focused row always sits at the same height. Moving down lifts it up and
+/// out while the next one rises into its place. Rows above and below stay laid
+/// out where they would be and are only hidden by a mask, never by opacity, so
+/// the focus engine still finds them: a click or a swipe moves focus natively,
+/// and the row that receives it animates into the pinned position.
+struct FocusHeroHomeView<RowContent: View>: View {
+    let rows: [FocusHeroRow]
+    let settings: HeroSettings
+    let spoilerSettings: SpoilerSettings
+    let navigationStyle: NavigationStyle
+    let isFrontmost: Bool
+    let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
+
+    init(
+        rows: [FocusHeroRow],
+        settings: HeroSettings,
+        spoilerSettings: SpoilerSettings,
+        navigationStyle: NavigationStyle,
+        isFrontmost: Bool,
+        @ViewBuilder rowContent: @escaping (FocusHeroRow, FocusHeroRowReporter) -> RowContent
+    ) {
+        self.rows = rows
+        self.settings = settings
+        self.spoilerSettings = spoilerSettings
+        self.navigationStyle = navigationStyle
+        self.isFrontmost = isFrontmost
+        self.rowContent = rowContent
+    }
+
+    private enum Subject: Equatable {
+        case item(MediaItem)
+        case library(AggregatedLibrary)
+
+        var id: String {
+            switch self {
+            case .item(let item): "item-\(item.id)"
+            case .library(let library): "library-\(library.key)"
+            }
+        }
+    }
+
+    @State private var activeRowID: String?
+    @State private var subject: Subject?
+    @State private var movingForward = true
+    @State private var rowFrames: [String: CGRect] = [:]
+    @State private var schedules = HeroScheduleLines()
+    @Namespace private var focusScope
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzNavigationContentInset) private var navigationContentInset
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            backdrop
+            heroColumn
+            rowsLayer
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .ignoresSafeArea(
+            .container,
+            edges: navigationStyle == .rail ? [.vertical, .trailing] : .vertical
+        )
+        .onAppear(perform: seedSubjectIfNeeded)
+        .onChange(of: rows.map(\.id)) { _, _ in seedSubjectIfNeeded() }
+        .task(id: rows.map(\.itemIDs)) {
+            await schedules.loadCached(rows.compactMap(\.leadItem))
+        }
+        .task(id: schedules.fetchKey(for: subjectItem)) {
+            guard let item = subjectItem else { return }
+            // Only the title the viewer settles on is fetched, not every card
+            // passed on the way.
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            await schedules.refreshFronted(item)
+        }
+    }
+
+    // MARK: - Backdrop
+
+    @ViewBuilder
+    private var backdrop: some View {
+        if let subject {
+            HomeHeroBackdrop(
+                references: backdropReferences(for: subject),
+                asyncFallbackURL: subjectItem.flatMap(HomeHeroArtwork.backdropFallback(for:)),
+                slideID: subject.id,
+                forward: movingForward,
+                width: FocusHeroLayout.screenWidth,
+                height: FocusHeroLayout.screenHeight,
+                scrimTone: colorScheme == .dark ? .black : .white,
+                alignsArtworkToLeadingEdge: navigationStyle == .rail,
+                scrimOpacity: isFrontmost ? 1 : 0,
+                transition: settings.backdropTransition == .slide ? .wipe : .crossfade,
+                scrimStyle: .browse
+            )
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func backdropReferences(for subject: Subject) -> [ArtworkReference] {
+        switch subject {
+        case .item(let item):
+            HomeHeroArtwork.backdropReferences(for: item)
+        case .library(let library):
+            [library.library.imageURL].compactMap { $0 }.map(ArtworkReference.remote)
+        }
+    }
+
+    // MARK: - Hero column
+
+    private var heroColumn: some View {
+        ZStack(alignment: .bottomLeading) {
+            if let subject {
+                columnContent(for: subject)
+                    .id(subject.id)
+                    .transition(.opacity)
+            }
+        }
+        .animation(FocusHeroLayout.foregroundAnimation, value: subject?.id)
+        .frame(width: FocusHeroLayout.columnWidth, alignment: .bottomLeading)
+        .frame(height: max(0, pinnedY - FocusHeroLayout.columnGap - FocusHeroLayout.columnTop), alignment: .bottomLeading)
+        .padding(.top, FocusHeroLayout.columnTop)
+        .padding(.leading, PlozzTheme.Metrics.heroLeadingPadding + navigationContentInset)
+        .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func columnContent(for subject: Subject) -> some View {
+        switch subject {
+        case .item(let item):
+            itemColumn(item)
+        case .library(let library):
+            VStack(alignment: .leading, spacing: 12) {
+                library.library.displayName
+                    .font(.system(size: 64, weight: .bold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.5)
+                if !library.serverName.isEmpty {
+                    Text(verbatim: library.serverName)
+                        .font(.system(size: 23, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
+        }
+    }
+
+    private func itemColumn(_ item: MediaItem) -> some View {
+        let hideText = spoilerSettings.shouldHideText(for: item)
+        let references = HomeHeroArtwork.backdropReferences(for: item)
+        return VStack(alignment: .leading, spacing: 12) {
+            if let scheduleLine = schedules.line(for: item) {
+                HeroScheduleBadge(text: scheduleLine)
+            }
+            HeroLogoArtwork(
+                references: item.artworkReferences(for: .logo),
+                asyncFallbackURL: HomeHeroArtwork.logoFallback(for: item),
+                backgroundSample: HomeHeroArtwork.backgroundSample(for: item, references: references),
+                maxWidth: HeroLogoLayout.box.width,
+                maxHeight: HeroLogoLayout.box.height,
+                presentationPolicy: .onArrival(maximumWait: 0.25)
+            ) {
+                title(for: item, hideText: hideText)
+                    .font(.system(size: 64, weight: .bold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.5)
+                    .multilineTextAlignment(.leading)
+            }
+            .padding(.bottom, 14)
+
+            HeroMetadataLine(item: item)
+                .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
+
+            if !hideText, let description = item.tagline ?? item.overview {
+                Text(description.overviewPlainText)
+                    .font(.system(size: 22))
+                    .foregroundStyle(.primary)
+                    .lineSpacing(2)
+                    .lineLimit(3)
+                    .frame(maxWidth: 820, alignment: .topLeading)
+                    .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
+            }
+
+            if settings.shouldShowRatings(for: item, spoilerSettings: spoilerSettings) {
+                let presentation = HeroPresentation(item: item, artworkStyle: .landscape, surface: .home)
+                RatingsBadgeRow(
+                    ratings: settings.ratingPreferences.headerRatings(
+                        from: item.ratings, isAnime: presentation.isAnime, hidesRatings: false
+                    ),
+                    familyGuidanceAge: settings.ratingPreferences.headerFamilyGuidanceAge(
+                        from: presentation.familyGuidanceAge, hidesRatings: false
+                    )
+                )
+            }
+        }
+    }
+
+    /// An episode leads with its show, as the carousel does.
+    private func title(for item: MediaItem, hideText: Bool) -> Text {
+        if item.kind == .episode,
+           let parentTitle = item.parentTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !parentTitle.isEmpty {
+            return Text(verbatim: parentTitle)
+        }
+        if hideText {
+            return Text(spoilerSettings.maskedTitle(for: item))
+        }
+        return Text(verbatim: item.title)
+    }
+
+    // MARK: - Rows
+
+    private var rowsLayer: some View {
+        Color.clear
+            .overlay(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                        rowContent(row, reporter(for: row))
+                            .onGeometryChange(for: CGRect.self) {
+                                $0.frame(in: .named(FocusHeroLayout.rowSpace))
+                            } action: { frame in
+                                rowFrames[row.id] = frame
+                            }
+                            .prefersDefaultFocus(index == 0, in: focusScope)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .coordinateSpace(.named(FocusHeroLayout.rowSpace))
+                .offset(y: pinnedY - (rowFrames[resolvedActiveRowID ?? ""]?.minY ?? 0))
+                .animation(FocusHeroLayout.rowAnimation, value: resolvedActiveRowID)
+                .focusScope(focusScope)
+            }
+            .mask(rowsMask)
+    }
+
+    /// Clear above the band a lifting row fades through, solid from the pinned
+    /// row's title down. A mask, not opacity: masked rows keep their focusability.
+    private var rowsMask: some View {
+        let height = FocusHeroLayout.screenHeight
+        let solid = max(0, pinnedY - 12) / height
+        let clear = max(0, pinnedY - 12 - FocusHeroLayout.fadeBand) / height
+        return LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .clear, location: clear),
+                .init(color: .black, location: solid),
+                .init(color: .black, location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    /// Every row pins at one height, low enough for the tallest to fit with the
+    /// next one peeking beneath it.
+    private var pinnedY: CGFloat {
+        let tallest = rowFrames.values.map(\.height).max() ?? 0
+        guard tallest > 0 else { return FocusHeroLayout.pinnedRange.upperBound }
+        let fitted = FocusHeroLayout.screenHeight - tallest - metrics.rowSpacing - FocusHeroLayout.nextRowPeek
+        return min(max(fitted, FocusHeroLayout.pinnedRange.lowerBound), FocusHeroLayout.pinnedRange.upperBound)
+    }
+
+    private var resolvedActiveRowID: String? {
+        if let activeRowID, rows.contains(where: { $0.id == activeRowID }) { return activeRowID }
+        return rows.first?.id
+    }
+
+    private func reporter(for row: FocusHeroRow) -> FocusHeroRowReporter {
+        FocusHeroRowReporter(
+            entered: { activate(row) },
+            focusedItem: { item in show(.item(item), in: row) },
+            focusedLibrary: { library in
+                activate(row)
+                show(.library(library), in: row)
+            }
+        )
+    }
+
+    private func activate(_ row: FocusHeroRow) {
+        guard resolvedActiveRowID != row.id else { return }
+        let from = rows.firstIndex { $0.id == resolvedActiveRowID } ?? 0
+        let to = rows.firstIndex { $0.id == row.id } ?? 0
+        movingForward = to >= from
+        activeRowID = row.id
+    }
+
+    private func show(_ next: Subject, in row: FocusHeroRow) {
+        guard next != subject else { return }
+        if case .item(let item) = next, case .item(let current)? = subject,
+           let from = row.itemIDs.firstIndex(of: current.id),
+           let to = row.itemIDs.firstIndex(of: item.id) {
+            movingForward = to >= from
+        }
+        subject = next
+    }
+
+    private func seedSubjectIfNeeded() {
+        if case .item(let item)? = subject,
+           rows.contains(where: { $0.itemIDs.contains(item.id) }) {
+            return
+        }
+        if case .library? = subject { return }
+        let row = rows.first { $0.id == resolvedActiveRowID } ?? rows.first
+        subject = row?.leadItem.map(Subject.item)
+    }
+
+    private var subjectItem: MediaItem? {
+        if case .item(let item)? = subject { return item }
+        return nil
+    }
+}
+#endif

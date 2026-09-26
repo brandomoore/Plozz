@@ -95,6 +95,41 @@ final class HeroSettingsTests: XCTestCase {
         XCTAssertFalse(decoded.showsDiscoverySources)
     }
 
+    // MARK: Hero style
+
+    func testExistingSettingsKeepTheCarouselAndCrossfade() throws {
+        let decoded = try JSONDecoder().decode(
+            HeroSettings.self, from: Data(#"{"isEnabled":true,"maxItems":4}"#.utf8)
+        )
+        XCTAssertEqual(decoded.style, .carousel)
+        XCTAssertEqual(decoded.backdropTransition, .crossfade)
+        XCTAssertFalse(decoded.followsFocus)
+    }
+
+    func testAnUnknownStyleFallsBackWithoutResettingOtherSettings() throws {
+        let data = Data(#"{"maxItems":4,"style":"someday","backdropTransition":"spin"}"#.utf8)
+        let decoded = try JSONDecoder().decode(HeroSettings.self, from: data)
+        XCTAssertEqual(decoded.style, .carousel)
+        XCTAssertEqual(decoded.backdropTransition, .crossfade)
+        XCTAssertEqual(decoded.maxItems, 4)
+    }
+
+    func testFollowingFocusRoundTripsAndNeedsOnlyTheSwitch() {
+        var settings = HeroSettings.default
+        settings.style = .followsFocus
+        settings.backdropTransition = .slide
+        settings.sources = []
+        let store = HeroSettingsStore(defaults: defaults)
+        store.save(settings)
+        let loaded = store.load()
+        XCTAssertEqual(loaded.style, .followsFocus)
+        XCTAssertEqual(loaded.backdropTransition, .slide)
+        XCTAssertTrue(loaded.followsFocus, "Its titles come from the rows, not the carousel's sources")
+
+        settings.isEnabled = false
+        XCTAssertFalse(settings.followsFocus)
+    }
+
     func testInMemoryStoreRoundTrips() {
         let store = InMemoryHeroSettingsStore()
         XCTAssertEqual(store.load(), .default)

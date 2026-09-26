@@ -243,7 +243,7 @@ struct CustomizeHomeDetailView: View {
             SettingsSplitRow(
                 id: "hero",
                 title: "Hero",
-                description: "A cinematic, rotating spotlight at the top of Home, with a Continue Watching row tucked under its lower edge.",
+                description: "Full-screen artwork at the top of Home: a rotating spotlight, or whatever you're browsing.",
             ) {
                 heroForm
             }
@@ -257,88 +257,120 @@ struct CustomizeHomeDetailView: View {
                 .toggleStyle(SettingsSwitchToggleStyle())
 
             if hero.settings.isEnabled {
+                SettingsDetailGroup(title: "Style", description: hero.settings.style.settingsDescription) {
+                    SettingsOptionList(
+                        options: HeroStyle.allCases,
+                        selection: $hero.settings.style,
+                        bordered: false,
+                        title: { Text($0.settingsTitle) }
+                    )
+                }
+
+                if hero.settings.style == .followsFocus {
+                    SettingsDetailGroup(title: "Background transition") {
+                        SettingsOptionList(
+                            options: HeroBackdropTransition.allCases,
+                            selection: $hero.settings.backdropTransition,
+                            bordered: false,
+                            title: { Text($0.settingsTitle) }
+                        )
+                    }
+                }
+
                 Toggle("Show ratings", isOn: $hero.settings.showsRatings)
                     .toggleStyle(SettingsSwitchToggleStyle())
                 if hero.settings.showsRatings {
                     Toggle("Show Common Sense age", isOn: $hero.settings.ratingPreferences.showsHeaderFamilyGuidance)
                     HeaderReviewScoreCountPicker(settings: $hero.settings.ratingPreferences)
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    Toggle("Show discovery sources", isOn: $hero.settings.showsDiscoverySources)
-                        .toggleStyle(SettingsSwitchToggleStyle())
-                    Text("Show the catalogs behind each title.")
-                        .settingsHelperText()
-                        .fixedSize(horizontal: false, vertical: true)
+                if hero.settings.style == .carousel {
+                    spotlightForm
                 }
-                Toggle(
-                    "Hide watched movies, shows, and episodes",
-                    isOn: $hero.settings.hideWatched
-                )
-                .toggleStyle(SettingsSwitchToggleStyle())
-
-                SettingsDetailGroup(title: "Sources") {
-                    SettingsCheckList(
-                        options: orderedHeroSources,
-                        title: { Text($0.displayName) },
-                        isChecked: { hero.settings.sources.contains($0) },
-                        onToggle: { toggleSource($0) }
-                    )
-                }
-
-                if hero.settings.isEnabled(.featured) {
-                    FeaturedDiscoverySettings(sources: $hero.settings.discoverySources)
-                }
-
-                if hero.settings.isEnabled(.randomFromLibrary) {
-                    SettingsDetailGroup(
-                        title: "Random Libraries",
-                        description: "Leave all selected to use every library on Home."
-                    ) {
-                        randomLibrariesContent
-                    }
-                }
-
-                if hero.settings.isEnabled(.watchlist) {
-                    SettingsDetailGroup(
-                        title: "Watchlist picks",
-                        description: "Prefer titles you haven't seen in the hero recently. Turn off to keep your watchlist order."
-                    ) {
-                        Toggle(
-                            "Discovery rotation",
-                            isOn: $hero.settings.watchlistDiscoveryEnabled
-                        )
-                        .toggleStyle(SettingsSwitchToggleStyle())
-                    }
-                }
-
-                SettingsDetailGroup(title: "Rotation") {
-                    VStack(alignment: .leading, spacing: 24) {
-                        LabeledSettingRow("Items in rotation") {
-                            SettingsStepper(
-                                options: Array(HeroSettings.maxItemsRange),
-                                selection: $hero.settings.maxItems,
-                                title: { "\($0)" }
-                            )
-                        }
-                        Toggle("Rotate automatically", isOn: $hero.settings.autoAdvance)
-                            .toggleStyle(SettingsSwitchToggleStyle())
-                        if hero.settings.autoAdvance {
-                            LabeledSettingRow("Seconds per title") {
-                                SettingsStepper(
-                                    options: Array(HeroSettings.autoAdvanceRange),
-                                    selection: $hero.settings.autoAdvanceSeconds,
-                                    verbatimTitle: { Duration.seconds($0).formatted(.units(allowed: [.seconds], width: .narrow)) }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                heroTrailerGroup
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(.easeInOut(duration: 0.22), value: hero.settings.isEnabled)
+        .animation(.easeInOut(duration: 0.22), value: hero.settings.style)
+    }
+
+    /// What only the rotating spotlight uses: where its picks come from and how it
+    /// rotates. A hero that follows focus shows the rows' own titles instead.
+    @ViewBuilder private var spotlightForm: some View {
+        @Bindable var hero = hero
+        VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Show discovery sources", isOn: $hero.settings.showsDiscoverySources)
+                    .toggleStyle(SettingsSwitchToggleStyle())
+                Text("Show the catalogs behind each title.")
+                    .settingsHelperText()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Toggle(
+                "Hide watched movies, shows, and episodes",
+                isOn: $hero.settings.hideWatched
+            )
+            .toggleStyle(SettingsSwitchToggleStyle())
+
+            SettingsDetailGroup(title: "Sources") {
+                SettingsCheckList(
+                    options: orderedHeroSources,
+                    title: { Text($0.displayName) },
+                    isChecked: { hero.settings.sources.contains($0) },
+                    onToggle: { toggleSource($0) }
+                )
+            }
+
+            if hero.settings.isEnabled(.featured) {
+                FeaturedDiscoverySettings(sources: $hero.settings.discoverySources)
+            }
+
+            if hero.settings.isEnabled(.randomFromLibrary) {
+                SettingsDetailGroup(
+                    title: "Random Libraries",
+                    description: "Leave all selected to use every library on Home."
+                ) {
+                    randomLibrariesContent
+                }
+            }
+
+            if hero.settings.isEnabled(.watchlist) {
+                SettingsDetailGroup(
+                    title: "Watchlist picks",
+                    description: "Prefer titles you haven't seen in the hero recently. Turn off to keep your watchlist order."
+                ) {
+                    Toggle(
+                        "Discovery rotation",
+                        isOn: $hero.settings.watchlistDiscoveryEnabled
+                    )
+                    .toggleStyle(SettingsSwitchToggleStyle())
+                }
+            }
+
+            SettingsDetailGroup(title: "Rotation") {
+                VStack(alignment: .leading, spacing: 24) {
+                    LabeledSettingRow("Items in rotation") {
+                        SettingsStepper(
+                            options: Array(HeroSettings.maxItemsRange),
+                            selection: $hero.settings.maxItems,
+                            title: { "\($0)" }
+                        )
+                    }
+                    Toggle("Rotate automatically", isOn: $hero.settings.autoAdvance)
+                        .toggleStyle(SettingsSwitchToggleStyle())
+                    if hero.settings.autoAdvance {
+                        LabeledSettingRow("Seconds per title") {
+                            SettingsStepper(
+                                options: Array(HeroSettings.autoAdvanceRange),
+                                selection: $hero.settings.autoAdvanceSeconds,
+                                verbatimTitle: { Duration.seconds($0).formatted(.units(allowed: [.seconds], width: .narrow)) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            heroTrailerGroup
+        }
     }
 
     @ViewBuilder private var heroTrailerGroup: some View {
@@ -425,6 +457,33 @@ struct CustomizeHomeDetailView: View {
         keys.formIntersection(allKeys)
         // Canonicalise "everything selected" back to empty.
         hero.settings.randomLibraryKeys = (keys == allKeys) ? [] : keys
+    }
+}
+
+private extension HeroStyle {
+    var settingsTitle: LocalizedStringResource {
+        switch self {
+        case .carousel: "Spotlight"
+        case .followsFocus: "Full-screen browsing"
+        }
+    }
+
+    var settingsDescription: LocalizedStringResource {
+        switch self {
+        case .carousel:
+            "Rotates through picks from the sources below, with Play and More Info, above your rows."
+        case .followsFocus:
+            "Whatever you move to fills the screen, and rows stay in one place as you browse."
+        }
+    }
+}
+
+private extension HeroBackdropTransition {
+    var settingsTitle: LocalizedStringResource {
+        switch self {
+        case .crossfade: "Crossfade"
+        case .slide: "Slide"
+        }
     }
 }
 

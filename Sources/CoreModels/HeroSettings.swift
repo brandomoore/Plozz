@@ -57,6 +57,12 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// Seconds between auto-advances (clamped to ``autoAdvanceRange``).
     public var autoAdvanceSeconds: Int
 
+    /// How the hero behaves on Apple TV. Other platforms always show the carousel.
+    public var style: HeroStyle
+
+    /// How the backdrop changes between titles when the hero follows focus.
+    public var backdropTransition: HeroBackdropTransition
+
     /// Hero on, all content categories enabled, a modest rotation, all libraries
     /// for Random, and gentle auto-advance. Optional discovery credits are hidden.
     /// Feed defaults are defined by ``HeroDiscoverySource/defaultSelection``.
@@ -89,7 +95,9 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         ratingPreferences: DetailPageSettings = .default,
         randomLibraryKeys: Set<String>,
         autoAdvance: Bool,
-        autoAdvanceSeconds: Int
+        autoAdvanceSeconds: Int,
+        style: HeroStyle = .carousel,
+        backdropTransition: HeroBackdropTransition = .crossfade
     ) {
         self.isEnabled = isEnabled
         // De-duplicate while preserving order so the picker can't persist a
@@ -107,6 +115,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         self.randomLibraryKeys = randomLibraryKeys
         self.autoAdvance = autoAdvance
         self.autoAdvanceSeconds = autoAdvanceSeconds.clamped(to: HeroSettings.autoAdvanceRange)
+        self.style = style
+        self.backdropTransition = backdropTransition
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -115,6 +125,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         case discoverySources, showsDiscoverySources
         case ratingPreferences
         case randomLibraryKeys, autoAdvance, autoAdvanceSeconds
+        case style, backdropTransition
         case offeredSourcesVersion
     }
 
@@ -150,7 +161,9 @@ public struct HeroSettings: Codable, Equatable, Sendable {
             ratingPreferences: value(DetailPageSettings.self, .ratingPreferences, d.ratingPreferences),
             randomLibraryKeys: value(Set<String>.self, .randomLibraryKeys, d.randomLibraryKeys),
             autoAdvance: value(Bool.self, .autoAdvance, d.autoAdvance),
-            autoAdvanceSeconds: value(Int.self, .autoAdvanceSeconds, d.autoAdvanceSeconds)
+            autoAdvanceSeconds: value(Int.self, .autoAdvanceSeconds, d.autoAdvanceSeconds),
+            style: value(HeroStyle.self, .style, d.style),
+            backdropTransition: value(HeroBackdropTransition.self, .backdropTransition, d.backdropTransition)
         )
     }
 
@@ -207,6 +220,8 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         try c.encode(randomLibraryKeys, forKey: .randomLibraryKeys)
         try c.encode(autoAdvance, forKey: .autoAdvance)
         try c.encode(autoAdvanceSeconds, forKey: .autoAdvanceSeconds)
+        try c.encode(style, forKey: .style)
+        try c.encode(backdropTransition, forKey: .backdropTransition)
         try c.encode(Self.currentOfferedSourcesVersion, forKey: .offeredSourcesVersion)
     }
 
@@ -219,6 +234,12 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// one enabled source.
     public var isActive: Bool {
         isEnabled && !sources.isEmpty
+    }
+
+    /// Whether Apple TV's Home should show the full-screen hero that follows focus
+    /// in place of the carousel. Needs only the switch: its titles are the rows.
+    public var followsFocus: Bool {
+        isEnabled && style == .followsFocus
     }
 
     public var usesDiscoveryWatchlistSeeds: Bool {
@@ -244,6 +265,22 @@ public struct HeroSettings: Codable, Equatable, Sendable {
         isActive && hideWatched
             && (isEnabled(.featured) || isEnabled(.randomFromLibrary))
     }
+}
+
+/// How the Home hero chooses what it shows.
+public enum HeroStyle: String, Codable, CaseIterable, Sendable {
+    /// A rotating spotlight of curated titles, with its own actions, above the rows.
+    case carousel
+    /// Whatever title is focused in the rows fills the screen; rows hold one position.
+    case followsFocus
+}
+
+/// How the full-screen backdrop moves from one focused title to the next.
+public enum HeroBackdropTransition: String, Codable, CaseIterable, Sendable {
+    /// A gentle dissolve.
+    case crossfade
+    /// The carousel's sideways wipe, entering from the direction of travel.
+    case slide
 }
 
 private extension Comparable {
