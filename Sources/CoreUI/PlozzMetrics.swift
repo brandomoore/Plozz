@@ -28,8 +28,8 @@ public struct PlozzMetrics: Equatable, Sendable {
 
     // MARK: Card artwork sizes (scaled)
 
-    public let posterWidth: CGFloat
-    public let posterHeight: CGFloat
+    public private(set) var posterWidth: CGFloat
+    public private(set) var posterHeight: CGFloat
     public let landscapeWidth: CGFloat
     public let landscapeHeight: CGFloat
     /// Artwork width for a Continue Watching card.
@@ -233,6 +233,15 @@ public struct PlozzMetrics: Equatable, Sendable {
         case .framed: titleInset
         case .borderless: titleInset - borderlessCardSideMargin
         }
+    }
+
+    /// These metrics with portrait posters scaled by `factor`, for a surface
+    /// that wants more of them on screen.
+    public func scalingPosters(by factor: CGFloat) -> PlozzMetrics {
+        var metrics = self
+        metrics.posterWidth = (posterWidth * factor).rounded()
+        metrics.posterHeight = (posterHeight * factor).rounded()
+        return metrics
     }
 
     // MARK: Concentric card corner radii (derived)

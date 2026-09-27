@@ -70,6 +70,9 @@ enum FocusHeroLayout {
     static let logoBox = CGSize(width: 440, height: 124)
     /// How much closer a row's title sits to its cards than on the classic Home.
     static let rowTitleTightening: CGFloat = 14
+    /// Portrait posters are smaller than on the classic Home, so more of each
+    /// row's artwork is on screen.
+    static let posterScale: CGFloat = 0.7
     /// With the top tab bar the column starts below it: nothing scrolls here, so
     /// the bar never tucks away the way it does over the carousel.
     static let columnTopUnderTabBar: CGFloat = 150
@@ -250,7 +253,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
     }
 
     @State private var model = FocusHeroModel()
-    @State private var metadata = FocusHeroMetadata()
+    @State private var metadata = FocusHeroMetadata.session
 
     // Reads nothing from `model`: this body builds the rows, and must not run
     // again when the pinned row or the hero title changes.
@@ -279,6 +282,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
                 .modifier(FocusHeroRowMask(model: model, rows: rows))
                 .environment(\.plozzCardCaptionsHidden, !settings.showsCardCaptions)
                 .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
+                .transformEnvironment(\.plozzMetrics) { $0 = $0.scalingPosters(by: FocusHeroLayout.posterScale) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea(
@@ -290,7 +294,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
         .task(id: rows.map(\.itemIDs)) {
             guard let enrich else { return }
             // Each row's opening titles, top row first: where focus goes next.
-            await metadata.prefetch(rows.flatMap { $0.items.prefix(12) }, using: enrich)
+            await metadata.prefetch(rows.map { Array($0.items.prefix(16)) }, using: enrich)
         }
     }
 }
@@ -321,6 +325,9 @@ private struct FocusHeroDetailsFootprint: View {
 final class FocusHeroMetadata {
     typealias Enrich = @Sendable ([MediaItem]) async -> [MediaItem]
 
+    /// Kept for the session, so coming back to Home finds details already in.
+    static let session = FocusHeroMetadata()
+
     private var details: [String: MediaItem] = [:]
     @ObservationIgnored private var requested: Set<String> = []
 
@@ -333,33 +340,34 @@ final class FocusHeroMetadata {
         details[item.stablePresentationID] != nil
     }
 
-    /// Loads the details of titles focus hasn't reached yet, a few at a time, so
-    /// they're usually ready by the time it does.
-    func prefetch(_ items: [MediaItem], using enrich: Enrich) async {
-        let wanted = items.filter {
-            details[$0.stablePresentationID] == nil && !requested.contains($0.stablePresentationID)
-        }
-        for batch in stride(from: 0, to: wanted.count, by: 8).map({ Array(wanted[$0..<min($0 + 8, wanted.count)]) }) {
-            let keys = batch.map(\.stablePresentationID).filter { requested.insert($0).inserted }
-            guard !keys.isEmpty else { continue }
-            let enriched = await enrich(batch)
-            guard !Task.isCancelled, enriched.count == batch.count else {
-                keys.forEach { requested.remove($0) }
-                return
-            }
-            for (original, full) in zip(batch, enriched) where keys.contains(original.stablePresentationID) {
-                details[original.stablePresentationID] = full
+    /// Loads the details of every row's titles at once, as soon as the rows
+    /// appear, so they're ready before focus reaches them.
+    func prefetch(_ rows: [[MediaItem]], using enrich: @escaping Enrich) async {
+        await withTaskGroup(of: Void.self) { group in
+            for items in rows {
+                let batch = items.filter { requested.insert($0.stablePresentationID).inserted }
+                guard !batch.isEmpty else { continue }
+                group.addTask { @MainActor in await self.store(batch, using: enrich) }
             }
         }
     }
 
-    /// Loads a title's details once focus has settled on it. Cards passed on the
-    /// way are left alone, and a load cut short is tried again next time.
+    private func store(_ batch: [MediaItem], using enrich: Enrich) async {
+        let enriched = await enrich(batch)
+        guard !Task.isCancelled, enriched.count == batch.count else {
+            batch.forEach { requested.remove($0.stablePresentationID) }
+            return
+        }
+        for (original, full) in zip(batch, enriched) {
+            details[original.stablePresentationID] = full
+        }
+    }
+
+    /// Loads the focused title's details straight away, ahead of the rest of its
+    /// row. A load cut short is tried again next time.
     func load(_ item: MediaItem, using enrich: Enrich) async {
         let key = item.stablePresentationID
-        guard details[key] == nil, !requested.contains(key) else { return }
-        try? await Task.sleep(for: .milliseconds(250))
-        guard !Task.isCancelled, requested.insert(key).inserted else { return }
+        guard details[key] == nil, requested.insert(key).inserted else { return }
         let enriched = await enrich([item]).first
         guard !Task.isCancelled, let enriched else {
             requested.remove(key)
