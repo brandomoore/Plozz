@@ -58,9 +58,11 @@ final class FocusHeroModelTests: XCTestCase {
         let bottom = FocusHeroLayout.rowsBottom(rowSpacing: 28)
         XCTAssertEqual(
             model.slotTop(in: rows, rowSpacing: 28),
-            max(FocusHeroLayout.lowestSlotTop, bottom - 540),
-            "A row that has gone away must not hold the hero column short"
+            max(FocusHeroLayout.lowestSlotTop, bottom - 406),
+            "The details end above the pinned row, not a taller one elsewhere"
         )
+        model.activate(watchlist, in: rows)
+        XCTAssertEqual(model.slotTop(in: rows, rowSpacing: 28), max(FocusHeroLayout.lowestSlotTop, bottom - 540))
     }
 
     func testSubPointMeasurementNoiseIsIgnored() {

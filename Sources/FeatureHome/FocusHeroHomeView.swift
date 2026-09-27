@@ -68,6 +68,8 @@ enum FocusHeroLayout {
     /// row is short, and the description needs its lines more than the logo needs
     /// the extra size.
     static let logoBox = CGSize(width: 440, height: 124)
+    /// Room kept for the ratings row beneath the description.
+    static let ratingsRowHeight: CGFloat = 44
     /// With the top tab bar the column starts below it: nothing scrolls here, so
     /// the bar never tucks away the way it does over the carousel.
     static let columnTopUnderTabBar: CGFloat = 150
@@ -198,14 +200,13 @@ final class FocusHeroModel {
         }
     }
 
-    /// The top of the space every row occupies: the tallest current row's title.
-    /// The hero column always ends above it, whichever row is pinned. Only rows
-    /// still on Home count, so a row that goes away can't hold the column short.
+    /// The pinned row's title: the hero's details end just above it, so they
+    /// sit close to the cards they describe and move only when the pinned row
+    /// changes height.
     func slotTop(in rows: [FocusHeroRow], rowSpacing: CGFloat) -> CGFloat {
-        let tallest = rows.compactMap { rowHeights[$0.id] }.max() ?? 0
-        return max(
+        max(
             FocusHeroLayout.lowestSlotTop,
-            FocusHeroLayout.rowsBottom(rowSpacing: rowSpacing) - tallest
+            FocusHeroLayout.rowsBottom(rowSpacing: rowSpacing) - activeHeight(in: rows)
         )
     }
 }
@@ -290,6 +291,25 @@ struct FocusHeroHomeView<RowContent: View>: View {
             // Each row's opening titles, top row first: where focus goes next.
             await metadata.prefetch(rows.flatMap { $0.items.prefix(12) }, using: enrich)
         }
+    }
+}
+
+/// The room a title's details can take: the logo box, one metadata line, a
+/// three-line description and a ratings row. Drawn hidden, it fixes where the
+/// details block starts above the pinned row.
+private struct FocusHeroDetailsFootprint: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Color.clear
+                .frame(height: FocusHeroLayout.logoBox.height)
+                .padding(.bottom, 6)
+            Text(verbatim: " ").font(.system(size: 23, weight: .medium))
+            Text(verbatim: " \n \n ")
+                .font(.system(size: 22))
+                .lineSpacing(2)
+            Color.clear.frame(height: FocusHeroLayout.ratingsRowHeight)
+        }
+        .frame(width: FocusHeroLayout.columnWidth, alignment: .leading)
     }
 }
 
@@ -495,9 +515,11 @@ private struct FocusHeroColumn: View {
     var body: some View {
         let top = FocusHeroLayout.columnTop(for: navigationStyle)
         let slotTop = model.slotTop(in: rows, rowSpacing: FocusHeroLayout.rowSpacing)
-        // Pinned to the top, so the logo holds one place from title to title and
-        // a longer description only reaches further down.
+        // A block of fixed height just above the pinned row, its content pinned
+        // to the block's top: the logo holds one place from title to title, and a
+        // longer description only reaches further down.
         ZStack(alignment: .topLeading) {
+            FocusHeroDetailsFootprint().hidden()
             if let subject = model.subject {
                 content(for: subject)
                     .id(subject.id)
@@ -505,7 +527,7 @@ private struct FocusHeroColumn: View {
             }
         }
         .frame(width: FocusHeroLayout.columnWidth, alignment: .topLeading)
-        .frame(height: max(0, slotTop - FocusHeroLayout.columnGap - top), alignment: .topLeading)
+        .frame(height: max(0, slotTop - FocusHeroLayout.columnGap - top), alignment: .bottomLeading)
         .padding(.top, top)
         // The TV's safe area and the rail's inset, exactly as the classic hero.
         .padding(.leading, PlozzTheme.Metrics.heroLeadingPadding + navigationContentInset)
