@@ -595,11 +595,15 @@ private struct FocusHeroColumn: View {
             }
             // Every logo and title sits on the same line, whatever its shape.
             .frame(height: FocusHeroLayout.logoBox.height, alignment: .bottomLeading)
-            .padding(.bottom, 6)
-
-            if let scheduleLine = schedules.line(for: item) {
-                HeroScheduleBadge(text: scheduleLine)
+            // Above the logo, as on the classic hero, in the free space over the
+            // block: it takes no room, so nothing below it moves.
+            .overlay(alignment: .topLeading) {
+                if let scheduleLine = schedules.line(for: item) {
+                    HeroScheduleBadge(text: scheduleLine)
+                        .alignmentGuide(.top) { $0[.bottom] + 16 }
+                }
             }
+            .padding(.bottom, 6)
 
             if detailed {
                 HeroMetadataLine(item: item)
