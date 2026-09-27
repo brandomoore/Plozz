@@ -119,6 +119,7 @@ public struct MediaRowView: View {
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
     @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
     @Environment(\.plozzCardStyle) private var cardStyle
+    @Environment(\.plozzRowTitleTightening) private var titleTightening
     /// Keeps branch-specific masking completely out of native navigation styles.
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
 
@@ -484,7 +485,7 @@ public struct MediaRowView: View {
 
     public var body: some View {
         if !items.isEmpty || loadingPlaceholderCount > 0 || episodeEntry != nil {
-            VStack(alignment: .leading, spacing: layoutMetrics.sectionTitleSpacing) {
+            VStack(alignment: .leading, spacing: layoutMetrics.sectionTitleSpacing - titleTightening) {
                 if let title {
                     MediaRowHeader(title: title)
                         .padding(.leading, leadingInset + navigationContentInset)

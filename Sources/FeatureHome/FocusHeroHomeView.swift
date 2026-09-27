@@ -68,8 +68,8 @@ enum FocusHeroLayout {
     /// row is short, and the description needs its lines more than the logo needs
     /// the extra size.
     static let logoBox = CGSize(width: 440, height: 124)
-    /// Room kept for the ratings row beneath the description.
-    static let ratingsRowHeight: CGFloat = 44
+    /// How much closer a row's title sits to its cards than on the classic Home.
+    static let rowTitleTightening: CGFloat = 14
     /// With the top tab bar the column starts below it: nothing scrolls here, so
     /// the bar never tucks away the way it does over the carousel.
     static let columnTopUnderTabBar: CGFloat = 150
@@ -278,6 +278,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
                 }
                 .modifier(FocusHeroRowMask(model: model, rows: rows))
                 .environment(\.plozzCardCaptionsHidden, !settings.showsCardCaptions)
+                .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea(
@@ -294,9 +295,9 @@ struct FocusHeroHomeView<RowContent: View>: View {
     }
 }
 
-/// The room a title's details can take: the logo box, one metadata line, a
-/// three-line description and a ratings row. Drawn hidden, it fixes where the
-/// details block starts above the pinned row.
+/// The room a title's details usually take: the logo box, one metadata line and
+/// a three-line description. Drawn hidden, it fixes where the details block
+/// starts above the pinned row; a title that also shows ratings reaches past it.
 private struct FocusHeroDetailsFootprint: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -307,7 +308,6 @@ private struct FocusHeroDetailsFootprint: View {
             Text(verbatim: " \n \n ")
                 .font(.system(size: 22))
                 .lineSpacing(2)
-            Color.clear.frame(height: FocusHeroLayout.ratingsRowHeight)
         }
         .frame(width: FocusHeroLayout.columnWidth, alignment: .leading)
     }

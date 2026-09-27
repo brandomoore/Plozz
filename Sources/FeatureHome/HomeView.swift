@@ -2023,11 +2023,12 @@ private struct HomeLibrariesRow: View {
 
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var cardStyle
+    @Environment(\.plozzRowTitleTightening) private var titleTightening
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
 
     var body: some View {
-        VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
+        VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing - titleTightening) {
             Text("Libraries")
                 .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
                 .padding(.leading, PlozzTheme.Metrics.screenPadding + navigationContentInset)

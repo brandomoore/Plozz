@@ -13,5 +13,17 @@ public extension EnvironmentValues {
         get { self[PlozzCardCaptionsHiddenKey.self] }
         set { self[PlozzCardCaptionsHiddenKey.self] = newValue }
     }
+
+    /// How much closer a row's title sits to its cards than usual. Set by a
+    /// surface that reads one row at a time, where the title belongs tightly to
+    /// its row.
+    var plozzRowTitleTightening: CGFloat {
+        get { self[PlozzRowTitleTighteningKey.self] }
+        set { self[PlozzRowTitleTighteningKey.self] = newValue }
+    }
+}
+
+private struct PlozzRowTitleTighteningKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
 }
 #endif
