@@ -295,9 +295,10 @@ struct FocusHeroHomeView<RowContent: View>: View {
     }
 }
 
-/// The room a title's details usually take: the logo box, one metadata line and
-/// a three-line description. Drawn hidden, it fixes where the details block
-/// starts above the pinned row; a title that also shows ratings reaches past it.
+/// The room a title's details take: the logo box, one metadata line and a
+/// three-line description, or a one-line description and the ratings row. Drawn
+/// hidden, it fixes where the details block, and so the logo, sits above the
+/// pinned row.
 private struct FocusHeroDetailsFootprint: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -518,14 +519,17 @@ private struct FocusHeroColumn: View {
         // A block of fixed height just above the pinned row, its content pinned
         // to the block's top: the logo holds one place from title to title, and a
         // longer description only reaches further down.
-        ZStack(alignment: .topLeading) {
-            FocusHeroDetailsFootprint().hidden()
-            if let subject = model.subject {
-                content(for: subject)
-                    .id(subject.id)
-                    .transition(.opacity)
+        // The footprint alone sets the block's size; the details are laid over
+        // it, so no title can move where the logo sits.
+        FocusHeroDetailsFootprint()
+            .hidden()
+            .overlay(alignment: .topLeading) {
+                if let subject = model.subject {
+                    content(for: subject)
+                        .id(subject.id)
+                        .transition(.opacity)
+                }
             }
-        }
         .frame(width: FocusHeroLayout.columnWidth, alignment: .topLeading)
         .frame(height: max(0, slotTop - FocusHeroLayout.columnGap - top), alignment: .bottomLeading)
         .padding(.top, top)
@@ -601,29 +605,38 @@ private struct FocusHeroColumn: View {
                 HeroMetadataLine(item: item)
                     .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
 
+                let ratings = ratingsRow(for: item)
+                let showsRatings = ratings.map { !$0.ratings.isEmpty || $0.age != nil } ?? false
                 if !hideText, let description = item.tagline ?? item.overview {
+                    // The ratings row takes the room of two description lines.
                     Text(description.overviewPlainText)
                         .font(.system(size: 22))
                         .foregroundStyle(.primary)
                         .lineSpacing(2)
-                        .lineLimit(3)
+                        .lineLimit(showsRatings ? 1 : 3)
                         .frame(maxWidth: 820, alignment: .topLeading)
                         .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
                 }
 
-                if settings.shouldShowRatings(for: item, spoilerSettings: spoilerSettings) {
-                    let presentation = HeroPresentation(item: item, artworkStyle: .landscape, surface: .home)
-                    RatingsBadgeRow(
-                        ratings: settings.ratingPreferences.headerRatings(
-                            from: item.ratings, isAnime: presentation.isAnime, hidesRatings: false
-                        ),
-                        familyGuidanceAge: settings.ratingPreferences.headerFamilyGuidanceAge(
-                            from: presentation.familyGuidanceAge, hidesRatings: false
-                        )
-                    )
+                if showsRatings, let ratings {
+                    RatingsBadgeRow(ratings: ratings.ratings, familyGuidanceAge: ratings.age)
                 }
             }
         }
+    }
+
+    /// The ratings the header shows for a title, or `nil` when ratings are off.
+    private func ratingsRow(for item: MediaItem) -> (ratings: [ExternalRating], age: Double?)? {
+        guard settings.shouldShowRatings(for: item, spoilerSettings: spoilerSettings) else { return nil }
+        let presentation = HeroPresentation(item: item, artworkStyle: .landscape, surface: .home)
+        return (
+            settings.ratingPreferences.headerRatings(
+                from: item.ratings, isAnime: presentation.isAnime, hidesRatings: false
+            ),
+            settings.ratingPreferences.headerFamilyGuidanceAge(
+                from: presentation.familyGuidanceAge, hidesRatings: false
+            )
+        )
     }
 
     /// An episode leads with its show, as the carousel does.
