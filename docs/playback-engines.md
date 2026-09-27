@@ -6,10 +6,15 @@ with the best possible quality (Dolby Vision, Atmos, full-timeline seek).
 
 ## Dependency version
 
-Plozz pins upstream release **7.16.1**, commit
-`4ef5ef95faf271cb0c0e9cc79a0bf81a54b1244b`. It carries the two stage-2
-recovery fixes behind issue #61: the media fallback comes back where the
-refused item was placed rather than where the session first started
+Plozz pins upstream release **7.19.0**, commit
+`fc1c531da84726cd3c983f0d82b610bb45bb5db9`. It preserves and fills
+software-decoded colour tags to match VideoToolbox and fixes still-image
+conversion to use the picture's matrix and range. The 7.17.x-7.18.x range also
+seals relay credentials to their origin, improves live recovery and remote-disc
+prewarming, and reports the actual resume position after an escalation rebuild.
+It retains the two stage-2 recovery fixes behind issue #61: the media fallback
+comes back where the refused item was placed rather than where the session first
+started
 ([superuser404notfound/AetherEngine#621](https://github.com/superuser404notfound/AetherEngine/pull/621)),
 and a recovery reload leaves a paused viewer paused rather than starting the
 title behind the tvOS screensaver
@@ -33,7 +38,7 @@ wait for an origin slot until their deadline. Plozz's existing public-API
 integration and stricter HTTP transport remain unchanged.
 
 Its iOS/tvOS 18 minimum matches Plozz's existing deployment targets. The engine
-owns the FFmpegBuild 3.5.x and LibDovi 2.1.x dependencies; Plozz does not link a
+owns the FFmpegBuild 3.6.0 and LibDovi 2.1.x dependencies; Plozz does not link a
 second FFmpeg build. This release also retains both earlier integration fixes:
 
 - [superuser404notfound/AetherEngine#566](https://github.com/superuser404notfound/AetherEngine/pull/566):
