@@ -88,8 +88,8 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
                        "Changing slot height must not change the static pattern's opacity or phase.")
         let hatchPixels = (64..<112).map { hatched.red(x: $0, y: 22) }
         XCTAssertEqual(Double(try XCTUnwrap(hatchPixels.min())) / 255, 0.06, accuracy: 0.01)
-        XCTAssertEqual(Double(try XCTUnwrap(hatchPixels.max())) / 255, 0.53, accuracy: 0.01,
-                       "Diagonals retain more of their underlying bar color, without becoming opaque.")
+        XCTAssertEqual(hatchPixels.max(), 255,
+                       "Opaque mask strokes retain the exact bar material, without dimming or recoloring it.")
         XCTAssertEqual(hatched.red(x: 80, y: 12), 255, "The original progress rails are unchanged.")
         XCTAssertEqual(PlayerSkipMarkerTrack.cutoutHeightFraction, 0.75, "The preview must not change the deployed default.")
     }
@@ -115,95 +115,64 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         }
     }
 
-    func testGlassHighlightImprovesOnlyUnplayedDiagonalsWithoutChangingTheOtherLayers() throws {
+    func testDiagonalsMatchTheUnderlyingPlayedBufferedAndUnplayedFillsExactly() throws {
         for treatment in [PlayerSkipMarkerTreatment.hatchedCutout, .halfHatchedCutout] {
             for height in [CGFloat(12), 20] {
-                let baseline = try pixels(track(segments: [marker], height: height, treatment: treatment))
-                let highlighted = try pixels(track(
-                    segments: [marker], height: height, treatment: treatment, highlightsUnplayed: true
-                ))
-                let flat = try pixels(track(
-                    segments: [marker], height: height, treatment: treatment,
-                    highlightsUnplayed: true, performance: true
-                ))
-                XCTAssertEqual(flat.bytes, baseline.bytes, "Flat performance tracks must remain byte-for-byte unchanged.")
-                for y in 0..<44 {
-                    for x in 0..<124 {
-                        XCTAssertEqual(highlighted.rgb(x: x, y: y), baseline.rgb(x: x, y: y),
-                                       "No visibility boost behind the playhead.")
+                let mask = try pixels(
+                    PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: height, treatment: treatment)
+                        .frame(width: 320, height: 44).background(.black)
+                )
+                for background in [Color.black, .gray, .cyan] {
+                    let baseline = try pixels(track(segments: [], height: height, background: background))
+                    let patterned = try pixels(track(
+                        segments: [marker], height: height, background: background, treatment: treatment
+                    ))
+                    for region in [48..<120, 144..<184, 208..<272] {
+                        let strokeCenters = region.filter { mask.red(x: $0, y: 22) == 255 }
+                        let gaps = region.filter { mask.red(x: $0, y: 22) <= 16 }
+                        XCTAssertFalse(strokeCenters.isEmpty)
+                        XCTAssertFalse(gaps.isEmpty)
+                        for x in strokeCenters {
+                            XCTAssertEqual(patterned.rgb(x: x, y: 22), baseline.rgb(x: x, y: 22),
+                                           "Every stroke must be the original bar, not a highlight or a dimmer color.")
+                        }
+                        for x in gaps {
+                            XCTAssertNotEqual(patterned.rgb(x: x, y: 22), baseline.rgb(x: x, y: 22))
+                        }
                     }
-                    for x in 281..<320 {
-                        XCTAssertEqual(highlighted.rgb(x: x, y: y), baseline.rgb(x: x, y: y),
-                                       "No highlight outside skip ranges.")
+                    for x in 124..<132 {
+                        XCTAssertEqual(patterned.rgb(x: x, y: 22), [255, 255, 255])
                     }
-                }
-                for x in 124..<132 {
-                    XCTAssertEqual(highlighted.rgb(x: x, y: 22), [255, 255, 255])
-                }
-                for region in [144..<184, 208..<272] {
-                    let increase = region.map {
-                        Int(highlighted.red(x: $0, y: 22)) - Int(baseline.red(x: $0, y: 22))
+                    for x in Array(12..<38) + Array(282..<308) {
+                        XCTAssertEqual(patterned.rgb(x: x, y: 22), baseline.rgb(x: x, y: 22))
                     }
-                    XCTAssertGreaterThan(try XCTUnwrap(increase.max()), 25,
-                                         "The pattern must remain visible in both buffered and unbuffered sections.")
-                    XCTAssertLessThan(try XCTUnwrap(increase.max()), 50, "The boost should remain subtle.")
-                    XCTAssertEqual(increase.min(), 0, "Do not fill the spaces between the diagonals.")
-                }
-                let railY = Int((44 - height) / 2)
-                for x in 48..<272 {
-                    XCTAssertEqual(highlighted.rgb(x: x, y: railY), baseline.rgb(x: x, y: railY))
-                    XCTAssertEqual(highlighted.rgb(x: x, y: 43 - railY), baseline.rgb(x: x, y: 43 - railY))
+                    let railY = Int((44 - height) / 2)
+                    for x in 48..<272 {
+                        XCTAssertEqual(patterned.rgb(x: x, y: railY), baseline.rgb(x: x, y: railY))
+                        XCTAssertEqual(patterned.rgb(x: x, y: 43 - railY), baseline.rgb(x: x, y: 43 - railY))
+                    }
                 }
             }
         }
     }
 
-    func testHighlightFollowsThePlayheadWithoutShiftingItsPattern() throws {
-        let early = try pixels(track(
-            segments: [marker], played: 0.3, buffered: 0.5,
-            treatment: .halfHatchedCutout, highlightsUnplayed: true
-        ))
-        let earlyBase = try pixels(track(
-            segments: [marker], played: 0.3, buffered: 0.5, treatment: .halfHatchedCutout
-        ))
-        let late = try pixels(track(
-            segments: [marker], played: 0.6, buffered: 0.8,
-            treatment: .halfHatchedCutout, highlightsUnplayed: true
-        ))
-        let lateBase = try pixels(track(
-            segments: [marker], played: 0.6, buffered: 0.8, treatment: .halfHatchedCutout
-        ))
-        for x in 112..<144 {
-            XCTAssertEqual(late.rgb(x: x, y: 22), lateBase.rgb(x: x, y: 22),
-                           "Once playback passes, restore the original played fill exactly.")
-        }
-        XCTAssertTrue((112..<144).contains { early.red(x: $0, y: 22) > earlyBase.red(x: $0, y: 22) })
-        XCTAssertEqual(
-            (208..<272).map { early.red(x: $0, y: 22) > earlyBase.red(x: $0, y: 22) },
-            (208..<272).map { late.red(x: $0, y: 22) > lateBase.red(x: $0, y: 22) },
-            "The stroke phase must not shift as playback or buffering moves."
-        )
-    }
-
-    func testVisibilityBoostLeavesOpenCutoutsAndInvalidTimelinesUntouched() throws {
-        for treatment in [PlayerSkipMarkerTreatment.cutout, .halfCutout] {
-            XCTAssertEqual(
-                try pixels(track(segments: [marker], treatment: treatment)).bytes,
-                try pixels(track(segments: [marker], treatment: treatment, highlightsUnplayed: true)).bytes
-            )
-        }
-        let empty = try pixels(Color.black.frame(width: 320, height: 44))
-        for duration in [0, -10, Double.nan, .infinity] {
-            let highlighted = try pixels(
-                PlayerSkipMarkerUnplayedHighlight(
-                    segments: [marker], duration: duration, height: 20,
-                    treatment: .halfHatchedCutout, progressFraction: 0
-                )
+    func testDiagonalColorsFollowProgressWithoutChangingPatternPhase() throws {
+        let mask = try pixels(
+            PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: 20, treatment: .halfHatchedCutout)
                 .frame(width: 320, height: 44).background(.black)
-            )
-            XCTAssertEqual(highlighted.bytes, empty.bytes)
+        )
+        let centers = (112..<144).filter { mask.red(x: $0, y: 22) == 255 }
+        XCTAssertFalse(centers.isEmpty)
+        for (played, buffered) in [(0.2, 0.3), (0.3, 0.5), (0.6, 0.8)] {
+            let patterned = try pixels(track(
+                segments: [marker], played: played, buffered: buffered, treatment: .halfHatchedCutout
+            ))
+            let plain = try pixels(track(segments: [], played: played, buffered: buffered))
+            for x in centers {
+                XCTAssertEqual(patterned.rgb(x: x, y: 22), plain.rgb(x: x, y: 22),
+                               "The same stroke location follows unbuffered, buffered, then played colors.")
+            }
         }
-        XCTAssertEqual(PlayerSkipMarkerUnplayedHighlight.opacity, 0.18)
     }
 
     #if DEBUG && os(tvOS)
@@ -333,8 +302,7 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
 
     private func track(
         segments: [MediaSegment], height: CGFloat = 20, played: Double = 0.4, buffered: Double = 0.6,
-        background: Color = .black, treatment: PlayerSkipMarkerTreatment = .cutout,
-        highlightsUnplayed: Bool = false, performance: Bool = false
+        background: Color = .black, treatment: PlayerSkipMarkerTreatment = .cutout
     ) -> some View {
         ZStack(alignment: .leading) {
             ZStack(alignment: .leading) {
@@ -345,19 +313,10 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
             .mask {
                 PlayerSkipMarkerTrack(segments: segments, duration: 100, height: height, treatment: treatment)
             }
-            .overlay {
-                if highlightsUnplayed {
-                    PlayerSkipMarkerUnplayedHighlight(
-                        segments: segments, duration: 100, height: height,
-                        treatment: treatment, progressFraction: played
-                    )
-                }
-            }
             Rectangle().fill(.white).frame(width: 8, height: 32).offset(x: 320 * played - 4)
         }
         .frame(width: 320, height: 44)
         .background(background)
-        .environment(\.plozzReducePanelGlass, performance)
     }
 
     private struct Pixels {

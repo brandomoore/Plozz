@@ -604,18 +604,17 @@ timeline annotation. Live programme progress is not a VOD skip-marker timeline.
 
 Debug tvOS builds can open `PlayerSkipMarkerPreview` with the explicit
 `PLOZZ_SKIP_MARKER_PREVIEW=1` process environment. It compares 50% open cutouts
-with 50% or 75% faintly hatched cutouts using the actual `ScrubBar` and both
+with 50% or 75% diagonal-filled cutouts using the actual `ScrubBar` and both
 `plozzReducePanelGlass` paths: Liquid Glass and the translucent flat performance
 fill. Remote controls change example playhead/buffer positions, the patterned
 slot's height, normal/focused bar heights, and picture brightness. The patterned
 slot starts at 50%; its button switches to 75% without changing the open comparison.
-The patterned slot retains 6% of the underlying fills between strokes and 53%
-at the diagonal strokes, keeping their colors tied to played/buffered/base
-progress rather than painting a separate accent. In Liquid Glass only, strokes
-ahead of the playhead also receive a static 18%-white highlight so a nearly clear
-unplayed track cannot hide the marker. It shares the mask's exact stroke phase
-and rounded clipping, sits below the playhead, and leaves the played portion,
-flat tracks, and open cutouts unchanged. No blur, refraction, or timer is added.
+The patterned slot retains 6% of the underlying fills between strokes and 100%
+at stroke centers. Diagonals are unmodified pieces of the existing bar, so
+Liquid Glass and flat tracks each retain their own exact played, buffered, and
+unplayed color/alpha. There is no separately colored highlight, dimming, or
+playhead-dependent overlay; only the gaps are cut away. The static mask adds no
+blur, refraction, or timer and keeps its rounded clipping beneath the playhead.
 Menu/Done returns to the normal app. The preview uses isolated local models,
 no video/network/timers, and never saves
 profile preferences. The ordinary player remains on its current 75% open

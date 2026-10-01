@@ -103,13 +103,6 @@ struct ScrubBar: View {
                     )
                     .equatable()
                 }
-                .overlay {
-                    PlayerSkipMarkerUnplayedHighlight(
-                        segments: model.skipSegments.segments, duration: model.duration, height: barHeight,
-                        treatment: markerTreatment, progressFraction: model.progressFraction
-                    )
-                    .equatable()
-                }
                 RoundedRectangle(cornerRadius: focused ? knobWidth / 2 : 0, style: .continuous)
                     .fill(.white)
                     .frame(width: knobWidth, height: knobHeight)

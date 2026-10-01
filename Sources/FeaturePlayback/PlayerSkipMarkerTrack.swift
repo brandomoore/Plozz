@@ -1,7 +1,6 @@
 #if canImport(SwiftUI)
 import CoreModels
 import CoreNetworking
-import CoreUI
 import SwiftUI
 
 enum SkipMarkerTrackLayout {
@@ -85,7 +84,7 @@ struct PlayerSkipMarkerTrack: View, Equatable {
 
     static let cutoutHeightFraction = PlayerSkipMarkerTreatment.cutout.heightFraction
     static let interiorFillOpacity = 0.06
-    static let hatchFillOpacity = 0.5
+    static let hatchFillOpacity = 1.0
 
     var body: some View {
         let ranges = SkipMarkerTrackLayout.ranges(segments: segments, duration: duration)
@@ -100,6 +99,7 @@ struct PlayerSkipMarkerTrack: View, Equatable {
             if treatment.hasHatch, !ranges.isEmpty {
                 context.clip(to: cutouts)
                 context.fill(cutouts, with: .color(.white.opacity(Self.interiorFillOpacity)))
+                // Opaque mask strokes retain the original material, not white paint.
                 context.stroke(SkipMarkerTrackLayout.hatch(in: size),
                                with: .color(.white.opacity(Self.hatchFillOpacity)), lineWidth: 2)
             }
@@ -110,44 +110,4 @@ struct PlayerSkipMarkerTrack: View, Equatable {
     }
 }
 
-/// Native glass can be nearly clear ahead of playback; retain a little stroke
-/// contrast there without brightening the whole slot or changing the flat track.
-struct PlayerSkipMarkerUnplayedHighlight: View, Equatable {
-    let segments: [MediaSegment]
-    let duration: TimeInterval
-    let height: CGFloat
-    let treatment: PlayerSkipMarkerTreatment
-    let progressFraction: Double
-
-    static let opacity = 0.18
-    @Environment(\.plozzReducePanelGlass) private var reducePanelGlass
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.segments == rhs.segments && lhs.duration == rhs.duration
-            && lhs.height == rhs.height && lhs.treatment == rhs.treatment
-            && lhs.progressFraction == rhs.progressFraction
-    }
-
-    var body: some View {
-        if #available(iOS 26.0, tvOS 26.0, *), !reducePanelGlass, treatment.hasHatch {
-            let ranges = SkipMarkerTrackLayout.ranges(segments: segments, duration: duration)
-            Canvas { context, size in
-                guard !ranges.isEmpty, progressFraction.isFinite,
-                      size.width.isFinite, size.height.isFinite,
-                      size.width > 0, size.height > 0 else { return }
-                let start = size.width * CGFloat(min(1, max(0, progressFraction)))
-                guard start < size.width else { return }
-                context.clip(to: SkipMarkerTrackLayout.cutouts(
-                    ranges: ranges, size: size, heightFraction: treatment.heightFraction
-                ))
-                context.clip(to: Path(CGRect(x: start, y: 0, width: size.width - start, height: size.height)))
-                context.stroke(SkipMarkerTrackLayout.hatch(in: size),
-                               with: .color(.white.opacity(Self.opacity)), lineWidth: 2)
-            }
-            .frame(height: height)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-    }
-}
 #endif

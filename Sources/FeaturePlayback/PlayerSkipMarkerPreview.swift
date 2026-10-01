@@ -99,7 +99,7 @@ private struct MarkerComparisonGroup: View {
             Text(verbatim: treatment == .halfCutout
                  ? "A  ·  50% open cutout"
                  : treatment == .halfHatchedCutout
-                    ? "B  ·  50% cutout + faint diagonals" : "B  ·  75% cutout + faint diagonals")
+                    ? "B  ·  50% cutout + matching diagonals" : "B  ·  75% cutout + matching diagonals")
                 .font(.system(size: 27, weight: .semibold))
             MarkerComparisonRow(model: model, treatment: treatment, performance: false)
             MarkerComparisonRow(model: model, treatment: treatment, performance: true)
