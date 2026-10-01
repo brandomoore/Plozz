@@ -12,6 +12,7 @@ import FeaturePlayback
 struct PlozzApp: App {
     #if DEBUG
     @State private var showsSubtitleFileMatchPreview = SubtitleFileMatchPreview.isRequested()
+    @State private var showsSkipMarkerPreview = PlayerSkipMarkerPreview.isRequested()
     #endif
 
     init() {
@@ -36,7 +37,11 @@ struct PlozzApp: App {
             // device's. See CoreUI.AppLanguageScope.
             AppLanguageScope {
                 #if DEBUG
-                if showsSubtitleFileMatchPreview {
+                if showsSkipMarkerPreview {
+                    PlayerSkipMarkerPreview {
+                        showsSkipMarkerPreview = false
+                    }
+                } else if showsSubtitleFileMatchPreview {
                     SubtitleFileMatchPreview {
                         showsSubtitleFileMatchPreview = false
                     }

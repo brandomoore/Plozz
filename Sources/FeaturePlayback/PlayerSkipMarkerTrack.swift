@@ -33,32 +33,53 @@ enum SkipMarkerTrackLayout {
     }
 }
 
+enum PlayerSkipMarkerTreatment: Equatable, Sendable {
+    case cutout
+    case halfCutout
+    case hatchedCutout
+
+    var heightFraction: CGFloat { self == .halfCutout ? 0.5 : 0.75 }
+}
+
 /// An alpha mask that cuts a centered slot through all three progress fills.
 struct PlayerSkipMarkerTrack: View, Equatable {
     let segments: [MediaSegment]
     let duration: TimeInterval
     let height: CGFloat
+    var treatment: PlayerSkipMarkerTreatment = .cutout
 
-    static let cutoutHeightFraction: CGFloat = 0.75
+    static let cutoutHeightFraction = PlayerSkipMarkerTreatment.cutout.heightFraction
 
     var body: some View {
         let ranges = SkipMarkerTrackLayout.ranges(segments: segments, duration: duration)
         Canvas { context, size in
             guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return }
-            var mask = Path(CGRect(origin: .zero, size: size))
-            let cutoutHeight = size.height * Self.cutoutHeightFraction
+            var cutouts = Path()
+            let cutoutHeight = size.height * treatment.heightFraction
             let inset = (size.height - cutoutHeight) / 2
             for range in ranges {
                 // Preserve the track's end caps when a marker touches 0 or duration.
                 let start = max(inset, size.width * CGFloat(range.lowerBound))
                 let end = min(size.width - inset, size.width * CGFloat(range.upperBound))
                 guard end > start else { continue }
-                mask.addRoundedRect(
+                cutouts.addRoundedRect(
                     in: CGRect(x: start, y: inset, width: end - start, height: cutoutHeight),
                     cornerSize: CGSize(width: cutoutHeight / 2, height: cutoutHeight / 2)
                 )
             }
+            var mask = Path(CGRect(origin: .zero, size: size))
+            mask.addPath(cutouts)
             context.fill(mask, with: .color(.white), style: FillStyle(eoFill: true))
+            if treatment == .hatchedCutout, !ranges.isEmpty {
+                context.clip(to: cutouts)
+                context.fill(cutouts, with: .color(.white.opacity(0.06)))
+                var stripes = Path()
+                for x in stride(from: CGFloat.zero, through: size.width + size.height, by: 16) {
+                    stripes.move(to: CGPoint(x: x, y: 0))
+                    stripes.addLine(to: CGPoint(x: x - size.height, y: size.height))
+                }
+                context.stroke(stripes, with: .color(.white.opacity(0.18)), lineWidth: 2)
+            }
         }
         .frame(height: height)
         .allowsHitTesting(false)

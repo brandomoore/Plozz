@@ -59,6 +59,49 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         }
     }
 
+    func testComparisonTreatmentsKeepTheirSizeAndFaintFillSeparate() throws {
+        let open = try pixels(
+            PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: 20)
+                .frame(width: 320, height: 44).background(.black)
+        )
+        let half = try pixels(
+            PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: 20, treatment: .halfCutout)
+                .frame(width: 320, height: 44).background(.black)
+        )
+        let hatched = try pixels(
+            PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: 20, treatment: .hatchedCutout)
+                .frame(width: 320, height: 44).background(.black)
+        )
+        XCTAssertEqual(PlayerSkipMarkerTreatment.halfCutout.heightFraction, 0.5)
+        XCTAssertEqual(PlayerSkipMarkerTreatment.hatchedCutout.heightFraction, 0.75)
+        XCTAssertEqual(open.red(x: 80, y: 16), 0)
+        XCTAssertEqual(half.red(x: 80, y: 16), 255, "The 50% variation has thicker remaining rails.")
+        XCTAssertEqual(half.red(x: 80, y: 22), 0)
+        let hatchPixels = (64..<112).map { hatched.red(x: $0, y: 22) }
+        XCTAssertGreaterThan(try XCTUnwrap(hatchPixels.min()), 0)
+        XCTAssertLessThan(try XCTUnwrap(hatchPixels.max()), 70, "The pattern is faint retained fill, not opaque stripes.")
+        XCTAssertGreaterThan(try XCTUnwrap(hatchPixels.max()) - XCTUnwrap(hatchPixels.min()), 25)
+        XCTAssertEqual(hatched.red(x: 80, y: 12), 255, "The original progress rails are unchanged.")
+        XCTAssertEqual(PlayerSkipMarkerTrack.cutoutHeightFraction, 0.75, "The preview must not change the deployed default.")
+    }
+
+    #if DEBUG && os(tvOS)
+    func testNativeComparisonRequiresExplicitOptInAndUsesOnlyLocalExampleState() {
+        XCTAssertFalse(PlayerSkipMarkerPreview.isRequested(environment: [:]))
+        XCTAssertFalse(PlayerSkipMarkerPreview.isRequested(environment: ["PLOZZ_SKIP_MARKER_PREVIEW": "true"]))
+        XCTAssertTrue(PlayerSkipMarkerPreview.isRequested(environment: ["PLOZZ_SKIP_MARKER_PREVIEW": "1"]))
+        let first = PlayerSkipMarkerPreview.makeModel()
+        let second = PlayerSkipMarkerPreview.makeModel()
+        XCTAssertFalse(first === second)
+        XCTAssertEqual(first.duration, 1_440)
+        XCTAssertEqual(first.currentSeconds, 675)
+        XCTAssertEqual(first.bufferedSeconds, 700)
+        XCTAssertEqual(first.skipSegments.segments.map(\.kind), [.recap, .intro, .commercial, .credits])
+        first.currentSeconds = 710
+        XCTAssertEqual(second.currentSeconds, 675)
+    }
+    #endif
+
     func testCutoutRevealsThePictureThroughEveryFillAndKeepsThePlayheadSolid() throws {
         for height in [CGFloat(12), 20] {
             for background in [Color.black, .red, .cyan] {

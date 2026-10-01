@@ -51,6 +51,7 @@ struct ScrubBar: View {
     /// off-screen).
     var leadingInset: CGFloat = 0
     var trailingInset: CGFloat = 0
+    var markerTreatment: PlayerSkipMarkerTreatment = .cutout
 
     /// The track is the widest single piece of glass in the player, so it gives
     /// its up with the panel rather than staying behind as the one refracting
@@ -97,7 +98,8 @@ struct ScrubBar: View {
                 }
                 .mask {
                     PlayerSkipMarkerTrack(
-                        segments: model.skipSegments.segments, duration: model.duration, height: barHeight
+                        segments: model.skipSegments.segments, duration: model.duration, height: barHeight,
+                        treatment: markerTreatment
                     )
                     .equatable()
                 }

@@ -596,6 +596,16 @@ The display uses already-loaded server/community metadata, without additional
 fetches or a separate clock observer; dismissed skip buttons do not erase the
 timeline annotation. Live programme progress is not a VOD skip-marker timeline.
 
+Debug tvOS builds can open `PlayerSkipMarkerPreview` with the explicit
+`PLOZZ_SKIP_MARKER_PREVIEW=1` process environment. It compares 50% open cutouts
+with 75% faintly hatched cutouts using the actual `ScrubBar` and both
+`plozzReducePanelGlass` paths: Liquid Glass and the translucent flat performance
+fill. Remote controls change example playhead/buffer positions, normal/focused
+heights, and picture brightness. Menu/Done returns to the normal app. The
+preview uses isolated local models, no video/network/timers, and never saves
+profile preferences. The ordinary player remains on its current 75% open
+cutout until a treatment is selected for production.
+
 Velocity smoothing uses elapsed touch-event time rather than a fixed weight per
 callback, preserving the same response at 24 Hz and 60 Hz without changing
 Match Content settings.
