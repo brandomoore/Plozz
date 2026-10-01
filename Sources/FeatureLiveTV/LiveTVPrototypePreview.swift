@@ -148,16 +148,13 @@ struct PrototypePreviewScrim: View {
                 tone: palette.backgroundBase, edgePeak: 0.96, wash: 0.08,
                 edges: [.leading], bottomFadeTop: 0.3
             )
-            VStack(spacing: 0) {
-                LinearGradient(
-                    stops: (0 ... 24).map { step in
-                        let t = Double(step) / 24
-                        return .init(color: palette.backgroundBase.opacity(t * t * (3 - 2 * t)), location: t)
-                    },
-                    startPoint: .top, endPoint: .bottom
-                )
-                .frame(height: layout.fadeEnd)
-                palette.backgroundBase
+            if palette.usesAmbientGradient {
+                // Gradient theme: fade the player into the page's gradient rather
+                // than a flat tone, so the guide sits on the same backdrop.
+                AppBackground(palette: palette)
+                    .mask { pageFade(Color.white) }
+            } else {
+                pageFade(palette.backgroundBase)
             }
             if reduceTransparency {
                 palette.backgroundBase
@@ -168,6 +165,21 @@ struct PrototypePreviewScrim: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    /// Clear at the top, easing to solid `tone` by `fadeEnd` and solid below.
+    private func pageFade(_ tone: Color) -> some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                stops: (0 ... 24).map { step in
+                    let t = Double(step) / 24
+                    return .init(color: tone.opacity(t * t * (3 - 2 * t)), location: t)
+                },
+                startPoint: .top, endPoint: .bottom
+            )
+            .frame(height: layout.fadeEnd)
+            tone
+        }
     }
 }
 

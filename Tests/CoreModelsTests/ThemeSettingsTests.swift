@@ -88,6 +88,16 @@ final class ThemePaletteResolutionTests: XCTestCase {
         }
     }
 
+    /// Only Gradient paints the ambient gradient; every other palette keeps its
+    /// flat page so the existing themes are untouched.
+    func testOnlyGradientUsesTheAmbientGradient() {
+        for theme in AppTheme.allCases {
+            let palette = ThemePalette.palette(for: theme, systemColorScheme: .dark)
+            XCTAssertEqual(palette.usesAmbientGradient, theme == .gradient, "\(theme)")
+        }
+        XCTAssertEqual(AppTheme.gradient.preferredColorScheme, .dark)
+    }
+
     func testPureBlackHasNoGlowOthersAreThemed() {
         XCTAssertNil(ThemePalette.pureBlack.topGlow)
         XCTAssertNotNil(ThemePalette.dark.topGlow)

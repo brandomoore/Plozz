@@ -18,7 +18,7 @@ public struct LiveTVLoadingSkeleton: View {
                 navigationInset: navigationInset, largeText: typeSize.isAccessibilitySize
             )
             ZStack {
-                palette.backgroundBase.ignoresSafeArea()
+                AppBackground(palette: palette)
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: geometry.size.width) {
                     VStack(spacing: layout.sectionGap) {
                         #if os(iOS)

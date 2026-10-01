@@ -100,6 +100,8 @@ public struct RootView: View {
     /// Owned here so a change reaches every surface at once, and injected so the
     /// player can raise and lower it without reaching back up through the app.
     @State private var glassPerformance = GlassPerformanceModel()
+    /// Artwork tint for the Gradient theme's page background (Home's hero).
+    @State private var ambientBackdrop = AmbientBackdropModel()
     /// Window-level black veil that survives the player's dismiss into Home so it
     /// can cover the TV's *physical* HDR/DV → SDR panel switch (which on some TVs
     /// lags ~1s behind tvOS's `displayDidSettle`). Injected into the environment so
@@ -583,6 +585,7 @@ public struct RootView: View {
         }
         .background { AppBackground(palette: resolvedPalette) }
         .environment(\.themePalette, resolvedPalette)
+        .environment(\.ambientBackdrop, ambientBackdrop)
         .environment(\.familyGuidanceProvider, appState.familyGuidance)
         .environment(\.detailHeaderSettings, appState.profileSettings.detailPageModel)
         // `dynamicTypeSize` is read here on purpose: PlozzMetrics samples its

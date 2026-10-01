@@ -37,6 +37,17 @@ struct ThemePreviewColors {
         textSecondary: Color.white.opacity(0.45),
         accent: accentBlue
     )
+    /// The gradient itself is drawn behind the mini preview by the swatch, so
+    /// the preview's own background stops are clear.
+    static let gradient = ThemePreviewColors(
+        bgTop: .clear,
+        bgBottom: .clear,
+        card: Color.white.opacity(0.12),
+        cardBorder: Color.white.opacity(0.14),
+        textPrimary: Color.white.opacity(0.90),
+        textSecondary: Color.white.opacity(0.45),
+        accent: accentBlue
+    )
     static let pureBlack = ThemePreviewColors(
         bgTop: .black,
         bgBottom: .black,
@@ -143,6 +154,9 @@ public struct ThemeSwatch: View {
                 MiniPreview(colors: .dark)
             case .pureBlack:
                 MiniPreview(colors: .pureBlack)
+            case .gradient:
+                MiniPreview(colors: .gradient)
+                    .background(AmbientGradientBackground(tint: nil))
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))

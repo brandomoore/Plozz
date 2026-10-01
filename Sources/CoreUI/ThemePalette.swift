@@ -165,6 +165,11 @@ public struct ThemePalette: Equatable, Sendable {
     /// Whether this is a light-appearance palette. Drives the focused-Light
     /// opaque backing that stops the drop shadow bleeding through the glass.
     public let isLight: Bool
+    /// Whether the page is painted with `AmbientGradientBackground` (the tvOS
+    /// system-style multi-tone gradient) rather than the flat `backgroundBase`.
+    /// ``backgroundBase`` still holds the gradient's average tone for the few
+    /// call sites that need a single solid colour.
+    public let usesAmbientGradient: Bool
 
     /// Standard dimming behind app-owned dialogs; system presentations own theirs.
     public var dialogBackdropOpacity: Double { isLight ? 0.4 : 0.85 }
@@ -194,7 +199,8 @@ public struct ThemePalette: Equatable, Sendable {
         separator: Color,
         fill: Color,
         fillSubtle: Color,
-        isLight: Bool
+        isLight: Bool,
+        usesAmbientGradient: Bool = false
     ) {
         self.backgroundBase = backgroundBase
         self.backgroundSecondary = backgroundSecondary
@@ -217,6 +223,7 @@ public struct ThemePalette: Equatable, Sendable {
         self.fill = fill
         self.fillSubtle = fillSubtle
         self.isLight = isLight
+        self.usesAmbientGradient = usesAmbientGradient
     }
 
     /// Resolves the appearance for an elevation rung. Call sites use the
@@ -404,6 +411,40 @@ public extension ThemePalette {
         isLight: false
     )
 
+    /// Dark theme over the tvOS system-style gradient. Text and accents match
+    /// Dark; the page itself is drawn by `AmbientGradientBackground`, and raised
+    /// surfaces are translucent white lifts rather than opaque greys so the
+    /// gradient (and, on Home, the artwork-tinted gradient) reads through them.
+    static let gradient = ThemePalette(
+        backgroundBase: Color(red: 0.18, green: 0.19, blue: 0.20),
+        backgroundSecondary: Color(red: 0.14, green: 0.14, blue: 0.14),
+        settingsBackground: Color(red: 0.18, green: 0.19, blue: 0.20),
+        cardSurface: Color.white.opacity(0.08),
+        cardBorder: Color.white.opacity(0.16),
+        primaryText: .white,
+        secondaryText: Color.white.opacity(0.60),
+        tertiaryText: Color.white.opacity(0.36),
+        accent: ThemePalette.brandAccent(isLight: false),
+        errorText: Color(red: 1.0, green: 0.42, blue: 0.40),
+        topGlow: nil,
+        focusedCardGlassTint: Color.white.opacity(0.13),
+        liftSurface: .white,
+        cardOpaqueSurface: Color(red: 0.22, green: 0.23, blue: 0.24),
+        cardOpaqueBorder: Color.white.opacity(0.16),
+        raised: SurfaceStyle(fill: Color.white.opacity(0.08)),
+        overlay: SurfaceStyle(
+            fill: Color(red: 0.22, green: 0.23, blue: 0.24),
+            border: Color.white.opacity(0.14),
+            borderWidth: 1,
+            shadow: SurfaceShadow(color: .black.opacity(0.45), radius: 26, y: 14)
+        ),
+        separator: Color.white.opacity(0.14),
+        fill: Color.white.opacity(0.11),
+        fillSubtle: Color.white.opacity(0.06),
+        isLight: false,
+        usesAmbientGradient: true
+    )
+
     /// Light app theme keeps the shared app gradient and glow. Settings uses the
     /// separate neutral grouped-page token instead.
     static let light = ThemePalette(
@@ -446,6 +487,7 @@ public extension ThemePalette {
         case .system: return systemColorScheme == .dark ? .dark : .light
         case .dark: return .dark
         case .pureBlack: return .pureBlack
+        case .gradient: return .gradient
         case .light: return .light
         }
     }
@@ -460,7 +502,7 @@ public extension AppTheme {
         switch self {
         case .system: return nil
         case .light: return .light
-        case .dark, .pureBlack: return .dark
+        case .dark, .pureBlack, .gradient: return .dark
         }
     }
 }
@@ -481,11 +523,16 @@ public struct AppBackground: View {
     }
 
     public var body: some View {
-        // A clean, flat themed fill on every platform (no gradient or glow), so the
-        // page background is consistent and the standardized elevated surfaces read
-        // the same everywhere. (tvOS previously used a gradient + brand-blue glow.)
-        palette.backgroundBase
-            .ignoresSafeArea()
+        if palette.usesAmbientGradient {
+            AmbientGradientBackground()
+        } else {
+            // A clean, flat themed fill on every platform (no gradient or glow), so
+            // the page background is consistent and the standardized elevated
+            // surfaces read the same everywhere. (tvOS previously used a gradient +
+            // brand-blue glow.)
+            palette.backgroundBase
+                .ignoresSafeArea()
+        }
     }
 }
 

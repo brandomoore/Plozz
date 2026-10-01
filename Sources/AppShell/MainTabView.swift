@@ -131,6 +131,13 @@ struct MainTabView: View {
         return resolvedSelectedTab == tab
     }
 
+    /// Whether Home (the only destination with a hero) is the one on screen.
+    private var isHomeHeroVisible: Bool {
+        navigationStyle == .tabBar
+            ? resolvedSelectedTab == .home
+            : activeLibraryNavigationDestination == .home
+    }
+
     private enum MainTab: String {
         case home, watchlist, search
         case liveTV
@@ -476,6 +483,7 @@ struct MainTabView: View {
     @State private var resumePrompt: MediaItem?
     @State private var pendingPlaylistOrigin: VideoPlaylistPlaybackOrigin?
     @Environment(\.colorScheme) private var systemColorScheme
+    @Environment(\.ambientBackdrop) private var ambientBackdrop
 
     /// The selected root tab, persisted so it survives MainTabView being torn
     /// down and rebuilt — e.g. the add-server flow swaps the whole root out for
@@ -1550,6 +1558,11 @@ struct MainTabView: View {
         .onChange(of: pendingStandaloneLiveTVEntry, initial: true) { _, _ in
             settleFreshLaunch()
             settleStandaloneStartup()
+        }
+        // The Gradient theme tints the page to Home's hero only while Home is
+        // the destination on screen; every other destination shows it stock.
+        .onChange(of: isHomeHeroVisible, initial: true) { _, visible in
+            ambientBackdrop?.isHeroDestinationVisible = visible
         }
         #if os(tvOS)
         .onContinueUserActivity(LiveTVGuideButton.activityType) { _ in openLiveTVGuide() }
