@@ -7,7 +7,7 @@ import XCTest
 
 @MainActor
 final class PlayerSkipMarkerHostedTests: XCTestCase {
-    func testRealGlassAndFrostedTracksRevealThePictureThroughTheirCutouts() async throws {
+    func testRealGlassAndFlatTracksRevealThePictureThroughTheirCutouts() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
               ContinuousClock.now < deadline {
@@ -23,7 +23,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        for frosted in [false, true] {
+        for performance in [false, true] {
             for focused in [false, true] {
                 let model = PlayerControlsModel()
                 model.duration = 100
@@ -39,7 +39,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                                 .frame(width: 1280, height: 44)
                         }
                         .ignoresSafeArea()
-                        .environment(\.plozzReducePanelGlass, frosted)
+                        .environment(\.plozzReducePanelGlass, performance)
                 )
                 window.rootViewController = host
                 window.makeKeyAndVisible()
@@ -67,13 +67,13 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                 }
                 for x in [640, 960, 1280] {
                     XCTAssertEqual(color(x, 540), color(x, 450),
-                                   "The slot must reveal the picture through \(frosted ? "frosted" : "native glass") fills.")
+                                   "The slot must reveal the picture through \(performance ? "flat" : "native glass") fills.")
                     XCTAssertNotEqual(color(x, focused ? 531 : 535), color(x, 450),
                                       "The track must retain visible rails.")
                 }
                 XCTAssertEqual(color(832, 540), [255, 255, 255])
                 let attachment = XCTAttachment(image: snapshot)
-                attachment.name = "Skip cutouts - \(frosted ? "frosted" : "glass") - \(focused ? "focused" : "normal")"
+                attachment.name = "Skip cutouts - \(performance ? "flat" : "glass") - \(focused ? "focused" : "normal")"
                 attachment.lifetime = .keepAlways
                 add(attachment)
             }

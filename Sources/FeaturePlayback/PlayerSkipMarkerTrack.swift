@@ -57,6 +57,8 @@ struct PlayerSkipMarkerTrack: View, Equatable {
     var treatment: PlayerSkipMarkerTreatment = .cutout
 
     static let cutoutHeightFraction = PlayerSkipMarkerTreatment.cutout.heightFraction
+    static let interiorFillOpacity = 0.06
+    static let hatchFillOpacity = 0.5
 
     var body: some View {
         let ranges = SkipMarkerTrackLayout.ranges(segments: segments, duration: duration)
@@ -80,13 +82,13 @@ struct PlayerSkipMarkerTrack: View, Equatable {
             context.fill(mask, with: .color(.white), style: FillStyle(eoFill: true))
             if treatment.hasHatch, !ranges.isEmpty {
                 context.clip(to: cutouts)
-                context.fill(cutouts, with: .color(.white.opacity(0.06)))
+                context.fill(cutouts, with: .color(.white.opacity(Self.interiorFillOpacity)))
                 var stripes = Path()
                 for x in stride(from: CGFloat.zero, through: size.width + size.height, by: 16) {
                     stripes.move(to: CGPoint(x: x, y: 0))
                     stripes.addLine(to: CGPoint(x: x - size.height, y: size.height))
                 }
-                context.stroke(stripes, with: .color(.white.opacity(0.18)), lineWidth: 2)
+                context.stroke(stripes, with: .color(.white.opacity(Self.hatchFillOpacity)), lineWidth: 2)
             }
         }
         .frame(height: height)

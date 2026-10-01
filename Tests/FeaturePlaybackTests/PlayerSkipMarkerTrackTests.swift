@@ -87,11 +87,32 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
                        (64..<112).map { hatched.red(x: $0, y: 22) },
                        "Changing slot height must not change the static pattern's opacity or phase.")
         let hatchPixels = (64..<112).map { hatched.red(x: $0, y: 22) }
-        XCTAssertGreaterThan(try XCTUnwrap(hatchPixels.min()), 0)
-        XCTAssertLessThan(try XCTUnwrap(hatchPixels.max()), 70, "The pattern is faint retained fill, not opaque stripes.")
-        XCTAssertGreaterThan(try XCTUnwrap(hatchPixels.max()) - XCTUnwrap(hatchPixels.min()), 25)
+        XCTAssertEqual(Double(try XCTUnwrap(hatchPixels.min())) / 255, 0.06, accuracy: 0.01)
+        XCTAssertEqual(Double(try XCTUnwrap(hatchPixels.max())) / 255, 0.53, accuracy: 0.01,
+                       "Diagonals retain more of their underlying bar color, without becoming opaque.")
         XCTAssertEqual(hatched.red(x: 80, y: 12), 255, "The original progress rails are unchanged.")
         XCTAssertEqual(PlayerSkipMarkerTrack.cutoutHeightFraction, 0.75, "The preview must not change the deployed default.")
+    }
+
+    func testFlatPerformanceTrackUsesLightTranslucencyWithoutChangingProgressLayers() throws {
+        XCTAssertEqual(PlayerScrubTrackSurface.flatFillOpacity, 0.22)
+        for height in [CGFloat(12), 20] {
+            for background in [Color.black, .gray, .cyan] {
+                let actual = try pixels(
+                    PlayerScrubTrackSurface(height: height)
+                        .frame(width: 320, height: 44)
+                        .environment(\.plozzReducePanelGlass, true)
+                        .background(background)
+                )
+                let reference = try pixels(
+                    Capsule().fill(.white.opacity(0.22)).frame(height: height)
+                        .frame(width: 320, height: 44)
+                        .background(background)
+                )
+                XCTAssertEqual(actual.bytes, reference.bytes,
+                               "The performance track is a static white tint, not the dark panel fill or a blur.")
+            }
+        }
     }
 
     #if DEBUG && os(tvOS)

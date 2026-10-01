@@ -315,14 +315,15 @@ struct InfoActionButtonStyle: ButtonStyle {
 /// underneath it. The semantic values these replace were `.headline` (45.35pt
 /// per line) and `.footnote` (34.61) — both a size larger than this card, at
 /// three metres, actually needs.
-/// The scrub bar's base track: Liquid Glass on 26+, frosted when panel glass is
-/// reduced, a translucent fill before that.
+/// The scrub bar's base track: Liquid Glass on 26+, or a light translucent
+/// flat fill when performance/accessibility reduces glass and on older systems.
 ///
 /// Shared by the remote and touch scrub bars. They had drifted apart — the touch
 /// one drew a plain white fill — which is how the same control ended up looking
 /// like two different controls on two platforms.
 public struct PlayerScrubTrackSurface: View {
     public let height: CGFloat
+    static let flatFillOpacity = 0.22
 
     @Environment(\.plozzReducePanelGlass) private var reducePanelGlass
 
@@ -331,19 +332,14 @@ public struct PlayerScrubTrackSurface: View {
     }
 
     public var body: some View {
-        if reducePanelGlass {
-            Capsule()
-                .fill(.clear)
-                .frame(height: height)
-                .plozzFrostedBackground(Capsule())
-        } else if #available(iOS 26.0, tvOS 26.0, *) {
+        if #available(iOS 26.0, tvOS 26.0, *), !reducePanelGlass {
             Capsule()
                 .fill(.clear)
                 .frame(height: height)
                 .glassEffect(.regular, in: Capsule())
         } else {
             Capsule()
-                .fill(.white.opacity(0.22))
+                .fill(.white.opacity(Self.flatFillOpacity))
                 .frame(height: height)
         }
     }

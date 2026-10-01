@@ -582,6 +582,12 @@ controls body, so moving the timeline does not rebuild unrelated menus and
 controls. Preserve the existing reveal/fade, playhead, and thumbnail animations
 when optimizing this path; removing visual polish is not a performance fix.
 
+`PlayerScrubTrackSurface` uses a light 22%-white translucent fill when Liquid
+Glass is reduced, shared by TV, touch, and live timelines. This is a flat,
+non-adaptive tint with no blur or refraction. Other performance-mode panels keep
+their existing dark surfaces; timeline-specific lightening does not change the
+global fallback material. Buffered and played fills still layer above the track.
+
 The TV and touch seek bars share `PlayerSkipMarkerTrack`: rounded transparent
 slots centered within available skippable ranges, cutting away 75% of the track's
 height. The mask applies to the base, buffered, and played fills together, never
@@ -603,8 +609,10 @@ with 50% or 75% faintly hatched cutouts using the actual `ScrubBar` and both
 fill. Remote controls change example playhead/buffer positions, the patterned
 slot's height, normal/focused bar heights, and picture brightness. The patterned
 slot starts at 50%; its button switches to 75% without changing the open comparison.
-Menu/Done returns to the normal app. The
-preview uses isolated local models, no video/network/timers, and never saves
+The patterned slot retains 6% of the underlying fills between strokes and 53%
+at the diagonal strokes, keeping their colors tied to played/buffered/base
+progress rather than painting a separate accent. Menu/Done returns to the normal
+app. The preview uses isolated local models, no video/network/timers, and never saves
 profile preferences. The ordinary player remains on its current 75% open
 cutout until a treatment is selected for production.
 
