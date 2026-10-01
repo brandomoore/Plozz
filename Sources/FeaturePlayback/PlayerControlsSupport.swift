@@ -93,6 +93,10 @@ struct ScrubBar: View {
                 )
                     .fill(.white.opacity(focused ? 0.62 : 0.32))
                     .frame(width: knobX, height: barHeight)
+                PlayerSkipMarkerTrack(
+                    segments: model.skipSegments.segments, duration: model.duration, height: barHeight
+                )
+                .equatable()
                 RoundedRectangle(cornerRadius: focused ? knobWidth / 2 : 0, style: .continuous)
                     .fill(.white)
                     .frame(width: knobWidth, height: knobHeight)

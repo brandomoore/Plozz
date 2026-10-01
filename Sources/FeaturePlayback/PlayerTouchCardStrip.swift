@@ -250,6 +250,7 @@ public struct PlayerTouchScrubBar: View {
     private let currentSeconds: TimeInterval
     private let duration: TimeInterval
     private let bufferedFraction: Double
+    private let segments: [MediaSegment]
     private let onScrub: (TimeInterval) -> Void
     private let onScrubbingChanged: (Bool) -> Void
 
@@ -267,12 +268,14 @@ public struct PlayerTouchScrubBar: View {
         currentSeconds: TimeInterval,
         duration: TimeInterval,
         bufferedFraction: Double,
+        segments: [MediaSegment] = [],
         onScrub: @escaping (TimeInterval) -> Void,
         onScrubbingChanged: @escaping (Bool) -> Void
     ) {
         self.currentSeconds = currentSeconds
         self.duration = duration
         self.bufferedFraction = bufferedFraction
+        self.segments = segments
         self.onScrub = onScrub
         self.onScrubbingChanged = onScrubbingChanged
     }
@@ -309,6 +312,8 @@ public struct PlayerTouchScrubBar: View {
                 )
                 .fill(.white.opacity(isTouching ? 0.9 : 0.62))
                 .frame(width: knobX, height: barHeight)
+                PlayerSkipMarkerTrack(segments: segments, duration: duration, height: barHeight)
+                    .equatable()
                 // Square at rest, rounded once lifted — a rounded cap on a knob
                 // the same height as the track just erodes the played edge.
                 RoundedRectangle(cornerRadius: isTouching ? knobWidth / 2 : 0, style: .continuous)

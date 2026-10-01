@@ -581,6 +581,18 @@ Per-sample time-label reads live in `PlayerTimelineTimes`, not in the full
 controls body, so moving the timeline does not rebuild unrelated menus and
 controls. Preserve the existing reveal/fade, playhead, and thumbnail animations
 when optimizing this path; removing visual polish is not a performance fix.
+
+The TV and touch seek bars share `PlayerSkipMarkerTrack`: static 2pt diagonal
+cuts at 16pt spacing and 24% black opacity, clipped to available skippable ranges.
+The overlay sits above the base, buffered, and played fills but below the white
+playhead, preserving each fill's brightness when progress or buffering crosses
+a marker. Overlapping/touching ranges form one mask, so they cannot darken twice.
+Ranges are clamped to a finite positive duration; malformed timing is logged and
+ignored. No marker changes focus, gestures, skip modes, or the existing buttons.
+The display uses already-loaded server/community metadata, without additional
+fetches or a separate clock observer; dismissed skip buttons do not erase the
+timeline annotation. Live programme progress is not a VOD skip-marker timeline.
+
 Velocity smoothing uses elapsed touch-event time rather than a fixed weight per
 callback, preserving the same response at 24 Hz and 60 Hz without changing
 Match Content settings.
