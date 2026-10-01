@@ -49,14 +49,45 @@ enum SkipMarkerTrackLayout {
         return path
     }
 
-    static func hatch(in size: CGSize) -> Path {
+    static func pattern(_ pattern: PlayerSkipMarkerPattern, in size: CGSize, slotHeight: CGFloat) -> Path {
         var path = Path()
-        for x in stride(from: CGFloat.zero, through: size.width + size.height, by: 16) {
-            path.move(to: CGPoint(x: x, y: 0))
-            path.addLine(to: CGPoint(x: x - size.height, y: size.height))
+        let centerY = size.height / 2
+        switch pattern {
+        case .diagonal:
+            for x in stride(from: CGFloat.zero, through: size.width + size.height, by: 16) {
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x - size.height, y: size.height))
+            }
+            return path.strokedPath(StrokeStyle(lineWidth: 2))
+        case .chevrons:
+            let halfHeight = max(1, slotHeight / 2 - 1)
+            for x in stride(from: CGFloat(-18), through: size.width, by: 18) {
+                path.move(to: CGPoint(x: x, y: centerY - halfHeight))
+                path.addLine(to: CGPoint(x: x + 4, y: centerY))
+                path.addLine(to: CGPoint(x: x, y: centerY + halfHeight))
+            }
+            return path.strokedPath(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+        case .dashes:
+            for x in stride(from: CGFloat(-16), through: size.width, by: 16) {
+                path.addRoundedRect(
+                    in: CGRect(x: x, y: centerY - 1, width: 8, height: 2),
+                    cornerSize: CGSize(width: 1, height: 1)
+                )
+            }
+        case .dots:
+            for x in stride(from: CGFloat(-12), through: size.width, by: 12) {
+                path.addEllipse(in: CGRect(x: x, y: centerY - 1.5, width: 3, height: 3))
+            }
         }
         return path
     }
+}
+
+enum PlayerSkipMarkerPattern: String, CaseIterable, Sendable {
+    case diagonal
+    case chevrons
+    case dashes
+    case dots
 }
 
 enum PlayerSkipMarkerTreatment: Equatable, Sendable {
@@ -81,10 +112,11 @@ struct PlayerSkipMarkerTrack: View, Equatable {
     let duration: TimeInterval
     let height: CGFloat
     var treatment: PlayerSkipMarkerTreatment = .cutout
+    var pattern: PlayerSkipMarkerPattern = .diagonal
 
     static let cutoutHeightFraction = PlayerSkipMarkerTreatment.cutout.heightFraction
     static let interiorFillOpacity = 0.06
-    static let hatchFillOpacity = 1.0
+    static let patternFillOpacity = 1.0
 
     var body: some View {
         let ranges = SkipMarkerTrackLayout.ranges(segments: segments, duration: duration)
@@ -100,8 +132,10 @@ struct PlayerSkipMarkerTrack: View, Equatable {
                 context.clip(to: cutouts)
                 context.fill(cutouts, with: .color(.white.opacity(Self.interiorFillOpacity)))
                 // Opaque mask strokes retain the original material, not white paint.
-                context.stroke(SkipMarkerTrackLayout.hatch(in: size),
-                               with: .color(.white.opacity(Self.hatchFillOpacity)), lineWidth: 2)
+                context.fill(
+                    SkipMarkerTrackLayout.pattern(pattern, in: size, slotHeight: size.height * treatment.heightFraction),
+                    with: .color(.white.opacity(Self.patternFillOpacity))
+                )
             }
         }
         .frame(height: height)

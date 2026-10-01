@@ -7,7 +7,7 @@ import SwiftUI
 public struct PlayerSkipMarkerPreview: View {
     @State private var model = Self.makeModel()
     @State private var brightPicture = false
-    @State private var halfHeightPattern = true
+    @State private var pattern = PlayerSkipMarkerPattern.diagonal
     @State private var positionIndex = 2
     @State private var bufferIndex = 1
     private let onClose: () -> Void
@@ -40,12 +40,15 @@ public struct PlayerSkipMarkerPreview: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             MarkerComparisonHeader()
-            MarkerComparisonGroup(treatment: .halfCutout, model: model)
-            MarkerComparisonGroup(
-                treatment: halfHeightPattern ? .halfHatchedCutout : .hatchedCutout, model: model
-            )
+            MarkerPatternPicker(selection: $pattern)
+            pattern.previewExplanation
+                .font(.system(size: 23))
+                .foregroundStyle(.white.opacity(0.72))
+                .frame(height: 32, alignment: .leading)
+                .accessibilityIdentifier("marker-preview-explanation")
+            MarkerComparisonGroup(pattern: pattern, model: model)
             MarkerComparisonControls(
-                model: model, brightPicture: $brightPicture, halfHeightPattern: $halfHeightPattern,
+                model: model, brightPicture: $brightPicture,
                 movePosition: advancePosition, moveBuffer: advanceBuffer, onClose: onClose
             )
             Text(verbatim: "The commercial section runs from 10:30 to 12:00. Menu returns to Plozz. No playback preferences are changed.")
@@ -82,7 +85,7 @@ private struct MarkerComparisonHeader: View {
             Text(verbatim: "Compare skip markers")
                 .font(.system(size: 36, weight: .bold))
                 .accessibilityIdentifier("marker-preview-ready")
-            Text(verbatim: "Actual player bars: Liquid Glass and the flat performance fallback. This is a visual preview, not a performance benchmark.")
+            Text(verbatim: "50% patterned cutouts. Identical track colors. Compare the real Liquid Glass and flat performance bars.")
                 .font(.system(size: 23))
                 .foregroundStyle(.white.opacity(0.72))
         }
@@ -91,18 +94,13 @@ private struct MarkerComparisonHeader: View {
 }
 
 private struct MarkerComparisonGroup: View {
-    let treatment: PlayerSkipMarkerTreatment
+    let pattern: PlayerSkipMarkerPattern
     let model: PlayerControlsModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(verbatim: treatment == .halfCutout
-                 ? "A  ·  50% open cutout"
-                 : treatment == .halfHatchedCutout
-                    ? "B  ·  50% cutout + matching diagonals" : "B  ·  75% cutout + matching diagonals")
-                .font(.system(size: 27, weight: .semibold))
-            MarkerComparisonRow(model: model, treatment: treatment, performance: false)
-            MarkerComparisonRow(model: model, treatment: treatment, performance: true)
+        VStack(alignment: .leading, spacing: 28) {
+            MarkerComparisonRow(model: model, pattern: pattern, performance: false)
+            MarkerComparisonRow(model: model, pattern: pattern, performance: true)
         }
         .foregroundStyle(.white)
     }
@@ -110,7 +108,7 @@ private struct MarkerComparisonGroup: View {
 
 private struct MarkerComparisonRow: View {
     let model: PlayerControlsModel
-    let treatment: PlayerSkipMarkerTreatment
+    let pattern: PlayerSkipMarkerPattern
     let performance: Bool
 
     var body: some View {
@@ -118,24 +116,23 @@ private struct MarkerComparisonRow: View {
             Text(verbatim: performance ? "Performance · flat" : "Liquid Glass")
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(.white.opacity(0.7))
-            ScrubBar(model: model, palette: .dark, markerTreatment: treatment)
+            ScrubBar(model: model, palette: .dark, markerTreatment: .halfHatchedCutout, markerPattern: pattern)
                 .frame(height: 44)
             PlayerTimelineTimes(model: model)
                 .frame(height: 30)
         }
         .environment(\.plozzReducePanelGlass, performance)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(performance ? "marker-preview-flat" : "marker-preview-glass")
     }
 }
 
 private struct MarkerComparisonControls: View {
     let model: PlayerControlsModel
     @Binding var brightPicture: Bool
-    @Binding var halfHeightPattern: Bool
     let movePosition: () -> Void
     let moveBuffer: () -> Void
     let onClose: () -> Void
-    @FocusState private var positionFocused: Bool
 
     var body: some View {
         HStack(spacing: 24) {
@@ -144,18 +141,11 @@ private struct MarkerComparisonControls: View {
             }
             .accessibilityIdentifier("marker-preview-position")
             .accessibilityValue(Text(verbatim: PlayerControls.timeLabel(model.currentSeconds)))
-            .focused($positionFocused)
             Button(action: moveBuffer) {
                 Text(verbatim: "Move buffer")
             }
             .accessibilityIdentifier("marker-preview-buffer")
             .accessibilityValue(Text(verbatim: PlayerControls.timeLabel(model.bufferedSeconds)))
-            Button {
-                halfHeightPattern.toggle()
-            } label: {
-                Text(verbatim: halfHeightPattern ? "Cutout B: 50%" : "Cutout B: 75%")
-            }
-            .accessibilityIdentifier("marker-preview-size")
             Button {
                 model.controlBarVisible.toggle()
             } label: {
@@ -174,7 +164,54 @@ private struct MarkerComparisonControls: View {
         }
         .font(.system(size: 24, weight: .medium))
         .buttonStyle(.bordered)
-        .defaultFocus($positionFocused, true)
+    }
+}
+
+private struct MarkerPatternPicker: View {
+    @Binding var selection: PlayerSkipMarkerPattern
+    @FocusState private var focused: PlayerSkipMarkerPattern?
+
+    var body: some View {
+        HStack(spacing: 24) {
+            ForEach(PlayerSkipMarkerPattern.allCases, id: \.self) { pattern in
+                Button {
+                    selection = pattern
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark")
+                            .opacity(selection == pattern ? 1 : 0)
+                        pattern.previewTitle
+                    }
+                    .frame(width: 235)
+                }
+                .accessibilityIdentifier("marker-pattern-\(pattern.rawValue)")
+                .accessibilityValue(Text(verbatim: selection == pattern ? "Selected" : "Not selected"))
+                .focused($focused, equals: pattern)
+            }
+        }
+        .font(.system(size: 24, weight: .medium))
+        .buttonStyle(.bordered)
+        .defaultFocus($focused, .diagonal)
+    }
+}
+
+private extension PlayerSkipMarkerPattern {
+    var previewTitle: Text {
+        switch self {
+        case .diagonal: Text(verbatim: "Diagonals")
+        case .chevrons: Text(verbatim: "Chevrons")
+        case .dashes: Text(verbatim: "Dashes")
+        case .dots: Text(verbatim: "Dots")
+        }
+    }
+
+    var previewExplanation: Text {
+        switch self {
+        case .diagonal: Text(verbatim: "A familiar marked-off range. Clear and continuous.")
+        case .chevrons: Text(verbatim: "Forward-pointing shapes suggest skipping ahead. The strongest directional cue.")
+        case .dashes: Text(verbatim: "A broken centerline distinguishes the section without much visual weight.")
+        case .dots: Text(verbatim: "A soft dotted guide. The quietest option, with less directional meaning.")
+        }
     }
 }
 

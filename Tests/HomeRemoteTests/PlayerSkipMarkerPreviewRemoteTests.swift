@@ -2,19 +2,36 @@ import XCTest
 
 @MainActor
 final class PlayerSkipMarkerPreviewRemoteTests: XCTestCase {
-    func testFourRealBarVariantsAndRemoteControlsFitOnTheTV() {
+    func testPatternChoicesKeepOnlyTwoHalfHeightMaterialComparisonsAndRemoteControls() {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = ["--skip-marker-preview"]
         app.launch()
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["marker-preview-ready"].waitForExistence(timeout: 15))
-        XCTAssertTrue(app.staticTexts["A  ·  50% open cutout"].isHittable)
-        XCTAssertTrue(app.staticTexts["B  ·  50% cutout + matching diagonals"].isHittable)
+        XCTAssertTrue(app.descendants(matching: .any)["marker-preview-glass"].firstMatch.isHittable)
+        XCTAssertTrue(app.descendants(matching: .any)["marker-preview-flat"].firstMatch.isHittable)
+        XCTAssertFalse(app.buttons["marker-preview-size"].exists, "The comparison is fixed at 50%.")
+        XCTAssertFalse(app.staticTexts["A  ·  50% open cutout"].exists)
+        let diagonal = app.buttons["marker-pattern-diagonal"]
+        XCTAssertTrue(isFocused(diagonal))
+        XCTAssertEqual(diagonal.value as? String, "Selected")
+        attach(app, "Diagonals - Liquid Glass and flat")
+        for pattern in ["chevrons", "dashes", "dots"] {
+            let button = app.buttons["marker-pattern-\(pattern)"]
+            XCUIRemote.shared.press(.right)
+            XCTAssertTrue(isFocused(button))
+            XCUIRemote.shared.press(.select)
+            XCTAssertEqual(button.value as? String, "Selected")
+            XCTAssertEqual(diagonal.value as? String, "Not selected")
+            attach(app, "\(pattern) - Liquid Glass and flat")
+        }
+        for _ in 0..<3 { XCUIRemote.shared.press(.left) }
+        XCTAssertTrue(isFocused(diagonal))
+        XCUIRemote.shared.press(.down)
         let position = app.buttons["marker-preview-position"]
         XCTAssertTrue(position.isHittable)
         XCTAssertTrue(isFocused(position))
         XCTAssertEqual(position.value as? String, "11:15")
-        attach(app, "Focused Liquid Glass and flat performance comparison")
         XCUIRemote.shared.press(.select)
         XCTAssertEqual(position.value as? String, "11:50")
 
@@ -24,30 +41,19 @@ final class PlayerSkipMarkerPreviewRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.select)
         XCTAssertEqual(buffer.value as? String, "11:55")
 
-        let size = app.buttons["marker-preview-size"]
-        XCUIRemote.shared.press(.right)
-        XCTAssertTrue(isFocused(size))
-        XCUIRemote.shared.press(.select)
-        XCTAssertEqual(size.label, "Cutout B: 75%")
-        XCTAssertTrue(app.staticTexts["B  ·  75% cutout + matching diagonals"].isHittable)
-        attach(app, "75 percent patterned cutout comparison")
-        XCUIRemote.shared.press(.select)
-        XCTAssertEqual(size.label, "Cutout B: 50%")
-        XCTAssertTrue(app.staticTexts["B  ·  50% cutout + matching diagonals"].isHittable)
-
         let focus = app.buttons["marker-preview-focus"]
         XCUIRemote.shared.press(.right)
         XCTAssertTrue(isFocused(focus))
         XCUIRemote.shared.press(.select)
         XCTAssertEqual(focus.label, "Bar: normal")
-        attach(app, "Normal Liquid Glass and flat performance comparison")
+        attach(app, "Normal dotted Liquid Glass and flat comparison")
 
         let picture = app.buttons["marker-preview-picture"]
         XCUIRemote.shared.press(.right)
         XCTAssertTrue(isFocused(picture))
         XCUIRemote.shared.press(.select)
         XCTAssertEqual(picture.label, "Picture: bright")
-        attach(app, "Bright picture behind both skip marker treatments")
+        attach(app, "Bright picture behind both dotted materials")
 
         let done = app.buttons["marker-preview-done"]
         XCUIRemote.shared.press(.right)

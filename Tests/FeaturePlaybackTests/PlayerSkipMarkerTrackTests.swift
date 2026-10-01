@@ -175,6 +175,49 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         }
     }
 
+    func testEveryComparisonPatternKeepsTheOriginalColorsInsideAHalfHeightSlot() throws {
+        XCTAssertEqual(PlayerSkipMarkerPattern.allCases, [.diagonal, .chevrons, .dashes, .dots])
+        for height in [CGFloat(12), 20] {
+            var renderedPatterns: [[UInt8]] = []
+            for pattern in PlayerSkipMarkerPattern.allCases {
+                let mask = try pixels(
+                    PlayerSkipMarkerTrack(
+                        segments: [marker], duration: 100, height: height,
+                        treatment: .halfHatchedCutout, pattern: pattern
+                    )
+                    .frame(width: 320, height: 44).background(.black)
+                )
+                renderedPatterns.append(mask.bytes)
+                let plain = try pixels(track(segments: [], height: height))
+                let patterned = try pixels(track(
+                    segments: [marker], height: height, treatment: .halfHatchedCutout, pattern: pattern
+                ))
+                for region in [48..<120, 144..<184, 208..<272] {
+                    let centers = region.filter { mask.red(x: $0, y: 22) == 255 }
+                    let gaps = region.filter { mask.red(x: $0, y: 22) <= 16 }
+                    XCTAssertFalse(centers.isEmpty, "\(pattern) must have recognizable full-color shapes.")
+                    XCTAssertFalse(gaps.isEmpty, "\(pattern) must remain a pattern rather than a solid fill.")
+                    for x in centers {
+                        XCTAssertEqual(patterned.rgb(x: x, y: 22), plain.rgb(x: x, y: 22),
+                                       "\(pattern) must not recolor the track.")
+                    }
+                }
+                let railY = Int((44 - height) / 2)
+                for x in 48..<272 {
+                    XCTAssertEqual(patterned.rgb(x: x, y: railY), plain.rgb(x: x, y: railY))
+                    XCTAssertEqual(patterned.rgb(x: x, y: 43 - railY), plain.rgb(x: x, y: 43 - railY))
+                }
+                XCTAssertEqual(patterned.rgb(x: 128, y: 22), [255, 255, 255])
+            }
+            for first in renderedPatterns.indices {
+                for second in renderedPatterns.indices where first < second {
+                    XCTAssertNotEqual(renderedPatterns[first], renderedPatterns[second],
+                                      "Each choice must be visually distinct at \(height)pt.")
+                }
+            }
+        }
+    }
+
     #if DEBUG && os(tvOS)
     func testNativeComparisonRequiresExplicitOptInAndUsesOnlyLocalExampleState() {
         XCTAssertFalse(PlayerSkipMarkerPreview.isRequested(environment: [:]))
@@ -224,8 +267,12 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
             .init(kind: .recap, start: 40, end: 85),
             .init(kind: .commercial, start: 45, end: 60)
         ]
-        XCTAssertEqual(try pixels(track(segments: single)).bytes,
-                       try pixels(track(segments: overlapping)).bytes)
+        for pattern in PlayerSkipMarkerPattern.allCases {
+            XCTAssertEqual(
+                try pixels(track(segments: single, treatment: .halfHatchedCutout, pattern: pattern)).bytes,
+                try pixels(track(segments: overlapping, treatment: .halfHatchedCutout, pattern: pattern)).bytes
+            )
+        }
     }
 
     func testTheSlotDoesNotMoveAsProgressOrBufferCrossesIt() throws {
@@ -302,7 +349,8 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
 
     private func track(
         segments: [MediaSegment], height: CGFloat = 20, played: Double = 0.4, buffered: Double = 0.6,
-        background: Color = .black, treatment: PlayerSkipMarkerTreatment = .cutout
+        background: Color = .black, treatment: PlayerSkipMarkerTreatment = .cutout,
+        pattern: PlayerSkipMarkerPattern = .diagonal
     ) -> some View {
         ZStack(alignment: .leading) {
             ZStack(alignment: .leading) {
@@ -311,7 +359,8 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
                 Rectangle().fill(.white.opacity(0.62)).frame(width: 320 * played, height: height)
             }
             .mask {
-                PlayerSkipMarkerTrack(segments: segments, duration: 100, height: height, treatment: treatment)
+                PlayerSkipMarkerTrack(segments: segments, duration: 100, height: height,
+                                      treatment: treatment, pattern: pattern)
             }
             Rectangle().fill(.white).frame(width: 8, height: 32).offset(x: 320 * played - 4)
         }
