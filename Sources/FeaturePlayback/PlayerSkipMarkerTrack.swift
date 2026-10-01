@@ -53,30 +53,24 @@ enum SkipMarkerTrackLayout {
         var path = Path()
         let centerY = size.height / 2
         switch pattern {
-        case .diagonal:
-            for x in stride(from: CGFloat.zero, through: size.width + size.height, by: 16) {
+        case .diagonal, .fineHatch, .mesh:
+            let spacing: CGFloat = pattern == .diagonal ? 16 : pattern == .fineHatch ? 8 : 12
+            for x in stride(from: CGFloat.zero, through: size.width + size.height, by: spacing) {
                 path.move(to: CGPoint(x: x, y: 0))
                 path.addLine(to: CGPoint(x: x - size.height, y: size.height))
+                if pattern == .mesh {
+                    path.move(to: CGPoint(x: x - size.height, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: size.height))
+                }
             }
-            return path.strokedPath(StrokeStyle(lineWidth: 2))
-        case .chevrons:
-            let halfHeight = max(1, slotHeight / 2 - 1)
-            for x in stride(from: CGFloat(-18), through: size.width, by: 18) {
-                path.move(to: CGPoint(x: x, y: centerY - halfHeight))
-                path.addLine(to: CGPoint(x: x + 4, y: centerY))
-                path.addLine(to: CGPoint(x: x, y: centerY + halfHeight))
-            }
-            return path.strokedPath(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-        case .dashes:
-            for x in stride(from: CGFloat(-16), through: size.width, by: 16) {
-                path.addRoundedRect(
-                    in: CGRect(x: x, y: centerY - 1, width: 8, height: 2),
-                    cornerSize: CGSize(width: 1, height: 1)
-                )
-            }
-        case .dots:
-            for x in stride(from: CGFloat(-12), through: size.width, by: 12) {
-                path.addEllipse(in: CGRect(x: x, y: centerY - 1.5, width: 3, height: 3))
+            return path.strokedPath(StrokeStyle(lineWidth: pattern == .diagonal ? 2 : 1.5))
+        case .denseDots:
+            let rows = Int(ceil(slotHeight / 8))
+            for row in -rows...rows {
+                let stagger: CGFloat = row.isMultiple(of: 2) ? 0 : 3
+                for x in stride(from: CGFloat(-6) + stagger, through: size.width, by: 6) {
+                    path.addEllipse(in: CGRect(x: x, y: centerY + CGFloat(row) * 4 - 1.5, width: 3, height: 3))
+                }
             }
         }
         return path
@@ -85,9 +79,9 @@ enum SkipMarkerTrackLayout {
 
 enum PlayerSkipMarkerPattern: String, CaseIterable, Sendable {
     case diagonal
-    case chevrons
-    case dashes
-    case dots
+    case denseDots
+    case fineHatch
+    case mesh
 }
 
 enum PlayerSkipMarkerTreatment: Equatable, Sendable {

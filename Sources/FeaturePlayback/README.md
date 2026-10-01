@@ -629,8 +629,10 @@ timeline annotation. Live programme progress is not a VOD skip-marker timeline.
 Debug tvOS builds can open `PlayerSkipMarkerPreview` with the explicit
 `PLOZZ_SKIP_MARKER_PREVIEW=1` process environment. It shows only two real
 `ScrubBar` rows: Liquid Glass and the translucent flat performance fill, each
-with a 50%-height patterned cutout. Remote pattern buttons compare diagonal
-hatching, forward chevrons, rounded dashes, and dots in exactly the same space.
+with a 50%-height patterned cutout. Remote pattern buttons compare the original
+16pt diagonal hatch, dense staggered 6pt-spaced dots, an 8pt fine diagonal hatch,
+and a fine diamond mesh in exactly the same space. Rejected literal chevrons,
+centerline dashes, and sparse dots are no longer in the comparison.
 Open-cutout comparisons and the 75% preview toggle are removed. Other controls
 change example playhead/buffer positions, normal/focused bar heights, and
 picture brightness. Patterns are static and anchored to the track, not to

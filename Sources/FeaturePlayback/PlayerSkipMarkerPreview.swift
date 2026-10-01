@@ -199,18 +199,18 @@ private extension PlayerSkipMarkerPattern {
     var previewTitle: Text {
         switch self {
         case .diagonal: Text(verbatim: "Diagonals")
-        case .chevrons: Text(verbatim: "Chevrons")
-        case .dashes: Text(verbatim: "Dashes")
-        case .dots: Text(verbatim: "Dots")
+        case .denseDots: Text(verbatim: "Dense dots")
+        case .fineHatch: Text(verbatim: "Fine hatch")
+        case .mesh: Text(verbatim: "Diamond mesh")
         }
     }
 
     var previewExplanation: Text {
         switch self {
         case .diagonal: Text(verbatim: "A familiar marked-off range. Clear and continuous.")
-        case .chevrons: Text(verbatim: "Forward-pointing shapes suggest skipping ahead. The strongest directional cue.")
-        case .dashes: Text(verbatim: "A broken centerline distinguishes the section without much visual weight.")
-        case .dots: Text(verbatim: "A soft dotted guide. The quietest option, with less directional meaning.")
+        case .denseDots: Text(verbatim: "Close, staggered dots fill the slot. A fine texture, not a line of markers.")
+        case .fineHatch: Text(verbatim: "Twice as many diagonals with thinner strokes. More continuous, less stripe-like.")
+        case .mesh: Text(verbatim: "Fine crossing diagonals form a diamond mesh. A woven texture without a literal symbol.")
         }
     }
 }

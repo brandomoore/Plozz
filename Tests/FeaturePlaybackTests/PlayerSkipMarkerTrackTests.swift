@@ -176,7 +176,7 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
     }
 
     func testEveryComparisonPatternKeepsTheOriginalColorsInsideAHalfHeightSlot() throws {
-        XCTAssertEqual(PlayerSkipMarkerPattern.allCases, [.diagonal, .chevrons, .dashes, .dots])
+        XCTAssertEqual(PlayerSkipMarkerPattern.allCases, [.diagonal, .denseDots, .fineHatch, .mesh])
         for height in [CGFloat(12), 20] {
             var renderedPatterns: [[UInt8]] = []
             for pattern in PlayerSkipMarkerPattern.allCases {
@@ -216,6 +216,41 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testNewTexturesAreDenseAndTwoDimensionalWithoutChangingTheReference() throws {
+        func mask(_ pattern: PlayerSkipMarkerPattern) throws -> Pixels {
+            try pixels(
+                PlayerSkipMarkerTrack(
+                    segments: [marker], duration: 100, height: 20,
+                    treatment: .halfHatchedCutout, pattern: pattern
+                )
+                .frame(width: 320, height: 44).background(.black)
+            )
+        }
+        let diagonal = try mask(.diagonal)
+        let fine = try mask(.fineHatch)
+        let dots = try mask(.denseDots)
+        let mesh = try mask(.mesh)
+        func islands(_ image: Pixels, y: Int) -> Int {
+            var count = 0
+            var previous = false
+            for x in 64..<256 {
+                let current = image.red(x: x, y: y) > 100
+                if current && !previous { count += 1 }
+                previous = current
+            }
+            return count
+        }
+        XCTAssertEqual(islands(diagonal, y: 22), 12, "Keep the original 16pt diagonal rhythm.")
+        XCTAssertEqual(islands(fine, y: 22), 24)
+        XCTAssertEqual(islands(dots, y: 22), 32, "Dense dots use 6pt spacing rather than the former 12pt row.")
+        XCTAssertGreaterThan(islands(dots, y: 18), 25)
+        XCTAssertGreaterThan(islands(dots, y: 26), 25)
+        XCTAssertNotEqual((64..<256).map { dots.red(x: $0, y: 18) },
+                          (64..<256).map { dots.red(x: $0, y: 22) }, "Neighboring rows must be staggered.")
+        XCTAssertGreaterThan((64..<256).filter { mesh.red(x: $0, y: 22) > 100 }.count,
+                             (64..<256).filter { diagonal.red(x: $0, y: 22) > 100 }.count)
     }
 
     #if DEBUG && os(tvOS)
