@@ -61,6 +61,47 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
         }
     }
 
+    func testSegmentedTracksKeepNativeFillsAndRoundEverySectionWithoutInternalCutouts() async throws {
+        try await withWindow { window in
+            for performance in [false, true] {
+                for focused in [false, true] {
+                    let background = Color(red: 0.15, green: 0.35, blue: 0.6)
+                    let plain = try await render(
+                        in: window, focused: focused, performance: performance, treatment: .cutout,
+                        background: background, segments: []
+                    )
+                    let frame = try await render(
+                        in: window, focused: focused, performance: performance, treatment: .segmented,
+                        background: background
+                    )
+                    let top = focused ? 530 : 534
+                    let bottom = focused ? 550 : 546
+                    for y in top..<bottom {
+                        for x in [479, 480, 481, 1439, 1440, 1441] {
+                            XCTAssertEqual(frame.color(x, y), frame.color(x, 450),
+                                           "The entire gap, including the glass backing, reveals the picture.")
+                        }
+                        for x in [640, 960, 1280] {
+                            for channel in 0..<3 {
+                                XCTAssertEqual(Int(frame.color(x, y)[channel]), Int(plain.color(x, y)[channel]), accuracy: 1,
+                                               "The sections retain the original played, buffered, and unplayed fills.")
+                            }
+                        }
+                    }
+                    XCTAssertEqual(frame.color(483, top), frame.color(483, 450), "The new section has rounded corners.")
+                    XCTAssertNotEqual(frame.color(483, 540), frame.color(483, 450))
+                    XCTAssertEqual(frame.color(832, 540), [255, 255, 255])
+                    attach(frame.image, name: "Rounded sections - \(performance ? "flat" : "glass") - \(focused ? "focused" : "normal")")
+                    let crossing = try await render(
+                        in: window, focused: focused, performance: performance, treatment: .segmented,
+                        background: background, segments: [.init(kind: .intro, start: 40, end: 60)]
+                    )
+                    XCTAssertEqual(crossing.color(832, 540), [255, 255, 255], "A boundary never cuts through the playhead.")
+                }
+            }
+        }
+    }
+
     private func withWindow(_ body: (UIWindow) async throws -> Void) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),

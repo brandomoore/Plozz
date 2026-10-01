@@ -633,8 +633,14 @@ timeline annotation. Live programme progress is not a VOD skip-marker timeline.
 
 Debug tvOS builds can open `PlayerSkipMarkerPreview` with the explicit
 `PLOZZ_SKIP_MARKER_PREVIEW=1` process environment. It shows only two real
-`ScrubBar` rows: Liquid Glass and the translucent flat performance fill, each
-with a 50%-height patterned cutout. Remote pattern buttons compare the original
+`ScrubBar` rows: Liquid Glass and the translucent flat performance fill.
+The preview starts on **Segmented**: solid, rounded sections separated at the
+start and end of each merged skip range, with no internal cutout or pattern.
+The 4pt gaps are centered on the original time boundaries. Each half-gap is
+capped at a quarter of either neighboring section's width so a tiny range is
+not consumed or enlarged. Outer timeline ends remain unchanged. The same mask
+cuts all three fills and the glass backing, never the playhead.
+Remote pattern buttons retain the 50%-height cutouts and compare the original
 16pt diagonal hatch, dense staggered 2pt dots at 6pt spacing, a 12pt medium hatch,
 the retained 8pt fine hatch, and an 8pt diamond mesh in exactly the same space.
 Medium/fine/mesh use the same 1.5pt line weight; the original retains its 2pt
@@ -671,8 +677,8 @@ profile, hiding the video, or leaving the foreground stops it and drains its
 owned transport/session. Startup is bounded and failures expose Retry.
 No clip is generated, downloaded to the repository, or uploaded elsewhere.
 Standalone test fixtures use the static picture and make no media requests.
-The ordinary player and preview both start on the selected 50% fine hatch;
-the preview's other pattern choices do not alter that saved-in-code default.
+The ordinary TV/touch player still defaults to the selected 50% fine hatch;
+Segmented is a preview-only choice, and no comparison changes that default.
 
 Velocity smoothing uses elapsed touch-event time rather than a fixed weight per
 callback, preserving the same response at 24 Hz and 60 Hz without changing

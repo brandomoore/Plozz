@@ -49,6 +49,29 @@ enum SkipMarkerTrackLayout {
         return path
     }
 
+    static func segmentedSections(ranges: [Range<Double>], size: CGSize) -> [CGRect] {
+        var boundaries: [CGFloat] = [0]
+        for range in ranges {
+            for fraction in [range.lowerBound, range.upperBound] where fraction > 0 && fraction < 1 {
+                boundaries.append(size.width * CGFloat(fraction))
+            }
+        }
+        boundaries.append(size.width)
+        let halfGaps = boundaries.indices.map { index -> CGFloat in
+            guard index > 0, index < boundaries.count - 1 else { return 0 }
+            // Keep gaps centered on their time boundary without consuming tiny sections.
+            return min(2, min(
+                (boundaries[index] - boundaries[index - 1]) / 4,
+                (boundaries[index + 1] - boundaries[index]) / 4
+            ))
+        }
+        return boundaries.indices.dropLast().map { index in
+            let start = boundaries[index] + halfGaps[index]
+            let end = boundaries[index + 1] - halfGaps[index + 1]
+            return CGRect(x: start, y: 0, width: end - start, height: size.height)
+        }
+    }
+
     static func pattern(_ pattern: PlayerSkipMarkerPattern, in size: CGSize, slotHeight: CGFloat) -> Path {
         var path = Path()
         let centerY = size.height / 2
@@ -93,6 +116,7 @@ enum PlayerSkipMarkerTreatment: Equatable, Sendable {
     case halfCutout
     case hatchedCutout
     case halfHatchedCutout
+    case segmented
 
     static let `default`: Self = .halfHatchedCutout
 
@@ -100,13 +124,14 @@ enum PlayerSkipMarkerTreatment: Equatable, Sendable {
         switch self {
         case .halfCutout, .halfHatchedCutout: 0.5
         case .cutout, .hatchedCutout: 0.75
+        case .segmented: 1
         }
     }
 
     var hasHatch: Bool { self == .hatchedCutout || self == .halfHatchedCutout }
 }
 
-/// An alpha mask that cuts a centered slot through all three progress fills.
+/// A shared alpha mask for skip annotations across all three progress fills.
 struct PlayerSkipMarkerTrack: View, Equatable {
     let segments: [MediaSegment]
     let duration: TimeInterval
@@ -122,6 +147,15 @@ struct PlayerSkipMarkerTrack: View, Equatable {
         let ranges = SkipMarkerTrackLayout.ranges(segments: segments, duration: duration)
         Canvas { context, size in
             guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return }
+            if treatment == .segmented {
+                var mask = Path()
+                for section in SkipMarkerTrackLayout.segmentedSections(ranges: ranges, size: size) {
+                    let radius = min(section.width, section.height) / 2
+                    mask.addRoundedRect(in: section, cornerSize: CGSize(width: radius, height: radius))
+                }
+                context.fill(mask, with: .color(.white))
+                return
+            }
             let cutouts = SkipMarkerTrackLayout.cutouts(
                 ranges: ranges, size: size, heightFraction: treatment.heightFraction
             )

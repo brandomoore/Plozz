@@ -135,6 +135,82 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         }
     }
 
+    func testSegmentedSectionsKeepGapsCenteredOnTimingBoundariesAndOuterEndsIntact() {
+        let size = CGSize(width: 320, height: 20)
+        let expected = [
+            CGRect(x: 0, y: 0, width: 38, height: 20),
+            CGRect(x: 42, y: 0, width: 236, height: 20),
+            CGRect(x: 282, y: 0, width: 38, height: 20)
+        ]
+        XCTAssertEqual(SkipMarkerTrackLayout.segmentedSections(ranges: [0.125..<0.875], size: size), expected)
+        XCTAssertEqual(SkipMarkerTrackLayout.segmentedSections(ranges: [0..<0.125, 0.875..<1], size: size), expected)
+        let unbrokenRanges: [[Range<Double>]] = [[], [0..<1]]
+        for ranges in unbrokenRanges {
+            XCTAssertEqual(SkipMarkerTrackLayout.segmentedSections(ranges: ranges, size: size),
+                           [CGRect(origin: .zero, size: size)])
+        }
+    }
+
+    func testSegmentedSectionsShrinkGapsInsteadOfErasingOrEnlargingTinyRanges() {
+        for width in [CGFloat(360), 960, 1_600] {
+            let range = (60.0 / 2_700)..<(68.0 / 2_700)
+            let start = width * range.lowerBound
+            let end = width * range.upperBound
+            let sections = SkipMarkerTrackLayout.segmentedSections(
+                ranges: [range], size: CGSize(width: width, height: 20)
+            )
+            XCTAssertEqual(sections.count, 3)
+            XCTAssertEqual(sections[1].midX, (start + end) / 2, accuracy: 0.000001)
+            XCTAssertEqual(sections[1].width, (end - start) / 2, accuracy: 0.000001)
+            XCTAssertEqual((sections[0].maxX + sections[1].minX) / 2, start, accuracy: 0.000001)
+            XCTAssertEqual((sections[1].maxX + sections[2].minX) / 2, end, accuracy: 0.000001)
+            XCTAssertEqual(sections[0].minX, 0)
+            XCTAssertEqual(sections[2].maxX, width)
+        }
+    }
+
+    func testSegmentedMaskHasFullHeightTransparentGapsButNoInternalTexture() throws {
+        for height in [CGFloat(12), 20] {
+            let mask = try pixels(
+                PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: height, treatment: .segmented)
+                    .frame(width: 320, height: 44).background(.black)
+            )
+            let otherPattern = try pixels(
+                PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: height,
+                                      treatment: .segmented, pattern: .mesh)
+                    .frame(width: 320, height: 44).background(.black)
+            )
+            XCTAssertEqual(mask.bytes, otherPattern.bytes, "Segmented sections never use a pattern.")
+            let top = Int((44 - height) / 2)
+            for y in top..<(44 - top) {
+                for x in [39, 40, 41, 279, 280, 281] {
+                    XCTAssertEqual(mask.red(x: x, y: y), 0, "No rail or backing bridges a segment boundary.")
+                }
+                for x in [80, 160, 240] {
+                    XCTAssertEqual(mask.red(x: x, y: y), 255, "The segment's interior remains solid.")
+                }
+            }
+            XCTAssertEqual(mask.red(x: 43, y: top), 0, "Each new section has a rounded corner.")
+            XCTAssertEqual(mask.red(x: 43, y: 22), 255, "The rounded cap still reaches the middle of the bar.")
+            for background in [Color.black, .gray, .cyan] {
+                let plain = try pixels(track(segments: [], height: height, background: background))
+                let divided = try pixels(track(
+                    segments: [marker], height: height, background: background, treatment: .segmented
+                ))
+                let backdrop = try pixels(background.frame(width: 320, height: 44))
+                for x in [80, 160, 240] {
+                    XCTAssertEqual(divided.rgb(x: x, y: 22), plain.rgb(x: x, y: 22))
+                }
+                for x in [40, 280] {
+                    XCTAssertEqual(divided.rgb(x: x, y: 22), backdrop.rgb(x: x, y: 22))
+                }
+                XCTAssertEqual(divided.rgb(x: 128, y: 22), [255, 255, 255])
+            }
+            let crossing = try pixels(track(segments: [marker], height: height, played: 0.125, treatment: .segmented))
+            XCTAssertEqual(crossing.rgb(x: 40, y: 22), [255, 255, 255], "The playhead stays solid over a gap.")
+        }
+    }
+
     func testDiagonalsMatchTheUnderlyingPlayedBufferedAndUnplayedFillsExactly() throws {
         for treatment in [PlayerSkipMarkerTreatment.hatchedCutout, .halfHatchedCutout] {
             for height in [CGFloat(12), 20] {
@@ -333,6 +409,15 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         let movieRange = SkipMarkerTrackLayout.ranges(segments: [movie.target], duration: movie.duration)[0]
         XCTAssertEqual((hourRange.upperBound - hourRange.lowerBound) * 1_600, 13.333333, accuracy: 0.000001)
         XCTAssertEqual((movieRange.upperBound - movieRange.lowerBound) * 1_600, 17.777778, accuracy: 0.000001)
+        let hourSections = SkipMarkerTrackLayout.segmentedSections(
+            ranges: [hourRange], size: CGSize(width: 1_600, height: 20)
+        )
+        let movieSections = SkipMarkerTrackLayout.segmentedSections(
+            ranges: [movieRange], size: CGSize(width: 1_600, height: 20)
+        )
+        XCTAssertEqual(hourSections[1].width, 13.333333 - 4, accuracy: 0.000001)
+        XCTAssertEqual(movieSections[1].width, 17.777778 - 2, accuracy: 0.000001,
+                       "End credits have only one gap; the track's outside end is unchanged.")
     }
     #endif
 
@@ -374,6 +459,11 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
                 try pixels(track(segments: overlapping, treatment: .halfHatchedCutout, pattern: pattern)).bytes
             )
         }
+        XCTAssertEqual(
+            try pixels(track(segments: single, treatment: .segmented)).bytes,
+            try pixels(track(segments: overlapping, treatment: .segmented)).bytes,
+            "Overlapping skip metadata must not create duplicate segment boundaries."
+        )
     }
 
     func testTheSlotDoesNotMoveAsProgressOrBufferCrossesIt() throws {

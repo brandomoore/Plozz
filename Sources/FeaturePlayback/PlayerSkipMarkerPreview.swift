@@ -8,6 +8,7 @@ public struct PlayerSkipMarkerPreview: View {
     @State private var model = Self.makeModel()
     @State private var scenario = PlayerSkipMarkerScenario.hourEpisode
     @State private var picture = MarkerPreviewPicture.dark
+    @State private var treatment = PlayerSkipMarkerTreatment.segmented
     @State private var pattern = PlayerSkipMarkerPattern.default
     @State private var positionIndex = 2
     @State private var bufferIndex = 1
@@ -35,8 +36,10 @@ public struct PlayerSkipMarkerPreview: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             MarkerComparisonHeader()
-            MarkerPatternPicker(selection: $pattern)
-            pattern.previewExplanation
+            MarkerPatternPicker(selection: $pattern, treatment: $treatment)
+            (treatment == .segmented
+                ? Text(verbatim: "Rounded sections at each skip boundary. Small gaps, no internal cutout or pattern.")
+                : pattern.previewExplanation)
                 .font(.system(size: 23))
                 .foregroundStyle(.white.opacity(0.72))
                 .frame(height: 32, alignment: .leading)
@@ -47,7 +50,7 @@ public struct PlayerSkipMarkerPreview: View {
                 bufferIndex = 1
                 scenario.apply(to: model)
             }
-            MarkerComparisonGroup(pattern: pattern, model: model)
+            MarkerComparisonGroup(treatment: treatment, pattern: pattern, model: model)
             MarkerComparisonControls(
                 model: model, picture: $picture, video: video,
                 movePosition: advancePosition, moveBuffer: advanceBuffer, onClose: onClose
@@ -103,7 +106,7 @@ private struct MarkerComparisonHeader: View {
             Text(verbatim: "Compare skip markers")
                 .font(.system(size: 36, weight: .bold))
                 .accessibilityIdentifier("marker-preview-ready")
-            Text(verbatim: "50% patterned cutouts, identical track colors, and realistic durations. Short markers are never stretched.")
+            Text(verbatim: "Identical track colors and realistic durations. Short markers are never stretched.")
                 .font(.system(size: 23))
                 .foregroundStyle(.white.opacity(0.72))
         }
@@ -112,13 +115,14 @@ private struct MarkerComparisonHeader: View {
 }
 
 private struct MarkerComparisonGroup: View {
+    let treatment: PlayerSkipMarkerTreatment
     let pattern: PlayerSkipMarkerPattern
     let model: PlayerControlsModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
-            MarkerComparisonRow(model: model, pattern: pattern, performance: false)
-            MarkerComparisonRow(model: model, pattern: pattern, performance: true)
+            MarkerComparisonRow(model: model, treatment: treatment, pattern: pattern, performance: false)
+            MarkerComparisonRow(model: model, treatment: treatment, pattern: pattern, performance: true)
         }
         .foregroundStyle(.white)
     }
@@ -126,6 +130,7 @@ private struct MarkerComparisonGroup: View {
 
 private struct MarkerComparisonRow: View {
     let model: PlayerControlsModel
+    let treatment: PlayerSkipMarkerTreatment
     let pattern: PlayerSkipMarkerPattern
     let performance: Bool
 
@@ -134,7 +139,7 @@ private struct MarkerComparisonRow: View {
             Text(verbatim: performance ? "Performance · flat" : "Liquid Glass")
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(.white.opacity(0.7))
-            ScrubBar(model: model, palette: .dark, markerTreatment: .halfHatchedCutout, markerPattern: pattern)
+            ScrubBar(model: model, palette: .dark, markerTreatment: treatment, markerPattern: pattern)
                 .frame(height: 44)
             PlayerTimelineTimes(model: model)
                 .frame(height: 30)
@@ -270,29 +275,45 @@ private extension PlayerSkipMarkerScenario {
 
 private struct MarkerPatternPicker: View {
     @Binding var selection: PlayerSkipMarkerPattern
-    @FocusState private var focused: PlayerSkipMarkerPattern?
+    @Binding var treatment: PlayerSkipMarkerTreatment
+    @FocusState private var segmentsFocused: Bool
 
     var body: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 20) {
+            Button {
+                treatment = .segmented
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark")
+                        .opacity(treatment == .segmented ? 1 : 0)
+                    Text(verbatim: "Segmented")
+                }
+                .frame(width: 195)
+            }
+            .accessibilityIdentifier("marker-preview-segmented")
+            .accessibilityValue(Text(verbatim: treatment == .segmented ? "Selected" : "Not selected"))
+            .focused($segmentsFocused)
             ForEach(PlayerSkipMarkerPattern.allCases, id: \.self) { pattern in
                 Button {
                     selection = pattern
+                    treatment = .halfHatchedCutout
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "checkmark")
-                            .opacity(selection == pattern ? 1 : 0)
+                            .opacity(treatment.hasHatch && selection == pattern ? 1 : 0)
                         pattern.previewTitle
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                     }
-                    .frame(width: 235)
+                    .frame(width: 195)
                 }
                 .accessibilityIdentifier("marker-pattern-\(pattern.rawValue)")
-                .accessibilityValue(Text(verbatim: selection == pattern ? "Selected" : "Not selected"))
-                .focused($focused, equals: pattern)
+                .accessibilityValue(Text(verbatim: treatment.hasHatch && selection == pattern ? "Selected" : "Not selected"))
             }
         }
         .font(.system(size: 24, weight: .medium))
         .buttonStyle(.bordered)
-        .defaultFocus($focused, .diagonal)
+        .defaultFocus($segmentsFocused, true)
     }
 }
 

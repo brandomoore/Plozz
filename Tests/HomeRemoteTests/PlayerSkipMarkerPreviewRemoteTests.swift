@@ -2,7 +2,7 @@ import XCTest
 
 @MainActor
 final class PlayerSkipMarkerPreviewRemoteTests: XCTestCase {
-    func testPatternChoicesKeepOnlyTwoHalfHeightMaterialComparisonsAndRemoteControls() {
+    func testSegmentedAndPatternChoicesKeepBothMaterialsAndRemoteControls() {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = ["--skip-marker-preview"]
         app.launch()
@@ -10,14 +10,20 @@ final class PlayerSkipMarkerPreviewRemoteTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["marker-preview-ready"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.descendants(matching: .any)["marker-preview-glass"].firstMatch.isHittable)
         XCTAssertTrue(app.descendants(matching: .any)["marker-preview-flat"].firstMatch.isHittable)
-        XCTAssertFalse(app.buttons["marker-preview-size"].exists, "The comparison is fixed at 50%.")
+        XCTAssertFalse(app.buttons["marker-preview-size"].exists, "Patterned alternatives stay fixed at 50%.")
         XCTAssertFalse(app.staticTexts["A  ·  50% open cutout"].exists)
+        let segmented = app.buttons["marker-preview-segmented"]
+        XCTAssertEqual(segmented.value as? String, "Selected", "The new alternative is shown without changing the real player default.")
+        XCTAssertTrue(isFocused(segmented))
         let fine = app.buttons["marker-pattern-fineHatch"]
-        XCTAssertEqual(fine.value as? String, "Selected", "The preview starts on the chosen player default.")
-        attach(app, "Default fine hatch - Liquid Glass and flat")
+        XCTAssertEqual(fine.value as? String, "Not selected")
+        XCTAssertTrue(fine.isHittable, "The chosen fine hatch remains available for comparison.")
+        attach(app, "Rounded sections - Liquid Glass and flat")
         let diagonal = app.buttons["marker-pattern-diagonal"]
+        XCUIRemote.shared.press(.right)
         XCTAssertTrue(isFocused(diagonal))
         XCUIRemote.shared.press(.select)
+        XCTAssertEqual(segmented.value as? String, "Not selected")
         XCTAssertEqual(diagonal.value as? String, "Selected")
         attach(app, "Diagonals - Liquid Glass and flat")
         for pattern in ["denseDots", "mediumHatch", "fineHatch", "mesh"] {
@@ -31,6 +37,11 @@ final class PlayerSkipMarkerPreviewRemoteTests: XCTestCase {
         }
         for _ in 0..<4 { XCUIRemote.shared.press(.left) }
         XCTAssertTrue(isFocused(diagonal))
+        XCUIRemote.shared.press(.left)
+        XCTAssertTrue(isFocused(segmented))
+        XCUIRemote.shared.press(.select)
+        XCTAssertEqual(segmented.value as? String, "Selected")
+        XCTAssertEqual(app.buttons["marker-pattern-mesh"].value as? String, "Not selected")
         XCUIRemote.shared.press(.down)
         let scenario = app.buttons["marker-preview-scenario"]
         XCTAssertTrue(isFocused(scenario))
@@ -60,14 +71,14 @@ final class PlayerSkipMarkerPreviewRemoteTests: XCTestCase {
         XCTAssertTrue(isFocused(focus))
         XCUIRemote.shared.press(.select)
         XCTAssertEqual(focus.label, "Bar: normal")
-        attach(app, "Normal mesh Liquid Glass and flat comparison")
+        attach(app, "Normal segmented Liquid Glass and flat comparison")
 
         let picture = app.buttons["marker-preview-picture"]
         XCUIRemote.shared.press(.right)
         XCTAssertTrue(isFocused(picture))
         XCUIRemote.shared.press(.select)
         XCTAssertEqual(picture.label, "Picture: bright")
-        attach(app, "Bright picture behind both mesh materials")
+        attach(app, "Bright picture behind both segmented materials")
 
         let done = app.buttons["marker-preview-done"]
         XCUIRemote.shared.press(.right)
