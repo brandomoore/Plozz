@@ -840,7 +840,7 @@ private struct FocusHeroBackdropLayer: View {
                 scrimStyle: .browse
             )
             .allowsHitTesting(false)
-            // Gradient theme: the page behind the rows takes this title's colours.
+            // Ambient theme: the page behind the rows takes this title's colours.
             .ambientBackdropSource(
                 id: subject.id,
                 references: references(for: subject),

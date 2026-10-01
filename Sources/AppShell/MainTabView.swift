@@ -1559,7 +1559,7 @@ struct MainTabView: View {
             settleFreshLaunch()
             settleStandaloneStartup()
         }
-        // The Gradient theme tints the page to Home's hero only while Home is
+        // The Ambient theme tints the page to Home's hero only while Home is
         // the destination on screen; every other destination shows it stock.
         .onChange(of: isHomeHeroVisible, initial: true) { _, visible in
             ambientBackdrop?.isHeroDestinationVisible = visible

@@ -399,9 +399,9 @@ public struct NowPlayingView: View {
     private var matchedThemeStyle: LiquidArtworkBackground.Style {
         switch appTheme {
         case .light: return .light
-        case .dark, .gradient: return .dark
+        case .dark: return .dark
         case .pureBlack: return .pureBlack
-        case .system: return systemColorScheme == .light ? .light : .dark
+        case .system, .ambient: return systemColorScheme == .light ? .light : .dark
         }
     }
 

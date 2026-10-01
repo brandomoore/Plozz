@@ -296,6 +296,11 @@ public extension ThemePalette {
     /// `cardSurface`). Kept deliberately quiet: ~5% lighter on Dark, ~2% on the
     /// near-black OLED theme, ~5% darker on Light.
     var informationSurface: Color {
+        // Ambient: a translucent recess rather than an opaque tone, so the band
+        // reads as its own zone without covering the gradient.
+        if usesAmbientGradient {
+            return isLight ? Color.white.opacity(0.25) : Color.black.opacity(0.14)
+        }
         #if canImport(UIKit)
         let base = UIColor(backgroundBase)
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
@@ -411,16 +416,18 @@ public extension ThemePalette {
         isLight: false
     )
 
-    /// Dark theme over the tvOS system-style gradient. Text and accents match
-    /// Dark; the page itself is drawn by `AmbientGradientBackground`, and raised
-    /// surfaces are translucent white lifts rather than opaque greys so the
-    /// gradient (and, on Home, the artwork-tinted gradient) reads through them.
-    static let gradient = ThemePalette(
+    /// Ambient, dark appearance: the tvOS system-style gradient as the page,
+    /// with Dark's text and accents. The page is drawn by
+    /// `AmbientGradientBackground`; resting surfaces are faint translucent
+    /// washes rather than opaque greys, so the gradient (and, on Home, the
+    /// artwork-tinted gradient) reads through cards instead of being covered by
+    /// a flat grey slab.
+    static let ambientDark = ThemePalette(
         backgroundBase: Color(red: 0.18, green: 0.19, blue: 0.20),
         backgroundSecondary: Color(red: 0.14, green: 0.14, blue: 0.14),
         settingsBackground: Color(red: 0.18, green: 0.19, blue: 0.20),
-        cardSurface: Color.white.opacity(0.08),
-        cardBorder: Color.white.opacity(0.16),
+        cardSurface: Color.white.opacity(0.05),
+        cardBorder: Color.white.opacity(0.10),
         primaryText: .white,
         secondaryText: Color.white.opacity(0.60),
         tertiaryText: Color.white.opacity(0.36),
@@ -431,17 +438,55 @@ public extension ThemePalette {
         liftSurface: .white,
         cardOpaqueSurface: Color(red: 0.22, green: 0.23, blue: 0.24),
         cardOpaqueBorder: Color.white.opacity(0.16),
-        raised: SurfaceStyle(fill: Color.white.opacity(0.08)),
+        raised: SurfaceStyle(
+            fill: Color.white.opacity(0.05),
+            border: Color.white.opacity(0.08),
+            borderWidth: 1
+        ),
         overlay: SurfaceStyle(
             fill: Color(red: 0.22, green: 0.23, blue: 0.24),
             border: Color.white.opacity(0.14),
             borderWidth: 1,
             shadow: SurfaceShadow(color: .black.opacity(0.45), radius: 26, y: 14)
         ),
-        separator: Color.white.opacity(0.14),
-        fill: Color.white.opacity(0.11),
-        fillSubtle: Color.white.opacity(0.06),
+        separator: Color.white.opacity(0.10),
+        fill: Color.white.opacity(0.10),
+        fillSubtle: Color.white.opacity(0.05),
         isLight: false,
+        usesAmbientGradient: true
+    )
+
+    /// Ambient, light appearance: the pale tvOS light-mode gradient with Light's
+    /// text and accents. Surfaces are frosted white washes so the gradient still
+    /// shows through them.
+    static let ambientLight = ThemePalette(
+        backgroundBase: Color(red: 0.91, green: 0.91, blue: 0.92),
+        backgroundSecondary: Color(red: 0.88, green: 0.88, blue: 0.89),
+        settingsBackground: Color(red: 0.91, green: 0.91, blue: 0.92),
+        cardSurface: Color.white.opacity(0.45),
+        cardBorder: Color.black.opacity(0.06),
+        primaryText: Color.black.opacity(0.90),
+        secondaryText: Color.black.opacity(0.60),
+        tertiaryText: Color.black.opacity(0.45),
+        accent: ThemePalette.brandAccent(isLight: true),
+        errorText: Color(red: 0.78, green: 0.11, blue: 0.09),
+        topGlow: nil,
+        focusedCardGlassTint: Color.black.opacity(0.05),
+        liftSurface: .white,
+        cardOpaqueSurface: .white,
+        cardOpaqueBorder: Color.black.opacity(0.08),
+        raised: SurfaceStyle(
+            fill: Color.white.opacity(0.45),
+            shadow: SurfaceShadow(color: .black.opacity(0.05), radius: 10, y: 3)
+        ),
+        overlay: SurfaceStyle(
+            fill: Color(white: 0.97),
+            shadow: SurfaceShadow(color: .black.opacity(0.16), radius: 28, y: 16)
+        ),
+        separator: Color.black.opacity(0.08),
+        fill: Color.black.opacity(0.08),
+        fillSubtle: Color.black.opacity(0.04),
+        isLight: true,
         usesAmbientGradient: true
     )
 
@@ -487,7 +532,7 @@ public extension ThemePalette {
         case .system: return systemColorScheme == .dark ? .dark : .light
         case .dark: return .dark
         case .pureBlack: return .pureBlack
-        case .gradient: return .gradient
+        case .ambient: return systemColorScheme == .dark ? .ambientDark : .ambientLight
         case .light: return .light
         }
     }
@@ -500,9 +545,9 @@ public extension AppTheme {
     /// follows the device; Black rides the dark scheme.
     var preferredColorScheme: ColorScheme? {
         switch self {
-        case .system: return nil
+        case .system, .ambient: return nil
         case .light: return .light
-        case .dark, .pureBlack, .gradient: return .dark
+        case .dark, .pureBlack: return .dark
         }
     }
 }

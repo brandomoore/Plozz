@@ -39,13 +39,22 @@ struct ThemePreviewColors {
     )
     /// The gradient itself is drawn behind the mini preview by the swatch, so
     /// the preview's own background stops are clear.
-    static let gradient = ThemePreviewColors(
+    static let ambientDark = ThemePreviewColors(
         bgTop: .clear,
         bgBottom: .clear,
-        card: Color.white.opacity(0.12),
-        cardBorder: Color.white.opacity(0.14),
+        card: Color.white.opacity(0.10),
+        cardBorder: Color.white.opacity(0.12),
         textPrimary: Color.white.opacity(0.90),
         textSecondary: Color.white.opacity(0.45),
+        accent: accentBlue
+    )
+    static let ambientLight = ThemePreviewColors(
+        bgTop: .clear,
+        bgBottom: .clear,
+        card: Color.white.opacity(0.55),
+        cardBorder: Color.black.opacity(0.06),
+        textPrimary: Color.black.opacity(0.80),
+        textSecondary: Color.black.opacity(0.42),
         accent: accentBlue
     )
     static let pureBlack = ThemePreviewColors(
@@ -154,9 +163,22 @@ public struct ThemeSwatch: View {
                 MiniPreview(colors: .dark)
             case .pureBlack:
                 MiniPreview(colors: .pureBlack)
-            case .gradient:
-                MiniPreview(colors: .gradient)
-                    .background(AmbientGradientBackground(tint: nil))
+            case .ambient:
+                // Split light | dark like System, each half on its own gradient.
+                GeometryReader { geo in
+                    ZStack {
+                        MiniPreview(colors: .ambientLight)
+                            .background(AmbientGradientBackground(tint: nil, isLight: true))
+                            .mask(alignment: .leading) {
+                                Rectangle().frame(width: geo.size.width / 2 + 0.5)
+                            }
+                        MiniPreview(colors: .ambientDark)
+                            .background(AmbientGradientBackground(tint: nil, isLight: false))
+                            .mask(alignment: .trailing) {
+                                Rectangle().frame(width: geo.size.width / 2)
+                            }
+                    }
+                }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))

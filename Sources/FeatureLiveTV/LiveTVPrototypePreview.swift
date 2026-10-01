@@ -149,7 +149,7 @@ struct PrototypePreviewScrim: View {
                 edges: [.leading], bottomFadeTop: 0.3
             )
             if palette.usesAmbientGradient {
-                // Gradient theme: fade the player into the page's gradient rather
+                // Ambient theme: fade the player into the page's gradient rather
                 // than a flat tone, so the guide sits on the same backdrop.
                 AppBackground(palette: palette)
                     .mask { pageFade(Color.white) }

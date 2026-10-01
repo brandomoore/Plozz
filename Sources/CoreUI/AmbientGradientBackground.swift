@@ -7,7 +7,7 @@ import UIKit
 
 // MARK: - Model
 
-/// The live tint for the Gradient theme's page background.
+/// The live tint for the Ambient theme's page background.
 ///
 /// Home's hero publishes the colours of the slide it is showing; the navigation
 /// shell says whether Home is the visible destination. Only when both hold does
@@ -63,7 +63,7 @@ public extension EnvironmentValues {
 
 // MARK: - Background
 
-/// The Gradient theme's page: a soft 3×3 mesh recreating the stock tvOS system
+/// The Ambient theme's page: a soft 3×3 mesh recreating the stock tvOS system
 /// background — slate blue upper-left, a dim warm centre, olive lower-left and
 /// a faint teal lower-right.
 ///
@@ -79,17 +79,24 @@ public struct AmbientGradientBackground: View {
     }
 
     private let source: Source
+    private let pinnedIsLight: Bool?
     @Environment(\.ambientBackdrop) private var model
+    @Environment(\.themePalette) private var palette
 
     /// Follows the environment's ``AmbientBackdropModel`` (stock when absent).
     public init() {
         source = .environment
+        pinnedIsLight = nil
     }
 
-    /// A fixed tint; `nil` draws the stock gradient.
-    public init(tint: [Color]?) {
+    /// A fixed tint; `nil` draws the stock gradient. `isLight` pins the light or
+    /// dark gradient (theme previews); `nil` follows the palette.
+    public init(tint: [Color]?, isLight: Bool? = nil) {
         source = .fixed(tint)
+        pinnedIsLight = isLight
     }
+
+    private var isLight: Bool { pinnedIsLight ?? palette.isLight }
 
     private var tint: [Color]? {
         switch source {
@@ -99,7 +106,7 @@ public struct AmbientGradientBackground: View {
     }
 
     public var body: some View {
-        let colors = Self.meshColors(tint: tint)
+        let colors = Self.meshColors(tint: tint, isLight: isLight)
         MeshGradient(
             width: 3,
             height: 3,
@@ -119,11 +126,20 @@ public struct AmbientGradientBackground: View {
         [0, 1], [0.45, 1], [1, 1],
     ]
 
-    /// The stock stops, row-major, sampled from the system background.
-    static let stock: [(r: Double, g: Double, b: Double)] = [
+    /// The stock dark stops, row-major, sampled from the system background.
+    static let stockDark: [(r: Double, g: Double, b: Double)] = [
         (0.196, 0.227, 0.251), (0.188, 0.208, 0.235), (0.212, 0.208, 0.220),
         (0.192, 0.216, 0.231), (0.165, 0.163, 0.165), (0.190, 0.182, 0.176),
         (0.165, 0.149, 0.114), (0.129, 0.129, 0.118), (0.149, 0.165, 0.149),
+    ]
+
+    /// The stock light stops: the same layout and hue drift as dark — cool
+    /// upper-left, neutral centre, warm lower-left, faint green lower-right —
+    /// lifted to the pale tvOS light-mode backdrop.
+    static let stockLight: [(r: Double, g: Double, b: Double)] = [
+        (0.86, 0.89, 0.93), (0.88, 0.90, 0.93), (0.91, 0.90, 0.91),
+        (0.88, 0.90, 0.92), (0.93, 0.93, 0.93), (0.92, 0.91, 0.90),
+        (0.91, 0.89, 0.84), (0.94, 0.94, 0.92), (0.89, 0.92, 0.89),
     ]
 
     /// Which artwork colour feeds each stop (index into the tint, wrapped).
@@ -135,7 +151,8 @@ public struct AmbientGradientBackground: View {
         2, 2, 3,
     ]
 
-    static func meshColors(tint: [Color]?) -> [Color] {
+    static func meshColors(tint: [Color]?, isLight: Bool) -> [Color] {
+        let stock = isLight ? stockLight : stockDark
         let stockColors = stock.map { Color(red: $0.r, green: $0.g, blue: $0.b) }
         guard let tint, !tint.isEmpty else { return stockColors }
         #if canImport(UIKit)
@@ -147,10 +164,19 @@ public struct AmbientGradientBackground: View {
             }
             let stop = stock[index]
             let stockBrightness = max(stop.r, stop.g, stop.b)
-            // Saturated colours read darker than greys at equal brightness, so
-            // lift a touch to keep the page's overall depth matched to stock.
-            let brightness = min(stockBrightness * 1.25, 0.36)
-            let saturation = min(s, 0.75) * 0.8
+            let brightness: CGFloat
+            let saturation: CGFloat
+            if isLight {
+                // A pale wash of the artwork's hue; strong saturation on a light
+                // page reads as a coloured card, not a backdrop.
+                brightness = stockBrightness
+                saturation = min(s, 0.6) * 0.3
+            } else {
+                // Saturated colours read darker than greys at equal brightness,
+                // so lift a touch to keep the page's depth matched to stock.
+                brightness = min(stockBrightness * 1.25, 0.36)
+                saturation = min(s, 0.75) * 0.8
+            }
             return Color(hue: Double(h), saturation: Double(saturation), brightness: Double(brightness))
         }
         #else
@@ -164,7 +190,7 @@ public struct AmbientGradientBackground: View {
 #if canImport(UIKit)
 public extension View {
     /// Publishes the colours of the hero slide `id` into the root's
-    /// ``AmbientBackdropModel`` so the Gradient theme can tint the page to it.
+    /// ``AmbientBackdropModel`` so the Ambient theme can tint the page to it.
     /// Only active when the theme uses the ambient gradient; otherwise it does
     /// no work. Samples the already-decoded hero backdrop where possible.
     func ambientBackdropSource(

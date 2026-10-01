@@ -78,24 +78,32 @@ final class ThemePaletteResolutionTests: XCTestCase {
         for theme in AppTheme.allCases {
             let dark = ThemePalette.palette(for: theme, systemColorScheme: .dark)
             let light = ThemePalette.palette(for: theme, systemColorScheme: .light)
-            // `.system` follows the device scheme; the rest ignore it.
+            // `.system` and `.ambient` follow the device scheme; the rest ignore it.
             if theme == .system {
                 XCTAssertEqual(dark, .dark)
                 XCTAssertEqual(light, .light)
+            } else if theme == .ambient {
+                XCTAssertEqual(dark, .ambientDark)
+                XCTAssertEqual(light, .ambientLight)
             } else {
                 XCTAssertEqual(dark, light, "\(theme) should not depend on the system scheme")
             }
         }
     }
 
-    /// Only Gradient paints the ambient gradient; every other palette keeps its
+    /// Only Ambient paints the ambient gradient; every other palette keeps its
     /// flat page so the existing themes are untouched.
-    func testOnlyGradientUsesTheAmbientGradient() {
+    func testOnlyAmbientUsesTheAmbientGradient() {
         for theme in AppTheme.allCases {
-            let palette = ThemePalette.palette(for: theme, systemColorScheme: .dark)
-            XCTAssertEqual(palette.usesAmbientGradient, theme == .gradient, "\(theme)")
+            for scheme in [ColorScheme.dark, .light] {
+                let palette = ThemePalette.palette(for: theme, systemColorScheme: scheme)
+                XCTAssertEqual(palette.usesAmbientGradient, theme == .ambient, "\(theme) \(scheme)")
+            }
         }
-        XCTAssertEqual(AppTheme.gradient.preferredColorScheme, .dark)
+        // Ambient follows the device appearance, like System.
+        XCTAssertNil(AppTheme.ambient.preferredColorScheme)
+        XCTAssertFalse(ThemePalette.ambientDark.isLight)
+        XCTAssertTrue(ThemePalette.ambientLight.isLight)
     }
 
     func testPureBlackHasNoGlowOthersAreThemed() {

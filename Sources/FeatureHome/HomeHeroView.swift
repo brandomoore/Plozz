@@ -882,7 +882,7 @@ struct HomeHeroView: View {
                 alignsArtworkToLeadingEdge: navigationStyle == .rail,
                 scrimOpacity: isFrontmost ? 1 : 0
             )
-            // Gradient theme: the page below the hero takes this slide's colours.
+            // Ambient theme: the page below the hero takes this slide's colours.
             .ambientBackdropSource(
                 id: item.id,
                 references: primaryBackdropReferences(for: item),
