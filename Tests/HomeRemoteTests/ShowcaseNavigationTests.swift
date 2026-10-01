@@ -452,6 +452,41 @@ final class ShowcaseNavigationTests: XCTestCase {
         try measureNavigation(vertical: true)
     }
 
+    func testCarouselHeroGradientNavigationHitches() throws {
+        guard #available(tvOS 26.0, *) else { throw XCTSkip("Presented-frame metrics require tvOS 26.") }
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--production-home-fixture", "--home-performance-fixture", "--distinct-home-artwork",
+            "--gradient-performance", "--gradient-black"
+        ]
+        if ProcessInfo.processInfo.environment["PLOZZ_GRADIENT_DISABLED"] == "1" {
+            app.launchArguments.append("--gradient-off")
+        }
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
+        let hero = app.buttons["home-hero-action-row"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 20))
+        XCTAssertTrue(hero.hasFocus)
+        let initial = hero.label
+        for _ in 0..<6 { XCUIRemote.shared.press(.right); Thread.sleep(forTimeInterval: 0.5) }
+        XCTAssertNotEqual(hero.label.components(separatedBy: ",").first, initial.components(separatedBy: ",").first,
+                          "Measure actual hero slide changes, not just movement between action buttons.")
+        let options = XCTMeasureOptions()
+        options.iterationCount = 3
+        options.invocationOptions = [.manuallyStart, .manuallyStop]
+        measure(metrics: [XCTHitchMetric(application: app)], options: options) {
+            startMeasuring()
+            for _ in 0..<6 { XCUIRemote.shared.press(.right); Thread.sleep(forTimeInterval: 0.5) }
+            stopMeasuring()
+            XCTAssertTrue(hero.hasFocus)
+        }
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Carousel gradient after hero navigation"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testHorizontalRowAndHeroAnchorsStayFixed() throws {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = [
@@ -527,6 +562,12 @@ final class ShowcaseNavigationTests: XCTestCase {
             "--production-home-fixture", "--pinned-home", "--immersive-home",
             "--home-performance-fixture", "--distinct-home-artwork",
         ]
+        if ProcessInfo.processInfo.environment["PLOZZ_GRADIENT_COMPARISON"] == "1" {
+            app.launchArguments += ["--gradient-performance", "--gradient-black"]
+            if ProcessInfo.processInfo.environment["PLOZZ_GRADIENT_DISABLED"] == "1" {
+                app.launchArguments.append("--gradient-off")
+            }
+        }
         app.launch()
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))

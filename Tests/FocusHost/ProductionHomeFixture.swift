@@ -126,6 +126,8 @@ struct ProductionHomeFixture: View {
             }
         }
         .environment(\.plozzCardFocusStyle, Self.focusStyle)
+        .environment(\.gradientBackgroundsEnabled, !ProcessInfo.processInfo.arguments.contains("--gradient-off"))
+        .environment(\.themePalette, ProcessInfo.processInfo.arguments.contains("--gradient-black") ? .pureBlack : .dark)
         .environment(\.plozzCardStyle, ProcessInfo.processInfo.arguments.contains("--framed-cards") ? .framed : .borderless)
         .task {
             guard fixture == nil else { return }
@@ -429,6 +431,21 @@ private final class ProductionHomeState {
             ? [url] + (0..<150).map { ProductionHomeProvider.artworkURL(url, index: $0) }
             : [url]
         for reference in references {
+            let referenceBytes: Data
+            if ProcessInfo.processInfo.arguments.contains("--gradient-performance"),
+               let value = URLComponents(url: reference, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "fixture-item" })?.value,
+               let index = Int(value) {
+                let tinted = UIGraphicsImageRenderer(size: size).image { context in
+                    image.draw(in: CGRect(origin: .zero, size: size))
+                    context.cgContext.setBlendMode(.color)
+                    UIColor(hue: CGFloat(index % 12) / 12, saturation: 0.8, brightness: 0.7, alpha: 1).setFill()
+                    context.fill(CGRect(origin: .zero, size: size))
+                }
+                referenceBytes = tinted.pngData() ?? bytes
+            } else {
+                referenceBytes = bytes
+            }
             for variant in ArtworkImageVariant.allCases {
                 let requestURL = variant.requestURL(for: reference)
                 let response = HTTPURLResponse(
@@ -436,7 +453,7 @@ private final class ProductionHomeState {
                     headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
                 )!
                 cache.storeCachedResponse(
-                    CachedURLResponse(response: response, data: bytes), for: URLRequest(url: requestURL)
+                    CachedURLResponse(response: response, data: referenceBytes), for: URLRequest(url: requestURL)
                 )
             }
         }

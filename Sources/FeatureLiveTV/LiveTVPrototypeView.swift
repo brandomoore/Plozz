@@ -335,7 +335,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             )
             let expanded = multiviewSelection == nil && (preview.isExpanded || multiview.isEnabled)
             ZStack(alignment: .topLeading) {
-                palette.backgroundBase.ignoresSafeArea()
+                AppBackground(palette: palette)
 
                 // Stable pane IDs retain renderers through single/multiple layouts and promotion.
                 ForEach(multiview.panes) { pane in

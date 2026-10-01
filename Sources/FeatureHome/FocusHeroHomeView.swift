@@ -840,6 +840,12 @@ private struct FocusHeroBackdropLayer: View {
                 scrimStyle: .browse
             )
             .allowsHitTesting(false)
+            .ambientBackdropSource(
+                id: subject.id,
+                references: references(for: subject),
+                isActive: isFrontmost,
+                fallbackURL: subject.item.flatMap(HomeHeroArtwork.backdropFallback(for:))
+            )
         }
     }
 

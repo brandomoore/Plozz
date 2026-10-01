@@ -237,6 +237,7 @@ public struct PlozziOSRootView: View {
         }
         .background { AppBackground(palette: resolvedPalette) }
         .environment(\.themePalette, resolvedPalette)
+        .environment(\.gradientBackgroundsEnabled, appModel.settings.theme.gradientEnabled)
         .environment(\.familyGuidanceProvider, appModel.familyGuidance)
         // See the tvOS root: reading `dynamicTypeSize` is what rebuilds the metrics
         // when the reader's text size changes, rather than only on relaunch.

@@ -1734,6 +1734,7 @@ private struct PlozziOSAppearanceSettingsView: View {
                             .tag(theme)
                     }
                 }
+                Toggle("Gradient Backgrounds", isOn: $theme.gradientEnabled)
                 Picker(
                     "Liquid Glass",
                     selection: $transparency.preference

@@ -42,6 +42,31 @@ final class ThemeSettingsStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testGradientDefaultsOnAndPersistsIndependentlyForEveryThemeAndProfile() {
+        let defaults = makeDefaults()
+        let primary = ThemeSettingsStore(defaults: defaults)
+        let other = ThemeSettingsStore(defaults: defaults, namespace: "other")
+        let model = ThemeSettingsModel(store: primary)
+        XCTAssertTrue(model.gradientEnabled)
+        for theme in AppTheme.allCases {
+            model.theme = theme
+            model.gradientEnabled = false
+            XCTAssertFalse(ThemeSettingsModel(store: primary).gradientEnabled)
+            XCTAssertEqual(primary.load(), theme)
+            XCTAssertTrue(other.loadGradientEnabled())
+            model.gradientEnabled = true
+            XCTAssertTrue(primary.loadGradientEnabled())
+        }
+        model.gradientEnabled = false
+        let snapshot = ProfileSettingsTransfer.capture(namespace: nil, defaults: defaults)
+        ProfileSettingsTransfer.apply(snapshot, namespace: "other", defaults: defaults)
+        XCTAssertFalse(other.loadGradientEnabled())
+        other.saveGradientEnabled(true)
+        XCTAssertFalse(primary.loadGradientEnabled())
+        XCTAssertTrue(other.loadGradientEnabled())
+    }
+
+    @MainActor
     func testModelPersistsOnChange() {
         let defaults = makeDefaults()
         let model = ThemeSettingsModel(store: ThemeSettingsStore(defaults: defaults))

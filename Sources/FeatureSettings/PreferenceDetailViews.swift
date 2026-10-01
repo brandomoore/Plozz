@@ -112,6 +112,7 @@ struct AppearanceDetailView: View {
         @Bindable var transparency = transparency
         VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
             CompactThemePicker(selection: $theme.theme)
+            Toggle("Gradient Backgrounds", isOn: $theme.gradientEnabled)
             SettingsDetailGroup(title: "Liquid Glass") {
                 DescribedSegmentedPicker(
                     options: TransparencyPreference.allCases,
