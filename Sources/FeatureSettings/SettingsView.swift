@@ -795,6 +795,19 @@ public struct SettingsView: View {
                    value: nil,
                    route: .help)
 
+            if PlayerMarkerPreviewRequest.isAvailable {
+                Button(action: PlayerMarkerPreviewRequest.open) {
+                    Label {
+                        Text(verbatim: "Player marker examples")
+                    } icon: {
+                        Image(systemName: "play.rectangle")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                }
+                .buttonStyle(SettingsFocusButtonStyle(size: .prominent))
+            }
+
             // The only Sign-Out-All entry point now lives here, inline, guarded
             // by the are-you-sure confirmation alert on the root view.
             if !accounts.isEmpty, !activeProfile.isKids {

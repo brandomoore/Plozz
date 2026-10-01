@@ -263,7 +263,19 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
     }
 
     #if DEBUG && os(tvOS)
+    func testManualPreviewAccessDoesNotDependOnALaunchFlag() async {
+        XCTAssertFalse(PlayerMarkerPreviewRequest.isRequested(environment: [:]))
+        let opened = expectation(description: "manual marker preview request")
+        let observer = NotificationCenter.default.addObserver(
+            forName: PlayerMarkerPreviewRequest.notification, object: nil, queue: .main
+        ) { _ in opened.fulfill() }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        PlayerMarkerPreviewRequest.open()
+        await fulfillment(of: [opened], timeout: 1)
+    }
+
     func testNativeComparisonRequiresExplicitOptInAndUsesOnlyLocalExampleState() {
+        XCTAssertTrue(PlayerMarkerPreviewRequest.isAvailable, "Manual preview access is available in the local Debug build.")
         XCTAssertFalse(PlayerSkipMarkerPreview.isRequested(environment: [:]))
         XCTAssertFalse(PlayerSkipMarkerPreview.isRequested(environment: ["PLOZZ_SKIP_MARKER_PREVIEW": "true"]))
         XCTAssertTrue(PlayerSkipMarkerPreview.isRequested(environment: ["PLOZZ_SKIP_MARKER_PREVIEW": "1"]))

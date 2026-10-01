@@ -43,6 +43,16 @@ struct PlayerMarkerLibraryPreview: View {
 
 @MainActor
 enum MarkerPreviewLibrarySource {
+    static func gateSummary(_ app: AppState) -> String { // l10n:content - boolean authorization facts for the diagnostic journal, never UI copy
+        let flow = app.profileFlow
+        return "authorized=\(app.isActiveProfileAuthorized) admitted=\(app.canEnterApp)"
+            + " choosing=\(flow.isChoosingProfile) locked=\(flow.activeProfileAwaitsUnlock)"
+            + " setup=\(flow.hasResumableSetup) appearance=\(flow.isPickingAppearanceForNewProfile)"
+            + " identity=\(flow.pendingIdentityAccountID != nil) lockOffer=\(flow.pendingLockOfferProfile != nil)"
+            + " plexPIN=\(app.plexHomeUsers.pendingPlexPINRequest != nil)"
+            + " awaitsIdentity=\(app.profilesModel.activeProfile.awaitsIdentity(amongAccounts: app.accountsProviders.activeAccountIDs))"
+    }
+
     static func authorizationID(_ app: AppState) -> String {
         let accounts = app.accountsProviders
         let revisions = accounts.accounts.filter { accounts.activeAccountIDs.contains($0.id) }
@@ -55,8 +65,10 @@ enum MarkerPreviewLibrarySource {
     static func resolve(_ app: AppState, expected: String) async throws -> PlayerSkipMarkerVideo.Source {
         func check() throws {
             try Task.checkCancellation()
-            guard app.isActiveProfileAuthorized, authorizationID(app) == expected else {
-                throw CancellationError()
+            guard authorizationID(app) == expected else { throw CancellationError() }
+            guard app.isActiveProfileAuthorized else {
+                HandoffDiagnostics.emit("player MARKER_PREVIEW_VIDEO blocked \(gateSummary(app))")
+                throw AppError.unauthorized
             }
         }
         try check()

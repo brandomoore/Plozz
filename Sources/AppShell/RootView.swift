@@ -374,7 +374,7 @@ public struct RootView: View {
                 if appState.profileFlow.isChoosingProfile {
                     ProfileSelectionView(appState: appState, canCancel: appState.profileFlow.isProfileSelectionCancelable)
                         .transition(.opacity)
-                } else if showsMarkerPreview, appState.isActiveProfileAuthorized {
+                } else if showsMarkerPreview {
                     markerPreview
                 } else {
                     // Rendered even when `homeAccounts` is EMPTY. Switching the
@@ -857,6 +857,16 @@ public struct RootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: MainThreadStallProbe.contextDidChange)) { _ in
             crashReporting.setScreen(CrashReportScreen(context: MainThreadStallProbe.context))
+        }
+        .onReceive(NotificationCenter.default.publisher(for: PlayerMarkerPreviewRequest.notification)) { _ in
+            if PlayerMarkerPreviewRequest.isAvailable { showsMarkerPreview = true }
+        }
+        .onChange(of: appState.state, initial: true) { _, _ in
+            #if DEBUG && os(tvOS)
+            if PlayerMarkerPreviewRequest.isRequested() {
+                HandoffDiagnostics.emit("player MARKER_PREVIEW_ROUTE requested=\(showsMarkerPreview) \(MarkerPreviewLibrarySource.gateSummary(appState))")
+            }
+            #endif
         }
         // Scene-phase side effects live in a zero-size child, NOT here.
         //

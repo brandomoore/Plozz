@@ -653,8 +653,10 @@ four ad breaks, and a 45-minute episode with an eight-second recap. Marker
 widths always use the exact duration ratio, without a minimum-width enlargement.
 Example playhead/buffer positions do not seek the separate background video.
 
-The real app enters this preview only after the normal profile/Plex identity
-gates. `MarkerPreviewLibrarySource` selects an episode from an enabled library
+The real app enters the synthetic comparison through its normal profile route;
+Settings also exposes **Player marker examples** in Debug builds, so reopening
+does not depend on launch flags. Library footage additionally requires the complete profile/Plex
+authorization gates. `MarkerPreviewLibrarySource` selects an episode from an enabled library
 on an active source; mapped Plex Home users require their resolved server
 identity. It rechecks profile, credentials, and library visibility across each
 request, releasing stale preparations. The existing Plozzigen engine plays

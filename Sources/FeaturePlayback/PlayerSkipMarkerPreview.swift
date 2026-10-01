@@ -22,7 +22,7 @@ public struct PlayerSkipMarkerPreview: View {
     public static func isRequested(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Bool {
-        environment["PLOZZ_SKIP_MARKER_PREVIEW"] == "1"
+        PlayerMarkerPreviewRequest.isRequested(environment: environment)
     }
 
     static func makeModel() -> PlayerControlsModel {
