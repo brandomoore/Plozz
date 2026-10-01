@@ -611,8 +611,13 @@ slot's height, normal/focused bar heights, and picture brightness. The patterned
 slot starts at 50%; its button switches to 75% without changing the open comparison.
 The patterned slot retains 6% of the underlying fills between strokes and 53%
 at the diagonal strokes, keeping their colors tied to played/buffered/base
-progress rather than painting a separate accent. Menu/Done returns to the normal
-app. The preview uses isolated local models, no video/network/timers, and never saves
+progress rather than painting a separate accent. In Liquid Glass only, strokes
+ahead of the playhead also receive a static 18%-white highlight so a nearly clear
+unplayed track cannot hide the marker. It shares the mask's exact stroke phase
+and rounded clipping, sits below the playhead, and leaves the played portion,
+flat tracks, and open cutouts unchanged. No blur, refraction, or timer is added.
+Menu/Done returns to the normal app. The preview uses isolated local models,
+no video/network/timers, and never saves
 profile preferences. The ordinary player remains on its current 75% open
 cutout until a treatment is selected for production.
 

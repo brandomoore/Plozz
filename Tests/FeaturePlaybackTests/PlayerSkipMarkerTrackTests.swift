@@ -115,6 +115,97 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         }
     }
 
+    func testGlassHighlightImprovesOnlyUnplayedDiagonalsWithoutChangingTheOtherLayers() throws {
+        for treatment in [PlayerSkipMarkerTreatment.hatchedCutout, .halfHatchedCutout] {
+            for height in [CGFloat(12), 20] {
+                let baseline = try pixels(track(segments: [marker], height: height, treatment: treatment))
+                let highlighted = try pixels(track(
+                    segments: [marker], height: height, treatment: treatment, highlightsUnplayed: true
+                ))
+                let flat = try pixels(track(
+                    segments: [marker], height: height, treatment: treatment,
+                    highlightsUnplayed: true, performance: true
+                ))
+                XCTAssertEqual(flat.bytes, baseline.bytes, "Flat performance tracks must remain byte-for-byte unchanged.")
+                for y in 0..<44 {
+                    for x in 0..<124 {
+                        XCTAssertEqual(highlighted.rgb(x: x, y: y), baseline.rgb(x: x, y: y),
+                                       "No visibility boost behind the playhead.")
+                    }
+                    for x in 281..<320 {
+                        XCTAssertEqual(highlighted.rgb(x: x, y: y), baseline.rgb(x: x, y: y),
+                                       "No highlight outside skip ranges.")
+                    }
+                }
+                for x in 124..<132 {
+                    XCTAssertEqual(highlighted.rgb(x: x, y: 22), [255, 255, 255])
+                }
+                for region in [144..<184, 208..<272] {
+                    let increase = region.map {
+                        Int(highlighted.red(x: $0, y: 22)) - Int(baseline.red(x: $0, y: 22))
+                    }
+                    XCTAssertGreaterThan(try XCTUnwrap(increase.max()), 25,
+                                         "The pattern must remain visible in both buffered and unbuffered sections.")
+                    XCTAssertLessThan(try XCTUnwrap(increase.max()), 50, "The boost should remain subtle.")
+                    XCTAssertEqual(increase.min(), 0, "Do not fill the spaces between the diagonals.")
+                }
+                let railY = Int((44 - height) / 2)
+                for x in 48..<272 {
+                    XCTAssertEqual(highlighted.rgb(x: x, y: railY), baseline.rgb(x: x, y: railY))
+                    XCTAssertEqual(highlighted.rgb(x: x, y: 43 - railY), baseline.rgb(x: x, y: 43 - railY))
+                }
+            }
+        }
+    }
+
+    func testHighlightFollowsThePlayheadWithoutShiftingItsPattern() throws {
+        let early = try pixels(track(
+            segments: [marker], played: 0.3, buffered: 0.5,
+            treatment: .halfHatchedCutout, highlightsUnplayed: true
+        ))
+        let earlyBase = try pixels(track(
+            segments: [marker], played: 0.3, buffered: 0.5, treatment: .halfHatchedCutout
+        ))
+        let late = try pixels(track(
+            segments: [marker], played: 0.6, buffered: 0.8,
+            treatment: .halfHatchedCutout, highlightsUnplayed: true
+        ))
+        let lateBase = try pixels(track(
+            segments: [marker], played: 0.6, buffered: 0.8, treatment: .halfHatchedCutout
+        ))
+        for x in 112..<144 {
+            XCTAssertEqual(late.rgb(x: x, y: 22), lateBase.rgb(x: x, y: 22),
+                           "Once playback passes, restore the original played fill exactly.")
+        }
+        XCTAssertTrue((112..<144).contains { early.red(x: $0, y: 22) > earlyBase.red(x: $0, y: 22) })
+        XCTAssertEqual(
+            (208..<272).map { early.red(x: $0, y: 22) > earlyBase.red(x: $0, y: 22) },
+            (208..<272).map { late.red(x: $0, y: 22) > lateBase.red(x: $0, y: 22) },
+            "The stroke phase must not shift as playback or buffering moves."
+        )
+    }
+
+    func testVisibilityBoostLeavesOpenCutoutsAndInvalidTimelinesUntouched() throws {
+        for treatment in [PlayerSkipMarkerTreatment.cutout, .halfCutout] {
+            XCTAssertEqual(
+                try pixels(track(segments: [marker], treatment: treatment)).bytes,
+                try pixels(track(segments: [marker], treatment: treatment, highlightsUnplayed: true)).bytes
+            )
+        }
+        let empty = try pixels(Color.black.frame(width: 320, height: 44))
+        for duration in [0, -10, Double.nan, .infinity] {
+            let highlighted = try pixels(
+                PlayerSkipMarkerUnplayedHighlight(
+                    segments: [marker], duration: duration, height: 20,
+                    treatment: .halfHatchedCutout, progressFraction: 0
+                )
+                .frame(width: 320, height: 44).background(.black)
+            )
+            XCTAssertEqual(highlighted.bytes, empty.bytes)
+        }
+        XCTAssertEqual(PlayerSkipMarkerUnplayedHighlight.opacity, 0.18)
+    }
+
     #if DEBUG && os(tvOS)
     func testNativeComparisonRequiresExplicitOptInAndUsesOnlyLocalExampleState() {
         XCTAssertFalse(PlayerSkipMarkerPreview.isRequested(environment: [:]))
@@ -242,7 +333,8 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
 
     private func track(
         segments: [MediaSegment], height: CGFloat = 20, played: Double = 0.4, buffered: Double = 0.6,
-        background: Color = .black
+        background: Color = .black, treatment: PlayerSkipMarkerTreatment = .cutout,
+        highlightsUnplayed: Bool = false, performance: Bool = false
     ) -> some View {
         ZStack(alignment: .leading) {
             ZStack(alignment: .leading) {
@@ -251,12 +343,21 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
                 Rectangle().fill(.white.opacity(0.62)).frame(width: 320 * played, height: height)
             }
             .mask {
-                PlayerSkipMarkerTrack(segments: segments, duration: 100, height: height)
+                PlayerSkipMarkerTrack(segments: segments, duration: 100, height: height, treatment: treatment)
+            }
+            .overlay {
+                if highlightsUnplayed {
+                    PlayerSkipMarkerUnplayedHighlight(
+                        segments: segments, duration: 100, height: height,
+                        treatment: treatment, progressFraction: played
+                    )
+                }
             }
             Rectangle().fill(.white).frame(width: 8, height: 32).offset(x: 320 * played - 4)
         }
         .frame(width: 320, height: 44)
         .background(background)
+        .environment(\.plozzReducePanelGlass, performance)
     }
 
     private struct Pixels {
