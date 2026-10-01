@@ -119,7 +119,7 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
     }
 
     func testSharedDefaultRendersTheChosenFineHatchAndKeepsGlassBackingSubtle() throws {
-        XCTAssertEqual(PlayerScrubTrackSurface.glassBackingOpacity, 0.05)
+        XCTAssertEqual(PlayerScrubTrackSurface.glassBackingOpacity, 0.10)
         for height in [CGFloat(12), 20] {
             let chosen = try pixels(
                 PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: height)

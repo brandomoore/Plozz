@@ -40,6 +40,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
     }
 
     func testRealGlassAndFlatTracksRevealThePictureThroughTheirCutouts() async throws {
+        XCTAssertEqual(PlayerScrubTrackSurface.glassBackingOpacity, 0.10)
         try await withWindow { window in
             for performance in [false, true] {
                 for focused in [false, true] {

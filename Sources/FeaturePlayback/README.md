@@ -611,7 +611,7 @@ Glass is reduced, shared by TV, touch, and live timelines. This is a flat,
 non-adaptive tint with no blur or refraction. Other performance-mode panels keep
 their existing dark surfaces; timeline-specific lightening does not change the
 global fallback material. Buffered and played fills still layer above the track.
-Liquid Glass has a 5%-white capsule behind the glass itself to keep a nearly
+Liquid Glass has a 10%-white capsule behind the glass itself to keep a nearly
 transparent unbuffered track visible. This backing is part of the track surface
 inside the skip-marker mask, not a background behind its cutouts. The flat
 performance fill remains 22% white.

@@ -325,7 +325,7 @@ struct InfoActionButtonStyle: ButtonStyle {
 public struct PlayerScrubTrackSurface: View {
     public let height: CGFloat
     static let flatFillOpacity = 0.22
-    static let glassBackingOpacity = 0.05
+    static let glassBackingOpacity = 0.10
 
     @Environment(\.plozzReducePanelGlass) private var reducePanelGlass
 
