@@ -646,8 +646,25 @@ unplayed color/alpha. There is no separately colored highlight, dimming, or
 playhead-dependent overlay; only the gaps are cut away. The static mask adds no
 blur, refraction, or timer and keeps its rounded clipping beneath the playhead.
 Menu/Done returns to the normal app. The preview uses isolated local models,
-no video/network/timers, and never saves
-profile preferences. The ordinary player remains on its current 75% open
+and never saves profile preferences. A scenario control cycles through a
+60-minute episode with a 30-second intro, a 24-minute episode with a 90-second
+intro, a three-hour movie with two-minute credits, a 90-minute recording with
+four ad breaks, and a 45-minute episode with an eight-second recap. Marker
+widths always use the exact duration ratio, without a minimum-width enlargement.
+Example playhead/buffer positions do not seek the separate background video.
+
+The real app enters this preview only after the normal profile/Plex identity
+gates. `MarkerPreviewLibrarySource` selects an episode from an enabled library
+on an active source; mapped Plex Home users require their resolved server
+identity. It rechecks profile, credentials, and library visibility across each
+request, releasing stale preparations. The existing Plozzigen engine plays
+the library video muted with display matching suppressed, without normal
+player progress, watched-state, or scrobble reporting. Closing, changing the
+profile, hiding the video, or leaving the foreground stops it and drains its
+owned transport/session. Startup is bounded and failures expose Retry.
+No clip is generated, downloaded to the repository, or uploaded elsewhere.
+Standalone test fixtures use the static picture and make no media requests.
+The ordinary player remains on its current 75% open
 cutout until a treatment is selected for production.
 
 Velocity smoothing uses elapsed touch-event time rather than a fixed weight per

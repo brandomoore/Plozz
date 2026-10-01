@@ -65,6 +65,7 @@ public struct RootView: View {
     @State private var appState: AppState
     @State private var showSyncReceive = false
     @State private var showSyncReceiveFromSettings = false
+    @State private var showsMarkerPreview = false
     /// A just-set-up profile whose PIN is being chosen.
     /// Identifies the server awaiting an identity choice, for `.fullScreenCover(item:)`.
     private struct PendingIdentityAccount: Identifiable { let id: String }
@@ -128,6 +129,9 @@ public struct RootView: View {
         featureIntroductionStore: (any FeatureIntroductionStoring)? = nil
     ) {
         _appState = State(initialValue: appState ?? AppState())
+        #if DEBUG && os(tvOS)
+        _showsMarkerPreview = State(initialValue: PlayerSkipMarkerPreview.isRequested())
+        #endif
         self.featureIntroductionStore =
             featureIntroductionStore ?? FeatureIntroductionStore()
     }
@@ -307,6 +311,13 @@ public struct RootView: View {
         }
     }
 
+    @ViewBuilder
+    private var markerPreview: some View {
+        #if DEBUG && os(tvOS)
+        PlayerMarkerLibraryPreview(appState: appState) { showsMarkerPreview = false }
+        #endif
+    }
+
     public var body: some View {
         let _ = plozzPrintChanges { Self._printChanges() }
         // Read the PIN request HERE so the @Observable system registers it
@@ -363,6 +374,8 @@ public struct RootView: View {
                 if appState.profileFlow.isChoosingProfile {
                     ProfileSelectionView(appState: appState, canCancel: appState.profileFlow.isProfileSelectionCancelable)
                         .transition(.opacity)
+                } else if showsMarkerPreview, appState.isActiveProfileAuthorized {
+                    markerPreview
                 } else {
                     // Rendered even when `homeAccounts` is EMPTY. Switching the
                     // last server off used to skip this whole branch, so the
@@ -397,6 +410,7 @@ public struct RootView: View {
                     let createProfileForSetup: (ProfileDraft) -> Void = { draft in
                         appState.createProfileForSetup(draft, isKids: false)
                     }
+
                     let debugActions = DebugSettingsActions(
                         resetToFirstRun: { appState.resetToFirstRunForDebugging() },
                         eraseICloud: { appState.eraseEverythingFromICloudForDebugging() }

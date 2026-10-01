@@ -270,12 +270,35 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         let first = PlayerSkipMarkerPreview.makeModel()
         let second = PlayerSkipMarkerPreview.makeModel()
         XCTAssertFalse(first === second)
-        XCTAssertEqual(first.duration, 1_440)
-        XCTAssertEqual(first.currentSeconds, 675)
-        XCTAssertEqual(first.bufferedSeconds, 700)
-        XCTAssertEqual(first.skipSegments.segments.map(\.kind), [.recap, .intro, .commercial, .credits])
+        XCTAssertEqual(first.duration, 3_600)
+        XCTAssertEqual(first.currentSeconds, 105)
+        XCTAssertEqual(first.bufferedSeconds, 115)
+        XCTAssertEqual(first.skipSegments.segments.map(\.kind), [.intro, .credits])
         first.currentSeconds = 710
-        XCTAssertEqual(second.currentSeconds, 675)
+        XCTAssertEqual(second.currentSeconds, 105)
+    }
+
+    func testRealisticScenariosUseExactDurationsAndNeverEnlargeShortRanges() {
+        let hour = PlayerSkipMarkerScenario.hourEpisode
+        let movie = PlayerSkipMarkerScenario.longMovie
+        XCTAssertEqual(hour.duration, 3_600)
+        XCTAssertEqual(hour.target.end - hour.target.start, 30)
+        XCTAssertEqual(movie.duration, 10_800)
+        XCTAssertEqual(movie.target.end - movie.target.start, 120)
+        for scenario in PlayerSkipMarkerScenario.allCases {
+            let model = PlayerSkipMarkerPreview.makeModel()
+            scenario.apply(to: model)
+            XCTAssertEqual(model.duration, scenario.duration)
+            XCTAssertEqual(model.skipSegments.segments, scenario.segments)
+            XCTAssertTrue(scenario.target.contains(model.currentSeconds))
+            XCTAssertTrue(scenario.positions.allSatisfy { $0 >= 0 && $0 <= scenario.duration })
+            let actual = SkipMarkerTrackLayout.ranges(segments: [scenario.target], duration: scenario.duration)
+            XCTAssertEqual(actual, [(scenario.target.start / scenario.duration)..<(scenario.target.end / scenario.duration)])
+        }
+        let hourRange = SkipMarkerTrackLayout.ranges(segments: [hour.target], duration: hour.duration)[0]
+        let movieRange = SkipMarkerTrackLayout.ranges(segments: [movie.target], duration: movie.duration)[0]
+        XCTAssertEqual((hourRange.upperBound - hourRange.lowerBound) * 1_600, 13.333333, accuracy: 0.000001)
+        XCTAssertEqual((movieRange.upperBound - movieRange.lowerBound) * 1_600, 17.777778, accuracy: 0.000001)
     }
     #endif
 
