@@ -611,10 +611,15 @@ Glass is reduced, shared by TV, touch, and live timelines. This is a flat,
 non-adaptive tint with no blur or refraction. Other performance-mode panels keep
 their existing dark surfaces; timeline-specific lightening does not change the
 global fallback material. Buffered and played fills still layer above the track.
+Liquid Glass has a 5%-white capsule behind the glass itself to keep a nearly
+transparent unbuffered track visible. This backing is part of the track surface
+inside the skip-marker mask, not a background behind its cutouts. The flat
+performance fill remains 22% white.
 
 The TV and touch seek bars share `PlayerSkipMarkerTrack`: rounded transparent
-slots centered within available skippable ranges, cutting away 75% of the track's
-height. The mask applies to the base, buffered, and played fills together, never
+slots centered within available skippable ranges, with a 50%-height fine-hatch
+pattern as the shared TV/touch default. The mask applies to the base, buffered,
+and played fills together, never
 the white playhead. The thin remaining rails still show each fill's brightness
 when progress or buffering crosses a marker. The slot reveals the picture
 behind the bar rather than painting a black patch. Track end caps remain intact
@@ -666,8 +671,8 @@ profile, hiding the video, or leaving the foreground stops it and drains its
 owned transport/session. Startup is bounded and failures expose Retry.
 No clip is generated, downloaded to the repository, or uploaded elsewhere.
 Standalone test fixtures use the static picture and make no media requests.
-The ordinary player remains on its current 75% open
-cutout until a treatment is selected for production.
+The ordinary player and preview both start on the selected 50% fine hatch;
+the preview's other pattern choices do not alter that saved-in-code default.
 
 Velocity smoothing uses elapsed touch-event time rather than a fixed weight per
 callback, preserving the same response at 24 Hz and 60 Hz without changing

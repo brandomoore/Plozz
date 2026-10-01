@@ -39,29 +39,32 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         XCTAssertTrue(SkipMarkerTrackLayout.ranges(segments: segments, duration: 100).isEmpty)
     }
 
-    func testCutoutIsCenteredAndExactlyThreeQuartersOfTheTrackHeight() throws {
-        XCTAssertEqual(PlayerSkipMarkerTrack.cutoutHeightFraction, 0.75)
-        for height in [CGFloat(12), 20] {
-            let mask = try pixels(
-                PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: height)
-                    .frame(width: 320, height: 44)
-                    .background(.black)
-            )
-            let missingHeight = (0..<44).reduce(0.0) { total, y in
-                let insideTrack = CGFloat(y) >= (44 - height) / 2 && CGFloat(y) < (44 + height) / 2
-                return total + (insideTrack ? 1 - Double(mask.red(x: 80, y: y)) / 255 : 0)
-            }
-            XCTAssertEqual(missingHeight, Double(height * 0.75), accuracy: 0.05)
-            for y in 0..<22 {
-                XCTAssertEqual(mask.red(x: 80, y: y), mask.red(x: 80, y: 43 - y),
-                               "The cutout must leave equal rails above and below.")
+    func testCutoutsAreCenteredAndTheSelectedDefaultIsHalfHeightFineHatch() throws {
+        XCTAssertEqual(PlayerSkipMarkerTrack.cutoutHeightFraction, 0.5)
+        XCTAssertEqual(PlayerSkipMarkerTreatment.default, .halfHatchedCutout)
+        XCTAssertEqual(PlayerSkipMarkerPattern.default, .fineHatch)
+        for treatment in [PlayerSkipMarkerTreatment.cutout, .halfCutout] {
+            for height in [CGFloat(12), 20] {
+                let mask = try pixels(
+                    PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: height, treatment: treatment)
+                        .frame(width: 320, height: 44).background(.black)
+                )
+                let missingHeight = (0..<44).reduce(0.0) { total, y in
+                    let insideTrack = CGFloat(y) >= (44 - height) / 2 && CGFloat(y) < (44 + height) / 2
+                    return total + (insideTrack ? 1 - Double(mask.red(x: 80, y: y)) / 255 : 0)
+                }
+                XCTAssertEqual(missingHeight, Double(height * treatment.heightFraction), accuracy: 0.05)
+                for y in 0..<22 {
+                    XCTAssertEqual(mask.red(x: 80, y: y), mask.red(x: 80, y: 43 - y),
+                                   "The cutout must leave equal rails above and below.")
+                }
             }
         }
     }
 
     func testComparisonTreatmentsKeepTheirSizeAndFaintFillSeparate() throws {
         let open = try pixels(
-            PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: 20)
+            PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: 20, treatment: .cutout)
                 .frame(width: 320, height: 44).background(.black)
         )
         let half = try pixels(
@@ -91,7 +94,7 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         XCTAssertEqual(hatchPixels.max(), 255,
                        "Opaque mask strokes retain the exact bar material, without dimming or recoloring it.")
         XCTAssertEqual(hatched.red(x: 80, y: 12), 255, "The original progress rails are unchanged.")
-        XCTAssertEqual(PlayerSkipMarkerTrack.cutoutHeightFraction, 0.75, "The preview must not change the deployed default.")
+        XCTAssertEqual(PlayerSkipMarkerTrack.cutoutHeightFraction, 0.5)
     }
 
     func testFlatPerformanceTrackUsesLightTranslucencyWithoutChangingProgressLayers() throws {
@@ -115,11 +118,29 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         }
     }
 
+    func testSharedDefaultRendersTheChosenFineHatchAndKeepsGlassBackingSubtle() throws {
+        XCTAssertEqual(PlayerScrubTrackSurface.glassBackingOpacity, 0.05)
+        for height in [CGFloat(12), 20] {
+            let chosen = try pixels(
+                PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: height)
+                    .frame(width: 320, height: 44).background(.black)
+            )
+            let explicit = try pixels(
+                PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: height,
+                                      treatment: .halfHatchedCutout, pattern: .fineHatch)
+                    .frame(width: 320, height: 44).background(.black)
+            )
+            XCTAssertEqual(chosen.bytes, explicit.bytes,
+                           "Both TV and touch bars must pick the same 50% fine hatch without an override.")
+        }
+    }
+
     func testDiagonalsMatchTheUnderlyingPlayedBufferedAndUnplayedFillsExactly() throws {
         for treatment in [PlayerSkipMarkerTreatment.hatchedCutout, .halfHatchedCutout] {
             for height in [CGFloat(12), 20] {
                 let mask = try pixels(
-                    PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: height, treatment: treatment)
+                    PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: height,
+                                          treatment: treatment, pattern: .diagonal)
                         .frame(width: 320, height: 44).background(.black)
                 )
                 for background in [Color.black, .gray, .cyan] {
@@ -158,7 +179,8 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
 
     func testDiagonalColorsFollowProgressWithoutChangingPatternPhase() throws {
         let mask = try pixels(
-            PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: 20, treatment: .halfHatchedCutout)
+            PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: 20,
+                                  treatment: .halfHatchedCutout, pattern: .diagonal)
                 .frame(width: 320, height: 44).background(.black)
         )
         let centers = (112..<144).filter { mask.red(x: $0, y: 22) == 255 }
@@ -366,7 +388,7 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
 
     func testSlotsHaveRoundedEndsAndPreserveTheTimelineEndCaps() throws {
         let mask = try pixels(
-            PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: 20)
+            PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: 20, treatment: .cutout)
                 .frame(width: 320, height: 44)
                 .background(.black)
         )
@@ -374,7 +396,7 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         XCTAssertEqual(mask.red(x: 41, y: 22), 0, "The same x-coordinate is cut through at the center.")
         let full = try pixels(
             PlayerSkipMarkerTrack(segments: [.init(kind: .credits, start: 0, end: 100)],
-                                 duration: 100, height: 20)
+                                 duration: 100, height: 20, treatment: .cutout)
                 .frame(width: 320, height: 44)
                 .background(.black)
         )

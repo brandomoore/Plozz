@@ -12,8 +12,12 @@ final class PlayerSkipMarkerPreviewRemoteTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["marker-preview-flat"].firstMatch.isHittable)
         XCTAssertFalse(app.buttons["marker-preview-size"].exists, "The comparison is fixed at 50%.")
         XCTAssertFalse(app.staticTexts["A  ·  50% open cutout"].exists)
+        let fine = app.buttons["marker-pattern-fineHatch"]
+        XCTAssertEqual(fine.value as? String, "Selected", "The preview starts on the chosen player default.")
+        attach(app, "Default fine hatch - Liquid Glass and flat")
         let diagonal = app.buttons["marker-pattern-diagonal"]
         XCTAssertTrue(isFocused(diagonal))
+        XCUIRemote.shared.press(.select)
         XCTAssertEqual(diagonal.value as? String, "Selected")
         attach(app, "Diagonals - Liquid Glass and flat")
         for pattern in ["denseDots", "mediumHatch", "fineHatch", "mesh"] {

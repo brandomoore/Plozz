@@ -84,6 +84,8 @@ enum PlayerSkipMarkerPattern: String, CaseIterable, Sendable {
     case mediumHatch
     case fineHatch
     case mesh
+
+    static let `default`: Self = .fineHatch
 }
 
 enum PlayerSkipMarkerTreatment: Equatable, Sendable {
@@ -91,6 +93,8 @@ enum PlayerSkipMarkerTreatment: Equatable, Sendable {
     case halfCutout
     case hatchedCutout
     case halfHatchedCutout
+
+    static let `default`: Self = .halfHatchedCutout
 
     var heightFraction: CGFloat {
         switch self {
@@ -107,10 +111,10 @@ struct PlayerSkipMarkerTrack: View, Equatable {
     let segments: [MediaSegment]
     let duration: TimeInterval
     let height: CGFloat
-    var treatment: PlayerSkipMarkerTreatment = .cutout
-    var pattern: PlayerSkipMarkerPattern = .diagonal
+    var treatment: PlayerSkipMarkerTreatment = .default
+    var pattern: PlayerSkipMarkerPattern = .default
 
-    static let cutoutHeightFraction = PlayerSkipMarkerTreatment.cutout.heightFraction
+    static let cutoutHeightFraction = PlayerSkipMarkerTreatment.default.heightFraction
     static let interiorFillOpacity = 0.06
     static let patternFillOpacity = 1.0
 

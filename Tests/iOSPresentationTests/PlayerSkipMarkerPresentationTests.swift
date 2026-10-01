@@ -28,13 +28,26 @@ final class PlayerSkipMarkerPresentationTests: XCTestCase {
             XCTAssertGreaterThan(changed, width / 30)
             XCTAssertEqual(marked.bytes[(22 * width + width / 2) * 4], 255,
                            "The playhead must remain outside the cutout mask.")
-            for x in [width / 3, width * 3 / 5, width * 3 / 4] {
-                let index = (22 * width + x) * 4
-                XCTAssertEqual(Array(marked.bytes[index..<(index + 3)]), [0, 255, 255],
-                               "The cutout must reveal the actual picture through every fill.")
+            for region in [width / 4..<width * 2 / 5, width * 11 / 20..<width * 13 / 20,
+                           width * 18 / 25..<width * 39 / 50] {
+                let unchanged = region.filter {
+                    let index = (22 * width + $0) * 4
+                    return marked.bytes[index] == plain.bytes[index]
+                }
+                let gaps = region.filter {
+                    let index = (22 * width + $0) * 4
+                    return Double(marked.bytes[index]) <= Double(plain.bytes[index]) * 0.08 + 1
+                }
+                XCTAssertGreaterThan(unchanged.count, 1, "Fine-hatch strokes retain the original bar color.")
+                XCTAssertGreaterThan(gaps.count, region.count / 3, "Gaps still reveal the underlying picture.")
+                for x in gaps {
+                    let index = (22 * width + x) * 4
+                    XCTAssertEqual(marked.bytes[index + 1], 255)
+                    XCTAssertEqual(marked.bytes[index + 2], 255)
+                }
             }
             let attachment = XCTAttachment(image: UIImage(cgImage: marked.image))
-            attachment.name = "Touch skip cutouts at \(width)pt"
+            attachment.name = "Default fine-hatch touch markers at \(width)pt"
             attachment.lifetime = .keepAlways
             add(attachment)
         }

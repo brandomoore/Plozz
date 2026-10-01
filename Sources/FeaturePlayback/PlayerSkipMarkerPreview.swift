@@ -8,7 +8,7 @@ public struct PlayerSkipMarkerPreview: View {
     @State private var model = Self.makeModel()
     @State private var scenario = PlayerSkipMarkerScenario.hourEpisode
     @State private var picture = MarkerPreviewPicture.dark
-    @State private var pattern = PlayerSkipMarkerPattern.diagonal
+    @State private var pattern = PlayerSkipMarkerPattern.default
     @State private var positionIndex = 2
     @State private var bufferIndex = 1
     private let onClose: () -> Void

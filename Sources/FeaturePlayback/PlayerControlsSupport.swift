@@ -51,8 +51,8 @@ struct ScrubBar: View {
     /// off-screen).
     var leadingInset: CGFloat = 0
     var trailingInset: CGFloat = 0
-    var markerTreatment: PlayerSkipMarkerTreatment = .cutout
-    var markerPattern: PlayerSkipMarkerPattern = .diagonal
+    var markerTreatment: PlayerSkipMarkerTreatment = .default
+    var markerPattern: PlayerSkipMarkerPattern = .default
 
     /// The track is the widest single piece of glass in the player, so it gives
     /// its up with the panel rather than staying behind as the one refracting
@@ -325,6 +325,7 @@ struct InfoActionButtonStyle: ButtonStyle {
 public struct PlayerScrubTrackSurface: View {
     public let height: CGFloat
     static let flatFillOpacity = 0.22
+    static let glassBackingOpacity = 0.05
 
     @Environment(\.plozzReducePanelGlass) private var reducePanelGlass
 
@@ -338,6 +339,9 @@ public struct PlayerScrubTrackSurface: View {
                 .fill(.clear)
                 .frame(height: height)
                 .glassEffect(.regular, in: Capsule())
+                .background {
+                    Capsule().fill(.white.opacity(Self.glassBackingOpacity))
+                }
         } else {
             Capsule()
                 .fill(.white.opacity(Self.flatFillOpacity))

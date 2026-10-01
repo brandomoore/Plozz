@@ -94,7 +94,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
         let host = UIHostingController(rootView:
             background
                 .overlay {
-                    ScrubBar(model: model, palette: .dark, markerTreatment: treatment)
+                    ScrubBar(model: model, palette: .dark, markerTreatment: treatment, markerPattern: .diagonal)
                         .frame(width: 1280, height: 44)
                 }
                 .ignoresSafeArea()
