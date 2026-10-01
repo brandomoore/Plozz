@@ -72,11 +72,20 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
             PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: 20, treatment: .hatchedCutout)
                 .frame(width: 320, height: 44).background(.black)
         )
+        let halfHatched = try pixels(
+            PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: 20, treatment: .halfHatchedCutout)
+                .frame(width: 320, height: 44).background(.black)
+        )
         XCTAssertEqual(PlayerSkipMarkerTreatment.halfCutout.heightFraction, 0.5)
+        XCTAssertEqual(PlayerSkipMarkerTreatment.halfHatchedCutout.heightFraction, 0.5)
         XCTAssertEqual(PlayerSkipMarkerTreatment.hatchedCutout.heightFraction, 0.75)
         XCTAssertEqual(open.red(x: 80, y: 16), 0)
         XCTAssertEqual(half.red(x: 80, y: 16), 255, "The 50% variation has thicker remaining rails.")
         XCTAssertEqual(half.red(x: 80, y: 22), 0)
+        XCTAssertEqual(halfHatched.red(x: 80, y: 16), 255, "The 50% patterned option keeps the thicker rails.")
+        XCTAssertEqual((64..<112).map { halfHatched.red(x: $0, y: 22) },
+                       (64..<112).map { hatched.red(x: $0, y: 22) },
+                       "Changing slot height must not change the static pattern's opacity or phase.")
         let hatchPixels = (64..<112).map { hatched.red(x: $0, y: 22) }
         XCTAssertGreaterThan(try XCTUnwrap(hatchPixels.min()), 0)
         XCTAssertLessThan(try XCTUnwrap(hatchPixels.max()), 70, "The pattern is faint retained fill, not opaque stripes.")

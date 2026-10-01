@@ -9,7 +9,7 @@ final class PlayerSkipMarkerPreviewRemoteTests: XCTestCase {
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["marker-preview-ready"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["A  ·  50% open cutout"].isHittable)
-        XCTAssertTrue(app.staticTexts["B  ·  75% cutout + faint diagonals"].isHittable)
+        XCTAssertTrue(app.staticTexts["B  ·  50% cutout + faint diagonals"].isHittable)
         let position = app.buttons["marker-preview-position"]
         XCTAssertTrue(position.isHittable)
         XCTAssertTrue(isFocused(position))
@@ -23,6 +23,17 @@ final class PlayerSkipMarkerPreviewRemoteTests: XCTestCase {
         XCTAssertTrue(isFocused(buffer))
         XCUIRemote.shared.press(.select)
         XCTAssertEqual(buffer.value as? String, "11:55")
+
+        let size = app.buttons["marker-preview-size"]
+        XCUIRemote.shared.press(.right)
+        XCTAssertTrue(isFocused(size))
+        XCUIRemote.shared.press(.select)
+        XCTAssertEqual(size.label, "Cutout B: 75%")
+        XCTAssertTrue(app.staticTexts["B  ·  75% cutout + faint diagonals"].isHittable)
+        attach(app, "75 percent patterned cutout comparison")
+        XCUIRemote.shared.press(.select)
+        XCTAssertEqual(size.label, "Cutout B: 50%")
+        XCTAssertTrue(app.staticTexts["B  ·  50% cutout + faint diagonals"].isHittable)
 
         let focus = app.buttons["marker-preview-focus"]
         XCUIRemote.shared.press(.right)

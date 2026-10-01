@@ -7,6 +7,7 @@ import SwiftUI
 public struct PlayerSkipMarkerPreview: View {
     @State private var model = Self.makeModel()
     @State private var brightPicture = false
+    @State private var halfHeightPattern = true
     @State private var positionIndex = 2
     @State private var bufferIndex = 1
     private let onClose: () -> Void
@@ -40,9 +41,11 @@ public struct PlayerSkipMarkerPreview: View {
         VStack(alignment: .leading, spacing: 24) {
             MarkerComparisonHeader()
             MarkerComparisonGroup(treatment: .halfCutout, model: model)
-            MarkerComparisonGroup(treatment: .hatchedCutout, model: model)
+            MarkerComparisonGroup(
+                treatment: halfHeightPattern ? .halfHatchedCutout : .hatchedCutout, model: model
+            )
             MarkerComparisonControls(
-                model: model, brightPicture: $brightPicture,
+                model: model, brightPicture: $brightPicture, halfHeightPattern: $halfHeightPattern,
                 movePosition: advancePosition, moveBuffer: advanceBuffer, onClose: onClose
             )
             Text(verbatim: "The commercial section runs from 10:30 to 12:00. Menu returns to Plozz. No playback preferences are changed.")
@@ -94,7 +97,9 @@ private struct MarkerComparisonGroup: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(verbatim: treatment == .halfCutout
-                 ? "A  ·  50% open cutout" : "B  ·  75% cutout + faint diagonals")
+                 ? "A  ·  50% open cutout"
+                 : treatment == .halfHatchedCutout
+                    ? "B  ·  50% cutout + faint diagonals" : "B  ·  75% cutout + faint diagonals")
                 .font(.system(size: 27, weight: .semibold))
             MarkerComparisonRow(model: model, treatment: treatment, performance: false)
             MarkerComparisonRow(model: model, treatment: treatment, performance: true)
@@ -126,6 +131,7 @@ private struct MarkerComparisonRow: View {
 private struct MarkerComparisonControls: View {
     let model: PlayerControlsModel
     @Binding var brightPicture: Bool
+    @Binding var halfHeightPattern: Bool
     let movePosition: () -> Void
     let moveBuffer: () -> Void
     let onClose: () -> Void
@@ -144,6 +150,12 @@ private struct MarkerComparisonControls: View {
             }
             .accessibilityIdentifier("marker-preview-buffer")
             .accessibilityValue(Text(verbatim: PlayerControls.timeLabel(model.bufferedSeconds)))
+            Button {
+                halfHeightPattern.toggle()
+            } label: {
+                Text(verbatim: halfHeightPattern ? "Cutout B: 50%" : "Cutout B: 75%")
+            }
+            .accessibilityIdentifier("marker-preview-size")
             Button {
                 model.controlBarVisible.toggle()
             } label: {

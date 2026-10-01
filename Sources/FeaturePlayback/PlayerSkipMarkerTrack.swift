@@ -37,8 +37,16 @@ enum PlayerSkipMarkerTreatment: Equatable, Sendable {
     case cutout
     case halfCutout
     case hatchedCutout
+    case halfHatchedCutout
 
-    var heightFraction: CGFloat { self == .halfCutout ? 0.5 : 0.75 }
+    var heightFraction: CGFloat {
+        switch self {
+        case .halfCutout, .halfHatchedCutout: 0.5
+        case .cutout, .hatchedCutout: 0.75
+        }
+    }
+
+    var hasHatch: Bool { self == .hatchedCutout || self == .halfHatchedCutout }
 }
 
 /// An alpha mask that cuts a centered slot through all three progress fills.
@@ -70,7 +78,7 @@ struct PlayerSkipMarkerTrack: View, Equatable {
             var mask = Path(CGRect(origin: .zero, size: size))
             mask.addPath(cutouts)
             context.fill(mask, with: .color(.white), style: FillStyle(eoFill: true))
-            if treatment == .hatchedCutout, !ranges.isEmpty {
+            if treatment.hasHatch, !ranges.isEmpty {
                 context.clip(to: cutouts)
                 context.fill(cutouts, with: .color(.white.opacity(0.06)))
                 var stripes = Path()

@@ -598,10 +598,12 @@ timeline annotation. Live programme progress is not a VOD skip-marker timeline.
 
 Debug tvOS builds can open `PlayerSkipMarkerPreview` with the explicit
 `PLOZZ_SKIP_MARKER_PREVIEW=1` process environment. It compares 50% open cutouts
-with 75% faintly hatched cutouts using the actual `ScrubBar` and both
+with 50% or 75% faintly hatched cutouts using the actual `ScrubBar` and both
 `plozzReducePanelGlass` paths: Liquid Glass and the translucent flat performance
-fill. Remote controls change example playhead/buffer positions, normal/focused
-heights, and picture brightness. Menu/Done returns to the normal app. The
+fill. Remote controls change example playhead/buffer positions, the patterned
+slot's height, normal/focused bar heights, and picture brightness. The patterned
+slot starts at 50%; its button switches to 75% without changing the open comparison.
+Menu/Done returns to the normal app. The
 preview uses isolated local models, no video/network/timers, and never saves
 profile preferences. The ordinary player remains on its current 75% open
 cutout until a treatment is selected for production.
