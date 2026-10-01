@@ -46,6 +46,41 @@ final class ShareEnricherTests: XCTestCase {
         }
     }
 
+    func testAnimeMetadataContextReachesBatchAndOnDemandFilmMatching() async {
+        actor RequestRecorder: ShareMetadataResolving {
+            var requests: [ShareEnrichRequest] = []
+            func resolve(_ request: ShareEnrichRequest) async -> EnrichmentRecord {
+                requests.append(request)
+                return EnrichmentRecord(providerIDs: ["Tmdb": request.itemID])
+            }
+        }
+        for onDemand in [false, true] {
+            for configuredAnime in [false, true] {
+                let store = ShareCatalogStore(accountKey: "anime-context", directory: tempDir())
+                await store.setLibraryAnimeContext(configuredAnime)
+                let films = [
+                    movie("Anime/Movies/Your Name (2016).mkv", "Your Name", 2016),
+                    movie("Movies/Inception (2010).mkv", "Inception", 2010),
+                ]
+                await store.upsert(films, scanID: 1)
+                let resolver = RequestRecorder()
+                let enricher = ShareEnricher(store: store, resolver: resolver)
+                if onDemand {
+                    for film in films {
+                        await enricher.enrichOne(itemID: ShareCatalogID.file(film.relPath))
+                    }
+                } else {
+                    await enricher.enrichPending()
+                }
+                let requests = await resolver.requests
+                XCTAssertEqual(requests.count, 2)
+                XCTAssertTrue(requests.allSatisfy(\.isMovie))
+                XCTAssertEqual(requests.first { $0.title == "Your Name" }?.isAnime, true)
+                XCTAssertEqual(requests.first { $0.title == "Inception" }?.isAnime, configuredAnime)
+            }
+        }
+    }
+
     func testEnrichmentStampsIDsOverviewAndArtOntoItems() async {
         let store = ShareCatalogStore(accountKey: "a", directory: tempDir())
         await store.upsert([movie("Movies/The Matrix (1999).mkv", "The Matrix", 1999)], scanID: 1)

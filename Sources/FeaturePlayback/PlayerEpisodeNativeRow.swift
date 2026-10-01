@@ -113,6 +113,7 @@ struct PlayerEpisodeNativeRow: UIViewRepresentable {
             collection.semanticContentAttribute = environment.layoutDirection == .rightToLeft
                 ? .forceRightToLeft : .forceLeftToRight
             let size = CGSize(width: value.layout.cardWidth, height: value.layout.rowHeight)
+            layout.peekInset = value.layout.episodePeekInset
             if layout.itemSize != size || layout.minimumLineSpacing != value.layout.columnSpacing {
                 layout.itemSize = size
                 layout.minimumLineSpacing = value.layout.columnSpacing
@@ -138,6 +139,7 @@ struct PlayerEpisodeNativeRow: UIViewRepresentable {
                     requestedFocus = IndexPath(item: index, section: 0)
                 }
             }
+            updateFocusEligibility()
             schedulePublication()
         }
 
@@ -147,6 +149,24 @@ struct PlayerEpisodeNativeRow: UIViewRepresentable {
                 item, layout: configuration.layout, environment: environment,
                 spoilerSettings: configuration.spoilerSettings
             )
+            cell.permitsFocusEntry = permitsFocus(id)
+        }
+
+        private func permitsFocus(_ id: NativeEpisodeElement.ID) -> Bool {
+            // A preceding peek is visible but must not win entry over the current episode.
+            guard focusedID == nil else { return true }
+            let entry = requestedFocus.flatMap { dataSource?.itemIdentifier(for: $0) }
+                ?? lastFocusedID ?? configuration?.initialID.map(NativeEpisodeElement.ID.episode)
+            return entry == nil || entry == id
+        }
+
+        private func updateFocusEligibility() {
+            guard let collection else { return }
+            for case let cell as PlayerEpisodeNativeCell in collection.visibleCells {
+                guard let path = collection.indexPath(for: cell),
+                      let id = dataSource?.itemIdentifier(for: path) else { continue }
+                cell.permitsFocusEntry = permitsFocus(id)
+            }
         }
 
         private func apply(_ value: PlayerEpisodeNativeRow) {
@@ -219,14 +239,16 @@ struct PlayerEpisodeNativeRow: UIViewRepresentable {
         }
 
         func collectionView(_ collectionView: UICollectionView, canFocusItemAt indexPath: IndexPath) -> Bool {
-            environment.isEnabled
+            environment.isEnabled && (dataSource?.itemIdentifier(for: indexPath).map(permitsFocus) ?? false)
         }
 
         func collectionView(
             _ collectionView: UICollectionView, shouldUpdateFocusIn context: UICollectionViewFocusUpdateContext
         ) -> Bool {
             (collectionView.collectionViewLayout as? EpisodeCollectionLayout)?.focusTarget = context.nextFocusedIndexPath
-            return context.nextFocusedIndexPath == nil || environment.isEnabled
+            return context.nextFocusedIndexPath.map {
+                self.collectionView(collectionView, canFocusItemAt: $0)
+            } ?? true
         }
 
         func indexPathForPreferredFocusedView(in collectionView: UICollectionView) -> IndexPath? {
@@ -236,6 +258,7 @@ struct PlayerEpisodeNativeRow: UIViewRepresentable {
         func requestFocus(at indexPath: IndexPath) {
             guard let collection, let system = UIFocusSystem.focusSystem(for: collection) else { return }
             requestedFocus = indexPath
+            updateFocusEligibility()
             system.requestFocusUpdate(to: collection)
             system.updateFocusIfNeeded()
             requestedFocus = nil
@@ -247,6 +270,7 @@ struct PlayerEpisodeNativeRow: UIViewRepresentable {
         ) {
             focusedID = context.nextFocusedIndexPath.flatMap { dataSource?.itemIdentifier(for: $0) }
             if let focusedID { lastFocusedID = focusedID }
+            updateFocusEligibility()
             // SwiftUI can echo the collection's previous binding before observing
             // the native cell. That echo is not a new request to move focus back.
             publishingNativeFocus = focusedID != nil
@@ -271,7 +295,7 @@ struct PlayerEpisodeNativeRow: UIViewRepresentable {
                     } ?? 0
                     initialPositionApplied = true
                     collection.layoutIfNeeded()
-                    setLogicalOffset(CGFloat(index) * (configuration.layout.cardWidth + configuration.layout.columnSpacing),
+                    setLogicalOffset(configuration.layout.episodeOffset(for: index),
                                      in: collection)
                     collection.layoutIfNeeded()
                 }
@@ -307,8 +331,9 @@ final class PlayerEpisodeNativeCell: UICollectionViewCell {
     private let caption = NativePosterCaptionLine()
     private var enabled = true
     private var environment = EnvironmentValues()
+    var permitsFocusEntry = true
 
-    override var canBecomeFocused: Bool { element != nil && enabled }
+    override var canBecomeFocused: Bool { element != nil && enabled && permitsFocusEntry }
 
     override var configurationState: UICellConfigurationState {
         var state = super.configurationState
@@ -556,6 +581,7 @@ final class PlayerEpisodeNativeCell: UICollectionViewCell {
 private final class EpisodeCollectionLayout: UICollectionViewFlowLayout {
     var preservedOffset: CGPoint?
     var focusTarget: IndexPath?
+    var peekInset: CGFloat = 0
     override var flipsHorizontallyInOppositeLayoutDirection: Bool { true }
 
     override func targetContentOffset(forProposedContentOffset proposedContentOffset: CGPoint) -> CGPoint {
@@ -577,10 +603,11 @@ private final class EpisodeCollectionLayout: UICollectionViewFlowLayout {
         guard pitch > 0 else { return proposed }
         let maximum = max(0, collectionViewContentSize.width - collectionView.bounds.width)
         // A nearest-slot snap alone can leave the focused card clipped at the trailing edge.
-        let lower = min(maximum, max(0, ceil((frame.maxX - collectionView.bounds.width) / pitch) * pitch))
-        let upper = min(maximum, max(0, floor(frame.minX / pitch) * pitch))
-        let slot = (proposed.x / pitch).rounded() * pitch
-        return CGPoint(x: min(upper, max(lower, slot)), y: proposed.y)
+        let lower = min(maximum, max(0, ceil((frame.maxX - collectionView.bounds.width + peekInset) / pitch) * pitch - peekInset))
+        let upper = min(maximum, max(0, floor((frame.minX + peekInset) / pitch) * pitch - peekInset))
+        let slot = ((proposed.x + peekInset) / pitch).rounded() * pitch - peekInset
+        let target = min(upper, max(lower, slot))
+        return CGPoint(x: target, y: proposed.y)
     }
 }
 #endif

@@ -124,7 +124,7 @@ public final class PlayerViewModel {
     public var showBringUpSpinner: Bool {
         switch phase {
         case .loading: return true
-        case .ready: return awaitingFirstFrame || isRecoveringAfterForeground
+        case .ready: return pendingNextEpisode != nil || awaitingFirstFrame || isRecoveringAfterForeground
         case .failed: return false
         }
     }
@@ -842,6 +842,7 @@ public final class PlayerViewModel {
         PlaybackTrace.note("handlePlaybackEnded curr=\(String(format: "%.2f", engine.currentTime)) furthest=\(String(format: "%.2f", engine.furthestObservedPosition)) dur=\(String(format: "%.2f", engine.duration)) hasNext=\(nextEpisode != nil) autoPlay=\(playbackSettings.autoPlayNextEpisode) isSeeking=\(controls.isSeeking) isScrubbing=\(controls.isScrubbing) intendsPlayback=\(intendsPlayback)")
         didReachNaturalEnd = true
         nowPlaying?.end()
+        guard pendingNextEpisode == nil else { return }
         if let playlistContext {
             guard playbackSettings.autoPlayNextPlaylistItem,
                   playlistContext.currentIndex + 1 < playlistContext.totalCount else {
@@ -882,6 +883,7 @@ public final class PlayerViewModel {
     /// ``PlayerPresentation`` observes ``pendingNextEpisode`` and handles the
     /// actual VM swap so the full-screen cover stays up.
     public func playEpisode(_ episode: MediaItem) {
+        guard !didStop, pendingNextEpisode == nil else { return }
         pendingNextEpisode = episode
     }
 
@@ -923,6 +925,26 @@ public final class PlayerViewModel {
     /// Public: the ``PlayerPresentation`` advance path (AppShell) drives it.
     public func consumePrefetchedNext(matching itemID: String) -> PrefetchedPlayback? {
         nextEpisodeCoordinator.consumePrefetchedNext(matching: itemID)
+    }
+
+    /// Keeps the current display criteria alive while preparing any episode,
+    /// not just the eagerly prefetched next one. The caller owns the returned
+    /// session until an incoming player adopts it or `discardEpisodeHandoff` runs.
+    public func prepareEpisodeHandoff(to episode: MediaItem) async -> PrefetchedPlayback? {
+        guard !didStop, !Task.isCancelled else { return nil }
+        let prepared = await nextEpisodeCoordinator.prepareHandoff(to: episode)
+        guard !didStop, !Task.isCancelled else {
+            if let prepared { await nextEpisodeCoordinator.releaseSession(prepared.request) }
+            return nil
+        }
+        return prepared
+    }
+
+    /// A dismissed presentation must release its unadopted server session and
+    /// clear any display criteria intentionally retained by the outgoing stop.
+    public func discardEpisodeHandoff(_ prepared: PrefetchedPlayback?) async {
+        if didStop { engine.stop() }
+        if let prepared { await nextEpisodeCoordinator.releaseSession(prepared.request) }
     }
 
     /// Whether the panel's HDR/Dolby-Vision mode should be kept across this
@@ -1253,7 +1275,7 @@ public final class PlayerViewModel {
                 for: itemID, mediaSourceID: mediaSourceID, forceTranscode: forceTranscode)
         }
         if Task.isCancelled {
-            await releaseStreamingSession(request)
+            await nextEpisodeCoordinator.releaseSession(request)
             throw CancellationError()
         }
         // Offline choke point: if a completed download exists for this item,
@@ -2107,6 +2129,7 @@ public final class PlayerViewModel {
         // shows happening on iOS.
         PlaybackTrace.note("stop() teardown curr=\(String(format: "%.2f", engine.currentTime)) shouldDismiss=\(shouldDismiss) pendingNext=\(pendingNextEpisode != nil) isSeeking=\(controls.isSeeking)")
         didStop = true
+        episodeBrowser?.stop()
         playlistAdvanceTask?.cancel()
         playlistAdvanceTask = nil
         streamingLoadGeneration += 1
@@ -2475,7 +2498,8 @@ extension PlayerViewModel: NextEpisodeCoordinatorHost {
     func upNextResolveAndRoute(
         itemID: String, mediaSourceID: String?, forceTranscode: Bool
     ) async throws -> PrefetchedPlayback {
-        try await resolveAndRoute(
+        guard !didStop else { throw CancellationError() }
+        return try await resolveAndRoute(
             itemID: itemID, mediaSourceID: mediaSourceID, forceTranscode: forceTranscode)
     }
 }

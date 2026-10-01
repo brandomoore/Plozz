@@ -13,6 +13,8 @@ public struct MediaShareLibraryConfiguration: Codable, Hashable, Sendable {
         case movies
         /// Index files with episode evidence as television episodes.
         case tvShows
+        /// Infer anime films and episodes, using anime parsing and metadata context.
+        case anime
         /// Keep files browsable and playable without external movie/show matching.
         case personalVideos
     }
@@ -20,8 +22,12 @@ public struct MediaShareLibraryConfiguration: Codable, Hashable, Sendable {
     /// User-visible name for the selected library root.
     public var name: String
     public var contentType: ContentType
-    /// Anime is an independent metadata context, not a movie-vs-episode choice.
+    /// Retained for saved configurations from the former independent Anime toggle.
     public var isAnime: Bool
+
+    public var usesAnimeMetadata: Bool {
+        contentType == .anime || isAnime
+    }
 
     public init(
         name: String,

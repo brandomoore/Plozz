@@ -309,6 +309,9 @@ struct LiveChannelOverlay: View {
                     .allowsHitTesting(!cardOpen)
                 tabRow
             }
+            .reportSubtitleControlsFrame(
+                in: tracks.subtitles.controlsLayout, region: .transport, isVisible: !cardOpen && !styleEditing
+            )
             card
                 .reportSubtitleControlsFrame(
                     in: tracks.subtitles.controlsLayout, region: .card, isVisible: cardOpen && !styleEditing

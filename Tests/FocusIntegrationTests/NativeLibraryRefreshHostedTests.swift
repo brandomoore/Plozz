@@ -387,6 +387,70 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         XCTAssertNotNil(model.item(at: 100))
     }
 
+    func testCatalogRefreshReloadsPreviouslyLoadedOffscreenPageInLargeLibrary() async {
+        let provider = RefreshLibraryProvider()
+        await provider.change(total: 2_178, prefix: "Before")
+        let model = LibraryBrowseViewModel(provider: provider, containerID: "library", containerKind: .movie)
+        await model.loadFirstPage()
+        let generation = model.contentGeneration
+        await model.itemAppeared(at: 1_750, generation: generation)
+        let slot = model.slot(at: 1_750)
+        XCTAssertEqual(slot?.item?.id, "Before-1750")
+        model.itemDisappeared(at: 1_750, generation: generation)
+
+        await provider.change(total: 2_178, prefix: "After")
+        await model.refreshAfterCatalogChange()
+
+        XCTAssertEqual(model.totalCount, 2_178)
+        XCTAssertEqual(model.contentGeneration, generation)
+        XCTAssertTrue(model.slot(at: 1_750) === slot)
+        XCTAssertNil(slot?.item, "An off-screen page is invalidated, not treated as already loaded.")
+        await model.itemAppeared(at: 1_750, generation: generation)
+        XCTAssertEqual(slot?.item?.id, "After-1750", "Returning must refill the existing slot without reopening the grid.")
+        XCTAssertEqual(model.item(at: 1_791)?.id, "After-1791", "The entire 42-item page must reload.")
+        XCTAssertNil(model.pageError)
+    }
+
+    func testLargeNativeGridRefillsOffscreenPageAfterMidScanRefresh() async throws {
+        let provider = RefreshLibraryProvider()
+        await provider.change(total: 2_178, prefix: "Before")
+        let model = LibraryBrowseViewModel(provider: provider, containerID: "library", containerKind: .movie)
+        await model.loadFirstPage()
+        var selected: MediaItem?
+        try await withGrid(model: model, onSelect: { selected = $0 }) { collection in
+            let path = IndexPath(item: 1_750, section: 0)
+            collection.scrollToItem(at: path, at: .centeredVertically, animated: false)
+            collection.layoutIfNeeded()
+            _ = try await waitForGridItem("Before-1750", at: path, in: collection)
+            let slot = model.slot(at: path.item)
+            let generation = model.contentGeneration
+
+            collection.scrollToItem(at: IndexPath(item: 0, section: 0), at: .top, animated: false)
+            collection.layoutIfNeeded()
+            _ = try await waitForGridItem("Before-0", at: IndexPath(item: 0, section: 0), in: collection)
+            XCTAssertNil(collection.cellForItem(at: path), "The regression requires a previously loaded off-screen page.")
+            await provider.change(total: 2_178, prefix: "After")
+            await model.refreshAfterCatalogChange()
+            XCTAssertTrue(model.slot(at: path.item) === slot)
+            XCTAssertNil(slot?.item)
+            XCTAssertEqual(model.contentGeneration, generation)
+
+            await provider.holdNextPage(at: 1_750)
+            defer { Task { await provider.releasePage() } }
+            collection.scrollToItem(at: path, at: .centeredVertically, animated: false)
+            collection.layoutIfNeeded()
+            await waitForHeldPage(provider)
+            let loading = try XCTUnwrap(collection.cellForItem(at: path) as? NativeTVLibraryCell)
+            XCTAssertNil(loading.item)
+            await provider.releasePage()
+            let loaded = try await waitForGridItem("After-1750", at: path, in: collection)
+            XCTAssertTrue(loaded === loading, "The on-screen placeholder must update without recycling or reopening.")
+            XCTAssertEqual(slot?.item?.id, "After-1750")
+            collection.delegate?.collectionView?(collection, didSelectItemAt: path)
+            XCTAssertEqual(selected?.id, "After-1750")
+        }
+    }
+
     func testRefreshIncludesViewportThatMovedWhileFirstPageWasPending() async throws {
         let provider = RefreshLibraryProvider()
         let model = LibraryBrowseViewModel(
@@ -517,6 +581,20 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(10))
         }
         XCTFail("Expected the fixture page request to reach its gate.")
+    }
+
+    private func waitForGridItem(
+        _ id: String, at path: IndexPath, in collection: UICollectionView
+    ) async throws -> NativeTVLibraryCell {
+        for _ in 0..<200 {
+            if let cell = collection.cellForItem(at: path) as? NativeTVLibraryCell, cell.item?.id == id {
+                return cell
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let cell = try XCTUnwrap(collection.cellForItem(at: path) as? NativeTVLibraryCell)
+        XCTAssertEqual(cell.item?.id, id, "The displayed page did not finish loading.")
+        return cell
     }
 
     private func find<T: UIView>(_ type: T.Type, in view: UIView) -> T? {

@@ -120,6 +120,44 @@ final class SyncSetupTests: XCTestCase {
         XCTAssertFalse(base.semanticallyEqualForSync(to: changed))
     }
 
+    func testAnimeContentChoiceRoundTripsWithoutLegacyToggle() throws {
+        XCTAssertEqual(
+            MediaShareLibraryConfiguration.ContentType.allCases,
+            [.automatic, .movies, .tvShows, .anime, .personalVideos]
+        )
+        let configuration = MediaShareLibraryConfiguration(name: "Anime", contentType: .anime)
+        let server = MediaServer(
+            id: "share:anime", name: "Anime", baseURL: url("webdav+https://nas/media"),
+            provider: .mediaShare, mediaShareLibraryConfiguration: configuration
+        )
+        let descriptor = SyncedAccountDescriptor(account: Account(
+            id: server.id, server: server, userID: "guest", userName: "", deviceID: "device"
+        ))
+        let decoded = try JSONDecoder().decode(
+            SyncedAccountDescriptor.self, from: JSONEncoder().encode(descriptor)
+        )
+        XCTAssertEqual(decoded.mediaShareLibraryConfiguration, configuration)
+        XCTAssertTrue(configuration.usesAnimeMetadata)
+        XCTAssertFalse(configuration.isAnime, "New choices do not depend on the legacy toggle.")
+    }
+
+    func testLegacyAnimeToggleConfigurationsKeepTheirOriginalClassification() throws {
+        for type in ["automatic", "movies", "tvShows"] {
+            let json = """
+            {"name":"Existing anime library","contentType":"\(type)","isAnime":true}
+            """
+            let configuration = try JSONDecoder().decode(
+                MediaShareLibraryConfiguration.self, from: Data(json.utf8)
+            )
+            XCTAssertEqual(configuration.contentType.rawValue, type)
+            XCTAssertTrue(configuration.usesAnimeMetadata)
+            XCTAssertEqual(
+                try JSONDecoder().decode(MediaShareLibraryConfiguration.self, from: JSONEncoder().encode(configuration)),
+                configuration
+            )
+        }
+    }
+
     // MARK: Deterministic account ids (holistic cross-device duplicate prevention)
 
     func testStableIDIsDeterministicForTokenProviders() {

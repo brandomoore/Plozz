@@ -712,6 +712,9 @@ private struct PlozziOSPlayerTransport: View {
             // button style until UIKit re-applied its own styling: the flash on
             // open. Each glyph now carries its own styling instead.
         }
+        .reportSubtitleControlsFrame(
+            in: viewModel.controls.subtitleLayout, region: .transport, isVisible: !isCardOpen
+        )
         .padding(.horizontal, 24)
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)

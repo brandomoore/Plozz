@@ -38,10 +38,8 @@ final class PlayerViewModelEOFTests: XCTestCase {
                 episodes.rowHeight + episodes.containerVerticalInset * 2,
                 metrics.cardHeight
             )
-            XCTAssertEqual(
-                episodes.columnSpacing,
-                metrics.columnSpacing + metrics.contentPadding / 2
-            )
+            XCTAssertEqual(episodes.columnSpacing, metrics.columnSpacing)
+            XCTAssertEqual(layout.columnSpacing, metrics.columnSpacing)
             XCTAssertGreaterThan(episodes.imageHeight, metrics.castHeadshot * 0.85)
             #if canImport(UIKit)
             XCTAssertEqual(
@@ -50,6 +48,12 @@ final class PlayerViewModelEOFTests: XCTestCase {
             )
             #endif
             XCTAssertEqual(episodes.bottomInset, episodes.cardMetrics.cardInset)
+            XCTAssertEqual(episodes.previousArtworkPeek, 24)
+            XCTAssertEqual(episodes.episodeOffset(for: 0), 0)
+            XCTAssertEqual(
+                episodes.cardWidth - episodes.cardMetrics.cardInset - episodes.episodeOffset(for: 1),
+                24, accuracy: 0.01
+            )
             XCTAssertEqual(
                 episodes.imageHeight + episodes.titleHeight + episodes.cardMetrics.landscapeCaptionTopSpacing
                     + episodes.cardMetrics.cardInset + episodes.bottomInset,
@@ -74,6 +78,8 @@ final class PlayerViewModelEOFTests: XCTestCase {
         )
         XCTAssertGreaterThan(tvEpisodes.imageHeight, 205)
         XCTAssertGreaterThan(tvEpisodes.imageWidth, 365)
+        XCTAssertEqual(tvEpisodes.columnSpacing, 28)
+        XCTAssertEqual(tvEpisodes.columnSpacing + tvEpisodes.cardMetrics.cardInset * 2, 52)
     }
 
     func testMobileWakeIntentCoversStartupAndBufferingButRespectsPause() async {
@@ -393,7 +399,7 @@ final class PlayerViewModelEOFTests: XCTestCase {
         for error: any Error in [CancellationError(), AppError.cancelled, URLError(.cancelled)] {
             await provider.setItemError(error)
             await browser.loadIfNeeded()
-            XCTAssertNil(browser.loadError)
+            XCTAssertEqual(browser.loadError, .cancelled, "Provider cancellation on an active panel must offer Retry.")
             XCTAssertFalse(browser.isLoading)
             XCTAssertFalse(browser.hasLoaded)
         }
@@ -427,6 +433,127 @@ final class PlayerViewModelEOFTests: XCTestCase {
         XCTAssertEqual(browser.episodes.first?.item.sourceAccountID, "account")
         let requests = await provider.childRequests
         XCTAssertEqual(requests, 1)
+    }
+
+    func testReopenedEpisodePanelCompletesAfterItsCancelledLoadDrains() async throws {
+        let playing = MediaItem(
+            id: "playing", title: "Playing", kind: .episode, seriesID: "series"
+        )
+        let provider = RecordingPlaybackProvider(
+            request: PlaybackRequest(
+                item: playing, streamURL: URL(string: "https://example.test/episode.m3u8")!
+            ),
+            childrenByParent: ["series": [playing]]
+        )
+        let browser = PlayerEpisodeBrowser(item: playing, provider: provider)
+        let gate = PreCommitYieldGate()
+        await provider.setChildGate(gate, for: "series")
+        let firstOpening = Task { await browser.loadIfNeeded() }
+        await waitForGate(gate, entries: 1)
+        firstOpening.cancel()
+        var reopenedFinished = false
+        let reopened = Task {
+            await browser.loadIfNeeded()
+            reopenedFinished = true
+        }
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertFalse(reopenedFinished, "The reopened panel must await or replace the old request, not skip loading.")
+        await provider.setChildGate(nil, for: "series")
+        gate.releaseNext()
+        await firstOpening.value
+        await reopened.value
+        XCTAssertTrue(browser.hasLoaded)
+        XCTAssertFalse(browser.isLoading)
+        XCTAssertNil(browser.loadError)
+        XCTAssertEqual(browser.episodes.map(\.item.id), [playing.id])
+        let requests = await provider.requestedChildIDs()
+        XCTAssertEqual(requests, ["series", "series"], "Only the cancelled request is retried.")
+    }
+
+    func testConcurrentEpisodeOpeningsJoinTheSameUncancelledLoad() async {
+        let playing = MediaItem(id: "playing", title: "Playing", kind: .episode, seriesID: "series")
+        let provider = RecordingPlaybackProvider(
+            request: PlaybackRequest(item: playing, streamURL: URL(string: "https://example.test/episode.m3u8")!),
+            childrenByParent: ["series": [playing]]
+        )
+        let browser = PlayerEpisodeBrowser(item: playing, provider: provider)
+        let gate = PreCommitYieldGate()
+        await provider.setChildGate(gate, for: "series")
+        let first = Task { await browser.loadIfNeeded() }
+        await waitForGate(gate, entries: 1)
+        let second = Task { await browser.loadIfNeeded() }
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(gate.entryCount, 1)
+        gate.releaseNext()
+        await first.value
+        await second.value
+        XCTAssertTrue(browser.hasLoaded)
+        let requests = await provider.requestedChildIDs()
+        XCTAssertEqual(requests, ["series"])
+    }
+
+    func testStoppingPlayerCancelsEpisodeLoadAndPreventsLatePublication() async throws {
+        let playing = MediaItem(id: "playing", title: "Playing", kind: .episode, seriesID: "series")
+        let provider = RecordingPlaybackProvider(
+            request: PlaybackRequest(item: playing, streamURL: URL(string: "https://example.test/episode.m3u8")!),
+            childrenByParent: ["series": [playing]]
+        )
+        let player = PlayerViewModel(provider: provider, itemID: playing.id, episodeItem: playing)
+        let browser = try XCTUnwrap(player.episodeBrowser)
+        let gate = PreCommitYieldGate()
+        await provider.setChildGate(gate, for: "series")
+        let opening = Task { await browser.loadIfNeeded() }
+        await waitForGate(gate, entries: 1)
+        await player.stop()
+        gate.releaseNext()
+        await opening.value
+        await browser.loadIfNeeded()
+        XCTAssertFalse(browser.hasLoaded)
+        XCTAssertFalse(browser.isLoading)
+        XCTAssertNil(browser.loadError)
+        XCTAssertTrue(browser.episodes.isEmpty)
+        let requests = await provider.requestedChildIDs()
+        XCTAssertEqual(requests, ["series"])
+    }
+
+    func testReopenedEpisodeEdgesResumeCancelledLoadsWithoutAnotherScroll() async {
+        let playing = MediaItem(
+            id: "middle", title: "Playing", kind: .episode, seriesID: "series", seasonID: "season-2"
+        )
+        let seasons = (1...3).map { MediaItem(id: "season-\($0)", title: "Season", kind: .season) }
+        let provider = RecordingPlaybackProvider(
+            request: PlaybackRequest(item: playing, streamURL: URL(string: "https://example.test/episode.m3u8")!),
+            childrenByParent: [
+                "series": seasons, "season-1": [MediaItem(id: "earlier", title: "Earlier", kind: .episode)],
+                "season-2": [playing], "season-3": [MediaItem(id: "later", title: "Later", kind: .episode)]
+            ]
+        )
+        let browser = PlayerEpisodeBrowser(item: playing, provider: provider)
+        await browser.loadIfNeeded()
+        let previous = PreCommitYieldGate()
+        let next = PreCommitYieldGate()
+        await provider.setChildGate(previous, for: "season-1")
+        await provider.setChildGate(next, for: "season-3")
+        let oldPrevious = Task { await browser.loadPrevious() }
+        let oldNext = Task { await browser.loadNext() }
+        await waitForGate(previous, entries: 1)
+        await waitForGate(next, entries: 1)
+        oldPrevious.cancel()
+        oldNext.cancel()
+        let newPrevious = Task { await browser.loadPrevious() }
+        let newNext = Task { await browser.loadNext() }
+        for _ in 0..<20 { await Task.yield() }
+        await provider.setChildGate(nil, for: "season-1")
+        await provider.setChildGate(nil, for: "season-3")
+        previous.releaseNext()
+        next.releaseNext()
+        await oldPrevious.value
+        await oldNext.value
+        await newPrevious.value
+        await newNext.value
+        XCTAssertEqual(browser.episodes.map(\.item.id), ["earlier", "middle", "later"])
+        XCTAssertNil(browser.previousLoadError)
+        XCTAssertNil(browser.nextLoadError)
     }
 
     func testOneSeasonBrowserShowsEpisodesWithoutLoadingOtherSeasons() async {
@@ -582,7 +709,7 @@ final class PlayerViewModelEOFTests: XCTestCase {
         )
     }
 
-    func testEpisodeCancellationNeverBecomesAnErrorOrBlocksLaterLoading() async {
+    func testProviderCancellationOnAnActiveEpisodePanelOffersRetry() async {
         let seasons = (1...3).map {
             MediaItem(id: "season-\($0)", title: "Season", kind: .season)
         }
@@ -609,7 +736,7 @@ final class PlayerViewModelEOFTests: XCTestCase {
             XCTAssertFalse(browser.hasLoaded)
             await provider.setChildError(cancellation, for: "series")
             await browser.loadIfNeeded()
-            XCTAssertNil(browser.loadError)
+            XCTAssertEqual(browser.loadError, .cancelled)
             XCTAssertFalse(browser.isLoading)
             XCTAssertFalse(browser.hasLoaded)
             await provider.setChildError(nil, for: "series")
@@ -621,8 +748,8 @@ final class PlayerViewModelEOFTests: XCTestCase {
             await provider.setChildError(cancellation, for: seasons[2].id)
             await browser.loadPrevious()
             await browser.loadNext()
-            XCTAssertNil(browser.previousLoadError)
-            XCTAssertNil(browser.nextLoadError)
+            XCTAssertEqual(browser.previousLoadError, .cancelled)
+            XCTAssertEqual(browser.nextLoadError, .cancelled)
             XCTAssertFalse(browser.isLoadingPrevious)
             XCTAssertFalse(browser.isLoadingNext)
             XCTAssertEqual(browser.previousSeasonIndex, 0)
@@ -631,8 +758,8 @@ final class PlayerViewModelEOFTests: XCTestCase {
 
             await provider.setChildError(nil, for: seasons[0].id)
             await provider.setChildError(nil, for: seasons[2].id)
-            await browser.loadPrevious()
-            await browser.loadNext()
+            await browser.retryPrevious()
+            await browser.retryNext()
             XCTAssertEqual(browser.episodes.map(\.item.id), ["earlier", "middle", "later"])
         }
     }
@@ -1498,6 +1625,145 @@ final class PlayerViewModelEOFTests: XCTestCase {
         await viewModel.stop()
     }
 
+    func testPreviousEpisodeHandoffKeepsHDRUntilSelectedEpisodeIsProbed() async throws {
+        let current = try makeNetworkFileRequest(itemID: "episode-2", kind: .episode)
+        let previous = try makeNetworkFileRequest(itemID: "episode-1", kind: .episode)
+        let provider = RecordingPlaybackProvider(
+            request: current, kind: .mediaShare, requestsByItemID: ["episode-1": previous]
+        )
+        let engine = SpyVideoEngine()
+        let gate = RangeProbeGate(result: .dolbyVision)
+        let viewModel = PlayerViewModel(
+            provider: provider, itemID: current.item.id,
+            engineFactory: EngineFactory(
+                makeNative: { _ in SpyVideoEngine() },
+                makePlozzigen: { engine },
+                probeSourceDynamicRange: { await gate.probe($0) }
+            ),
+            neighborResolver: { (previous.item, nil) }
+        )
+        await viewModel.load()
+        engine.onProbedSourceFactsChanged?(EngineProbedSourceFacts(range: .dolbyVision))
+        viewModel.playEpisode(previous.item)
+        XCTAssertTrue(viewModel.showBringUpSpinner)
+        let handoff = Task { await viewModel.prepareEpisodeHandoff(to: previous.item) }
+        await gate.waitUntilEntered()
+        XCTAssertEqual(engine.stopCount, 0)
+        engine.onEnded?()
+        viewModel.playEpisode(MediaItem(id: "ignored", title: "Ignored", kind: .episode))
+        XCTAssertEqual(viewModel.pendingNextEpisode?.id, previous.item.id,
+                       "EOF and repeated input cannot replace the user's in-flight selection.")
+        await gate.release()
+        let resolved = await handoff.value
+        let prepared = try XCTUnwrap(resolved)
+        let preserve = viewModel.shouldPreserveDisplayMode(forNext: prepared)
+        XCTAssertTrue(preserve)
+        await viewModel.stop(preserveDisplayMode: preserve)
+        XCTAssertEqual(engine.preservedDisplayStops, [true])
+
+        let incomingEngine = SpyVideoEngine()
+        let incoming = PlayerViewModel(
+            provider: provider, itemID: previous.item.id,
+            engineFactory: EngineFactory(
+                makeNative: { _ in SpyVideoEngine() }, makePlozzigen: { incomingEngine }
+            ),
+            adoptedResolved: prepared.inheritingPreservedDisplayMode(preserve)
+        )
+        await incoming.load()
+        let resolutions = await provider.playbackInfoCallCountValue()
+        XCTAssertEqual(resolutions, 2, "Current and selected episodes each resolve only once.")
+        XCTAssertEqual(incoming.inheritedPreservedDynamicRange, .dolbyVision)
+        await incoming.stop()
+    }
+
+    func testDismissalWhilePreparingEpisodeReleasesSessionWithoutPublishing() async throws {
+        let current = try makeNetworkFileRequest(itemID: "current", kind: .episode)
+        let previous = try makeNetworkFileRequest(
+            itemID: "previous", kind: .episode, playSessionID: "prepared-session"
+        )
+        let provider = RecordingPlaybackProvider(
+            request: current, requestsByItemID: ["previous": previous]
+        )
+        let engine = SpyVideoEngine()
+        let gate = RangeProbeGate(result: .dolbyVision)
+        let viewModel = PlayerViewModel(
+            provider: provider, itemID: current.item.id,
+            engineFactory: EngineFactory(
+                makeNative: { _ in SpyVideoEngine() }, makePlozzigen: { engine },
+                probeSourceDynamicRange: { await gate.probe($0) }
+            )
+        )
+        await viewModel.load()
+        engine.onProbedSourceFactsChanged?(EngineProbedSourceFacts(range: .dolbyVision))
+        let handoff = Task { await viewModel.prepareEpisodeHandoff(to: previous.item) }
+        await gate.waitUntilEntered()
+        await viewModel.stop()
+        await gate.release()
+        let prepared = await handoff.value
+        XCTAssertNil(prepared)
+        let reports = await provider.reports
+        XCTAssertEqual(reports.filter { $0.progress.playSessionID == "prepared-session" && $0.event == .stop }.count, 1)
+        XCTAssertEqual(engine.preservedDisplayStops, [false])
+    }
+
+    func testAbandonedPreparedHandoffClearsRetainedDisplayAndSession() async throws {
+        let current = try makeNetworkFileRequest(itemID: "current", kind: .episode)
+        let previous = try makeNetworkFileRequest(
+            itemID: "previous", kind: .episode, playSessionID: "prepared-session"
+        )
+        let provider = RecordingPlaybackProvider(
+            request: current, requestsByItemID: ["previous": previous]
+        )
+        let engine = SpyVideoEngine()
+        let viewModel = PlayerViewModel(
+            provider: provider, itemID: current.item.id,
+            engineFactory: EngineFactory(
+                makeNative: { _ in SpyVideoEngine() }, makePlozzigen: { engine },
+                probeSourceDynamicRange: { _ in .dolbyVision }
+            )
+        )
+        await viewModel.load()
+        engine.onProbedSourceFactsChanged?(EngineProbedSourceFacts(range: .dolbyVision))
+        let prepared = await viewModel.prepareEpisodeHandoff(to: previous.item)
+        XCTAssertNotNil(prepared)
+        await viewModel.stop(preserveDisplayMode: true)
+        await viewModel.discardEpisodeHandoff(prepared)
+        XCTAssertEqual(engine.preservedDisplayStops, [true, false])
+        let reports = await provider.reports
+        XCTAssertEqual(reports.filter { $0.progress.playSessionID == "prepared-session" && $0.event == .stop }.count, 1)
+    }
+
+    func testCancellationDuringEpisodeResolutionReleasesLegacyProviderSession() async throws {
+        let current = try makeNetworkFileRequest(itemID: "current", kind: .episode)
+        let previous = try makeNetworkFileRequest(
+            itemID: "previous", kind: .episode, playSessionID: "prepared-session"
+        )
+        let provider = RecordingPlaybackProvider(
+            request: current, requestsByItemID: ["previous": previous]
+        )
+        let engine = SpyVideoEngine()
+        let viewModel = PlayerViewModel(
+            provider: provider, itemID: current.item.id,
+            engineFactory: EngineFactory(
+                makeNative: { _ in SpyVideoEngine() }, makePlozzigen: { engine }
+            )
+        )
+        await viewModel.load()
+        engine.onProbedSourceFactsChanged?(EngineProbedSourceFacts(range: .dolbyVision))
+        let gate = PreCommitYieldGate()
+        await provider.setPlaybackInfoGate(gate)
+        let handoff = Task { await viewModel.prepareEpisodeHandoff(to: previous.item) }
+        await waitForGate(gate, entries: 1)
+        handoff.cancel()
+        gate.releaseNext()
+        let prepared = await handoff.value
+        XCTAssertNil(prepared)
+        let reports = await provider.reports
+        XCTAssertEqual(reports.filter { $0.progress.playSessionID == "prepared-session" && $0.event == .stop }.count, 1)
+        XCTAssertEqual(engine.stopCount, 0)
+        await viewModel.stop()
+    }
+
     func testCancelledDirectFilePrefetchProbeCannotPublishRange() async throws {
         let current = try makeNetworkFileRequest(
             itemID: "current",
@@ -1865,6 +2131,7 @@ private actor RecordingPlaybackProvider: MediaProvider {
     private let childrenByParent: [String: [MediaItem]]
     private var childErrors: [String: any Error] = [:]
     private var itemError: (any Error)?
+    private var playbackInfoGate: PreCommitYieldGate?
     private var childGates: [String: PreCommitYieldGate] = [:]
     private var childIDs: [String] = []
     private var playlistMemberError: AppError?
@@ -1931,9 +2198,11 @@ private actor RecordingPlaybackProvider: MediaProvider {
     }
     func playbackInfo(for itemID: String, mediaSourceID: String?, forceTranscode: Bool) async throws -> PlaybackRequest {
         playbackInfoCallCount += 1
+        await playbackInfoGate?.suspend()
         return requestsByItemID[itemID] ?? request
     }
 
+    func setPlaybackInfoGate(_ gate: PreCommitYieldGate) { playbackInfoGate = gate }
     func itemCallCountValue() -> Int { itemCallCount }
     func playbackInfoCallCountValue() -> Int { playbackInfoCallCount }
     func hasReport(itemID: String, event: PlaybackEvent) -> Bool {
@@ -2046,6 +2315,7 @@ private final class SpyVideoEngine: VideoEngine {
     var onSecondarySubtitleCues: (@MainActor ([SubtitleCue]) -> Void)?
     var loadCount = 0
     var stopCount = 0
+    var preservedDisplayStops: [Bool] = []
     var drainTransportCount = 0
     var reloadAfterForegroundCount = 0
     var drainGate: PreCommitYieldGate?
@@ -2071,7 +2341,11 @@ private final class SpyVideoEngine: VideoEngine {
         furthestObservedPosition = max(furthestObservedPosition, seconds)
     }
     func stop() {
+        stop(preserveDisplayMode: false)
+    }
+    func stop(preserveDisplayMode: Bool) {
         stopCount += 1
+        preservedDisplayStops.append(preserveDisplayMode)
         status = .idle
         duration = 0
     }

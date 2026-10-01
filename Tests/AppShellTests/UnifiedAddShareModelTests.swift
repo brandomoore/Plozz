@@ -278,6 +278,7 @@ final class UnifiedAddShareModelTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 5_000_000)
         }
         model.displayName = "Anime Films"
+        XCTAssertEqual(model.libraryContentType, .anime)
         model.libraryContentType = .movies
         model.chooseFilesystemRoot()
 
@@ -288,10 +289,59 @@ final class UnifiedAddShareModelTests: XCTestCase {
             configuration.libraryConfiguration,
             MediaShareLibraryConfiguration(
                 name: "Anime Films",
-                contentType: .movies,
-                isAnime: true
+                contentType: .movies
             )
         )
+    }
+
+    func testAnimeContentChoiceSavesWithoutASeparateToggle() async throws {
+        let model = UnifiedAddShareModel(webDAVProbe: StubWebDAVProbe())
+        var saved: WebDAVShareConfiguration?
+        model.onWebDAVConfigured = { saved = $0 }
+        model.openManualConnect()
+        model.applyTransport(.webDAV)
+        model.address = "https://nas.local/media"
+        model.connect()
+        for _ in 0..<50 {
+            if model.locationLoad == .loaded { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(model.libraryContentType, .automatic)
+        model.libraryContentType = .anime
+        await model.loadWebDAVFolders(path: "/media/Animation")
+        model.useCurrentFolder()
+        let configuration = try XCTUnwrap(saved?.libraryConfiguration)
+        XCTAssertEqual(configuration.contentType, .anime)
+        XCTAssertTrue(configuration.usesAnimeMetadata)
+        XCTAssertFalse(configuration.isAnime)
+    }
+
+    func testFolderSuggestionsNeverOverrideAnExplicitContentChoice() async throws {
+        let model = UnifiedAddShareModel(webDAVProbe: StubWebDAVProbe())
+        var saved: WebDAVShareConfiguration?
+        model.onWebDAVConfigured = { saved = $0 }
+        model.openManualConnect()
+        model.applyTransport(.webDAV)
+        model.address = "https://nas.local/media"
+        model.connect()
+        for _ in 0..<50 {
+            if model.locationLoad == .loaded { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        await model.loadWebDAVFolders(path: "/media/Anime%20Movies")
+        XCTAssertEqual(model.libraryContentType, .anime)
+        await model.loadWebDAVFolders(path: "/media")
+        XCTAssertEqual(model.libraryContentType, .automatic)
+        for choice in MediaShareLibraryConfiguration.ContentType.allCases {
+            model.libraryContentType = choice
+            await model.loadWebDAVFolders(path: "/media/Anime")
+            XCTAssertEqual(model.libraryContentType, choice)
+            await model.loadWebDAVFolders(path: "/media")
+            XCTAssertEqual(model.libraryContentType, choice)
+            model.useCurrentFolder()
+            XCTAssertEqual(saved?.libraryConfiguration?.contentType, choice)
+            XCTAssertEqual(saved?.libraryConfiguration?.usesAnimeMetadata, choice == .anime)
+        }
     }
 
     func testNFSExportCanDrillIntoNestedFolderWithoutChangingMountRoot() async {

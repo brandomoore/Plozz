@@ -1503,7 +1503,7 @@ struct CatalogReadQueries {
                     itemID: itemID,
                     title: self.columnText(stmt, 0) ?? relPath,
                     year: self.columnOptInt(stmt, 1),
-                    isMovie: true, isAnime: false,
+                    isMovie: true, isAnime: ShareScanner.isAnimePath(relPath),
                     discoveredAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3))
                 )
             }

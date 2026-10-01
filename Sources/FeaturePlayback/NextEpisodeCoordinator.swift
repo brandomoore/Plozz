@@ -68,6 +68,8 @@ final class NextEpisodeCoordinator {
 
     /// Background resolve of the NEXT episode's playback (see ``prefetchedNext``).
     @ObservationIgnored private var nextEpisodePrefetchTask: Task<Void, Never>?
+    @ObservationIgnored private var prefetchTarget: MediaItem?
+    @ObservationIgnored private var isPreparingHandoff = false
     /// Fires the next-episode prefetch at most once per player.
     @ObservationIgnored private var didStartNextEpisodePrefetch = false
     /// Polls the engine for its first presented frame so the bring-up spinner can
@@ -107,35 +109,16 @@ final class NextEpisodeCoordinator {
     /// path (Jellyfin) calls it from ``maybeStartWindowedNextPrefetch()``.
     func startNextEpisodePrefetch(trigger: String) {
         guard let host, let next = host.nextEpisodeCandidate,
-              !didStartNextEpisodePrefetch, prefetchedNext == nil,
+              !isPreparingHandoff, !didStartNextEpisodePrefetch, prefetchedNext == nil,
               nextEpisodePrefetchTask == nil else { return }
         didStartNextEpisodePrefetch = true
+        prefetchTarget = next
         HandoffDiagnostics.emit("prefetch START trigger=\(trigger) next=\(next.id) provider=\(host.upNextProvider.kind.rawValue) idempotent=\(host.upNextProvider.kind.playbackInfoIsIdempotent)")
         let prefetchStart = Date()
         nextEpisodePrefetchTask = Task { @MainActor [weak self] in
-            guard let self, let host = self.host else { return }
+            guard let self else { return }
             do {
-                var resolved = try await host.upNextResolveAndRoute(
-                    itemID: next.id, mediaSourceID: next.selectedVersionID, forceTranscode: false)
-                // For an on-device-decode direct file, header-probe the upcoming
-                // range NOW (provider-independent, no metadata enrichment) so the
-                // hand-off has authoritative range truth before the swap.
-                if resolved.engineKind == .plozzigen,
-                   let probe = self.engineFactory.probeSourceDynamicRange {
-                    let range = await probe(resolved.request)
-                    resolved = resolved.withPrefetchedDynamicRange(range)
-                    HandoffDiagnostics.emit(
-                        "prefetch RANGE next=\(next.id) range=\(range?.rawValue ?? "unknown") "
-                            + "authority=engineHeaderProbe"
-                    )
-                }
-                // A stop()/back-out cancelled us after the resolve opened a
-                // (Jellyfin) session — release it rather than orphan it.
-                if Task.isCancelled {
-                    await self.releasePrefetchedSession(resolved.request)
-                    self.nextEpisodePrefetchTask = nil
-                    return
-                }
+                let resolved = try await self.resolveHandoffTarget(next)
                 self.prefetchedNext = resolved
                 HandoffDiagnostics.emit("prefetch READY next=\(next.id) engine=\(resolved.engineKind.rawValue) took=\(HandoffDiagnostics.ms(prefetchStart))")
                 PlozzLog.playback.info("Prefetched next-episode playback (engine=\(resolved.engineKind.rawValue))")
@@ -151,6 +134,65 @@ final class NextEpisodeCoordinator {
             }
             self.nextEpisodePrefetchTask = nil
         }
+    }
+
+    /// Resolve a previous/arbitrary selection before teardown, using the same
+    /// range evidence as eager Next. Only HDR playback needs an on-demand probe.
+    func prepareHandoff(to episode: MediaItem) async -> PlayerViewModel.PrefetchedPlayback? {
+        guard !Task.isCancelled, !isPreparingHandoff else { return nil }
+        isPreparingHandoff = true
+        defer { isPreparingHandoff = false }
+        if prefetchTarget?.id == episode.id,
+           prefetchTarget?.selectedVersionID == episode.selectedVersionID {
+            if let task = nextEpisodePrefetchTask {
+                await withTaskCancellationHandler {
+                    await task.value
+                } onCancel: {
+                    task.cancel()
+                }
+            }
+            guard !Task.isCancelled else { return nil }
+            if let ready = consumePrefetchedNext(matching: episode.id) { return ready }
+        } else {
+            cancelPrefetch()
+        }
+        guard !Task.isCancelled, let host,
+              host.upNextCurrentEngineKind == .plozzigen,
+              host.upNextAuthoritativeRange?.isHDR == true else { return nil }
+        HandoffDiagnostics.emit("handoff PREPARE item=\(episode.id) prefetch=MISS")
+        do {
+            return try await resolveHandoffTarget(episode)
+        } catch is CancellationError {
+            return nil
+        } catch {
+            HandoffDiagnostics.emit("handoff PREPARE_FAILED (incoming player will resolve normally)")
+            PlozzLog.playback.error("Could not prepare episode handoff; continuing with normal playback resolution.")
+            return nil
+        }
+    }
+
+    private func resolveHandoffTarget(
+        _ episode: MediaItem
+    ) async throws -> PlayerViewModel.PrefetchedPlayback {
+        try Task.checkCancellation()
+        guard let host else { throw CancellationError() }
+        var resolved = try await host.upNextResolveAndRoute(
+            itemID: episode.id, mediaSourceID: episode.selectedVersionID, forceTranscode: false
+        )
+        if !Task.isCancelled, resolved.engineKind == .plozzigen,
+           let probe = engineFactory.probeSourceDynamicRange {
+            let range = await probe(resolved.request)
+            resolved = resolved.withPrefetchedDynamicRange(range)
+            HandoffDiagnostics.emit(
+                "prefetch RANGE next=\(episode.id) range=\(range?.rawValue ?? "unknown") "
+                    + "authority=engineHeaderProbe"
+            )
+        }
+        if Task.isCancelled {
+            await releasePrefetchedSession(resolved.request)
+            throw CancellationError()
+        }
+        return resolved
     }
 
     /// Starts the next-episode prefetch for a NON-idempotent provider (Jellyfin)

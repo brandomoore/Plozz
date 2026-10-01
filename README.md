@@ -76,6 +76,10 @@ available when you want them.
   files becomes a real library with artwork, descriptions, ratings, and cast.
   Browse folders as grids on both iOS and tvOS, with recognized movies and
   shows opening their usual details, seasons, and episodes.
+  Choose **Mixed (Automatic)** on a common parent to include its Movies,
+  TV Shows, and Anime subfolders together. Choose **Anime** for an anime-only
+  root; films and episodes are identified automatically. Dedicated roots can
+  also use **Movies**, **TV Shows**, or **Personal Videos**.
   Recognized titles stay in detail navigation during library scans. Choose
   **More actions > Browse Files** on a title to inspect its original folders
   and individual files; unknown or mixed folders remain browsable grids.

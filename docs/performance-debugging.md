@@ -660,12 +660,52 @@ A Time Profiler trace tells you *which threads burn CPU and in which binary* —
 on this app that immediately fingers the subsystem. The physical Apple TV is
 visible to Instruments under the **xctrace UDID** (not the devicectl id).
 
-Record while reproducing the problem:
+Use the coordinated recorder for a live reproduction:
 ```bash
-xcrun xctrace record --device 00008110-001C25343E61401E \
-  --template "Time Profiler" --attach Plozz \
-  --output /tmp/plz.trace --time-limit 60s --no-prompt
+tools/trace-device.sh --device "$DEVICE_ID" --time-limit 90s
+# tvOS only: verify the named button already has focus, then press Select ONCE.
+tools/trace-device.sh --device "$DEVICE_ID" --time-limit 120s --press-focused Movies
 ```
+The device is explicit (CoreDevice ID, hardware ID, or name); the helper resolves
+its hardware ID and takes a per-device lock shared across worktrees. It verifies
+the installed app and live PID, never launches/replaces Plozz, and never resets
+developer services. `--press-focused` builds/installs only the unbound XCTest
+runner, rejects app-bound runner metadata, and rechecks the exact focused label
+before input. It does not navigate to the control for you.
+
+**Do not tell someone to reproduce while the recorder is merely starting.**
+Current local Debug builds show a non-focusable status badge on tvOS and iOS:
+preparing (wait), recording (ready), and finished/failed. The helper requires
+the app's visible-status acknowledgement, the recorder's Darwin start
+notification, and five seconds without an early disconnect before authorizing
+input. Heartbeats maintain the badge; a missing heartbeat expires it after
+15 seconds, including a render-server fade if the main thread is blocked.
+Release builds have no receiver. `--no-indicator` is an explicit opt-out for
+an older/release build, not an automatic fallback when an acknowledgement fails.
+
+The default uses `Blank` + the `Time Profiler` instrument, device-wide, then
+counts samples only for the verified app PID. Both bundled and CPU-only
+recordings can fail intermittently on current device/toolchain combinations:
+the helper makes at most three **pre-input** attempts. It never repeats an
+input after a disconnect. An explicit `--template` keeps that template and
+attaches to the app instead. Non-CPU templates retain their trace but return
+an explicit unverified result; their relevant tables require separate inspection.
+
+Evidence stays under `.build/device-traces/<unique-run>/`: command logs,
+original trace, remote screenshots/result bundle when requested, raw CPU XML,
+and `report.json`. CPU captures require a readable timeline covering the requested
+duration and actual samples for the verified PID; a zero exit code with
+“Device disconnected” is not success. Raw samples are explicitly reported as
+unsymbolicated. App inactivity near the end is not by itself a dropped recording.
+
+Finalization gets up to ten minutes, separately from the requested recording
+duration. Never kill a saving recorder after an arbitrary short wait. If its
+document is incomplete but `Trace*.run/Attachments/trace-data.atrc` survives,
+the helper uses native `xctrace import` into a **new** recovered trace and
+preserves the original. A failed symbolicated export can be bypassed with the
+`time-sample` raw CPU table; do not silently label raw addresses as resolved
+symbols. Missing device support symbols also limit attribution in Debug builds.
+
 Other useful templates: `Allocations` (attributes a memory total to a call stack —
 the natural follow-up when memory is the problem), `Leaks`, `Swift Concurrency`.
 
@@ -683,23 +723,22 @@ binary** (see `scripts`/the case study below for a ~30-line Python aggregator).
 Key reading tips:
 - Each `<row>` is one ~1 ms sample with a `<weight>` and a `<tagged-backtrace>`; the
   **first** `<frame>` is the innermost (leaf) — where the CPU actually was.
-- Frames are **not symbolicated** by default in a *release* trace (`name` ==
-  address). You don't need symbols to win: the **thread name** and **leaf
-  binary** are usually enough. **But a Debug build (what you deploy with
-  `xcodebuild build` here) *does* ship symbols**, so an attached Debug trace
-  gives you real Swift symbol names like `NowPlayingView.body.getter`,
+- Frames can remain **unsymbolicated** (`name` == address), including in Debug
+  when matching device-support/shared-cache symbols are missing. Thread names
+  still help; leaf-binary attribution is usable only when image mappings exist.
+  With matching app and platform symbols, an attached Debug trace can provide
+  Swift symbol names like `NowPlayingView.body.getter`,
   `MusicCard.body.getter`, `SDFLayer.updateSDFEffects`, and the
   `Attribute.init<A>` closures. For a SwiftUI re-render storm those symbol names
   *are* the decisive signal — aggregate by symbol, not just by binary (see §7).
 - Leaf binary `UNKNOWN` with no named binary often means **JIT code in anonymous
   memory** (i.e. JavaScriptCore executing). Treat a large UNKNOWN bucket as a clue,
   not noise — correlate it with JSC threads.
-- **Attach vs launch.** `--attach Plozz` (by name) profiles the *live* app
-  without relaunching — use it when the user is already in the laggy state and
-  you don't want to lose it. `--attach <pid>` is flaky between repeated runs;
-  prefer the name. `--launch com.thatcube.Plozz` relaunches the app (fresh home
-  screen) and is the most reliable when you control the repro from zero. Find the
-  live pid with `xcrun devicectl device info processes --device <devicectl-id> | grep -i plozz`.
+- **Preserve the live app.** Name and PID attachment can both fail even while
+  CoreDevice reports the process running. The helper correlates the executable
+  with the exact installed bundle URL, then defaults to device-wide CPU sampling
+  filtered by that PID. Never relaunch an app merely to get past an attachment
+  failure when that would destroy the reproduction state.
 
 ---
 
@@ -733,6 +772,43 @@ Key reading tips:
 ---
 
 ## 5. Traps specific to this codebase
+
+### Large share-folder lists: lazy rendering is not bounded native focus
+
+The 1,551-folder WebDAV picker opened quickly after switching to `LazyVStack`,
+but repeated Down presses still froze. On the Apple TV 4K (2nd generation),
+eight measured presses in the live app produced seven hitches totaling 3.971 s
+(502.8 ms/s). A deterministic fixture using the production view reproduced
+seven hitches totaling 4.555 s (531.5 ms/s).
+
+A correlated CPU trace attributed 11,305 of 13,336 main-thread samples during
+navigation to native focus movement. Hot stacks included
+`_UIFocusRegionEvaluator` occlusion evaluation and `_UIFocusMapSnapshot`, not
+network folder enumeration. Removing the root per-folder `FocusState`, replacing
+the fade mask, or reducing scroll-geometry state updates individually did not
+resolve it; those experiments were reverted. SwiftUI `List` improved timing but
+still hitched and initially clipped horizontal focus cards.
+
+`ShareLocationList` instead recycles `UITableView` cells. Only realized native
+cells participate in focus; `SettingsFocusRow` shares the exact appearance and
+contrast behavior with `SettingsFocusButtonStyle`. Keep the hosting
+configuration's inherited SwiftUI environment and zero minimum content size.
+The cells reserve horizontal space for the card/shadow, and the existing
+vertical fade mask extends horizontally rather than cutting off either side.
+Recreating the list on path changes retires stale cells and preserves the
+screen's explicit "Use This Folder" entry focus.
+
+The same physical fixture with the completed change recorded zero hitches for
+its eight measured presses, with exact item advancement, folder entry/return,
+and rendered left/right overhang assertions passing. An earlier native-cell
+run recorded 0.050 s total (7.3 ms/s). These are controlled fixture results, not
+a guarantee for every server or input cadence. The full app's live-server
+navigation remains a separate check after installation.
+
+Use `ShareFolderNavigationTests` in `PlozzHomeFixtureTests` for the deterministic
+comparison. XCTest performs an eight-press warmup before the measured eight
+presses. Preserve actual input timestamps and metrics; command round-trip time
+and a passing functional test are not substitutes for presented-frame timing.
 
 ### tvOS focus handoffs (Search/sidebar)
 

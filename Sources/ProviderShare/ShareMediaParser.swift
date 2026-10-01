@@ -280,8 +280,8 @@ enum ShareMediaParser {
                 return nil
             }
             return .episode(episode)
-        case .automatic:
-            if configuration.isAnime {
+        case .automatic, .anime:
+            if configuration.usesAnimeMetadata {
                 return classify(relPath: "Anime/\(relPath)")
             }
             return classify(relPath: relPath)

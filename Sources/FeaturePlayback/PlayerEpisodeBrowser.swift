@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 import Observation
 
@@ -44,12 +45,24 @@ public final class PlayerEpisodeBrowser {
     private var initialSeasonID: String?
     private let initialEpisodeID: String
     private let accountID: String?
+    private let openingEpisodeNumber: Int?
+    private enum Load: String { case initial, previous, next }
+    @ObservationIgnored private var loads: [Load: Task<Void, Never>] = [:]
+    @ObservationIgnored private var isStopped = false
 
     public init(item: MediaItem, provider: any MediaProvider) {
         self.provider = provider
         initialSeasonID = item.seasonID
         initialEpisodeID = item.id
         accountID = item.sourceAccountID
+        openingEpisodeNumber = item.episodeNumber
+    }
+
+    var initialHasPreviousEpisode: Bool {
+        if let index = episodes.firstIndex(where: { $0.item.id == initialEpisodeID }) {
+            return index > 0
+        }
+        return (openingEpisodeNumber ?? 1) > 1
     }
 
     public var initialEntryID: PlayerEpisodeEntry.ID? {
@@ -60,9 +73,56 @@ public final class PlayerEpisodeBrowser {
     }
 
     public func loadIfNeeded() async {
+        await runLoad(.initial)
+    }
+
+    public func loadPrevious() async {
+        await runLoad(.previous)
+    }
+
+    public func loadNext() async {
+        await runLoad(.next)
+    }
+
+    func stop() {
+        isStopped = true
+        for task in loads.values { task.cancel() }
+    }
+
+    /// A replacement view must wait for the cancelled request to drain, then
+    /// restart it. Returning merely because `isLoading` is true strands its tab.
+    private func runLoad(_ load: Load) async {
+        while !Task.isCancelled, !isStopped {
+            let task: Task<Void, Never>
+            if let existing = loads[load] {
+                task = existing
+            } else {
+                task = Task { [weak self] in
+                    guard let self else { return }
+                    defer { self.loads[load] = nil }
+                    switch load {
+                    case .initial: await self.loadInitial()
+                    case .previous: await self.loadEarlier()
+                    case .next: await self.loadLater()
+                    }
+                }
+                loads[load] = task
+            }
+            await withTaskCancellationHandler {
+                await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            guard task.isCancelled else { return }
+        }
+    }
+
+    private func loadInitial() async {
         guard !Task.isCancelled, !hasLoaded, !isLoading else { return }
         isLoading = true
+        defer { isLoading = false }
         loadError = nil
+        HandoffDiagnostics.emit("episodes LOAD_BEGIN")
         do {
             // Source selection can retain another server's parent IDs on the opening card.
             let playing = try await provider.item(id: initialEpisodeID)
@@ -92,19 +152,19 @@ public final class PlayerEpisodeBrowser {
                 }
             }
             hasLoaded = true
-            isLoading = false
-        } catch where Self.isCancellation(error) {
-            isLoading = false
+            HandoffDiagnostics.emit("episodes LOAD_READY count=\(episodes.count)")
+        } catch where Task.isCancelled {
+            HandoffDiagnostics.emit("episodes LOAD_CANCELLED")
         } catch {
-            loadError = error as? AppError ?? .invalidResponse
-            isLoading = false
+            loadError = Self.reportFailure(error, load: .initial)
         }
     }
 
-    public func loadPrevious() async {
+    private func loadEarlier() async {
         guard !Task.isCancelled, hasLoaded, let start = previousSeasonIndex,
               !isLoadingPrevious, previousLoadError == nil else { return }
         isLoadingPrevious = true
+        defer { isLoadingPrevious = false }
         do {
             for index in stride(from: start, through: 0, by: -1) {
                 let fetched = try await entries(in: index)
@@ -115,19 +175,18 @@ public final class PlayerEpisodeBrowser {
                     break
                 }
             }
-            isLoadingPrevious = false
-        } catch where Self.isCancellation(error) {
-            isLoadingPrevious = false
+        } catch where Task.isCancelled {
+            HandoffDiagnostics.emit("episodes PREVIOUS_CANCELLED")
         } catch {
-            previousLoadError = error as? AppError ?? .invalidResponse
-            isLoadingPrevious = false
+            previousLoadError = Self.reportFailure(error, load: .previous)
         }
     }
 
-    public func loadNext() async {
+    private func loadLater() async {
         guard !Task.isCancelled, hasLoaded, let start = nextSeasonIndex,
               !isLoadingNext, nextLoadError == nil else { return }
         isLoadingNext = true
+        defer { isLoadingNext = false }
         do {
             for index in start..<seasons.count {
                 let fetched = try await entries(in: index)
@@ -138,12 +197,10 @@ public final class PlayerEpisodeBrowser {
                     break
                 }
             }
-            isLoadingNext = false
-        } catch where Self.isCancellation(error) {
-            isLoadingNext = false
+        } catch where Task.isCancelled {
+            HandoffDiagnostics.emit("episodes NEXT_CANCELLED")
         } catch {
-            nextLoadError = error as? AppError ?? .invalidResponse
-            isLoadingNext = false
+            nextLoadError = Self.reportFailure(error, load: .next)
         }
     }
 
@@ -157,9 +214,12 @@ public final class PlayerEpisodeBrowser {
         await loadNext()
     }
 
-    private static func isCancellation(_ error: any Error) -> Bool {
-        Task.isCancelled || error is CancellationError || error as? AppError == .cancelled
+    private static func reportFailure(_ error: any Error, load: Load) -> AppError {
+        let cancelled = error is CancellationError || error as? AppError == .cancelled
             || (error as? URLError)?.code == .cancelled
+        HandoffDiagnostics.emit("episodes LOAD_FAILED direction=\(load.rawValue) providerCancelled=\(cancelled)")
+        PlozzLog.playback.error("Episode loading failed; the browser is ready to retry.")
+        return cancelled ? .cancelled : error as? AppError ?? .invalidResponse
     }
 
     private func findFirstEpisodes() async throws {

@@ -651,6 +651,10 @@ struct PlayerControls: View {
                     .opacity(chromeHidden ? 0 : 1)
                     .animation(.easeInOut(duration: 0.3), value: chromeHidden)
             }
+            .reportSubtitleControlsFrame(
+                in: model.subtitleLayout, region: .transport,
+                isVisible: model.controlsVisible && !chromeHidden && !infoMode
+            )
             .background(
                 GeometryReader { proxy in
                     Color.clear.preference(key: TransportHeightKey.self, value: proxy.size.height)

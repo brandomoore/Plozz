@@ -46,6 +46,7 @@ struct PlozziOSApp: App {
             AppLanguageScope {
                 PlozziOSRootView()
             }
+            .diagnosticRecordingStatus()
         }
     }
 }

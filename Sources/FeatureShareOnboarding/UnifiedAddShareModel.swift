@@ -183,14 +183,13 @@ public final class UnifiedAddShareModel {
     public private(set) var locations: [LocationItem] = []
     public private(set) var locationLoad: LocationLoad = .idle
     public private(set) var currentPath = "/" {
-        didSet { inferAnimeContextIfUnedited(from: currentPath) }
+        didSet { inferLibraryContentIfUnedited(from: currentPath) }
     }
     public var manualShare = ""
     private struct LibraryDraft: Equatable {
         var name = ""
         var contentType: MediaShareLibraryConfiguration.ContentType = .automatic
-        var isAnime = false
-        var animeSelectionWasEdited = false
+        var contentSelectionWasEdited = false
     }
     private var libraryDraft = LibraryDraft()
     public var displayName: String {
@@ -199,11 +198,10 @@ public final class UnifiedAddShareModel {
     }
     public var libraryContentType: MediaShareLibraryConfiguration.ContentType {
         get { libraryDraft.contentType }
-        set { libraryDraft.contentType = newValue }
-    }
-    public var libraryIsAnime: Bool {
-        get { libraryDraft.isAnime }
-        set { libraryDraft.isAnime = newValue }
+        set {
+            libraryDraft.contentType = newValue
+            libraryDraft.contentSelectionWasEdited = true
+        }
     }
 
     // Resolved connection for the active attempt.
@@ -467,23 +465,19 @@ public final class UnifiedAddShareModel {
         }
     }
 
-    public func setLibraryIsAnime(_ isAnime: Bool) {
-        libraryDraft.animeSelectionWasEdited = true
-        libraryIsAnime = isAnime
-    }
-
-    private func inferAnimeContextIfUnedited(from path: String) {
-        guard !libraryDraft.animeSelectionWasEdited else { return }
-        libraryIsAnime = path
+    private func inferLibraryContentIfUnedited(from path: String) {
+        guard !libraryDraft.contentSelectionWasEdited else { return }
+        let isAnime = path
             .split(separator: "/", omittingEmptySubsequences: true)
             .contains { component in
-                let value = component.lowercased()
+                let value = (String(component).removingPercentEncoding ?? String(component)).lowercased()
                 return value == "anime"
                     || value == "animes"
                     || value == "anime tv"
                     || value == "anime movies"
                     || value == "anime films"
             }
+        libraryDraft.contentType = isAnime ? .anime : .automatic
     }
 
     public var showsManualRootEntry: Bool {
@@ -1046,7 +1040,7 @@ public final class UnifiedAddShareModel {
     public func chooseFilesystemRoot() {
         let name = displayName.trimmingCharacters(in: .whitespaces)
         let path = confirmedPath
-        inferAnimeContextIfUnedited(from: path)
+        inferLibraryContentIfUnedited(from: path)
         let resolvedName = name.isEmpty
             ? defaultLibraryName(
                 path: path,
@@ -1111,8 +1105,7 @@ public final class UnifiedAddShareModel {
     ) -> MediaShareLibraryConfiguration {
         MediaShareLibraryConfiguration(
             name: defaultName,
-            contentType: libraryContentType,
-            isAnime: libraryContentType == .personalVideos ? false : libraryIsAnime
+            contentType: libraryContentType
         )
     }
 
@@ -1493,7 +1486,7 @@ public final class UnifiedAddShareModel {
     public func chooseSMBShare(_ path: String) {
         guard hasValidPathComponents(path) else { return }
         let normalized = normalizedRelativePath(path)
-        inferAnimeContextIfUnedited(from: normalized)
+        inferLibraryContentIfUnedited(from: normalized)
         let components = normalized.split(
             separator: "/",
             omittingEmptySubsequences: true
@@ -1521,7 +1514,7 @@ public final class UnifiedAddShareModel {
         guard let origin = webDAVOriginURL,
               var comps = URLComponents(url: origin, resolvingAgainstBaseURL: false) else { return }
         let path = normalizedWebDAVPath(path)
-        inferAnimeContextIfUnedited(from: path)
+        inferLibraryContentIfUnedited(from: path)
         comps.percentEncodedPath = path == "/" ? "" : path
         guard let baseURL = comps.url else { return }
         let pin = approvedPin.flatMap { try? SHA256Fingerprint(bytes: $0) }

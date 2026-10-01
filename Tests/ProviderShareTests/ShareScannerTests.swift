@@ -507,6 +507,71 @@ final class ShareScannerTests: XCTestCase {
         XCTAssertEqual(counts.animeSeries, 0)
     }
 
+    func testAnimeContentTypeIndexesFilmsAndBareNumberedEpisodesTogether() async {
+        let store = ShareCatalogStore(accountKey: "anime-content-choice", directory: tempDir())
+        let scanner = makeScanner(
+            store: store,
+            fake: FakeShare([
+                "": [dir("Sword Art Online II"), dir("Movies")],
+                "Sword Art Online II": [file("Sword Art Online II - 18.mkv")],
+                "Movies": [file("Your Name (2016).mkv"), file("Ghost in the Shell 2 (2004).mkv")],
+            ]),
+            libraryConfiguration: .init(name: "Anime", contentType: .anime)
+        )
+        await scanner.scan()
+        let counts = await store.libraryCounts()
+        XCTAssertEqual(counts.movies, 2)
+        XCTAssertEqual(counts.animeSeries, 1)
+        XCTAssertEqual(counts.tvSeries, 0)
+        let animeContext = await store.libraryAnimeContext()
+        XCTAssertTrue(animeContext, "Films as well as series must receive anime metadata context.")
+        XCTAssertEqual(
+            ShareScanner.seriesMetadataRoot(
+                relPath: "Sword Art Online II/Sword Art Online II - 18.mkv",
+                libraryConfiguration: .init(name: "Anime", contentType: .anime)
+            ),
+            "Sword Art Online II"
+        )
+    }
+
+    func testExplicitMixedContentKeepsMoviesTVAndAnimeSeparate() async {
+        let store = ShareCatalogStore(accountKey: "mixed-content-choice", directory: tempDir())
+        let scanner = makeScanner(
+            store: store, fake: FakeShare(standardTree()),
+            libraryConfiguration: .init(name: "Media", contentType: .automatic)
+        )
+        await scanner.scan()
+        let counts = await store.libraryCounts()
+        XCTAssertEqual(counts.movies, 1)
+        XCTAssertEqual(counts.tvSeries, 1)
+        XCTAssertEqual(counts.animeSeries, 1)
+        let animeContext = await store.libraryAnimeContext()
+        XCTAssertFalse(animeContext, "A mixed root must not mark unrelated movies and TV as anime.")
+    }
+
+    func testSwitchingAnimeToMixedReclassifiesWithoutChangingFileIdentity() async {
+        let store = ShareCatalogStore(accountKey: "anime-to-mixed", directory: tempDir())
+        let fake = FakeShare(standardTree())
+        await makeScanner(
+            store: store, fake: fake,
+            libraryConfiguration: .init(name: "Media", contentType: .anime)
+        ).scan()
+        let before = await store.item(id: ShareCatalogID.file("Movies/Inception (2010).mkv"))
+        await makeScanner(
+            store: store, fake: fake,
+            libraryConfiguration: .init(name: "Media", contentType: .automatic)
+        ).scanIfStale(minInterval: 600)
+        let after = await store.item(id: ShareCatalogID.file("Movies/Inception (2010).mkv"))
+        XCTAssertNotNil(before)
+        XCTAssertEqual(after?.id, before?.id)
+        let context = await store.libraryAnimeContext()
+        XCTAssertFalse(context)
+        let counts = await store.libraryCounts()
+        XCTAssertEqual(counts.movies, 1)
+        XCTAssertEqual(counts.tvSeries, 1)
+        XCTAssertEqual(counts.animeSeries, 1)
+    }
+
     func testConfiguredTVRootIndexesOnlyFilesWithEpisodeEvidence() async {
         let store = ShareCatalogStore(accountKey: "configured-tv", directory: tempDir())
         let tree: [String: [RemoteFileEntry]] = [

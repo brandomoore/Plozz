@@ -119,21 +119,10 @@ struct PlayerPresentation: View {
         .onChange(of: viewModel?.pendingNextEpisode?.id) { _, nextID in
             guard handoffTask == nil, nextID != nil,
                   let next = viewModel?.pendingNextEpisode else { return }
-            // Adopt the next episode's prefetched resolution (if ready) BEFORE
-            // stop() runs, so the incoming player skips the network resolve and
-            // reuses the already-open session rather than the old player releasing
-            // it. `nil` when the prefetch didn't finish → the new player resolves
-            // normally (no regression).
-            let consumed = viewModel?.consumePrefetchedNext(matching: next.id)
-            // Keep the panel's HDR/DV mode across a same-range hand-off so the TV
-            // doesn't flap DV→SDR→DV between episodes (needs the prefetched next's
-            // source facts, so it's a no-op on a prefetch miss).
-            let preserveDisplay = viewModel?.shouldPreserveDisplayMode(forNext: consumed) ?? false
-            let prefetched = consumed?.inheritingPreservedDisplayMode(preserveDisplay)
             triedAccountIDs = []
             replacePlayback(
                 with: PlayRequest(item: next, startPosition: 0, versionPreferences: versionPreferences),
-                prefetched: prefetched, preserveDisplayMode: preserveDisplay
+                preparesEpisodeHandoff: true
             )
         }
         .onChange(of: viewModel?.pendingPlaylistSelection?.index) { _, index in
@@ -217,8 +206,7 @@ struct PlayerPresentation: View {
 
     private func replacePlayback(
         with request: PlayRequest,
-        prefetched: PlayerViewModel.PrefetchedPlayback? = nil,
-        preserveDisplayMode: Bool = false,
+        preparesEpisodeHandoff: Bool = false,
         continuation: PlaybackContinuation? = nil,
         playlistIndex: Int? = nil
     ) {
@@ -226,8 +214,19 @@ struct PlayerPresentation: View {
         outgoing.controls.versions.options = []
         outgoing.controls.versions.onSelect = nil
         handoffTask = Task { @MainActor in
+            let prepared = preparesEpisodeHandoff
+                ? await outgoing.prepareEpisodeHandoff(to: request.item) : nil
+            guard !Task.isCancelled, isPresented, viewModel === outgoing else {
+                await outgoing.discardEpisodeHandoff(prepared)
+                handoffTask = nil
+                return
+            }
+            let preserveDisplayMode = preparesEpisodeHandoff
+                && outgoing.shouldPreserveDisplayMode(forNext: prepared)
+            let prefetched = prepared?.inheritingPreservedDisplayMode(preserveDisplayMode)
             await outgoing.stop(preserveDisplayMode: preserveDisplayMode)
             guard !Task.isCancelled, isPresented, viewModel === outgoing else {
+                await outgoing.discardEpisodeHandoff(prefetched)
                 handoffTask = nil
                 return
             }

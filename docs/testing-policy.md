@@ -199,6 +199,55 @@ Runner verdict regressions use the existing host-side unittest runner:
 
 ## App-hosted focus integration
 
+`SettingsSubtitleContrastHostedTests` measures rendered text and glyph contrast
+while native focus moves between shared settings rows in Black, Dark, and Light.
+It covers the media-share discovery subtitle, leading icons, manual-entry chevron,
+explicit primary text, and `SettingsIconLabelStyle`. Shared `.plozzForeground`
+tiers must inherit the inverted row foreground, then return to the normal palette
+on blur; text outside a row must remain unaffected. Body text requires 4.5:1
+contrast and supporting glyphs require 3:1 against their rendered surface.
+
+`ShareFolderBrowserHostedTests` opens the real unified share screen with 1,551
+instant-response folders, bounds main-actor stalls, and verifies returning to
+the original root without widening its browse boundary. Deep scrolling must
+realize onscreen native focus targets. The bounded folder viewport uses recycled
+native cells: fewer than 20 are visible for the large fixture, short lists retain
+their natural height, and the table/cells do not clip horizontal focus overflow.
+This is isolated UI coverage, not a live-server network benchmark.
+
+`ShareFolderNavigationTests` launches `PlozzFocusHost --share-folder-fixture`
+with the same 1,551-folder production picker. It drives real remote Down input,
+checks exact item advancement, opening/returning to a folder, and primary-action
+focus restoration. Its Black-mode screenshot checks both focus-card overhangs
+outside the label bounds. Native `XCTHitchMetric` collection requires tvOS 26+
+and physical hardware for meaningful timing; inspect the retained duration,
+count, and time-ratio measurements separately from XCTest's functional verdict.
+One measured eight-press iteration also runs XCTest's eight-press warmup.
+Accessibility queries and screenshot capture stay outside the measured window.
+For an attached profile, `PLOZZ_FOLDER_REUSE_FIXTURE=1` requires the fixture to
+already be foreground and avoids launching/terminating it.
+
+`DiagnosticRecordingStatusHostedTests` exercises real Darwin notifications and
+the visible acknowledgement, preserving native focus while showing the badge.
+It checks the render-server expiry animation, eventual removal, and receipt
+while a full-screen presentation detaches the app root from its window. Recorder
+control tests run with
+`python3 -m unittest discover -s tools/tests -p test_trace_device.py`: failed
+readiness/visibility must not send input, a sustained recording permits exactly
+one input, app-bound runner metadata is refused, and sample verification must
+resolve the target PID rather than count unrelated system activity.
+`PhysicalDiagnosticInputTests` is opt-in; it never launches the app and remains
+outside ordinary unattended test runs. `tools/trace-device.sh` controls the
+single-Select recording path. Its separate repeated-Down test requires
+`PLOZZ_CAPTURE_FOLDER_DOWN=1`, `PLOZZ_CAPTURE_BUNDLE_ID`, an already-foreground
+app, the subfolder heading, and a focused folder row. It supports the legacy
+folder-icon buttons and the native `share-location:` cell identifiers. XCTest
+adds a warmup, so expect sixteen Down presses in total, not eight. Host shell
+variables need the `TEST_RUNNER_` prefix when forwarded through `xcodebuild`.
+Its separate status-inspection method uses `PLOZZ_CAPTURE_INSPECT_STATUS=1`
+and `PLOZZ_CAPTURE_BUNDLE_ID` to retain the actual TV badge screenshot and
+accessibility tree without sending input.
+
 The `PlozziOSPresentationTests` scheme supplies a separate iOS app scene for
 native Form/picker and sheet rendering. Run it on an explicitly owned iOS
 simulator under the shared build lease, with a lane-private package workspace
@@ -721,6 +770,11 @@ Count-only changes insert/remove tail slots without resetting the collection.
 Catalog refreshes update existing `LibrarySlot` objects in place, including the
 pages visible when the refresh commits; they must not strand cell observers on
 discarded objects.
+The issue #15 regression uses 2,178 items and the default 28/42-item paging plan:
+load index 1,750, scroll away, refresh the catalog, and return without reopening.
+Both the shared model and the hosted native grid must refill the invalidated
+off-screen page; the native placeholder must update in place and select the
+refreshed item after its delayed page response arrives.
 
 The displayed grid's `contentGeneration` is separate from the first-page/refresh
 request token. Only replacing the browsing order invalidates cell callbacks.

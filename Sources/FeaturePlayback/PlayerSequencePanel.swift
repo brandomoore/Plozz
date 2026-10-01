@@ -14,9 +14,7 @@ struct PlayerSequenceLayout {
 
     var compact: Bool { metrics.contentHeight < 160 }
     var gap: CGFloat { compact ? 6 : 10 }
-    var columnSpacing: CGFloat {
-        metrics.columnSpacing + (contained ? metrics.contentPadding / 2 : 0)
-    }
+    var columnSpacing: CGFloat { metrics.columnSpacing }
     var containerVerticalInset: CGFloat { contained ? metrics.contentPadding / 2 : 0 }
     var rowHeight: CGFloat {
         metrics.cardHeight - containerVerticalInset * 2
@@ -41,6 +39,13 @@ struct PlayerSequenceLayout {
     var imageWidth: CGFloat { (imageHeight * 16 / 9).rounded() }
     var cardWidth: CGFloat {
         imageWidth + cardMetrics.cardInset * 2
+    }
+    var previousArtworkPeek: CGFloat { 24 }
+    var episodePeekInset: CGFloat {
+        previousArtworkPeek + columnSpacing + cardMetrics.cardInset
+    }
+    func episodeOffset(for index: Int) -> CGFloat {
+        max(0, CGFloat(index) * (cardWidth + columnSpacing) - episodePeekInset)
     }
 }
 
@@ -93,7 +98,7 @@ struct PlayerSequencePanel: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task {
+        .task(id: source) {
             if source == .episodes { await player.episodeBrowser?.loadIfNeeded() }
         }
     }
@@ -120,11 +125,7 @@ struct PlayerSequencePanel: View {
         if let error = browser.loadError {
             errorRow(error) { Task { await browser.loadIfNeeded() } }
         } else if browser.isLoading || !browser.hasLoaded {
-            sequenceScroll {
-                ForEach(0..<6) { _ in
-                    PlayerEpisodeLoadingCard(layout: layout)
-                }
-            }
+            PlayerEpisodeLoadingRow(layout: layout, showsPrevious: browser.initialHasPreviousEpisode)
             .allowsHitTesting(false)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Loading episodes…")
@@ -301,7 +302,11 @@ struct PlayerSequencePanel: View {
         .onAppear {
             displayedEpisodes = latest
             if let id = browser.initialEntryID {
-                episodePosition.scrollTo(id: id, anchor: metrics.isVertical ? .top : .leading)
+                if metrics.isVertical {
+                    episodePosition.scrollTo(id: id, anchor: .top)
+                } else if let index = latest.entries.firstIndex(where: { $0.id == id }) {
+                    episodePosition.scrollTo(x: layout.episodeOffset(for: index))
+                }
             }
         }
     }
@@ -528,6 +533,37 @@ struct PlayerEpisodeArtworkOverlay: View {
                 cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous
             ))
             .allowsHitTesting(false)
+    }
+}
+
+struct PlayerEpisodeLoadingRow: View {
+    let layout: PlayerSequenceLayout
+    let showsPrevious: Bool
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView(layout.metrics.isVertical ? .vertical : .horizontal, showsIndicators: false) {
+                if layout.metrics.isVertical {
+                    VStack(spacing: 8) {
+                        ForEach(0..<6) { _ in PlayerEpisodeLoadingCard(layout: layout) }
+                    }
+                    .padding(.vertical, layout.metrics.contentPadding)
+                } else {
+                    let count = max(2, Int(ceil(geometry.size.width / (layout.cardWidth + layout.columnSpacing))) + 2)
+                    HStack(spacing: layout.columnSpacing) {
+                        ForEach(0..<count, id: \.self) { _ in
+                            PlayerEpisodeLoadingCard(layout: layout)
+                        }
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(width: geometry.size.width, alignment: .leading)
+                    .offset(x: showsPrevious ? -layout.episodeOffset(for: 1) : 0)
+                }
+            }
+            .scrollDisabled(true)
+            .scrollClipDisabled()
+        }
+        .frame(height: layout.rowHeight)
     }
 }
 

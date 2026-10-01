@@ -10,6 +10,8 @@ struct FocusHostApp: App {
         WindowGroup {
             if ProcessInfo.processInfo.arguments.contains("--skip-marker-preview") {
                 SkipMarkerPreviewFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--share-folder-fixture") {
+                ShareFolderBrowserFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--episode-row-fixture") {
                 EpisodeRowRemoteFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--subtitle-style-input-fixture") {

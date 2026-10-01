@@ -113,6 +113,75 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
     }
 
     #if os(tvOS)
+    func testShortTitleTransportKeepsCenteredCaptionsAboveTheWholeControlBand() async throws {
+        let scene = try await activeScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        host.safeAreaRegions = []
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let subtitles = LiveSubtitleModel()
+        subtitles.style.fontFamily = .system
+        subtitles.style.followsSystemStyle = false
+        subtitles.style.verticalPosition = 0.06
+        subtitles.loadPrimary(SubtitleCueParser.parse(
+            "WEBVTT\n\n00:00:00.000 --> 00:01:00.000\nA centered caption.\n", id: 1
+        ))
+        subtitles.tick(1)
+        let model = PlayerControlsModel()
+        model.title = "Ted Lasso"
+        model.subtitle = "S1, E4 · For the Children"
+        model.controlsVisible = true
+        host.rootView = AnyView(ZStack {
+            LiveSubtitleOverlay(model: subtitles, controls: model)
+            PlayerControls(model: model, palette: .dark, actions: PlayerOptionsActions(), onExitToSurface: {})
+        }.transaction {
+            $0.disablesAnimations = true
+            $0.animation = nil
+        })
+        try await waitUntil {
+            window.layoutIfNeeded()
+            return model.subtitleLayout.frame(for: .title) != nil
+                && !self.frames(in: host.view, relativeTo: window).isEmpty
+        }
+        for _ in 0..<2 {
+            let title = try XCTUnwrap(model.subtitleLayout.frame(for: .title))
+            let caption = try XCTUnwrap(frames(in: host.view, relativeTo: window).first)
+            XCTAssertLessThanOrEqual(caption.maxY, title.minY - SubtitleOverlayGeometry.controlsClearance + 1,
+                                     "A centered caption cannot remain in the empty gap beside the bottom tabs.")
+            model.controlsVisible = false
+            try await waitUntil { model.subtitleLayout.frames.isEmpty }
+            model.controlsVisible = true
+            try await waitUntil {
+                window.layoutIfNeeded()
+                return model.subtitleLayout.frame(for: .title) != nil
+            }
+        }
+        var painted: UIImage?
+        let deadline = ContinuousClock.now + .seconds(5)
+        repeat {
+            let image = try XCTUnwrap(DetailTransitionSnapshot.image(of: window))
+            let recognition = VNRecognizeTextRequest()
+            recognition.recognitionLevel = .accurate
+            recognition.usesLanguageCorrection = false
+            recognition.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage), options: [:]).perform([recognition])
+            let text = (recognition.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            if text.contains("Ted Lasso"), text.contains("centered caption") { painted = image; break }
+            try await Task.sleep(for: .milliseconds(20))
+        } while ContinuousClock.now < deadline
+        let attachment = XCTAttachment(image: try XCTUnwrap(painted, "Capture must paint the transport and caption together."))
+        attachment.name = "Short-title transport subtitle clearance"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testSubtitleMenuKeepsTheNormalTitleClearanceWhenItsTitleFades() async throws {
         let scene = try await activeScene()
         let previous = scene.windows.first(where: \.isKeyWindow)

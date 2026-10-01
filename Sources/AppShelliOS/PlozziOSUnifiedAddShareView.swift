@@ -466,23 +466,6 @@ struct PlozziOSUnifiedAddShareView: View {
                     Text(libraryContentLabel(type)).tag(type)
                 }
             }
-            .onChange(of: viewModel.libraryContentType) { _, type in
-                if type == .personalVideos {
-                    viewModel.libraryIsAnime = false
-                }
-            }
-            if viewModel.libraryContentType != .personalVideos {
-                Toggle(
-                    "Anime",
-                    isOn: Binding(
-                        get: { viewModel.libraryIsAnime },
-                        set: { viewModel.setLibraryIsAnime($0) }
-                    )
-                )
-            }
-            Text("Content type controls scanning and matching. Personal Videos stay playable without movie or show matching. Re-adding the same location updates these settings without changing its library identity.")
-                .font(.footnote)
-                .foregroundStyle(palette.secondaryText)
         }
     }
 
@@ -493,6 +476,7 @@ struct PlozziOSUnifiedAddShareView: View {
         case .automatic: "Mixed (Automatic)"
         case .movies: "Movies"
         case .tvShows: "TV Shows"
+        case .anime: "Anime"
         case .personalVideos: "Personal Videos"
         }
     }

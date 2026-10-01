@@ -170,7 +170,9 @@ public struct ShareProvider: MediaProvider, MediaFileBrowsing, MediaSortFieldPro
         case .movies:
             libraryIDs = [ShareCatalogID.moviesLibrary]
         case .tvShows:
-            libraryIDs = [configuration?.isAnime == true ? ShareCatalogID.animeLibrary : ShareCatalogID.tvLibrary]
+            libraryIDs = [configuration?.usesAnimeMetadata == true ? ShareCatalogID.animeLibrary : ShareCatalogID.tvLibrary]
+        case .anime:
+            libraryIDs = [ShareCatalogID.moviesLibrary, ShareCatalogID.animeLibrary]
         case .automatic, nil:
             libraryIDs = [ShareCatalogID.moviesLibrary, ShareCatalogID.tvLibrary, ShareCatalogID.animeLibrary]
         case .personalVideos:
@@ -213,13 +215,13 @@ public struct ShareProvider: MediaProvider, MediaFileBrowsing, MediaSortFieldPro
             ))
         case .tvShows:
             result.append(MediaLibrary(
-                id: libraryConfiguration?.isAnime == true
+                id: libraryConfiguration?.usesAnimeMetadata == true
                     ? ShareCatalogID.animeLibrary
                     : ShareCatalogID.tvLibrary,
                 title: libraryConfiguration?.name ?? session.server.name,
                 kind: .series
             ))
-        case .automatic, nil:
+        case .automatic, .anime, nil:
             if counts.movies > 0 {
                 result.append(MediaLibrary(id: ShareCatalogID.moviesLibrary, title: "Movies", kind: .movie,
                                            synthesizedName: .movies))

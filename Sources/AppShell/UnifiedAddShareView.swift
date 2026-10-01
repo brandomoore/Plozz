@@ -19,7 +19,7 @@ struct UnifiedAddShareView: View {
     let onWebDAVConfigured: (WebDAVShareConfiguration) -> Void
     var onMediaShareConfigured: (MediaShareOnboardingResult) -> Void = { _ in }
 
-    @State private var viewModel = UnifiedAddShareModel()
+    @State var viewModel = UnifiedAddShareModel()
     @FocusState private var focus: Field?
 
     private enum Field: Hashable {
@@ -28,7 +28,7 @@ struct UnifiedAddShareView: View {
         case proto, address, port, portChip(Int)
         case authToggle, username, password, token, connect
         case approve, reject
-        case location(String), manualShare, displayName, contentType, anime, useFolder
+        case manualShare, displayName, contentType, useFolder
         case comingSoonBack
     }
 
@@ -66,6 +66,12 @@ struct UnifiedAddShareView: View {
             if ready { viewModel.startScan() } else { viewModel.stopScan() }
         }
         .onChange(of: viewModel.step) { _, _ in focus = defaultFocus() }
+        .task(id: viewModel.locationLoad == .loaded ? viewModel.currentPath : nil) {
+            await Task.yield()
+            guard !Task.isCancelled, viewModel.locationLoad == .loaded,
+                  viewModel.step == .pickLocation, viewModel.showsCurrentFolder else { return }
+            focus = .useFolder
+        }
         .onDisappear { viewModel.stopScan() }
     }
 
@@ -398,9 +404,6 @@ struct UnifiedAddShareView: View {
                         ForEach(MediaShareLibraryConfiguration.ContentType.allCases, id: \.self) { type in
                             Button {
                                 viewModel.libraryContentType = type
-                                if type == .personalVideos {
-                                    viewModel.libraryIsAnime = false
-                                }
                             } label: {
                                 if type == viewModel.libraryContentType {
                                     Label { Text(libraryContentLabel(type)) } icon: {
@@ -423,19 +426,6 @@ struct UnifiedAddShareView: View {
                     }
                     .focused($focus, equals: .contentType)
                 }
-                if viewModel.libraryContentType != .personalVideos {
-                    Toggle(
-                        "Anime",
-                        isOn: Binding(
-                            get: { viewModel.libraryIsAnime },
-                            set: { viewModel.setLibraryIsAnime($0) }
-                        )
-                    )
-                    .focused($focus, equals: .anime)
-                }
-                Text("Content type controls scanning and matching. Personal Videos stay playable without movie or show matching. Re-adding the same location updates these settings without changing its library identity.")
-                    .font(.footnote)
-                    .plozzForeground(.secondary)
             }
         }
         .focusSection()
@@ -448,6 +438,7 @@ struct UnifiedAddShareView: View {
         case .automatic: "Mixed (Automatic)"
         case .movies: "Movies"
         case .tvShows: "TV Shows"
+        case .anime: "Anime"
         case .personalVideos: "Personal Videos"
         }
     }
@@ -499,24 +490,8 @@ struct UnifiedAddShareView: View {
             if viewModel.locations.isEmpty {
                 placeholder(showsCurrentFolder ? "No subfolders here." : "Nothing here.")
             } else {
-                FadingScrollView(maxHeight: 620) {
-                    VStack(spacing: 12) {
-                        ForEach(viewModel.locations) { item in
-                            Button { viewModel.selectLocation(item) } label: {
-                                HStack(spacing: 16) {
-                                    Image(systemName: item.isBrowsable ? "folder.fill" : "externaldrive.fill")
-                                        .plozzForeground(.secondary)
-                                    Text(item.name).font(.headline)
-                                    Spacer(minLength: 12)
-                                    Image(systemName: "chevron.forward").plozzForeground(.tertiary)
-                                }
-                                .contentShape(Rectangle()).padding(.vertical, 10).padding(.horizontal, 12)
-                            }
-                            .buttonStyle(SettingsFocusButtonStyle(size: .prominent))
-                            .focused($focus, equals: .location(item.path))
-                        }
-                    }
-                }
+                ShareLocationList(locations: viewModel.locations, onSelect: viewModel.selectLocation)
+                    .id(viewModel.currentPath)
             }
         }
         if viewModel.showsManualRootEntry {

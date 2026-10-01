@@ -19,6 +19,8 @@ public enum PlozzTextTier: Sendable {
 
 private struct PlozzForegroundModifier: ViewModifier {
     @Environment(\.themePalette) private var palette
+    @Environment(\.settingsRowIsFocused) private var isRowFocused
+    @Environment(\.settingsRowFocusForeground) private var rowFocusForeground
     let tier: PlozzTextTier
 
     func body(content: Content) -> some View {
@@ -26,6 +28,13 @@ private struct PlozzForegroundModifier: ViewModifier {
     }
 
     private var color: Color {
+        if isRowFocused {
+            switch tier {
+            case .primary: return rowFocusForeground
+            case .secondary: return rowFocusForeground.opacity(0.72)
+            case .tertiary: return rowFocusForeground.opacity(0.56)
+            }
+        }
         switch tier {
         case .primary: return palette.primaryText
         case .secondary: return palette.secondaryText
@@ -39,6 +48,8 @@ public extension View {
     /// reads the palette from the environment), so it's a drop-in replacement for
     /// `.foregroundStyle(.secondary)` / `.foregroundStyle(.tertiary)` anywhere,
     /// with no need for the call site to hold the palette itself.
+    /// Inside an inverted settings row, tiers use that row's focus foreground
+    /// instead; outside it, the normal palette remains unchanged.
     func plozzForeground(_ tier: PlozzTextTier) -> some View {
         modifier(PlozzForegroundModifier(tier: tier))
     }

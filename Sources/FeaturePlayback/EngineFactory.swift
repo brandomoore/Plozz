@@ -24,7 +24,7 @@ public struct EngineFactory {
     /// AV1, DTS/TrueHD, …) and decodes embedded + bitmap (PGS/DVB/DVD) subtitles
     /// itself, so no server transcode/burn-in is needed for them.
     public var makePlozzigen: (@MainActor () -> (any VideoEngine)?)?
-    /// Bounded header probe used only for an already-resolved next-episode stream.
+    /// Bounded header probe for an already-resolved episode handoff target.
     /// This gives handoff policy provider-independent range truth before stopping
     /// the outgoing engine, without consulting catalogs or metadata APIs.
     public var probeSourceDynamicRange:

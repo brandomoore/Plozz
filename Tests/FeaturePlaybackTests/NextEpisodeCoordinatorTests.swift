@@ -19,7 +19,8 @@ final class NextEpisodeCoordinatorTests: XCTestCase {
     private func makeSUT(
         providerKind: ProviderKind = .plex,
         next: MediaItem? = MediaItem(id: "next-1", title: "Next", kind: .episode, runtime: 1_400),
-        showUpNextCard: Bool = true
+        showUpNextCard: Bool = true,
+        probe: (@Sendable (PlaybackRequest) async -> SourceDynamicRange?)? = nil
     ) -> (NextEpisodeCoordinator, SpyNextEpisodeHost, UpNextSpyEngine, UpNextRecordingProvider) {
         let engine = UpNextSpyEngine()
         let provider = UpNextRecordingProvider(kind: providerKind)
@@ -34,7 +35,7 @@ final class NextEpisodeCoordinatorTests: XCTestCase {
             controls: controls,
             playbackSettings: settings,
             spoilerSettings: .default,
-            engineFactory: .native
+            engineFactory: EngineFactory(probeSourceDynamicRange: probe)
         )
         return (sut, host, engine, provider)
     }
@@ -167,6 +168,152 @@ final class NextEpisodeCoordinatorTests: XCTestCase {
     }
 
     // MARK: - display-mode preservation
+
+    func testPreviousAndArbitraryEpisodesPrepareTheSelectedRangeBeforeTeardown() async throws {
+        for id in ["previous", "another-season"] {
+            for range in [SourceDynamicRange.dolbyVision, .hdr10, .sdr, nil] {
+                let (sut, host, engine, _) = makeSUT(
+                    providerKind: .mediaShare, probe: { _ in range }
+                )
+                host.currentEngineKind = .plozzigen
+                host.authoritativeRange = .dolbyVision
+                host.resolveResult = prefetched(itemID: id, engineKind: .plozzigen)
+                let selected = MediaItem(id: id, title: "Selected", kind: .episode)
+                let prepared = await sut.prepareHandoff(to: selected)
+                XCTAssertEqual(prepared?.itemID, id)
+                XCTAssertEqual(prepared?.prefetchedDynamicRange, range)
+                XCTAssertEqual(host.resolvedItemIDs, [id])
+                XCTAssertEqual(engine.stopCount, 0, "Preparation must leave current display criteria intact.")
+                XCTAssertEqual(sut.shouldPreserveDisplayMode(forNext: prepared), range == .dolbyVision)
+            }
+        }
+    }
+
+    func testPreparedNextIsReusedWithoutASecondResolveOrProbe() async {
+        let (sut, host, _, _) = makeSUT(providerKind: .mediaShare, probe: { _ in .dolbyVision })
+        host.currentEngineKind = .plozzigen
+        host.authoritativeRange = .dolbyVision
+        host.resolveResult = prefetched(itemID: "next-1", engineKind: .plozzigen)
+        sut.startNextEpisodePrefetch(trigger: "test")
+        await waitUntil { sut.prefetchedNext != nil }
+        let prepared = await sut.prepareHandoff(to: host.nextEpisodeCandidate!)
+        XCTAssertEqual(host.resolveCallCount, 1)
+        XCTAssertEqual(prepared?.prefetchedDynamicRange, .dolbyVision)
+        XCTAssertNil(sut.prefetchedNext)
+        XCTAssertTrue(sut.shouldPreserveDisplayMode(forNext: prepared))
+    }
+
+    func testInFlightNextIsJoinedInsteadOfOpeningAnotherSession() async {
+        let gate = HandoffProbeGate()
+        let (sut, host, _, _) = makeSUT(providerKind: .jellyfin, probe: { _ in await gate.wait() })
+        host.currentEngineKind = .plozzigen
+        host.authoritativeRange = .dolbyVision
+        host.resolveResult = prefetched(itemID: "next-1", engineKind: .plozzigen)
+        sut.startNextEpisodePrefetch(trigger: "test")
+        await gate.waitUntilEntered()
+        let selection = Task { await sut.prepareHandoff(to: host.nextEpisodeCandidate!) }
+        await Task.yield()
+        await gate.release()
+        let prepared = await selection.value
+        XCTAssertEqual(host.resolveCallCount, 1)
+        XCTAssertEqual(prepared?.prefetchedDynamicRange, .dolbyVision)
+        XCTAssertNil(sut.prefetchedNext)
+    }
+
+    func testChangedVersionDoesNotConsumeThePreviousVersionPrefetch() async {
+        let (sut, host, _, provider) = makeSUT(providerKind: .jellyfin, probe: { _ in .dolbyVision })
+        host.currentEngineKind = .plozzigen
+        host.authoritativeRange = .dolbyVision
+        host.resolveResult = prefetched(itemID: "next-1", engineKind: .plozzigen)
+        sut.startNextEpisodePrefetch(trigger: "test")
+        await waitUntil { sut.prefetchedNext != nil }
+        var selected = host.nextEpisodeCandidate!
+        selected.selectedVersionID = "alternate-file"
+        let prepared = await sut.prepareHandoff(to: selected)
+        XCTAssertNotNil(prepared)
+        XCTAssertEqual(host.resolveCallCount, 2)
+        XCTAssertEqual(host.resolvedVersionIDs, [nil, "alternate-file"])
+        XCTAssertNotNil(sut.prefetchedNext, "The unadopted version remains owned until stop.")
+        await sut.releaseOrphanedPrefetchIfNeeded()
+        let stops = await provider.stopReports
+        XCTAssertEqual(stops.count, 1)
+    }
+
+    func testCancelledJoinReleasesTheInFlightNextSessionOnce() async {
+        let gate = HandoffProbeGate()
+        let (sut, host, _, provider) = makeSUT(providerKind: .jellyfin, probe: { _ in await gate.wait() })
+        host.currentEngineKind = .plozzigen
+        host.authoritativeRange = .dolbyVision
+        host.resolveResult = prefetched(itemID: "next-1", engineKind: .plozzigen)
+        sut.startNextEpisodePrefetch(trigger: "test")
+        await gate.waitUntilEntered()
+        let selection = Task { await sut.prepareHandoff(to: host.nextEpisodeCandidate!) }
+        await Task.yield()
+        selection.cancel()
+        await gate.release()
+        let prepared = await selection.value
+        XCTAssertNil(prepared)
+        await sut.releaseOrphanedPrefetchIfNeeded()
+        let stops = await provider.stopReports
+        XCTAssertEqual(stops.map(\.playSessionID), ["session-next-1"])
+    }
+
+    func testNativeTargetSkipsProbeAndKeepsTheNormalDisplayReset() async {
+        let (sut, host, _, _) = makeSUT(probe: { _ in
+            XCTFail("Native target must not use the network-file engine probe.")
+            return .dolbyVision
+        })
+        host.currentEngineKind = .plozzigen
+        host.authoritativeRange = .dolbyVision
+        host.resolveResult = prefetched(itemID: "previous", engineKind: .native)
+        let prepared = await sut.prepareHandoff(to: MediaItem(id: "previous", title: "Previous", kind: .episode))
+        XCTAssertEqual(prepared?.engineKind, .native)
+        XCTAssertFalse(sut.shouldPreserveDisplayMode(forNext: prepared))
+    }
+
+    func testCancelledOnDemandProbeReleasesTheUnadoptedSession() async {
+        let gate = HandoffProbeGate()
+        let (sut, host, engine, provider) = makeSUT(providerKind: .jellyfin, probe: { _ in await gate.wait() })
+        host.currentEngineKind = .plozzigen
+        host.authoritativeRange = .dolbyVision
+        host.resolveResult = prefetched(itemID: "previous", engineKind: .plozzigen)
+        let selection = Task {
+            await sut.prepareHandoff(to: MediaItem(id: "previous", title: "Previous", kind: .episode))
+        }
+        await gate.waitUntilEntered()
+        selection.cancel()
+        await gate.release()
+        let prepared = await selection.value
+        XCTAssertNil(prepared)
+        XCTAssertEqual(engine.stopCount, 0)
+        let stops = await provider.stopReports
+        XCTAssertEqual(stops.map(\.playSessionID), ["session-previous"])
+        await sut.releaseOrphanedPrefetchIfNeeded()
+        let finalStops = await provider.stopReports
+        XCTAssertEqual(finalStops.count, 1)
+    }
+
+    func testSDROrNativePlaybackDoesNotAddAnOnDemandProbe() async {
+        for kind in [PlaybackEngineKind.native, .plozzigen] {
+            let (sut, host, _, _) = makeSUT()
+            host.currentEngineKind = kind
+            host.authoritativeRange = kind == .native ? .dolbyVision : .sdr
+            let prepared = await sut.prepareHandoff(to: MediaItem(id: "previous", title: "Previous", kind: .episode))
+            XCTAssertNil(prepared)
+            XCTAssertEqual(host.resolveCallCount, 0)
+        }
+    }
+
+    func testFailedPreparationRetainsNormalIncomingResolution() async {
+        let (sut, host, engine, _) = makeSUT()
+        host.currentEngineKind = .plozzigen
+        host.authoritativeRange = .dolbyVision
+        host.resolveError = TestError.boom
+        let prepared = await sut.prepareHandoff(to: MediaItem(id: "previous", title: "Previous", kind: .episode))
+        XCTAssertNil(prepared)
+        XCTAssertFalse(sut.shouldPreserveDisplayMode(forNext: prepared))
+        XCTAssertEqual(engine.stopCount, 0)
+    }
 
     func testPreserveDisplayModeBothPlozzigenSameHDR() {
         let (sut, host, _, _) = makeSUT()
@@ -340,6 +487,8 @@ private final class SpyNextEpisodeHost: NextEpisodeCoordinatorHost {
     var resolveResult: PlayerViewModel.PrefetchedPlayback?
     var resolveError: Error?
     private(set) var resolveCallCount = 0
+    private(set) var resolvedItemIDs: [String] = []
+    private(set) var resolvedVersionIDs: [String?] = []
 
     init(engine: UpNextSpyEngine, provider: UpNextRecordingProvider) {
         self.engine = engine
@@ -356,6 +505,8 @@ private final class SpyNextEpisodeHost: NextEpisodeCoordinatorHost {
         itemID: String, mediaSourceID: String?, forceTranscode: Bool
     ) async throws -> PlayerViewModel.PrefetchedPlayback {
         resolveCallCount += 1
+        resolvedItemIDs.append(itemID)
+        resolvedVersionIDs.append(mediaSourceID)
         if let resolveError { throw resolveError }
         guard let resolveResult else { throw TestError.boom }
         return resolveResult
@@ -416,18 +567,42 @@ private final class UpNextSpyEngine: VideoEngine {
     var onSubtitleCues: (@MainActor ([SubtitleCue]) -> Void)?
     var onSecondarySubtitleCues: (@MainActor ([SubtitleCue]) -> Void)?
     var onProbedSourceFactsChanged: (@MainActor (EngineProbedSourceFacts) -> Void)?
+    var stopCount = 0
     func load(request: PlaybackRequest, startPosition: TimeInterval) async { status = .ready }
     func play() { isPaused = false }
     func pause() { isPaused = true }
     func reloadAfterForeground() async throws {}
     func seek(to seconds: TimeInterval) async { _currentTime = seconds }
     func seek(to seconds: TimeInterval, kind: VideoSeekKind) async { _currentTime = seconds }
-    func stop() { status = .idle }
+    func stop() { stopCount += 1; status = .idle }
     func selectAudioTrack(_ track: MediaTrack?) {}
     func selectSubtitleTrack(_ track: MediaTrack?) {}
 
     #if canImport(UIKit)
     func makeVideoOutputView() -> UIView { UIView() }
     #endif
+}
+
+private actor HandoffProbeGate {
+    private var entered = false
+    private var continuation: CheckedContinuation<SourceDynamicRange?, Never>?
+
+    func wait() async -> SourceDynamicRange? {
+        entered = true
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilEntered() async {
+        for _ in 0..<1_000 {
+            if entered { return }
+            await Task.yield()
+        }
+        XCTFail("Probe did not start.")
+    }
+
+    func release() {
+        continuation?.resume(returning: .dolbyVision)
+        continuation = nil
+    }
 }
 #endif

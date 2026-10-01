@@ -22,6 +22,7 @@ final class ShareProviderCapabilityTests: XCTestCase {
         var searchItems: [MediaItem] = []
         var movieItems: [MediaItem] = []
         var seriesItems: [MediaItem] = []
+        var animeSeriesCount = 0
         var indexedItem: [String: MediaItem] = [:]
         var canonicalMap: [String: String] = [:]
         var aliasMap: [String: String] = [:]
@@ -34,7 +35,7 @@ final class ShareProviderCapabilityTests: XCTestCase {
         var seriesSortRequests: [CoreModels.SortDescriptor] = []
 
         func libraryCounts() async -> (movies: Int, tvSeries: Int, animeSeries: Int) {
-            (movieItems.count, seriesItems.count, 0)
+            (movieItems.count, seriesItems.count, animeSeriesCount)
         }
         func latest(limit: Int) async -> [MediaItem] { Array(latestItems.prefix(limit)) }
         func search(query: String, limit: Int) async -> [MediaItem] { Array(searchItems.prefix(limit)) }
@@ -165,6 +166,36 @@ final class ShareProviderCapabilityTests: XCTestCase {
 
         XCTAssertEqual(libraries.map(\.id), [ShareCatalogID.moviesLibrary])
         XCTAssertEqual(libraries.map(\.title), ["Anime Films"])
+    }
+
+    func testAnimeContentChoiceExposesBothFilmsAndAnimeSeries() async throws {
+        let reader = FakeCatalogReader()
+        reader.movieItems = [MediaItem(id: "anime-film", title: "Your Name", kind: .movie)]
+        reader.animeSeriesCount = 1
+        let provider = ShareProvider(
+            session: makeSession(configuration: .init(name: "Anime", contentType: .anime)),
+            catalogCoordinator: FakeCatalogCoordinator(reader: reader)
+        )
+        let libraries = try await provider.libraries()
+        XCTAssertTrue(libraries.contains { $0.id == ShareCatalogID.moviesLibrary && $0.kind == .movie })
+        XCTAssertTrue(libraries.contains { $0.id == ShareCatalogID.animeLibrary && $0.kind == .series })
+        XCTAssertFalse(libraries.contains { $0.id == ShareCatalogID.tvLibrary })
+    }
+
+    func testAnimeWorkScopeRequiresAnEnabledMovieOrAnimeLibrary() {
+        let configuration = MediaShareLibraryConfiguration(name: "Anime", contentType: .anime)
+        let movies = "share:\(ShareCatalogID.moviesLibrary)"
+        let anime = "share:\(ShareCatalogID.animeLibrary)"
+        for disabled in [Set<String>(), [movies], [anime]] {
+            XCTAssertTrue(ShareProvider.hasEnabledCatalogLibrary(
+                accountID: "share", configuration: configuration,
+                visibility: .init(disabledKeys: disabled)
+            ))
+        }
+        XCTAssertFalse(ShareProvider.hasEnabledCatalogLibrary(
+            accountID: "share", configuration: configuration,
+            visibility: .init(disabledKeys: [movies, anime])
+        ), "An enabled ordinary TV or raw-files entry must not keep an Anime root scanning.")
     }
 
     func testLegacyAutomaticShareKeepsSyntheticIDsAndDistinguishesRawBrowsing() async throws {

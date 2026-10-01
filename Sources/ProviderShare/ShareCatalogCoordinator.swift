@@ -749,8 +749,8 @@ public actor ShareCatalogCoordinator: ShareCatalogCoordinating {
                (
                    scanner.libraryConfiguration?.contentType
                        != libraryConfiguration?.contentType
-                       || scanner.libraryConfiguration?.isAnime
-                       != libraryConfiguration?.isAnime
+                       || scanner.libraryConfiguration?.usesAnimeMetadata
+                       != libraryConfiguration?.usesAnimeMetadata
                ) {
                 if libraryConfiguration?.contentType == .personalVideos {
                     let staleLocalEnricher = runtime.localEnricher

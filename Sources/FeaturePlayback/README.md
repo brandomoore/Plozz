@@ -215,6 +215,8 @@ Only intersecting captions lift above those bounds: dialogue and dual
 lanes move together, while bitmap and authored-position cues are checked at
 their own positions. Ordinary track menus retain the normal title clearance
 while the title fades, preventing subtitles from dropping into its empty space.
+The normal transport reserves its full title-to-tabs band, including gaps between
+controls: a short title must not let centered captions stay beneath the timeline.
 Info/Cast and full appearance editing release that reserved clearance.
 Hiding the controls restores normal placement; style
 editing, previews, and saved position values are unchanged. The normal dialogue
@@ -344,6 +346,16 @@ allowing the existing alternate-engine fallback to keep the requested position
 instead of waiting for the first-frame watchdog and adopting the wrong clock.
 A paused handoff clears loading only when the engine has a displayable frame at
 the resumed position; it does not force playback merely to advance the clock.
+tvOS episode handoffs use the same range preparation for automatic advance, Next,
+Previous, and episode-picker selections. A matching in-flight/ready prefetch is
+reused; other selections from Plozzigen HDR playback resolve and probe before
+the outgoing engine stops. Matching HDR display classes retain Aether's display
+criteria; unknown ranges, SDR, or native-engine transitions still reset normally.
+Cancelled handoffs release unadopted sessions and clear retained display criteria.
+The source-range decision does not establish HDMI output; physical-TV verification
+must check both initial Dolby Vision and forward/backward episode transitions.
+Mobile retains its existing handoff path without adding a network probe to
+offline playback; it does not drive the tvOS HDMI display-mode switch.
 For a server conversion, Info's existing badge row describes the active rendition
 and is labelled Transcoded alongside the badges: exact encoded dimensions, video codec, known range,
 and actual audio format/channels. No original-file badges are substituted while
@@ -482,14 +494,26 @@ shared artwork scrim rather than a capsule. Only the current season loads on
 entry; adjacent seasons load as browsing reaches the row's edges. Empty seasons
 are skipped, and a failed adjacent load exposes a retry at that edge. Adjacent
 loads belong to the row and follow visible edges, not the lifecycle of lazy
-cards; once started they finish even if that edge scrolls offscreen. Task and
-transport cancellations do not become retry errors. On tvOS, a reusable native
+cards; once started they finish even if that edge scrolls offscreen. Cancelling
+a view task drains the request without showing an error. A replacement
+panel joins that request and restarts it if cancelled, rather than leaving a
+loading skeleton with no work running. Transport cancellation on a still-active
+panel exposes Retry like other request failures. Initial and adjacent loads
+coalesce independently, and player teardown cancels all of them. Switching the
+retained sequence panel from Playlist to Episodes starts its load without
+requiring the view to remount. On tvOS, a reusable native
 collection owns directional focus and realizes cells throughout held Left/Right
 input. Stable episode IDs and layout offset adjustments preserve the focused cell
 and its exact viewport position when earlier seasons or retry rows arrive,
 including during native focus transitions and in RTL. Native scroll targets use
-complete card slots constrained to fully reveal the focused cell. First-card
-entry and return share the same gutter, with no idle realignment. Mobile SwiftUI
+complete card slots constrained to fully reveal the focused cell, with an initial 24pt
+peek of preceding artwork when available. The first episode retains its normal
+gutter. Entry targets the current/last-focused episode, not the partial previous
+card. Loading uses the same artwork dimensions, spacing, and peek offset, including
+right-to-left layout. Episode spacing uses the standard column gap without adding
+panel padding between cards (28pt between tvOS slots, 52pt between resting stills).
+Native focus can reveal more of the preceding card when making room for its lift.
+Mobile SwiftUI
 rows defer leading insertions until scrolling settles.
 tvOS resets artwork content when the row changes enabled state and when focus
 leaves the collection for a tab, without replacing cells or their viewport.
