@@ -80,23 +80,27 @@ struct ScrubBar: View {
             let knobHeight: CGFloat = focused ? (model.isScrubbing ? 40 : 32) : barHeight
 
             ZStack(alignment: .leading) {
-                PlayerScrubTrackSurface(height: barHeight)
-                Capsule()
-                    .fill(.white.opacity(0.14))
-                    .frame(width: width * CGFloat(model.bufferedFraction), height: barHeight)
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 10,
-                    bottomLeadingRadius: 10,
-                    bottomTrailingRadius: 0,
-                    topTrailingRadius: 0,
-                    style: .continuous
-                )
-                    .fill(.white.opacity(focused ? 0.62 : 0.32))
-                    .frame(width: knobX, height: barHeight)
-                PlayerSkipMarkerTrack(
-                    segments: model.skipSegments.segments, duration: model.duration, height: barHeight
-                )
-                .equatable()
+                ZStack(alignment: .leading) {
+                    PlayerScrubTrackSurface(height: barHeight)
+                    Capsule()
+                        .fill(.white.opacity(0.14))
+                        .frame(width: width * CGFloat(model.bufferedFraction), height: barHeight)
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 10,
+                        bottomLeadingRadius: 10,
+                        bottomTrailingRadius: 0,
+                        topTrailingRadius: 0,
+                        style: .continuous
+                    )
+                        .fill(.white.opacity(focused ? 0.62 : 0.32))
+                        .frame(width: knobX, height: barHeight)
+                }
+                .mask {
+                    PlayerSkipMarkerTrack(
+                        segments: model.skipSegments.segments, duration: model.duration, height: barHeight
+                    )
+                    .equatable()
+                }
                 RoundedRectangle(cornerRadius: focused ? knobWidth / 2 : 0, style: .continuous)
                     .fill(.white)
                     .frame(width: knobWidth, height: knobHeight)

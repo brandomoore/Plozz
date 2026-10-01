@@ -15,21 +15,26 @@ final class PlayerSkipMarkerPresentationTests: XCTestCase {
                 .init(kind: .intro, start: 20, end: 80)
             ])
             XCTAssertEqual(marked.image.width, width)
-            XCTAssertEqual(marked.image.height, 44, "Hatching must not change the touch target.")
+            XCTAssertEqual(marked.image.height, 44, "Cutouts must not change the touch target.")
             var changed = 0
             for x in 0..<width {
                 let index = (22 * width + x) * 4
                 if x < width / 5 - 1 || x > width * 4 / 5 + 1 {
-                    XCTAssertEqual(marked.bytes[index], plain.bytes[index], "No pattern outside the skip range.")
+                    XCTAssertEqual(marked.bytes[index], plain.bytes[index], "No cutout outside the skip range.")
                 } else if marked.bytes[index] < plain.bytes[index] {
                     changed += 1
                 }
             }
             XCTAssertGreaterThan(changed, width / 30)
             XCTAssertEqual(marked.bytes[(22 * width + width / 2) * 4], 255,
-                           "The playhead must stay above the hatch.")
+                           "The playhead must remain outside the cutout mask.")
+            for x in [width / 3, width * 3 / 5, width * 3 / 4] {
+                let index = (22 * width + x) * 4
+                XCTAssertEqual(Array(marked.bytes[index..<(index + 3)]), [0, 255, 255],
+                               "The cutout must reveal the actual picture through every fill.")
+            }
             let attachment = XCTAttachment(image: UIImage(cgImage: marked.image))
-            attachment.name = "Touch skip markers at \(width)pt"
+            attachment.name = "Touch skip cutouts at \(width)pt"
             attachment.lifetime = .keepAlways
             add(attachment)
         }
@@ -44,7 +49,7 @@ final class PlayerSkipMarkerPresentationTests: XCTestCase {
             )
             .frame(width: CGFloat(width), height: 44)
             .environment(\.plozzReducePanelGlass, true)
-            .background(.black)
+            .background(Color(red: 0, green: 1, blue: 1))
         )
         renderer.scale = 1
         let image = try XCTUnwrap(renderer.cgImage)

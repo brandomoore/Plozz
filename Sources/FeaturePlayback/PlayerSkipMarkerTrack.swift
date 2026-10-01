@@ -33,38 +33,34 @@ enum SkipMarkerTrackLayout {
     }
 }
 
-/// A static tonal cut over all three progress fills, beneath the playhead.
+/// An alpha mask that cuts a centered slot through all three progress fills.
 struct PlayerSkipMarkerTrack: View, Equatable {
     let segments: [MediaSegment]
     let duration: TimeInterval
     let height: CGFloat
 
-    static let spacing: CGFloat = 16
-    static let lineWidth: CGFloat = 2
-    static let opacity = 0.24
+    static let cutoutHeightFraction: CGFloat = 0.75
 
     var body: some View {
         let ranges = SkipMarkerTrackLayout.ranges(segments: segments, duration: duration)
         Canvas { context, size in
-            guard !ranges.isEmpty, size.width.isFinite, size.width > 0, size.height > 0 else { return }
-            var mask = Path()
+            guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return }
+            var mask = Path(CGRect(origin: .zero, size: size))
+            let cutoutHeight = size.height * Self.cutoutHeightFraction
+            let inset = (size.height - cutoutHeight) / 2
             for range in ranges {
-                mask.addRect(CGRect(
-                    x: size.width * CGFloat(range.lowerBound), y: 0,
-                    width: size.width * CGFloat(range.upperBound - range.lowerBound), height: size.height
-                ))
+                // Preserve the track's end caps when a marker touches 0 or duration.
+                let start = max(inset, size.width * CGFloat(range.lowerBound))
+                let end = min(size.width - inset, size.width * CGFloat(range.upperBound))
+                guard end > start else { continue }
+                mask.addRoundedRect(
+                    in: CGRect(x: start, y: inset, width: end - start, height: cutoutHeight),
+                    cornerSize: CGSize(width: cutoutHeight / 2, height: cutoutHeight / 2)
+                )
             }
-            context.clip(to: mask)
-            var stripes = Path()
-            // Anchor phase to the track, not each segment or the live playhead.
-            for x in stride(from: CGFloat.zero, through: size.width + size.height, by: Self.spacing) {
-                stripes.move(to: CGPoint(x: x, y: 0))
-                stripes.addLine(to: CGPoint(x: x - size.height, y: size.height))
-            }
-            context.stroke(stripes, with: .color(.black.opacity(Self.opacity)), lineWidth: Self.lineWidth)
+            context.fill(mask, with: .color(.white), style: FillStyle(eoFill: true))
         }
         .frame(height: height)
-        .clipShape(Capsule())
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

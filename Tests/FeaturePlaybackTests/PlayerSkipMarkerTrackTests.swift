@@ -39,41 +39,52 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
         XCTAssertTrue(SkipMarkerTrackLayout.ranges(segments: segments, duration: 100).isEmpty)
     }
 
-    func testStyleMatchesTheApprovedSubtleStaticPattern() {
-        XCTAssertEqual(PlayerSkipMarkerTrack.spacing, 16)
-        XCTAssertEqual(PlayerSkipMarkerTrack.lineWidth, 2)
-        XCTAssertEqual(PlayerSkipMarkerTrack.opacity, 0.24)
-    }
-
-    func testHatchKeepsAllThreeFillsAndTheWhitePlayheadDistinct() throws {
+    func testCutoutIsCenteredAndExactlyThreeQuartersOfTheTrackHeight() throws {
+        XCTAssertEqual(PlayerSkipMarkerTrack.cutoutHeightFraction, 0.75)
         for height in [CGFloat(12), 20] {
-            let plain = try pixels(track(segments: [], height: height))
-            let hatched = try pixels(track(segments: [marker], height: height))
-            var darkest: [UInt8] = []
-            for region in [48..<120, 144..<184, 208..<272] {
-                let before = region.map { plain.red(x: $0, y: 22) }
-                let after = region.map { hatched.red(x: $0, y: 22) }
-                let base = try XCTUnwrap(before.max())
-                let low = try XCTUnwrap(after.min())
-                XCTAssertEqual(after.max(), before.max(), "The spaces between stripes preserve the existing fill.")
-                XCTAssertLessThan(low, base, "Each fill must show the pattern.")
-                let darkening = 1 - Double(low) / Double(base)
-                XCTAssertGreaterThan(darkening, 0.18)
-                XCTAssertLessThan(darkening, 0.28, "Hatching must remain subtle on \(height)pt bars.")
-                darkest.append(low)
+            let mask = try pixels(
+                PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: height)
+                    .frame(width: 320, height: 44)
+                    .background(.black)
+            )
+            let missingHeight = (0..<44).reduce(0.0) { total, y in
+                let insideTrack = CGFloat(y) >= (44 - height) / 2 && CGFloat(y) < (44 + height) / 2
+                return total + (insideTrack ? 1 - Double(mask.red(x: 80, y: y)) / 255 : 0)
             }
-            XCTAssertGreaterThan(darkest[0], darkest[1])
-            XCTAssertGreaterThan(darkest[1], darkest[2])
-            for x in 124..<132 {
-                XCTAssertEqual(hatched.red(x: x, y: 22), 255, "Never hatch over the playhead.")
-            }
-            for x in Array(12..<38) + Array(282..<308) {
-                XCTAssertEqual(hatched.red(x: x, y: 22), plain.red(x: x, y: 22), "No paint outside the marker.")
+            XCTAssertEqual(missingHeight, Double(height * 0.75), accuracy: 0.05)
+            for y in 0..<22 {
+                XCTAssertEqual(mask.red(x: 80, y: y), mask.red(x: 80, y: 43 - y),
+                               "The cutout must leave equal rails above and below.")
             }
         }
     }
 
-    func testOverlappingMarkersRenderExactlyOnceAndDoNotMoveThePattern() throws {
+    func testCutoutRevealsThePictureThroughEveryFillAndKeepsThePlayheadSolid() throws {
+        for height in [CGFloat(12), 20] {
+            for background in [Color.black, .red, .cyan] {
+                let plain = try pixels(track(segments: [], height: height, background: background))
+                let cutout = try pixels(track(segments: [marker], height: height, background: background))
+                let backdrop = try pixels(background.frame(width: 320, height: 44))
+                let railY = Int((44 - height) / 2)
+                for x in [80, 160, 240] {
+                    XCTAssertEqual(cutout.rgb(x: x, y: 22), backdrop.rgb(x: x, y: 22),
+                                   "The center is transparent across played, buffered, and unbuffered portions.")
+                    XCTAssertEqual(cutout.rgb(x: x, y: railY), plain.rgb(x: x, y: railY),
+                                   "The remaining rail preserves the existing progress fill.")
+                    XCTAssertEqual(cutout.rgb(x: x, y: 43 - railY), plain.rgb(x: x, y: 43 - railY))
+                }
+                for x in 124..<132 {
+                    XCTAssertEqual(cutout.rgb(x: x, y: 22), [255, 255, 255], "The playhead is never masked.")
+                }
+                for x in Array(12..<38) + Array(282..<308) {
+                    XCTAssertEqual(cutout.rgb(x: x, y: 22), plain.rgb(x: x, y: 22),
+                                   "No cutout outside the marker.")
+                }
+            }
+        }
+    }
+
+    func testOverlappingMarkersCreateOneSlotWithoutFillingTheOverlapBackIn() throws {
         let single: [MediaSegment] = [.init(kind: .intro, start: 20, end: 85)]
         let overlapping: [MediaSegment] = [
             .init(kind: .intro, start: 20, end: 70),
@@ -84,17 +95,33 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
                        try pixels(track(segments: overlapping)).bytes)
     }
 
-    func testPatternPhaseDoesNotChangeAsProgressOrBufferCrossesIt() throws {
-        let early = try pixels(track(segments: [marker], played: 0.3, buffered: 0.5))
-        let late = try pixels(track(segments: [marker], played: 0.6, buffered: 0.8))
-        let earlyBase = try pixels(track(segments: [], played: 0.3, buffered: 0.5))
-        let lateBase = try pixels(track(segments: [], played: 0.6, buffered: 0.8))
-        let region = 112..<144
-        let earlyStripes = region.map { early.red(x: $0, y: 22) < earlyBase.red(x: $0, y: 22) - 3 }
-        let lateStripes = region.map { late.red(x: $0, y: 22) < lateBase.red(x: $0, y: 22) - 3 }
-        XCTAssertEqual(earlyStripes, lateStripes)
-        XCTAssertTrue(earlyStripes.contains(true))
-        XCTAssertTrue(earlyStripes.contains(false))
+    func testTheSlotDoesNotMoveAsProgressOrBufferCrossesIt() throws {
+        let early = try pixels(track(segments: [marker], played: 0.3, buffered: 0.5, background: .cyan))
+        let late = try pixels(track(segments: [marker], played: 0.6, buffered: 0.8, background: .cyan))
+        let backdrop = try pixels(Color.cyan.frame(width: 320, height: 44))
+        for x in 112..<144 {
+            XCTAssertEqual(early.rgb(x: x, y: 22), late.rgb(x: x, y: 22))
+            XCTAssertEqual(late.rgb(x: x, y: 22), backdrop.rgb(x: x, y: 22))
+        }
+    }
+
+    func testSlotsHaveRoundedEndsAndPreserveTheTimelineEndCaps() throws {
+        let mask = try pixels(
+            PlayerSkipMarkerTrack(segments: [marker], duration: 100, height: 20)
+                .frame(width: 320, height: 44)
+                .background(.black)
+        )
+        XCTAssertEqual(mask.red(x: 41, y: 15), 255, "The capsule corner must stay filled.")
+        XCTAssertEqual(mask.red(x: 41, y: 22), 0, "The same x-coordinate is cut through at the center.")
+        let full = try pixels(
+            PlayerSkipMarkerTrack(segments: [.init(kind: .credits, start: 0, end: 100)],
+                                 duration: 100, height: 20)
+                .frame(width: 320, height: 44)
+                .background(.black)
+        )
+        XCTAssertEqual(full.red(x: 1, y: 22), 255)
+        XCTAssertEqual(full.red(x: 318, y: 22), 255)
+        XCTAssertEqual(full.red(x: 20, y: 22), 0)
     }
 
     func testNoSegmentsPreservesUnmarkedBarAndRoundedEnds() throws {
@@ -127,7 +154,7 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
             renderer.scale = 1
             let image = try XCTUnwrap(renderer.cgImage)
             let attachment = XCTAttachment(image: UIImage(cgImage: image))
-            attachment.name = focused ? "Focused seek bar with subtle skip markers" : "Normal seek bar with subtle skip markers"
+            attachment.name = focused ? "Focused seek bar with skip cutouts" : "Normal seek bar with skip cutouts"
             attachment.lifetime = .keepAlways
             add(attachment)
             XCTAssertEqual(image.width, 1280)
@@ -141,23 +168,32 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
     #endif
 
     private func track(
-        segments: [MediaSegment], height: CGFloat = 20, played: Double = 0.4, buffered: Double = 0.6
+        segments: [MediaSegment], height: CGFloat = 20, played: Double = 0.4, buffered: Double = 0.6,
+        background: Color = .black
     ) -> some View {
         ZStack(alignment: .leading) {
-            Capsule().fill(.white.opacity(0.2)).frame(height: height)
-            Capsule().fill(.white.opacity(0.14)).frame(width: 320 * buffered, height: height)
-            Rectangle().fill(.white.opacity(0.62)).frame(width: 320 * played, height: height)
-            PlayerSkipMarkerTrack(segments: segments, duration: 100, height: height)
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.2)).frame(height: height)
+                Capsule().fill(.white.opacity(0.14)).frame(width: 320 * buffered, height: height)
+                Rectangle().fill(.white.opacity(0.62)).frame(width: 320 * played, height: height)
+            }
+            .mask {
+                PlayerSkipMarkerTrack(segments: segments, duration: 100, height: height)
+            }
             Rectangle().fill(.white).frame(width: 8, height: 32).offset(x: 320 * played - 4)
         }
         .frame(width: 320, height: 44)
-        .background(.black)
+        .background(background)
     }
 
     private struct Pixels {
         let width: Int
         let bytes: [UInt8]
         func red(x: Int, y: Int) -> UInt8 { bytes[(y * width + x) * 4] }
+        func rgb(x: Int, y: Int) -> [UInt8] {
+            let index = (y * width + x) * 4
+            return Array(bytes[index..<(index + 3)])
+        }
     }
 
     private func pixels(_ view: some View) throws -> Pixels {

@@ -582,11 +582,14 @@ controls body, so moving the timeline does not rebuild unrelated menus and
 controls. Preserve the existing reveal/fade, playhead, and thumbnail animations
 when optimizing this path; removing visual polish is not a performance fix.
 
-The TV and touch seek bars share `PlayerSkipMarkerTrack`: static 2pt diagonal
-cuts at 16pt spacing and 24% black opacity, clipped to available skippable ranges.
-The overlay sits above the base, buffered, and played fills but below the white
-playhead, preserving each fill's brightness when progress or buffering crosses
-a marker. Overlapping/touching ranges form one mask, so they cannot darken twice.
+The TV and touch seek bars share `PlayerSkipMarkerTrack`: rounded transparent
+slots centered within available skippable ranges, cutting away 75% of the track's
+height. The mask applies to the base, buffered, and played fills together, never
+the white playhead. The thin remaining rails still show each fill's brightness
+when progress or buffering crosses a marker. The slot reveals the picture
+behind the bar rather than painting a black patch. Track end caps remain intact
+when a range reaches the beginning or end. Overlapping/touching ranges merge
+before masking, so overlapping cutouts cannot accidentally fill each other in.
 Ranges are clamped to a finite positive duration; malformed timing is logged and
 ignored. No marker changes focus, gestures, skip modes, or the existing buttons.
 The display uses already-loaded server/community metadata, without additional

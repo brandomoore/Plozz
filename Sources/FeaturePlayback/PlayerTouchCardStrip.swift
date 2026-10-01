@@ -298,22 +298,26 @@ public struct PlayerTouchScrubBar: View {
             let knobHeight: CGFloat = isTouching ? 32 : barHeight
 
             ZStack(alignment: .leading) {
-                PlayerScrubTrackSurface(height: barHeight)
-                Capsule().fill(.white.opacity(0.14))
-                    .frame(width: width * CGFloat(min(max(bufferedFraction, 0), 1)), height: barHeight)
-                // Square trailing edge so the played portion meets the knob
-                // flush instead of tucking a curve behind it.
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 10,
-                    bottomLeadingRadius: 10,
-                    bottomTrailingRadius: 0,
-                    topTrailingRadius: 0,
-                    style: .continuous
-                )
-                .fill(.white.opacity(isTouching ? 0.9 : 0.62))
-                .frame(width: knobX, height: barHeight)
-                PlayerSkipMarkerTrack(segments: segments, duration: duration, height: barHeight)
-                    .equatable()
+                ZStack(alignment: .leading) {
+                    PlayerScrubTrackSurface(height: barHeight)
+                    Capsule().fill(.white.opacity(0.14))
+                        .frame(width: width * CGFloat(min(max(bufferedFraction, 0), 1)), height: barHeight)
+                    // Square trailing edge so the played portion meets the knob
+                    // flush instead of tucking a curve behind it.
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 10,
+                        bottomLeadingRadius: 10,
+                        bottomTrailingRadius: 0,
+                        topTrailingRadius: 0,
+                        style: .continuous
+                    )
+                    .fill(.white.opacity(isTouching ? 0.9 : 0.62))
+                    .frame(width: knobX, height: barHeight)
+                }
+                .mask {
+                    PlayerSkipMarkerTrack(segments: segments, duration: duration, height: barHeight)
+                        .equatable()
+                }
                 // Square at rest, rounded once lifted — a rounded cap on a knob
                 // the same height as the track just erodes the played edge.
                 RoundedRectangle(cornerRadius: isTouching ? knobWidth / 2 : 0, style: .continuous)
