@@ -103,7 +103,7 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
     func makeUIView(context: Context) -> Container {
         let view = Card()
         view.defaultAccessibilityElement = view.isAccessibilityElement
-        view.cardBackgroundColor = UIColor(context.environment.themePalette.raised.fill)
+        view.cardBackgroundColor = UIColor(context.environment.themePalette.opaqueRaisedFill)
         let host = configuration(in: context).makeContentView()
         view.hostedContent = host
         view.contentView.addSubview(host)
@@ -129,7 +129,7 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
         view.accessibilityLabel = accessibilityLabel
         view.accessibilityValue = accessibilityValue
         view.accessibilityTraits.insert(.button)
-        let background = UIColor(context.environment.themePalette.raised.fill)
+        let background = UIColor(context.environment.themePalette.opaqueRaisedFill)
         if view.cardBackgroundColor != background { view.cardBackgroundColor = background }
         view.hostedContent?.configuration = configuration(in: context)
         view.isEnabled = isEnabled && context.environment.isEnabled

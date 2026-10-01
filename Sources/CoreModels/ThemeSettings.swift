@@ -54,7 +54,7 @@ public enum AppTheme: String, CaseIterable, Identifiable, Codable, Sendable {
         case .ambient:
             return LocalizedStringResource(
                 "theme.appearance.ambient",
-                defaultValue: "Ambient (System)",
+                defaultValue: "Ambient",
                 comment: "Appearance/theme option shown in the Settings theme picker."
             )
         }

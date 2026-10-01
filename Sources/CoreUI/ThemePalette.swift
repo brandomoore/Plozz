@@ -290,6 +290,27 @@ public extension ThemePalette {
         #endif
     }
 
+    /// ``raised``'s fill flattened onto ``backgroundBase``, for TVUIKit cards.
+    /// `TVCardView.cardBackgroundColor` doesn't honour translucency — a 5% white
+    /// wash renders as a solid white platter — so native cards need an opaque
+    /// colour. Already-opaque fills (every theme but Ambient) pass through.
+    var opaqueRaisedFill: Color {
+        #if canImport(UIKit)
+        var fr: CGFloat = 0, fg: CGFloat = 0, fb: CGFloat = 0, fa: CGFloat = 0
+        UIColor(raised.fill).getRed(&fr, green: &fg, blue: &fb, alpha: &fa)
+        guard fa < 1 else { return raised.fill }
+        var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0, ba: CGFloat = 0
+        UIColor(backgroundBase).getRed(&br, green: &bg, blue: &bb, alpha: &ba)
+        return Color(
+            red: Double(fr * fa + br * (1 - fa)),
+            green: Double(fg * fa + bg * (1 - fa)),
+            blue: Double(fb * fa + bb * (1 - fa))
+        )
+        #else
+        return raised.fill
+        #endif
+    }
+
     /// A subtle full-width tint for the lower "information" band on the detail
     /// page — nudged a touch away from `backgroundBase` so the section reads as its
     /// own zone without competing with the cards inside it (which sit on their own
