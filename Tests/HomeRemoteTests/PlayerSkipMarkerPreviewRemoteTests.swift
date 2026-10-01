@@ -16,7 +16,7 @@ final class PlayerSkipMarkerPreviewRemoteTests: XCTestCase {
         XCTAssertTrue(isFocused(diagonal))
         XCTAssertEqual(diagonal.value as? String, "Selected")
         attach(app, "Diagonals - Liquid Glass and flat")
-        for pattern in ["denseDots", "fineHatch", "mesh"] {
+        for pattern in ["denseDots", "mediumHatch", "fineHatch", "mesh"] {
             let button = app.buttons["marker-pattern-\(pattern)"]
             XCUIRemote.shared.press(.right)
             XCTAssertTrue(isFocused(button))
@@ -25,7 +25,7 @@ final class PlayerSkipMarkerPreviewRemoteTests: XCTestCase {
             XCTAssertEqual(diagonal.value as? String, "Not selected")
             attach(app, "\(pattern) - Liquid Glass and flat")
         }
-        for _ in 0..<3 { XCUIRemote.shared.press(.left) }
+        for _ in 0..<4 { XCUIRemote.shared.press(.left) }
         XCTAssertTrue(isFocused(diagonal))
         XCUIRemote.shared.press(.down)
         let position = app.buttons["marker-preview-position"]

@@ -53,8 +53,8 @@ enum SkipMarkerTrackLayout {
         var path = Path()
         let centerY = size.height / 2
         switch pattern {
-        case .diagonal, .fineHatch, .mesh:
-            let spacing: CGFloat = pattern == .diagonal ? 16 : pattern == .fineHatch ? 8 : 12
+        case .diagonal, .mediumHatch, .fineHatch, .mesh:
+            let spacing: CGFloat = pattern == .diagonal ? 16 : pattern == .mediumHatch ? 12 : 8
             for x in stride(from: CGFloat.zero, through: size.width + size.height, by: spacing) {
                 path.move(to: CGPoint(x: x, y: 0))
                 path.addLine(to: CGPoint(x: x - size.height, y: size.height))
@@ -69,7 +69,8 @@ enum SkipMarkerTrackLayout {
             for row in -rows...rows {
                 let stagger: CGFloat = row.isMultiple(of: 2) ? 0 : 3
                 for x in stride(from: CGFloat(-6) + stagger, through: size.width, by: 6) {
-                    path.addEllipse(in: CGRect(x: x, y: centerY + CGFloat(row) * 4 - 1.5, width: 3, height: 3))
+                    // Pixel-centered small dots keep a solid core instead of a blurred speck.
+                    path.addEllipse(in: CGRect(x: x + 0.5, y: centerY + CGFloat(row) * 4 - 0.5, width: 2, height: 2))
                 }
             }
         }
@@ -80,6 +81,7 @@ enum SkipMarkerTrackLayout {
 enum PlayerSkipMarkerPattern: String, CaseIterable, Sendable {
     case diagonal
     case denseDots
+    case mediumHatch
     case fineHatch
     case mesh
 }

@@ -630,8 +630,10 @@ Debug tvOS builds can open `PlayerSkipMarkerPreview` with the explicit
 `PLOZZ_SKIP_MARKER_PREVIEW=1` process environment. It shows only two real
 `ScrubBar` rows: Liquid Glass and the translucent flat performance fill, each
 with a 50%-height patterned cutout. Remote pattern buttons compare the original
-16pt diagonal hatch, dense staggered 6pt-spaced dots, an 8pt fine diagonal hatch,
-and a fine diamond mesh in exactly the same space. Rejected literal chevrons,
+16pt diagonal hatch, dense staggered 2pt dots at 6pt spacing, a 12pt medium hatch,
+the retained 8pt fine hatch, and an 8pt diamond mesh in exactly the same space.
+Medium/fine/mesh use the same 1.5pt line weight; the original retains its 2pt
+strokes. Rejected literal chevrons,
 centerline dashes, and sparse dots are no longer in the comparison.
 Open-cutout comparisons and the 75% preview toggle are removed. Other controls
 change example playhead/buffer positions, normal/focused bar heights, and

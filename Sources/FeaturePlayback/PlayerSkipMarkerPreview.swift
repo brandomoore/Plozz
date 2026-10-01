@@ -200,6 +200,7 @@ private extension PlayerSkipMarkerPattern {
         switch self {
         case .diagonal: Text(verbatim: "Diagonals")
         case .denseDots: Text(verbatim: "Dense dots")
+        case .mediumHatch: Text(verbatim: "Medium hatch")
         case .fineHatch: Text(verbatim: "Fine hatch")
         case .mesh: Text(verbatim: "Diamond mesh")
         }
@@ -208,9 +209,10 @@ private extension PlayerSkipMarkerPattern {
     var previewExplanation: Text {
         switch self {
         case .diagonal: Text(verbatim: "A familiar marked-off range. Clear and continuous.")
-        case .denseDots: Text(verbatim: "Close, staggered dots fill the slot. A fine texture, not a line of markers.")
+        case .denseDots: Text(verbatim: "Smaller 2pt dots in close, staggered rows. The same spacing with a finer grain.")
+        case .mediumHatch: Text(verbatim: "A middle ground: thinner strokes at 12pt spacing, between the original and fine hatch.")
         case .fineHatch: Text(verbatim: "Twice as many diagonals with thinner strokes. More continuous, less stripe-like.")
-        case .mesh: Text(verbatim: "Fine crossing diagonals form a diamond mesh. A woven texture without a literal symbol.")
+        case .mesh: Text(verbatim: "A tighter 8pt diamond mesh. Smaller openings make it read as a continuous woven texture.")
         }
     }
 }

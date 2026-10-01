@@ -176,7 +176,7 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
     }
 
     func testEveryComparisonPatternKeepsTheOriginalColorsInsideAHalfHeightSlot() throws {
-        XCTAssertEqual(PlayerSkipMarkerPattern.allCases, [.diagonal, .denseDots, .fineHatch, .mesh])
+        XCTAssertEqual(PlayerSkipMarkerPattern.allCases, [.diagonal, .denseDots, .mediumHatch, .fineHatch, .mesh])
         for height in [CGFloat(12), 20] {
             var renderedPatterns: [[UInt8]] = []
             for pattern in PlayerSkipMarkerPattern.allCases {
@@ -229,6 +229,7 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
             )
         }
         let diagonal = try mask(.diagonal)
+        let medium = try mask(.mediumHatch)
         let fine = try mask(.fineHatch)
         let dots = try mask(.denseDots)
         let mesh = try mask(.mesh)
@@ -243,6 +244,7 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
             return count
         }
         XCTAssertEqual(islands(diagonal, y: 22), 12, "Keep the original 16pt diagonal rhythm.")
+        XCTAssertEqual(islands(medium, y: 22), 16, "Medium hatch uses the middle 12pt spacing.")
         XCTAssertEqual(islands(fine, y: 22), 24)
         XCTAssertEqual(islands(dots, y: 22), 32, "Dense dots use 6pt spacing rather than the former 12pt row.")
         XCTAssertGreaterThan(islands(dots, y: 18), 25)
@@ -251,6 +253,13 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
                           (64..<256).map { dots.red(x: $0, y: 22) }, "Neighboring rows must be staggered.")
         XCTAssertGreaterThan((64..<256).filter { mesh.red(x: $0, y: 22) > 100 }.count,
                              (64..<256).filter { diagonal.red(x: $0, y: 22) > 100 }.count)
+        XCTAssertEqual(islands(mesh, y: 22), 24, "Tighten the mesh to 8pt without changing its line weight.")
+
+        let dotPath = SkipMarkerTrackLayout.pattern(.denseDots, in: CGSize(width: 18, height: 20), slotHeight: 10)
+        XCTAssertTrue(dotPath.contains(CGPoint(x: 1.5, y: 10.5)))
+        XCTAssertTrue(dotPath.contains(CGPoint(x: 2.4, y: 10.5)))
+        XCTAssertFalse(dotPath.contains(CGPoint(x: 2.6, y: 10.5)), "The dot diameter is 2pt, not 3pt.")
+        XCTAssertFalse(dotPath.contains(CGPoint(x: 0.4, y: 10.5)))
     }
 
     #if DEBUG && os(tvOS)
