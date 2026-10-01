@@ -37,9 +37,14 @@ struct PlozziOSSyncSetupReceiveView: View {
 
     var body: some View {
         NavigationStack {
-            content
+            Group {
+                if case .applied(let received) = model.phase {
+                    appliedSummary(received)
+                } else {
+                    PlozziOSSetupScrollContent { content }
+                }
+            }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(24)
                 .navigationTitle("Set Up This Device")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -78,8 +83,8 @@ struct PlozziOSSyncSetupReceiveView: View {
                     Text("Setting up…").font(.headline).foregroundStyle(palette.secondaryText)
                 }
             }
-        case .applied(let received):
-            appliedSummary(received)
+        case .applied:
+            EmptyView()
         case .failed(let message):
             centered {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -172,6 +177,7 @@ struct PlozziOSSyncSetupReceiveView: View {
                 .foregroundStyle(palette.primaryText)
             Text(SyncPairingSAS.grouped(code))
                 .font(.system(size: 56, weight: .bold, design: .rounded)).monospaced()
+                .lineLimit(1).minimumScaleFactor(0.5)
                 .foregroundStyle(palette.primaryText)
             Text("Make sure the same number shows on your other device, then confirm there.")
                 .font(.callout).foregroundStyle(palette.secondaryText)
@@ -199,99 +205,25 @@ struct PlozziOSSyncSetupReceiveView: View {
         )
         let profiles = requestedServer == nil ? received.config.profiles.map(\.profile) : []
 
-        VStack(spacing: 22) {
-            Spacer(minLength: 0)
-            VStack(spacing: 8) {
-                Text(pendingIDs.isEmpty ? "You’re all set" : "Set Up This Device")
-                    .font(.title.bold()).foregroundStyle(palette.primaryText)
+        PlozziOSSyncSetupSummary(
+            serverGroups: serverGroups, pendingIDs: pendingIDs, profiles: profiles
+        ) {
+            guard !didApply else { return }
+            didApply = true
+            let outcome = appModel.applyReceivedSetup(received, restrictToAccountID: requestedServer?.id)
+            // For a per-server request, success means that one server actually
+            // signed in. For a whole-device transfer, success means at least one
+            // credential stuck (the existing gate).
+            let failed = requestedServer != nil && pendingIDs.isEmpty
+                ? outcome.addedCredentialed == 0
+                : outcome.isTotalCredentialFailure
+            if failed {
+                didApply = false   // allow a retry
+                applyError = "Couldn’t finish signing in on this device. Check both devices are on the same Wi-Fi and try again."
+            } else {
+                onClose()
             }
-            VStack(spacing: 14) {
-                if !serverGroups.isEmpty {
-                    card(title: serverGroups.count == 1 ? "Server" : "Servers") {
-                        ForEach(serverGroups) { group in
-                            HStack(spacing: 14) {
-                                ProviderBrandMark(
-                                    provider: group.provider, size: 32,
-                                    mediaShareTransport: group.mediaShareTransportKind)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(group.serverName).font(.body.weight(.semibold))
-                                        .foregroundStyle(palette.primaryText)
-                                    if group.accounts.contains(where: { pendingIDs.contains($0.id) }) {
-                                        Text("Needs sign-in").font(.caption)
-                                            .foregroundStyle(palette.secondaryText)
-                                    } else {
-                                        signedInSummary(group).font(.caption)
-                                            .foregroundStyle(palette.secondaryText)
-                                    }
-                                }
-                                Spacer()
-                            }
-                        }
-                    }
-                }
-                if !profiles.isEmpty {
-                    card(title: profiles.count == 1 ? "Profile" : "Profiles") {
-                        ProfileSummaryGrid(
-                            profiles: profiles,
-                            avatarSize: 56,
-                            itemWidth: 78,
-                            spacing: 14,
-                            nameFont: .caption
-                        )
-                        .foregroundStyle(palette.primaryText)
-                    }
-                }
-
-            }
-            if !pendingIDs.isEmpty {
-                Text("Finish signing in to the remaining servers in Settings > iCloud Sync.")
-                    .font(.footnote)
-                    .foregroundStyle(palette.secondaryText)
-                    .multilineTextAlignment(.center)
-            }
-            Spacer(minLength: 0)
-            Button(pendingIDs.isEmpty ? "Start Watching" : "Continue") {
-                guard !didApply else { return }
-                didApply = true
-                let outcome = appModel.applyReceivedSetup(received, restrictToAccountID: requestedServer?.id)
-                // For a per-server request, success means that one server actually
-                // signed in. For a whole-device transfer, success means at least one
-                // credential stuck (the existing gate).
-                let failed = requestedServer != nil && pendingIDs.isEmpty
-                    ? outcome.addedCredentialed == 0
-                    : outcome.isTotalCredentialFailure
-                if failed {
-                    didApply = false   // allow a retry
-                    applyError = "Couldn’t finish signing in on this device. Check both devices are on the same Wi-Fi and try again."
-                } else {
-                    onClose()
-                }
-            }
-            .syncPrimaryButtonStyle().controlSize(.large)
         }
-    }
-
-    /// See `userSummary` in the detected-setup view: copy around content, so it
-    /// returns `Text` and joins names with a list format style.
-    private func signedInSummary(_ group: SyncedServerAccountGroup) -> Text {
-        let names = group.userNames
-        return names.isEmpty
-            ? Text("Signed in")
-            : Text("Signed in as \(names.formatted(.list(type: .and)))")
-    }
-
-    @ViewBuilder
-    private func card<Content: View>(title: LocalizedStringResource, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title).textCase(.uppercase).font(.caption2.weight(.semibold)).tracking(1.2)
-                .foregroundStyle(palette.secondaryText)
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(palette.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .strokeBorder(palette.cardBorder, lineWidth: 1))
     }
 
     private func centered<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
@@ -308,6 +240,150 @@ struct PlozziOSSyncSetupReceiveView: View {
         let context = CIContext()
         guard let cg = context.createCGImage(output, from: output.extent) else { return nil }
         return UIImage(cgImage: cg)
+    }
+}
+
+private struct PlozziOSSetupScrollContent<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        ScrollView {
+            content
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
+                .padding(24)
+        }
+    }
+}
+
+struct PlozziOSSyncSetupSummary: View {
+    @Environment(\.themePalette) private var palette
+    let serverGroups: [SyncedServerAccountGroup]
+    let pendingIDs: Set<String>
+    let profiles: [Profile]
+    let onContinue: () -> Void
+
+    var body: some View {
+        PlozziOSSetupScrollContent {
+            VStack(spacing: 22) {
+                if pendingIDs.isEmpty {
+                    Text("You’re all set")
+                        .font(.title.bold())
+                        .foregroundStyle(palette.primaryText)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !serverGroups.isEmpty {
+                    SyncSetupSummaryCard(title: serverGroups.count == 1 ? "Server" : "Servers") {
+                        LazyVStack(alignment: .leading, spacing: 16) {
+                            ForEach(serverGroups) { group in
+                                SyncSetupSummaryServer(
+                                    group: group,
+                                    needsSignIn: group.accounts.contains { pendingIDs.contains($0.id) }
+                                )
+                            }
+                        }
+                    }
+                }
+                if !profiles.isEmpty {
+                    SyncSetupSummaryProfiles(profiles: profiles)
+                }
+                if !pendingIDs.isEmpty {
+                    Text("Finish signing in to the remaining servers in Settings > iCloud Sync.")
+                        .font(.footnote)
+                        .foregroundStyle(palette.secondaryText)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Button(action: onContinue) {
+                Text(pendingIDs.isEmpty ? "Start Watching" : "Continue")
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+            }
+            .syncPrimaryButtonStyle()
+            .controlSize(.large)
+            .accessibilityIdentifier("sync-setup-continue")
+            .frame(maxWidth: 640)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity)
+            .background(palette.backgroundBase)
+        }
+    }
+}
+
+private struct SyncSetupSummaryServer: View {
+    @Environment(\.themePalette) private var palette
+    let group: SyncedServerAccountGroup
+    let needsSignIn: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            ProviderBrandMark(
+                provider: group.provider, size: 32,
+                mediaShareTransport: group.mediaShareTransportKind
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(group.serverName)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(palette.primaryText)
+                Group {
+                    if needsSignIn {
+                        Text("Needs sign-in")
+                    } else if group.userNames.isEmpty {
+                        Text("Signed in")
+                    } else {
+                        Text("Signed in as \(group.userNames.formatted(.list(type: .and)))")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(palette.secondaryText)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SyncSetupSummaryProfiles: View {
+    @Environment(\.themePalette) private var palette
+    @ScaledMetric(relativeTo: .caption) private var itemWidth = 90.0
+    let profiles: [Profile]
+
+    var body: some View {
+        SyncSetupSummaryCard(title: profiles.count == 1 ? "Profile" : "Profiles") {
+            ProfileSummaryGrid(
+                profiles: profiles, avatarSize: 56,
+                itemWidth: min(itemWidth, 200), spacing: 14, nameFont: .caption,
+                nameLineLimit: nil
+            )
+            .foregroundStyle(palette.primaryText)
+        }
+    }
+}
+
+private struct SyncSetupSummaryCard<Content: View>: View {
+    @Environment(\.themePalette) private var palette
+    let title: LocalizedStringResource
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).textCase(.uppercase).font(.caption2.weight(.semibold)).tracking(1.2)
+                .foregroundStyle(palette.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(palette.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .strokeBorder(palette.cardBorder, lineWidth: 1))
     }
 }
 #endif

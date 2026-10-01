@@ -5,9 +5,123 @@ import SwiftUI
 import UIKit
 import Vision
 import XCTest
+@testable import AppShelliOS
 
 @MainActor
 final class ServerSetupPresentationTests: XCTestCase {
+    func testReceivedSetupKeepsContinueVisibleWithManyServersAndProfiles() async throws {
+        let accounts = (0..<25).flatMap { server in
+            (0..<3).map { user in
+                SyncedAccountDescriptor(
+                    id: "server-\(server)-user-\(user)", provider: .jellyfin,
+                    serverID: "server-\(server)",
+                    serverName: String(format: "Server %02d with a long household library name", server),
+                    userID: "user-\(user)", userName: "Household viewer number \(user)",
+                    candidateBaseURLs: [URL(string: "https://fixture.example.test")!],
+                    originDeviceName: "Test TV", originDeviceKind: "tv"
+                )
+            }
+        }
+        let profiles = (0..<40).map {
+            Profile(id: "profile-\($0)", name: $0 == 39 ? "Last Profile" : "A household profile with a long name \($0)")
+        }
+        let cases: [(CGSize, DynamicTypeSize, LayoutDirection)] = [
+            (.init(width: 320, height: 568), .large, .leftToRight),
+            (.init(width: 390, height: 844), .large, .leftToRight),
+            (.init(width: 430, height: 932), .large, .leftToRight),
+            (.init(width: 844, height: 390), .large, .leftToRight),
+            (.init(width: 768, height: 1024), .large, .leftToRight),
+            (.init(width: 320, height: 568), .accessibility3, .leftToRight),
+            (.init(width: 844, height: 390), .accessibility5, .leftToRight),
+            (.init(width: 320, height: 568), .large, .rightToLeft)
+        ]
+        for (size, typeSize, direction) in cases {
+            let summary = PlozziOSSyncSetupSummary(
+                serverGroups: SyncedServerAccountGroup.groups(from: accounts),
+                pendingIDs: [accounts[0].id], profiles: profiles, onContinue: {}
+            )
+            let image = try await render(
+                NavigationStack {
+                    summary
+                        .navigationTitle("Set Up This Device")
+                        .navigationBarTitleDisplayMode(.inline)
+                }
+                .environment(\.themePalette, ThemePalette.dark)
+                .environment(\.dynamicTypeSize, typeSize)
+                .environment(\.layoutDirection, direction),
+                size: size, light: false
+            ) { window in
+                let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
+                XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height)
+                XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+                let start = try self.capture(window)
+                let button = try self.continueFrame(in: start, size: size)
+                XCTAssertTrue(window.bounds.inset(by: window.safeAreaInsets).contains(button))
+                XCTAssertNotNil(window.hitTest(CGPoint(x: button.midX, y: button.midY), with: nil))
+                self.attach(start, name: "Large setup top \(size) \(typeSize) \(direction)")
+                for _ in 0..<5 {
+                    scroll.setContentOffset(CGPoint(
+                        x: 0,
+                        y: max(-scroll.adjustedContentInset.top,
+                               scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+                    ), animated: false)
+                    try await Task.sleep(for: .milliseconds(80))
+                    window.layoutIfNeeded()
+                }
+                let bottom = try self.capture(window)
+                let buttonAfterScrolling = try self.continueFrame(in: bottom, size: size)
+                XCTAssertEqual(buttonAfterScrolling.midY, button.midY, accuracy: 3)
+                let text = try self.recognize(bottom).joined(separator: " ")
+                XCTAssertTrue(text.contains("iCloud"), "The final help text must be reachable: \(text)")
+                XCTAssertFalse(text.contains("…"), "Content must wrap rather than truncate: \(text)")
+            }
+            attach(image, name: "Large setup bottom \(size) \(typeSize) \(direction)")
+        }
+    }
+
+    func testEmptyAndSmallReceivedSetupsKeepThePrimaryActionReachable() async throws {
+        for count in [0, 1] {
+            let profiles = (0..<count).map { Profile(id: "profile-\($0)", name: "Viewer") }
+            let image = try await render(
+                NavigationStack {
+                    PlozziOSSyncSetupSummary(
+                        serverGroups: [], pendingIDs: [], profiles: profiles, onContinue: {}
+                    )
+                    .navigationTitle("Set Up This Device")
+                    .navigationBarTitleDisplayMode(.inline)
+                }.environment(\.themePalette, ThemePalette.light),
+                size: .init(width: 320, height: 568), light: true
+            )
+            let text = try recognize(image).joined(separator: " ")
+            XCTAssertTrue(text.contains("Start Watching"), text)
+            XCTAssertTrue(text.contains("all set"), text)
+            attach(image, name: "Small setup - \(count) profiles")
+        }
+    }
+
+    private func scrollViews(in view: UIView) -> [UIScrollView] {
+        (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap { scrollViews(in: $0) }
+    }
+
+    private func capture(_ window: UIWindow) throws -> CGImage {
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
+        return try XCTUnwrap(image.cgImage)
+    }
+
+    private func continueFrame(in image: CGImage, size: CGSize) throws -> CGRect {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        let result = try XCTUnwrap(request.results?.first { $0.topCandidates(1).first?.string == "Continue" },
+                                  "Continue must be visibly rendered without scrolling.")
+        let rect = result.boundingBox
+        return CGRect(x: rect.minX * size.width, y: (1 - rect.maxY) * size.height,
+                      width: rect.width * size.width, height: rect.height * size.height)
+    }
+
     func testTransferButtonRemainsReadableWithSettingsForegroundInEveryTheme() async throws {
         let descriptor = SyncedAccountDescriptor(
             id: "share", provider: .mediaShare, serverID: "files",
@@ -127,7 +241,8 @@ final class ServerSetupPresentationTests: XCTestCase {
     }
 
     private func render<Content: View>(
-        _ content: Content, size: CGSize, light: Bool
+        _ content: Content, size: CGSize, light: Bool,
+        exercise: ((UIWindow) async throws -> Void)? = nil
     ) async throws -> CGImage {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -150,6 +265,7 @@ final class ServerSetupPresentationTests: XCTestCase {
         }
         window.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(200))
+        try await exercise?(window)
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
         }

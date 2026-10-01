@@ -254,7 +254,14 @@ simulator under the shared build lease, with a lane-private package workspace
 and retained result bundle. Its host and tests share only the `AppShelliOS`
 package product. `ServerSetupPresentationTests` checks rendered primary-button
 text in all themes, the native provider picker's logo bounds, and transparent
-WebDAV badge edges. Package-only UIKit snapshots cannot replace this gate:
+WebDAV badge edges. The received-setup summary is exercised with 25 servers,
+multiple sign-ins per server, and 40 profiles on compact/large phones, landscape,
+iPad-sized windows, accessibility text sizes, and right-to-left layout. Its
+primary action stays in the bottom safe area while the full summary scrolls;
+server names, usernames, profile names, and the final instructions wrap.
+Empty and single-profile summaries keep the same reachable action. These tests
+use synthetic received data, not pairing services or stored household credentials.
+Package-only UIKit snapshots cannot replace this gate:
 without an application scene, `drawHierarchy` returns an empty image.
 
 `tools/run-focus-tests.sh` runs the `PlozzFocusTests` scheme in a minimal,

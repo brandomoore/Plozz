@@ -24,19 +24,22 @@ public struct ProfileSummaryGrid: View {
     private let itemWidth: CGFloat
     private let spacing: CGFloat
     private let nameFont: Font
+    private let nameLineLimit: Int?
 
     public init(
         profiles: [Profile],
         avatarSize: CGFloat,
         itemWidth: CGFloat,
         spacing: CGFloat,
-        nameFont: Font
+        nameFont: Font,
+        nameLineLimit: Int? = 1
     ) {
         self.profiles = profiles
         self.avatarSize = avatarSize
         self.itemWidth = itemWidth
         self.spacing = spacing
         self.nameFont = nameFont
+        self.nameLineLimit = nameLineLimit
     }
 
     public var body: some View {
@@ -53,7 +56,8 @@ public struct ProfileSummaryGrid: View {
                     ProfileAvatarView(profile: profile, size: avatarSize)
                     Text(profile.name)
                         .font(nameFont)
-                        .lineLimit(1)
+                        .lineLimit(nameLineLimit)
+                        .fixedSize(horizontal: false, vertical: true)
                         // A long name shrinks a little before it truncates: these
                         // are names people chose, and "Christopher" reading as
                         // "Christo…" next to a picture of them is a poor trade
