@@ -1356,6 +1356,7 @@ public final class PlayerViewModel {
         rewritten.streamingOptions = nil
         rewritten.streamingSessionID = nil
         rewritten.negotiatedStreamingVideoCodec = nil
+        rewritten.burnedInSubtitleTrackID = nil
         rewritten.isManifestStream = false
         rewritten.isTranscoding = false
         rewritten.deliveryMode = .directPlay
@@ -2380,16 +2381,25 @@ public final class PlayerViewModel {
     /// and `false` for the programmatic load-time default. Owned by
     /// ``SubtitleTrackController``.
     public func selectSubtitleOption(id: Int, userInitiated: Bool = true) {
-        if streamingOptions != nil, request?.isTranscoding == true {
+        let burned = request?.burnedInSubtitleTrackID
+        if request?.isTranscoding == true, burned != id,
+           streamingOptions != nil || burned != nil {
             var snapshot = subtitleController.streamSnapshot()
-            let chosen = request?.subtitleTracks.first { $0.id == id }
+            let chosen = subtitleController.subtitleTrack(id: id)
+            guard id == PlayerTrackOption.offID || chosen != nil else { return }
             // Plex prepares the selected embedded text rendition at session start.
             // Sidecars and an already-prepared rendition can still switch locally.
             let needsPlexTextRendition = request?.sourceProvider == .plex
                 && chosen != nil && chosen?.deliverySource == nil
                 && request?.streamingOptions?.subtitleTrack?.id != chosen?.id
-            if snapshot.primary?.isBitmapSubtitle == true || chosen?.isBitmapSubtitle == true
+            if burned != nil || snapshot.primary?.isBitmapSubtitle == true || chosen?.isBitmapSubtitle == true
                 || needsPlexTextRendition {
+                // A legacy server fallback has no quality policy yet. Keep it
+                // transcoding rather than retrying the original that just failed.
+                if streamingOptions == nil {
+                    streamingQuality.options = .init(quality: .original, forceTranscoding: true)
+                }
+                streamingMediaSourceID = currentMediaSourceID
                 snapshot.primary = chosen
                 if userInitiated {
                     recordSeriesSubtitleSelection(chosen?.language.map(RememberedSubtitleSelection.language) ?? .off)

@@ -79,6 +79,11 @@ final class SubtitleTrackController {
         )
     }
 
+    func subtitleTrack(id: Int) -> MediaTrack? {
+        host?.trackEngine.subtitleTracks.first { $0.id == id }
+            ?? hotLoadedSubtitleTracks.first { $0.id == id }
+    }
+
     func restoreStreamSnapshot(_ snapshot: StreamSnapshot) -> Bool {
         guard let host else { return false }
         func match(_ track: MediaTrack?, in tracks: [MediaTrack]) -> MediaTrack? {
@@ -362,6 +367,11 @@ final class SubtitleTrackController {
     ///   attribute-matches a manually-picked image subtitle).
     func applyInitialSubtitleSelectionIfReady(for request: PlaybackRequest) {
         guard let host, !initialSubtitleApplied else { return }
+        if let burned = request.burnedInSubtitleTrackID {
+            initialSubtitleApplied = true
+            selectSubtitleOption(id: burned, userInitiated: false)
+            return
+        }
         switch host.trackEngineKind {
         case .native:
             initialSubtitleApplied = true
@@ -460,6 +470,22 @@ final class SubtitleTrackController {
         guard let host else { return }
         let engine = host.trackEngine
         if userInitiated { viewerChangedSubtitleThisSession = true }
+        if host.trackRequest?.burnedInSubtitleTrackID == id {
+            engine.selectSubtitleTrack(nil)
+            host.trackSubtitleOverlay.clearPrimary()
+            selectedSubtitleTrackID = id
+            if userInitiated {
+                host.trackRecordSubtitleSelection(
+                    subtitleTrack(id: id)?.language.map(RememberedSubtitleSelection.language)
+                )
+            }
+            HandoffDiagnostics.emit("subtitle PRIMARY route=server-burn-in track=\(id)")
+            #if DEBUG
+            setPrimarySubtitleDiagnostic(route: "server-burn-in")
+            #endif
+            loadTrackOptions()
+            return
+        }
         if id == PlayerTrackOption.offID {
             if userInitiated { host.trackRecordSubtitleSelection(.off) }
             engine.selectSubtitleTrack(nil)

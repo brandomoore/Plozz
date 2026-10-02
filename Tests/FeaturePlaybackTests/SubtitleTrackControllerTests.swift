@@ -63,6 +63,47 @@ final class SubtitleTrackControllerTests: XCTestCase {
 
     // MARK: - Subtitle OFF
 
+    func testServerBurnInKeepsSelectionWithoutClientRenderingOrTimingControls() {
+        for kind in [PlaybackEngineKind.native, .plozzigen] {
+            let (sut, host, engine) = makeSUT(engineKind: kind)
+            var track = textSidecar(3)
+            track.codec = "ass"
+            engine.subtitleTracks = [track, textSidecar(4)]
+            var request = PlaybackRequest(
+                item: .init(id: "episode", title: "Episode", kind: .episode),
+                streamURL: URL(string: "https://fixture.test/master.m3u8")!,
+                subtitleTracks: engine.subtitleTracks, isTranscoding: true
+            )
+            request.burnedInSubtitleTrackID = 3
+            host.request = request
+            host.liveSubtitles.beginLiveFeed()
+            host.liveSubtitles.updateLiveCues([
+                .init(id: 1, start: 0, end: 10, body: .text(.init("Duplicate")))
+            ])
+            host.liveSubtitles.tick(1)
+            XCTAssertFalse(host.liveSubtitles.primary.isEmpty)
+            host.liveSubtitles.beginSecondaryLiveFeed()
+            host.liveSubtitles.updateSecondaryLiveCues([
+                .init(id: 2, start: 0, end: 10, body: .text(.init("Intentional second track")))
+            ])
+
+            sut.applyInitialSubtitleForNewLoad(for: request)
+            XCTAssertEqual(sut.selectedSubtitleTrackID, 3)
+            XCTAssertTrue(engine.lastSubtitleSelectionCleared)
+            XCTAssertTrue(host.liveSubtitles.primary.isEmpty)
+            XCTAssertFalse(host.liveSubtitles.supportsPrimaryTimingOffset)
+            XCTAssertEqual(host.liveSubtitles.secondary.compactMap(\.text), ["Intentional second track"])
+            XCTAssertTrue(host.controls.secondarySubtitleOptions.contains { $0.id == 4 },
+                          "Burn-in ownership must not disable intentional dual subtitles")
+            sut.selectSubtitleOption(id: 3)
+            host.liveSubtitles.updateLiveCues([
+                .init(id: 3, start: 0, end: 10, body: .text(.init("Late duplicate callback")))
+            ])
+            XCTAssertTrue(host.liveSubtitles.primary.isEmpty, "Reselecting the burned track must not fetch its text copy")
+            XCTAssertTrue(engine.lastSubtitleSelectionCleared)
+        }
+    }
+
     func testSelectOffClearsSelectionAndRecordsMemory() {
         let (sut, host, engine) = makeSUT(engineKind: .native)
         engine.subtitleTracks = [embeddedText(1)]

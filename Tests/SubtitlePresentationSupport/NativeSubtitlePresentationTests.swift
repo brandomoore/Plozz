@@ -286,6 +286,56 @@ final class NativeSubtitlePresentationTests: XCTestCase {
     }
     #endif
 
+    func testServerBurnInSuppressesNativeAndSidecarCopiesAcrossSeek() async throws {
+        let server = try SubtitleFixtureServer(directory: fixtureDirectory())
+        let port = try await server.start()
+        defer { server.stop() }
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/master.m3u8"))
+        let locator = try AuthenticatedHTTPPlaybackLocator(
+            provider: .jellyfin, accountID: "fixture", credentialRevision: CredentialRevision(),
+            itemID: "fixture", deliveryMode: .directFile, purpose: .subtitle,
+            resource: try AuthenticatedHTTPResource(pathBase: .configuredBaseURL, path: "full.vtt")
+        )
+        let resolver = SidecarResolver(
+            locator: locator, url: try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/full.vtt"))
+        )
+        let engine = NativeVideoEngine(authenticatedHTTPResolver: resolver, startsMuted: true)
+        let track = MediaTrack(
+            id: 2, kind: .subtitle, displayTitle: "Full", language: "en", codec: "ass",
+            deliverySource: .authenticatedHTTP(locator)
+        )
+        var playback = request(url, tracks: [track])
+        playback.isTranscoding = true
+        playback.burnedInSubtitleTrackID = track.id
+        let host = SidecarTrackHost(engine: engine, request: playback, resolver: resolver)
+        engine.onSubtitleCues = { [model = host.subtitles] in model.updateLiveCues($0) }
+        let window = try await mount(engine, subtitles: host.subtitles, liveClock: true)
+        defer {
+            host.loader.cancelAll()
+            engine.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        await engine.load(request: playback, startPosition: 0)
+        host.controller.applyInitialSubtitleForNewLoad(for: playback)
+        try await waitUntil { engine.currentTime > 0.1 }
+        engine.pause()
+        let item = try XCTUnwrap(engine.underlyingPlayer?.currentItem)
+        let loadedGroup = try await item.asset.loadMediaSelectionGroup(for: .legible)
+        let group = try XCTUnwrap(loadedGroup)
+        for position in [1.5, 7.5, 1.5] {
+            await engine.seek(to: position)
+            host.controller.selectSubtitleOption(id: track.id)
+            window.layoutIfNeeded()
+            XCTAssertNil(item.currentMediaSelection.selectedMediaOption(in: group))
+            XCTAssertFalse(host.subtitles.rendersPrimary)
+            XCTAssertTrue(host.subtitles.primary.isEmpty)
+            XCTAssertTrue(captionFrames(in: window, relativeTo: window).isEmpty)
+            XCTAssertTrue(resolver.resolutions.isEmpty, "A burned-in track must not load its text sidecar")
+            XCTAssertEqual(host.controller.selectedSubtitleTrackID, track.id)
+        }
+    }
+
     func testNativeHLSOverlapsSameLanguageSwitchingPresentationStatesAndClearing() async throws {
         let server = try SubtitleFixtureServer(directory: fixtureDirectory())
         let port = try await server.start()

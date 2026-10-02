@@ -453,12 +453,20 @@ Plex hardware transcoding generally requires Plex Pass. Force transcoding is
 an advanced option, not a server hardware-encoder selector. Transcoding may
 change HDR/audio formats. A failed bounded rendition never retries the original
 file or an on-device remux; errors leave the Quality control available.
-For Jellyfin/Emby conversion, only bitmap subtitles request server burn-in.
+For bounded Jellyfin/Emby conversion, only bitmap subtitles request server burn-in.
 Text tracks remain available through the existing subtitle overlay; a stale
 server-generated `SubtitleMethod=Encode` is replaced by explicit `External`
 delivery for text/off renditions. Both singular and Emby's plural track selectors
 are disabled, and manifest-subtitle requests are removed from that video URL.
 Omitting the delivery method alone can still trigger Emby's default burn-in.
+An ordinary server fallback can instead return ASS already burned into the video.
+The final rendition's explicit `Encode` method and subtitle index are carried in
+`PlaybackRequest.burnedInSubtitleTrackID`. That primary remains selected in the
+menu but owns no client overlay or native legible track, avoiding duplicate text
+and ASS drawing commands. Off or another primary rebuilds the server rendition
+at the current position, preserving pause, speed, version, audio, and secondary
+selection. Burn-in cannot be moved or restyled by the client; timing controls stay
+disabled. Rewriting to an offline original clears this rendition-only fact.
 An engine load that returns after a terminal startup failure cannot publish ready.
 Managed native resume waits for actual item readiness rather than seeking an
 unknown HLS item after five seconds. The existing startup watchdog bounds that
