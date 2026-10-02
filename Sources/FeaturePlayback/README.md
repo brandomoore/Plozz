@@ -613,18 +613,20 @@ their existing dark surfaces; timeline-specific lightening does not change the
 global fallback material. Buffered and played fills still layer above the track.
 Liquid Glass has a 10%-white capsule behind the glass itself to keep a nearly
 transparent unbuffered track visible. This backing is part of the track surface
-inside the skip-marker mask, not a background behind its cutouts. The flat
+inside the skip-marker mask, not a background behind its gaps. The flat
 performance fill remains 22% white.
 
-The TV and touch seek bars share `PlayerSkipMarkerTrack`: rounded transparent
-slots centered within available skippable ranges, with a 50%-height fine-hatch
-pattern as the shared TV/touch default. The mask applies to the base, buffered,
-and played fills together, never
-the white playhead. The thin remaining rails still show each fill's brightness
-when progress or buffering crosses a marker. The slot reveals the picture
-behind the bar rather than painting a black patch. Track end caps remain intact
-when a range reaches the beginning or end. Overlapping/touching ranges merge
-before masking, so overlapping cutouts cannot accidentally fill each other in.
+The TV and touch seek bars share `PlayerSkipMarkerTrack`: solid, rounded
+sections separated at the start and end of each available skippable range.
+There are no internal cutouts, patterns, or user-selectable marker styles.
+The 4pt gaps are centered on the original time boundaries. Each half-gap is
+capped at a quarter of either neighboring section's width so a tiny range is
+not consumed or enlarged. Outer timeline ends remain unchanged.
+The mask applies to the base, buffered, and played fills and glass backing
+together, never the white playhead. Each section retains the bar's exact
+material and opacity; only its rounded ends and full-height gaps reveal the
+picture. Overlapping/touching ranges merge before masking, so duplicated
+metadata does not create extra boundaries inside one contiguous skip range.
 Ranges are clamped to a finite positive duration; malformed timing is logged and
 ignored. No marker changes focus, gestures, skip modes, or the existing buttons.
 The display uses already-loaded server/community metadata, without additional
@@ -633,29 +635,12 @@ timeline annotation. Live programme progress is not a VOD skip-marker timeline.
 
 Debug tvOS builds can open `PlayerSkipMarkerPreview` with the explicit
 `PLOZZ_SKIP_MARKER_PREVIEW=1` process environment. It shows only two real
-`ScrubBar` rows: Liquid Glass and the translucent flat performance fill.
-The preview starts on **Segmented**: solid, rounded sections separated at the
-start and end of each merged skip range, with no internal cutout or pattern.
-The 4pt gaps are centered on the original time boundaries. Each half-gap is
-capped at a quarter of either neighboring section's width so a tiny range is
-not consumed or enlarged. Outer timeline ends remain unchanged. The same mask
-cuts all three fills and the glass backing, never the playhead.
-Remote pattern buttons retain the 50%-height cutouts and compare the original
-16pt diagonal hatch, dense staggered 2pt dots at 6pt spacing, a 12pt medium hatch,
-the retained 8pt fine hatch, and an 8pt diamond mesh in exactly the same space.
-Medium/fine/mesh use the same 1.5pt line weight; the original retains its 2pt
-strokes. Rejected literal chevrons,
-centerline dashes, and sparse dots are no longer in the comparison.
-Open-cutout comparisons and the 75% preview toggle are removed. Other controls
-change example playhead/buffer positions, normal/focused bar heights, and
-picture brightness. Patterns are static and anchored to the track, not to
-each marker boundary or playback position.
-The patterned slot retains 6% of the underlying fills between strokes and 100%
-at shape centers. All shapes are unmodified pieces of the existing bar, so
-Liquid Glass and flat tracks each retain their own exact played, buffered, and
-unplayed color/alpha. There is no separately colored highlight, dimming, or
-playhead-dependent overlay; only the gaps are cut away. The static mask adds no
-blur, refraction, or timer and keeps its rounded clipping beneath the playhead.
+`ScrubBar` rows: Liquid Glass and the translucent flat performance fill, both
+using the production segmented markers. No alternative pattern/style selector
+is retained. Remote controls change example playhead/buffer positions,
+normal/focused bar heights, and picture brightness. Section boundaries are
+static, independent of playback position. The mask adds no blur, refraction,
+timer, or separately colored overlay.
 Menu/Done returns to the normal app. The preview uses isolated local models,
 and never saves profile preferences. A scenario control cycles through a
 60-minute episode with a 30-second intro, a 24-minute episode with a 90-second
@@ -677,8 +662,6 @@ profile, hiding the video, or leaving the foreground stops it and drains its
 owned transport/session. Startup is bounded and failures expose Retry.
 No clip is generated, downloaded to the repository, or uploaded elsewhere.
 Standalone test fixtures use the static picture and make no media requests.
-The ordinary TV/touch player still defaults to the selected 50% fine hatch;
-Segmented is a preview-only choice, and no comparison changes that default.
 
 Velocity smoothing uses elapsed touch-event time rather than a fixed weight per
 callback, preserving the same response at 24 Hz and 60 Hz without changing

@@ -8,8 +8,6 @@ public struct PlayerSkipMarkerPreview: View {
     @State private var model = Self.makeModel()
     @State private var scenario = PlayerSkipMarkerScenario.hourEpisode
     @State private var picture = MarkerPreviewPicture.dark
-    @State private var treatment = PlayerSkipMarkerTreatment.segmented
-    @State private var pattern = PlayerSkipMarkerPattern.default
     @State private var positionIndex = 2
     @State private var bufferIndex = 1
     private let onClose: () -> Void
@@ -36,10 +34,7 @@ public struct PlayerSkipMarkerPreview: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             MarkerComparisonHeader()
-            MarkerPatternPicker(selection: $pattern, treatment: $treatment)
-            (treatment == .segmented
-                ? Text(verbatim: "Rounded sections at each skip boundary. Small gaps, no internal cutout or pattern.")
-                : pattern.previewExplanation)
+            Text(verbatim: "Rounded sections at each skip boundary. Small gaps, no internal cutout or pattern.")
                 .font(.system(size: 23))
                 .foregroundStyle(.white.opacity(0.72))
                 .frame(height: 32, alignment: .leading)
@@ -50,7 +45,7 @@ public struct PlayerSkipMarkerPreview: View {
                 bufferIndex = 1
                 scenario.apply(to: model)
             }
-            MarkerComparisonGroup(treatment: treatment, pattern: pattern, model: model)
+            MarkerComparisonGroup(model: model)
             MarkerComparisonControls(
                 model: model, picture: $picture, video: video,
                 movePosition: advancePosition, moveBuffer: advanceBuffer, onClose: onClose
@@ -103,7 +98,7 @@ private enum MarkerPreviewPicture {
 private struct MarkerComparisonHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(verbatim: "Compare skip markers")
+            Text(verbatim: "Player marker examples")
                 .font(.system(size: 36, weight: .bold))
                 .accessibilityIdentifier("marker-preview-ready")
             Text(verbatim: "Identical track colors and realistic durations. Short markers are never stretched.")
@@ -115,14 +110,12 @@ private struct MarkerComparisonHeader: View {
 }
 
 private struct MarkerComparisonGroup: View {
-    let treatment: PlayerSkipMarkerTreatment
-    let pattern: PlayerSkipMarkerPattern
     let model: PlayerControlsModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
-            MarkerComparisonRow(model: model, treatment: treatment, pattern: pattern, performance: false)
-            MarkerComparisonRow(model: model, treatment: treatment, pattern: pattern, performance: true)
+            MarkerComparisonRow(model: model, performance: false)
+            MarkerComparisonRow(model: model, performance: true)
         }
         .foregroundStyle(.white)
     }
@@ -130,8 +123,6 @@ private struct MarkerComparisonGroup: View {
 
 private struct MarkerComparisonRow: View {
     let model: PlayerControlsModel
-    let treatment: PlayerSkipMarkerTreatment
-    let pattern: PlayerSkipMarkerPattern
     let performance: Bool
 
     var body: some View {
@@ -139,7 +130,7 @@ private struct MarkerComparisonRow: View {
             Text(verbatim: performance ? "Performance · flat" : "Liquid Glass")
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(.white.opacity(0.7))
-            ScrubBar(model: model, palette: .dark, markerTreatment: treatment, markerPattern: pattern)
+            ScrubBar(model: model, palette: .dark)
                 .frame(height: 44)
             PlayerTimelineTimes(model: model)
                 .frame(height: 30)
@@ -269,72 +260,6 @@ private extension PlayerSkipMarkerScenario {
         case .longMovie: Text(verbatim: "2m credits at 2:58:00. Credits = 1.11% of the bar.")
         case .recording: Text(verbatim: "Four 3m ad breaks across 90 minutes. Each break = 3.33%.")
         case .tinyRecap: Text(verbatim: "8s recap at 1:00, 1m intro and credits. Recap = 0.30%.")
-        }
-    }
-}
-
-private struct MarkerPatternPicker: View {
-    @Binding var selection: PlayerSkipMarkerPattern
-    @Binding var treatment: PlayerSkipMarkerTreatment
-    @FocusState private var segmentsFocused: Bool
-
-    var body: some View {
-        HStack(spacing: 20) {
-            Button {
-                treatment = .segmented
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark")
-                        .opacity(treatment == .segmented ? 1 : 0)
-                    Text(verbatim: "Segmented")
-                }
-                .frame(width: 195)
-            }
-            .accessibilityIdentifier("marker-preview-segmented")
-            .accessibilityValue(Text(verbatim: treatment == .segmented ? "Selected" : "Not selected"))
-            .focused($segmentsFocused)
-            ForEach(PlayerSkipMarkerPattern.allCases, id: \.self) { pattern in
-                Button {
-                    selection = pattern
-                    treatment = .halfHatchedCutout
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "checkmark")
-                            .opacity(treatment.hasHatch && selection == pattern ? 1 : 0)
-                        pattern.previewTitle
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                    }
-                    .frame(width: 195)
-                }
-                .accessibilityIdentifier("marker-pattern-\(pattern.rawValue)")
-                .accessibilityValue(Text(verbatim: treatment.hasHatch && selection == pattern ? "Selected" : "Not selected"))
-            }
-        }
-        .font(.system(size: 24, weight: .medium))
-        .buttonStyle(.bordered)
-        .defaultFocus($segmentsFocused, true)
-    }
-}
-
-private extension PlayerSkipMarkerPattern {
-    var previewTitle: Text {
-        switch self {
-        case .diagonal: Text(verbatim: "Diagonals")
-        case .denseDots: Text(verbatim: "Dense dots")
-        case .mediumHatch: Text(verbatim: "Medium hatch")
-        case .fineHatch: Text(verbatim: "Fine hatch")
-        case .mesh: Text(verbatim: "Diamond mesh")
-        }
-    }
-
-    var previewExplanation: Text {
-        switch self {
-        case .diagonal: Text(verbatim: "A familiar marked-off range. Clear and continuous.")
-        case .denseDots: Text(verbatim: "Smaller 2pt dots in close, staggered rows. The same spacing with a finer grain.")
-        case .mediumHatch: Text(verbatim: "A middle ground: thinner strokes at 12pt spacing, between the original and fine hatch.")
-        case .fineHatch: Text(verbatim: "Twice as many diagonals with thinner strokes. More continuous, less stripe-like.")
-        case .mesh: Text(verbatim: "A tighter 8pt diamond mesh. Smaller openings make it read as a continuous woven texture.")
         }
     }
 }

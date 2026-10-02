@@ -7,71 +7,18 @@ import XCTest
 
 @MainActor
 final class PlayerSkipMarkerHostedTests: XCTestCase {
-    func testDiagonalsMatchTheRealGlassAndFlatBarInsteadOfAddingAHighlight() async throws {
-        try await withWindow { window in
-            for performance in [false, true] {
-                for focused in [false, true] {
-                    let background = Color(red: 0.06, green: 0.10, blue: 0.16)
-                    let plain = try await render(
-                        in: window, focused: focused, performance: performance, treatment: .cutout,
-                        background: background, segments: []
-                    )
-                    for treatment in [PlayerSkipMarkerTreatment.halfHatchedCutout, .hatchedCutout] {
-                        let frame = try await render(
-                            in: window, focused: focused, performance: performance, treatment: treatment,
-                            background: background
-                        )
-                        // Sample the centers of 45-degree strokes in the fixed
-                        // 16pt grid, away from the rounded slot ends.
-                        let localY = focused ? 10 : 6
-                        for stripe in [19, 42, 58] {
-                            let x = 320 + stripe * 16 - localY - 1
-                            for channel in 0..<3 {
-                                XCTAssertEqual(Int(frame.color(x, 540)[channel]), Int(plain.color(x, 540)[channel]), accuracy: 1,
-                                               "A diagonal must match the original \(performance ? "flat" : "glass") bar, including its transparency.")
-                            }
-                        }
-                        XCTAssertEqual(frame.color(832, 540), [255, 255, 255])
-                        attach(frame.image, name: "Native-color diagonals - \(performance ? "flat" : "glass") - \(treatment) - \(focused ? "focused" : "normal")")
-                    }
-                }
-            }
-        }
-    }
-
-    func testRealGlassAndFlatTracksRevealThePictureThroughTheirCutouts() async throws {
-        XCTAssertEqual(PlayerScrubTrackSurface.glassBackingOpacity, 0.10)
-        try await withWindow { window in
-            for performance in [false, true] {
-                for focused in [false, true] {
-                    let frame = try await render(
-                        in: window, focused: focused, performance: performance, treatment: .cutout,
-                        background: Color(red: 0.15, green: 0.35, blue: 0.6)
-                    )
-                    for x in [640, 960, 1280] {
-                        XCTAssertEqual(frame.color(x, 540), frame.color(x, 450),
-                                       "The slot must reveal the picture through \(performance ? "flat" : "native glass") fills.")
-                        XCTAssertNotEqual(frame.color(x, focused ? 531 : 535), frame.color(x, 450),
-                                          "The track must retain visible rails.")
-                    }
-                    XCTAssertEqual(frame.color(832, 540), [255, 255, 255])
-                    attach(frame.image, name: "Skip cutouts - \(performance ? "flat" : "glass") - \(focused ? "focused" : "normal")")
-                }
-            }
-        }
-    }
-
     func testSegmentedTracksKeepNativeFillsAndRoundEverySectionWithoutInternalCutouts() async throws {
+        XCTAssertEqual(PlayerScrubTrackSurface.glassBackingOpacity, 0.10)
         try await withWindow { window in
             for performance in [false, true] {
                 for focused in [false, true] {
                     let background = Color(red: 0.15, green: 0.35, blue: 0.6)
                     let plain = try await render(
-                        in: window, focused: focused, performance: performance, treatment: .cutout,
+                        in: window, focused: focused, performance: performance,
                         background: background, segments: []
                     )
                     let frame = try await render(
-                        in: window, focused: focused, performance: performance, treatment: .segmented,
+                        in: window, focused: focused, performance: performance,
                         background: background
                     )
                     let top = focused ? 530 : 534
@@ -93,7 +40,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                     XCTAssertEqual(frame.color(832, 540), [255, 255, 255])
                     attach(frame.image, name: "Rounded sections - \(performance ? "flat" : "glass") - \(focused ? "focused" : "normal")")
                     let crossing = try await render(
-                        in: window, focused: focused, performance: performance, treatment: .segmented,
+                        in: window, focused: focused, performance: performance,
                         background: background, segments: [.init(kind: .intro, start: 40, end: 60)]
                     )
                     XCTAssertEqual(crossing.color(832, 540), [255, 255, 255], "A boundary never cuts through the playhead.")
@@ -123,7 +70,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
 
     private func render(
         in window: UIWindow, focused: Bool, performance: Bool,
-        treatment: PlayerSkipMarkerTreatment, background: Color,
+        background: Color,
         segments: [MediaSegment] = [.init(kind: .intro, start: 12.5, end: 87.5)]
     ) async throws -> Frame {
         let model = PlayerControlsModel()
@@ -136,7 +83,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
         let host = UIHostingController(rootView:
             background
                 .overlay {
-                    ScrubBar(model: model, palette: .dark, markerTreatment: treatment, markerPattern: .diagonal)
+                    ScrubBar(model: model, palette: .dark)
                         .frame(width: 1280, height: 44)
                 }
                 .ignoresSafeArea()

@@ -11,52 +11,44 @@ final class PlayerSkipMarkerPresentationTests: XCTestCase {
     func testTouchBarPreservesItsHitAreaFillsAndPlayheadWithMarkers() throws {
         for width in [360, 960] {
             let plain = try render(width: width, segments: [])
-            let marked = try render(width: width, segments: [
-                .init(kind: .intro, start: 20, end: 80)
-            ])
+            let segments = [MediaSegment(kind: .intro, start: 20, end: 80)]
+            let marked = try render(width: width, segments: segments)
+            func color(_ bytes: [UInt8], x: Int, y: Int) -> [UInt8] {
+                let index = (y * width + x) * 4
+                return Array(bytes[index..<(index + 3)])
+            }
             XCTAssertEqual(marked.image.width, width)
-            XCTAssertEqual(marked.image.height, 44, "Cutouts must not change the touch target.")
-            var changed = 0
-            for x in 0..<width {
-                let index = (22 * width + x) * 4
-                if x < width / 5 - 1 || x > width * 4 / 5 + 1 {
-                    XCTAssertEqual(marked.bytes[index], plain.bytes[index], "No cutout outside the skip range.")
-                } else if marked.bytes[index] < plain.bytes[index] {
-                    changed += 1
+            XCTAssertEqual(marked.image.height, 44, "Segment boundaries must not change the touch target.")
+            for boundary in [width / 5, width * 4 / 5] {
+                for y in 16..<28 {
+                    for x in (boundary - 2)..<(boundary + 2) {
+                        XCTAssertEqual(color(marked.bytes, x: x, y: y), [0, 255, 255],
+                                       "The full-height gap reveals the picture, without backing or surviving rails.")
+                    }
                 }
+                XCTAssertEqual(color(marked.bytes, x: boundary + 3, y: 16), [0, 255, 255])
+                XCTAssertNotEqual(color(marked.bytes, x: boundary + 3, y: 22), [0, 255, 255],
+                                 "Each section's end is rounded, not square.")
             }
-            XCTAssertGreaterThan(changed, width / 30)
-            XCTAssertEqual(marked.bytes[(22 * width + width / 2) * 4], 255,
-                           "The playhead must remain outside the cutout mask.")
-            for region in [width / 4..<width * 2 / 5, width * 11 / 20..<width * 13 / 20,
-                           width * 18 / 25..<width * 39 / 50] {
-                let unchanged = region.filter {
-                    let index = (22 * width + $0) * 4
-                    return marked.bytes[index] == plain.bytes[index]
-                }
-                let gaps = region.filter {
-                    let index = (22 * width + $0) * 4
-                    return Double(marked.bytes[index]) <= Double(plain.bytes[index]) * 0.08 + 1
-                }
-                XCTAssertGreaterThan(unchanged.count, 1, "Fine-hatch strokes retain the original bar color.")
-                XCTAssertGreaterThan(gaps.count, region.count / 3, "Gaps still reveal the underlying picture.")
-                for x in gaps {
-                    let index = (22 * width + x) * 4
-                    XCTAssertEqual(marked.bytes[index + 1], 255)
-                    XCTAssertEqual(marked.bytes[index + 2], 255)
-                }
+            for x in (width / 5 + 12)..<(width * 4 / 5 - 12) {
+                XCTAssertEqual(color(marked.bytes, x: x, y: 22), color(plain.bytes, x: x, y: 22),
+                               "Played, buffered, and unplayed sections have no internal cutout or pattern.")
             }
+            XCTAssertEqual(color(marked.bytes, x: width / 2, y: 22), [255, 255, 255])
+            let crossing = try render(width: width, segments: segments, currentSeconds: 20)
+            XCTAssertEqual(color(crossing.bytes, x: width / 5, y: 22), [255, 255, 255],
+                           "The playhead stays solid while crossing a boundary.")
             let attachment = XCTAttachment(image: UIImage(cgImage: marked.image))
-            attachment.name = "Default fine-hatch touch markers at \(width)pt"
+            attachment.name = "Segmented touch markers at \(width)pt"
             attachment.lifetime = .keepAlways
             add(attachment)
         }
     }
 
-    private func render(width: Int, segments: [MediaSegment]) throws -> (image: CGImage, bytes: [UInt8]) {
+    private func render(width: Int, segments: [MediaSegment], currentSeconds: TimeInterval = 50) throws -> (image: CGImage, bytes: [UInt8]) {
         let renderer = ImageRenderer(content:
             PlayerTouchScrubBar(
-                currentSeconds: 50, duration: 100, bufferedFraction: 0.7, segments: segments,
+                currentSeconds: currentSeconds, duration: 100, bufferedFraction: 0.7, segments: segments,
                 onScrub: { _ in XCTFail("Rendering must not seek.") },
                 onScrubbingChanged: { _ in XCTFail("Rendering must not begin a gesture.") }
             )
