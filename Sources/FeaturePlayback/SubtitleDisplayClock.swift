@@ -49,6 +49,7 @@ final class SubtitleDisplayClockView: UIView {
 
     @objc private func tick() {
         guard let engine, let subtitles, subtitles.hasContent else { return }
+        engine.renderSubtitles(at: engine.subtitlePresentationTime - subtitles.offset, style: subtitles.style)
         subtitles.tick(engine.subtitlePresentationTime)
     }
 }

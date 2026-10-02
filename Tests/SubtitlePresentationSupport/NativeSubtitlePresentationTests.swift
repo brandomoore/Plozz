@@ -10,6 +10,69 @@ import XCTest
 
 @MainActor
 final class NativeSubtitlePresentationTests: XCTestCase {
+    func testLocalEmbeddedASSKeepsAuthoredGraphicsThroughSeekAndOff() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PLOZZ_ASS_MEDIA_REPRO"] else {
+            throw XCTSkip("Requires an explicitly supplied local ASS media fixture.")
+        }
+        let engine = try PlozzigenVideoEngine()
+        engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        let model = LiveSubtitleModel()
+        model.beginLiveFeed()
+        var latest: [SubtitleCue] = []
+        engine.onSubtitleCues = { latest = $0; model.updateLiveCues($0) }
+        let window = try await mount(engine, subtitles: model)
+        defer { engine.stop(); window.isHidden = true; window.rootViewController = nil }
+        let mediaURL = path.hasPrefix("cache:")
+            ? try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
+                .appendingPathComponent(String(path.dropFirst("cache:".count)))
+            : URL(fileURLWithPath: path)
+        let mediaHandle = try FileHandle(forReadingFrom: mediaURL)
+        try mediaHandle.close()
+        if path == "cache:apothecary-repro.mkv" {
+            addTeardownBlock { try FileManager.default.removeItem(at: mediaURL) }
+        }
+        await engine.load(request: request(mediaURL, tracks: []), startPosition: 0)
+        try await waitUntil(timeout: 30) { engine.isPlaybackPositionReady }
+        let track = try XCTUnwrap(engine.subtitleTracks.first { $0.codec == "ass" })
+        engine.selectSubtitleTrack(track)
+        try await waitUntil(timeout: 30) { latest.contains(where: \.isImage) && model.primary.contains(where: \.isImage) }
+        engine.pause()
+        await engine.seek(to: 8)
+        try await waitUntil(timeout: 30) {
+            abs(engine.subtitlePresentationTime - 8) < 0.1
+                && latest.contains(where: \.isImage) && model.primary.contains(where: \.isImage)
+        }
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertTrue(latest.allSatisfy(\.isImage), "ASS drawings and glyph layers must never reach the plain text overlay.")
+        let rendered = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
+        let attachment = XCTAttachment(image: rendered)
+        attachment.name = "Local ASS artwork at actual player position"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let initialID = latest.first?.id
+        await engine.seek(to: 3)
+        try await waitUntil(timeout: 30) { latest.first?.id != initialID && latest.contains(where: \.isImage) }
+        XCTAssertTrue(engine.isPaused)
+        engine.selectSubtitleTrack(nil)
+        try await waitUntil { latest.isEmpty && model.primary.isEmpty }
+        engine.selectSubtitleTrack(track)
+        try await waitUntil(timeout: 30) { latest.contains(where: \.isImage) }
+        if let alternate = engine.subtitleTracks.first(where: { $0.codec == "ass" && $0.id != track.id }) {
+            engine.selectSubtitleTrack(alternate)
+            try await waitUntil(timeout: 30) { latest.contains(where: \.isImage) }
+        }
+        model.style.followsSystemStyle = true
+        try await waitUntil {
+            !latest.isEmpty && latest.allSatisfy { !$0.isImage }
+        }
+        XCTAssertFalse(latest.contains { $0.text?.hasPrefix("m ") == true },
+                       "Explicit system-style fallback must not expose vector coordinates.")
+        model.style.followsSystemStyle = false
+        try await waitUntil(timeout: 30) { latest.contains(where: \.isImage) }
+    }
+
     func testEngineMetricsAreJournaledWithoutOpeningPlaybackInfo() async throws {
         let tracing = HandoffDiagnostics.isEnabled
         HandoffDiagnostics.setEnabled(true)

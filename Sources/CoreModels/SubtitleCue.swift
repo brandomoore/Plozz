@@ -32,8 +32,8 @@ public struct SubtitleCue: Identifiable, Sendable {
 
     public enum Body: Sendable {
         case text(SubtitleText)
-        /// A pre-rendered bitmap cue (PGS / HDMV-PGS / DVB / DVD). Decoded by the
-        /// engine; the renderer only composites + luminance-clamps it.
+        /// A decoded bitmap (PGS / DVB / DVD) or a libass-composited authored
+        /// frame. The overlay places and luminance-clamps it.
         case image(SubtitleImage)
     }
 

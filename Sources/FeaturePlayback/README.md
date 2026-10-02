@@ -179,6 +179,27 @@ rendering supports fewer effects than the overlay.
 
 ### Caption timing and control avoidance
 
+Plozzigen's primary embedded ASS/SSA tracks preserve their packet text, script
+header and embedded font attachments for libass. With source position, colour and
+emphasis enabled (and system-style matching off), the adapter composites authored layers, vector drawings, transforms and
+karaoke into bitmap cues; it does not flatten animation fragments into dialogue.
+Rendering is serialized off the main actor with at most one frame in flight,
+at source time minus the subtitle offset. Paused frames redraw only for changed
+cue data; backward seeks rebuild the retained event set. Track changes, Off,
+native presentation and teardown fence late output. The existing overlay retains
+video-rect mapping, HDR brightness and control avoidance.
+
+The pinned SwiftLibass 1.4.0 binary wrapper supplies libass 0.17.3 and its font
+dependencies without adding another FFmpeg. Raster output is capped at 1080p;
+render caches and retained events are bounded. Turning off source position or
+colour uses the ordinary styled-text fallback, which discards vector drawing
+commands rather than displaying coordinates. System-style matching also retains
+the normal text renderer so explicit device caption preferences win. Embedded
+fonts are session-local libass data; they are never installed into the system.
+Secondary ASS and separately
+downloaded ASS files retain the existing text path; native PiP uses its plain
+subtitle rendition rather than promising authored ASS effects outside the app.
+
 `NativeSubtitleCueOutput` receives complete caption presentation states from
 AVFoundation, including empty states that clear the display. They are scheduled
 at the supplied **item presentation time**, never callback arrival time or a

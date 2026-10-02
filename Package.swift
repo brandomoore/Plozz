@@ -223,6 +223,7 @@ let package = Package(
         // SMB enters AetherEngine only through Plozz's protocol-neutral custom-source
         // bridge; the engine's legacy SMB URL product is not linked.
         .package(url: "https://github.com/superuser404notfound/AetherEngine", revision: "0e2f5c967b5f92e692e03edf612f2753289029cf"),
+        .package(url: "https://github.com/mihai8804858/swift-libass", revision: "6513c488e377a26c06db327fb2acfc2653a041d5"),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x decode-only) and LibDovi (Dolby Vision
         // RPU parser) are pulled in TRANSITIVELY by AetherEngine — its own manifest
         // declares and consumes them. Plozz used to declare them directly only for
@@ -687,6 +688,7 @@ let package = Package(
                 "MediaTransportCore",
                 "FeaturePlayback",
                 .product(name: "AetherEngine", package: "AetherEngine"),
+                .product(name: "SwiftLibass", package: "swift-libass"),
             ]
         ),
 

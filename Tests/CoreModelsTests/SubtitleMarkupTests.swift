@@ -7,6 +7,17 @@ import XCTest
 final class SubtitleMarkupTests: XCTestCase {
     private struct NotText: Error {}
 
+    func testASSDrawingCoordinatesNeverBecomeTextAndP0RestoresDialogue() {
+        let packet = #"0,0,Default,,0,0,0,,{\p1}m 0 0 l 100 0 100 20{\p0}Visible{\p2}m 2 2 l 3 3{\r} again"#
+        let text = SubtitleCueParser.textFromASSPacket(packet, header: assHeader)
+        XCTAssertEqual(text.string, "Visible again")
+        let drawingOnly = SubtitleCueParser.textFromASSPacket(
+            #"0,0,Default,,0,0,0,,{\pos(100,50)\p1}m 0 0 l 10 0 10 10"#, header: assHeader
+        )
+        XCTAssertTrue(drawingOnly.string.isEmpty)
+        XCTAssertNotNil(drawingOnly.rawASS)
+    }
+
     private func text(_ file: String) throws -> SubtitleText {
         let cue = try XCTUnwrap(SubtitleCueParser.parseCues(file).first)
         guard case .text(let text) = cue.body else { throw NotText() }

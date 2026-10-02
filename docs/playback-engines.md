@@ -6,6 +6,15 @@ with the best possible quality (Dolby Vision, Atmos, full-timeline seek).
 
 ## Dependency version
 
+Authored primary ASS/SSA subtitles use the pinned SwiftLibass 1.4.0 wrapper
+(`6513c488e377a26c06db327fb2acfc2653a041d5`, libass 0.17.3) in the
+Plozzigen adapter. It adds static text-rendering libraries, not another FFmpeg.
+The adapter consumes Aether's public raw-packet/header/font APIs and emits
+composited bitmap cues through Plozz's existing subtitle overlay. Font data is
+session-local, frame work is serialized off-main, and late frames are fenced
+across track changes, seeks and teardown. `App/Resources/LibassNotices.txt`
+ships the wrapper and transitive-library notices.
+
 Plozz pins upstream release **7.22.2**, commit
 `0e2f5c967b5f92e692e03edf612f2753289029cf`. This release waits for an observed,
 still-running display switch before offering an unproven HDR master. A rejection

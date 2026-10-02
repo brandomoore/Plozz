@@ -73,6 +73,7 @@ targets:
       # the FIRST copy a new user sees, so it has to be translated too.
       - path: App/Resources/InfoPlist.xcstrings
       - path: App/Resources/ReleaseNotes.json
+      - path: App/Resources/LibassNotices.txt
     info:
       path: App/Resources/Info.plist
       properties:
@@ -323,6 +324,7 @@ targets:
       # Same shared catalog as the tvOS target — see the note there.
       - path: App/Resources/Localizable.xcstrings
       - path: App/Resources/ReleaseNotes.json
+      - path: App/Resources/LibassNotices.txt
     info:
       path: App/PlozziOS/Info.plist
       properties:
