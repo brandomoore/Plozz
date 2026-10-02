@@ -128,7 +128,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         XCTAssertEqual(badges[0], badges[1])
     }
 
-    func testLibraryLogosUseOnlyTheSharedScrimWithoutABox() throws {
+    func testLibraryCornerScrimContainsTheWholeLogoAndLeavesOtherArtworkClear() throws {
         let library = AggregatedLibrary(
             accountID: "account", accountName: "Viewer", serverName: "Server",
             providerKind: .jellyfin,
@@ -137,20 +137,66 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                 imageURL: URL(string: "https://example.invalid/custom.jpg")
             )
         )
-        let actual = ImageRenderer(content:
-            LibraryArtworkOverlay(library: library).frame(width: 720, height: 405).background(.white)
-        )
-        let expected = ImageRenderer(content:
-            MediaArtworkChromeScrim(top: true, bottom: false)
-                .frame(width: 720, height: 405).background(.white)
-        )
-        actual.scale = 1
-        expected.scale = 1
-        let actualImage = try XCTUnwrap(actual.uiImage)
-        let expectedImage = try XCTUnwrap(expected.uiImage)
-        for point in [CGPoint(x: 600, y: 75), CGPoint(x: 640, y: 33), CGPoint(x: 685, y: 75)] {
-            XCTAssertEqual(try pixel(actualImage, at: point), try pixel(expectedImage, at: point),
-                           "The space around the logo must contain only the shared scrim, not a box or border.")
+        let widths: [CGFloat] = [220, 484, 720]
+        for width in widths {
+            for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+                let height = width * 9 / 16
+                let renderer = ImageRenderer(content:
+                    LibraryArtworkOverlay(library: library)
+                        .frame(width: width, height: height)
+                        .background(.white)
+                        .environment(\.plozzCardFocusStyle, .system)
+                        .environment(\.layoutDirection, direction)
+                )
+                renderer.scale = 3
+                let image = try XCTUnwrap(renderer.uiImage)
+                let size = width * 0.135
+                let padding = size * 0.1
+                let inset = min(10.5, width * 0.024)
+                let origin = CGPoint(x: width - inset - padding - size, y: inset + padding)
+                func brightness(_ point: CGPoint) throws -> UInt8 {
+                    let x = direction == .leftToRight ? point.x : width - point.x
+                    return try pixel(image, at: CGPoint(x: x * renderer.scale, y: point.y * renderer.scale))[0]
+                }
+                let edgeBrightness = max(
+                    try brightness(CGPoint(x: width - 1, y: origin.y + size * 0.5)),
+                    try brightness(CGPoint(x: origin.x + size * 0.5, y: 1))
+                )
+                for offset in [
+                    CGPoint(x: 0.03, y: 0.5), CGPoint(x: 0.97, y: 0.5),
+                    CGPoint(x: 0.5, y: 0.03), CGPoint(x: 0.5, y: 0.97)
+                ] {
+                    let point = CGPoint(x: origin.x + size * offset.x, y: origin.y + size * offset.y)
+                    XCTAssertLessThan(try brightness(point), 215,
+                                      "The gentle scrim must still sit beneath the whole logo: \(width), \(direction)")
+                    XCTAssertGreaterThan(try brightness(point), 160,
+                                         "The logo must not sit on a heavy dark patch or an additional backing plate.")
+                    XCTAssertLessThanOrEqual(Int(edgeBrightness), Int(try brightness(point)) + 2,
+                                             "Darkness must extend to the artwork edges, not peak around the logo as a halo.")
+                }
+                let fade = try brightness(CGPoint(x: origin.x - size * 0.5, y: origin.y + size * 0.5))
+                XCTAssertGreaterThan(fade, 200, "The corner must soften outside the logo.")
+                XCTAssertLessThan(fade, 245, "The gradient must extend beyond the logo, not stop at a box.")
+                let fadeSamples = try (0...8).map { step in
+                    Int(try brightness(CGPoint(x: width - 1, y: height * (0.15 + CGFloat(step) * 0.1))))
+                }
+                for (before, after) in zip(fadeSamples, fadeSamples.dropFirst()) {
+                    XCTAssertGreaterThanOrEqual(after, before, "The scrim must fade continuously away from the edge.")
+                    XCTAssertLessThanOrEqual(after - before, 15, "Spread the fade gradually instead of ending in a steep band.")
+                }
+                XCTAssertEqual(fadeSamples.last, 255)
+                for point in [
+                    CGPoint(x: width * 0.1, y: height * 0.1),
+                    CGPoint(x: width * 0.5, y: height * 0.5),
+                    CGPoint(x: width * 0.9, y: height * 0.9)
+                ] {
+                    XCTAssertGreaterThanOrEqual(try brightness(point), 247, "Away from the logo the scrim must be imperceptible.")
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "library-corner-scrim-\(width)-\(direction)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
         }
     }
 
