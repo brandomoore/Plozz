@@ -9,6 +9,323 @@ import CoreModels
 
 @MainActor
 final class NativeFocusRequestHostedTests: XCTestCase {
+    func testNavigationCallbackRefreshKeepsIdentityAndUsesLatestRoute() async throws {
+        let fixture = try await makeFixture()
+        let state = NavigatorRefreshState()
+        defer {
+            state.navigator = nil
+            fixture.close()
+        }
+        let menus = CountingMenuHandler()
+        fixture.window.rootViewController = UIHostingController(
+            rootView: NavigatorRefreshFixture(
+                state: state,
+                content: Button("Menu") {}
+                    .mediaItemContextMenu(for: state.item)
+                    .background(NavigatorProbe(state: state))
+            ).mediaItemActionHandler(menus)
+        )
+        fixture.window.layoutIfNeeded()
+        try await waitUntil { menus.builds.count == 1 && state.navigator != nil }
+        try await Task.sleep(for: .milliseconds(300))
+        let before = state.navigator
+        state.revision = 1
+        try await Task.sleep(for: .milliseconds(100))
+        let item = MediaItem(id: "menu", title: "Menu", kind: .movie)
+        state.navigator?(item)
+        XCTAssertEqual(state.receivedRevision, 1, "The stable router must dispatch the latest callback, not a stale capture.")
+        XCTAssertEqual(state.navigator, before, "Callback updates must not invalidate the navigator environment value.")
+        state.enabled = false
+        try await waitUntil { state.navigator == nil }
+        state.receivedRevision = nil
+        before?(item)
+        XCTAssertNil(state.receivedRevision, "A retained router must not dispatch after navigation is disabled.")
+        state.enabled = true
+        state.revision = 2
+        try await waitUntil { state.navigator != nil }
+        state.navigator?(item)
+        XCTAssertEqual(state.receivedRevision, 2)
+    }
+
+    @Observable final class NavigatorRefreshState {
+        let item = MediaItem(id: "menu", title: "Menu", kind: .movie)
+        var revision = 0
+        var enabled = true
+        @ObservationIgnored var navigator: MediaItemNavigator?
+        @ObservationIgnored var receivedRevision: Int?
+    }
+
+    private struct NavigatorRefreshFixture<Content: View>: View {
+        let state: NavigatorRefreshState
+        let content: Content
+        var body: some View {
+            content
+                .mediaItemNavigator(state.enabled ? { [revision = state.revision] _ in
+                    state.receivedRevision = revision
+                } : nil)
+        }
+    }
+
+    private struct NavigatorProbe: View {
+        let state: NavigatorRefreshState
+        @Environment(\.mediaItemNavigator) private var navigator
+        var body: some View {
+            state.navigator = navigator
+            return Color.clear
+        }
+    }
+
+    func testNavigatorReleasesReplacedCallbacksAndRemovedScope() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let state = NavigatorLifetimeState()
+        var first: NavigatorLifetimeToken? = NavigatorLifetimeToken()
+        weak var firstReference = first
+        state.route = { [token = first!] _ in token.calls += 1 }
+        first = nil
+        fixture.window.rootViewController = UIHostingController(rootView: NavigatorLifetimeFixture(state: state))
+        fixture.window.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        var second: NavigatorLifetimeToken? = NavigatorLifetimeToken()
+        weak var secondReference = second
+        state.route = { [token = second!] _ in token.calls += 1 }
+        second = nil
+        try await waitUntil { firstReference == nil }
+        fixture.close()
+        state.route = nil
+        try await waitUntil { secondReference == nil }
+    }
+
+    @Observable final class NavigatorLifetimeState {
+        var route: ((MediaItem) -> Void)?
+    }
+
+    private final class NavigatorLifetimeToken {
+        var calls = 0
+    }
+
+    private struct NavigatorLifetimeFixture: View {
+        let state: NavigatorLifetimeState
+        var body: some View {
+            Color.clear.mediaItemNavigator(state.route)
+        }
+    }
+
+    func testCallbackOnlyRowFocusDoesNotRebuildItsCardInputs() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        var builds: [String: Int] = [:]
+        var selected: [String] = []
+        let menus = CountingMenuHandler()
+        let host = PreferredPosterHost(rootView: AnyView(
+            VStack(spacing: 60) {
+                ForEach(0..<2) { row in
+                    MediaRowView(
+                        title: Text("Row \(row)"),
+                        items: (0..<3).map {
+                            MediaItem(id: "r\(row)-\($0)", title: "Item \(row)-\($0)", kind: .movie)
+                        },
+                        style: .landscape,
+                        onFocusChange: { if let item = $0 { selected.append(item.id) } },
+                        onCardFocused: { _ in },
+                        statusCue: {
+                            builds[$0.id, default: 0] += 1
+                            return nil
+                        },
+                        onSelect: { _ in }
+                    )
+                }
+            }
+            .environment(\.plozzCardStyle, .borderless)
+            .environment(\.plozzCardFocusStyle, .system)
+            .mediaItemActionHandler(menus)
+        ))
+        fixture.window.rootViewController = host
+        fixture.window.layoutIfNeeded()
+        try await waitUntil { self.lockups(in: host.view).count == 6 }
+        let posters = lockups(in: host.view)
+        let first = try XCTUnwrap(posters.first { $0.accessibilityLabel == "Item 0-0" })
+        let second = try XCTUnwrap(posters.first { $0.accessibilityLabel == "Item 1-0" })
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: fixture.window))
+        host.target = first
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await waitUntil { first.isFocused && selected.contains("r0-0") }
+        try await Task.sleep(for: .milliseconds(200))
+        let before = builds
+        let menusBefore = menus.builds
+        host.target = second
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await waitUntil { second.isFocused && selected.contains("r1-0") }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(builds, before, "Focus callbacks and prefetch bookkeeping must not rebuild all card inputs.")
+        XCTAssertEqual(menus.builds, menusBefore, "Focus alone must not rebuild card actions.")
+    }
+
+    private final class CountingMenuHandler: MediaItemActionHandling {
+        var builds: [String: Int] = [:]
+        func actions(for item: MediaItem, context: MediaItemActionContext) -> [MediaItemAction] {
+            builds[item.id, default: 0] += 1
+            return [.markWatched, .addToWatchlist]
+        }
+        func perform(_ action: MediaItemAction, on item: MediaItem, context: MediaItemActionContext) {}
+    }
+
+    private final class PreferredPosterHost: UIHostingController<AnyView> {
+        weak var target: UIView?
+        override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+            target.map { [$0] } ?? super.preferredFocusEnvironments
+        }
+    }
+
+    func testNativeFocusMovementDoesNotRebuildUnfocusedPosterOwners() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let counts = (0..<3).map { _ in FocusReadCounts() }
+        let host = UIHostingController(rootView:
+            HStack(spacing: 100) {
+                ForEach(0..<3) { index in
+                    NativeFocusReadOwner(counts: counts[index], title: "\(index)")
+                }
+            }
+            .environment(\.plozzCardFocusStyle, .system)
+        )
+        fixture.window.rootViewController = host
+        fixture.window.layoutIfNeeded()
+        let posters = lockups(in: host.view)
+        XCTAssertEqual(posters.count, 3)
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: fixture.window))
+        system.requestFocusUpdate(to: posters[0])
+        system.updateFocusIfNeeded()
+        try await waitUntil { posters[0].isFocused }
+        try await Task.sleep(for: .milliseconds(100))
+        let before = counts.map(\.ownerEvaluations)
+        try XCTUnwrap(counts[1].focus).focusState.wrappedValue = true
+        try await waitUntil { posters[1].isFocused }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(counts[2].ownerEvaluations, before[2], "An unrelated card must not rebuild.")
+        XCTAssertEqual(counts[0].ownerEvaluations, before[0], "Only the old card's focus reader must update.")
+        XCTAssertEqual(counts[1].ownerEvaluations, before[1], "Only the new card's focus reader must update.")
+    }
+
+    private struct NativeFocusReadOwner: View {
+        let counts: FocusReadCounts
+        let title: String
+        @PlozzCardFocus private var focused
+
+        var body: some View {
+            counts.ownerEvaluations += 1
+            return NativeTVPoster(
+                image: nil, treatment: .original, aspectRatio: 2,
+                fallbackWidth: 300, title: .content(title), subtitle: nil,
+                overlay: FocusReadChild(counts: counts, focus: $focused),
+                focus: $focused, action: {}
+            )
+            .focused($focused.focusState)
+            .frame(width: 300, height: 150)
+            .onAppear { counts.focus = $focused }
+        }
+    }
+
+    func testNativeFocusObservationInvalidatesOnlyItsReader() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let counts = FocusReadCounts()
+        fixture.window.rootViewController = UIHostingController(rootView: FocusReadOwner(counts: counts))
+        fixture.window.layoutIfNeeded()
+        try await waitUntil { counts.focus != nil }
+        let initial = counts.ownerEvaluations
+        let focus = try XCTUnwrap(counts.focus)
+        focus.observation.isFocused = true
+        try await waitUntil { counts.observedFocus }
+        focus.observation.isFocused = false
+        try await waitUntil { !counts.observedFocus }
+        XCTAssertEqual(
+            counts.ownerEvaluations, initial,
+            "Native focus must not rebuild the artwork/menu owner when only a child reads focus."
+        )
+    }
+
+    final class FocusReadCounts {
+        var ownerEvaluations = 0
+        var observedFocus = false
+        var focus: PlozzCardFocus.Binding?
+    }
+
+    private struct FocusReadOwner: View {
+        let counts: FocusReadCounts
+        @PlozzCardFocus private var focused
+
+        var body: some View {
+            counts.ownerEvaluations += 1
+            return FocusReadChild(counts: counts, focus: $focused)
+                .onAppear { counts.focus = $focused }
+                .environment(\.plozzCardFocusStyle, .system)
+        }
+    }
+
+    private struct FocusReadChild: View {
+        let counts: FocusReadCounts
+        let focus: PlozzCardFocus.Binding
+
+        var body: some View {
+            Color.clear
+                .onChange(of: focus.isFocused, initial: true) { _, value in
+                    counts.observedFocus = value
+                }
+        }
+    }
+
+    func testPosterOverlayCacheKeepsLiveContentAndDisplayScale() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let model = RasterOverlayModel()
+        let host = UIHostingController(rootView: RasterOverlayFixture(model: model))
+        fixture.window.rootViewController = host
+        fixture.window.layoutIfNeeded()
+        let poster = try XCTUnwrap(lockups(in: host.view).compactMap { $0 as? TVPosterView }.first)
+        let overlay = try XCTUnwrap(poster.imageView.overlayContentView.subviews.first)
+        try await waitUntil { !overlay.bounds.isEmpty }
+        XCTAssertTrue(overlay.layer.shouldRasterize)
+        XCTAssertEqual(overlay.layer.rasterizationScale, 1)
+        func pixels() throws -> Data {
+            let image = UIGraphicsImageRenderer(bounds: overlay.bounds).image { _ in
+                XCTAssertTrue(overlay.drawHierarchy(in: overlay.bounds, afterScreenUpdates: true))
+            }
+            return try XCTUnwrap(image.pngData())
+        }
+        let before = try pixels()
+        model.updated = true
+        model.scale = 2
+        try await waitUntil { overlay.layer.rasterizationScale == 2 }
+        fixture.window.layoutIfNeeded()
+        XCTAssertTrue(poster.imageView.overlayContentView.subviews.first === overlay)
+        XCTAssertNotEqual(try pixels(), before, "Cached overlays must repaint updated watch/progress content.")
+    }
+
+    @Observable
+    final class RasterOverlayModel {
+        var updated = false
+        var scale: CGFloat = 1
+    }
+
+    private struct RasterOverlayFixture: View {
+        let model: RasterOverlayModel
+        @PlozzCardFocus private var focused
+
+        var body: some View {
+            NativeTVPoster(
+                image: nil, treatment: .original, aspectRatio: 2,
+                fallbackWidth: 400, title: .content("Overlay"), subtitle: nil,
+                overlay: model.updated ? Color.green : Color.red,
+                focus: $focused, action: {}
+            )
+            .frame(width: 400, height: 200)
+            .environment(\.displayScale, model.scale)
+        }
+    }
+
     func testLoadingCardFocusStyleAndPresentationMatrix() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

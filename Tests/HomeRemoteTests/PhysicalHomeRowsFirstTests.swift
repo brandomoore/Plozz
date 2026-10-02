@@ -156,6 +156,14 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
         try runRows(nativeMetric: true, heroAllowed: true, verticalBurst: true)
     }
 
+    func testObservedHomeMultirowArrivalWarm() throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["PLOZZ_HOME_MEASURE_DIRECTION"] == "multirow-up",
+            "Requires explicit rapid multirow arrival opt-in."
+        )
+        try runRows(nativeMetric: true, heroAllowed: true, multirowArrival: true)
+    }
+
     func testObservedHomeVerticalRoundtripWarm() throws {
         try XCTSkipUnless(
             ProcessInfo.processInfo.environment["PLOZZ_HOME_VERTICAL_ROUNDTRIP"] == "1",
@@ -184,7 +192,7 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
         verticalOnly: Bool = false, horizontalOnly: Bool = false,
         sweep: Bool = false, nativeMetric: Bool = false,
         heroAllowed: Bool = false, verticalRoundtrip: Bool = false, observeOnly: Bool = false,
-        verticalBurst: Bool = false, mixedRows: Bool = false
+        verticalBurst: Bool = false, mixedRows: Bool = false, multirowArrival: Bool = false
     ) throws {
         #if !os(tvOS) || targetEnvironment(simulator)
         throw XCTSkip("Physical tvOS only.")
@@ -279,6 +287,10 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
 
         if mixedRows {
             try runShowcaseMixedRows(from: scene, app: app)
+            return
+        }
+        if multirowArrival {
+            try measureMultirowArrival(from: scene, app: app)
             return
         }
         if verticalBurst {
@@ -568,6 +580,63 @@ final class PhysicalHomeRowsFirstTests: XCTestCase {
         }
         if let failure { throw failure }
         event("native.metric.verified title=\(source.title.debugDescription) destination=\(destination.title.debugDescription) direction=\(direction)")
+        event("complete")
+    }
+
+    private func measureMultirowArrival(from initial: Scene, app: XCUIApplication) throws {
+        guard #available(tvOS 26.0, *) else { throw XCTSkip("Native hitch metrics require tvOS 26 or newer.") }
+        let title = ProcessInfo.processInfo.environment["PLOZZ_HOME_CONTINUE_WATCHING_LABEL"] ?? "Continue Watching"
+        try requireFocused(title, in: initial)
+        var scene = initial
+        var visited = [try XCTUnwrap(scene.focusedRow)]
+        for index in 1...4 {
+            let source = try XCTUnwrap(scene.focusedRow)
+            try input(.down, phase: "arrival.preverify-down.\(index)", app: app)
+            scene = try observeSettledFocus(app, phase: "arrival.preverified-down.\(index)")
+            guard hasAdvancedDown(from: source, in: scene) else {
+                try fail(.notReady, "Multirow arrival requires four verified populated rows below Continue Watching.")
+            }
+            visited.append(try XCTUnwrap(scene.focusedRow))
+        }
+        for index in (0..<4).reversed() {
+            try input(.up, phase: "arrival.preverify-up.\(index)", app: app)
+            scene = try observeSettledFocus(app, phase: "arrival.preverified-up.\(index)")
+            try requireFocused(visited[index], in: scene)
+        }
+        event("arrival.path.verified rows=\(visited.map(\.title)) axBetweenMeasuredPresses=false")
+        let options = XCTMeasureOptions()
+        options.iterationCount = 3
+        options.invocationOptions = [.manuallyStart, .manuallyStop]
+        var iteration = 0
+        var failure: Error?
+        measure(metrics: [XCTHitchMetric(application: app)], options: options) {
+            iteration += 1
+            do {
+                try self.requireFocused(visited[0], in: scene)
+                for _ in 0..<4 { XCUIRemote.shared.press(.down) }
+                scene = try self.observeSettledFocus(app, phase: "arrival.prepared.\(iteration)")
+                try self.requireFocused(visited[4], in: scene)
+                self.event("lower-rows.input-window.begin")
+                self.event("native.metric.begin iteration=\(iteration) direction=multirow-up depth=4")
+                self.startMeasuring()
+                for step in 1...4 {
+                    self.event("arrival.input.begin iteration=\(iteration) step=\(step) direction=up")
+                    XCUIRemote.shared.press(.up)
+                    self.event("arrival.input.end iteration=\(iteration) step=\(step) direction=up")
+                }
+                Thread.sleep(forTimeInterval: 0.6)
+                self.stopMeasuring()
+                self.event("native.metric.end iteration=\(iteration)")
+                self.event("lower-rows.input-window.end")
+                scene = try self.observeSettledFocus(app, phase: "arrival.finished.\(iteration)")
+                try self.requireFocused(visited[0], in: scene)
+            } catch {
+                failure = error
+                XCTFail("Rapid multirow arrival did not follow the verified path: \(error)")
+            }
+        }
+        if let failure { throw failure }
+        event("native.metric.verified direction=multirow-up depth=4 title=\(title.debugDescription)")
         event("complete")
     }
 

@@ -66,6 +66,41 @@ fallback when the user's server has no attached trailer.
 
 ## Home loading
 
+Library cards preserve server-supplied cover artwork. Missing covers use a stable,
+locally composed poster collage from that exact library, with a provider-colored
+fallback for empty or unavailable sources. All cards carry the shared provider
+mark (including explicit SMB/WebDAV/NFS transport badges), while server/account
+captions continue to distinguish same-provider servers.
+
+`LibraryArtworkSource` requests at most 18 library items and selects six unique
+poster candidates. `LibraryCollageCache` coalesces requests, admits at most two
+libraries and three poster transfers at once, and composes a single 720x405 texture
+on a serial utility queue. Visible covers use the foreground artwork lane rather
+than waiting behind speculative prefetch. The raw Browse Files root uses the same
+account's indexed latest media, never a recursive filesystem walk. Library names
+are not drawn over artwork. Provider badges sit beside the library name in the caption below the
+artwork on TV and mobile, never on the cover or collage; no logo scrim is applied.
+They use `ProviderBrandMark`'s standard provider-tinted circular background and
+optically balanced internal padding, including its existing Plex size adjustment.
+Native captions center the badge and short title together, keep the badge fixed
+while long names marquee, and move both together on focus without adding a focus target.
+Library captions reserve the landscape artwork-to-caption gap at rest and on focus,
+without changing ordinary poster spacing or the focus animation.
+Transparent server covers retain their alpha but use the same rounded native
+poster treatment as opaque covers, rather than alpha-shaped cutout focus.
+This changes the native image-view treatment, not the cached artwork bitmap.
+Transport marks stack the complete drive symbol above their label with balanced
+vertical padding.
+The decoded cache is capped at 16 MiB; the bounded disk derivative cache at 8 MiB.
+Collage keys use a stable profile identity, not the app container's absolute path,
+so installing another build does not invalidate them. Returning cards seed their
+first frame synchronously from decoded memory; disk reads, decoding and composition
+remain asynchronous and off the main thread.
+Keys include the Home profile scope, account, effective server user, library and
+credential revision. No authenticated artwork URLs are persisted by this cache.
+Focus changes do not reload or compose artwork. Native TV posters receive the
+same cached bitmap as mobile/custom cards; clipping and focus geometry stay unchanged.
+
 Home gives inventory, each global feed, and per-library rows independent queues
 of at most five operations each. Slow resume feeds cannot occupy the slots
 needed to start other row types. Each global row arrives
@@ -103,13 +138,46 @@ Preview headings have a 16pt inter-row spacer above them and more room below
 before their cards. Only the active heading lifts, preserving its focus
 clearance. That movement is a title-only drawing offset, not a rail
 relayout. Native card/shadow drawing bounds remain intact.
-Vertical movement uses a real `ScrollView` and UIKit's content-offset animation,
-not a SwiftUI animation of the entire stack. Focus still chooses the row and its
+Vertical movement uses a real `ScrollView` with additive native springs,
+not a main-thread display link advancing the content offset. Each press adds
+only its destination adjustment; existing springs keep running with their
+original clocks and velocity. Stopping and recreating a spring on every press
+makes held-remote navigation pulse between rows.
+Springs and height keyframes start at the actual Core Animation commit, not an
+earlier wall-clock timestamp. Otherwise a busy focus/layout update can skip
+most of the first visible movement. Retargeting reads the native resolved clocks;
+hosted coverage checks 90ms retargets and a deliberately delayed 150ms commit.
+The mask and hero-column height follow the
+viewport's presentation trajectory through the measured row anchors, not a
+separate spring started by the destination change. Rapid Up can target Continue
+Watching while the viewport still traverses taller rows; the height remains
+unchanged until that viewport reaches the shorter-row interval. Smooth height
+interpolation has zero slope at each anchor, avoiding a velocity jump on entering
+or leaving the interval. Native keyframes are calculated once per retarget and
+run on the compositor, without per-frame SwiftUI updates. Late row measurements
+refresh that path from its painted position even if the destination is unchanged.
+The lifted heading retains the same nonbouncing spring timing.
+Focus still chooses the row and its
 measured bottom edge determines the exact destination, preserving the hero,
 heading positions and next-row peek. Only the outer viewport's automatic
 scrolling is disabled to avoid a second competing focus-reveal animation;
 horizontal rows stay native and retain their focus and scroll state. The rows
-remain in the original SwiftUI hierarchy, including navigation and accessibility.
+remain SwiftUI content in stable native hosts, including navigation and accessibility.
+Each row retains its intrinsic vertical size rather than filling a host's height
+proposal, including the custom-focus horizontal scroll views.
+Hosts forward the public profile, styling and media-action environment values;
+copying the entire SwiftUI environment also copies internal accessibility state
+from the parent hosting tree and hides the hosted content from accessibility.
+The media-item router retains a comparable identity within its navigation scope.
+Refreshing its callback uses the latest route without invalidating every realized
+card's context menu; enabling or disabling navigation still updates the menus.
+Native-host coverage changes the route callback during upward navigation and
+asserts that already-realized cards do not rebuild their action lists.
+Vertical row owners remain in a `VStack`: the native model offset reaches its
+destination before the presentation viewport does. A `LazyVStack` would recycle
+rows that are still visibly passing through the viewport, especially during
+repeated presses and reversals. Individual horizontal rails keep their normal
+card windowing; preserving vertical owners does not realize every library item.
 Repeated updates to an unchanged destination never cancel an in-flight scroll,
 and Reduce Motion moves directly to the same anchor.
 The first row rests at native scroll offset zero. Its measured height is
@@ -120,8 +188,11 @@ first row. The UI regression checks actual painted chrome, not just its
 accessibility presence, including sidebar and detail returns.
 The schedule badge sits 16pt above the logo slot; Showcase
 constrains even tall logos to that slot rather than letting artwork grow into
-the badge. The outgoing row fades over 64pt, with its bottom edge trimmed so no
-strip remains above the next row. Earlier rows retain native Up eligibility;
+the badge. The outgoing row tucks upward by up to 110pt behind the 24pt mask fade so no
+bottom strip remains above the next row. This offset has its own native spring:
+deriving it from the scroll view's logical geometry makes the returning row
+release all 110pt immediately, ahead of the moving presentation viewport.
+Earlier rows retain native Up eligibility;
 making their entire mask transparent would break that navigation. Showcase's
 backdrop uses wider leading and bottom gradients without lengthening its crossfade.
 Crossfade is the only Showcase backdrop transition. The retired slide preference
@@ -135,13 +206,45 @@ margins settle after realization and draw outside that slot; feeding their
 changing height into a lazy row shifts both the pinned row and hero during deep
 horizontal scrolling. Hosted native-poster coverage checks this before and
 after layout, and the Home UI regression traverses all 75 fixture cards.
+Native poster overlays cache their logo/badge/progress composite at the current
+display scale. Only that hosted overlay is rasterized; native artwork and focus
+effects remain live, and changes to overlay content invalidate the cached image.
+
+Libraries uses the same unclipped horizontal viewport as media rows. Native
+navigation lets focused artwork and scrolling cards draw through the page gutter
+to the screen edge; pinned navigation keeps its shared sidebar feather as the
+clipping boundary, never a second hard clip at the row's content inset.
+
+Discover hydrates and displays its saved candidates with the same featured-only
+configuration used by Showcase's live curation. Without eligible cached content,
+its stable row slot shows loading posters until curation completes, rather than
+inserting a new row during navigation. An initially empty result removes the slot;
+disabling Discover does not reserve it. Lower loading rows never take focus.
+
+Once populated, Discover keeps its entire lineup for the app session, not just
+the focused or currently visible cards. Opening details, changing tabs,
+backgrounding, freshness ticks, and watched-state updates do not replace or
+reorder titles. Matching status and verified routing still refresh in place.
+An explicit configuration or profile/account-scope change resets the selection;
+retention never overrides source authorization. Fullscreen Hero keeps its
+existing carousel refresh policy.
+
+Discover records exposure only after at least half a real card is visible for
+two seconds while Home is frontmost and the scene active. A single native row
+sampler respects horizontal/vertical clipping and the Showcase mask without
+publishing SwiftUI state or treating lazy realization as an impression. The
+profile-scoped history favors unseen cached titles on the next cold launch.
+Background cache writes retain unexposed alternatives, clear unverified routing
+from retained-only discoveries, and fill remaining capacity with refreshed
+candidates; they never publish those replacements into the current lineup.
 
 Metadata belongs to the current Home view-model identity (profile, account set,
 and credential generation), never a process-global cache. Cached details only
 fill presentation gaps in the current row record: watched/resume state, source
 identity, availability, and the selected series remain current. Background
 enrichment publishes batches of at most four, and focus-driven loads share the
-same deduplication. `FocusHeroMetadataTests` covers freshness and ownership;
+same deduplication. Each title observes only its own metadata entry, so unrelated
+enrichment does not rebuild the active hero. `FocusHeroMetadataTests` covers freshness and ownership;
 `ShowcaseNavigationTests` covers geometry and native presented-frame hitches.
 For existing-library coverage, the guarded physical driver supports
 `--run-showcase-mixed`: it verifies on-screen Continue Watching, deep mixed-speed

@@ -199,6 +199,11 @@ Runner verdict regressions use the existing host-side unittest runner:
 
 ## App-hosted focus integration
 
+`PlayerSkipMarkerHostedTests` updates one live scrub track and waits for stable
+rendered frames before comparing native fills. Liquid Glass can keep changing
+after layout; comparing its first frames must not be mistaken for a marker color
+regression or worked around by relaxing the pixel assertions.
+
 `SettingsSubtitleContrastHostedTests` measures rendered text and glyph contrast
 while native focus moves between shared settings rows in Black, Dark, and Light.
 It covers the media-share discovery subtitle, leading icons, manual-entry chevron,

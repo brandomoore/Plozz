@@ -53,6 +53,25 @@ final class HomeContentStoreTests: XCTestCase {
         XCTAssertNil(store.load())
     }
 
+    func testLibraryArtworkScopeSurvivesContainerRelocationAndKeepsProfilesSeparate() {
+        var scopes = Set<String>()
+        for namespace in [nil, "adult", "child"] as [String?] {
+            let before = HomeContentStore(
+                namespace: namespace, directory: tempDir.appendingPathComponent("old-container")
+            )
+            let after = HomeContentStore(
+                namespace: namespace, directory: tempDir.appendingPathComponent("new-container")
+            )
+            XCTAssertNotEqual(before.persistenceScope, after.persistenceScope,
+                              "Write coordination must still identify each actual file.")
+            XCTAssertEqual(before.libraryArtworkScope, after.libraryArtworkScope,
+                           "Installing the app must not change a profile's collage keys.")
+            XCTAssertFalse(before.libraryArtworkScope.contains(tempDir.path))
+            scopes.insert(before.libraryArtworkScope)
+        }
+        XCTAssertEqual(scopes.count, 3)
+    }
+
     func testPrewarmerRunsFactoryAndLoadOffMainThread() async {
         let probe = HomeContentThreadProbe()
         await HomeContentPrewarmer().prepare {

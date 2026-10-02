@@ -230,6 +230,14 @@ accessibility checks between presses. Log the actual cadence and verify the
 ending destination. A Continue Watching/Watchlist or Watchlist/Recently Added
 burst is not a substitute for the cold Hero/Continue Watching case.
 
+`--measure-multirow-up` first verifies four populated rows below Continue Watching
+and their return path. Each sample then measures four consecutive Up presses from
+the deepest verified row, followed by 0.6 seconds for the final arrival to settle.
+Downward preparation and accessibility checks are outside the measurement.
+This exercises accumulated upward motion into the shorter row, unlike alternating
+between the top two rows. Actual remote-call timestamps remain authoritative;
+XCTest's press cadence is not the same as a fast physical remote gesture.
+
 The driver exports `native-metrics.json` from the result bundle and requires
 finite native hitch measurements, not just successful focus assertions. Keep the
 reported duration, count, and time-ratio units. A passing XCTest run means the

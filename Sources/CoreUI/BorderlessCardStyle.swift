@@ -142,6 +142,8 @@ public struct BorderlessCardCaption: View {
     private let horizontalInset: CGFloat
     private let reservesSubtitleSpace: Bool
     private let isFocused: Bool
+    private let providerKind: ProviderKind?
+    private let mediaShareTransport: MediaShareTransportKind?
 
     @Environment(\.plozzMetrics) private var metrics
 
@@ -150,24 +152,34 @@ public struct BorderlessCardCaption: View {
         subtitle: String?,   // l10n:content — media title/subtitle from the server
         horizontalInset: CGFloat,
         reservesSubtitleSpace: Bool = true,
-        isFocused: Bool = false
+        isFocused: Bool = false,
+        providerKind: ProviderKind? = nil,
+        mediaShareTransport: MediaShareTransportKind? = nil
     ) {
         self.title = title
         self.subtitle = subtitle
         self.horizontalInset = horizontalInset
         self.reservesSubtitleSpace = reservesSubtitleSpace
         self.isFocused = isFocused
+        self.providerKind = providerKind
+        self.mediaShareTransport = mediaShareTransport
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            PlozzMarqueeText(
-                text: title,
-                font: .system(size: metrics.cardTitleFontSize, weight: .semibold),
-                color: .primary,
-                inset: horizontalInset,
-                isFocused: isFocused
-            )
+            if let providerKind {
+                HStack(spacing: PlozzTheme.Spacing.small) {
+                    ProviderBrandMark(
+                        provider: providerKind, size: metrics.cardTitleFontSize,
+                        mediaShareTransport: mediaShareTransport
+                    )
+                    .accessibilityHidden(true)
+                    titleLine(inset: 0)
+                }
+                .padding(.horizontal, horizontalInset)
+            } else {
+                titleLine(inset: horizontalInset)
+            }
             if let subtitle {
                 PlozzMarqueeText(
                     text: Text(subtitle),
@@ -183,6 +195,17 @@ public struct BorderlessCardCaption: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func titleLine(inset: CGFloat) -> some View {
+        PlozzMarqueeText(
+            text: title,
+            font: .system(size: metrics.cardTitleFontSize, weight: .semibold),
+            color: .primary,
+            inset: inset,
+            fadeWidth: horizontalInset * PlozzTheme.Metrics.marqueeFadeRatio,
+            isFocused: isFocused
+        )
     }
 }
 #endif

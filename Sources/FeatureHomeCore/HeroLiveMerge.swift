@@ -113,6 +113,9 @@ public enum HeroLiveMerge {
     ///   - preservesPinnedItems: a novelty-only background refresh may replace
     ///     alternatives, but never the slide being viewed, even after many folds.
     ///     Leave false for authoritative settings/content changes.
+    ///   - preservesLineup: retain every loaded slot for the app session, including
+    ///     off-screen cards. Refresh matching payloads without admitting, aging,
+    ///     or retiring titles just because discovery offered a different set.
     ///   - sourceEligibility: authoritative source removal overrides pinning;
     ///     ordinary refresh absence still follows the retention policy below.
     public static func merge(
@@ -123,9 +126,26 @@ public enum HeroLiveMerge {
         misses: [String: Int] = [:],
         freshIsAuthoritative: Bool = false,
         preservesPinnedItems: Bool = false,
+        preservesLineup: Bool = false,
         sourceEligibility: HeroSourceEligibility = .unrestricted
     ) -> Outcome {
         let eligibleShowing = sourceEligibility.filtering(showing)
+        if preservesLineup, !eligibleShowing.isEmpty, limit > 0 {
+            let candidates = sourceEligibility.filtering(fresh).map {
+                (item: $0, tokens: HeroDedupe.tokens(for: $0))
+            }
+            let retained = eligibleShowing.prefix(limit).map { item in
+                let tokens = HeroDedupe.tokens(for: item)
+                guard let match = candidates.first(where: {
+                    !tokens.isDisjoint(with: $0.tokens)
+                }) else { return item }
+                return refreshed(item, from: match.item, isPinned: true)
+            }
+            return Outcome(
+                items: retained,
+                retired: showing.filter { !sourceEligibility.allows($0) }.map(\.id)
+            )
+        }
         var outcome = mergeEligible(
             showing: eligibleShowing,
             fresh: sourceEligibility.filtering(fresh),
@@ -222,7 +242,7 @@ public enum HeroLiveMerge {
                 let upgraded = refreshed(item, from: fresh[match], isPinned: isPinned)
                 // A pin that declined the fresh record has to age, exactly like an
                 // absence, or it outlasts the ceiling meant to bound it.
-                if upgraded.id != fresh[match].id {
+                if upgraded.stablePresentationID != fresh[match].stablePresentationID {
                     nextMisses[item.id] = (misses[item.id] ?? 0) + 1
                 }
                 placed.append(HeroDedupe.tokens(for: upgraded))
@@ -312,7 +332,7 @@ public enum HeroLiveMerge {
         from fresh: MediaItem,
         isPinned: Bool
     ) -> MediaItem {
-        guard fresh.id == showing.id || !isPinned else {
+        guard fresh.stablePresentationID == showing.stablePresentationID || !isPinned else {
             var kept = showing
             var verifiedRouting = false
             if !fresh.discoverySources.isEmpty || !showing.discoverySources.isEmpty {

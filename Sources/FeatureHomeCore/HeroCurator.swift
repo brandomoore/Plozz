@@ -258,9 +258,11 @@ public struct HeroCurator: Sendable {
         _ items: [MediaItem],
         settings: HeroSettings?,
         watchMutations: [MediaItemMutation],
+        preservesLineup: Bool = false,
         sourceEligibility: HeroSourceEligibility = .unrestricted
     ) -> [MediaItem] {
-        guard let settings, settings.isActive else { return [] }
+        guard var settings, settings.isActive else { return [] }
+        if preservesLineup { settings.hideWatched = false }
         return HeroWatchEligibility.filter(
             sourceEligibility.filtering(items),
             settings: settings,

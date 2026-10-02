@@ -29,7 +29,7 @@ if [[ ! "$REPEATS" =~ ^[1-3]$ ]]; then
   echo "PLOZZ_HOME_REPEATS must be 1, 2, or 3." >&2
   exit 2
 fi
-if [[ $# -ne 1 || ( "$MODE" != "--build-runner" && "$MODE" != "--run" && "$MODE" != "--run-hero-off" && "$MODE" != "--run-vertical-only" && "$MODE" != "--run-horizontal-only" && "$MODE" != "--sweep-down" && "$MODE" != "--sweep-up" && "$MODE" != "--measure-right" && "$MODE" != "--measure-left" && "$MODE" != "--measure-down" && "$MODE" != "--measure-up" && "$MODE" != "--measure-hero-down" && "$MODE" != "--measure-hero-up" && "$MODE" != "--run-vertical-roundtrip" && "$MODE" != "--observe-home" && "$MODE" != "--measure-vertical-burst" && "$MODE" != "--run-showcase-mixed" ) ]]; then
+if [[ $# -ne 1 || ( "$MODE" != "--build-runner" && "$MODE" != "--run" && "$MODE" != "--run-hero-off" && "$MODE" != "--run-vertical-only" && "$MODE" != "--run-horizontal-only" && "$MODE" != "--sweep-down" && "$MODE" != "--sweep-up" && "$MODE" != "--measure-right" && "$MODE" != "--measure-left" && "$MODE" != "--measure-down" && "$MODE" != "--measure-up" && "$MODE" != "--measure-hero-down" && "$MODE" != "--measure-hero-up" && "$MODE" != "--run-vertical-roundtrip" && "$MODE" != "--observe-home" && "$MODE" != "--measure-vertical-burst" && "$MODE" != "--run-showcase-mixed" && "$MODE" != "--measure-multirow-up" ) ]]; then
   echo "Usage: bash tools/run-physical-home-rows-first.sh --build-runner"
   echo "Then: PLOZZ_HOME_ROWS_FIRST=$DEVICE PLOZZ_HOME_RELEASE_APP_INSTALLED=1 bash tools/run-physical-home-rows-first.sh --run-hero-off"
   echo "--run is also a hero-off alias."
@@ -40,6 +40,7 @@ if [[ $# -ne 1 || ( "$MODE" != "--build-runner" && "$MODE" != "--run" && "$MODE"
   echo "PLOZZ_HOME_ALLOW_HERO=1 preserves hero ON for --measure-right/left/down/up; START_ROW preparation is unmeasured."
   echo "Use --measure-hero-down/up for native Hero/Continue Watching transitions without changing settings."
   echo "Use --measure-vertical-burst for warm adjacent media-row pairs, NOT Hero/CW or cold first Down."
+  echo "Use --measure-multirow-up for four rapid Up presses returning to Continue Watching."
   echo "Use --run-vertical-roundtrip for observed Hero/CW paging and available lower rows, then return."
   echo "Use --observe-home for AX evidence only, without directional input."
   echo "Use --run-showcase-mixed for deep mixed-speed Continue Watching and multi-row traversal."
@@ -217,6 +218,14 @@ elif [[ "$MODE" == "--run-vertical-roundtrip" ]]; then
   SCENARIO=observed-home
   RUNNER_LIMIT=150
   INPUT_BUDGET=130
+elif [[ "$MODE" == "--measure-multirow-up" ]]; then
+  export TEST_RUNNER_PLOZZ_HOME_HERO_OFF=0
+  export TEST_RUNNER_PLOZZ_HOME_ALLOW_HERO=1
+  export TEST_RUNNER_PLOZZ_HOME_MEASURE_DIRECTION=multirow-up
+  TEST_METHOD=testObservedHomeMultirowArrivalWarm
+  SCENARIO=observed-rows
+  RUNNER_LIMIT=150
+  INPUT_BUDGET=130
 elif [[ "$MODE" == "--measure-vertical-burst" ]]; then
   export TEST_RUNNER_PLOZZ_HOME_HERO_OFF=0
   export TEST_RUNNER_PLOZZ_HOME_ALLOW_HERO=1
@@ -269,6 +278,9 @@ elif [[ "$MODE" == "--run-vertical-roundtrip" ]]; then
   echo "PLOZZ_HOME_REQUIRE_HERO=1 refuses input unless the actual hero is exposed."
   echo "PLOZZ_HOME_FIRST_DOWN_ONLY=1 overrides the tour: one already-focused Hero Down, then stop."
   echo "Optional PLOZZ_HOME_HERO_WARM_PAIRS=1..6 adds explicitly warm Hero/CW-only pairs afterward."
+elif [[ "$MODE" == "--measure-multirow-up" ]]; then
+  echo "Preverify four lower rows and their return; measure four uninterrupted Up presses plus 0.6s settling."
+  echo "Three retained native samples plus XCTest warm-up. Actual press cadence is logged, not assumed."
 elif [[ "$MODE" == "--measure-vertical-burst" ]]; then
   echo "Preverify an observed adjacent Down/Up pair; six alternating pairs per sample, no AX between presses."
   echo "Three retained native samples plus XCTest warm-up. Actual press cadence is logged, not assumed."

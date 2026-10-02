@@ -10,6 +10,14 @@ cache that every feature module reuses. tvOS-only — guarded behind
   the per-profile theme model, observed at the app root.
 - **Focusable building blocks** — focus-aware buttons, cards, tab bars,
   parallax containers, brand QR code rendering, code-font numerals.
+  Native card focus observation is separate from explicit focus requests.
+  Caption, overlay and transition-anchor readers update without rebuilding
+  the poster's artwork loader or context menu.
+- **Media-row focus** — a dedicated modifier owns the row's `FocusState`
+  and supplies its binding to tracked cards. Focus callbacks and prefetch
+  bookkeeping must not invalidate the row that constructs all card inputs.
+  Entry-gate state remains observable for episode rows; ordinary Home rows
+  retain native column-aligned entry and cover/return behavior.
 - **Async artwork** — `FallbackAsyncImage` and `ArtworkImageCache`: an
   on-disk + in-memory image cache shared with `MetadataKit`'s URL cache,
   with an `asyncFallbackURL` slot so server art is always tried first and

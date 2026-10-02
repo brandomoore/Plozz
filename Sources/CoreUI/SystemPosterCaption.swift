@@ -1,4 +1,5 @@
 #if os(tvOS)
+import CoreModels
 import SwiftUI
 import UIKit
 
@@ -7,6 +8,8 @@ struct SystemPosterCaption: UIViewRepresentable {
     let subtitle: String? // l10n:content — provider metadata and preformatted runtime
     let reservesSubtitleSpace: Bool
     let isFocused: Bool
+    var providerKind: ProviderKind? = nil
+    var mediaShareTransport: MediaShareTransportKind? = nil
 
     func makeUIView(context: Context) -> CaptionView { CaptionView() }
 
@@ -29,6 +32,11 @@ struct SystemPosterCaption: UIViewRepresentable {
             font: .systemFont(ofSize: metrics.cardSubtitleFontSize),
             color: color, scrolls: scrolls
         )
+        view.setProviderBadge(
+            providerKind, transport: mediaShareTransport, size: metrics.cardTitleFontSize,
+            colorScheme: context.environment.colorScheme
+        )
+        if providerKind != nil { view.setNeedsLayout() }
         let hidesSubtitle = subtitle == nil && !reservesSubtitleSpace
         if view.subtitle.isHidden != hidesSubtitle { view.subtitle.isHidden = hidesSubtitle }
         if previousHeight != view.intrinsicContentSize.height {
@@ -48,9 +56,18 @@ struct SystemPosterCaption: UIViewRepresentable {
         private let content = UIView()
         let title = NativePosterCaptionLine()
         let subtitle = NativePosterCaptionLine()
+        private(set) var providerBadge: (UIView & UIContentView)?
+        private var badgeIdentity: BadgeIdentity?
         private var focusTravel: CGFloat = 0
         private var captionFocused = false
         private static let focusAnimationKey = "captionFocus"
+
+        private struct BadgeIdentity: Equatable {
+            let provider: ProviderKind
+            let transport: MediaShareTransportKind?
+            let size: CGFloat
+            let colorScheme: ColorScheme
+        }
 
         override var semanticContentAttribute: UISemanticContentAttribute {
             didSet {
@@ -59,6 +76,7 @@ struct SystemPosterCaption: UIViewRepresentable {
                 subtitle.semanticContentAttribute = semanticContentAttribute
                 title.setNeedsLayout()
                 subtitle.setNeedsLayout()
+                setNeedsLayout()
             }
         }
 
@@ -72,6 +90,40 @@ struct SystemPosterCaption: UIViewRepresentable {
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+        func setProviderBadge(
+            _ provider: ProviderKind?, transport: MediaShareTransportKind?,
+            size: CGFloat, colorScheme: ColorScheme
+        ) {
+            let identity = provider.map {
+                BadgeIdentity(provider: $0, transport: transport, size: size, colorScheme: colorScheme)
+            }
+            guard identity != badgeIdentity else { return }
+            badgeIdentity = identity
+            defer { setNeedsLayout() }
+            guard let identity else {
+                providerBadge?.removeFromSuperview()
+                providerBadge = nil
+                return
+            }
+            let configuration = UIHostingConfiguration {
+                ProviderBrandMark(
+                    provider: identity.provider, size: identity.size,
+                    mediaShareTransport: identity.transport
+                )
+                .environment(\.colorScheme, identity.colorScheme)
+                .accessibilityHidden(true)
+            }.margins(.all, 0)
+            if let providerBadge {
+                providerBadge.configuration = configuration
+            } else {
+                let badge = configuration.makeContentView()
+                badge.isUserInteractionEnabled = false
+                badge.accessibilityElementsHidden = true
+                content.addSubview(badge)
+                providerBadge = badge
+            }
+        }
+
         override var intrinsicContentSize: CGSize {
             CGSize(width: UIView.noIntrinsicMetric,
                    height: title.lineHeight + (subtitle.isHidden ? 0 : 2 + subtitle.lineHeight) + focusTravel)
@@ -81,7 +133,23 @@ struct SystemPosterCaption: UIViewRepresentable {
             super.layoutSubviews()
             content.bounds = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - focusTravel)
             content.center = CGPoint(x: bounds.midX, y: (bounds.height - focusTravel) / 2)
-            title.frame = CGRect(x: 0, y: 0, width: bounds.width, height: title.lineHeight)
+            if let providerBadge, let identity = badgeIdentity {
+                let size = min(identity.size, title.lineHeight, max(0, bounds.width))
+                let spacing = min(PlozzTheme.Spacing.small, max(0, bounds.width - size))
+                let textWidth = min(ceil(title.contentWidth), max(0, bounds.width - size - spacing))
+                let start = (bounds.width - size - spacing - textWidth) / 2
+                let rightToLeft = effectiveUserInterfaceLayoutDirection == .rightToLeft
+                providerBadge.frame = CGRect(
+                    x: rightToLeft ? start + textWidth + spacing : start,
+                    y: (title.lineHeight - size) / 2, width: size, height: size
+                )
+                title.frame = CGRect(
+                    x: rightToLeft ? start : start + size + spacing,
+                    y: 0, width: textWidth, height: title.lineHeight
+                )
+            } else {
+                title.frame = CGRect(x: 0, y: 0, width: bounds.width, height: title.lineHeight)
+            }
             subtitle.frame = CGRect(x: 0, y: title.lineHeight + 2,
                                     width: bounds.width, height: subtitle.lineHeight)
         }
@@ -132,6 +200,9 @@ public final class NativePosterCaptionLine: UIView {
     private var motion: Motion?
     private static let animationKey = "captionMarquee"
     public var lineHeight: CGFloat { ceil(label.font.lineHeight) }
+    var contentWidth: CGFloat {
+        label.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude, height: lineHeight)).width
+    }
 
     private struct Motion: Equatable {
         let text: String
@@ -230,7 +301,7 @@ public final class NativePosterCaptionLine: UIView {
         // The model stays at rest; removing this one animation restores it
         // immediately, including when a long scroll is interrupted by focus.
         label.layer.removeAnimation(forKey: Self.animationKey)
-        let width = label.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude, height: lineHeight)).width
+        let width = contentWidth
         let inset = min(max(0, horizontalInset), bounds.width / 2)
         let availableWidth = bounds.width - inset * 2
         let overflows = width > availableWidth + 0.5

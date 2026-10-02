@@ -85,12 +85,19 @@ actor HomeSnapshotPersistence {
         _ pool: HeroFreshnessCandidatePool,
         for key: HeroConfigurationKey,
         generation: UInt64,
-        to store: any HomeContentStoring
+        to store: any HomeContentStoring,
+        preservingUnseenWith history: HeroExposureHistory? = nil
     ) {
         let scope = store.persistenceScope
         guard generation > newestHeroGenerationByScope[scope, default: 0] else { return }
         newestHeroGenerationByScope[scope] = generation
-        store.saveHeroCandidatePool(pool, for: key)
+        let prepared: HeroFreshnessCandidatePool
+        if let history, let previous = store.loadHeroCandidatePool(for: key) {
+            prepared = pool.preservingUnseen(from: previous, history: history)
+        } else {
+            prepared = pool
+        }
+        store.saveHeroCandidatePool(prepared, for: key)
     }
 
     func saveHeroExposureHistory(
@@ -320,6 +327,16 @@ public final class HomeViewModel {
     /// persist in `ArtworkImageCache`/`URLCache`) and then silently refresh. See
     /// `HomeContentStore`.
     private let contentStore: HomeContentStoring
+
+    public func libraryArtworkSource(for library: AggregatedLibrary) -> LibraryArtworkSource? {
+        guard let account = accounts.first(where: { $0.account.id == library.accountID }) else {
+            return nil
+        }
+        return LibraryArtworkSource(
+            library: library, account: account, scope: contentStore.libraryArtworkScope
+        )
+    }
+
     /// The shared identity-index lookup folded into every merged row so a card
     /// surfaced by one server still carries its full cross-server source set.
     private let identitySources: @Sendable (MediaItem) -> [MediaSourceRef]
@@ -1604,7 +1621,11 @@ public final class HomeViewModel {
         }
     }
 
-    public func cacheHeroCandidatePool(_ pool: HeroFreshnessCandidatePool, for settings: HeroSettings) {
+    public func cacheHeroCandidatePool(
+        _ pool: HeroFreshnessCandidatePool,
+        for settings: HeroSettings,
+        preservingUnseen: Bool = false
+    ) {
         guard settings.isActive else { return }
         let durable = pool.durable()
         guard !durable.isEmpty else { return }
@@ -1612,9 +1633,11 @@ public final class HomeViewModel {
         heroPersistenceGeneration = generation
         let store = contentStore
         let key = HeroConfigurationKey(settings: settings)
+        let history = preservingUnseen ? heroExposureState.history : nil
         heroPersistenceTask = Task { [weak self] in
             await HomeSnapshotPersistence.shared.saveHeroCandidatePool(
-                durable, for: key, generation: generation, to: store
+                durable, for: key, generation: generation, to: store,
+                preservingUnseenWith: history
             )
             if self?.heroPersistenceGeneration == generation {
                 self?.cachedHeroIsInvalidated = false
