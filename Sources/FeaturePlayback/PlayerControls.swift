@@ -1665,7 +1665,8 @@ struct PlayerControls: View {
 extension PlayerControlsModel {
     var subtitleTrackListFocus: PlayerControls.FocusSlot {
         guard hasSelectableSubtitles else {
-            return subtitleDownload.canSearch ? .download : .edit
+            if subtitleDownload.canSearch { return .download }
+            return subtitleStyleAdjustable || !secondarySubtitleOptions.isEmpty ? .edit : .button(.subtitles)
         }
         return .row(subtitleOptions.firstIndex(where: \.isSelected) ?? 0)
     }

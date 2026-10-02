@@ -467,6 +467,10 @@ and ASS drawing commands. Off or another primary rebuilds the server rendition
 at the current position, preserving pause, speed, version, audio, and secondary
 selection. Burn-in cannot be moved or restyled by the client; timing controls stay
 disabled. Rewriting to an offline original clears this rendition-only fact.
+The in-player Style entry is hidden for a burned-in primary unless an editable
+second track is selected. tvOS still exposes Dual Subtitles directly so a second
+track can be enabled; mobile retains its Second Track section. Global appearance
+settings and styling for locally rendered ASS remain available.
 An engine load that returns after a terminal startup failure cannot publish ready.
 Managed native resume waits for actual item readiness rather than seeking an
 unknown HLS item after five seconds. The existing startup watchdog bounds that

@@ -92,6 +92,8 @@ final class SubtitleTrackControllerTests: XCTestCase {
             XCTAssertTrue(engine.lastSubtitleSelectionCleared)
             XCTAssertTrue(host.liveSubtitles.primary.isEmpty)
             XCTAssertFalse(host.liveSubtitles.supportsPrimaryTimingOffset)
+            XCTAssertTrue(host.controls.primarySubtitleIsBurnedIn)
+            XCTAssertFalse(host.controls.subtitleStyleAdjustable)
             XCTAssertEqual(host.liveSubtitles.secondary.compactMap(\.text), ["Intentional second track"])
             XCTAssertTrue(host.controls.secondarySubtitleOptions.contains { $0.id == 4 },
                           "Burn-in ownership must not disable intentional dual subtitles")
@@ -102,6 +104,31 @@ final class SubtitleTrackControllerTests: XCTestCase {
             XCTAssertTrue(host.liveSubtitles.primary.isEmpty, "Reselecting the burned track must not fetch its text copy")
             XCTAssertTrue(engine.lastSubtitleSelectionCleared)
         }
+
+    }
+
+    func testBurnInStyleAvailabilityTracksSecondarySelectionAndNewRenditions() {
+        let (sut, host, engine) = makeSUT()
+        engine.subtitleTracks = [textSidecar(3), textSidecar(4)]
+        var request = PlaybackRequest(
+            item: .init(id: "episode", title: "Episode", kind: .episode),
+            streamURL: URL(string: "https://fixture.test/master.m3u8")!,
+            subtitleTracks: engine.subtitleTracks, isTranscoding: true
+        )
+        request.burnedInSubtitleTrackID = 3
+        host.request = request
+        sut.applyInitialSubtitleForNewLoad(for: request)
+        XCTAssertFalse(host.controls.subtitleStyleAdjustable)
+        sut.selectSecondarySubtitleOption(id: 4)
+        XCTAssertTrue(host.controls.subtitleStyleAdjustable)
+        sut.selectSecondarySubtitleOption(id: PlayerTrackOption.offID)
+        XCTAssertFalse(host.controls.subtitleStyleAdjustable)
+        request.burnedInSubtitleTrackID = nil
+        host.request = request
+        sut.selectSubtitleOption(id: 3)
+        XCTAssertFalse(host.controls.primarySubtitleIsBurnedIn)
+        XCTAssertTrue(host.controls.subtitleStyleAdjustable)
+        host.overlay.cancelAll()
     }
 
     func testSelectOffClearsSelectionAndRecordsMemory() {

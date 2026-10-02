@@ -182,6 +182,7 @@ final class SubtitleTrackController {
     /// menu behaves identically across engines.
     func loadTrackOptions() {
         guard let host else { return }
+        host.trackControls.primarySubtitleIsBurnedIn = host.trackRequest?.burnedInSubtitleTrackID != nil
         registerProviderSidecars()
         let engine = host.trackEngine
         // Enrich the engine's demuxed tracks with the provider's probe of the
