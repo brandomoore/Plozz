@@ -1048,6 +1048,7 @@ struct PlayerControls: View {
                 isVisible: model.controlsVisible && !model.isScrubbing && !chromeHidden
             )
             .focused($focus, equals: .button(.info))
+            .accessibilityIdentifier("player-tab-info")
             .disabled(!tabFocusable(.info))
             .onChange(of: focus) { _, slot in selectCardTab(focusedTo: slot) }
 
@@ -1067,6 +1068,7 @@ struct PlayerControls: View {
                     isVisible: model.controlsVisible && !model.isScrubbing && !chromeHidden
                 )
                 .focused($focus, equals: .button(.cast))
+                .accessibilityIdentifier("player-tab-cast")
                 .disabled(!tabFocusable(.cast))
             }
             if isTabVisible(.episodes) {
@@ -1077,6 +1079,7 @@ struct PlayerControls: View {
                     focused: focus == .button(.episodes), selected: openPanel == .episodes
                 ))
                 .focused($focus, equals: .button(.episodes))
+                .accessibilityIdentifier("player-tab-episodes")
                 .disabled(!tabFocusable(.episodes))
             }
             if isTabVisible(.playlist) {

@@ -3,11 +3,8 @@ import CoreModels
 import Foundation
 import Observation
 
-/// The live glass budget for this device and whatever is playing right now.
-///
-/// Owned by the app root and observed by it, so a change to either signal
-/// re-resolves `\.plozzReduceTransparency` for the whole tree at once. The
-/// player writes to it; nothing reads it directly except the root.
+/// Retained playback classification for overlapping HDR presentation.
+/// The root no longer uses this historical budget to turn Liquid Glass off.
 @MainActor
 @Observable
 public final class GlassPerformanceModel {
@@ -28,11 +25,7 @@ public final class GlassPerformanceModel {
         budget = .forHardware(physicalMemoryBytes: physicalMemoryBytes)
     }
 
-    /// Suspends glass for as long as the returned token is held.
-    ///
-    /// Balanced by `endDemandingPlayback`, and safe to call for content that is
-    /// NOT demanding — it simply does nothing, so callers need no conditional
-    /// and cannot leak a suspension by forgetting one.
+    /// Registers a demanding player for presentation tracking, balanced on exit.
     public func beginDemandingPlayback(isHDR: Bool = false) {
         demandingSources += 1
         if isHDR { hdrSources += 1 }

@@ -374,24 +374,7 @@ struct InfoPanelView: View {
     }
 
     private func infoThumbnail(cornerRadius: CGFloat, height: CGFloat) -> some View {
-        Color.clear
-            .frame(width: height * 16.0 / 9.0, height: height)
-            .overlay {
-                FallbackAsyncImage(urls: model.infoCard.artworkURLs, variant: .landscapeCard) {
-                    // Fixed white, NOT palette.fill: this sits over the player's
-                    // variable video/artwork backdrop (always dark-scrimmed), so a
-                    // theme-tracking fill would be wrong here — it's a scrim-relative
-                    // placeholder, not a themed-page surface.
-                    Rectangle().fill(Color.white.opacity(0.08))
-                        .overlay(
-                            Image(systemName: "photo")
-                                .font(.system(size: 34, weight: .regular))
-                                .foregroundStyle(.white.opacity(0.28))
-                        )
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .plozzMediaEdge(cornerRadius: cornerRadius)
+        PlayerInfoArtwork(urls: model.infoCard.artworkURLs, cornerRadius: cornerRadius, height: height)
     }
 
     /// An icon-only Info-card action. At rest it shows just its glyph; while
@@ -433,6 +416,35 @@ struct InfoPanelView: View {
             vPadding: metrics.actionVPadding
         ))
         .focused($focus, equals: slot)
+    }
+}
+
+private struct PlayerInfoArtwork: View {
+    let urls: [URL]
+    let cornerRadius: CGFloat
+    let height: CGFloat
+    @State private var policyRevision = 0
+
+    var body: some View {
+        let _ = policyRevision
+        Color.clear
+            .frame(width: height * 16.0 / 9.0, height: height)
+            .overlay {
+                FallbackAsyncImage(urls: urls, variant: .landscapeCard) {
+                    Rectangle().fill(Color.white.opacity(0.08))
+                        .overlay(
+                            Image(systemName: "photo")
+                                .font(.system(size: 34, weight: .regular))
+                                .foregroundStyle(.white.opacity(0.28))
+                        )
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .plozzMediaEdge(cornerRadius: cornerRadius)
+            .onReceive(NotificationCenter.default.publisher(for: .metadataProviderSettingsDidChange)
+                .receive(on: DispatchQueue.main)) { _ in
+                policyRevision &+= 1
+            }
     }
 }
 #endif

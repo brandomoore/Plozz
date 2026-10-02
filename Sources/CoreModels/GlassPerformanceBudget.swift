@@ -1,39 +1,19 @@
 import Foundation
 
-/// Whether this device, playing this content, can afford Liquid Glass.
+/// Historical performance classification, retained for playback/HDR presentation.
+/// The app no longer uses it to suppress Liquid Glass automatically.
 ///
-/// Glass is a live backdrop blur: every panel resamples what is behind it, every
-/// frame. Over a still background that is nearly free. Over 4K Dolby Vision it
-/// competes with the video pipeline for the same bandwidth, and the player is
-/// exactly where the app draws the most glass at once.
-///
-/// Two independent signals, deliberately layered rather than merged:
-///
-///  * A **hardware floor**, fixed at launch. Some devices should never draw
-///    glass over video at all.
-///  * A **content ceiling**, raised and lowered as playback starts and stops.
-///    Demanding video suspends glass for its duration and gets it back on exit.
-///
-/// Pure and synchronous so the rules can be tested without a device, a player,
-/// or a running app — which matters, because the interesting cases are the ones
-/// that are awkward to reproduce by hand.
+/// The thresholds describe the previous tradeoff, not measured client load.
+/// Playback still uses the classification to balance its presentation state;
+/// profile and accessibility preferences alone select the current material.
 public struct GlassPerformanceBudget: Equatable, Sendable {
-    /// Devices below this never draw glass over video.
-    ///
-    /// Memory rather than a list of model identifiers, which is the same
-    /// judgement `deviceModelName` had to make and gets stale every time Apple
-    /// ships hardware: a new Apple TV with more memory passes this without a
-    /// code change, where a model list would silently treat it as unknown.
-    ///
-    /// 3GB admits every Apple TV 4K (3GB on the 1st and 2nd generation, 4GB on
-    /// the 3rd) and excludes the Apple TV HD, which has 2GB and an A8 — a chip
-    /// that predates every part of this material.
+    /// The previous 3 GiB classification threshold, not a current rendering gate.
     public static let minimumMemoryBytes: UInt64 = 3 * 1024 * 1024 * 1024
 
-    /// Whether the hardware can draw glass at all.
+    /// Whether hardware met the previous memory threshold.
     public var hardwareAllowsGlass: Bool
 
-    /// Whether the content currently playing is demanding enough to suspend it.
+    /// Whether content meets the retained source-demand classification.
     public var contentIsDemanding: Bool
 
     /// Whether the display is being driven in HDR for what is playing.
@@ -65,7 +45,7 @@ public struct GlassPerformanceBudget: Equatable, Sendable {
         return GlassPerformanceBudget(hardwareAllowsGlass: allows)
     }
 
-    /// Whether glass should be suppressed on performance grounds alone.
+    /// The historical combined classification; not used to select a material.
     public var reducesTransparency: Bool {
         !hardwareAllowsGlass || contentIsDemanding
     }

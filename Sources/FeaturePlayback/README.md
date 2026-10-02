@@ -649,6 +649,24 @@ four ad breaks, and a 45-minute episode with an eight-second recap. Marker
 widths always use the exact duration ratio, without a minimum-width enlargement.
 Example playhead/buffer positions do not seek the separate background video.
 
+The Info card's artwork is a focus-independent child view. Moving between
+actions or revealing/parking the card must not reconstruct its image loader
+or synchronously reload artwork policy. URL/geometry changes still update it,
+and metadata-provider policy notifications invalidate the child explicitly.
+The horizontal Cast row realizes only nearby faces on its first visit instead
+of constructing all twenty glass cards. Its fixed-height lazy row remains
+mounted underneath person details, preserving the scroll offset and native
+return-focus target after a deep drill; no artwork prewarming is required.
+The subtitle track menu resolves only its selected track when it opens.
+System-caption font resolution belongs to the font editor, not track-list focus.
+Panel glass is rendered on a separate background layer, not around the changing
+content subtree. On supported systems, the normal player keeps Liquid Glass
+instead of using source format, bitrate, or hardware memory to select a cheaper
+surface. The previous cutoffs were deliberate performance tradeoffs; the new
+path reduces first-visit and focus work while keeping the material. Both shells
+still honor the existing profile/OS transparency resolution, and older OS
+versions retain their non-glass fallback.
+
 The real app enters the synthetic comparison through its normal profile route;
 Settings also exposes **Player marker examples** in Debug builds, so reopening
 does not depend on launch flags. Library footage additionally requires the complete profile/Plex

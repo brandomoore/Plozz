@@ -580,18 +580,14 @@ extension View {
 }
 
 /// The floating panel's translucent backing. Native **Liquid Glass** on tvOS
-/// 26+, falling back to a cheap solid translucent fill below that (and honouring
-/// the perf intent on older devices).
+/// 26+, with the profile/accessibility choice and pre-26 fallback retained.
 ///
 /// Still **no `.shadow`** — a soft drop shadow was the original frame-drop
 /// culprit over Dolby Vision (a per-frame offscreen blur recomposited on the
 /// moving HDR signal). A 1px stroke gives edge separation instead.
 ///
-/// The note that used to sit here said to watch the diagnostics FPS over Dolby
-/// Vision and fall back to the solid fill if it ever stuttered. It did, and that
-/// fallback is now automatic: `plozzReducePanelGlass` carries it, so this panel
-/// gives up its glass for demanding content while the transport buttons keep
-/// theirs.
+/// The glass underlay has its own identity instead of wrapping changing text,
+/// artwork, and focus controls in the material's layout subtree.
 struct PanelGlassBackground: ViewModifier {
     var cornerRadius: CGFloat = 32
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous) }
@@ -600,24 +596,12 @@ struct PanelGlassBackground: ViewModifier {
 
     func body(content: Content) -> some View {
         if reducePanelGlass {
-            // A frosted MATERIAL, not a flat black wash.
-            //
-            // `.thickMaterial` is a static system blur: it still separates the
-            // panel from the footage and still reads as a surface, but it is
-            // not the live per-frame refraction that costs. The plain
-            // `Color.black.opacity` this replaced was cheap in both senses —
-            // it looked like a rectangle laid over the video rather than a
-            // panel floating above it.
-            //
-            // The thick variant rather than `.ultraThinMaterial` used elsewhere
-            // because this one sits over moving video: a thin frost lets enough
-            // of a bright scene through to fight the text on top of it.
             content
                 .plozzFrostedBackground(shape)
                 .plozzFrostedBorder(shape)
         } else if #available(iOS 26.0, tvOS 26.0, *) {
             content
-                .glassEffect(.regular, in: shape)
+                .background { PlayerPanelGlassSurface(cornerRadius: cornerRadius) }
                 .overlay(shape.stroke(.white.opacity(0.12), lineWidth: 1))
         } else {
             content
@@ -625,6 +609,18 @@ struct PanelGlassBackground: ViewModifier {
                 .clipShape(shape)
                 .overlay(shape.stroke(.white.opacity(0.14), lineWidth: 1))
         }
+    }
+}
+
+@available(iOS 26.0, tvOS 26.0, *)
+private struct PlayerPanelGlassSurface: View {
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        Color.clear.glassEffect(
+            .regular,
+            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        )
     }
 }
 

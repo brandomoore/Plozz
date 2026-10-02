@@ -13,16 +13,12 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
             for performance in [false, true] {
                 for focused in [false, true] {
                     let background = Color(red: 0.15, green: 0.35, blue: 0.6)
-                    let plain = try await render(
-                        in: window, focused: focused, performance: performance,
-                        background: background, segments: []
-                    )
                     let frame = try await render(
                         in: window, focused: focused, performance: performance,
                         background: background
                     )
-                    let top = focused ? 530 : 534
-                    let bottom = focused ? 550 : 546
+                    let top = focused ? 580 : 584
+                    let bottom = focused ? 600 : 596
                     for y in top..<bottom {
                         for x in [479, 480, 481, 1439, 1440, 1441] {
                             XCTAssertEqual(frame.color(x, y), frame.color(x, 450),
@@ -30,20 +26,20 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                         }
                         for x in [640, 960, 1280] {
                             for channel in 0..<3 {
-                                XCTAssertEqual(Int(frame.color(x, y)[channel]), Int(plain.color(x, y)[channel]), accuracy: 1,
+                                XCTAssertEqual(Int(frame.color(x, y)[channel]), Int(frame.color(x, y - 100)[channel]), accuracy: 1,
                                                "The sections retain the original played, buffered, and unplayed fills.")
                             }
                         }
                     }
                     XCTAssertEqual(frame.color(483, top), frame.color(483, 450), "The new section has rounded corners.")
-                    XCTAssertNotEqual(frame.color(483, 540), frame.color(483, 450))
-                    XCTAssertEqual(frame.color(832, 540), [255, 255, 255])
+                    XCTAssertNotEqual(frame.color(483, 590), frame.color(483, 450))
+                    XCTAssertEqual(frame.color(832, 590), [255, 255, 255])
                     attach(frame.image, name: "Rounded sections - \(performance ? "flat" : "glass") - \(focused ? "focused" : "normal")")
                     let crossing = try await render(
                         in: window, focused: focused, performance: performance,
                         background: background, segments: [.init(kind: .intro, start: 40, end: 60)]
                     )
-                    XCTAssertEqual(crossing.color(832, 540), [255, 255, 255], "A boundary never cuts through the playhead.")
+                    XCTAssertEqual(crossing.color(832, 590), [255, 255, 255], "A boundary never cuts through the playhead.")
                 }
             }
         }
@@ -73,18 +69,28 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
         background: Color,
         segments: [MediaSegment] = [.init(kind: .intro, start: 12.5, end: 87.5)]
     ) async throws -> Frame {
-        let model = PlayerControlsModel()
-        model.duration = 100
-        model.currentSeconds = 40
-        model.bufferedSeconds = 60
-        model.controlsVisible = true
-        model.controlBarVisible = !focused
-        model.skipSegments.segments = segments
+        func makeModel(_ segments: [MediaSegment]) -> PlayerControlsModel {
+            let model = PlayerControlsModel()
+            model.duration = 100
+            model.currentSeconds = 40
+            model.bufferedSeconds = 60
+            model.controlsVisible = true
+            model.controlBarVisible = !focused
+            model.skipSegments.segments = segments
+            return model
+        }
+        let plain = makeModel([])
+        let marked = makeModel(segments)
         let host = UIHostingController(rootView:
             background
                 .overlay {
-                    ScrubBar(model: model, palette: .dark)
-                        .frame(width: 1280, height: 44)
+                    // Both adaptive materials must be compared in the same frame.
+                    VStack(spacing: 56) {
+                        ScrubBar(model: plain, palette: .dark)
+                            .frame(width: 1280, height: 44)
+                        ScrubBar(model: marked, palette: .dark)
+                            .frame(width: 1280, height: 44)
+                    }
                 }
                 .ignoresSafeArea()
                 .environment(\.plozzReducePanelGlass, performance)
