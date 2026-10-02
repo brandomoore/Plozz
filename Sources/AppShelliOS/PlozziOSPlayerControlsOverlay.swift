@@ -678,6 +678,7 @@ private struct PlozziOSPlayerTransport: View {
                     currentSeconds: displayedSeconds,
                     duration: viewModel.controls.duration,
                     bufferedFraction: viewModel.controls.bufferedFraction,
+                    segments: viewModel.controls.skipSegments.segments,
                     onScrub: onScrubChanged,
                     onScrubbingChanged: onScrubEditingChanged
                 )

@@ -133,10 +133,23 @@ def package_workspace_fingerprint(repo: Path, workspace: Path) -> str:
             raise FreshnessError(f"Modified localization package checkout: {path.name}")
         facts.append((path.name, command(path, "git", "rev-parse", "HEAD").decode().strip()))
     state = workspace / "workspace-state.json"
+    state_digest = None
+    if state.exists():
+        try:
+            value = json.loads(read_stable(state))
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise FreshnessError("Invalid package workspace state JSON") from error
+        if not isinstance(value, dict):
+            raise FreshnessError("Package workspace state must be a JSON object")
+        workspace_object = value.get("object")
+        if isinstance(workspace_object, dict) and isinstance(workspace_object.get("artifacts"), list):
+            # SwiftPM reorders this inventory when switching platforms; its values still matter.
+            workspace_object["artifacts"] = sorted(workspace_object["artifacts"], key=canonical)
+        state_digest = digest(canonical(value))
     return digest(canonical({
         "path": str(workspace.resolve()),
         "checkouts": facts,
-        "state": digest(read_stable(state)) if state.exists() else None,
+        "state": state_digest,
     }))
 
 

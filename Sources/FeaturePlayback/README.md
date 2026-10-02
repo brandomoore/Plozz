@@ -605,6 +605,64 @@ Per-sample time-label reads live in `PlayerTimelineTimes`, not in the full
 controls body, so moving the timeline does not rebuild unrelated menus and
 controls. Preserve the existing reveal/fade, playhead, and thumbnail animations
 when optimizing this path; removing visual polish is not a performance fix.
+
+`PlayerScrubTrackSurface` uses a light 22%-white translucent fill when Liquid
+Glass is reduced, shared by TV, touch, and live timelines. This is a flat,
+non-adaptive tint with no blur or refraction. Other performance-mode panels keep
+their existing dark surfaces; timeline-specific lightening does not change the
+global fallback material. Buffered and played fills still layer above the track.
+Liquid Glass has a 10%-white capsule behind the glass itself to keep a nearly
+transparent unbuffered track visible. This backing is part of the track surface
+inside the skip-marker mask, not a background behind its gaps. The flat
+performance fill remains 22% white.
+
+The TV and touch seek bars share `PlayerSkipMarkerTrack`: solid, rounded
+sections separated at the start and end of each available skippable range.
+There are no internal cutouts, patterns, or user-selectable marker styles.
+The 4pt gaps are centered on the original time boundaries. Each half-gap is
+capped at a quarter of either neighboring section's width so a tiny range is
+not consumed or enlarged. Outer timeline ends remain unchanged.
+The mask applies to the base, buffered, and played fills and glass backing
+together, never the white playhead. Each section retains the bar's exact
+material and opacity; only its rounded ends and full-height gaps reveal the
+picture. Overlapping/touching ranges merge before masking, so duplicated
+metadata does not create extra boundaries inside one contiguous skip range.
+Ranges are clamped to a finite positive duration; malformed timing is logged and
+ignored. No marker changes focus, gestures, skip modes, or the existing buttons.
+The display uses already-loaded server/community metadata, without additional
+fetches or a separate clock observer; dismissed skip buttons do not erase the
+timeline annotation. Live programme progress is not a VOD skip-marker timeline.
+
+Debug tvOS builds can open `PlayerSkipMarkerPreview` with the explicit
+`PLOZZ_SKIP_MARKER_PREVIEW=1` process environment. It shows only two real
+`ScrubBar` rows: Liquid Glass and the translucent flat performance fill, both
+using the production segmented markers. No alternative pattern/style selector
+is retained. Remote controls change example playhead/buffer positions,
+normal/focused bar heights, and picture brightness. Section boundaries are
+static, independent of playback position. The mask adds no blur, refraction,
+timer, or separately colored overlay.
+Menu/Done returns to the normal app. The preview uses isolated local models,
+and never saves profile preferences. A scenario control cycles through a
+60-minute episode with a 30-second intro, a 24-minute episode with a 90-second
+intro, a three-hour movie with two-minute credits, a 90-minute recording with
+four ad breaks, and a 45-minute episode with an eight-second recap. Marker
+widths always use the exact duration ratio, without a minimum-width enlargement.
+Example playhead/buffer positions do not seek the separate background video.
+
+The real app enters the synthetic comparison through its normal profile route;
+Settings also exposes **Player marker examples** in Debug builds, so reopening
+does not depend on launch flags. Library footage additionally requires the complete profile/Plex
+authorization gates. `MarkerPreviewLibrarySource` selects an episode from an enabled library
+on an active source; mapped Plex Home users require their resolved server
+identity. It rechecks profile, credentials, and library visibility across each
+request, releasing stale preparations. The existing Plozzigen engine plays
+the library video muted with display matching suppressed, without normal
+player progress, watched-state, or scrobble reporting. Closing, changing the
+profile, hiding the video, or leaving the foreground stops it and drains its
+owned transport/session. Startup is bounded and failures expose Retry.
+No clip is generated, downloaded to the repository, or uploaded elsewhere.
+Standalone test fixtures use the static picture and make no media requests.
+
 Velocity smoothing uses elapsed touch-event time rather than a fixed weight per
 callback, preserving the same response at 24 Hz and 60 Hz without changing
 Match Content settings.
