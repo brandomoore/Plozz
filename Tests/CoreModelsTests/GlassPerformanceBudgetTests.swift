@@ -153,25 +153,23 @@ final class GlassPerformanceBudgetTests: XCTestCase {
     /// An explicit "On" is documented as always using glass, so performance must
     /// not quietly override it — someone who chose it and watched glass vanish
     /// mid-film cannot tell that from a bug.
-    func testExplicitOnIgnoresPerformance() {
-        let starved = GlassPerformanceBudget(hardwareAllowsGlass: false, contentIsDemanding: true)
+    func testExplicitOnRetainsItsTransparencyOverride() {
         XCTAssertFalse(
             TransparencyPreference.on.reducesTransparency(
-                systemReduceTransparency: false, performance: starved
+                systemReduceTransparency: true
             )
         )
     }
 
-    func testSystemPreferenceHonoursPerformance() {
-        let starved = GlassPerformanceBudget(hardwareAllowsGlass: false)
+    func testSystemPreferenceHonoursAccessibility() {
         XCTAssertTrue(
             TransparencyPreference.system.reducesTransparency(
-                systemReduceTransparency: false, performance: starved
+                systemReduceTransparency: true
             )
         )
         XCTAssertFalse(
             TransparencyPreference.system.reducesTransparency(
-                systemReduceTransparency: false, performance: GlassPerformanceBudget()
+                systemReduceTransparency: false
             )
         )
     }
@@ -180,7 +178,7 @@ final class GlassPerformanceBudgetTests: XCTestCase {
     func testExplicitOffStaysReduced() {
         XCTAssertTrue(
             TransparencyPreference.off.reducesTransparency(
-                systemReduceTransparency: false, performance: GlassPerformanceBudget()
+                systemReduceTransparency: false
             )
         )
     }

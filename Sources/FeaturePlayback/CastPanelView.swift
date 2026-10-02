@@ -31,8 +31,8 @@ struct CastPanelView: View {
     @Binding var closeRequest: Int
     /// Whether the card this panel fills is open.
     ///
-    /// Used to shed the row's glass BEFORE the card parks. Every face wears a
-    /// live `glassEffect`, so translating the row off-screen means moving ~20
+    /// Used to shed the row's glass BEFORE the card parks. Realized faces wear a
+    /// live `glassEffect`, so translating the row off-screen means moving their
     /// backdrop blurs over Dolby Vision video — the same per-frame offscreen
     /// cost this player already refuses to pay for shadows, and why leaving from
     /// Cast stuttered while leaving from Info did not, despite identical code.
@@ -435,6 +435,7 @@ struct CastPanelView: View {
                     ))
                     .disabled(isFaceDisabled(index))
                     .focused($focus, equals: .castMember(index))
+                    .accessibilityIdentifier("player-cast-face-\(person.id)")
                     .id(Self.faceID(person))
                     // Its rectangle in the panel's space, so a drill — if this
                     // layout ever grows one — has somewhere to start.
@@ -459,15 +460,9 @@ struct CastPanelView: View {
 
     private var faceRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            // NOT lazy. A LazyHStack builds only what is on screen, and coming
-            // back from a person's details rebuilds this row from offset zero —
-            // so restoring focus to a face you had scrolled to targeted a view
-            // that did not exist yet. With nothing to hold it, the focus engine
-            // fell back to the nearest candidate, the Info tab. That is the
-            // "Back sends me to Info" bug, and why it only happened after
-            // scrolling. Capped at 20 faces, so building them all is cheap —
-            // and the artwork loads lazily regardless.
-            HStack(spacing: metrics.columnSpacing) {
+            // The row stays mounted beneath the detail, retaining its viewport
+            // and return target without realizing every offscreen glass card.
+            LazyHStack(spacing: metrics.columnSpacing) {
                 ForEach(Array(people.enumerated()), id: \.element.id) { index, person in
                     Button { openDetail(person, at: index) } label: {
                         CastFaceCard(
@@ -488,6 +483,7 @@ struct CastPanelView: View {
                         // the drill starts from moves while Select is held down.
                         pressScale: 1
                     ))
+                    .frame(width: metrics.castCardWidth, height: metrics.cardHeight)
                     // The source card is not faded with the row — it is
                     // switched off outright, the instant the pane exists.
                     //
@@ -507,6 +503,7 @@ struct CastPanelView: View {
                     // Per-card, so the scroll view is never itself disabled.
                     .disabled(isFaceDisabled(index))
                     .focused($focus, equals: .castMember(index))
+                    .accessibilityIdentifier("player-cast-face-\(person.id)")
                     .id(Self.faceID(person))
                     // Its rectangle in the panel's space, so the drill can grow
                     // out of exactly this card and shrink back into it.
@@ -520,6 +517,7 @@ struct CastPanelView: View {
                     }
                 }
             }
+            .frame(height: metrics.cardHeight)
             // No leading inset: the first card is a panel-level element, so its
             // edge is the panel's edge — flush with the Info tab above it. An
             // inset here made the row start indented from everything else in the
@@ -530,20 +528,13 @@ struct CastPanelView: View {
             // was reserving room for the focus lift, which `scrollClipDisabled`
             // already allows — all it actually did was leave the cards short.
         }
+        // Re-entry must keep the existing viewport, not center the return card
+        // again. Directional scrolling resumes once that card owns native focus.
+        .scrollDisabled(detailPerson != nil || restoringToIndex != nil)
         // The row runs the full width of the card. Clipping at the content inset
         // left the first and last cards visibly sliced while scrolling; the inset
         // above still holds them off the edge at rest.
         .scrollClipDisabled()
-        // No `scrollPosition` binding. It existed to restore the offset across a
-        // teardown that no longer happens — the row is never destroyed — and all
-        // it did afterwards was re-centre a row that was already exactly where
-        // the viewer left it, which is the small nudge on landing.
-        // Put focus back on the face the viewer opened, now that it exists.
-        //
-        // Only when returning, never on first open: the cast tab is entered with
-        // focus on its tab button, and claiming focus here would snatch it away
-        // before the viewer had pressed anything.
-
     }
 }
 
@@ -1562,7 +1553,7 @@ private struct CastPhotoFrameKey: PreferenceKey {
     }
 }
 
-private struct CastCardFrameKey: PreferenceKey {
+struct CastCardFrameKey: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
         value.merge(nextValue()) { _, new in new }

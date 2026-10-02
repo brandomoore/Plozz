@@ -82,6 +82,26 @@ final class PlayerOptionsPanelIntegrationTests: XCTestCase {
         )
     }
 
+    func testTrackMenuFocusDoesNotResolveOrObserveSubtitleAppearance() async {
+        let model = PlayerControlsModel()
+        model.subtitleOptions = [
+            .init(id: PlayerTrackOption.offID, title: Text("Off"), isSelected: false),
+            .init(id: 12, title: Text("English"), isSelected: true)
+        ]
+        let appearanceInvalidatedTrackFocus = expectation(description: "Track focus must not observe subtitle styling")
+        appearanceInvalidatedTrackFocus.isInverted = true
+        withObservationTracking {
+            XCTAssertEqual(
+                PlayerOptionsPanel.preferredFocus(for: .subtitles, subtitleScreen: .tracks, model: model),
+                .row(1)
+            )
+        } onChange: {
+            appearanceInvalidatedTrackFocus.fulfill()
+        }
+        model.subtitleStyle.fontScale += 0.01
+        await fulfillment(of: [appearanceInvalidatedTrackFocus], timeout: 0.05)
+    }
+
     func testTrackRowsAndFocusRemainCapabilityDrivenForBothHosts() {
         let model = PlayerControlsModel()
         var pickedAudio: [Int] = []
