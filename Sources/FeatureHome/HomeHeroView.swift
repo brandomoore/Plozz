@@ -882,6 +882,12 @@ struct HomeHeroView: View {
                 alignsArtworkToLeadingEdge: navigationStyle == .rail,
                 scrimOpacity: isFrontmost ? 1 : 0
             )
+            // Ambient theme: the page below the hero takes this slide's colours.
+            .ambientBackdropSource(
+                id: item.id,
+                references: primaryBackdropReferences(for: item),
+                fallbackURL: backdropFallback(for: item)
+            )
         } else {
             Color.clear.frame(width: w, height: height)
         }

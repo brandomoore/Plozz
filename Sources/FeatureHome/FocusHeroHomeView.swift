@@ -987,6 +987,12 @@ private struct FocusHeroBackdropLayer: View {
                 scrimStyle: .browse
             )
             .allowsHitTesting(false)
+            // Ambient theme: the page behind the rows takes this title's colours.
+            .ambientBackdropSource(
+                id: subject.id,
+                references: references(for: subject),
+                fallbackURL: subject.item.flatMap(HomeHeroArtwork.backdropFallback(for:))
+            )
         }
     }
 

@@ -17,6 +17,11 @@ public enum AppTheme: String, CaseIterable, Identifiable, Codable, Sendable {
     /// A near-black theme. The persisted raw value stays unchanged so existing
     /// installs retain their selection after the user-facing rename.
     case pureBlack = "oled"
+    /// The soft, multi-tone tvOS system gradient as the page, following the
+    /// device's light/dark appearance for everything drawn on it. On Home the
+    /// gradient takes its colours from the fronted hero's artwork; everywhere
+    /// else it shows the stock gradient.
+    case ambient
 
     public var id: String { rawValue }
 
@@ -46,6 +51,12 @@ public enum AppTheme: String, CaseIterable, Identifiable, Codable, Sendable {
                 defaultValue: "Black",
                 comment: "Appearance/theme option shown in the Settings theme picker."
             )
+        case .ambient:
+            return LocalizedStringResource(
+                "theme.appearance.ambient",
+                defaultValue: "Ambient",
+                comment: "Appearance/theme option shown in the Settings theme picker."
+            )
         }
     }
 
@@ -56,6 +67,7 @@ public enum AppTheme: String, CaseIterable, Identifiable, Codable, Sendable {
         case .light: return "sun.max.fill"
         case .dark: return "moon.fill"
         case .pureBlack: return "moon.stars.fill"
+        case .ambient: return "camera.filters"
         }
     }
 
@@ -73,8 +85,8 @@ public enum AppTheme: String, CaseIterable, Identifiable, Codable, Sendable {
     public static let `default`: AppTheme = .pureBlack
 
     /// The order the theme pickers (onboarding + Settings) present options in:
-    /// Black first (the default), then Dark, Light, and System last.
-    public static let pickerOrder: [AppTheme] = [.pureBlack, .dark, .light, .system]
+    /// Black first (the default), then Dark, Ambient, Light, and System last.
+    public static let pickerOrder: [AppTheme] = [.pureBlack, .dark, .ambient, .light, .system]
 }
 
 /// How the full-screen music player paints its background and text. Independent

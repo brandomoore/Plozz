@@ -165,6 +165,11 @@ public struct ThemePalette: Equatable, Sendable {
     /// Whether this is a light-appearance palette. Drives the focused-Light
     /// opaque backing that stops the drop shadow bleeding through the glass.
     public let isLight: Bool
+    /// Whether the page is painted with `AmbientGradientBackground` (the tvOS
+    /// system-style multi-tone gradient) rather than the flat `backgroundBase`.
+    /// ``backgroundBase`` still holds the gradient's average tone for the few
+    /// call sites that need a single solid colour.
+    public let usesAmbientGradient: Bool
 
     /// Standard dimming behind app-owned dialogs; system presentations own theirs.
     public var dialogBackdropOpacity: Double { isLight ? 0.4 : 0.85 }
@@ -194,7 +199,8 @@ public struct ThemePalette: Equatable, Sendable {
         separator: Color,
         fill: Color,
         fillSubtle: Color,
-        isLight: Bool
+        isLight: Bool,
+        usesAmbientGradient: Bool = false
     ) {
         self.backgroundBase = backgroundBase
         self.backgroundSecondary = backgroundSecondary
@@ -217,6 +223,7 @@ public struct ThemePalette: Equatable, Sendable {
         self.fill = fill
         self.fillSubtle = fillSubtle
         self.isLight = isLight
+        self.usesAmbientGradient = usesAmbientGradient
     }
 
     /// Resolves the appearance for an elevation rung. Call sites use the
@@ -283,12 +290,38 @@ public extension ThemePalette {
         #endif
     }
 
+    /// ``raised``'s fill flattened onto ``backgroundBase``, for TVUIKit cards.
+    /// `TVCardView.cardBackgroundColor` doesn't honour translucency — a 5% white
+    /// wash renders as a solid white platter — so native cards need an opaque
+    /// colour. Already-opaque fills (every theme but Ambient) pass through.
+    var opaqueRaisedFill: Color {
+        #if canImport(UIKit)
+        var fr: CGFloat = 0, fg: CGFloat = 0, fb: CGFloat = 0, fa: CGFloat = 0
+        UIColor(raised.fill).getRed(&fr, green: &fg, blue: &fb, alpha: &fa)
+        guard fa < 1 else { return raised.fill }
+        var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0, ba: CGFloat = 0
+        UIColor(backgroundBase).getRed(&br, green: &bg, blue: &bb, alpha: &ba)
+        return Color(
+            red: Double(fr * fa + br * (1 - fa)),
+            green: Double(fg * fa + bg * (1 - fa)),
+            blue: Double(fb * fa + bb * (1 - fa))
+        )
+        #else
+        return raised.fill
+        #endif
+    }
+
     /// A subtle full-width tint for the lower "information" band on the detail
     /// page — nudged a touch away from `backgroundBase` so the section reads as its
     /// own zone without competing with the cards inside it (which sit on their own
     /// `cardSurface`). Kept deliberately quiet: ~5% lighter on Dark, ~2% on the
     /// near-black OLED theme, ~5% darker on Light.
     var informationSurface: Color {
+        // Ambient: a translucent recess rather than an opaque tone, so the band
+        // reads as its own zone without covering the gradient.
+        if usesAmbientGradient {
+            return isLight ? Color.white.opacity(0.25) : Color.black.opacity(0.14)
+        }
         #if canImport(UIKit)
         let base = UIColor(backgroundBase)
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
@@ -404,6 +437,80 @@ public extension ThemePalette {
         isLight: false
     )
 
+    /// Ambient, dark appearance: the tvOS system-style gradient as the page,
+    /// with Dark's text and accents. The page is drawn by
+    /// `AmbientGradientBackground`; resting surfaces are faint translucent
+    /// washes rather than opaque greys, so the gradient (and, on Home, the
+    /// artwork-tinted gradient) reads through cards instead of being covered by
+    /// a flat grey slab.
+    static let ambientDark = ThemePalette(
+        backgroundBase: Color(red: 0.18, green: 0.19, blue: 0.20),
+        backgroundSecondary: Color(red: 0.14, green: 0.14, blue: 0.14),
+        settingsBackground: Color(red: 0.18, green: 0.19, blue: 0.20),
+        cardSurface: Color.white.opacity(0.05),
+        cardBorder: Color.white.opacity(0.10),
+        primaryText: .white,
+        secondaryText: Color.white.opacity(0.60),
+        tertiaryText: Color.white.opacity(0.36),
+        accent: ThemePalette.brandAccent(isLight: false),
+        errorText: Color(red: 1.0, green: 0.42, blue: 0.40),
+        topGlow: nil,
+        focusedCardGlassTint: Color.white.opacity(0.13),
+        liftSurface: .white,
+        cardOpaqueSurface: Color(red: 0.22, green: 0.23, blue: 0.24),
+        cardOpaqueBorder: Color.white.opacity(0.16),
+        raised: SurfaceStyle(
+            fill: Color.white.opacity(0.05),
+            border: Color.white.opacity(0.08),
+            borderWidth: 1
+        ),
+        overlay: SurfaceStyle(
+            fill: Color(red: 0.22, green: 0.23, blue: 0.24),
+            border: Color.white.opacity(0.14),
+            borderWidth: 1,
+            shadow: SurfaceShadow(color: .black.opacity(0.45), radius: 26, y: 14)
+        ),
+        separator: Color.white.opacity(0.10),
+        fill: Color.white.opacity(0.10),
+        fillSubtle: Color.white.opacity(0.05),
+        isLight: false,
+        usesAmbientGradient: true
+    )
+
+    /// Ambient, light appearance: the pale tvOS light-mode gradient with Light's
+    /// text and accents. Surfaces are frosted white washes so the gradient still
+    /// shows through them.
+    static let ambientLight = ThemePalette(
+        backgroundBase: Color(red: 0.91, green: 0.91, blue: 0.92),
+        backgroundSecondary: Color(red: 0.88, green: 0.88, blue: 0.89),
+        settingsBackground: Color(red: 0.91, green: 0.91, blue: 0.92),
+        cardSurface: Color.white.opacity(0.45),
+        cardBorder: Color.black.opacity(0.06),
+        primaryText: Color.black.opacity(0.90),
+        secondaryText: Color.black.opacity(0.60),
+        tertiaryText: Color.black.opacity(0.45),
+        accent: ThemePalette.brandAccent(isLight: true),
+        errorText: Color(red: 0.78, green: 0.11, blue: 0.09),
+        topGlow: nil,
+        focusedCardGlassTint: Color.black.opacity(0.05),
+        liftSurface: .white,
+        cardOpaqueSurface: .white,
+        cardOpaqueBorder: Color.black.opacity(0.08),
+        raised: SurfaceStyle(
+            fill: Color.white.opacity(0.45),
+            shadow: SurfaceShadow(color: .black.opacity(0.05), radius: 10, y: 3)
+        ),
+        overlay: SurfaceStyle(
+            fill: Color(white: 0.97),
+            shadow: SurfaceShadow(color: .black.opacity(0.16), radius: 28, y: 16)
+        ),
+        separator: Color.black.opacity(0.08),
+        fill: Color.black.opacity(0.08),
+        fillSubtle: Color.black.opacity(0.04),
+        isLight: true,
+        usesAmbientGradient: true
+    )
+
     /// Light app theme keeps the shared app gradient and glow. Settings uses the
     /// separate neutral grouped-page token instead.
     static let light = ThemePalette(
@@ -446,6 +553,7 @@ public extension ThemePalette {
         case .system: return systemColorScheme == .dark ? .dark : .light
         case .dark: return .dark
         case .pureBlack: return .pureBlack
+        case .ambient: return systemColorScheme == .dark ? .ambientDark : .ambientLight
         case .light: return .light
         }
     }
@@ -458,7 +566,7 @@ public extension AppTheme {
     /// follows the device; Black rides the dark scheme.
     var preferredColorScheme: ColorScheme? {
         switch self {
-        case .system: return nil
+        case .system, .ambient: return nil
         case .light: return .light
         case .dark, .pureBlack: return .dark
         }
@@ -481,11 +589,16 @@ public struct AppBackground: View {
     }
 
     public var body: some View {
-        // A clean, flat themed fill on every platform (no gradient or glow), so the
-        // page background is consistent and the standardized elevated surfaces read
-        // the same everywhere. (tvOS previously used a gradient + brand-blue glow.)
-        palette.backgroundBase
-            .ignoresSafeArea()
+        if palette.usesAmbientGradient {
+            AmbientGradientBackground()
+        } else {
+            // A clean, flat themed fill on every platform (no gradient or glow), so
+            // the page background is consistent and the standardized elevated
+            // surfaces read the same everywhere. (tvOS previously used a gradient +
+            // brand-blue glow.)
+            palette.backgroundBase
+                .ignoresSafeArea()
+        }
     }
 }
 

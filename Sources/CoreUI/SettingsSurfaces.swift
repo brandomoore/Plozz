@@ -7,8 +7,13 @@ public struct SettingsPageBackground: View {
     public init() {}
 
     public var body: some View {
-        palette.settingsBackground
-            .ignoresSafeArea()
+        if palette.usesAmbientGradient {
+            // Settings is never a hero page, so it always shows the stock gradient.
+            AmbientGradientBackground(tint: nil)
+        } else {
+            palette.settingsBackground
+                .ignoresSafeArea()
+        }
     }
 }
 

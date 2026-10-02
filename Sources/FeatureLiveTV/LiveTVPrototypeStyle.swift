@@ -372,6 +372,12 @@ struct PrototypeGuideSurface: View {
             if reduceTransparency || contrast == .increased {
                 Color.clear.plozzSurface(.raised, cornerRadius: 0)
                     .clipShape(PrototypeLayout.guideShape)
+            } else if palette.usesAmbientGradient {
+                // Ambient: the page is already the gradient and the preview scrim
+                // already fades the player into it. A page-tone wash here would
+                // flatten only the guide's half of the gradient and leave a seam
+                // against the categories column.
+                Color.clear
             } else {
                 PrototypeLayout.guideShape
                     .fill(LinearGradient(
