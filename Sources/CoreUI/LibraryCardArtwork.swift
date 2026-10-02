@@ -87,6 +87,7 @@ public struct LibraryArtworkOverlay: View {
     public var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
+                MediaArtworkChromeScrim(top: true, bottom: false)
                 if library.library.imageURL == nil {
                     library.library.displayName
                         .font(.system(size: geometry.size.width * 0.095, weight: .bold))
@@ -104,10 +105,6 @@ public struct LibraryArtworkOverlay: View {
                     showsBackground: false,
                     mediaShareTransport: library.transportKind
                 )
-                .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 9))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.14), lineWidth: 1)
-                }
                 .padding(geometry.size.width * 0.04)
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topTrailing)

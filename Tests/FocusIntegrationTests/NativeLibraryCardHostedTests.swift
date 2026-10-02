@@ -128,6 +128,84 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         XCTAssertEqual(badges[0], badges[1])
     }
 
+    func testLibraryLogosUseOnlyTheSharedScrimWithoutABox() throws {
+        let library = AggregatedLibrary(
+            accountID: "account", accountName: "Viewer", serverName: "Server",
+            providerKind: .jellyfin,
+            library: MediaLibrary(
+                id: "movies", title: "Movies", kind: .movie,
+                imageURL: URL(string: "https://example.invalid/custom.jpg")
+            )
+        )
+        let actual = ImageRenderer(content:
+            LibraryArtworkOverlay(library: library).frame(width: 720, height: 405).background(.white)
+        )
+        let expected = ImageRenderer(content:
+            MediaArtworkChromeScrim(top: true, bottom: false)
+                .frame(width: 720, height: 405).background(.white)
+        )
+        actual.scale = 1
+        expected.scale = 1
+        let actualImage = try XCTUnwrap(actual.uiImage)
+        let expectedImage = try XCTUnwrap(expected.uiImage)
+        for point in [CGPoint(x: 600, y: 75), CGPoint(x: 640, y: 33), CGPoint(x: 685, y: 75)] {
+            XCTAssertEqual(try pixel(actualImage, at: point), try pixel(expectedImage, at: point),
+                           "The space around the logo must contain only the shared scrim, not a box or border.")
+        }
+    }
+
+    func testTransportMarkIsUnclippedAndOpticallyCentered() throws {
+        let sizes: [CGFloat] = [32, 52, 76]
+        for size in sizes {
+            for transport in [MediaShareTransportKind.smb, .webDAV, .nfs, .sftp, .ftp] {
+                let renderer = ImageRenderer(content:
+                    ProviderBrandMark(
+                        provider: .mediaShare, size: size, showsBackground: false,
+                        mediaShareTransport: transport
+                    )
+                )
+                renderer.scale = 3
+                let image = try XCTUnwrap(renderer.cgImage)
+                var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+                try pixels.withUnsafeMutableBytes { bytes in
+                    let context = try XCTUnwrap(CGContext(
+                        data: bytes.baseAddress, width: image.width, height: image.height,
+                        bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                        space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                    ))
+                    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+                }
+                let rows = (0..<image.height).filter { y in
+                    (0..<image.width).contains { x in pixels[(y * image.width + x) * 4 + 3] > 32 }
+                }
+                let top = try XCTUnwrap(rows.first)
+                let bottom = image.height - 1 - (try XCTUnwrap(rows.last))
+                let details = "\(transport), \(size)pt"
+                XCTAssertGreaterThan(top, 3, details)
+                XCTAssertGreaterThan(bottom, 3, details)
+                XCTAssertLessThanOrEqual(abs(top - bottom), 6, "Balanced top/bottom ink padding: \(details)")
+                let breaks = zip(rows, rows.dropFirst()).filter { $0.1 > $0.0 + 1 }
+                XCTAssertEqual(breaks.count, 2,
+                               "The drive's case, front panel and label must remain separate, unclipped shapes: \(details)")
+            }
+        }
+        let renderer = ImageRenderer(content:
+            HStack(spacing: 24) {
+                ProviderBrandMark(provider: .mediaShare, size: 76, showsBackground: false, mediaShareTransport: .smb)
+                ProviderBrandMark(provider: .mediaShare, size: 76, showsBackground: false, mediaShareTransport: .webDAV)
+                ProviderBrandMark(provider: .jellyfin, size: 76, showsBackground: false)
+            }
+            .padding(24)
+            .background(.gray)
+        )
+        renderer.scale = 2
+        let attachment = XCTAttachment(image: try XCTUnwrap(renderer.uiImage))
+        attachment.name = "unclipped-balanced-provider-marks"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testLibrariesRowClipsAtNavigationBoundaryInsteadOfContentInset() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -485,6 +563,11 @@ final class NativeLibraryCardHostedTests: XCTestCase {
     }
 
     private func isRed(_ image: UIImage, at point: CGPoint) throws -> Bool {
+        let pixel = try pixel(image, at: point)
+        return pixel[0] > 180 && pixel[1] < 100 && pixel[2] < 100
+    }
+
+    private func pixel(_ image: UIImage, at point: CGPoint) throws -> [UInt8] {
         let crop = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(x: point.x, y: point.y, width: 1, height: 1)))
         var pixel = [UInt8](repeating: 0, count: 4)
         try pixel.withUnsafeMutableBytes { bytes in
@@ -495,7 +578,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
             ))
             context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         }
-        return pixel[0] > 180 && pixel[1] < 100 && pixel[2] < 100
+        return pixel
     }
 }
 

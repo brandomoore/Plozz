@@ -79,7 +79,9 @@ on a serial utility queue. Visible covers use the foreground artwork lane rather
 than waiting behind speculative prefetch. The raw Browse Files root uses the same
 account's indexed latest media, never a recursive filesystem walk. Generated titles
 are centered; badges occupy the same top-trailing artwork corner with or without
-server-supplied covers.
+server-supplied covers. Provider marks sit directly on the shared eased artwork
+scrim, without individual boxes or borders. Transport marks stack the complete
+drive symbol above their label with balanced vertical padding.
 The decoded cache is capped at 16 MiB; the bounded disk derivative cache at 8 MiB.
 Keys include the Home profile scope, account, effective server user, library and
 credential revision. No authenticated artwork URLs are persisted by this cache.
