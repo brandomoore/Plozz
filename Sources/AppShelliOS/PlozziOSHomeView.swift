@@ -2351,6 +2351,7 @@ private struct PlozziOSHomeRowView: View {
                         ) {
                             PlozziOSHomeLibraryCard(
                                 library: library,
+                                artworkSource: viewModel.libraryArtworkSource(for: library),
                                 width: appModel.settings.density.density
                                     .iOSHomeLibraryWidth(
                                         horizontalSizeClass: horizontalSizeClass
@@ -2730,6 +2731,7 @@ private struct PlozziOSHomeLibraryCard: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
     let library: AggregatedLibrary
+    let artworkSource: LibraryArtworkSource?
     let width: CGFloat
 
     @ViewBuilder
@@ -2750,22 +2752,9 @@ private struct PlozziOSHomeLibraryCard: View {
             alignment: .leading,
             spacing: metrics.landscapeCaptionTopSpacing
         ) {
-            AsyncImage(url: library.library.imageURL) { image in
-                image
-                    .resizable()
-                    .scaledToFill()
-            } placeholder: {
-                // Transparent: the card's own rest surface (raised) shows through
-                // and defines the look per theme — gray lift on Dark, white on Light,
-                // page-black + hairline (no fill) on OLED — matching the tvOS tile.
-                Color.clear
-                    .overlay {
-                        Image(systemName: library.library.kind == .series ? "tv" : "film")
-                            .font(.title)
-                            .plozzForeground(.secondary)
-                    }
-            }
+            LibraryCardArtwork(library: library, source: artworkSource)
             .frame(width: width, height: width * 0.6)
+            .overlay { LibraryArtworkOverlay(library: library) }
             .clipShape(
                 RoundedRectangle(
                     cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,

@@ -10,6 +10,124 @@ import XCTest
 
 @MainActor
 final class NativeLibraryCardHostedTests: XCTestCase {
+    func testGeneratedLibraryArtworkReachesNativePosterWithoutReplacingFocus() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let data = try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 100, height: 150)).image {
+            UIColor.red.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 100, height: 150))
+        }.pngData())
+        let server = try LibraryArtworkServer(images: ["poster": data])
+        defer { server.stop() }
+        let port = try await server.start()
+        let provider = LibraryCollageHostedProvider(
+            posterURL: try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/poster/\(UUID().uuidString)"))
+        )
+        let account = Account(id: UUID().uuidString, from: provider.session)
+        let library = AggregatedLibrary(
+            accountID: account.id, accountName: "Viewer", serverName: "Server",
+            providerKind: .jellyfin,
+            library: MediaLibrary(id: "movies", title: "Movies", kind: .movie)
+        )
+        let source = LibraryArtworkSource(
+            library: library, account: .init(account: account, provider: provider), scope: "hosted"
+        )
+        var activations = 0
+        let controller = LibraryFocusController()
+        let host = UIHostingController(rootView:
+            LibraryCardView(
+                aggregated: library, subtitle: "Server",
+                action: { activations += 1 }, artworkSource: source
+            )
+            .environment(\.plozzCardFocusStyle, .system)
+            .frame(width: 500)
+        )
+        controller.addChild(host)
+        controller.view.addSubview(host.view)
+        host.didMove(toParent: controller)
+        host.view.frame = CGRect(x: 400, y: 300, width: 600, height: 450)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        window.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        let poster = try XCTUnwrap(descendant(TVPosterView.self, in: window))
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        controller.target = poster
+        system.requestFocusUpdate(to: controller)
+        system.updateFocusIfNeeded()
+        let deadline = ContinuousClock.now + .seconds(8)
+        while poster.image?.cgImage?.width != 720, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(poster.image?.cgImage?.width, 720)
+        XCTAssertEqual(poster.image?.cgImage?.height, 405)
+        XCTAssertTrue(poster.isFocused, "An asynchronously generated bitmap must not replace the native focus target.")
+        poster.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(activations, 1)
+        let artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.imageView, in: window))
+        let image = snapshot(window)
+        XCTAssertFalse(try isRed(image, at: CGPoint(
+            x: artwork.maxX - artwork.width * 0.08,
+            y: artwork.minY + artwork.height * 0.12
+        )), "The branded corner badge must be drawn over the bitmap, inside native artwork.")
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "generated-native-library-collage"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testLibraryTransportMarksRemainDistinct() throws {
+        var rendered: [Data] = []
+        for transport in [MediaShareTransportKind.smb, .webDAV, .nfs] {
+            let library = AggregatedLibrary(
+                accountID: "share", accountName: "Viewer", serverName: "Server",
+                providerKind: .mediaShare, transportKind: transport,
+                library: MediaLibrary(id: "movies", title: "Movies", kind: .movie)
+            )
+            let renderer = ImageRenderer(content:
+                LibraryArtworkOverlay(library: library).frame(width: 720, height: 405)
+            )
+            rendered.append(try XCTUnwrap(renderer.uiImage?.pngData()))
+        }
+        XCTAssertEqual(Set(rendered).count, 3, "Shared drive marks must retain the actual transport labels.")
+    }
+
+    func testLibraryBadgePositionDoesNotDependOnServerCover() throws {
+        var badges: [Data] = []
+        let covers: [URL?] = [nil, URL(string: "https://example.invalid/custom.jpg")]
+        for cover in covers {
+            let library = AggregatedLibrary(
+                accountID: "account", accountName: "Viewer", serverName: "Server",
+                providerKind: .jellyfin,
+                library: MediaLibrary(id: "movies", title: "Movies", kind: .movie, imageURL: cover)
+            )
+            let renderer = ImageRenderer(content:
+                LibraryArtworkOverlay(library: library)
+                    .frame(width: 720, height: 405)
+                    .background(.red)
+            )
+            renderer.scale = 1
+            let image = try XCTUnwrap(renderer.uiImage)
+            let corner = try XCTUnwrap(image.cgImage?.cropping(to:
+                CGRect(x: 580, y: 20, width: 140, height: 140)
+            ))
+            badges.append(try XCTUnwrap(UIImage(cgImage: corner).pngData()))
+            XCTAssertFalse(try isRed(image, at: CGPoint(x: 640, y: 75)),
+                           "Both cover types must put the badge in the top-right corner.")
+            XCTAssertTrue(try isRed(image, at: CGPoint(x: 65, y: 75)),
+                          "The badge must not fall back to the GeometryReader's top-left origin.")
+        }
+        XCTAssertEqual(badges[0], badges[1])
+    }
+
     func testLibrariesRowClipsAtNavigationBoundaryInsteadOfContentInset() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -387,6 +505,34 @@ private struct LibraryCardFrameProbe: UIViewRepresentable {
 }
 
 private final class LibraryCardSlotView: UIView {}
+
+private struct LibraryCollageHostedProvider: MediaProvider {
+    let posterURL: URL
+    let kind: ProviderKind = .jellyfin
+    let session = UserSession(
+        server: MediaServer(
+            id: "server", name: "Server", baseURL: URL(string: "https://example.invalid")!,
+            provider: .jellyfin
+        ),
+        userID: "viewer", userName: "Viewer", deviceID: "fixture", accessToken: ""
+    )
+    func libraries() async throws -> [MediaLibrary] { [] }
+    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func item(id: String) async throws -> MediaItem { throw AppError.notFound }
+    func children(of itemID: String) async throws -> [MediaItem] { [] }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        try await Task.sleep(for: .milliseconds(300))
+        return MediaPage(
+            items: [MediaItem(id: "movie", title: "Movie", kind: .movie, posterURL: posterURL)],
+            startIndex: 0, totalCount: 1
+        )
+    }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
+    func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
 
 @MainActor
 private final class LibraryFocusController: UIViewController {

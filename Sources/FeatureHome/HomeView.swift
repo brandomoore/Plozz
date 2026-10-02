@@ -1711,7 +1711,10 @@ public struct HomeView: View {
         _ libraries: [AggregatedLibrary],
         onFocused: ((AggregatedLibrary) -> Void)? = nil
     ) -> some View {
-        HomeLibrariesRow(libraries: libraries, onSelectLibrary: onSelectLibrary, onFocused: onFocused)
+        HomeLibrariesRow(
+            libraries: libraries, onSelectLibrary: onSelectLibrary, onFocused: onFocused,
+            artworkSource: viewModel.libraryArtworkSource
+        )
     }
 
     /// The tile's secondary line. Library TILES are never merged across servers,
@@ -2130,6 +2133,7 @@ struct HomeLibrariesRow: View {
     let libraries: [AggregatedLibrary]
     let onSelectLibrary: (MediaLibrary) -> Void
     var onFocused: ((AggregatedLibrary) -> Void)?
+    var artworkSource: ((AggregatedLibrary) -> LibraryArtworkSource?)? = nil
 
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var cardStyle
@@ -2159,7 +2163,8 @@ struct HomeLibrariesRow: View {
                                 action: { onSelectLibrary(aggregated.library) },
                                 onFocusChange: { focused in
                                     if focused { onFocused?(aggregated) }
-                                }
+                                },
+                                artworkSource: artworkSource?(aggregated)
                             )
                         }
                     }
@@ -2188,6 +2193,7 @@ struct LibraryCardView: View {
     let action: () -> Void
     /// Fired when the tile gains or loses focus.
     var onFocusChange: ((Bool) -> Void)? = nil
+    var artworkSource: LibraryArtworkSource? = nil
 
     @PlozzCardFocus private var isFocused: Bool
     @Environment(\.locale) private var locale
@@ -2236,16 +2242,14 @@ struct LibraryCardView: View {
                 subtitle: subtitle.isEmpty ? nil : subtitle,
                 localizedTitle: aggregated.library.localizedTitle,
                 placeholderSymbol: librarySymbol,
+                placeholderTint: aggregated.library.imageURL == nil
+                    ? ProviderBrandMark.brandTint(aggregated.providerKind) : nil,
                 focus: $isFocused,
                 action: action
             ) {
-                FallbackAsyncImage(
-                    urls: [aggregated.library.imageURL].compactMap { $0 },
-                    variant: .landscapeCard,
-                    pinIdentity: aggregated.key
-                ) {
-                    placeholder
-                }
+                LibraryCardArtwork(library: aggregated, source: artworkSource)
+            } overlay: {
+                LibraryArtworkOverlay(library: aggregated)
             }
         } else {
             customCard
@@ -2348,37 +2352,8 @@ struct LibraryCardView: View {
 
     @ViewBuilder
     private var artwork: some View {
-        Group {
-            if let url = aggregated.library.imageURL {
-                AsyncImage(url: url) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    placeholder
-                }
-            } else {
-                placeholder
-            }
-        }
-    }
-
-    /// Themed empty-state for an imageless library: the shared ``ThemePalette/fill``
-    /// so it reads as a visible card on every theme, matching the iOS/iPadOS library
-    /// tile exactly (same token) and the media-card frame's own rest surface. Opaque
-    /// enough that the focus glass halo behind the card can't bleed through, and
-    /// focus-independent so nothing jumps on focus.
-    /// Empty-state for an imageless library: transparent, so the card's own rest
-    /// surface (the shared ``PlozzGlassCardModifier`` `raised` treatment) shows
-    /// through and defines the look per theme — a gray lift on Dark, white on Light,
-    /// and on OLED/Pure Black just the page-black with a hairline border (no fill).
-    /// Only the glyph is drawn on top, so an imageless tile matches the surface
-    /// system and the iOS/iPadOS tile exactly.
-    private var placeholder: some View {
-        ZStack {
-            Color.clear
-            Image(systemName: librarySymbol)
-                .font(.system(size: 64, weight: .semibold))
-                .foregroundStyle(palette.tertiaryText)
-        }
+        LibraryCardArtwork(library: aggregated, source: artworkSource)
+            .overlay { LibraryArtworkOverlay(library: aggregated) }
     }
 
     /// A per-kind SF Symbol for the empty-state watermark. Plex/Jellyfin map

@@ -66,6 +66,27 @@ fallback when the user's server has no attached trailer.
 
 ## Home loading
 
+Library cards preserve server-supplied cover artwork. Missing covers use a stable,
+locally composed poster collage from that exact library, with a provider-colored
+fallback for empty or unavailable sources. All cards carry the shared provider
+mark (including explicit SMB/WebDAV/NFS transport badges), while server/account
+captions continue to distinguish same-provider servers.
+
+`LibraryArtworkSource` requests at most 18 library items and selects six unique
+poster candidates. `LibraryCollageCache` coalesces requests, admits at most two
+libraries and three poster transfers at once, and composes a single 720x405 texture
+on a serial utility queue. Visible covers use the foreground artwork lane rather
+than waiting behind speculative prefetch. The raw Browse Files root uses the same
+account's indexed latest media, never a recursive filesystem walk. Generated titles
+are centered; badges occupy the same top-trailing artwork corner with or without
+server-supplied covers.
+The decoded cache is capped at 16 MiB; the bounded disk derivative cache at 8 MiB.
+Keys include the Home profile scope, account, effective server user, library and
+credential revision. No authenticated artwork URLs are persisted by this cache.
+Focus changes do not reload or compose artwork. Native TV posters receive the
+same bitmap as mobile/custom cards, with their decorative provider/title overlay
+inside the native artwork surface; clipping and focus geometry stay unchanged.
+
 Home gives inventory, each global feed, and per-library rows independent queues
 of at most five operations each. Slow resume feeds cannot occupy the slots
 needed to start other row types. Each global row arrives

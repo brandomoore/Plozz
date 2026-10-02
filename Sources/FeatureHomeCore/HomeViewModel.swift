@@ -327,6 +327,16 @@ public final class HomeViewModel {
     /// persist in `ArtworkImageCache`/`URLCache`) and then silently refresh. See
     /// `HomeContentStore`.
     private let contentStore: HomeContentStoring
+
+    public func libraryArtworkSource(for library: AggregatedLibrary) -> LibraryArtworkSource? {
+        guard let account = accounts.first(where: { $0.account.id == library.accountID }) else {
+            return nil
+        }
+        return LibraryArtworkSource(
+            library: library, account: account, scope: contentStore.persistenceScope
+        )
+    }
+
     /// The shared identity-index lookup folded into every merged row so a card
     /// surfaced by one server still carries its full cross-server source set.
     private let identitySources: @Sendable (MediaItem) -> [MediaSourceRef]
