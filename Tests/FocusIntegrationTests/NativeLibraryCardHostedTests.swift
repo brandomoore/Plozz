@@ -411,7 +411,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         other.frame = CGRect(x: 200, y: 80, width: 300, height: 60)
         controller.view.addSubview(other)
         controller.target = other
-        let images = try [
+        var images = try [
             "portrait": CGSize(width: 200, height: 300),
             "wide": CGSize(width: 640, height: 180),
             "landscape": CGSize(width: 320, height: 180)
@@ -421,6 +421,21 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                 $0.fill(CGRect(origin: .zero, size: size))
             }.pngData())
         }
+        let transparentFormat = UIGraphicsImageRendererFormat()
+        transparentFormat.scale = 1
+        transparentFormat.opaque = false
+        images["transparent"] = try XCTUnwrap(UIGraphicsImageRenderer(
+            size: CGSize(width: 320, height: 180), format: transparentFormat
+        ).image { renderer in
+            let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: [UIColor.red.cgColor, UIColor.red.cgColor, UIColor.red.withAlphaComponent(0).cgColor] as CFArray,
+                locations: [0, 0.65, 1]
+            )!
+            renderer.cgContext.drawLinearGradient(
+                gradient, start: .zero, end: CGPoint(x: 0, y: 180), options: []
+            )
+        }.pngData())
         let server = try LibraryArtworkServer(images: images)
         defer { server.stop() }
         let port = try await server.start()
@@ -436,12 +451,13 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         configurations.append((.system, .framed, .compact))
         for (style, cardStyle, density) in configurations {
             let metrics = PlozzMetrics(density: density)
-            for aspect in ["portrait", "wide", "landscape"] {
+            for aspect in ["portrait", "wide", "landscape", "transparent"] {
+                controller.view.backgroundColor = aspect == "transparent" ? UIColor(white: 0.14, alpha: 1) : .black
                 let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/\(aspect)/\(UUID().uuidString)"))
                 let synthesized = style == .system && aspect == "landscape"
                 let aggregated = AggregatedLibrary(
                     accountID: "fixture", accountName: "Viewer", serverName: "Fixture server",
-                    providerKind: .jellyfin,
+                    providerKind: aspect == "transparent" ? .emby : .jellyfin,
                     library: MediaLibrary(
                         id: aspect, title: synthesized ? "Untranslated fallback" : "Movies", kind: .movie,
                         synthesizedName: synthesized ? .movies : nil, imageURL: url
@@ -504,6 +520,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                 XCTAssertNil(descendant(TVCardView.self, in: host.view),
                              "System Library focus must not encompass the caption in a generic TVCardView.")
                 let poster = descendant(TVPosterView.self, in: host.view)
+                let restingImage = poster?.image
                 let caption = descendant(SystemPosterCaption.CaptionView.self, in: host.view)
                 let captionFrame = try caption.map { try XCTUnwrap(NativeFocusProjection.artworkFrame(of: $0, in: window)) }
                 if style == .system {
@@ -521,6 +538,8 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                     }
                     image = snapshot(window)
                     if let poster {
+                        XCTAssertTrue(poster.image === restingImage, "Focus must reuse the prepared bitmap.")
+                        XCTAssertFalse(poster.imageView.masksFocusEffectToContents)
                         let width = metrics.landscapeCardSlotWidth - metrics.borderlessCardSideMargin * 2
                         XCTAssertEqual(poster.contentSize.width, width, accuracy: 1)
                         XCTAssertEqual(poster.contentSize.height, width * 9 / 16, accuracy: 1)
@@ -551,6 +570,20 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                         XCTAssertLessThanOrEqual(badgeFrame.maxX, textFrame.minX)
                         XCTAssertEqual(slot.bounds.width, metrics.landscapeCardSlotWidth, accuracy: 1)
                         XCTAssertTrue(try isRed(image, at: CGPoint(x: artwork.midX, y: artwork.midY)))
+                        for x in [artwork.minX + 3, artwork.maxX - 3] {
+                            XCTAssertFalse(try isRed(image, at: CGPoint(x: x, y: artwork.minY + 3)),
+                                           "Native artwork must keep rounded corners, including transparent covers: \(aspect), focused=\(focused)")
+                        }
+                        if aspect == "transparent" {
+                            let bitmap = try XCTUnwrap(poster.image?.cgImage)
+                            let pixels = try rgba(bitmap)
+                            XCTAssertLessThan(pixels[((bitmap.height - 1) * bitmap.width + bitmap.width / 2) * 4 + 3], 16,
+                                              "Keep the server cover's fading reflection; do not flatten it onto a plate.")
+                            if !focused {
+                                let bottom = try pixel(image, at: CGPoint(x: artwork.midX, y: artwork.maxY - 3))
+                                XCTAssertGreaterThan(bottom[1], 12, "The backdrop must remain visible through the fade.")
+                            }
+                        }
                         if focused {
                             poster.sendActions(for: .primaryActionTriggered)
                             XCTAssertEqual(activations, 1, "Select must still open the correct Library.")

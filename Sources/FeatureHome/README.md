@@ -86,6 +86,9 @@ Native captions center the badge and short title together, keep the badge fixed
 while long names marquee, and move both together on focus without adding a focus target.
 Library captions reserve the landscape artwork-to-caption gap at rest and on focus,
 without changing ordinary poster spacing or the focus animation.
+Transparent server covers retain their alpha but use the same rounded native
+poster treatment as opaque covers, rather than alpha-shaped cutout focus.
+This changes the native image-view treatment, not the cached artwork bitmap.
 Transport marks stack the complete drive symbol above their label with balanced
 vertical padding.
 The decoded cache is capped at 16 MiB; the bounded disk derivative cache at 8 MiB.
