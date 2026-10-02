@@ -150,6 +150,8 @@ public struct MediaRowView: View {
     /// debounce and no once-per-entry gate. For layout that has to follow focus
     /// immediately, such as a Home that pins the focused row.
     private let onCardFocused: ((MediaItem) -> Void)?
+    private let onItemExposed: ((MediaItem) -> Void)?
+    private let isExposureActive: Bool
     /// Optional localized cue drawn on selected card kinds (e.g. a Related row
     /// marks sequels/spin-offs as "Continues"). The row owns card construction,
     /// so callers need this seam rather than rebuilding the whole rail.
@@ -191,6 +193,8 @@ public struct MediaRowView: View {
         onFocusEntered: (() -> Void)? = nil,
         onFocusChange: ((MediaItem?) -> Void)? = nil,
         onCardFocused: ((MediaItem) -> Void)? = nil,
+        onItemExposed: ((MediaItem) -> Void)? = nil,
+        isExposureActive: Bool = true,
         statusCue: ((MediaItem) -> LocalizedStringResource?)? = nil,
         pendingRemovalIDs: Set<String> = [],
         loadingPlaceholderCount: Int = 0,
@@ -216,6 +220,8 @@ public struct MediaRowView: View {
             onFocusEntered: onFocusEntered,
             onFocusChange: onFocusChange,
             onCardFocused: onCardFocused,
+            onItemExposed: onItemExposed,
+            isExposureActive: isExposureActive,
             statusCue: statusCue,
             pendingRemovalIDs: pendingRemovalIDs,
             loadingPlaceholderCount: loadingPlaceholderCount,
@@ -243,6 +249,8 @@ public struct MediaRowView: View {
         onFocusEntered: (() -> Void)? = nil,
         onFocusChange: ((MediaItem?) -> Void)? = nil,
         onCardFocused: ((MediaItem) -> Void)? = nil,
+        onItemExposed: ((MediaItem) -> Void)? = nil,
+        isExposureActive: Bool = true,
         statusCue: ((MediaItem) -> LocalizedStringResource?)? = nil,
         pendingRemovalIDs: Set<String> = [],
         loadingPlaceholderCount: Int = 0,
@@ -281,6 +289,8 @@ public struct MediaRowView: View {
         self.onFocusEntered = onFocusEntered
         self.onFocusChange = onFocusChange
         self.onCardFocused = onCardFocused
+        self.onItemExposed = onItemExposed
+        self.isExposureActive = isExposureActive
         self.statusCue = statusCue
         self.pendingRemovalIDs = pendingRemovalIDs
         self.playsOnSelect = playsOnSelect
@@ -688,6 +698,17 @@ public struct MediaRowView: View {
                     pendingEntryHandoff = false
                 }
             }
+            .background {
+                #if os(tvOS)
+                if let onItemExposed {
+                    MediaRowExposureDriver(
+                        tracker: activity.exposure,
+                        isActive: isExposureActive,
+                        onExposure: onItemExposed
+                    )
+                }
+                #endif
+            }
         }
     }
     }
@@ -785,6 +806,11 @@ public struct MediaRowView: View {
             .frame(width: cardSlotWidth)
             .id(item.stablePresentationID)
             .background {
+                #if os(tvOS)
+                if onItemExposed != nil {
+                    MediaRowExposureAnchor(tracker: activity.exposure, item: item)
+                }
+                #endif
                 if episodeEntry != nil, !activity.focusEngaged, item.stablePresentationID == gateTarget {
                     GeometryReader { geometry in
                         Color.clear.preference(
@@ -1383,8 +1409,12 @@ private struct MediaRowCardFocus: ViewModifier {
     }
 }
 
+@MainActor
 @Observable
 private final class MediaRowActivity {
+    #if os(tvOS)
+    @ObservationIgnored let exposure = MediaRowExposureTracker()
+    #endif
     // Only gated episode rows render these values. Ordinary Home rows report
     // focus without rebuilding every card and its context menu.
     var focusEngaged = false

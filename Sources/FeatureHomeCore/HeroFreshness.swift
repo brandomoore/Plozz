@@ -216,6 +216,26 @@ public struct HeroFreshnessCandidatePool: Codable, Equatable, Sendable {
         }
     }
 
+    /// Keep unexposed cached alternatives ahead of new arrivals. This prepares
+    /// the next launch; it never changes a session's displayed lineup.
+    public func preservingUnseen(
+        from previous: HeroFreshnessCandidatePool,
+        history: HeroExposureHistory
+    ) -> HeroFreshnessCandidatePool {
+        HeroFreshnessCandidatePool(buckets: buckets.map { bucket in
+            let old = previous.buckets.first { $0.source == bucket.source }?.items ?? []
+            let freshTokens = bucket.items.map { HeroDedupe.tokens(for: $0) }
+            let retained = old.filter { item in
+                guard history.lastSeenAt(for: item) == nil else { return false }
+                let tokens = HeroDedupe.tokens(for: item)
+                return !freshTokens.contains { !tokens.isDisjoint(with: $0) }
+            }.map { item in
+                item.discoverySources.isEmpty ? item : item.removingDiscoveryOwnership()
+            }
+            return Bucket(source: bucket.source, items: retained + bucket.items)
+        })
+    }
+
     public func mapItems(_ transform: (MediaItem) -> MediaItem) -> HeroFreshnessCandidatePool {
         HeroFreshnessCandidatePool(buckets: buckets.map {
             Bucket(source: $0.source, items: $0.items.map(transform))

@@ -993,10 +993,15 @@ public struct HomeView: View {
                 content: content, randomLibraries: randomLibraries,
                 candidates: refreshed, supportingCandidates: heroRuntime.candidatePool
             )
+            let refreshedLineup = focusHeroSettings != nil ? HeroLiveMerge.merge(
+                showing: heroRuntime.items, fresh: refreshed, limit: settings.maxItems,
+                preservesLineup: true, sourceEligibility: sourceEligibility
+            ).items : refreshed
             let reconciled = heroCurator.reconcile(
-                refreshed,
+                refreshedLineup,
                 settings: settings,
                 watchMutations: durable + heroRuntime.watchMutations,
+                preservesLineup: focusHeroSettings != nil,
                 sourceEligibility: sourceEligibility
             )
             heroRuntime.sourceEligibility = sourceEligibility
@@ -1163,10 +1168,22 @@ public struct HomeView: View {
                 .filter { $0.source == .watchlist }.flatMap(\.items),
             supportingCandidates: updatedPool
         )
+        let current: [MediaItem]
+        if focusHeroSettings != nil, !onScreen.isEmpty {
+            let refreshed = await heroWatchStateRefresher(onScreen)
+            guard !Task.isCancelled else { return }
+            current = HeroLiveMerge.merge(
+                showing: onScreen, fresh: refreshed, limit: settings.maxItems,
+                preservesLineup: true, sourceEligibility: sourceEligibility
+            ).items
+        } else {
+            current = onScreen
+        }
         let showing = heroCurator.reconcile(
-            onScreen,
+            current,
             settings: settings,
-            watchMutations: durableWatchMutations + heroRuntime.watchMutations
+            watchMutations: durableWatchMutations + heroRuntime.watchMutations,
+            preservesLineup: focusHeroSettings != nil
         )
         let merge = HeroLiveMerge.merge(
             showing: showing,
@@ -1176,6 +1193,7 @@ public struct HomeView: View {
             misses: foldsIntoLoadedSet ? heroRuntime.retainedMisses : [:],
             freshIsAuthoritative: freshIsAuthoritative,
             preservesPinnedItems: true,
+            preservesLineup: focusHeroSettings != nil,
             sourceEligibility: sourceEligibility
         )
         heroRuntime.sourceEligibility = sourceEligibility
@@ -1195,7 +1213,9 @@ public struct HomeView: View {
             // that a failed refresh can never erase a good snapshot.
             viewModel.clearCachedHeroItems()
         } else {
-            viewModel.cacheHeroCandidatePool(durablePool, for: settings)
+            viewModel.cacheHeroCandidatePool(
+                durablePool, for: settings, preservingUnseen: focusHeroSettings != nil
+            )
         }
         let elapsedMS = Int(Date().timeIntervalSince(started) * 1_000)
         PlozzLog.boot(
@@ -1599,6 +1619,8 @@ public struct HomeView: View {
                 onFocusEntered: reporter.entered,
                 onFocusChange: onFocusChange,
                 onCardFocused: reporter.cardFocused,
+                onItemExposed: { viewModel.recordHeroExposure($0) },
+                isExposureActive: heroIsFrontmost,
                 loadingPlaceholderCount: isLoading ? 8 : 0,
                 reservesLoadingFocus: reservesLoadingFocus,
                 onSelect: onSelectItem
@@ -1920,6 +1942,7 @@ enum HomeHeroDisplayResolver {
                 runtime.items,
                 settings: settings,
                 watchMutations: watchMutations,
+                preservesLineup: settings?.followsFocus == true,
                 sourceEligibility: sourceEligibility
             )
             if !reconciled.isEmpty { return reconciled }
@@ -1934,6 +1957,7 @@ enum HomeHeroDisplayResolver {
             runtime.cachedItems,
             settings: settings,
             watchMutations: watchMutations,
+            preservesLineup: settings.followsFocus,
             sourceEligibility: sourceEligibility
         )
     }

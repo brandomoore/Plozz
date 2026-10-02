@@ -6,6 +6,36 @@ import XCTest
 
 final class HeroRefreshTriggerTests: XCTestCase {
     @MainActor
+    func testShowcaseKeepsWatchedTitlesThroughCacheAndLoadedDisplayPasses() {
+        #if os(tvOS)
+        var settings = HeroSettings.default
+        settings.style = .followsFocus
+        settings.sources = [.featured]
+        settings.hideWatched = true
+        var item = MediaItem(id: "shown", title: "Shown", kind: .movie)
+        item.isPlayed = true
+        item.hasBeenPlayed = true
+        let runtime = HomeHeroRuntimeState()
+        runtime.cachedItems = [item]
+        runtime.cachedKey = .init(settings: settings)
+        let key = HeroRecomputeKey(content: .init(), settings: settings, randomLibraries: [])
+        func displayed() -> [MediaItem] {
+            HomeHeroDisplayResolver.resolve(
+                runtime: runtime, key: key, settings: settings,
+                continueWatching: [], watchlist: [], curator: HeroCurator()
+            )
+        }
+        XCTAssertEqual(displayed(), [item])
+        runtime.items = [item]
+        runtime.completedKey = key
+        runtime.cachedItems = []
+        XCTAssertEqual(displayed(), [item])
+        runtime.resetForSourceScopeChange()
+        XCTAssertTrue(displayed().isEmpty)
+        #endif
+    }
+
+    @MainActor
     func testShowcaseCacheUsesTheSameFeaturedConfigurationAsLiveCuration() throws {
         #if os(tvOS)
         var settings = HeroSettings.default

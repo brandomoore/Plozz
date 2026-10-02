@@ -35,6 +35,28 @@ final class HeroFreshnessTests: XCTestCase {
         XCTAssertEqual(selected.map(\.id), ["unseen", "older", "recent"])
     }
 
+    func testUnseenRetentionUsesFreshMatchesAndRevokesUnrefreshedOwnership() throws {
+        var retained = item("retained", account: "old-server")
+        retained.discoverySources = [.tmdb]
+        retained.locallyValidatedPlayableSource = true
+        retained.sources = [.init(accountID: "old-server", itemID: retained.id, kind: .movie)]
+        var old = item("old-id")
+        old.providerIDs = ["Tmdb": "42"]
+        var fresh = item("new-id")
+        fresh.providerIDs = old.providerIDs
+        fresh.overview = "Fresh metadata"
+        let previous = pool([retained, old, item("seen")])
+        var history = HeroExposureHistory()
+        history.record(item("seen"))
+        let merged = pool([fresh]).preservingUnseen(from: previous, history: history)
+        let items = try XCTUnwrap(merged.buckets.first?.items)
+        XCTAssertEqual(items.map(\.id), ["retained", "new-id"])
+        XCTAssertFalse(items[0].locallyValidatedPlayableSource)
+        XCTAssertNil(items[0].sourceAccountID)
+        XCTAssertTrue(items[0].sources.isEmpty)
+        XCTAssertEqual(items[1], fresh)
+    }
+
     func testEqualRankShuffleIsStableWithinSessionButVariesAcrossSeeds() {
         let candidates = pool((0..<12).map { item("candidate-\($0)") })
         let first = candidates.select(settings: settings(), freshness: .init(sessionSeed: 1))

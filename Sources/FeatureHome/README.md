@@ -178,8 +178,25 @@ effects remain live, and changes to overlay content invalidate the cached image.
 Discover hydrates and displays its saved candidates with the same featured-only
 configuration used by Showcase's live curation. Without eligible cached content,
 its stable row slot shows loading posters until curation completes, rather than
-inserting a new row during navigation. A completed empty result removes the slot;
+inserting a new row during navigation. An initially empty result removes the slot;
 disabling Discover does not reserve it. Lower loading rows never take focus.
+
+Once populated, Discover keeps its entire lineup for the app session, not just
+the focused or currently visible cards. Opening details, changing tabs,
+backgrounding, freshness ticks, and watched-state updates do not replace or
+reorder titles. Matching status and verified routing still refresh in place.
+An explicit configuration or profile/account-scope change resets the selection;
+retention never overrides source authorization. Fullscreen Hero keeps its
+existing carousel refresh policy.
+
+Discover records exposure only after at least half a real card is visible for
+two seconds while Home is frontmost and the scene active. A single native row
+sampler respects horizontal/vertical clipping and the Showcase mask without
+publishing SwiftUI state or treating lazy realization as an impression. The
+profile-scoped history favors unseen cached titles on the next cold launch.
+Background cache writes retain unexposed alternatives, clear unverified routing
+from retained-only discoveries, and fill remaining capacity with refreshed
+candidates; they never publish those replacements into the current lineup.
 
 Metadata belongs to the current Home view-model identity (profile, account set,
 and credential generation), never a process-global cache. Cached details only
