@@ -1,4 +1,5 @@
 import CoreModels
+import Observation
 import SwiftUI
 
 private struct NativeFocusSurfaceKey: EnvironmentKey {
@@ -33,7 +34,7 @@ extension EnvironmentValues {
 @propertyWrapper
 public struct PlozzCardFocus: DynamicProperty {
     @FocusState private var focused: Bool
-    @State private var observed = false
+    @State private var observation = NativeFocusObservation()
     @State private var request = Request()
     @Environment(\.plozzCardFocusStyle) private var style
 
@@ -42,7 +43,7 @@ public struct PlozzCardFocus: DynamicProperty {
     public var wrappedValue: Bool {
         get {
             #if os(tvOS)
-            usesNativeFocus ? observed : focused
+            usesNativeFocus ? observation.isFocused : focused
             #else
             focused
             #endif
@@ -73,19 +74,30 @@ public struct PlozzCardFocus: DynamicProperty {
 
     public var projectedValue: Binding {
         Binding(
-            focusState: $focused, observed: $observed, request: $request,
+            focusState: $focused,
+            observation: observation,
+            request: $request,
             requestSnapshot: request, usesNativeFocus: usesNativeFocus
         )
     }
 
+    @Observable
+    final class NativeFocusObservation {
+        var isFocused = false
+    }
+
     public struct Binding {
         public let focusState: FocusState<Bool>.Binding
-        let observed: SwiftUI.Binding<Bool>
+        let observation: NativeFocusObservation
         let request: SwiftUI.Binding<Request>
         // The command value participates in SwiftUI invalidation even when the
         // native coordinator is the only consumer of the writable binding.
         let requestSnapshot: Request
         let usesNativeFocus: Bool
+
+        var isFocused: Bool {
+            usesNativeFocus ? observation.isFocused : focusState.wrappedValue
+        }
 
         public func requestFocus(animated: Bool = true) {
             if usesNativeFocus {

@@ -54,9 +54,8 @@ final class SystemDirectionalFocusTests: XCTestCase {
     }
 
     private static func assertFocus(_ label: String, in app: XCUIApplication) throws {
-        let card = app.buttons.containing(.staticText, identifier: label).firstMatch
-        let focused = card.descendants(matching: .any)
-            .matching(NSPredicate(format: "hasFocus == true")).firstMatch
+        let focused = app.buttons
+            .matching(NSPredicate(format: "label == %@ AND hasFocus == true", label)).firstMatch
         XCTAssertTrue(focused.waitForExistence(timeout: 3), "Expected \(label). \(app.debugDescription)")
         Thread.sleep(forTimeInterval: 0.35)
         XCTAssertTrue(focused.exists, "Focus bounced away from \(label). \(app.debugDescription)")

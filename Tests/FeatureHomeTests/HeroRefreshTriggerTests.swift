@@ -5,6 +5,45 @@ import XCTest
 @testable import FeatureHome
 
 final class HeroRefreshTriggerTests: XCTestCase {
+    @MainActor
+    func testShowcaseCacheUsesTheSameFeaturedConfigurationAsLiveCuration() throws {
+        #if os(tvOS)
+        var settings = HeroSettings.default
+        settings.style = .followsFocus
+        settings.showsDiscoverRow = true
+        settings.sources = [.continueWatching, .randomFromLibrary]
+        let discovery = try XCTUnwrap(HomeView.curationSettings(for: settings))
+        XCTAssertEqual(discovery.sources, [.featured])
+        XCTAssertTrue(discovery.isActive)
+        XCTAssertEqual(discovery.discoverySources, settings.discoverySources)
+        XCTAssertEqual(discovery.maxItems, settings.maxItems)
+        XCTAssertNotEqual(HeroConfigurationKey(settings: settings), HeroConfigurationKey(settings: discovery))
+
+        let item = MediaItem(id: "cached", title: "Cached discovery", kind: .movie)
+        let runtime = HomeHeroRuntimeState()
+        runtime.cachedKey = HeroConfigurationKey(settings: discovery)
+        runtime.cachedItems = [item]
+        let key = HeroRecomputeKey(content: .init(), settings: discovery, randomLibraries: [])
+        let shown = HomeHeroDisplayResolver.resolve(
+            runtime: runtime, key: key, settings: discovery,
+            continueWatching: [], watchlist: [], curator: HeroCurator()
+        )
+        XCTAssertEqual(shown.map(\.id), [item.id], "Cached Discover must render before live curation finishes.")
+        XCTAssertNil(runtime.completedKey)
+        settings.showsDiscoverRow = false
+        XCTAssertNil(HomeView.curationSettings(for: settings))
+        #endif
+    }
+
+    @MainActor
+    func testCarouselCurationKeepsItsConfiguredSources() {
+        var settings = HeroSettings.default
+        settings.style = .carousel
+        settings.sources = [.watchlist, .randomFromLibrary]
+        XCTAssertEqual(HomeView.curationSettings(for: settings), settings)
+        XCTAssertNil(HomeView.curationSettings(for: nil))
+    }
+
     func testFeaturedTrendsDoNotReloadWhenUnrelatedWatchlistIDsChange() {
         var settings = HeroSettings.default
         settings.sources = [.featured]

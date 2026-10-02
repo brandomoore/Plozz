@@ -53,7 +53,7 @@ public struct NativeArtworkPoster<Artwork: View>: View {
             .frame(width: width)
             SystemPosterCaption(
                 title: title, subtitle: subtitle,
-                reservesSubtitleSpace: true, isFocused: focus.observed.wrappedValue
+                reservesSubtitleSpace: true, isFocused: focus.observation.isFocused
             )
             .frame(width: width)
             .accessibilityHidden(true)

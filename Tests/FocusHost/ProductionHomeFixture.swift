@@ -5,6 +5,7 @@ import notify
 import FeatureHome
 import FeatureHomeCore
 import MetadataKit
+import Observation
 import SwiftUI
 import UIKit
 @testable import AppShell
@@ -117,6 +118,10 @@ struct ProductionHomeFixture: View {
                             Text(verbatim: fixture.model.loadingRows.contains(.recentlyAdded) ? "pending" : "ready")
                                 .accessibilityIdentifier("home-fixture-latest-state")
                         }
+                        if ProcessInfo.processInfo.arguments.contains("--showcase-discover-fixture") {
+                            Text(verbatim: fixture.discoveryLoad.isReady ? "ready" : "pending")
+                                .accessibilityIdentifier("home-fixture-discover-state")
+                        }
                     }
                     .font(.caption2)
                     .allowsHitTesting(false)
@@ -184,6 +189,7 @@ private struct ProductionHomeContent: View {
                         heroTrailerController: fixture.trailer,
                         heroIsFrontmost: isActive && path.isEmpty,
                         heroRuntime: fixture.runtime,
+                        heroFeaturedProvider: { limit in await fixture.featuredContent(limit: limit) },
                         heroArtworkProvider: { $0.backdropURL },
                         heroArtworkValidator: { _ in true },
                         navigationStyle: isPinned
@@ -253,6 +259,12 @@ private final class ProductionHomeActions: MediaItemActionHandling {
 }
 
 @MainActor
+@Observable
+private final class ProductionDiscoveryLoadState {
+    var isReady = false
+}
+
+@MainActor
 private final class ProductionHomeState {
     let model: HomeViewModel
     let library: LibraryBrowseViewModel
@@ -265,6 +277,7 @@ private final class ProductionHomeState {
     let runtime = HomeHeroRuntimeState()
     let chrome = NavigationChromeModel()
     let actions = ProductionHomeActions()
+    let discoveryLoad = ProductionDiscoveryLoadState()
     private let provider: ProductionHomeProvider
     private var details: [String: ItemDetailViewModel] = [:]
 
@@ -309,6 +322,7 @@ private final class ProductionHomeState {
         settings.trailersEnabled = false
         // Settings persist between launches, so every launch picks its layout.
         settings.style = ProcessInfo.processInfo.arguments.contains("--immersive-home") ? .followsFocus : .carousel
+        settings.showsDiscoverRow = ProcessInfo.processInfo.arguments.contains("--showcase-discover-fixture")
         heroSettings.settings = settings
         background.settings.homeTrailerEnabled = false
         if trailerURL != nil { background.settings.detailMode = .trailer }
@@ -319,6 +333,13 @@ private final class ProductionHomeState {
         let model = ItemDetailViewModel(provider: provider, itemID: item.id, initialItem: item)
         details[item.id] = model
         return model
+    }
+
+    func featuredContent(limit: Int) async -> [MediaItem] {
+        guard ProcessInfo.processInfo.arguments.contains("--showcase-discover-fixture") else { return [] }
+        let items = await provider.featuredContent(limit: limit)
+        discoveryLoad.isReady = true
+        return items
     }
 
     static func load() async -> ProductionHomeState {
@@ -346,6 +367,13 @@ private final class ProductionHomeState {
         let state = ProductionHomeState(poster: poster, backdrop: backdrop, logo: logo, trailerURL: trailerURL)
         if ProcessInfo.processInfo.arguments.contains("--cached-home-hero") {
             state.model.cacheHeroItems([state.provider.heroSeed], for: state.heroSettings.settings)
+            await state.model.waitForHeroPersistence()
+        }
+        if ProcessInfo.processInfo.arguments.contains("--cached-showcase-discover") {
+            var discovery = state.heroSettings.settings
+            discovery.isEnabled = true
+            discovery.sources = [.featured]
+            state.model.cacheHeroItems([state.provider.heroSeed], for: discovery)
             await state.model.waitForHeroPersistence()
         }
         if ProcessInfo.processInfo.arguments.contains("--slow-home-load")
@@ -455,10 +483,16 @@ private struct ProductionHomeProvider: MediaProvider {
     let logo: URL
     private let progressiveGate = ProductionHomeRowsGate()
     private let recentGate = ProductionHomeRowsGate(notificationKey: "PLOZZ_HOME_RECENT_RELEASE_NOTIFICATION")
+    private let discoverGate = ProductionHomeRowsGate(notificationKey: "PLOZZ_HOME_DISCOVER_RELEASE_NOTIFICATION")
     private var rowCount: Int {
         ProcessInfo.processInfo.arguments.contains("--home-performance-fixture") ? 75 : 24
     }
     var heroSeed: MediaItem { movie(rowCount + 10) }
+
+    func featuredContent(limit: Int) async -> [MediaItem] {
+        await discoverGate.wait()
+        return Array((rowCount..<(rowCount * 2)).prefix(limit).map(movie))
+    }
 
     static func artworkURL(_ base: URL, index: Int) -> URL {
         base.appending(queryItems: [URLQueryItem(name: "fixture-item", value: String(index))])

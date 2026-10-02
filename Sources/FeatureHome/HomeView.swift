@@ -161,8 +161,12 @@ public struct HomeView: View {
     /// so the row holds exactly the discovery picks the Fullscreen Hero would. `nil`
     /// when nothing on screen needs curating.
     private var curationSettings: HeroSettings? {
+        Self.curationSettings(for: heroSettings?.settings)
+    }
+
+    static func curationSettings(for settings: HeroSettings?) -> HeroSettings? {
         #if os(tvOS)
-        if let settings = heroSettings?.settings, settings.followsFocus {
+        if let settings, settings.followsFocus {
             guard settings.showsDiscoverRow else { return nil }
             var discover = settings
             discover.isEnabled = true
@@ -170,7 +174,7 @@ public struct HomeView: View {
             return discover
         }
         #endif
-        return carouselSettings
+        return settings
     }
     private var heroBackground: HeroBackgroundSettingsModel
     private let heroTrailerController: HeroTrailerController
@@ -350,7 +354,7 @@ public struct HomeView: View {
         self.enabledServerCount = enabledServerCount
         if !heroRuntime.hasHydratedCache {
             heroRuntime.hasHydratedCache = true
-            if let settings = heroSettings?.settings,
+            if let settings = Self.curationSettings(for: heroSettings?.settings),
                let cached = viewModel.cachedHeroItems(for: settings) {
                 heroRuntime.cachedKey = HeroConfigurationKey(settings: settings)
                 heroRuntime.cachedDisabledLibraryKeys = visibility.visibility.disabledKeys
@@ -433,7 +437,7 @@ public struct HomeView: View {
             let displayHeroItems = HomeHeroDisplayResolver.resolve(
                 runtime: heroRuntime,
                 key: heroRecomputeKey,
-                settings: carouselSettings,
+                settings: curationSettings,
                 continueWatching: heroContent.continueWatching,
                 watchlist: heroContent.watchlist,
                 recentlyAdded: heroContent.latest,
@@ -470,7 +474,15 @@ public struct HomeView: View {
             // `onFocusGained`); nothing competes on the way up, so it sticks.
             Group {
                 if let focusHeroSettings {
-                    focusHeroHome(rows: rows, content: content, settings: focusHeroSettings)
+                    focusHeroHome(
+                        rows: rows, content: content, settings: focusHeroSettings,
+                        discoverItems: displayHeroItems,
+                        discoverState: HomeHeroSlotState.resolve(
+                            isConfigured: focusHeroSettings.showsDiscoverRow,
+                            hasItems: !displayHeroItems.isEmpty,
+                            recomputeComplete: heroRuntime.completedKey == heroRecomputeKey
+                        )
+                    )
                 } else {
                     ScrollViewReader { heroScrollProxy in
                         ScrollView {
@@ -1328,7 +1340,7 @@ public struct HomeView: View {
     private enum FocusHomeRowSource {
         case home(HomeRow)
         case section(HomeLibrarySectionGroup.Row)
-        case discover([MediaItem])
+        case discover([MediaItem], isLoading: Bool)
         case notice(HomeContentNotice)
     }
 
@@ -1336,7 +1348,9 @@ public struct HomeView: View {
     /// library, each paired with what the hero needs to know about it.
     private func focusHomeRows(
         rows: [HomeRow],
-        content: HomeViewModel.Content
+        content: HomeViewModel.Content,
+        discoverItems: [MediaItem],
+        discoverState: HomeHeroSlotState
     ) -> [(row: FocusHeroRow, source: FocusHomeRowSource)] {
         let seriesArtwork = visibility.continueWatchingShowsSeriesArtwork
         func entry(_ row: HomeRow) -> (row: FocusHeroRow, source: FocusHomeRowSource) {
@@ -1367,13 +1381,17 @@ public struct HomeView: View {
             result.insert((FocusHeroRow(id: "home-notice", itemIDs: [], leadItem: nil), .notice(notice)), at: 0)
         }
         // After Continue Watching, or first when there is none.
-        if focusHeroSettings?.showsDiscoverRow == true, !heroRuntime.items.isEmpty {
-            let discover = heroRuntime.items
+        if discoverState != .hidden {
+            let discover = discoverItems
             let continueWatching = result.firstIndex { $0.row.id == "home-\(HomeRowKind.continueWatching)" }
             let index = continueWatching.map { $0 + 1 } ?? result.firstIndex { $0.row.id != "home-notice" } ?? result.count
             result.insert((
-                FocusHeroRow(id: "home-discover", itemIDs: discover.map(\.stablePresentationID), leadItem: discover.first, items: discover),
-                .discover(discover)
+                FocusHeroRow(
+                    id: "home-discover", itemIDs: discover.map(\.stablePresentationID),
+                    leadItem: discover.first, items: discover,
+                    isPlaceholder: discoverState == .placeholder
+                ),
+                .discover(discover, isLoading: discoverState == .placeholder)
             ), at: index)
         }
         return result
@@ -1439,7 +1457,11 @@ public struct HomeView: View {
                     .redacted(reason: .placeholder)
                 } else {
                     MediaRowView(
-                        title: Text(verbatim: "Recently Added"),
+                        title: settings.showsDiscoverRow ? Text(LocalizedStringResource(
+                            "home.row.discover",
+                            defaultValue: "Discover",
+                            comment: "Name of a Home row of recommended titles from outside the user's libraries."
+                        )) : Text(verbatim: "Recently Added"),
                         items: [],
                         style: .poster,
                         loadingPlaceholderCount: 8,
@@ -1457,12 +1479,16 @@ public struct HomeView: View {
     private func focusHeroHome(
         rows: [HomeRow],
         content: HomeViewModel.Content,
-        settings: HeroSettings
+        settings: HeroSettings,
+        discoverItems: [MediaItem],
+        discoverState: HomeHeroSlotState
     ) -> some View {
         #if os(tvOS)
         let entries = focusHomeRows(
             rows: rows,
-            content: content
+            content: content,
+            discoverItems: discoverItems,
+            discoverState: discoverState
         )
         let sources = Dictionary(
             entries.map { ($0.row.id, $0.source) },
@@ -1560,7 +1586,7 @@ public struct HomeView: View {
                 notice: notice,
                 onReload: { Task { await viewModel.load() } }
             )
-        case .discover(let items):
+        case .discover(let items, let isLoading):
             MediaRowView(
                 title: Text(LocalizedStringResource(
                     "home.row.discover",
@@ -1573,6 +1599,8 @@ public struct HomeView: View {
                 onFocusEntered: reporter.entered,
                 onFocusChange: onFocusChange,
                 onCardFocused: reporter.cardFocused,
+                loadingPlaceholderCount: isLoading ? 8 : 0,
+                reservesLoadingFocus: reservesLoadingFocus,
                 onSelect: onSelectItem
             )
         case .section(let row):

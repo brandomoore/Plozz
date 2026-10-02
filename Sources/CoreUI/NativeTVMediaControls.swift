@@ -82,7 +82,7 @@ final class NativeTVMediaCoordinator {
     }
 
     func observe(_ focused: Bool) {
-        if focus.observed.wrappedValue != focused { focus.observed.wrappedValue = focused }
+        if focus.observation.isFocused != focused { focus.observation.isFocused = focused }
     }
 
     func activate() { action() }
@@ -367,6 +367,9 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         view.contentSize = size
         view.hostedOverlay = overlayConfiguration(in: context).makeContentView()
         if let overlay = view.hostedOverlay {
+            // Native focus and row scrolling move the same logo/badge composite.
+            overlay.layer.shouldRasterize = true
+            overlay.layer.rasterizationScale = context.environment.displayScale
             let container = view.imageView.overlayContentView
             container.addSubview(overlay)
             overlay.translatesAutoresizingMaskIntoConstraints = false
@@ -403,6 +406,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         view.accessibilityValue = subtitle
         view.accessibilityTraits.insert(.button)
         view.hostedOverlay?.configuration = overlayConfiguration(in: context)
+        view.hostedOverlay?.layer.rasterizationScale = context.environment.displayScale
         let prepared = context.coordinator.presentationImage(
             image, treatment: treatment, size: view.contentSize, scale: context.environment.displayScale
         )

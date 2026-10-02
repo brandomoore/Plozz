@@ -103,13 +103,34 @@ Preview headings have a 16pt inter-row spacer above them and more room below
 before their cards. Only the active heading lifts, preserving its focus
 clearance. That movement is a title-only drawing offset, not a rail
 relayout. Native card/shadow drawing bounds remain intact.
-Vertical movement uses a real `ScrollView` and UIKit's content-offset animation,
-not a SwiftUI animation of the entire stack. Focus still chooses the row and its
+Vertical movement uses a real `ScrollView` with a compositor-backed UIKit spring,
+not a main-thread display link advancing the content offset. Repeated presses
+retarget from the current presentation position and carry the spring's existing
+velocity; restarting an ease-in-out curve from rest makes rapid navigation stall
+between rows. UIKit's bounds interpolation needs the normalized scalar (`dx`)
+velocity, even for a vertical offset. The viewport, mask and hero-column surface
+use native springs with the same timing but independent velocities. The height
+stays stationary through equal-height poster rows; entering Continue Watching
+must not inject the viewport's accumulated speed into that new height change.
+An unchanged height also leaves its in-flight animation running. Separate SwiftUI
+timing can visibly lag the viewport between short cards and tall posters.
+The lifted heading retains the same nonbouncing spring timing.
+Focus still chooses the row and its
 measured bottom edge determines the exact destination, preserving the hero,
 heading positions and next-row peek. Only the outer viewport's automatic
 scrolling is disabled to avoid a second competing focus-reveal animation;
 horizontal rows stay native and retain their focus and scroll state. The rows
-remain in the original SwiftUI hierarchy, including navigation and accessibility.
+remain SwiftUI content in stable native hosts, including navigation and accessibility.
+Each row retains its intrinsic vertical size rather than filling a host's height
+proposal, including the custom-focus horizontal scroll views.
+Hosts forward the public profile, styling and media-action environment values;
+copying the entire SwiftUI environment also copies internal accessibility state
+from the parent hosting tree and hides the hosted content from accessibility.
+Vertical row owners remain in a `VStack`: the native model offset reaches its
+destination before the presentation viewport does. A `LazyVStack` would recycle
+rows that are still visibly passing through the viewport, especially during
+repeated presses and reversals. Individual horizontal rails keep their normal
+card windowing; preserving vertical owners does not realize every library item.
 Repeated updates to an unchanged destination never cancel an in-flight scroll,
 and Reduce Motion moves directly to the same anchor.
 The first row rests at native scroll offset zero. Its measured height is
@@ -120,8 +141,11 @@ first row. The UI regression checks actual painted chrome, not just its
 accessibility presence, including sidebar and detail returns.
 The schedule badge sits 16pt above the logo slot; Showcase
 constrains even tall logos to that slot rather than letting artwork grow into
-the badge. The outgoing row fades over 64pt, with its bottom edge trimmed so no
-strip remains above the next row. Earlier rows retain native Up eligibility;
+the badge. The outgoing row tucks upward by up to 110pt behind the 24pt mask fade so no
+bottom strip remains above the next row. This offset has its own native spring:
+deriving it from the scroll view's logical geometry makes the returning row
+release all 110pt immediately, ahead of the moving presentation viewport.
+Earlier rows retain native Up eligibility;
 making their entire mask transparent would break that navigation. Showcase's
 backdrop uses wider leading and bottom gradients without lengthening its crossfade.
 Crossfade is the only Showcase backdrop transition. The retired slide preference
@@ -135,13 +159,23 @@ margins settle after realization and draw outside that slot; feeding their
 changing height into a lazy row shifts both the pinned row and hero during deep
 horizontal scrolling. Hosted native-poster coverage checks this before and
 after layout, and the Home UI regression traverses all 75 fixture cards.
+Native poster overlays cache their logo/badge/progress composite at the current
+display scale. Only that hosted overlay is rasterized; native artwork and focus
+effects remain live, and changes to overlay content invalidate the cached image.
+
+Discover hydrates and displays its saved candidates with the same featured-only
+configuration used by Showcase's live curation. Without eligible cached content,
+its stable row slot shows loading posters until curation completes, rather than
+inserting a new row during navigation. A completed empty result removes the slot;
+disabling Discover does not reserve it. Lower loading rows never take focus.
 
 Metadata belongs to the current Home view-model identity (profile, account set,
 and credential generation), never a process-global cache. Cached details only
 fill presentation gaps in the current row record: watched/resume state, source
 identity, availability, and the selected series remain current. Background
 enrichment publishes batches of at most four, and focus-driven loads share the
-same deduplication. `FocusHeroMetadataTests` covers freshness and ownership;
+same deduplication. Each title observes only its own metadata entry, so unrelated
+enrichment does not rebuild the active hero. `FocusHeroMetadataTests` covers freshness and ownership;
 `ShowcaseNavigationTests` covers geometry and native presented-frame hitches.
 For existing-library coverage, the guarded physical driver supports
 `--run-showcase-mixed`: it verifies on-screen Continue Watching, deep mixed-speed

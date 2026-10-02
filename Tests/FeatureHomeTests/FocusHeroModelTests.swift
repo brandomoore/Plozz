@@ -1,6 +1,7 @@
 #if os(tvOS)
 import XCTest
 import UIKit
+import Observation
 import CoreModels
 @testable import FeatureHome
 
@@ -78,7 +79,7 @@ final class FocusHeroModelTests: XCTestCase {
         XCTAssertEqual(model.subject?.item?.id, "dune", "The focused title stays in the hero")
     }
 
-    func testRowTopsAndTheSlotComeFromCurrentRowsOnly() {
+    func testRowTopsHeightAndConcealmentComeFromCurrentRowsOnly() {
         let model = FocusHeroModel()
         let notice = row("notice", [])
         let continueWatching = row("continue", ["tbate"])
@@ -89,22 +90,13 @@ final class FocusHeroModelTests: XCTestCase {
 
         let rows = [continueWatching, watchlist]
         XCTAssertEqual(model.top(ofRowAt: 1, in: rows, rowSpacing: 28), 434)
-        let bottom = FocusHeroLayout.rowsBottom(rowSpacing: 28)
-        XCTAssertEqual(
-            model.slotTop(in: rows, rowSpacing: 28),
-            max(FocusHeroLayout.lowestSlotTop, bottom - 406),
-            "The details end above the pinned row, not a taller one elsewhere"
-        )
+        XCTAssertEqual(model.activeHeight(in: rows), 406)
+        XCTAssertEqual(model.tuckOffsets(in: rows), ["continue": 0, "watchlist": 0])
         model.activate(watchlist, in: rows)
-        XCTAssertEqual(
-            model.slotTop(in: rows, rowSpacing: 28),
-            max(FocusHeroLayout.lowestSlotTop, bottom - 406),
-            "The details leave with the rows, not ahead of them"
-        )
-        model.advanceRows(to: 0.5)
-        XCTAssertEqual(model.slotTop(in: rows, rowSpacing: 28), max(FocusHeroLayout.lowestSlotTop, bottom - 473))
-        model.advanceRows(to: 1)
-        XCTAssertEqual(model.slotTop(in: rows, rowSpacing: 28), max(FocusHeroLayout.lowestSlotTop, bottom - 540))
+        XCTAssertEqual(model.activeHeight(in: rows), 540)
+        XCTAssertEqual(model.tuckOffsets(in: rows), ["continue": -110, "watchlist": 0])
+        model.activate(continueWatching, in: rows)
+        XCTAssertEqual(model.tuckOffsets(in: rows), ["continue": 0, "watchlist": 0])
     }
 
     func testSubPointMeasurementNoiseIsIgnored() {
@@ -112,6 +104,77 @@ final class FocusHeroModelTests: XCTestCase {
         model.record(height: 540, for: "watchlist")
         model.record(height: 540.3, for: "watchlist")
         XCTAssertEqual(model.rowHeights["watchlist"], 540)
+    }
+
+    func testNativeMotionTargetsDoNotInvalidateHeroContents() async {
+        let model = FocusHeroModel()
+        let rows = [row("continue", ["one"]), row("discover", ["two"])]
+        model.record(height: 340, for: rows[0].id)
+        model.record(height: 540, for: rows[1].id)
+        model.activate(rows[1], in: rows)
+        let invalidation = expectation(description: "Animation frames must not rebuild the hero's contents")
+        invalidation.isInverted = true
+        withObservationTracking {
+            _ = model.activeHeight(in: rows)
+            _ = model.details
+        } onChange: {
+            invalidation.fulfill()
+        }
+        for frame in 1...60 {
+            model.motion.height = 340 + 200 * CGFloat(frame) / 60
+            model.motion.applyTargets()
+        }
+        XCTAssertEqual(model.motion.height, 540)
+        await fulfillment(of: [invalidation], timeout: 0.05)
+    }
+
+    func testInitialBindingAndLateMeasurementsRefreshDrawingGeometryWithoutScrolling() {
+        let motion = FocusHeroRowMotion()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let controller = UIViewController()
+        window.rootViewController = controller
+        let viewport = UIScrollView(frame: window.bounds)
+        viewport.contentSize = CGSize(width: 1920, height: 3000)
+        let position = FocusHeroNativeScrollPosition.PositionView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let mask = UIView()
+        motion.mask = mask
+        motion.height = 340
+        position.rowMotion = motion
+        controller.view.addSubview(viewport)
+        viewport.addSubview(position)
+        window.isHidden = false
+        defer { position.stop(); window.isHidden = true }
+        position.move(to: 0, rowID: "continue")
+        let maskBottom = FocusHeroLayout.rowsBottom(rowSpacing: FocusHeroLayout.rowSpacing)
+            - FocusHeroLayout.activeTitleLift - 6 - FocusHeroLayout.fadeBand
+        XCTAssertEqual(mask.transform.ty, maskBottom - 340)
+        motion.height = 540
+        position.move(to: 0, rowID: "continue")
+        XCTAssertEqual(viewport.contentOffset.y, 0)
+        XCTAssertEqual(mask.transform.ty, maskBottom - 540,
+                       "The first row's height can change while its native scroll offset remains zero.")
+    }
+
+    func testNativeSpringRejectsCompetingFocusScrollBeforeItCanBePresented() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let controller = UIViewController()
+        window.rootViewController = controller
+        let viewport = UIScrollView(frame: window.bounds)
+        viewport.contentSize = CGSize(width: 1920, height: 3000)
+        let position = FocusHeroNativeScrollPosition.PositionView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        controller.view.addSubview(viewport)
+        viewport.addSubview(position)
+        window.isHidden = false
+        defer { position.stop(); window.isHidden = true }
+        position.move(to: 340, rowID: "continue")
+        position.move(to: 840, rowID: "posters")
+        let nativePosition = viewport.contentOffset.y
+        XCTAssertEqual(nativePosition, 840, "Only the compositor interpolates intermediate frames.")
+        viewport.setContentOffset(CGPoint(x: 20, y: 600), animated: false)
+        XCTAssertEqual(viewport.contentOffset.x, 0)
+        XCTAssertEqual(viewport.contentOffset.y, nativePosition, accuracy: 0.5,
+                       "UIKit's focus reveal must not replace the owned animation's destination.")
+        settle(viewport, at: 840)
     }
 
     func testScrollOriginKeepsTheFirstRowAtZeroWithoutMovingRowAnchors() {
@@ -161,12 +224,10 @@ final class FocusHeroModelTests: XCTestCase {
         XCTAssertTrue(horizontal.isScrollEnabled, "Pinning must not disable native horizontal navigation.")
 
         position.move(to: 840, rowID: "posters")
+        let requestCount = viewport.requests.count
         position.move(to: 840, rowID: "posters")
+        XCTAssertEqual(viewport.requests.count, requestCount, "An unchanged destination must not restart the move.")
         settle(viewport, at: 840)
-        if !UIAccessibility.isReduceMotionEnabled {
-            XCTAssertGreaterThan(viewport.steps.count, 3, "Row changes move a frame at a time on the rows' spring.")
-            XCTAssertEqual(viewport.steps, viewport.steps.sorted(), "An unchanged destination does not restart the move.")
-        }
 
         position.move(to: 340, rowID: "continue")
         settle(viewport, at: 340)
@@ -179,21 +240,12 @@ final class FocusHeroModelTests: XCTestCase {
     }
 
     private func settle(_ viewport: UIScrollView, at y: CGFloat) {
-        // Long enough for the spring to finish, past the last sub-pixel steps
-        // the viewport rounds away.
         RunLoop.main.run(until: Date().addingTimeInterval(1))
         XCTAssertEqual(viewport.contentOffset.y, y)
     }
 
     private final class ScrollRecorder: UIScrollView {
         var requests: [(point: CGPoint, animated: Bool)] = []
-        /// Offsets set directly, as the row spring does a frame at a time.
-        var steps: [CGFloat] = []
-
-        override var contentOffset: CGPoint {
-            didSet { steps.append(contentOffset.y) }
-        }
-
         override func setContentOffset(_ contentOffset: CGPoint, animated: Bool) {
             requests.append((contentOffset, animated))
             super.setContentOffset(contentOffset, animated: animated)
@@ -243,6 +295,36 @@ final class FocusHeroModelTests: XCTestCase {
         }
         XCTAssertEqual(metadata.item(for: sparse).genres, ["Animation"])
         XCTAssertEqual(metadata.item(for: sparse).officialRating, "TV-14")
+    }
+
+    func testPrefetchingAnotherTitleDoesNotInvalidateTheVisibleMetadata() async {
+        let metadata = FocusHeroMetadata()
+        let focused = item("visible")
+        let invalidation = expectation(description: "Background metadata must not rebuild the current title")
+        invalidation.isInverted = true
+        withObservationTracking {
+            _ = metadata.item(for: focused)
+            _ = metadata.hasDetails(for: focused)
+        } onChange: {
+            invalidation.fulfill()
+        }
+        await metadata.load(item("background")) { items in
+            items.map { var full = $0; full.genres = ["Drama"]; return full }
+        }
+        XCTAssertFalse(metadata.hasDetails(for: focused))
+        await fulfillment(of: [invalidation], timeout: 0.05)
+
+        let arrival = expectation(description: "The visible title updates when its own metadata arrives")
+        withObservationTracking {
+            _ = metadata.item(for: focused)
+        } onChange: {
+            arrival.fulfill()
+        }
+        await metadata.load(focused) { items in
+            items.map { var full = $0; full.genres = ["Animation"]; return full }
+        }
+        await fulfillment(of: [arrival], timeout: 0.2)
+        XCTAssertEqual(metadata.item(for: focused).genres, ["Animation"])
     }
 
     func testAFocusThatMovesOnLoadsNothingAndCanLoadLater() async {
