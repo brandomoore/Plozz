@@ -445,13 +445,31 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                     for: request,
                     sourceURL: url
                 )
+                let boundedProbe = PlozzigenRemoteProbePolicy.apply(to: &options, request: request, url: url)
+                if boundedProbe {
+                    HandoffDiagnostics.emit("aether PROBE_POLICY kind=bounded-remote-av1")
+                }
                 stage = "engine.load"
-                try await engine.load(
+                let probe = try await engine.load(
                     url: url,
                     startPosition: startPosition > 0 ? startPosition : nil,
                     options: options,
                     audioSourceStreamIndex: request.preferredAudioTrackID.map(Int32.init)
                 )
+                if boundedProbe, !PlozzigenRemoteProbePolicy.isComplete(probe, for: request) {
+                    guard probePublicationGate.accepts(probeGeneration), !Task.isCancelled else { return }
+                    HandoffDiagnostics.emit("aether PROBE_RETRY reason=incomplete-remote-matroska")
+                    PlozzLog.playback.info("Bounded remote MKV probe missed required media facts; retrying the full probe.")
+                    options.probesize = nil
+                    options.maxAnalyzeDuration = nil
+                    stage = "engine.fullProbeRetry"
+                    try await engine.load(
+                        url: url,
+                        startPosition: startPosition > 0 ? startPosition : nil,
+                        options: options,
+                        audioSourceStreamIndex: request.preferredAudioTrackID.map(Int32.init)
+                    )
+                }
             }
             // Engine state can already be `.playing` by the time load returns,
             // which advances the adapter status to `.ready`. Generation truth,

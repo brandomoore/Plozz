@@ -10,6 +10,85 @@ import XCTest
 
 @MainActor
 final class NativeSubtitlePresentationTests: XCTestCase {
+    func testRemoteASSStartupPreservesTracksOnABoundedLink() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PLOZZ_ASS_HTTP_REPRO"] else {
+            throw XCTSkip("Requires an explicitly supplied local media fixture for HTTP startup reproduction.")
+        }
+        let mediaURL = path.hasPrefix("cache:")
+            ? try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
+                .appendingPathComponent(String(path.dropFirst("cache:".count)))
+            : URL(fileURLWithPath: path)
+        if path == "cache:apothecary-startup.mkv" {
+            addTeardownBlock { try FileManager.default.removeItem(at: mediaURL) }
+        }
+        try await checkRemoteASS(mediaURL, bytesPerSecond: 512 * 1024, sustainedPlayback: false)
+        // The opening itself peaks near 16 Mbps despite the file's 2.7 Mbps average.
+        try await checkRemoteASS(mediaURL, bytesPerSecond: 2_560 * 1024, sustainedPlayback: true)
+    }
+
+    private func checkRemoteASS(_ mediaURL: URL, bytesPerSecond: Int, sustainedPlayback: Bool) async throws {
+        let server = try SubtitleFixtureServer(fileURL: mediaURL, bytesPerSecond: bytesPerSecond)
+        let port = try await server.start()
+        defer { server.stop() }
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/media.mkv"))
+        let engine = try PlozzigenVideoEngine()
+        engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        let subtitles = LiveSubtitleModel()
+        subtitles.beginLiveFeed()
+        engine.onSubtitleCues = { subtitles.updateLiveCues($0) }
+        let window = try await mount(engine, subtitles: subtitles)
+        defer { engine.stop(); window.isHidden = true; window.rootViewController = nil }
+        var playback = request(url, tracks: [])
+        playback.sourceMetadata = .init(
+            container: "mkv", video: .init(codec: "av1", width: 1920, height: 1080),
+            audio: .init(codec: "opus", channels: 2)
+        )
+        playback.preferredAudioLanguages = ["ja"]
+        playback.preferredAudioTrackID = 1
+        playback.audioTracks = [
+            .init(id: 1, kind: .audio, displayTitle: "Japanese", language: "jpn", codec: "opus", channels: 2),
+            .init(id: 2, kind: .audio, displayTitle: "English", language: "eng", codec: "eac3", channels: 2)
+        ]
+        playback.subtitleTracks = [
+            .init(id: 3, kind: .subtitle, displayTitle: "Full", codec: "ass"),
+            .init(id: 4, kind: .subtitle, displayTitle: "Signs", codec: "ass")
+        ]
+        let started = ContinuousClock.now
+        let load = Task { await engine.load(request: playback, startPosition: 12) }
+        let deadline = started + .seconds(35)
+        while (!engine.isPlaybackPositionReady || engine.currentTime < 12.5), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        print("REMOTE_ASS_STARTUP bytesPerSecond=\(bytesPerSecond) elapsed=\(started.duration(to: .now)) bytes=\(server.transferredBytes) ready=\(engine.isPlaybackPositionReady)")
+        guard engine.isPlaybackPositionReady else {
+            load.cancel()
+            engine.stop()
+            await load.value
+            return XCTFail("Remote startup exceeded the production fallback deadline")
+        }
+        await load.value
+        XCTAssertLessThan(started.duration(to: .now), .seconds(30))
+        XCTAssertEqual(engine.audioTracks.count, 2)
+        XCTAssertEqual(engine.subtitleTracks.filter { $0.codec == "ass" }.count, 2)
+        XCTAssertEqual(engine.currentAudioTrackID, 1)
+        XCTAssertGreaterThanOrEqual(engine.currentTime, 12.5)
+        guard sustainedPlayback else { return }
+        engine.selectSubtitleTrack(try XCTUnwrap(engine.subtitleTracks.first { $0.id == 3 }))
+        try await waitUntil(timeout: 15) { subtitles.primary.contains(where: \.isImage) }
+        try await Task.sleep(for: .seconds(3))
+        let playbackStart = engine.currentTime
+        let droppedStart = engine.liveTelemetry?.droppedFrameCount
+        var frameRates: [Double] = []
+        for _ in 0..<10 {
+            try await Task.sleep(for: .seconds(1))
+            if let fps = engine.liveTelemetry?.observedFps { frameRates.append(fps) }
+        }
+        let meanFPS = frameRates.isEmpty ? 0 : frameRates.reduce(0, +) / Double(frameRates.count)
+        print("REMOTE_ASS_PLAYBACK advance=\(engine.currentTime - playbackStart) meanFPS=\(meanFPS) droppedStart=\(String(describing: droppedStart)) droppedEnd=\(String(describing: engine.liveTelemetry?.droppedFrameCount))")
+        XCTAssertGreaterThan(engine.currentTime - playbackStart, 8.5)
+        XCTAssertGreaterThan(meanFPS, 20, "1080p/24 AV1 with authored ASS must remain playable after opening")
+    }
+
     func testLocalEmbeddedASSKeepsAuthoredGraphicsThroughSeekAndOff() async throws {
         guard let path = ProcessInfo.processInfo.environment["PLOZZ_ASS_MEDIA_REPRO"] else {
             throw XCTSkip("Requires an explicitly supplied local ASS media fixture.")
@@ -630,11 +709,24 @@ private final class SubtitleFixtureServer: @unchecked Sendable {
     private let files: [String: Data]
     private let queue = DispatchQueue(label: "SubtitleFixtureServer")
     private var connections: [NWConnection] = []
+    private var stopped = false
+    private var sentBytes = 0
+    private let bytesPerSecond: Int?
+    var transferredBytes: Int { queue.sync { sentBytes } }
 
     init(directory: URL) throws {
+        bytesPerSecond = nil
         files = try Dictionary(uniqueKeysWithValues: FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: nil
         ).map { ($0.lastPathComponent, try Data(contentsOf: $0)) })
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
+        listener = try NWListener(using: parameters)
+    }
+
+    init(fileURL: URL, bytesPerSecond: Int) throws {
+        self.bytesPerSecond = bytesPerSecond
+        files = ["media.mkv": try Data(contentsOf: fileURL, options: .mappedIfSafe)]
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
@@ -667,6 +759,7 @@ private final class SubtitleFixtureServer: @unchecked Sendable {
     func stop() {
         listener.cancel()
         queue.sync {
+            stopped = true
             connections.forEach { $0.cancel() }
             connections.removeAll()
         }
@@ -684,7 +777,7 @@ private final class SubtitleFixtureServer: @unchecked Sendable {
             let path = header.split(separator: " ").dropFirst().first ?? ""
             let name = path.split(separator: "/").last.map(String.init) ?? ""
             let body = files[name] ?? Data()
-            var payload = body
+            var payloadRange = 0..<body.count
             var status = files[name] == nil ? "404 Not Found" : "200 OK"
             var contentRange = ""
             if files[name] != nil,
@@ -693,11 +786,11 @@ private final class SubtitleFixtureServer: @unchecked Sendable {
                }) {
                 let value = rangeLine.dropFirst("range:".count).trimmingCharacters(in: .whitespaces)
                 if let range = byteRange(value, count: body.count) {
-                    payload = body.subdata(in: range)
+                    payloadRange = range
                     status = "206 Partial Content"
                     contentRange = "Content-Range: bytes \(range.lowerBound)-\(range.upperBound - 1)/\(body.count)\r\n"
                 } else {
-                    payload = Data()
+                    payloadRange = 0..<0
                     status = "416 Range Not Satisfiable"
                     contentRange = "Content-Range: bytes */\(body.count)\r\n"
                 }
@@ -705,10 +798,30 @@ private final class SubtitleFixtureServer: @unchecked Sendable {
             let type = name.hasSuffix(".m3u8") ? "application/vnd.apple.mpegurl"
                 : name.hasSuffix(".vtt") ? "text/vtt"
                 : name.hasSuffix(".srt") ? "application/x-subrip" : "video/mp4"
-            let headers = "HTTP/1.1 \(status)\r\nContent-Type: \(type)\r\nAccept-Ranges: bytes\r\n\(contentRange)Content-Length: \(payload.count)\r\nConnection: close\r\n\r\n"
-            let response = Data(headers.utf8) + (header.hasPrefix("HEAD ") ? Data() : payload)
-            connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
+            let headers = "HTTP/1.1 \(status)\r\nContent-Type: \(type)\r\nAccept-Ranges: bytes\r\n\(contentRange)Content-Length: \(payloadRange.count)\r\nConnection: close\r\n\r\n"
+            if bytesPerSecond != nil, !header.hasPrefix("HEAD ") {
+                connection.send(content: Data(headers.utf8), completion: .contentProcessed { [weak self] error in
+                    guard let self, error == nil else { connection.cancel(); return }
+                    sendThrottled(connection, body: body, range: payloadRange)
+                })
+            } else {
+                let response = Data(headers.utf8) + (header.hasPrefix("HEAD ") ? Data() : body.subdata(in: payloadRange))
+                connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
+            }
         }
+    }
+
+    private func sendThrottled(_ connection: NWConnection, body: Data, range: Range<Int>) {
+        guard !stopped, !range.isEmpty, let bytesPerSecond else { connection.cancel(); return }
+        let end = min(range.upperBound, range.lowerBound + 16_384)
+        let count = end - range.lowerBound
+        connection.send(content: body.subdata(in: range.lowerBound..<end), completion: .contentProcessed { [weak self] error in
+            guard let self, error == nil else { connection.cancel(); return }
+            sentBytes += count
+            queue.asyncAfter(deadline: .now() + Double(count) / Double(bytesPerSecond)) { [weak self] in
+                self?.sendThrottled(connection, body: body, range: end..<range.upperBound)
+            }
+        })
     }
 
     private func byteRange(_ value: String, count: Int) -> Range<Int>? {

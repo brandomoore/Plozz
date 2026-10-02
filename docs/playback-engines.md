@@ -89,6 +89,31 @@ background recovery, retains the native Now Playing host across screensaver
 recovery, and avoids dispatch-pool starvation in loopback connections and source
 size probes. FFmpegBuild 3.4.x adds AV1 Dolby Vision sample-entry support.
 
+## Remote AV1 Matroska startup
+
+For HTTP(S) original-file AV1 in MKV/Matroska/WebM with provider-known video
+dimensions, Plozz bounds Aether's initial stream-information analysis to 2 MiB
+and two seconds of media analysis. The upstream default is 50 MiB / 60 seconds;
+font-rich files can spend that budget chasing unresolvable attachment metadata
+and hit Plozz's 30-second startup watchdog before presenting video.
+
+This is an analysis budget, not a total download cap or wall-clock deadline.
+Container headers, read-ahead, seeking, and subtitle readers can transfer more.
+Before accepting the bounded result, the adapter checks the declared video codec
+and dimensions, audio parameters and selected track, all declared embedded
+audio/subtitle indexes, and ASS headers. An incomplete result is logged and gets
+one ordinary full-probe retry, fenced against cancellation and replacement.
+External sidecars are not expected in the demuxed inventory. Local files, live
+streams, server renditions, other codecs, and sources without sufficient metadata
+retain their existing probe behavior.
+
+`PLOZZ_ASS_HTTP_REPRO` enables the hosted full-file HTTP regression using a local
+two-audio/two-ASS-track fixture; media is never checked in. It separately measures
+startup over a 512 KiB/s connection and sustained AV1/ASS playback over a
+2.5 MiB/s connection. The distinction matters: the reproduction averages about
+2.7 Mbps but its opening peaks near 16 Mbps. Reducing probe work cannot make a
+4 Mbps connection sustain those peaks.
+
 ## HDR10+ source preservation
 
 An HDR10-capable playback path accepts HDR10+ source files without requesting a
