@@ -13,14 +13,13 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
             for performance in [false, true] {
                 for focused in [false, true] {
                     let background = Color(red: 0.15, green: 0.35, blue: 0.6)
-                    let plain = try await render(
-                        in: window, focused: focused, performance: performance,
-                        background: background, segments: []
-                    )
-                    let frame = try await render(
+                    let model = showTrack(
                         in: window, focused: focused, performance: performance,
                         background: background
                     )
+                    let plain = try await render(in: window)
+                    model.skipSegments.segments = [.init(kind: .intro, start: 12.5, end: 87.5)]
+                    let frame = try await render(in: window)
                     let top = focused ? 530 : 534
                     let bottom = focused ? 550 : 546
                     for y in top..<bottom {
@@ -31,7 +30,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                         for x in [640, 960, 1280] {
                             for channel in 0..<3 {
                                 XCTAssertEqual(Int(frame.color(x, y)[channel]), Int(plain.color(x, y)[channel]), accuracy: 1,
-                                               "The sections retain the original played, buffered, and unplayed fills.")
+                                               "The sections retain the original played, buffered, and unplayed fills. flat=\(performance) focused=\(focused)")
                             }
                         }
                     }
@@ -39,10 +38,8 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                     XCTAssertNotEqual(frame.color(483, 540), frame.color(483, 450))
                     XCTAssertEqual(frame.color(832, 540), [255, 255, 255])
                     attach(frame.image, name: "Rounded sections - \(performance ? "flat" : "glass") - \(focused ? "focused" : "normal")")
-                    let crossing = try await render(
-                        in: window, focused: focused, performance: performance,
-                        background: background, segments: [.init(kind: .intro, start: 40, end: 60)]
-                    )
+                    model.skipSegments.segments = [.init(kind: .intro, start: 40, end: 60)]
+                    let crossing = try await render(in: window)
                     XCTAssertEqual(crossing.color(832, 540), [255, 255, 255], "A boundary never cuts through the playhead.")
                 }
             }
@@ -60,6 +57,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.overrideUserInterfaceStyle = .dark
         defer {
             window.isHidden = true
             window.rootViewController = nil
@@ -68,18 +66,16 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
         try await body(window)
     }
 
-    private func render(
+    private func showTrack(
         in window: UIWindow, focused: Bool, performance: Bool,
-        background: Color,
-        segments: [MediaSegment] = [.init(kind: .intro, start: 12.5, end: 87.5)]
-    ) async throws -> Frame {
+        background: Color
+    ) -> PlayerControlsModel {
         let model = PlayerControlsModel()
         model.duration = 100
         model.currentSeconds = 40
         model.bufferedSeconds = 60
         model.controlsVisible = true
         model.controlBarVisible = !focused
-        model.skipSegments.segments = segments
         let host = UIHostingController(rootView:
             background
                 .overlay {
@@ -87,12 +83,32 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                         .frame(width: 1280, height: 44)
                 }
                 .ignoresSafeArea()
+                .environment(\.colorScheme, .dark)
                 .environment(\.plozzReducePanelGlass, performance)
         )
         window.rootViewController = host
         window.makeKeyAndVisible()
         window.layoutIfNeeded()
-        try await Task.sleep(for: .milliseconds(100))
+        return model
+    }
+
+    private func render(in window: UIWindow) async throws -> Frame {
+        // Native glass can still be transitioning after the first completed layout.
+        let deadline = ContinuousClock.now + .seconds(3)
+        var frame = try capture(in: window)
+        var stableFrames = 0
+        while ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+            let next = try capture(in: window)
+            stableFrames = next.bytes == frame.bytes ? stableFrames + 1 : 0
+            frame = next
+            if stableFrames >= 3 { return frame }
+        }
+        XCTFail("The native scrub-track material did not settle before the snapshot deadline.")
+        return frame
+    }
+
+    private func capture(in window: UIWindow) throws -> Frame {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.preferredRange = .standard
