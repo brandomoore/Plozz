@@ -1,6 +1,6 @@
 import AVFoundation
 import CoreModels
-import EnginePlozzigen
+@testable import EnginePlozzigen
 import Network
 import SwiftUI
 import UIKit
@@ -10,6 +10,52 @@ import XCTest
 
 @MainActor
 final class NativeSubtitlePresentationTests: XCTestCase {
+    func testLocalASSAnimationFrameBudget() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PLOZZ_ASS_ANIMATION_REPRO"] else {
+            throw XCTSkip("Requires the explicitly supplied private ASS animation fixture.")
+        }
+        struct Input: Decodable {
+            struct Event: Decodable { let packet: String; let start: Double; let end: Double }
+            struct Font: Decodable { let name: String; let path: String }
+            let header: String
+            let events: [Event]
+            let fonts: [Font]
+        }
+        let url = path.hasPrefix("cache:")
+            ? try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
+                .appendingPathComponent(String(path.dropFirst("cache:".count)))
+            : URL(fileURLWithPath: path)
+        if path == "cache:ass-animation-fixture/input.json" {
+            addTeardownBlock { try FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        }
+        let input = try JSONDecoder().decode(Input.self, from: Data(contentsOf: url))
+        let document = ASSSubtitleDocument(
+            identity: "animation-repro", header: input.header,
+            fonts: try input.fonts.map {
+                let font = $0.path.hasPrefix("/") ? URL(fileURLWithPath: $0.path)
+                    : url.deletingLastPathComponent().appendingPathComponent($0.path)
+                return .init(name: $0.name, data: try Data(contentsOf: font))
+            },
+            size: .init(width: 1920, height: 1080)
+        )
+        let events = input.events.map { ASSSubtitleEvent(packet: $0.packet, start: $0.start, end: $0.end) }
+        let rasterizer = ASSSubtitleRasterizer()
+        for start in [5.0, 20, 40] {
+            _ = try await rasterizer.render(document: document, events: events, time: start)
+            var samples: [Double] = []
+            for frame in 1...60 {
+                let before = CACurrentMediaTime()
+                _ = try await rasterizer.render(
+                    document: document, events: events, time: start + Double(frame) / 60
+                )
+                samples.append((CACurrentMediaTime() - before) * 1_000)
+            }
+            samples.sort()
+            print("ASS_ANIMATION start=\(start) meanMs=\(samples.reduce(0,+)/Double(samples.count)) p95Ms=\(samples[56])")
+            XCTAssertLessThan(samples[56], 33.3, "Animated ASS must fit a 30fps frame budget")
+        }
+    }
+
     func testRemoteASSStartupPreservesTracksOnABoundedLink() async throws {
         guard let path = ProcessInfo.processInfo.environment["PLOZZ_ASS_HTTP_REPRO"] else {
             throw XCTSkip("Requires an explicitly supplied local media fixture for HTTP startup reproduction.")
@@ -35,7 +81,11 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
         let subtitles = LiveSubtitleModel()
         subtitles.beginLiveFeed()
-        engine.onSubtitleCues = { subtitles.updateLiveCues($0) }
+        var subtitleFrameTimes: [CFTimeInterval] = []
+        engine.onSubtitleCues = {
+            subtitles.updateLiveCues($0)
+            if $0.contains(where: \.isImage) { subtitleFrameTimes.append(CACurrentMediaTime()) }
+        }
         let window = try await mount(engine, subtitles: subtitles)
         defer { engine.stop(); window.isHidden = true; window.rootViewController = nil }
         var playback = request(url, tracks: [])
@@ -79,6 +129,8 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         let playbackStart = engine.currentTime
         let droppedStart = engine.liveTelemetry?.droppedFrameCount
         var frameRates: [Double] = []
+        subtitleFrameTimes = []
+        let animationStart = CACurrentMediaTime()
         for _ in 0..<10 {
             try await Task.sleep(for: .seconds(1))
             if let fps = engine.liveTelemetry?.observedFps { frameRates.append(fps) }
@@ -87,6 +139,19 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         print("REMOTE_ASS_PLAYBACK advance=\(engine.currentTime - playbackStart) meanFPS=\(meanFPS) droppedStart=\(String(describing: droppedStart)) droppedEnd=\(String(describing: engine.liveTelemetry?.droppedFrameCount))")
         XCTAssertGreaterThan(engine.currentTime - playbackStart, 8.5)
         XCTAssertGreaterThan(meanFPS, 20, "1080p/24 AV1 with authored ASS must remain playable after opening")
+        let subtitleFPS = Double(subtitleFrameTimes.count) / (CACurrentMediaTime() - animationStart)
+        let gaps = zip(subtitleFrameTimes, subtitleFrameTimes.dropFirst()).map { $1 - $0 }.sorted()
+        print("ASS_PRESENTATION fps=\(subtitleFPS) p95GapMs=\(gaps.isEmpty ? 0 : gaps[Int(Double(gaps.count-1)*0.95)]*1000)")
+        XCTAssertGreaterThan(subtitleFPS, 20, "Animated subtitle frames must reach the display loop, not just render quickly in isolation")
+        engine.pause()
+        let pausedTime = engine.subtitlePresentationTime
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(engine.subtitlePresentationTime, pausedTime, accuracy: 0.01,
+                       "The continuous subtitle clock must freeze with the actual video timebase")
+        await engine.seek(to: 3)
+        XCTAssertEqual(engine.subtitlePresentationTime, 3, accuracy: 0.15)
+        engine.selectSubtitleTrack(nil)
+        try await waitUntil { subtitles.primary.isEmpty }
     }
 
     func testLocalEmbeddedASSKeepsAuthoredGraphicsThroughSeekAndOff() async throws {

@@ -2,7 +2,7 @@ import CoreGraphics
 import CoreModels
 import CoreNetworking
 import Foundation
-import SwiftLibass
+import Libass
 
 struct ASSSubtitleEvent: Hashable, Sendable {
     let packet: String
@@ -169,7 +169,9 @@ actor ASSSubtitleRasterizer {
                 bitsPerComponent: 8, bytesPerRow: Int(bounds.width) * 4,
                 space: CGColorSpace(name: CGColorSpace.sRGB)!,
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else { throw ASSSubtitleRenderError.allocation }
+            ), let output = context.data?.assumingMemoryBound(to: UInt8.self) else {
+                throw ASSSubtitleRenderError.allocation
+            }
             pointer = first
             while let image = pointer?.pointee {
                 defer { pointer = image.next }
@@ -181,27 +183,17 @@ actor ASSSubtitleRasterizer {
                       Int64(image.stride) * Int64(image.h) <= 64 * 1_024 * 1_024 else {
                     throw ASSSubtitleRenderError.invalidBitmap
                 }
-                // libass's final row is not necessarily padded to stride.
-                let count = Int(image.stride) * (Int(image.h) - 1) + Int(image.w)
-                let data = Data(bytes: bitmap, count: count)
-                guard let provider = CGDataProvider(data: data as CFData),
-                      let mask = CGImage(
-                        width: Int(image.w), height: Int(image.h), bitsPerComponent: 8,
-                        bitsPerPixel: 8, bytesPerRow: Int(image.stride),
-                        space: CGColorSpaceCreateDeviceGray(), bitmapInfo: [],
-                        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
-                      ) else { throw ASSSubtitleRenderError.invalidBitmap }
-                let color = image.color
-                let target = CGRect(x: rect.minX - bounds.minX, y: bounds.maxY - rect.maxY,
-                                    width: rect.width, height: rect.height)
-                context.saveGState()
-                context.clip(to: target, mask: mask)
-                context.setFillColor(red: CGFloat((color >> 24) & 255) / 255,
-                                     green: CGFloat((color >> 16) & 255) / 255,
-                                     blue: CGFloat((color >> 8) & 255) / 255,
-                                     alpha: CGFloat(255 - (color & 255)) / 255)
-                context.fill(target)
-                context.restoreGState()
+                let clipped = rect.intersection(bounds)
+                guard !clipped.isEmpty, !clipped.isNull else { continue }
+                let maskOffset = Int(clipped.minY - rect.minY) * Int(image.stride)
+                    + Int(clipped.minX - rect.minX)
+                let outputOffset = Int(clipped.minY - bounds.minY) * context.bytesPerRow
+                    + Int(clipped.minX - bounds.minX) * 4
+                plozz_ass_blend_bitmap(
+                    output.advanced(by: outputOffset), context.bytesPerRow,
+                    bitmap.advanced(by: maskOffset), Int(image.stride),
+                    Int(clipped.width), Int(clipped.height), image.color
+                )
             }
             guard let image = context.makeImage() else { throw ASSSubtitleRenderError.allocation }
             return SubtitleImage(cgImage: image,
@@ -220,6 +212,7 @@ final class ASSSubtitleRenderer {
     private var revision = 0
     private var frameID = 0
     private var pending: Task<Void, Never>?
+    private var requestedTime: Double?
     private var lastTime: Double?
     private var failed = false
     var onFrame: (([SubtitleCue]) -> Void)?
@@ -232,8 +225,17 @@ final class ASSSubtitleRenderer {
     }
 
     func tick(_ time: Double) {
-        guard !failed, pending == nil, let document, time.isFinite,
-              lastTime.map({ abs(time - $0) >= 1.0 / 60 }) ?? true else { return }
+        guard !failed, document != nil, time.isFinite else { return }
+        requestedTime = time
+        renderPendingFrame()
+    }
+
+    private func renderPendingFrame() {
+        // The display link owns cadence. A hard 1/60 cutoff skips alternating
+        // ticks on 59.94 Hz displays; libass itself uses millisecond timestamps.
+        guard pending == nil, let document, let time = requestedTime,
+              lastTime.map({ abs(time - $0) >= 0.001 }) ?? true else { return }
+        requestedTime = nil
         lastTime = time
         let revision = revision, events = events, rasterizer = rasterizer
         pending = Task { [weak self] in
@@ -241,6 +243,7 @@ final class ASSSubtitleRenderer {
                 let frame = try await rasterizer.render(document: document, events: events, time: time)
                 guard let self, !Task.isCancelled, self.revision == revision else { return }
                 pending = nil
+                defer { renderPendingFrame() }
                 guard frame.changed else { return }
                 frameID &+= 1
                 onFrame?(frame.image.map {
@@ -249,6 +252,7 @@ final class ASSSubtitleRenderer {
             } catch {
                 guard let self, !Task.isCancelled, self.revision == revision else { return }
                 pending = nil
+                requestedTime = nil
                 failed = true
                 onFrame?([])
                 PlozzLog.playback.error("ASS subtitle rendering failed: \(String(describing: error))")
@@ -260,6 +264,7 @@ final class ASSSubtitleRenderer {
         revision &+= 1
         pending?.cancel()
         pending = nil
+        requestedTime = nil
         document = nil
         events = []
         lastTime = nil

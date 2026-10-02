@@ -184,13 +184,20 @@ header and embedded font attachments for libass. With source position, colour an
 emphasis enabled (and system-style matching off), the adapter composites authored layers, vector drawings, transforms and
 karaoke into bitmap cues; it does not flatten animation fragments into dialogue.
 Rendering is serialized off the main actor with at most one frame in flight,
-at source time minus the subtitle offset. Paused frames redraw only for changed
+coalescing busy display ticks to one latest timestamp rather than building a
+backlog. Animated ASS reads the software presentation timebase directly; native
+playback converts the item's continuous clock through Aether's presentation-axis
+map. Seek/wait states retain the engine's held picture time. The published status
+clock is too coarse for animation and must not throttle it to roughly five fps.
+Rendering uses source time minus the subtitle offset. Paused frames redraw only for changed
 cue data; backward seeks rebuild the retained event set. Track changes, Off,
 native presentation and teardown fence late output. The existing overlay retains
 video-rect mapping, HDR brightness and control avoidance.
 
-The pinned SwiftLibass 1.4.0 binary wrapper supplies libass 0.17.3 and its font
-dependencies without adding another FFmpeg. Raster output is capped at 1080p;
+The pinned libass 0.17.5 source target enables ARM NEON acceleration and uses
+checksum-pinned font dependencies without adding another FFmpeg or MPV. Glyph
+masks blend directly into premultiplied RGBA, avoiding one CoreGraphics mask
+allocation and clip per layer. Raster output is capped at 1080p;
 render caches and retained events are bounded. Turning off source position or
 colour uses the ordinary styled-text fallback, which discards vector drawing
 commands rather than displaying coordinates. System-style matching also retains
@@ -199,6 +206,11 @@ fonts are session-local libass data; they are never installed into the system.
 Secondary ASS and separately
 downloaded ASS files retain the existing text path; native PiP uses its plain
 subtitle rendition rather than promising authored ASS effects outside the app.
+
+The full-screen startup indicator covers an absent picture only. Actual frame
+readiness retires it even if a rewind occurs before the original resume position
+is reached; a parked displayed frame also needs no startup cover. Seek and
+buffering delays use the scrub-bar indicator, not a center overlay over video.
 
 `NativeSubtitleCueOutput` receives complete caption presentation states from
 AVFoundation, including empty states that clear the display. They are scheduled

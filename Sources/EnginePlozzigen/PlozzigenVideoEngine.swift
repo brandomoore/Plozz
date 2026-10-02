@@ -85,6 +85,17 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         if usesNativeSubtitleCues, let time = engine.currentAVPlayer?.currentTime().seconds, time.isFinite {
             return time
         }
+        if assDocument != nil, engine.hasFirstFrameReadyForDisplay, !engine.isSeeking {
+            if let timebase = engine.softwarePresentationTimebase {
+                let time = CMTimebaseGetTime(timebase).seconds
+                if time.isFinite { return time }
+            } else if let player = engine.currentAVPlayer,
+                      player.timeControlStatus != .waitingToPlayAtSpecifiedRate,
+                      let time = engine.presentationAxisMap.sourceSeconds(forItemSeconds: player.currentTime().seconds),
+                      time.isFinite {
+                return time
+            }
+        }
         return engine.sourceTime
     }
     private var nativeSubtitleOutput: NativeSubtitleCueOutput?

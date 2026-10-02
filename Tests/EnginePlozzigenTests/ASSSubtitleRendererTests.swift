@@ -2,10 +2,51 @@ import CoreGraphics
 import CoreModels
 import Foundation
 import ImageIO
+import Libass
 import XCTest
 @testable import EnginePlozzigen
 
 final class ASSSubtitleRendererTests: XCTestCase {
+    func testDirectMaskCompositingMatchesCoreGraphicsPremultipliedLayers() throws {
+        let width = 17, height = 5, stride = 24
+        let length = stride * (height - 1) + width
+        let mask = (0..<length).map { UInt8(($0 * 37) % 256) }
+        let format = CGImageAlphaInfo.premultipliedLast.rawValue
+        let reference = try XCTUnwrap(CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: format
+        ))
+        let direct = try XCTUnwrap(CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: format
+        ))
+        let output = try XCTUnwrap(direct.data?.assumingMemoryBound(to: UInt8.self))
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(mask) as CFData))
+        let image = try XCTUnwrap(CGImage(
+            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: stride,
+            space: CGColorSpaceCreateDeviceGray(), bitmapInfo: [], provider: provider,
+            decode: nil, shouldInterpolate: false, intent: .defaultIntent
+        ))
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
+        for color: UInt32 in [0xFF000000, 0x00FF007F, 0x3972C512, 0x123456FF] {
+            reference.saveGState()
+            reference.clip(to: rect, mask: image)
+            reference.setFillColor(
+                red: CGFloat(color >> 24) / 255, green: CGFloat((color >> 16) & 255) / 255,
+                blue: CGFloat((color >> 8) & 255) / 255, alpha: CGFloat(255 - (color & 255)) / 255
+            )
+            reference.fill(rect)
+            reference.restoreGState()
+            mask.withUnsafeBufferPointer {
+                plozz_ass_blend_bitmap(output, direct.bytesPerRow, $0.baseAddress, stride, width, height, color)
+            }
+        }
+        let expected = try XCTUnwrap(reference.data?.assumingMemoryBound(to: UInt8.self))
+        for i in 0..<(width * height * 4) {
+            XCTAssertLessThanOrEqual(abs(Int(output[i]) - Int(expected[i])), 2, "RGBA byte \(i)")
+        }
+    }
+
     private static let header = """
     [Script Info]
     ScriptType: v4.00+
@@ -64,6 +105,44 @@ final class ASSSubtitleRendererTests: XCTestCase {
         XCTAssertNil(switched.image)
     }
 
+    func testPartiallyOffscreenDrawingClipsWithoutChangingItsCanvasPosition() async throws {
+        let renderer = ASSSubtitleRasterizer()
+        let frame = try await renderer.render(document: document(), events: [.init(
+            packet: #"0,0,Default,,0,0,0,,{\an7\pos(-10,-5)\p1\c&H0000FF&}m 0 0 l 30 0 30 20 0 20"#,
+            start: 0, end: 2
+        )], time: 1)
+        let image = try XCTUnwrap(frame.image)
+        XCTAssertEqual(image.normalizedRect.minX, 0, accuracy: 0.001)
+        XCTAssertEqual(image.normalizedRect.minY, 0, accuracy: 0.001)
+        let color = try pixel(image.cgImage, x: 2, y: 2)
+        XCTAssertGreaterThan(color[0], 240)
+        XCTAssertLessThan(color[1], 15)
+    }
+
+    @MainActor
+    func testDriverCoalescesBusyTicksToTheLatestAnimationTime() async throws {
+        let renderer = ASSSubtitleRenderer()
+        var positions: [CGFloat] = []
+        renderer.onFrame = { cues in
+            if case .image(let image)? = cues.first?.body { positions.append(image.normalizedRect.minX) }
+        }
+        renderer.update(document: document(), events: [.init(
+            packet: #"0,0,Default,,0,0,0,,{\an7\move(10,20,210,20)\p1}m 0 0 l 30 0 30 30 0 30"#,
+            start: 0, end: 2
+        )])
+        renderer.tick(0.1)
+        renderer.tick(0.3)
+        renderer.tick(0.5)
+        renderer.tick(1)
+        let deadline = ContinuousClock.now + .seconds(3)
+        while positions.count < 2, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(positions.count, 2, "One in-flight render plus one latest timestamp, not a frame queue")
+        XCTAssertEqual(try XCTUnwrap(positions.last), 110.0 / 640, accuracy: 0.01)
+        renderer.clear()
+    }
+
     @MainActor
     func testDriverClearsOffAndRejectsAnInFlightPreviousTrackFrame() async throws {
         let renderer = ASSSubtitleRenderer()
@@ -75,6 +154,7 @@ final class ASSSubtitleRendererTests: XCTestCase {
         )]
         renderer.update(document: document(), events: events)
         renderer.tick(1)
+        renderer.tick(1.5)
         renderer.clear()
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertTrue(delivered.isEmpty)

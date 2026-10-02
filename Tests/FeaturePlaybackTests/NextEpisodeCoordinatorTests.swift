@@ -369,7 +369,7 @@ final class NextEpisodeCoordinatorTests: XCTestCase {
         XCTAssertTrue(engine.isPaused)
     }
 
-    func testPausedPictureAtZeroCannotCompleteAResumedStartup() async {
+    func testDisplayedPausedPictureDoesNotShowTheCenterSpinnerDuringAResumeSeek() async {
         let (sut, _, engine, _) = makeSUT()
         engine.isPaused = true
         engine.preventsDisplaySleep = false
@@ -377,8 +377,26 @@ final class NextEpisodeCoordinatorTests: XCTestCase {
         engine._currentTime = 0
         sut.beginAwaitingFirstFrame(resumeClock: 425.7)
         try? await Task.sleep(for: .milliseconds(150))
-        XCTAssertTrue(sut.awaitingFirstFrame)
+        XCTAssertFalse(sut.awaitingFirstFrame, "The center indicator is only for an absent picture, not seek completion")
         sut.clearFirstFrameWait()
+    }
+
+    func testRewindBeforeInitialResumeFinishesClearsCenterSpinnerWhenPictureArrives() async {
+        let (sut, _, engine, _) = makeSUT()
+        engine.preventsDisplaySleep = true
+        engine._currentTime = 134
+        sut.beginAwaitingFirstFrame(resumeClock: 134)
+        engine._currentTime = 0
+        try? await Task.sleep(for: .milliseconds(150))
+        XCTAssertTrue(sut.awaitingFirstFrame, "An optimistic seek clock alone is not a picture")
+        engine.hasPresentedVideoFrame = true
+        engine._currentTime = 0.5
+        await waitUntil { !sut.awaitingFirstFrame }
+        XCTAssertFalse(sut.awaitingFirstFrame, "Do not wait another 134 seconds to cross the old resume position")
+        engine.hasPresentedVideoFrame = false
+        engine.preventsDisplaySleep = false
+        try? await Task.sleep(for: .milliseconds(150))
+        XCTAssertFalse(sut.awaitingFirstFrame, "Later seek/buffer delays must not rearm the startup overlay")
     }
 
     /// Regression: on the Plozzigen/custom-source path the engine reports

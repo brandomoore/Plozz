@@ -123,8 +123,10 @@ public final class PlayerViewModel {
     /// spinner across the `.loading` → `.ready` boundary.
     public var showBringUpSpinner: Bool {
         switch phase {
-        case .loading: return true
-        case .ready: return pendingNextEpisode != nil || awaitingFirstFrame || isRecoveringAfterForeground
+        case .loading: return !engine.hasPresentedVideoFrame
+        case .ready:
+            return (pendingNextEpisode != nil || awaitingFirstFrame || isRecoveringAfterForeground)
+                && !engine.hasPresentedVideoFrame
         case .failed: return false
         }
     }

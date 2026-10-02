@@ -92,9 +92,10 @@ public enum PlozzAttributions {
         PlozzAttribution(
             title: "libass & Text Rendering",
             detail:
-                "Authored ASS/SSA rendering uses libass 0.17.3 through SwiftLibass "
-                + "by Mihai Seremet (MIT), with FreeType, HarfBuzz, FriBidi, "
-                + "Fontconfig and libpng. Source: https://github.com/mihai8804858/swift-libass/tree/1.4.0. "
+                "Authored ASS/SSA rendering uses libass 0.17.5 (ISC), "
+                + "with FreeType, HarfBuzz, FriBidi and libunibreak. "
+                + "Source: https://github.com/libass/libass/tree/0.17.5. "
+                + "Font-library builds: https://github.com/mpvkit/libass-build/tree/0.17.5. "
                 + "Complete notices are bundled in LibassNotices.txt.",
             licenses: [
                 .init("ISC", family: .isc),

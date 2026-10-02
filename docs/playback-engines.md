@@ -6,14 +6,27 @@ with the best possible quality (Dolby Vision, Atmos, full-timeline seek).
 
 ## Dependency version
 
-Authored primary ASS/SSA subtitles use the pinned SwiftLibass 1.4.0 wrapper
-(`6513c488e377a26c06db327fb2acfc2653a041d5`, libass 0.17.3) in the
-Plozzigen adapter. It adds static text-rendering libraries, not another FFmpeg.
+Authored primary ASS/SSA subtitles use libass **0.17.5**, built from the
+unmodified upstream sources in `Vendor/Libass/libass`. `UPSTREAM.json` records
+the official archive and SHA-256; Apple configuration and assembly wrappers live
+outside that directory. SwiftPM compiles ARM NEON kernels on arm64 and the scalar
+fallback on Intel, with optimization enabled even in Debug. The former prebuilt
+wrapper disabled assembly and spent 36–67 ms per frame on a font-heavy opening
+on Apple TV 4K (2nd generation). The optimized renderer and direct premultiplied
+RGBA compositor measured 15–28 ms at the same 1920×1080 resolution; no effects or
+font sizing are removed to reach the frame budget.
+
+FreeType 2.14.3, HarfBuzz 14.2.0, FriBidi 1.0.16 and libunibreak 6.1 use
+checksum-pinned standalone artifacts from `mpvkit/libass-build` 0.17.5.
+Their exact public headers are retained in `Vendor/Libass/dependency-headers`
+for the C build. These add standalone text-rendering libraries, not MPV or another FFmpeg.
 The adapter consumes Aether's public raw-packet/header/font APIs and emits
 composited bitmap cues through Plozz's existing subtitle overlay. Font data is
 session-local, frame work is serialized off-main, and late frames are fenced
 across track changes, seeks and teardown. `App/Resources/LibassNotices.txt`
-ships the wrapper and transitive-library notices.
+ships the upstream and transitive-library notices. Preserve all upstream license
+headers when updating the vendored sources, and update sources, public headers,
+binary checksums, and bundled notices together.
 
 Plozz pins upstream release **7.22.2**, commit
 `0e2f5c967b5f92e692e03edf612f2753289029cf`. This release waits for an observed,
