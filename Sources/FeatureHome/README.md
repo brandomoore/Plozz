@@ -66,6 +66,11 @@ fallback when the user's server has no attached trailer.
 
 ## Home loading
 
+On iPhone and iPad, the loading and loaded Home layouts share the hero visibility
+gate. Disabling the hero or deselecting all its sources removes both the carousel
+and its placeholder, including the reserved height. Only an active hero extends
+under the top safe area; a rows-only Home keeps its first row below navigation.
+
 Library cards preserve server-supplied cover artwork. Missing covers use a stable,
 locally composed poster collage from that exact library, with a provider-colored
 fallback for empty or unavailable sources. All cards carry the shared provider

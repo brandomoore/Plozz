@@ -89,18 +89,19 @@ struct PlozziOSHomeSkeletonRail: View {
 struct PlozziOSHomeSkeletonScreen: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
+    let heroActive: Bool
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
-                PlozziOSHomeHeroSkeleton(
-                    style: horizontalSizeClass == .compact
-                        ? .compactPortrait
-                        : .landscape
-                )
-                PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .landscape)
-                PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster)
-                PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster)
-            }
+        PlozziOSHomeScrollView(heroActive: heroActive) {
+            PlozziOSHomeHeroSkeleton(
+                style: horizontalSizeClass == .compact
+                    ? .compactPortrait
+                    : .landscape
+            )
+        } rows: {
+            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .landscape)
+            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster)
+            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster)
         }
         .scrollDisabled(true)
         .accessibilityLabel("Loading Home")
