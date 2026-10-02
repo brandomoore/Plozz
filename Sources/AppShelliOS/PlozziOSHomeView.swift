@@ -2727,6 +2727,7 @@ private struct PlozziOSHomeMediaCard: View {
 }
 
 private struct PlozziOSHomeLibraryCard: View {
+    @ScaledMetric(relativeTo: .headline) private var providerBadgeSize: CGFloat = 24
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
@@ -2766,9 +2767,16 @@ private struct PlozziOSHomeLibraryCard: View {
             )
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(library.library.title)
-                    .font(.headline)
-                    .lineLimit(1)
+                HStack(spacing: PlozzTheme.Spacing.small) {
+                    ProviderBrandMark(
+                        provider: library.providerKind, size: providerBadgeSize,
+                        mediaShareTransport: library.transportKind
+                    )
+                    .accessibilityHidden(true)
+                    Text(library.library.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                }
                 Text(library.serverName)
                     .font(.caption)
                     .plozzForeground(.secondary)

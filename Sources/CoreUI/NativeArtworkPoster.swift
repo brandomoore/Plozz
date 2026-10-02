@@ -1,4 +1,5 @@
 #if os(tvOS)
+import CoreModels
 import SwiftUI
 
 /// Native artwork focus with captions outside the surface, matching media posters.
@@ -13,6 +14,8 @@ public struct NativeArtworkPoster<Artwork: View, Overlay: View>: View {
     private let artwork: Artwork
     private let overlay: Overlay
     private let placeholderTint: Color?
+    private let providerKind: ProviderKind?
+    private let mediaShareTransport: MediaShareTransportKind?
     @State private var resolution = ArtworkResolutionState()
     @Environment(\.plozzMetrics) private var metrics
 
@@ -24,6 +27,8 @@ public struct NativeArtworkPoster<Artwork: View, Overlay: View>: View {
         localizedTitle: LocalizedStringResource? = nil,
         placeholderSymbol: String,
         placeholderTint: Color? = nil,
+        providerKind: ProviderKind? = nil,
+        mediaShareTransport: MediaShareTransportKind? = nil,
         focus: PlozzCardFocus.Binding,
         action: @escaping () -> Void,
         @ViewBuilder artwork: () -> Artwork,
@@ -39,10 +44,14 @@ public struct NativeArtworkPoster<Artwork: View, Overlay: View>: View {
         self.artwork = artwork()
         self.overlay = overlay()
         self.placeholderTint = placeholderTint
+        self.providerKind = providerKind
+        self.mediaShareTransport = mediaShareTransport
     }
 
     public var body: some View {
-        VStack(spacing: metrics.nativePosterCaptionSpacing) {
+        VStack(spacing: providerKind == nil
+               ? metrics.nativePosterCaptionSpacing
+               : metrics.landscapeCaptionTopSpacing) {
             NativeTVPoster(
                 image: resolution.image, treatment: .original, aspectRatio: aspectRatio,
                 fallbackWidth: width, title: title, subtitle: subtitle,
@@ -67,7 +76,8 @@ public struct NativeArtworkPoster<Artwork: View, Overlay: View>: View {
             .frame(width: width)
             SystemPosterCaption(
                 title: title, subtitle: subtitle,
-                reservesSubtitleSpace: true, isFocused: focus.observation.isFocused
+                reservesSubtitleSpace: true, isFocused: focus.observation.isFocused,
+                providerKind: providerKind, mediaShareTransport: mediaShareTransport
             )
             .frame(width: width)
             .accessibilityHidden(true)
@@ -91,6 +101,8 @@ public extension NativeArtworkPoster where Overlay == EmptyView {
         subtitle: String?, // l10n:content — library metadata
         localizedTitle: LocalizedStringResource? = nil,
         placeholderSymbol: String,
+        providerKind: ProviderKind? = nil,
+        mediaShareTransport: MediaShareTransportKind? = nil,
         focus: PlozzCardFocus.Binding,
         action: @escaping () -> Void,
         @ViewBuilder artwork: () -> Artwork
@@ -98,6 +110,7 @@ public extension NativeArtworkPoster where Overlay == EmptyView {
         self.init(
             width: width, aspectRatio: aspectRatio, title: title, subtitle: subtitle,
             localizedTitle: localizedTitle, placeholderSymbol: placeholderSymbol,
+            providerKind: providerKind, mediaShareTransport: mediaShareTransport,
             focus: focus, action: action, artwork: artwork, overlay: { EmptyView() }
         )
     }

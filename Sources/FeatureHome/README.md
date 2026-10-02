@@ -78,14 +78,14 @@ libraries and three poster transfers at once, and composes a single 720x405 text
 on a serial utility queue. Visible covers use the foreground artwork lane rather
 than waiting behind speculative prefetch. The raw Browse Files root uses the same
 account's indexed latest media, never a recursive filesystem walk. Generated titles
-are centered; badges occupy the same top-trailing artwork corner with or without
-server-supplied covers. A subtle corner scrim uses eased linear fades from the top
-and trailing artwork edges. Both long, finely sampled ramps begin fading
-immediately, without a flat dark core, keeping the tint negligible away from the
-mark and never peaking around the logo like a radial shadow.
-Marks use `ProviderBrandMark`'s standard provider-tinted circular background and
+are centered. Provider badges sit beside the library name in the caption below the
+artwork on TV and mobile, never on the cover or collage; no logo scrim is applied.
+They use `ProviderBrandMark`'s standard provider-tinted circular background and
 optically balanced internal padding, including its existing Plex size adjustment.
-No library-specific backing plates, borders, or logo scaling are added.
+Native captions center the badge and short title together, keep the badge fixed
+while long names marquee, and move both together on focus without adding a focus target.
+Library captions reserve the landscape artwork-to-caption gap at rest and on focus,
+without changing ordinary poster spacing or the focus animation.
 Transport marks stack the complete drive symbol above their label with balanced
 vertical padding.
 The decoded cache is capped at 16 MiB; the bounded disk derivative cache at 8 MiB.

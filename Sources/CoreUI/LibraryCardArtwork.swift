@@ -76,12 +76,9 @@ public struct LibraryArtworkFallback: View {
     }
 }
 
-/// Kept separate from the bitmap so native posters use their own focus surface.
+/// Generated titles stay separate from the bitmap; provider badges live in captions.
 public struct LibraryArtworkOverlay: View {
     private let library: AggregatedLibrary
-    @Environment(\.plozzMetrics) private var metrics
-    @Environment(\.plozzCardStyle) private var cardStyle
-    @Environment(\.plozzCardFocusStyle) private var focusStyle
 
     public init(library: AggregatedLibrary) {
         self.library = library
@@ -89,56 +86,20 @@ public struct LibraryArtworkOverlay: View {
 
     public var body: some View {
         GeometryReader { geometry in
-            let markSize = geometry.size.width * 0.135
-            let markPadding = markSize * 0.1
-            let inset = min(artworkCornerRadius * 0.5, geometry.size.width * 0.024)
-            ZStack(alignment: .topTrailing) {
-                LinearGradient(
-                    stops: ArtworkGradientRamp.fadingStops(peak: 0.32, from: 0, to: 1, steps: 16),
-                    startPoint: .top, endPoint: .bottom
-                )
-                .frame(width: geometry.size.width * 0.65, height: geometry.size.height * 0.95)
-                .mask {
-                    LinearGradient(
-                        stops: ArtworkGradientRamp.stops(peak: 1, from: 0, to: 1, steps: 16),
-                        startPoint: .leading, endPoint: .trailing
-                    )
-                }
-                if library.library.imageURL == nil {
-                    library.library.displayName
-                        .font(.system(size: geometry.size.width * 0.095, weight: .bold))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                        .minimumScaleFactor(0.65)
-                        .shadow(color: .black.opacity(0.4), radius: 3, y: 2)
-                        .padding(geometry.size.width * 0.075)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                }
-                ProviderBrandMark(
-                    provider: library.providerKind,
-                    size: markSize,
-                    showsBackground: true,
-                    mediaShareTransport: library.transportKind
-                )
-                .padding(markPadding)
-                .padding(inset)
+            if library.library.imageURL == nil {
+                library.library.displayName
+                    .font(.system(size: geometry.size.width * 0.095, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.65)
+                    .shadow(color: .black.opacity(0.4), radius: 3, y: 2)
+                    .padding(geometry.size.width * 0.075)
+                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
             }
-            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topTrailing)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-    }
-
-    private var artworkCornerRadius: CGFloat {
-        #if os(tvOS)
-        if focusStyle.usesSystemEffect { return NativePosterPlaceholder.cornerRadius }
-        return cardStyle == .framed
-            ? PlozzTheme.Metrics.mediumMediaCornerRadius
-            : metrics.landscapeCardCornerRadius
-        #else
-        return PlozzTheme.Metrics.mediumMediaCornerRadius
-        #endif
     }
 }
 #endif

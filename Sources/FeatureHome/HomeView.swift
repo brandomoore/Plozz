@@ -2244,6 +2244,8 @@ struct LibraryCardView: View {
                 placeholderSymbol: librarySymbol,
                 placeholderTint: aggregated.library.imageURL == nil
                     ? ProviderBrandMark.brandTint(aggregated.providerKind) : nil,
+                providerKind: aggregated.providerKind,
+                mediaShareTransport: aggregated.transportKind,
                 focus: $isFocused,
                 action: action
             ) {
@@ -2278,13 +2280,23 @@ struct LibraryCardView: View {
                 .plozzMediaEdge(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius)
 
             VStack(alignment: .leading, spacing: 4) {
-                PlozzMarqueeText(
-                    text: aggregated.library.displayName,
-                    font: .system(size: metrics.cardTitleFontSize, weight: .semibold),
-                    color: titleColor,
-                    inset: metrics.landscapeCaptionInset,
-                    isFocused: isFocused
-                )
+                HStack(spacing: PlozzTheme.Spacing.small) {
+                    ProviderBrandMark(
+                        provider: aggregated.providerKind, size: metrics.cardTitleFontSize,
+                        mediaShareTransport: aggregated.transportKind
+                    )
+                    .environment(\.settingsRowIsFocused, surfaceFocused)
+                    .accessibilityHidden(true)
+                    PlozzMarqueeText(
+                        text: aggregated.library.displayName,
+                        font: .system(size: metrics.cardTitleFontSize, weight: .semibold),
+                        color: titleColor,
+                        inset: 0,
+                        fadeWidth: metrics.landscapeCaptionInset * PlozzTheme.Metrics.marqueeFadeRatio,
+                        isFocused: isFocused
+                    )
+                }
+                .padding(.horizontal, metrics.landscapeCaptionInset)
                 PlozzMarqueeText(
                     text: Text(subtitle.isEmpty ? " " : subtitle),
                     font: .system(size: metrics.cardSubtitleFontSize),
@@ -2337,7 +2349,9 @@ struct LibraryCardView: View {
                 title: aggregated.library.displayName,
                 subtitle: subtitle.isEmpty ? nil : subtitle,
                 horizontalInset: metrics.landscapeCaptionInset,
-                isFocused: isFocused
+                isFocused: isFocused,
+                providerKind: aggregated.providerKind,
+                mediaShareTransport: aggregated.transportKind
             )
             .frame(width: width)
             .offset(y: focusStyle.usesSystemEffect || isFocused ? 0 : -push)

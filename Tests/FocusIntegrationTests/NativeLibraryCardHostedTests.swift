@@ -78,8 +78,13 @@ final class NativeLibraryCardHostedTests: XCTestCase {
             x: artwork.maxX - artwork.width * 0.08,
             y: artwork.minY + artwork.height * 0.12
         ))
-        XCTAssertGreaterThan(Int(badgePixel[2]) - Int(badgePixel[1]), 5,
-                             "The purple provider badge must be drawn over the red bitmap, inside native artwork.")
+        XCTAssertLessThanOrEqual(abs(Int(badgePixel[2]) - Int(badgePixel[1])), 3,
+                                "Provider tint must no longer be drawn over the artwork.")
+        let caption = try XCTUnwrap(descendant(SystemPosterCaption.CaptionView.self, in: window))
+        let badge = try XCTUnwrap(caption.providerBadge)
+        let badgeFrame = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: badge, in: window))
+        XCTAssertGreaterThanOrEqual(badgeFrame.minY, artwork.maxY)
+        XCTAssertFalse(badge.isDescendant(of: poster))
         let attachment = XCTAttachment(image: image)
         attachment.name = "generated-native-library-collage"
         attachment.lifetime = .keepAlways
@@ -89,21 +94,18 @@ final class NativeLibraryCardHostedTests: XCTestCase {
     func testLibraryTransportMarksRemainDistinct() throws {
         var rendered: [Data] = []
         for transport in [MediaShareTransportKind.smb, .webDAV, .nfs] {
-            let library = AggregatedLibrary(
-                accountID: "share", accountName: "Viewer", serverName: "Server",
-                providerKind: .mediaShare, transportKind: transport,
-                library: MediaLibrary(id: "movies", title: "Movies", kind: .movie)
-            )
             let renderer = ImageRenderer(content:
-                LibraryArtworkOverlay(library: library).frame(width: 720, height: 405)
+                ProviderBrandMark(provider: .mediaShare, size: 32, mediaShareTransport: transport)
             )
             rendered.append(try XCTUnwrap(renderer.uiImage?.pngData()))
         }
         XCTAssertEqual(Set(rendered).count, 3, "Shared drive marks must retain the actual transport labels.")
     }
 
-    func testLibraryBadgePositionDoesNotDependOnServerCover() throws {
-        var badges: [Data] = []
+    func testLibraryArtworkHasNoCornerBadgeOrScrim() throws {
+        var corners: [Data] = []
+        let baseline = ImageRenderer(content: Color.red.frame(width: 1, height: 1))
+        let backgroundPixel = try pixel(XCTUnwrap(baseline.uiImage), at: .zero)
         let covers: [URL?] = [nil, URL(string: "https://example.invalid/custom.jpg")]
         for cover in covers {
             let library = AggregatedLibrary(
@@ -121,149 +123,109 @@ final class NativeLibraryCardHostedTests: XCTestCase {
             let corner = try XCTUnwrap(image.cgImage?.cropping(to:
                 CGRect(x: 580, y: 20, width: 140, height: 140)
             ))
-            badges.append(try XCTUnwrap(UIImage(cgImage: corner).pngData()))
-            let badgePixel = try pixel(image, at: CGPoint(x: 640, y: 75))
-            XCTAssertGreaterThan(Int(badgePixel[2]) - Int(badgePixel[1]), 5,
-                                 "Both cover types must put the purple badge in the top-right corner.")
+            corners.append(try XCTUnwrap(UIImage(cgImage: corner).pngData()))
+            XCTAssertEqual(try pixel(image, at: CGPoint(x: 640, y: 75)), backgroundPixel,
+                           "Neither server covers nor collages should receive a corner badge or scrim.")
             XCTAssertTrue(try isRed(image, at: CGPoint(x: 65, y: 75)),
                           "The badge must not fall back to the GeometryReader's top-left origin.")
         }
-        XCTAssertEqual(badges[0], badges[1])
+        XCTAssertEqual(corners[0], corners[1])
     }
 
-    func testLibraryCornerScrimRemainsSoftOutsideTheProviderBadge() throws {
-        let library = AggregatedLibrary(
-            accountID: "account", accountName: "Viewer", serverName: "Server",
-            providerKind: .jellyfin,
-            library: MediaLibrary(
-                id: "movies", title: "Movies", kind: .movie,
-                imageURL: URL(string: "https://example.invalid/custom.jpg")
+    func testNativeLibraryCaptionBadgeLayoutAndReuse() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let metrics = PlozzMetrics(density: .standard)
+        func fixture(
+            _ name: String, focused: Bool = false, direction: LayoutDirection = .leftToRight,
+            provider: ProviderKind = .jellyfin, transport: MediaShareTransportKind? = nil
+        ) -> some View {
+            SystemPosterCaption(
+                title: .content(name), subtitle: "Server", reservesSubtitleSpace: true,
+                isFocused: focused, providerKind: provider, mediaShareTransport: transport
             )
-        )
-        let widths: [CGFloat] = [220, 484, 720]
-        for width in widths {
-            for direction in [LayoutDirection.leftToRight, .rightToLeft] {
-                let height = width * 9 / 16
-                let renderer = ImageRenderer(content:
-                    LibraryArtworkOverlay(library: library)
-                        .frame(width: width, height: height)
-                        .background(.white)
-                        .environment(\.plozzCardFocusStyle, .system)
-                        .environment(\.layoutDirection, direction)
-                )
-                renderer.scale = 3
-                let image = try XCTUnwrap(renderer.uiImage)
-                let size = width * 0.135
-                let padding = size * 0.1
-                let inset = min(10.5, width * 0.024)
-                let origin = CGPoint(x: width - inset - padding - size, y: inset + padding)
-                func brightness(_ point: CGPoint) throws -> UInt8 {
-                    let x = direction == .leftToRight ? point.x : width - point.x
-                    return try pixel(image, at: CGPoint(x: x * renderer.scale, y: point.y * renderer.scale))[0]
+            .frame(width: 484)
+            .environment(\.plozzMetrics, metrics)
+            .environment(\.layoutDirection, direction)
+            .environment(\.colorScheme, .dark)
+            .environment(\.themePalette, .dark)
+            .background(.black)
+        }
+        let host = UIHostingController(rootView: fixture("Movies"))
+        host.view.backgroundColor = .black
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let longName = String(repeating: "A long library name ", count: 8)
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+            for name in ["Movies", longName] {
+                host.rootView = fixture(name, direction: direction)
+                try await Task.sleep(for: .milliseconds(100))
+                let caption = try XCTUnwrap(descendant(SystemPosterCaption.CaptionView.self, in: window))
+                let badge = try XCTUnwrap(caption.providerBadge)
+                let restingFrame = badge.frame
+                let height = caption.bounds.height
+                XCTAssertEqual(badge.bounds.size, CGSize(
+                    width: metrics.cardTitleFontSize, height: metrics.cardTitleFontSize
+                ))
+                XCTAssertFalse(badge.canBecomeFocused)
+                XCTAssertFalse(badge.isUserInteractionEnabled)
+                XCTAssertTrue(badge.accessibilityElementsHidden)
+                XCTAssertFalse(badge.isDescendant(of: caption.title), "The badge must not move inside the marquee.")
+                let title = try XCTUnwrap(descendant(UILabel.self, in: caption.title))
+                if direction == .leftToRight {
+                    XCTAssertEqual(caption.title.frame.minX - badge.frame.maxX, PlozzTheme.Spacing.small, accuracy: 1)
+                } else {
+                    XCTAssertEqual(badge.frame.minX - caption.title.frame.maxX, PlozzTheme.Spacing.small, accuracy: 1)
                 }
-                let edgeBrightness = max(
-                    try brightness(CGPoint(x: width - 1, y: origin.y + size * 0.5)),
-                    try brightness(CGPoint(x: origin.x + size * 0.5, y: 1))
-                )
-                for offset in [
-                    CGPoint(x: -0.04, y: 0.5), CGPoint(x: 1.04, y: 0.5),
-                    CGPoint(x: 0.5, y: -0.04), CGPoint(x: 0.5, y: 1.04)
-                ] {
-                    let point = CGPoint(x: origin.x + size * offset.x, y: origin.y + size * offset.y)
-                    XCTAssertLessThan(try brightness(point), 215,
-                                      "The gentle scrim must still sit beneath the whole logo: \(width), \(direction)")
-                    XCTAssertGreaterThan(try brightness(point), 160,
-                                         "The shared badge must not acquire a heavy dark patch or an additional backing plate.")
-                    XCTAssertLessThanOrEqual(Int(edgeBrightness), Int(try brightness(point)) + 2,
-                                             "Darkness must extend to the artwork edges, not peak around the logo as a halo.")
+                let start = min(badge.frame.minX, caption.title.frame.minX)
+                let end = max(badge.frame.maxX, caption.title.frame.maxX)
+                XCTAssertEqual((start + end) / 2, caption.bounds.midX, accuracy: 1,
+                               "Center the name and badge together, not the name alone.")
+                XCTAssertGreaterThanOrEqual(start, 0)
+                XCTAssertLessThanOrEqual(end, caption.bounds.width)
+                host.rootView = fixture(name, focused: true, direction: direction)
+                try await Task.sleep(for: .milliseconds(250))
+                XCTAssertTrue(caption.providerBadge === badge, "Focus must not rebuild the badge.")
+                XCTAssertEqual(badge.frame, restingFrame)
+                XCTAssertEqual(caption.bounds.height, height)
+                if name == longName {
+                    XCTAssertGreaterThan(title.bounds.width, caption.title.bounds.width)
+                    XCTAssertEqual(title.layer.animation(forKey: "captionMarquee") != nil,
+                                   !UIAccessibility.isReduceMotionEnabled)
+                } else {
+                    XCTAssertNil(title.layer.animation(forKey: "captionMarquee"))
                 }
-                let fade = try brightness(CGPoint(x: origin.x - size * 0.5, y: origin.y + size * 0.5))
-                XCTAssertGreaterThan(fade, 200, "The corner must soften outside the logo.")
-                XCTAssertLessThan(fade, 245, "The gradient must extend beyond the logo, not stop at a box.")
-                let fadeSamples = try (0...8).map { step in
-                    Int(try brightness(CGPoint(x: width - 1, y: height * (0.15 + CGFloat(step) * 0.1))))
-                }
-                for (before, after) in zip(fadeSamples, fadeSamples.dropFirst()) {
-                    XCTAssertGreaterThanOrEqual(after, before, "The scrim must fade continuously away from the edge.")
-                    XCTAssertLessThanOrEqual(after - before, 15, "Spread the fade gradually instead of ending in a steep band.")
-                }
-                XCTAssertEqual(fadeSamples.last, 255)
-                for point in [
-                    CGPoint(x: width * 0.1, y: height * 0.1),
-                    CGPoint(x: width * 0.5, y: height * 0.5),
-                    CGPoint(x: width * 0.9, y: height * 0.9)
-                ] {
-                    XCTAssertGreaterThanOrEqual(try brightness(point), 247, "Away from the logo the scrim must be imperceptible.")
-                }
-                let attachment = XCTAttachment(image: image)
-                attachment.name = "library-corner-scrim-\(width)-\(direction)"
+                let attachment = XCTAttachment(image: snapshot(window))
+                attachment.name = "library-caption-\(direction)-long-\(name == longName)"
                 attachment.lifetime = .keepAlways
                 add(attachment)
             }
         }
-    }
-
-    func testLibraryBadgesUseTheSharedTintAndOpticalSizing() throws {
-        let widths: [CGFloat] = [220, 484]
-        for width in widths {
-            for provider in ProviderKind.allCases {
-                let library = AggregatedLibrary(
-                    accountID: "account", accountName: "Viewer", serverName: "Server",
-                    providerKind: provider, transportKind: provider == .mediaShare ? .smb : nil,
-                    library: MediaLibrary(
-                        id: "movies", title: "Movies", kind: .movie,
-                        imageURL: URL(string: "https://example.invalid/custom.jpg")
-                    )
-                )
-                let size = width * 0.135
-                let actual = ImageRenderer(content:
-                    LibraryArtworkOverlay(library: library)
-                        .frame(width: width, height: width * 9 / 16)
-                        .background(.white)
-                        .environment(\.plozzCardFocusStyle, .system)
-                )
-                let expected = ImageRenderer(content:
-                    Color.clear.frame(width: width, height: width * 9 / 16)
-                        .overlay(alignment: .topTrailing) {
-                            ProviderBrandMark(
-                                provider: provider, size: size,
-                                mediaShareTransport: library.transportKind
-                            )
-                            .padding(size * 0.1)
-                            .padding(min(10.5, width * 0.024))
-                        }
-                )
-                actual.scale = 3
-                expected.scale = 3
-                let actualImage = try XCTUnwrap(actual.cgImage)
-                let expectedImage = try XCTUnwrap(expected.cgImage)
-                let actualPixels = try rgba(actualImage)
-                let expectedPixels = try rgba(expectedImage)
-                XCTAssertEqual(actualImage.width, expectedImage.width)
-                XCTAssertEqual(actualImage.height, expectedImage.height)
-                guard actualPixels.count == expectedPixels.count else {
-                    XCTFail("Both badges must have the same canvas.")
-                    return
-                }
-                var difference = 0
-                // Channel differences cancel the grayscale scrim while preserving
-                // both the tinted circle and the shared logo's exact optical sizing.
-                for index in stride(from: 0, to: actualPixels.count, by: 4) {
-                    for channel in [0, 2] {
-                        let actualChroma = Int(actualPixels[index + channel]) - Int(actualPixels[index + 1])
-                        let expectedChroma = Int(expectedPixels[index + channel]) - Int(expectedPixels[index + 1])
-                        difference = max(difference, abs(actualChroma - expectedChroma))
-                    }
-                }
-                XCTAssertLessThanOrEqual(difference, 4, "Use the standard tinted badge unchanged: \(provider), \(width)")
-                if width == 484 {
-                    let attachment = XCTAttachment(image: UIImage(cgImage: actualImage))
-                    attachment.name = "library-standard-badge-\(provider.rawValue)"
-                    attachment.lifetime = .keepAlways
-                    add(attachment)
-                }
+        var transports: [Data] = []
+        for provider in ProviderKind.allCases {
+            let kinds: [MediaShareTransportKind?] = provider == .mediaShare ? [.smb, .webDAV, .nfs] : [nil]
+            for transport in kinds {
+                host.rootView = fixture("Movies", provider: provider, transport: transport)
+                try await Task.sleep(for: .milliseconds(100))
+                let caption = try XCTUnwrap(descendant(SystemPosterCaption.CaptionView.self, in: window))
+                XCTAssertNotNil(caption.providerBadge)
+                let image = snapshot(window)
+                if provider == .mediaShare { transports.append(try XCTUnwrap(image.pngData())) }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "library-caption-\(provider.rawValue)-\(transport?.rawValue ?? "")"
+                attachment.lifetime = .keepAlways
+                add(attachment)
             }
         }
+        XCTAssertEqual(Set(transports).count, 3, "The caption must retain each share's actual transport.")
     }
 
     func testTransportMarkIsUnclippedAndOpticallyCentered() throws {
@@ -499,6 +461,9 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                 controller.target = other
                 system.requestFocusUpdate(to: controller)
                 system.updateFocusIfNeeded()
+                if style == .system {
+                    try await Task.sleep(for: .milliseconds(350))
+                }
                 var image = snapshot(window)
                 let loadDeadline = ContinuousClock.now + .seconds(5)
                 let slotFrame = slot.convert(slot.bounds, to: window)
@@ -547,8 +512,19 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                         XCTAssertEqual(title.font.pointSize, metrics.cardTitleFontSize)
                         let artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.imageView, in: window))
                         let textFrame = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: title, in: window))
-                        XCTAssertGreaterThanOrEqual(textFrame.minY, artwork.maxY,
-                                                    "The caption must remain below the artwork's focused footprint.")
+                        if !focused {
+                            XCTAssertEqual(frame.minY - artwork.maxY, metrics.landscapeCaptionTopSpacing, accuracy: 1,
+                                           "Library captions need the landscape gap even before focus.")
+                        }
+                        XCTAssertGreaterThanOrEqual(textFrame.minY - artwork.maxY, metrics.landscapeCaptionTopSpacing - 1,
+                                                    "The caption must keep breathing room below the focused artwork.")
+                        let badge = try XCTUnwrap(caption.providerBadge)
+                        let badgeFrame = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: badge, in: window))
+                        XCTAssertFalse(badge.isDescendant(of: poster))
+                        XCTAssertFalse(badge.canBecomeFocused)
+                        XCTAssertGreaterThanOrEqual(badgeFrame.minY - artwork.maxY, metrics.landscapeCaptionTopSpacing - 1,
+                                                    "The provider mark must retain the caption's artwork clearance.")
+                        XCTAssertLessThanOrEqual(badgeFrame.maxX, textFrame.minX)
                         XCTAssertEqual(slot.bounds.width, metrics.landscapeCardSlotWidth, accuracy: 1)
                         XCTAssertTrue(try isRed(image, at: CGPoint(x: artwork.midX, y: artwork.midY)))
                         if focused {
@@ -623,6 +599,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         XCTAssertEqual(poster.accessibilityLabel, "Movies")
         let caption = try XCTUnwrap(descendant(SystemPosterCaption.CaptionView.self, in: window))
         XCTAssertFalse(caption.isDescendant(of: poster))
+        XCTAssertNil(caption.providerBadge, "Music and other unbadged poster callers must remain unchanged.")
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
         system.requestFocusUpdate(to: poster)
         system.updateFocusIfNeeded()
