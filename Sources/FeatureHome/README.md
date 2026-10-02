@@ -175,6 +175,11 @@ Native poster overlays cache their logo/badge/progress composite at the current
 display scale. Only that hosted overlay is rasterized; native artwork and focus
 effects remain live, and changes to overlay content invalidate the cached image.
 
+Libraries uses the same unclipped horizontal viewport as media rows. Native
+navigation lets focused artwork and scrolling cards draw through the page gutter
+to the screen edge; pinned navigation keeps its shared sidebar feather as the
+clipping boundary, never a second hard clip at the row's content inset.
+
 Discover hydrates and displays its saved candidates with the same featured-only
 configuration used by Showcase's live curation. Without eligible cached content,
 its stable row slot shows loading posters until curation completes, rather than

@@ -10,6 +10,103 @@ import XCTest
 
 @MainActor
 final class NativeLibraryCardHostedTests: XCTestCase {
+    func testLibrariesRowClipsAtNavigationBoundaryInsteadOfContentInset() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let controller = LibraryFocusController()
+        controller.view.backgroundColor = .black
+        window.rootViewController = controller
+        let image = try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 320, height: 180)).image {
+            UIColor.red.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 320, height: 180))
+        }.pngData())
+        let server = try LibraryArtworkServer(images: ["edge": image])
+        defer { server.stop() }
+        let port = try await server.start()
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/edge/\(UUID().uuidString)"))
+        let libraries = (0..<6).map {
+            AggregatedLibrary(
+                accountID: "fixture", accountName: "Viewer", serverName: "Server",
+                providerKind: .jellyfin,
+                library: MediaLibrary(id: String($0), title: "Library \($0)", kind: .movie, imageURL: url)
+            )
+        }
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for navigation in [NavigationStyle.tabBar, .sidebar, .rail] {
+            let pinned = navigation == .rail
+            var selected: String?
+            let host = UIHostingController(rootView:
+                HomeLibrariesRow(libraries: libraries, onSelectLibrary: { selected = $0.id })
+                    .environment(\.plozzNavigationStyle, navigation)
+                    .environment(\.plozzPinnedSidebarActive, pinned)
+                    .environment(\.plozzNavigationContentInset, pinned ? 64 : 0)
+                    .environment(\.plozzCardFocusStyle, .system)
+                    .environment(\.themePalette, .dark)
+            )
+            host.safeAreaRegions = []
+            controller.addChild(host)
+            controller.view.addSubview(host.view)
+            host.didMove(toParent: controller)
+            host.view.backgroundColor = .clear
+            host.view.frame = CGRect(x: 80, y: 250, width: 1760, height: 600)
+            host.view.layoutIfNeeded()
+            defer {
+                host.willMove(toParent: nil)
+                host.view.removeFromSuperview()
+                host.removeFromParent()
+            }
+            try await Task.sleep(for: .milliseconds(200))
+            let scroll = try XCTUnwrap(descendant(UIScrollView.self, in: host.view))
+            let poster = try XCTUnwrap(descendant(TVPosterView.self, in: host.view))
+            let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            controller.target = poster
+            focus.requestFocusUpdate(to: controller)
+            focus.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(700))
+            XCTAssertTrue(poster.isFocused)
+            var artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.imageView, in: window))
+            let loaded = ContinuousClock.now + .seconds(5)
+            while try !isRed(snapshot(window), at: CGPoint(x: artwork.midX, y: artwork.midY)),
+                  ContinuousClock.now < loaded {
+                try await Task.sleep(for: .milliseconds(100))
+                artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.imageView, in: window))
+            }
+            XCTAssertTrue(try isRed(snapshot(window), at: CGPoint(x: artwork.minX + 4, y: artwork.midY)),
+                          "The focused first library must be whole: \(navigation)")
+            poster.sendActions(for: .primaryActionTriggered)
+            XCTAssertEqual(selected, "0")
+
+            // A card passing through the page gutter still draws there under
+            // native navigation; only the pinned sidebar owns a leading mask.
+            let viewport = scroll.convert(scroll.bounds, to: window)
+            scroll.setContentOffset(CGPoint(
+                x: scroll.contentOffset.x + artwork.minX - (viewport.minX - 40),
+                y: scroll.contentOffset.y
+            ), animated: false)
+            try await Task.sleep(for: .milliseconds(100))
+            artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.imageView, in: window))
+            let point = CGPoint(x: viewport.minX - 12, y: artwork.midY)
+            XCTAssertGreaterThan(point.x, 0)
+            XCTAssertTrue(artwork.contains(point), "The sampled pixel must lie inside real artwork.")
+            XCTAssertEqual(try isRed(snapshot(window), at: point), !pinned,
+                           "Native rows reach the screen edge; pinned rows stop at their chrome: \(navigation)")
+            XCTAssertFalse(scroll.clipsToBounds, "The row must not impose a second content-inset clip.")
+        }
+    }
+
     func testLibrariesUseArtworkOnlyNativeFocusAndPreserveCustomCardGeometry() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),

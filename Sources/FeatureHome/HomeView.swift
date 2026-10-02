@@ -2126,7 +2126,7 @@ private struct HomeShareScanRefreshObserver: View {
 
 /// Home's Libraries row: tiles beside a pinned sidebar park where the first
 /// tile opened, and focus is reported for a Home that follows it.
-private struct HomeLibrariesRow: View {
+struct HomeLibrariesRow: View {
     let libraries: [AggregatedLibrary]
     let onSelectLibrary: (MediaLibrary) -> Void
     var onFocused: ((AggregatedLibrary) -> Void)?
@@ -2170,6 +2170,7 @@ private struct HomeLibrariesRow: View {
                     // the row's height and spacing are unchanged — only the clip grows.
                     .padding(.vertical, metrics.railShadowClearance)
                 }
+                .scrollClipDisabled()
                 .padding(.top, metrics.railTopClearanceOffset)
                 .padding(.bottom, metrics.railBottomClearanceOffset)
             }
