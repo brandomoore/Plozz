@@ -89,6 +89,30 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         attachment.name = "generated-native-library-collage"
         attachment.lifetime = .keepAlways
         add(attachment)
+
+        let returningCard = ImageRenderer(content:
+            LibraryCardArtwork(library: library, source: source)
+                .frame(width: 720, height: 405)
+        )
+        let firstFrame = try XCTUnwrap(returningCard.uiImage)
+        XCTAssertTrue(try isRed(firstFrame, at: CGPoint(x: 360, y: 100)),
+                      "A returning card must show its resident collage before any async task runs.")
+
+        let returningHost = UIHostingController(rootView:
+            LibraryCardView(aggregated: library, subtitle: "Server", action: {}, artworkSource: source)
+                .environment(\.plozzCardFocusStyle, .system)
+                .frame(width: 500)
+        )
+        host.view.isHidden = true
+        controller.addChild(returningHost)
+        controller.view.addSubview(returningHost.view)
+        returningHost.didMove(toParent: controller)
+        returningHost.view.frame = host.view.frame
+        window.layoutIfNeeded()
+        _ = snapshot(window)
+        let returningPoster = try XCTUnwrap(descendant(TVPosterView.self, in: returningHost.view))
+        XCTAssertEqual(returningPoster.image?.cgImage?.width, 720,
+                       "The native focus surface must receive the cached bitmap on its first paint.")
     }
 
     func testLibraryTransportMarksRemainDistinct() throws {

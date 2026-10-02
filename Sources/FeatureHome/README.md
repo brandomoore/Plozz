@@ -89,6 +89,10 @@ without changing ordinary poster spacing or the focus animation.
 Transport marks stack the complete drive symbol above their label with balanced
 vertical padding.
 The decoded cache is capped at 16 MiB; the bounded disk derivative cache at 8 MiB.
+Collage keys use a stable profile identity, not the app container's absolute path,
+so installing another build does not invalidate them. Returning cards seed their
+first frame synchronously from decoded memory; disk reads, decoding and composition
+remain asynchronous and off the main thread.
 Keys include the Home profile scope, account, effective server user, library and
 credential revision. No authenticated artwork URLs are persisted by this cache.
 Focus changes do not reload or compose artwork. Native TV posters receive the

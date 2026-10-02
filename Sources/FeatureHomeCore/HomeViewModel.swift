@@ -333,7 +333,7 @@ public final class HomeViewModel {
             return nil
         }
         return LibraryArtworkSource(
-            library: library, account: account, scope: contentStore.persistenceScope
+            library: library, account: account, scope: contentStore.libraryArtworkScope
         )
     }
 

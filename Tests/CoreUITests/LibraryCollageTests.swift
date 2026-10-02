@@ -72,6 +72,11 @@ final class LibraryCollageTests: XCTestCase {
         XCTAssertNotNil(loaded.0)
         XCTAssertTrue(loaded.0 === loaded.1)
         XCTAssertEqual(loaded.0?.size, CGSize(width: 720, height: 405))
+        XCTAssertTrue(cache.cachedImage(for: source) === loaded.0,
+                      "Returning cards must obtain the same decoded bitmap synchronously.")
+        XCTAssertNil(cache.cachedImage(for: self.source(provider, scope: "child")))
+        let repeated = await cache.image(for: source)
+        XCTAssertTrue(repeated === loaded.0)
         var calls = await provider.calls
         XCTAssertEqual(calls, 1)
 
@@ -79,6 +84,7 @@ final class LibraryCollageTests: XCTestCase {
         let diskImage = await restored.image(for: source)
         XCTAssertNotNil(diskImage)
         XCTAssertEqual(diskImage?.size, CGSize(width: 720, height: 405))
+        XCTAssertTrue(restored.cachedImage(for: source) === diskImage)
         calls = await provider.calls
         XCTAssertEqual(calls, 1, "A persisted collage must not refetch posters or enumerate the library.")
     }

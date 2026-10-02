@@ -2,11 +2,12 @@
 import CoreModels
 import CoreNetworking
 import CryptoKit
+import Synchronization
 import UIKit
 
 actor LibraryCollageCache {
     static let shared = LibraryCollageCache()
-    private let memory = NSCache<NSString, UIImage>()
+    private nonisolated let memory: Mutex<NSCache<NSString, UIImage>>
     private let disk: LocalArtworkDerivedCache
     private let limiter = ConcurrencyLimiter(limit: 2)
     private let imageLimiter = ConcurrencyLimiter(limit: 3)
@@ -34,14 +35,20 @@ actor LibraryCollageCache {
             maximumAge: 30 * 24 * 60 * 60,
             now: { Date() }
         )
-        memory.totalCostLimit = 16 * 1024 * 1024
-        memory.countLimit = 24
+        let images = NSCache<NSString, UIImage>()
+        images.totalCostLimit = 16 * 1024 * 1024
+        images.countLimit = 24
+        memory = Mutex(images)
+    }
+
+    nonisolated func cachedImage(for source: LibraryArtworkSource) -> UIImage? {
+        memory.withLock { $0.object(forKey: source.cacheIdentity as NSString) }
     }
 
     func image(for source: LibraryArtworkSource) async -> UIImage? {
+        if let image = cachedImage(for: source) { return image }
         let key = SHA256.hash(data: Data(source.cacheIdentity.utf8))
             .map { String(format: "%02x", $0) }.joined()
-        if let image = memory.object(forKey: key as NSString) { return image }
         if let task = pending[key] { return await task.value }
         if let retry = retryAfter[key], retry > Date() { return nil }
         let task = Task(priority: .utility) { [disk, limiter, imageLimiter, imageLoader] in
@@ -103,7 +110,9 @@ actor LibraryCollageCache {
         let image = await task.value
         pending[key] = nil
         if let image {
-            memory.setObject(image, forKey: key as NSString, cost: 720 * 405 * 4)
+            memory.withLock {
+                $0.setObject(image, forKey: source.cacheIdentity as NSString, cost: 720 * 405 * 4)
+            }
             retryAfter[key] = nil
         } else {
             retryAfter = retryAfter.filter { $0.value > Date() }

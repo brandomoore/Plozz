@@ -32,9 +32,18 @@ private struct LibraryCollageArtwork: View {
     let source: LibraryArtworkSource?
     let provider: ProviderKind
     @State private var image: UIImage?
+    @State private var resolved: Bool
     #if os(tvOS)
     @Environment(\.artworkResolutionState) private var resolution
     #endif
+
+    init(source: LibraryArtworkSource?, provider: ProviderKind) {
+        self.source = source
+        self.provider = provider
+        let cached = source.flatMap { LibraryCollageCache.shared.cachedImage(for: $0) }
+        _image = State(initialValue: cached)
+        _resolved = State(initialValue: cached != nil)
+    }
 
     var body: some View {
         Group {
@@ -44,19 +53,20 @@ private struct LibraryCollageArtwork: View {
                 LibraryArtworkFallback(provider: provider)
             }
         }
+        #if os(tvOS)
+        .onChange(of: image, initial: true) { _, value in
+            resolution?.image = value
+        }
+        .onChange(of: resolved, initial: true) { _, value in
+            resolution?.isResolved = value
+        }
+        #endif
         .task(id: source?.cacheIdentity) {
-            #if os(tvOS)
-            resolution?.image = image
-            resolution?.isResolved = image != nil
-            #endif
-            guard let source else { return }
-            let resolved = await LibraryCollageCache.shared.image(for: source)
+            guard image == nil, let source else { return }
+            let loaded = await LibraryCollageCache.shared.image(for: source)
             guard !Task.isCancelled else { return }
-            image = resolved
-            #if os(tvOS)
-            resolution?.image = resolved
-            resolution?.isResolved = true
-            #endif
+            image = loaded
+            resolved = true
         }
     }
 }
