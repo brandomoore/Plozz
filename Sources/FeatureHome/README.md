@@ -83,7 +83,9 @@ server-supplied covers. A subtle corner scrim uses eased linear fades from the t
 and trailing artwork edges. Both long, finely sampled ramps begin fading
 immediately, without a flat dark core, keeping the tint negligible away from the
 mark and never peaking around the logo like a radial shadow.
-Marks have breathing room but no individual backing plates or borders.
+Marks use `ProviderBrandMark`'s standard provider-tinted circular background and
+optically balanced internal padding, including its existing Plex size adjustment.
+No library-specific backing plates, borders, or logo scaling are added.
 Transport marks stack the complete drive symbol above their label with balanced
 vertical padding.
 The decoded cache is capped at 16 MiB; the bounded disk derivative cache at 8 MiB.

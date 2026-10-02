@@ -74,10 +74,12 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         XCTAssertEqual(activations, 1)
         let artwork = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: poster.imageView, in: window))
         let image = snapshot(window)
-        XCTAssertFalse(try isRed(image, at: CGPoint(
+        let badgePixel = try pixel(image, at: CGPoint(
             x: artwork.maxX - artwork.width * 0.08,
             y: artwork.minY + artwork.height * 0.12
-        )), "The branded corner badge must be drawn over the bitmap, inside native artwork.")
+        ))
+        XCTAssertGreaterThan(Int(badgePixel[2]) - Int(badgePixel[1]), 5,
+                             "The purple provider badge must be drawn over the red bitmap, inside native artwork.")
         let attachment = XCTAttachment(image: image)
         attachment.name = "generated-native-library-collage"
         attachment.lifetime = .keepAlways
@@ -120,15 +122,16 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                 CGRect(x: 580, y: 20, width: 140, height: 140)
             ))
             badges.append(try XCTUnwrap(UIImage(cgImage: corner).pngData()))
-            XCTAssertFalse(try isRed(image, at: CGPoint(x: 640, y: 75)),
-                           "Both cover types must put the badge in the top-right corner.")
+            let badgePixel = try pixel(image, at: CGPoint(x: 640, y: 75))
+            XCTAssertGreaterThan(Int(badgePixel[2]) - Int(badgePixel[1]), 5,
+                                 "Both cover types must put the purple badge in the top-right corner.")
             XCTAssertTrue(try isRed(image, at: CGPoint(x: 65, y: 75)),
                           "The badge must not fall back to the GeometryReader's top-left origin.")
         }
         XCTAssertEqual(badges[0], badges[1])
     }
 
-    func testLibraryCornerScrimContainsTheWholeLogoAndLeavesOtherArtworkClear() throws {
+    func testLibraryCornerScrimRemainsSoftOutsideTheProviderBadge() throws {
         let library = AggregatedLibrary(
             accountID: "account", accountName: "Viewer", serverName: "Server",
             providerKind: .jellyfin,
@@ -163,14 +166,14 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                     try brightness(CGPoint(x: origin.x + size * 0.5, y: 1))
                 )
                 for offset in [
-                    CGPoint(x: 0.03, y: 0.5), CGPoint(x: 0.97, y: 0.5),
-                    CGPoint(x: 0.5, y: 0.03), CGPoint(x: 0.5, y: 0.97)
+                    CGPoint(x: -0.04, y: 0.5), CGPoint(x: 1.04, y: 0.5),
+                    CGPoint(x: 0.5, y: -0.04), CGPoint(x: 0.5, y: 1.04)
                 ] {
                     let point = CGPoint(x: origin.x + size * offset.x, y: origin.y + size * offset.y)
                     XCTAssertLessThan(try brightness(point), 215,
                                       "The gentle scrim must still sit beneath the whole logo: \(width), \(direction)")
                     XCTAssertGreaterThan(try brightness(point), 160,
-                                         "The logo must not sit on a heavy dark patch or an additional backing plate.")
+                                         "The shared badge must not acquire a heavy dark patch or an additional backing plate.")
                     XCTAssertLessThanOrEqual(Int(edgeBrightness), Int(try brightness(point)) + 2,
                                              "Darkness must extend to the artwork edges, not peak around the logo as a halo.")
                 }
@@ -200,6 +203,69 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         }
     }
 
+    func testLibraryBadgesUseTheSharedTintAndOpticalSizing() throws {
+        let widths: [CGFloat] = [220, 484]
+        for width in widths {
+            for provider in ProviderKind.allCases {
+                let library = AggregatedLibrary(
+                    accountID: "account", accountName: "Viewer", serverName: "Server",
+                    providerKind: provider, transportKind: provider == .mediaShare ? .smb : nil,
+                    library: MediaLibrary(
+                        id: "movies", title: "Movies", kind: .movie,
+                        imageURL: URL(string: "https://example.invalid/custom.jpg")
+                    )
+                )
+                let size = width * 0.135
+                let actual = ImageRenderer(content:
+                    LibraryArtworkOverlay(library: library)
+                        .frame(width: width, height: width * 9 / 16)
+                        .background(.white)
+                        .environment(\.plozzCardFocusStyle, .system)
+                )
+                let expected = ImageRenderer(content:
+                    Color.clear.frame(width: width, height: width * 9 / 16)
+                        .overlay(alignment: .topTrailing) {
+                            ProviderBrandMark(
+                                provider: provider, size: size,
+                                mediaShareTransport: library.transportKind
+                            )
+                            .padding(size * 0.1)
+                            .padding(min(10.5, width * 0.024))
+                        }
+                )
+                actual.scale = 3
+                expected.scale = 3
+                let actualImage = try XCTUnwrap(actual.cgImage)
+                let expectedImage = try XCTUnwrap(expected.cgImage)
+                let actualPixels = try rgba(actualImage)
+                let expectedPixels = try rgba(expectedImage)
+                XCTAssertEqual(actualImage.width, expectedImage.width)
+                XCTAssertEqual(actualImage.height, expectedImage.height)
+                guard actualPixels.count == expectedPixels.count else {
+                    XCTFail("Both badges must have the same canvas.")
+                    return
+                }
+                var difference = 0
+                // Channel differences cancel the grayscale scrim while preserving
+                // both the tinted circle and the shared logo's exact optical sizing.
+                for index in stride(from: 0, to: actualPixels.count, by: 4) {
+                    for channel in [0, 2] {
+                        let actualChroma = Int(actualPixels[index + channel]) - Int(actualPixels[index + 1])
+                        let expectedChroma = Int(expectedPixels[index + channel]) - Int(expectedPixels[index + 1])
+                        difference = max(difference, abs(actualChroma - expectedChroma))
+                    }
+                }
+                XCTAssertLessThanOrEqual(difference, 4, "Use the standard tinted badge unchanged: \(provider), \(width)")
+                if width == 484 {
+                    let attachment = XCTAttachment(image: UIImage(cgImage: actualImage))
+                    attachment.name = "library-standard-badge-\(provider.rawValue)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+            }
+        }
+    }
+
     func testTransportMarkIsUnclippedAndOpticallyCentered() throws {
         let sizes: [CGFloat] = [32, 52, 76]
         for size in sizes {
@@ -212,16 +278,7 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                 )
                 renderer.scale = 3
                 let image = try XCTUnwrap(renderer.cgImage)
-                var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
-                try pixels.withUnsafeMutableBytes { bytes in
-                    let context = try XCTUnwrap(CGContext(
-                        data: bytes.baseAddress, width: image.width, height: image.height,
-                        bitsPerComponent: 8, bytesPerRow: image.width * 4,
-                        space: CGColorSpaceCreateDeviceRGB(),
-                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-                    ))
-                    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-                }
+                let pixels = try rgba(image)
                 let rows = (0..<image.height).filter { y in
                     (0..<image.width).contains { x in pixels[(y * image.width + x) * 4 + 3] > 32 }
                 }
@@ -611,6 +668,20 @@ final class NativeLibraryCardHostedTests: XCTestCase {
     private func isRed(_ image: UIImage, at point: CGPoint) throws -> Bool {
         let pixel = try pixel(image, at: point)
         return pixel[0] > 180 && pixel[1] < 100 && pixel[2] < 100
+    }
+
+    private func rgba(_ image: CGImage) throws -> [UInt8] {
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            ))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        return pixels
     }
 
     private func pixel(_ image: UIImage, at point: CGPoint) throws -> [UInt8] {

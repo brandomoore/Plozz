@@ -118,7 +118,7 @@ public struct LibraryArtworkOverlay: View {
                 ProviderBrandMark(
                     provider: library.providerKind,
                     size: markSize,
-                    showsBackground: false,
+                    showsBackground: true,
                     mediaShareTransport: library.transportKind
                 )
                 .padding(markPadding)
