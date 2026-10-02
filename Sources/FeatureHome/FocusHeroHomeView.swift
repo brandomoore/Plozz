@@ -288,6 +288,16 @@ final class FocusHeroModel {
         return offsets
     }
 
+    func heightStops(in rows: [FocusHeroRow]) -> [FocusHeroHeightStop] {
+        let origin = scrollOrigin(in: rows)
+        var top: CGFloat = 0
+        return rows.map { row in
+            let height = rowHeights[row.id] ?? 0
+            defer { top += height + FocusHeroLayout.rowSpacing }
+            return FocusHeroHeightStop(offset: top + height - origin, height: height)
+        }
+    }
+
 }
 
 /// Apple TV Home where the hero is whatever is focused.
@@ -591,8 +601,25 @@ private struct FocusHeroScrollPosition: View {
                 + model.activeHeight(in: rows) - model.scrollOrigin(in: rows),
             motion: model.motion,
             height: model.activeHeight(in: rows),
+            heightStops: model.heightStops(in: rows),
             rowOffsets: model.tuckOffsets(in: rows)
         )
+    }
+}
+
+struct FocusHeroHeightStop: Equatable {
+    let offset: CGFloat
+    let height: CGFloat
+
+    static func height(at offset: CGFloat, in stops: [Self]) -> CGFloat? {
+        guard let first = stops.first, let last = stops.last else { return nil }
+        if offset <= first.offset { return first.height }
+        for (lower, upper) in zip(stops, stops.dropFirst()) where offset <= upper.offset {
+            let progress = (offset - lower.offset) / (upper.offset - lower.offset)
+            let eased = progress * progress * (3 - 2 * progress)
+            return lower.height + (upper.height - lower.height) * eased
+        }
+        return last.height
     }
 }
 
@@ -600,12 +627,12 @@ private struct FocusHeroScrollPosition: View {
 @MainActor
 final class FocusHeroRowMotion {
     var height: CGFloat?
+    var heightStops: [FocusHeroHeightStop] = []
     weak var column: UIView?
     weak var mask: UIView?
-    private let columnMotion = FocusHeroTransformMotion()
-    private let maskMotion = FocusHeroTransformMotion()
     var rowOffsets: [String: CGFloat] = [:]
     private var rowSurfaces: [String: RowSurface] = [:]
+    private static let heightAnimationKey = "plozz.home.viewport-height"
 
     @MainActor private struct RowSurface {
         weak var view: UIView?
@@ -630,27 +657,74 @@ final class FocusHeroRowMotion {
                 surface.motion.move(view, to: offset, animated: animated)
             }
         }
-        guard let height else { return }
+        guard !animated, let height else { return }
         let bottom = FocusHeroLayout.rowsBottom(rowSpacing: FocusHeroLayout.rowSpacing)
         if let column {
-            columnMotion.move(column, to: max(FocusHeroLayout.lowestSlotTop, bottom - height)
-                              - FocusHeroLayout.lowestSlotTop, animated: animated)
+            column.layer.removeAnimation(forKey: Self.heightAnimationKey)
+            column.transform = CGAffineTransform(
+                translationX: 0,
+                y: max(FocusHeroLayout.lowestSlotTop, bottom - height) - FocusHeroLayout.lowestSlotTop
+            )
         }
         if let mask {
-            maskMotion.move(mask, to: max(0, bottom - height - FocusHeroLayout.activeTitleLift
-                                         - 6 - FocusHeroLayout.fadeBand), animated: animated)
+            mask.layer.removeAnimation(forKey: Self.heightAnimationKey)
+            mask.transform = CGAffineTransform(
+                translationX: 0,
+                y: max(0, bottom - height - FocusHeroLayout.activeTitleLift - 6 - FocusHeroLayout.fadeBand)
+            )
         }
     }
 
+    func followViewport(from departure: CGFloat, to target: CGFloat, velocity: CGFloat) {
+        guard !heightStops.isEmpty else { return }
+        let timing = FocusHeroLayout.rowSpring
+        let duration = timing.settlingDuration
+        // Sample once per retarget; Core Animation plays the trajectory without
+        // publishing per-frame scroll geometry back through SwiftUI.
+        let count = max(1, Int(ceil(duration * 120)))
+        let bottom = FocusHeroLayout.rowsBottom(rowSpacing: FocusHeroLayout.rowSpacing)
+        let heights = (0...count).map { index in
+            let offset = index == count ? target : departure + timing.value(
+                target: target - departure, initialVelocity: velocity,
+                time: duration * Double(index) / Double(count)
+            )
+            return FocusHeroHeightStop.height(at: offset, in: heightStops)!
+        }
+        func animate(_ view: UIView?, values: [CGFloat]) {
+            guard let view, let first = values.first, let last = values.last else { return }
+            let current = view.layer.presentation()?.affineTransform().ty ?? view.transform.ty
+            view.layer.removeAnimation(forKey: Self.heightAnimationKey)
+            UIView.performWithoutAnimation {
+                view.transform = CGAffineTransform(translationX: 0, y: last)
+            }
+            guard values.contains(where: { abs($0 - current) > 0.01 }) else { return }
+            let correction = current - first
+            let animation = CAKeyframeAnimation(keyPath: "transform.translation.y")
+            animation.values = values.enumerated().map { index, value in
+                let elapsed = duration * Double(index) / Double(count)
+                return index == count ? last : value + correction
+                    - timing.value(target: correction, initialVelocity: 0, time: elapsed)
+            }
+            animation.duration = duration
+            animation.calculationMode = .linear
+            view.layer.add(animation, forKey: Self.heightAnimationKey)
+        }
+        animate(column, values: heights.map {
+            max(FocusHeroLayout.lowestSlotTop, bottom - $0) - FocusHeroLayout.lowestSlotTop
+        })
+        animate(mask, values: heights.map {
+            max(0, bottom - $0 - FocusHeroLayout.activeTitleLift - 6 - FocusHeroLayout.fadeBand)
+        })
+    }
+
     func stop() {
-        columnMotion.stop()
-        maskMotion.stop()
+        column?.layer.removeAnimation(forKey: Self.heightAnimationKey)
+        mask?.layer.removeAnimation(forKey: Self.heightAnimationKey)
         for surface in rowSurfaces.values { surface.motion.stop() }
     }
 }
 
-/// A height change carries its own velocity, not the viewport's. Passing
-/// through equal-height rows must neither start nor restart this movement.
+/// Concealment carries its own velocity; unchanged row targets keep moving.
 @MainActor
 private final class FocusHeroTransformMotion {
     private weak var view: UIView?
@@ -713,6 +787,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
     let y: CGFloat
     var motion: FocusHeroRowMotion? = nil
     var height: CGFloat? = nil
+    var heightStops: [FocusHeroHeightStop] = []
     var rowOffsets: [String: CGFloat] = [:]
 
     func makeUIView(context: Context) -> PositionView {
@@ -722,10 +797,12 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
     }
 
     func updateUIView(_ view: PositionView, context: Context) {
+        let heightChanged = motion?.height != height || motion?.heightStops != heightStops
         view.rowMotion = motion
         motion?.height = height
+        motion?.heightStops = heightStops
         motion?.rowOffsets = rowOffsets
-        view.move(to: y, rowID: rowID)
+        view.move(to: y, rowID: rowID, heightChanged: heightChanged)
     }
 
     static func dismantleUIView(_ view: PositionView, coordinator: ()) {
@@ -734,16 +811,23 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
 
     final class PositionView: UIView {
         weak var rowMotion: FocusHeroRowMotion?
-        private var rowAnimator: UIViewPropertyAnimator?
-        private var compositorDeparture: CGFloat = 0
+        private struct ScrollStep {
+            let key: String
+            let distance: CGFloat
+        }
+        private var scrollSteps: [ScrollStep] = []
+        private var scrollSequence = 0
         private var compositorTarget: CGFloat = 0
-        private var compositorVelocity: CGFloat = 0
         private weak var scroller: UIScrollView?
         private var wasScrollEnabled = true
         private var rowID: String?
         private var y: CGFloat = 0
         private var offsetObservation: NSKeyValueObservation?
         private var isStepping = false
+
+        private var isMoving: Bool {
+            scrollSteps.contains { scroller?.layer.animation(forKey: $0.key) != nil }
+        }
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
@@ -755,68 +839,67 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
             bindScrollView()
         }
 
-        func move(to y: CGFloat, rowID: String?) {
+        func move(to y: CGFloat, rowID: String?, heightChanged: Bool = false) {
             let changed = self.y != y || self.rowID != rowID
             let animated = self.rowID != nil && self.rowID != rowID
             self.rowID = rowID
             self.y = y
             bindScrollView()
             guard let scroller else { return }
-            if changed {
+            if changed || (heightChanged && isMoving) {
                 moveWithCompositor(in: scroller, animated: animated)
             } else {
-                rowMotion?.applyTargets(animated: rowAnimator?.isRunning == true)
+                rowMotion?.applyTargets(animated: isMoving)
             }
         }
 
         private func moveWithCompositor(in scroller: UIScrollView, animated: Bool) {
-            let shouldAnimate = (animated || rowAnimator?.isRunning == true)
-                && !UIAccessibility.isReduceMotionEnabled
-            let presented = scroller.layer.presentation()?.bounds.origin ?? scroller.contentOffset
+            let beganAt = CACurrentMediaTime()
             let timing = FocusHeroLayout.rowSpring
-            let velocity: CGFloat
-            if let rowAnimator, rowAnimator.isRunning {
-                velocity = timing.velocity(
-                    target: compositorTarget - compositorDeparture,
-                    initialVelocity: compositorVelocity,
-                    time: rowAnimator.duration * Double(rowAnimator.fractionComplete)
-                )
-            } else {
-                velocity = 0
+            scrollSteps.removeAll { scroller.layer.animation(forKey: $0.key) == nil }
+            let shouldAnimate = (animated || !scrollSteps.isEmpty)
+                && !UIAccessibility.isReduceMotionEnabled
+            var departure = compositorTarget
+            var velocity: CGFloat = 0
+            for step in scrollSteps {
+                guard let animation = scroller.layer.animation(forKey: step.key) else { continue }
+                // Core Animation resolves zero beginTime at commit. A requested
+                // wall-clock start would skip frames when focus/layout runs long.
+                let elapsed = animation.beginTime == 0 ? 0
+                    : max(0, scroller.layer.convertTime(beganAt, from: nil) - animation.beginTime)
+                departure += timing.value(target: step.distance, initialVelocity: 0, time: elapsed) - step.distance
+                velocity += timing.velocity(target: step.distance, initialVelocity: 0, time: elapsed)
             }
             isStepping = true
-            rowAnimator?.stopAnimation(true)
-            rowAnimator = nil
             if shouldAnimate {
-                UIView.performWithoutAnimation {
-                    scroller.setContentOffset(presented, animated: false)
-                    scroller.layoutIfNeeded()
-                }
-                let destination = CGPoint(x: 0, y: y)
-                let distance = y - presented.y
-                compositorDeparture = presented.y
+                let distance = y - compositorTarget
                 compositorTarget = y
-                compositorVelocity = velocity
-                let relativeVelocity = distance == 0 ? 0 : velocity / distance
-                // UIKit's bounds interpolation uses the scalar (dx) velocity.
-                let animator = UIViewPropertyAnimator(
-                    duration: timing.settlingDuration,
-                    timingParameters: UISpringTimingParameters(
-                        mass: timing.mass, stiffness: timing.stiffness, damping: timing.damping,
-                        initialVelocity: CGVector(dx: relativeVelocity, dy: relativeVelocity)
-                    )
-                )
-                animator.addAnimations {
-                    scroller.setContentOffset(destination, animated: false)
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                scroller.setContentOffset(CGPoint(x: 0, y: y), animated: false)
+                if distance != 0 {
+                    // The new target and its inverse additive offset cancel at
+                    // t=0. Existing springs keep their position, clock and velocity.
+                    scrollSequence += 1
+                    let key = "plozz.home.scroll.\(scrollSequence)"
+                    let animation = CASpringAnimation(keyPath: "bounds.origin.y")
+                    animation.mass = timing.mass
+                    animation.stiffness = timing.stiffness
+                    animation.damping = timing.damping
+                    animation.fromValue = -distance
+                    animation.toValue = 0
+                    animation.isAdditive = true
+                    animation.duration = timing.settlingDuration
+                    scroller.layer.add(animation, forKey: key)
+                    scrollSteps.append(ScrollStep(key: key, distance: distance))
                 }
-                rowAnimator = animator
-                animator.addCompletion { [weak self, weak animator] _ in
-                    guard let self, self.rowAnimator === animator else { return }
-                    self.rowAnimator = nil
-                }
-                animator.startAnimation()
+                CATransaction.commit()
                 rowMotion?.applyTargets(animated: true)
+                rowMotion?.followViewport(from: departure, to: y, velocity: velocity)
             } else {
+                for step in scrollSteps { scroller.layer.removeAnimation(forKey: step.key) }
+                scrollSteps.removeAll()
+                compositorTarget = y
                 scroller.setContentOffset(CGPoint(x: 0, y: y), animated: false)
                 rowMotion?.applyTargets()
             }
@@ -824,8 +907,8 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
         }
 
         func stop() {
-            rowAnimator?.stopAnimation(true)
-            rowAnimator = nil
+            for step in scrollSteps { scroller?.layer.removeAnimation(forKey: step.key) }
+            scrollSteps.removeAll()
             rowMotion?.stop()
             offsetObservation = nil
             scroller?.isScrollEnabled = wasScrollEnabled
@@ -860,6 +943,7 @@ struct FocusHeroNativeScrollPosition: UIViewRepresentable {
                         // owns scrolling. Do not disable the nested horizontal rails.
                         scrollView.isScrollEnabled = false
                         scrollView.setContentOffset(CGPoint(x: 0, y: y), animated: false)
+                        compositorTarget = y
                         offsetObservation = scrollView.observe(\.contentOffset) { [weak self] _, _ in
                             MainActor.assumeIsolated { self?.holdOffset() }
                         }

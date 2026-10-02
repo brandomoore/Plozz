@@ -103,17 +103,24 @@ Preview headings have a 16pt inter-row spacer above them and more room below
 before their cards. Only the active heading lifts, preserving its focus
 clearance. That movement is a title-only drawing offset, not a rail
 relayout. Native card/shadow drawing bounds remain intact.
-Vertical movement uses a real `ScrollView` with a compositor-backed UIKit spring,
-not a main-thread display link advancing the content offset. Repeated presses
-retarget from the current presentation position and carry the spring's existing
-velocity; restarting an ease-in-out curve from rest makes rapid navigation stall
-between rows. UIKit's bounds interpolation needs the normalized scalar (`dx`)
-velocity, even for a vertical offset. The viewport, mask and hero-column surface
-use native springs with the same timing but independent velocities. The height
-stays stationary through equal-height poster rows; entering Continue Watching
-must not inject the viewport's accumulated speed into that new height change.
-An unchanged height also leaves its in-flight animation running. Separate SwiftUI
-timing can visibly lag the viewport between short cards and tall posters.
+Vertical movement uses a real `ScrollView` with additive native springs,
+not a main-thread display link advancing the content offset. Each press adds
+only its destination adjustment; existing springs keep running with their
+original clocks and velocity. Stopping and recreating a spring on every press
+makes held-remote navigation pulse between rows.
+Springs and height keyframes start at the actual Core Animation commit, not an
+earlier wall-clock timestamp. Otherwise a busy focus/layout update can skip
+most of the first visible movement. Retargeting reads the native resolved clocks;
+hosted coverage checks 90ms retargets and a deliberately delayed 150ms commit.
+The mask and hero-column height follow the
+viewport's presentation trajectory through the measured row anchors, not a
+separate spring started by the destination change. Rapid Up can target Continue
+Watching while the viewport still traverses taller rows; the height remains
+unchanged until that viewport reaches the shorter-row interval. Smooth height
+interpolation has zero slope at each anchor, avoiding a velocity jump on entering
+or leaving the interval. Native keyframes are calculated once per retarget and
+run on the compositor, without per-frame SwiftUI updates. Late row measurements
+refresh that path from its painted position even if the destination is unchanged.
 The lifted heading retains the same nonbouncing spring timing.
 Focus still chooses the row and its
 measured bottom edge determines the exact destination, preserving the hero,
@@ -126,6 +133,11 @@ proposal, including the custom-focus horizontal scroll views.
 Hosts forward the public profile, styling and media-action environment values;
 copying the entire SwiftUI environment also copies internal accessibility state
 from the parent hosting tree and hides the hosted content from accessibility.
+The media-item router retains a comparable identity within its navigation scope.
+Refreshing its callback uses the latest route without invalidating every realized
+card's context menu; enabling or disabling navigation still updates the menus.
+Native-host coverage changes the route callback during upward navigation and
+asserts that already-realized cards do not rebuild their action lists.
 Vertical row owners remain in a `VStack`: the native model offset reaches its
 destination before the presentation viewport does. A `LazyVStack` would recycle
 rows that are still visibly passing through the viewport, especially during
