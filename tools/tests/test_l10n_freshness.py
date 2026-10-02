@@ -164,6 +164,63 @@ class ExtractionFreshnessTests(unittest.TestCase):
         self.write(".build/packages/workspace-state.json", '{"changed":true}')
         self.assertFalse(self.matches())
 
+    def test_workspace_artifact_order_and_json_format_do_not_invalidate(self):
+        state = {
+            "version": 6,
+            "object": {
+                "artifacts": [
+                    {"packageRef": {"identity": "one"}, "path": "/one", "source": {"checksum": "one"}},
+                    {"packageRef": {"identity": "two"}, "path": "/two", "source": {"checksum": "two"}},
+                ],
+                "dependencies": [{"identity": "one", "revision": "pin-one"}],
+            },
+        }
+        self.write(".build/packages/workspace-state.json", json.dumps(state, indent=2))
+        self.record()
+        state["object"]["artifacts"].reverse()
+        self.write(".build/packages/workspace-state.json", json.dumps(state, sort_keys=True))
+        self.assertTrue(self.matches())
+
+    def test_real_workspace_input_changes_still_invalidate(self):
+        baseline = {
+            "version": 6,
+            "object": {
+                "artifacts": [
+                    {"packageRef": {"identity": "one"}, "path": "/one", "source": {"checksum": "one"}},
+                    {"packageRef": {"identity": "two"}, "path": "/two", "source": {"checksum": "two"}},
+                ],
+                "dependencies": [{"identity": "one", "revision": "pin-one"}],
+                "orderedValues": ["first", "second"],
+            },
+        }
+        mutations = [
+            lambda obj: obj["artifacts"][0]["source"].update(checksum="changed"),
+            lambda obj: obj["artifacts"][0].update(path="/changed"),
+            lambda obj: obj["artifacts"][0]["packageRef"].update(identity="changed"),
+            lambda obj: obj["artifacts"].pop(),
+            lambda obj: obj["artifacts"].append(obj["artifacts"][0]),
+            lambda obj: obj["dependencies"][0].update(revision="pin-two"),
+            lambda obj: obj["orderedValues"].reverse(),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                self.write(".build/packages/workspace-state.json", json.dumps(baseline))
+                self.record()
+                changed = json.loads(json.dumps(baseline))
+                mutate(changed["object"])
+                self.write(".build/packages/workspace-state.json", json.dumps(changed))
+                self.assertFalse(self.matches())
+
+    def test_malformed_workspace_state_is_not_reusable_evidence(self):
+        for invalid in ("{broken", "null", "[]"):
+            with self.subTest(invalid=invalid):
+                self.write(".build/packages/workspace-state.json", "{}")
+                self.record()
+                self.write(".build/packages/workspace-state.json", invalid)
+                self.assertFalse(self.matches())
+                with self.assertRaises(freshness.FreshnessError):
+                    self.receipt.record(self.receipt.inputs())
+
     def test_dirty_or_replaced_checkout_invalidates_even_with_same_package_lock(self):
         checkout = self.workspace / "checkouts/Dependency"
         checkout.mkdir(parents=True)

@@ -55,6 +55,10 @@ An edit, missing/corrupt receipt, changed package checkout, or missing/changed
 `.stringsdata` causes a real rebuild. Partial, failed, and explicit `--no-build`
 runs cannot create full-scope evidence. Source changes during extraction fail
 the operation rather than recording an ambiguous result.
+Dependency fingerprints canonicalize JSON formatting and SwiftPM's unordered
+binary-artifact inventory, which can be reordered when switching platforms.
+Artifact checksums, identities, paths, membership, checkout revisions, and all
+other workspace values remain part of the fingerprint; malformed state is rejected.
 Git's repository-selection variables are cleared for extraction subprocesses,
 so invoking the check from a push hook cannot redirect dependency lookups back
 to the parent repository. Build configuration and lease variables are retained.
