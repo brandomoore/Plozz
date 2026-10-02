@@ -2755,7 +2755,6 @@ private struct PlozziOSHomeLibraryCard: View {
         ) {
             LibraryCardArtwork(library: library, source: artworkSource)
             .frame(width: width, height: width * 0.6)
-            .overlay { LibraryArtworkOverlay(library: library) }
             .clipShape(
                 RoundedRectangle(
                     cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,

@@ -101,6 +101,7 @@ public extension NativeArtworkPoster where Overlay == EmptyView {
         subtitle: String?, // l10n:content — library metadata
         localizedTitle: LocalizedStringResource? = nil,
         placeholderSymbol: String,
+        placeholderTint: Color? = nil,
         providerKind: ProviderKind? = nil,
         mediaShareTransport: MediaShareTransportKind? = nil,
         focus: PlozzCardFocus.Binding,
@@ -110,6 +111,7 @@ public extension NativeArtworkPoster where Overlay == EmptyView {
         self.init(
             width: width, aspectRatio: aspectRatio, title: title, subtitle: subtitle,
             localizedTitle: localizedTitle, placeholderSymbol: placeholderSymbol,
+            placeholderTint: placeholderTint,
             providerKind: providerKind, mediaShareTransport: mediaShareTransport,
             focus: focus, action: action, artwork: artwork, overlay: { EmptyView() }
         )

@@ -2250,8 +2250,6 @@ struct LibraryCardView: View {
                 action: action
             ) {
                 LibraryCardArtwork(library: aggregated, source: artworkSource)
-            } overlay: {
-                LibraryArtworkOverlay(library: aggregated)
             }
         } else {
             customCard
@@ -2367,7 +2365,6 @@ struct LibraryCardView: View {
     @ViewBuilder
     private var artwork: some View {
         LibraryCardArtwork(library: aggregated, source: artworkSource)
-            .overlay { LibraryArtworkOverlay(library: aggregated) }
     }
 
     /// A per-kind SF Symbol for the empty-state watermark. Plex/Jellyfin map

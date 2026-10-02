@@ -80,7 +80,16 @@ final class NativeLibraryCardHostedTests: XCTestCase {
         ))
         XCTAssertLessThanOrEqual(abs(Int(badgePixel[2]) - Int(badgePixel[1])), 3,
                                 "Provider tint must no longer be drawn over the artwork.")
+        let center = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(
+            x: artwork.minX + artwork.width * 0.2, y: artwork.minY + artwork.height * 0.35,
+            width: artwork.width * 0.6, height: artwork.height * 0.3
+        )))
+        let centerPixels = try rgba(center)
+        XCTAssertFalse(stride(from: 0, to: centerPixels.count, by: 4).contains {
+            centerPixels[$0 + 1] > 180 && centerPixels[$0 + 2] > 180
+        }, "The red collage must not have a white library title painted over it.")
         let caption = try XCTUnwrap(descendant(SystemPosterCaption.CaptionView.self, in: window))
+        XCTAssertEqual(try XCTUnwrap(descendant(UILabel.self, in: caption.title)).text, "Movies")
         let badge = try XCTUnwrap(caption.providerBadge)
         let badgeFrame = try XCTUnwrap(NativeFocusProjection.artworkFrame(of: badge, in: window))
         XCTAssertGreaterThanOrEqual(badgeFrame.minY, artwork.maxY)
@@ -124,36 +133,6 @@ final class NativeLibraryCardHostedTests: XCTestCase {
             rendered.append(try XCTUnwrap(renderer.uiImage?.pngData()))
         }
         XCTAssertEqual(Set(rendered).count, 3, "Shared drive marks must retain the actual transport labels.")
-    }
-
-    func testLibraryArtworkHasNoCornerBadgeOrScrim() throws {
-        var corners: [Data] = []
-        let baseline = ImageRenderer(content: Color.red.frame(width: 1, height: 1))
-        let backgroundPixel = try pixel(XCTUnwrap(baseline.uiImage), at: .zero)
-        let covers: [URL?] = [nil, URL(string: "https://example.invalid/custom.jpg")]
-        for cover in covers {
-            let library = AggregatedLibrary(
-                accountID: "account", accountName: "Viewer", serverName: "Server",
-                providerKind: .jellyfin,
-                library: MediaLibrary(id: "movies", title: "Movies", kind: .movie, imageURL: cover)
-            )
-            let renderer = ImageRenderer(content:
-                LibraryArtworkOverlay(library: library)
-                    .frame(width: 720, height: 405)
-                    .background(.red)
-            )
-            renderer.scale = 1
-            let image = try XCTUnwrap(renderer.uiImage)
-            let corner = try XCTUnwrap(image.cgImage?.cropping(to:
-                CGRect(x: 580, y: 20, width: 140, height: 140)
-            ))
-            corners.append(try XCTUnwrap(UIImage(cgImage: corner).pngData()))
-            XCTAssertEqual(try pixel(image, at: CGPoint(x: 640, y: 75)), backgroundPixel,
-                           "Neither server covers nor collages should receive a corner badge or scrim.")
-            XCTAssertTrue(try isRed(image, at: CGPoint(x: 65, y: 75)),
-                          "The badge must not fall back to the GeometryReader's top-left origin.")
-        }
-        XCTAssertEqual(corners[0], corners[1])
     }
 
     func testNativeLibraryCaptionBadgeLayoutAndReuse() async throws {

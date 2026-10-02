@@ -77,8 +77,8 @@ poster candidates. `LibraryCollageCache` coalesces requests, admits at most two
 libraries and three poster transfers at once, and composes a single 720x405 texture
 on a serial utility queue. Visible covers use the foreground artwork lane rather
 than waiting behind speculative prefetch. The raw Browse Files root uses the same
-account's indexed latest media, never a recursive filesystem walk. Generated titles
-are centered. Provider badges sit beside the library name in the caption below the
+account's indexed latest media, never a recursive filesystem walk. Library names
+are not drawn over artwork. Provider badges sit beside the library name in the caption below the
 artwork on TV and mobile, never on the cover or collage; no logo scrim is applied.
 They use `ProviderBrandMark`'s standard provider-tinted circular background and
 optically balanced internal padding, including its existing Plex size adjustment.
@@ -99,8 +99,7 @@ remain asynchronous and off the main thread.
 Keys include the Home profile scope, account, effective server user, library and
 credential revision. No authenticated artwork URLs are persisted by this cache.
 Focus changes do not reload or compose artwork. Native TV posters receive the
-same bitmap as mobile/custom cards, with their decorative provider/title overlay
-inside the native artwork surface; clipping and focus geometry stay unchanged.
+same cached bitmap as mobile/custom cards; clipping and focus geometry stay unchanged.
 
 Home gives inventory, each global feed, and per-library rows independent queues
 of at most five operations each. Slow resume feeds cannot occupy the slots
