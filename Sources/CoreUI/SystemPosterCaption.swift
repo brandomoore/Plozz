@@ -43,7 +43,7 @@ struct SystemPosterCaption: UIViewRepresentable {
             view.invalidateIntrinsicContentSize()
             view.setNeedsLayout()
         }
-        view.setFocused(isFocused, travel: metrics.focusCaptionPush(for: .system),
+        view.setFocused(isFocused, travel: metrics.nativePosterCaptionFocusTravel,
                         animated: !context.environment.accessibilityReduceMotion)
     }
 

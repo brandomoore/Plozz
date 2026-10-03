@@ -91,9 +91,10 @@ Native captions center the badge and short title together, keep the badge fixed
 while long names marquee, and move both together on focus without adding a focus target.
 Native library, poster, and landscape captions share the same density-aware
 artwork-to-caption gap, including loading placeholders. Native focus overflow
-stays outside the artwork layout slot. Caption travel reserves at least 24 points
-for TVUIKit's enlargement, including compact densities, without reflowing the row
-or changing animation timing.
+stays outside the artwork layout slot. Poster caption travel reserves at least
+24 points for TVUIKit's enlargement, including compact densities, without
+reflowing the row or changing animation timing. This poster-specific clearance
+does not change playback-panel, grid, or circular-tile caption travel.
 Transparent server covers retain their alpha but use the same rounded native
 poster treatment as opaque covers, rather than alpha-shaped cutout focus.
 This changes the native image-view treatment, not the cached artwork bitmap.

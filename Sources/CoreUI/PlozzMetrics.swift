@@ -201,11 +201,6 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// own offset must both come from here, or the card's footprint changes with
     /// focus and the whole row shifts.
     public func focusCaptionPush(for focusStyle: CardFocusStyle) -> CGFloat {
-        #if os(tvOS)
-        if focusStyle == .system {
-            return max(focusCaptionPush, PlozzTheme.Metrics.nativeFocusCaptionMinimumPush)
-        }
-        #endif
         guard focusStyle == .highlight else { return focusCaptionPush }
         return (focusCaptionPush * PlozzTheme.Metrics.highlightCaptionPushRatio).rounded()
     }
@@ -299,6 +294,11 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// Shared resting clearance for native media and library captions. Native
     /// focus margins are drawing overflow, not space in the artwork layout slot.
     public var nativePosterCaptionSpacing: CGFloat { landscapeCaptionTopSpacing }
+
+    /// TVPosterView overflow needs more clearance than other native media controls.
+    public var nativePosterCaptionFocusTravel: CGFloat {
+        max(focusCaptionPush, PlozzTheme.Metrics.nativeFocusCaptionMinimumPush)
+    }
 
     /// - Parameter dynamicTypeSize: the reader's current text size. Pass the
     ///   view's `\.dynamicTypeSize` so the metrics REBUILD when it changes —
