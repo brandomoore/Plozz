@@ -28,6 +28,8 @@ struct FocusHostApp: App {
                 NativeSidebarHandoffFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--navigation-handoff-fixture") {
                 NavigationDestinationHandoffFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--pinned-back-fixture") {
+                PinnedNavigationBackFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--poster-caption-fixture") {
                 PosterCaptionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--cast-focus-fixture") {

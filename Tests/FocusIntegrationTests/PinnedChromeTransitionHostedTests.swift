@@ -9,12 +9,12 @@ import XCTest
 
 @MainActor
 final class PinnedChromeTransitionHostedTests: XCTestCase {
-    func testExplicitTitleNavigationCanUseHomeWithoutChangingHiddenNavigationPreferences() {
+    func testExplicitHomeNavigationDoesNotChangeHiddenNavigationPreferences() {
         let configured: [NavigationRailDestination] = [.liveTV, .settings]
-        XCTAssertEqual(MainTabView.includingTitleHome(configured, isRequested: false), configured)
-        XCTAssertEqual(MainTabView.includingTitleHome(configured, isRequested: true), [.home, .liveTV, .settings])
+        XCTAssertEqual(MainTabView.includingExplicitHome(configured, isRequested: false), configured)
+        XCTAssertEqual(MainTabView.includingExplicitHome(configured, isRequested: true), [.home, .liveTV, .settings])
         XCTAssertEqual(
-            MainTabView.includingTitleHome([.settings, .home], isRequested: true), [.settings, .home]
+            MainTabView.includingExplicitHome([.settings, .home], isRequested: true), [.settings, .home]
         )
         XCTAssertEqual(configured, [.liveTV, .settings])
     }
