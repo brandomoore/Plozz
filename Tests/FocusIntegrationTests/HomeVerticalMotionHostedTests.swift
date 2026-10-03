@@ -414,12 +414,12 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
             XCTAssertEqual(Double(bytes[offset]), 25.5, accuracy: 3,
                            "Keep 10% of scrolling artwork at x=\(x), including behind the icons.")
         }
-        for distance in [20, 30, 42, 50, 54, 64] {
+        for distance in [20, 30, 42, 50, 54, 58, 64] {
             let offset = y * cg.bytesPerRow + (Int(frame.minX) + distance) * 4
-            let t = min(1, (Double(distance - 16) + 0.5) / 38)
+            let t = min(1, (Double(distance - 16) + 0.5) / 42)
             let opacity = 0.1 + 0.9 * t * t * (3 - 2 * t)
             XCTAssertEqual(Double(bytes[offset]), 255 * opacity, accuracy: 3,
-                           "Keep the requested 38pt feather and its shifted start at distance=\(distance).")
+                           "Keep the requested 42pt feather without moving its start at distance=\(distance).")
         }
     }
 

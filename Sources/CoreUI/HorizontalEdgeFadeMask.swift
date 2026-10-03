@@ -225,7 +225,7 @@ private struct PinnedSidebarFeather: View {
     static let lift: CGFloat = 18
     /// The feather's base width, ending faint just past the sidebar's icons.
     static let width: CGFloat = 30
-    static let trailingExtension: CGFloat = 8
+    static let trailingExtension: CGFloat = 12
 
     var body: some View {
         let clear = max(0, start - Self.lift - Self.width)
