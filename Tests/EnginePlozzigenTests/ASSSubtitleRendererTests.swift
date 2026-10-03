@@ -194,6 +194,10 @@ final class ASSSubtitleRendererTests: XCTestCase {
         XCTAssertTrue(paced.admit(0, frameRate: nil))
         XCTAssertFalse(paced.admit(1.0 / 120, frameRate: .nan))
         XCTAssertTrue(paced.admit(1.0 / 60, frameRate: nil), "Unknown-rate sources retain full cadence")
+        paced = ASSSubtitleFramePacer()
+        XCTAssertTrue(paced.admit(0, frameRate: 1))
+        XCTAssertTrue(paced.admit(1.0 / 24, frameRate: 1),
+                      "Very low video rates must not delay an independent subtitle cue by a second")
     }
 
     @MainActor

@@ -242,7 +242,7 @@ struct ASSSubtitleFramePacer {
     private var lastTime: Double?
 
     mutating func admit(_ time: Double, frameRate: Double?) -> Bool {
-        let interval = 1 / min(max(frameRate.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 60, 1), 60)
+        let interval = 1 / min(max(frameRate.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 60, 24), 60)
         if let lastTime, time < lastTime - 0.1 {
             nextTime = nil
         }
