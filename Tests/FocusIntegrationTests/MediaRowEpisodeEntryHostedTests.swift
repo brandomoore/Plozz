@@ -174,16 +174,16 @@ final class MediaRowEpisodeEntryHostedTests: XCTestCase {
                 XCTAssertEqual(Double(faint[0]), Double(original[0]) * 0.1, accuracy: 3,
                                "Retain 10% of \(style) artwork beneath the pinned sidebar.")
             }
-            for offset in [30, 42, 46, 50, 54] {
+            for offset in [12, 16, 20, 30, 42, 46, 50, 54] {
                 let x = Int(insetEdge) + offset
                 let original = try pixel(unobscured, x: x, y: y)
                 let faded = try pixel(underSidebar, x: x, y: y)
-                // The leading edge stays at 12pt; the opaque edge moves 46 -> 54pt.
-                let t = min(1, (Double(offset - 12) + 0.5) / 42)
+                // The 38pt feather starts at 16pt and is fully opaque at 54pt.
+                let t = max(0, min(1, (Double(offset - 16) + 0.5) / 38))
                 let opacity = 0.1 + 0.9 * t * t * (3 - 2 * t)
                 XCTAssertGreaterThan(original[0], 150)
                 XCTAssertEqual(Double(faded[0]), Double(original[0]) * opacity, accuracy: 3,
-                               "Extend the \(style) feather exactly 8pt right without moving its leading edge.")
+                               "Keep the \(style) feather 38pt wide, starting at 16pt with its opaque edge fixed at 54pt.")
             }
             try await assertRedPixel(
                 in: window, x: Int(insetEdge) + 64, y: y,

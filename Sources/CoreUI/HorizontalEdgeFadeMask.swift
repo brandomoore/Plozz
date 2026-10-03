@@ -224,7 +224,7 @@ private struct PinnedSidebarFeather: View {
     /// How far a focused first card's lift reaches back from its slot.
     static let lift: CGFloat = 18
     /// The feather's base width, ending faint just past the sidebar's icons.
-    static let width: CGFloat = 34
+    static let width: CGFloat = 30
     static let trailingExtension: CGFloat = 8
 
     var body: some View {
