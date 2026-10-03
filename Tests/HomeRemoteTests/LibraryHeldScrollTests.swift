@@ -2,6 +2,83 @@ import XCTest
 
 @MainActor
 final class LibraryHeldScrollTests: XCTestCase {
+    func testSelectingEveryLibraryModeKeepsRemoteFocusOnThatTab() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--library-held-scroll-fixture", "--library-interaction-fixture",
+            "--library-mode-loading-fixture", "--borderless",
+        ]
+        app.launch()
+        defer { app.terminate() }
+        let modes = ["recommended", "titles", "collections", "playlists"]
+        XCTAssertTrue(app.buttons["library-content-mode-recommended"].waitForExistence(timeout: 15))
+        for source in modes {
+            try selectMode(source, in: app)
+            for destination in modes where destination != source {
+                try selectMode(destination, in: app)
+                try selectMode(source, in: app)
+            }
+        }
+    }
+
+    func testLibraryModeFocusSurvivesEmptyAndFailedPages() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        defer { app.terminate() }
+        for state in ["empty", "failed"] {
+            app.launchArguments = [
+                "--library-held-scroll-fixture", "--library-interaction-fixture",
+                "--library-mode-loading-fixture", "--library-mode-\(state)-fixture",
+            ]
+            app.launch()
+            XCTAssertTrue(app.buttons["library-content-mode-recommended"].waitForExistence(timeout: 15))
+            for mode in ["collections", "playlists", "titles", "recommended"] {
+                try selectMode(mode, in: app)
+            }
+            app.terminate()
+        }
+    }
+
+    func testCustomLibraryGridKeepsRemoteModeFocus() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--library-held-scroll-fixture", "--library-interaction-fixture",
+            "--library-mode-loading-fixture", "--library-mode-custom-focus-fixture",
+        ]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["library-content-mode-recommended"].waitForExistence(timeout: 15))
+        for mode in ["collections", "playlists", "titles", "recommended"] {
+            try selectMode(mode, in: app)
+        }
+    }
+
+    private func selectMode(_ mode: String, in app: XCUIApplication) throws {
+        let tab = app.buttons["library-content-mode-\(mode)"]
+        for _ in 0..<8 where !tab.hasFocus {
+            if let current = focusedFrame(in: try app.snapshot()) {
+                XCUIRemote.shared.press(current.midY > tab.frame.maxY ? .up :
+                    (current.midX > tab.frame.midX ? .left : .right))
+            } else {
+                XCUIRemote.shared.press(.up)
+            }
+        }
+        XCTAssertTrue(tab.hasFocus, "\(mode) must receive focus before selection. \(app.debugDescription)")
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(tab.hasFocus, "\(mode) must retain focus during loading. \(app.debugDescription)")
+        Thread.sleep(forTimeInterval: 0.7)
+        XCTAssertEqual(tab.value as? String, "Selected", app.debugDescription)
+        XCTAssertTrue(tab.hasFocus, "\(mode) must retain focus after loading. \(app.debugDescription)")
+        if mode != "recommended" {
+            let sort = app.buttons["library-sort-menu"]
+            XCTAssertTrue(sort.exists, app.debugDescription)
+            XCTAssertEqual(sort.frame.midY, tab.frame.midY, accuracy: 4,
+                           "Sort must share the navigation row in \(mode).")
+        }
+    }
+
     func testNativeContextMenuNavigationRestoresTheSameScrolledCell() throws {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")

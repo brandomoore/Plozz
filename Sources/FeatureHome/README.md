@@ -52,7 +52,11 @@ fallback when the user's server has no attached trailer.
   its mode tabs only while the first row is active; mobile uses rows.
   Library Continue Watching uses Home's profile-selected series artwork and
   resume progress treatment; changing tabs keeps the focused mode control
-  mounted while replacing content below it. Browse retains its paged grid,
+  mounted while replacing content below it. A stable layout container owns the
+  top inset across Recommended, Browse, Collections, and Playlists (a transparent
+  `Group` would attach the inset to each replaceable content branch). Sort sits
+  on that same top navigation line; A–Z retains its native-grid focus ownership.
+  Browse retains its paged grid,
   and video libraries can also switch to Collections and Playlists when their
   provider advertises those capabilities. File shares and collection/playlist
   members continue to open in Browse. Plex, Jellyfin, and Emby discover existing video

@@ -52,7 +52,10 @@ struct LibraryHeldScrollFixture: View {
                 ProgressView("Preparing fixture")
             }
         }
-        .environment(\.plozzCardFocusStyle, .system)
+        .environment(
+            \.plozzCardFocusStyle,
+            ProcessInfo.processInfo.arguments.contains("--library-mode-custom-focus-fixture") ? .highlight : .system
+        )
         .environment(
             \.plozzCardStyle,
             ProcessInfo.processInfo.arguments.contains("--borderless") ? .borderless : .framed
@@ -207,7 +210,9 @@ private struct LibraryHeldScrollProvider: MediaProvider, CapabilityReporting {
     let artwork: URL
     let delayed: Bool
     let collectionsEnabled: Bool
-    var capabilities: ProviderCapability { collectionsEnabled ? [.video, .libraryCollections] : [.video] }
+    var capabilities: ProviderCapability {
+        collectionsEnabled ? [.video, .libraryCollections, .videoPlaylists] : [.video]
+    }
     let kind: ProviderKind = .plex
     let session = UserSession(
         server: MediaServer(id: "fixture", name: "Fixture", baseURL: URL(string: "https://fixture.test")!, provider: .plex),
@@ -215,17 +220,19 @@ private struct LibraryHeldScrollProvider: MediaProvider, CapabilityReporting {
     )
 
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        try await prepareModePage()
         if delayed && page.startIndex > 0 {
             try await Task.sleep(for: .seconds(20))
         }
-        let end = min(500, page.startIndex + page.limit)
+        let total = modeTotalCount(500)
+        let end = min(total, page.startIndex + page.limit)
         let items = (min(page.startIndex, end)..<end).map { index in
             MediaItem(
                 id: "held-\(index)", title: String(format: "%@: Library item %03d", index < 250 ? "A" : "M", index),
                 kind: .movie, posterURL: artwork, sourceAccountID: "fixture"
             )
         }
-        return MediaPage(items: items, startIndex: page.startIndex, totalCount: 500)
+        return MediaPage(items: items, startIndex: page.startIndex, totalCount: total)
     }
 
     func letterIndex(in containerID: String, kind: MediaItemKind, sort: CoreModels.SortDescriptor) async throws -> [LibraryLetterIndexEntry] {
@@ -233,10 +240,36 @@ private struct LibraryHeldScrollProvider: MediaProvider, CapabilityReporting {
     }
 
     func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
-        let items = (page.startIndex..<min(12, page.startIndex + page.limit)).map {
+        try await prepareModePage()
+        let total = modeTotalCount(12)
+        let end = min(total, page.startIndex + page.limit)
+        let items = (min(page.startIndex, end)..<end).map {
             MediaItem(id: "collection-\($0)", title: "Collection item \($0)", kind: .collection, posterURL: artwork)
         }
-        return MediaPage(items: items, startIndex: page.startIndex, totalCount: 12)
+        return MediaPage(items: items, startIndex: page.startIndex, totalCount: total)
+    }
+
+    func videoPlaylists(in libraryID: String, page: PageRequest) async throws -> MediaPage {
+        try await prepareModePage()
+        let total = modeTotalCount(12)
+        let end = min(total, page.startIndex + page.limit)
+        let items = (min(page.startIndex, end)..<end).map {
+            MediaItem(id: "playlist-\($0)", title: "Playlist item \($0)", kind: .playlist, posterURL: artwork)
+        }
+        return MediaPage(items: items, startIndex: page.startIndex, totalCount: total)
+    }
+
+    private func prepareModePage() async throws {
+        if ProcessInfo.processInfo.arguments.contains("--library-mode-loading-fixture") {
+            try await Task.sleep(for: .milliseconds(400))
+        }
+        if ProcessInfo.processInfo.arguments.contains("--library-mode-failed-fixture") {
+            throw AppError.invalidResponse
+        }
+    }
+
+    private func modeTotalCount(_ count: Int) -> Int {
+        ProcessInfo.processInfo.arguments.contains("--library-mode-empty-fixture") ? 0 : count
     }
 
     func collectionMembers(of collectionID: String, page: PageRequest) async throws -> MediaPage {

@@ -59,7 +59,6 @@ public struct LibraryBrowseView: View {
     /// you're actually flying through content. Reset when the rail's eligibility
     /// goes away (a non-name sort) so re-entering name sort re-arms the reveal.
     @State private var railHasRevealed = false
-    @State private var sortButtonHeight: CGFloat?
     @FocusState private var focusedGridIndex: Int?
     #if os(tvOS)
     @State private var nativeScrollTarget = NativeLibraryScrollTarget()
@@ -114,7 +113,7 @@ public struct LibraryBrowseView: View {
         // scales with the UI-density setting, with six columns at default density.
         let columns = metrics.libraryPosterColumns
         let generation = viewModel.contentGeneration
-        return Group {
+        return ZStack {
             if viewModel.contentMode == .recommended {
                 recommendedContent
             } else {
@@ -147,8 +146,10 @@ public struct LibraryBrowseView: View {
         // dedicated destination with no navigation chrome pinned at the top.
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .top, spacing: 0) {
-            if viewModel.availableContentModes.count > 1 {
-                modeHeader
+            if viewModel.availableContentModes.count > 1
+                || viewModel.browseScope != .library
+                || !viewModel.availableSortFields.isEmpty {
+                navigationHeader
                     .padding(.top, PlozzTheme.Spacing.large)
                     .padding(.bottom, PlozzTheme.Spacing.large)
                     #if os(tvOS)
@@ -487,10 +488,17 @@ public struct LibraryBrowseView: View {
     private var railRevealThreshold: Int { max(1, metrics.libraryPosterColumns.count) * 2 }
 
     /// Keep the selected mode's focus target mounted while the grid is replaced.
-    private var modeHeader: some View {
-        HStack(alignment: .firstTextBaseline) {
-            LibraryContentModeControl(viewModel: viewModel, buttonHeight: sortButtonHeight)
+    private var navigationHeader: some View {
+        HStack {
+            if viewModel.availableContentModes.count > 1 {
+                LibraryContentModeControl(viewModel: viewModel)
+            } else if viewModel.browseScope != .library {
+                title.font(.largeTitle.bold())
+            }
             Spacer(minLength: PlozzTheme.Spacing.large)
+            if !viewModel.availableSortFields.isEmpty {
+                sortControl
+            }
         }
         .padding(.leading, contentLeadingPadding)
         .padding(.trailing, HomeLayout.horizontalPadding)
@@ -499,36 +507,26 @@ public struct LibraryBrowseView: View {
 
     /// Grid-specific menus stay inside the native collection's focus hierarchy,
     /// so an A–Z jump can hand focus directly from its menu to a loaded card.
-    private var browseHeader: some View {
-        HStack(alignment: .firstTextBaseline) {
-            if viewModel.browseScope != .library {
-                title.font(.largeTitle.bold())
+    @ViewBuilder private var browseHeader: some View {
+        if viewModel.fileBrowserLibrary != nil || viewModel.alphabet.isVisible {
+            HStack(alignment: .firstTextBaseline) {
+                Spacer(minLength: PlozzTheme.Spacing.large)
+                if let library = viewModel.fileBrowserLibrary {
+                    LibraryFileBrowseButton(library: library, onSelect: onSelect)
+                }
+                if viewModel.alphabet.isVisible {
+                    LibraryAlphabetMenu(entries: viewModel.letterEntries, isLoading: viewModel.alphabet.isLoading,
+                                        isJumping: viewModel.alphabet.jumpingTo != nil,
+                                        onSelect: { letter, id in viewModel.beginLetterJump(letter, menuPresentationID: id) },
+                                        onDismiss: viewModel.alphabet.menuDidDismiss,
+                                        onCancel: viewModel.cancelLetterJump,
+                                        onRetry: viewModel.retryLetterIndex)
+                }
             }
-            Spacer(minLength: PlozzTheme.Spacing.large)
-            if let library = viewModel.fileBrowserLibrary {
-                LibraryFileBrowseButton(library: library, onSelect: onSelect)
-            }
-            if viewModel.alphabet.isVisible {
-                LibraryAlphabetMenu(entries: viewModel.letterEntries, isLoading: viewModel.alphabet.isLoading,
-                                    isJumping: viewModel.alphabet.jumpingTo != nil,
-                                    onSelect: { letter, id in viewModel.beginLetterJump(letter, menuPresentationID: id) },
-                                    onDismiss: viewModel.alphabet.menuDidDismiss,
-                                    onCancel: viewModel.cancelLetterJump,
-                                    onRetry: viewModel.retryLetterIndex)
-            }
-            if !viewModel.availableSortFields.isEmpty {
-                sortControl
-                    .onGeometryChange(for: CGFloat.self) {
-                        $0.size.height
-                    } action: { height in
-                        if height > 0 { sortButtonHeight = height }
-                    }
-            }
+            .padding(.leading, contentLeadingPadding)
+            .padding(.trailing, HomeLayout.horizontalPadding)
+            .focusSection()
         }
-
-        .padding(.leading, contentLeadingPadding)
-        .padding(.trailing, HomeLayout.horizontalPadding)
-        .focusSection()
     }
 
     /// Live scan/enrich progress for the media share backing THIS library, sitting
@@ -581,6 +579,7 @@ public struct LibraryBrowseView: View {
         } label: {
             Label("Sort: \(viewModel.sort.field.displayName)", systemImage: "arrow.up.arrow.down")
         }
+        .accessibilityIdentifier("library-sort-menu")
     }
 
     private var sortFieldBinding: Binding<SortField> {
@@ -629,7 +628,6 @@ public struct LibraryBrowseView: View {
 
 private struct LibraryContentModeControl: View {
     let viewModel: LibraryBrowseViewModel
-    let buttonHeight: CGFloat?
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
 
@@ -645,8 +643,7 @@ private struct LibraryContentModeControl: View {
                         .lineLimit(1)
                 }
                 .buttonStyle(LibraryContentSegmentStyle(
-                    isSelected: isSelected,
-                    height: buttonHeight
+                    isSelected: isSelected
                 ))
                 .accessibilityValue(isSelected ? Text("Selected") : Text(verbatim: ""))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -670,16 +667,14 @@ private struct LibraryContentModeControl: View {
 
 private struct LibraryContentSegmentStyle: ButtonStyle {
     let isSelected: Bool
-    let height: CGFloat?
 
     func makeBody(configuration: Configuration) -> some View {
-        SegmentBody(configuration: configuration, isSelected: isSelected, height: height)
+        SegmentBody(configuration: configuration, isSelected: isSelected)
     }
 
     private struct SegmentBody: View {
         let configuration: ButtonStyle.Configuration
         let isSelected: Bool
-        let height: CGFloat?
         @Environment(\.isFocused) private var isFocused
         @Environment(\.colorScheme) private var colorScheme
         @Environment(\.themePalette) private var palette
@@ -692,7 +687,6 @@ private struct LibraryContentSegmentStyle: ButtonStyle {
                     : (isSelected ? palette.primaryText : palette.secondaryText))
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
-                .frame(height: height)
                 .background {
                     Capsule()
                         .fill(isFocused
