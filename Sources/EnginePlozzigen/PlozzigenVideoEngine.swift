@@ -1094,7 +1094,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             if authored { assRenderer.update(document: assDocument, events: assEvents) }
             else { assRenderer.clear(); publishPlainASS() }
         }
-        if authored { assRenderer.tick(time) }
+        if authored { assRenderer.tick(time, frameRate: engine.sourceVideoFrameRate) }
     }
 
     private func clearASS() {

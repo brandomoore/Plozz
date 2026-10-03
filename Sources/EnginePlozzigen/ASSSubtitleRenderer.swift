@@ -51,9 +51,11 @@ actor ASSSubtitleRasterizer {
     struct Frame: Sendable {
         let changed: Bool
         let images: [SubtitleImage]
+        let renderSeconds: Double
     }
 
     func render(document: ASSSubtitleDocument, events incoming: [ASSSubtitleEvent], time: Double) throws -> Frame {
+        let started = ProcessInfo.processInfo.systemUptime
         guard time.isFinite, abs(time) < Double(Int64.max) / 2_000 else { throw ASSSubtitleRenderError.invalidCanvas }
         if identity != document.identity {
             context = try Context(document: document)
@@ -89,8 +91,12 @@ actor ASSSubtitleRasterizer {
         }
         var changed: Int32 = 0
         let images = ass_render_frame(context.renderer, context.track, Int64((time * 1_000).rounded()), &changed)
-        guard changed != 0 else { return Frame(changed: false, images: []) }
-        return Frame(changed: true, images: try context.composite(images))
+        guard changed != 0 else {
+            return Frame(changed: false, images: [], renderSeconds: ProcessInfo.processInfo.systemUptime - started)
+        }
+        let composited = try context.composite(images)
+        return Frame(changed: true, images: composited,
+                     renderSeconds: ProcessInfo.processInfo.systemUptime - started)
     }
 
     private final class Context {
@@ -231,6 +237,30 @@ actor ASSSubtitleRasterizer {
     }
 }
 
+struct ASSSubtitleFramePacer {
+    private var nextTime: Double?
+    private var lastTime: Double?
+
+    mutating func admit(_ time: Double, frameRate: Double?) -> Bool {
+        let interval = 1 / min(max(frameRate.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 60, 1), 60)
+        if let lastTime, time < lastTime - 0.1 {
+            nextTime = nil
+        }
+        if let nextTime, time < nextTime { return false }
+        let next = nextTime ?? time
+        // Advance from the frame slot, not the display tick, to preserve fractional video rates.
+        nextTime = time - next < interval ? next + interval : time + interval
+        lastTime = time
+        return true
+    }
+
+    mutating func complete(renderSeconds: Double) {
+        guard let lastTime, renderSeconds.isFinite else { return }
+        // Leave at least 30% of the interval for the software video and audio pipelines.
+        nextTime = max(nextTime ?? lastTime, lastTime + min(renderSeconds / 0.7, 0.25))
+    }
+}
+
 @MainActor
 final class ASSSubtitleRenderer {
     private var rasterizer = ASSSubtitleRasterizer()
@@ -241,6 +271,8 @@ final class ASSSubtitleRenderer {
     private var pending: Task<Void, Never>?
     private var requestedTime: Double?
     private var lastTime: Double?
+    private var frameRate: Double?
+    private var pacer = ASSSubtitleFramePacer()
     private var failed = false
     var onFrame: (([SubtitleCue]) -> Void)?
 
@@ -251,9 +283,10 @@ final class ASSSubtitleRenderer {
         lastTime = nil
     }
 
-    func tick(_ time: Double) {
+    func tick(_ time: Double, frameRate: Double? = nil) {
         guard !failed, document != nil, time.isFinite else { return }
         requestedTime = time
+        self.frameRate = frameRate
         renderPendingFrame()
     }
 
@@ -262,14 +295,16 @@ final class ASSSubtitleRenderer {
         // ticks on 59.94 Hz displays; libass itself uses millisecond timestamps.
         guard pending == nil, let document, let time = requestedTime,
               lastTime.map({ abs(time - $0) >= 0.001 }) ?? true else { return }
+        guard pacer.admit(time, frameRate: frameRate) else { return }
         requestedTime = nil
         lastTime = time
         let revision = revision, events = events, rasterizer = rasterizer
-        pending = Task { [weak self] in
+        pending = Task(priority: .utility) { [weak self] in
             do {
                 let frame = try await rasterizer.render(document: document, events: events, time: time)
                 guard let self, !Task.isCancelled, self.revision == revision else { return }
                 pending = nil
+                pacer.complete(renderSeconds: frame.renderSeconds)
                 defer { renderPendingFrame() }
                 guard frame.changed else { return }
                 onFrame?(frame.images.map {
@@ -295,6 +330,8 @@ final class ASSSubtitleRenderer {
         document = nil
         events = []
         lastTime = nil
+        frameRate = nil
+        pacer = ASSSubtitleFramePacer()
         failed = false
         rasterizer = ASSSubtitleRasterizer()
         onFrame?([])

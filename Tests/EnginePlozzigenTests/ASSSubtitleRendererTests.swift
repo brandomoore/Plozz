@@ -172,6 +172,30 @@ final class ASSSubtitleRendererTests: XCTestCase {
         XCTAssertLessThan(color[1], 15)
     }
 
+    func testFramePacerMatchesVideoCadenceAndGivesExpensiveFramesBreathingRoom() {
+        var paced = ASSSubtitleFramePacer()
+        let normal = (0..<60).filter { paced.admit(Double($0) / 60, frameRate: 24_000 / 1_001) }
+        XCTAssertTrue((23...25).contains(normal.count), "A 24 fps video must not trigger 60 libass renders per second")
+        XCTAssertEqual(normal.first, 0)
+        XCTAssertGreaterThan(normal.last ?? 0, 55)
+
+        paced = ASSSubtitleFramePacer()
+        let loaded = (0..<60).filter { tick in
+            guard paced.admit(Double(tick) / 60, frameRate: 24_000 / 1_001) else { return false }
+            paced.complete(renderSeconds: 0.08)
+            return true
+        }
+        XCTAssertTrue((7...10).contains(loaded.count), "An over-budget renderer must yield CPU to video and audio")
+        XCTAssertGreaterThan(loaded.last ?? 0, 50)
+        XCTAssertTrue(paced.admit(1.5, frameRate: 24_000 / 1_001), "Forward seeks have no frame backlog")
+        XCTAssertTrue(paced.admit(0.5, frameRate: 24_000 / 1_001), "Backward seeks draw immediately")
+
+        paced = ASSSubtitleFramePacer()
+        XCTAssertTrue(paced.admit(0, frameRate: nil))
+        XCTAssertFalse(paced.admit(1.0 / 120, frameRate: .nan))
+        XCTAssertTrue(paced.admit(1.0 / 60, frameRate: nil), "Unknown-rate sources retain full cadence")
+    }
+
     @MainActor
     func testDriverCoalescesBusyTicksToTheLatestAnimationTime() async throws {
         let renderer = ASSSubtitleRenderer()
