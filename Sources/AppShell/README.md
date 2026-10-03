@@ -73,11 +73,12 @@ navigation style are independent choices.
 
 At a visible pinned-navigation root, Back opens the menu on the current
 destination. If already on Home, the next Back exits directly from the menu.
-Otherwise, Back from the menu returns focus to Home; the following Back is left
-to tvOS to exit. Returning Home uses the existing rendered-page focus handoff, and
-extra Back presses during that handoff cannot exit early. Explicit navigation,
-opening a detail page, or leaving the active scene resets the sequence. Leaving
-the active scene also releases menu focus so reopening starts in the content. Back
+Otherwise, Back from the menu shows Home while keeping navigation open and focused
+on its Home row; the following Back is left to tvOS to exit. Returning Home uses
+the existing rendered-page handoff with a navigation focus target, so content never
+takes focus and extra Back presses cannot exit before Home appears. Select or Right
+still enters the page, where Back always opens navigation again. Leaving the active
+scene releases menu focus so reopening starts in the content. Back
 inside pushed pages and presentations still belongs to those surfaces. A hidden
 Home destination is temporarily available for this explicit return without
 changing the profile's hidden/order preferences. Native navigation and its

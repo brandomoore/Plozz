@@ -232,6 +232,10 @@ struct NavigationRailView: View {
         guard isFocusEnabled, isEnabled else { return false }
         // Handing focus back to the page: nothing in the rail may hold it.
         if isReleasingFocus { return false }
+        // Retarget an open menu without letting an unrelated row win the handoff.
+        if let pendingFocusTarget {
+            return target == pendingFocusTarget || target == focusedTarget
+        }
         if hasFocus { return true }
         return target == .destination(selection)
     }
