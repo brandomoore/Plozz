@@ -9,6 +9,37 @@ import XCTest
 
 @MainActor
 final class HeroLogoPresentationHostedTests: XCTestCase {
+    func testColdShowcaseLogoAppearsWithoutLeavingAndReturningToTheTitle() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let url = try seedLogo(size: CGSize(width: 320, height: 100))
+        defer { removeSeededLogo(url) }
+        let item = MediaItem(id: UUID().uuidString, title: "Cold Showcase title", kind: .movie)
+        fixture.window.rootViewController = UIHostingController(rootView:
+            Color.black.overlay {
+                HeroLogoArtwork(
+                    references: [],
+                    asyncFallbackURL: HeroLogoFallback(for: item) {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        return url
+                    },
+                    maxWidth: FocusHeroLayout.logoBox.width,
+                    maxHeight: FocusHeroLayout.logoBox.height,
+                    constrainsToBounds: true,
+                    presentationPolicy: FocusHeroLayout.logoPresentationPolicy
+                ) {
+                    Text(verbatim: item.title)
+                }
+            }
+            .ignoresSafeArea()
+        )
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertNil(try redBounds(in: fixture.window), "This must exercise a genuinely cold lookup.")
+        try await waitUntil { (try? redBounds(in: fixture.window)) != nil }
+        XCTAssertNotNil(try redBounds(in: fixture.window),
+                        "A slow first lookup must not require a focus change to adopt the logo.")
+    }
+
     func testCompactSeriesLogoStaysAboveSeasonsForTallSquareAndWideArtwork() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

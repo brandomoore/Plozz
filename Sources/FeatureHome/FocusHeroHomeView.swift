@@ -76,10 +76,14 @@ enum FocusHeroLayout {
     /// Clear space between the hero's last line and the pinned row's title.
     static let columnGap: CGFloat = 40
     static let columnTop: CGFloat = 56
+    static var detailsFootprintHeight: CGFloat {
+        lowestSlotTop - columnGap - columnTop
+    }
     /// Smaller than the carousel's wordmark box: the column above a pinned poster
     /// row is short, and the description needs its lines more than the logo needs
     /// the extra size.
     static let logoBox = CGSize(width: 440, height: 124)
+    static let logoPresentationPolicy = HeroLogoPresentationPolicy.whenReady
     /// How much closer a row's title sits to its cards than on the classic Home.
     static let rowTitleTightening: CGFloat = 22
     /// With the top tab bar the column starts below it: nothing scrolls here, so
@@ -1044,6 +1048,9 @@ private struct FocusHeroColumn: View {
                 if model.detailsSwapWithRow { transaction.animation = nil }
             }
         .frame(width: FocusHeroLayout.columnWidth, alignment: .topLeading)
+        // Keep Home's proposal around the complete block; framing the footprint
+        // before its overlay would move the details into its unused space.
+        .frame(height: FocusHeroLayout.detailsFootprintHeight, alignment: .bottomLeading)
         .frame(height: max(0, reference - FocusHeroLayout.columnGap - top), alignment: .bottomLeading)
         .padding(.top, top)
         // The TV's safe area and the rail's inset, exactly as the classic hero.
@@ -1099,7 +1106,7 @@ private struct FocusHeroColumn: View {
                 maxWidth: FocusHeroLayout.logoBox.width,
                 maxHeight: FocusHeroLayout.logoBox.height,
                 constrainsToBounds: true,
-                presentationPolicy: .onArrival(maximumWait: 0.25)
+                presentationPolicy: FocusHeroLayout.logoPresentationPolicy
             ) {
                 title(for: item, hideText: hideText)
                     .font(.system(size: 64, weight: .bold))
@@ -1132,6 +1139,7 @@ private struct FocusHeroColumn: View {
                 if !hideText, let description = item.tagline ?? item.overview {
                     // The ratings row takes the room of two description lines.
                     Text(description.overviewPlainText)
+                        .accessibilityIdentifier("showcase-description")
                         .font(.system(size: 22))
                         .foregroundStyle(.primary)
                         .lineSpacing(2)

@@ -20,6 +20,8 @@ struct FocusHostApp: App {
                 SubtitleStyleInputFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--home-layout-onboarding-fixture") {
                 HomeLayoutOnboardingFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--library-showcase-fixture") {
+                LibraryShowcaseFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--library-held-scroll-fixture") {
                 LibraryHeldScrollFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--family-guidance-fixture") {

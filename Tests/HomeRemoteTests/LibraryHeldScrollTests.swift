@@ -2,6 +2,33 @@ import XCTest
 
 @MainActor
 final class LibraryHeldScrollTests: XCTestCase {
+    func testLibraryShowcaseKeepsHomesMetadataToRowHeadingSpacing() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        defer { app.terminate() }
+        var gaps: [CGFloat] = []
+        for homeComparison in [true, false] {
+            app.launchArguments = ["--library-showcase-fixture"]
+            if homeComparison { app.launchArguments.append("--library-showcase-home-comparison") }
+            app.launch()
+            let description = app.staticTexts["showcase-description"]
+            XCTAssertTrue(description.waitForExistence(timeout: 15), app.debugDescription)
+            let heading = app.staticTexts["Continue Watching"].firstMatch
+            XCTAssertTrue(heading.waitForExistence(timeout: 5))
+            Thread.sleep(forTimeInterval: 0.4)
+            gaps.append(heading.frame.minY - description.frame.maxY)
+            let image = XCTAttachment(screenshot: app.screenshot())
+            image.name = homeComparison ? "home-showcase-clearance" : "library-showcase-clearance"
+            image.lifetime = .keepAlways
+            add(image)
+            app.terminate()
+        }
+        print("SHOWCASE_CLEARANCE home=\(gaps[0]) library=\(gaps[1])")
+        XCTAssertEqual(gaps[0], 40, accuracy: 1, "Home's existing breathing room must not change.")
+        XCTAssertEqual(gaps[1], gaps[0], accuracy: 1,
+                       "The library header must not compress the hidden details footprint.")
+    }
+
     func testSelectingEveryLibraryModeKeepsRemoteFocusOnThatTab() throws {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")

@@ -56,6 +56,9 @@ fallback when the user's server has no attached trailer.
   top inset across Recommended, Browse, Collections, and Playlists (a transparent
   `Group` would attach the inset to each replaceable content branch). Sort sits
   on that same top navigation line; A–Z retains its native-grid focus ownership.
+  Showcase preserves the Home-sized details footprint under that header,
+  keeping the same metadata-to-heading clearance as Home. A cold logo is adopted
+  when it finishes for the still-current title, without requiring a focus round trip.
   Browse retains its paged grid,
   and video libraries can also switch to Collections and Playlists when their
   provider advertises those capabilities. File shares and collection/playlist
