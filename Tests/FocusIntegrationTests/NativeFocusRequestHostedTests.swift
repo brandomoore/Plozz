@@ -797,6 +797,81 @@ final class NativeFocusRequestHostedTests: XCTestCase {
         XCTAssertEqual(caption.intrinsicContentSize.height, initialSize.height + 4)
     }
 
+    func testMediaPostersKeepLibraryCaptionClearanceAtRestAndFocus() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        func descendants<T: UIView>(_ type: T.Type, in view: UIView) -> [T] {
+            if let match = view as? T { return [match] }
+            return view.subviews.flatMap { descendants(type, in: $0) }
+        }
+        for density in UIDensity.allCases {
+            let metrics = PlozzMetrics(density: density)
+            for style in [PosterCardView.Style.poster, .landscape] {
+                let width = metrics.cardSlotWidth(for: style, cardStyle: .borderless)
+                let host = PreferredPosterHost(rootView: AnyView(
+                    HStack(alignment: .top, spacing: 100) {
+                        ForEach(0..<2) { index in
+                            PosterCardView(
+                                item: MediaItem(
+                                    id: "caption-\(index)", title: "Media title", kind: .movie,
+                                    productionYear: 2020, allowsTitleBasedMetadataMatching: false
+                                ),
+                                style: style, enablesAsyncArtworkFallback: false,
+                                action: {}
+                            )
+                            .frame(width: width)
+                        }
+                    }
+                    .environment(\.plozzMetrics, metrics)
+                    .environment(\.plozzCardStyle, .borderless)
+                    .environment(\.plozzCardFocusStyle, .system)
+                ))
+                fixture.window.rootViewController = host
+                fixture.window.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(100))
+                let posters = descendants(TVPosterView.self, in: host.view)
+                let captions = descendants(SystemPosterCaption.CaptionView.self, in: host.view)
+                XCTAssertEqual(posters.count, 2)
+                XCTAssertEqual(captions.count, 2)
+                guard posters.count == 2, captions.count == 2 else { continue }
+                let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: fixture.window))
+                host.target = posters[0]
+                system.requestFocusUpdate(to: host)
+                system.updateFocusIfNeeded()
+                try await waitUntil { posters[0].isFocused }
+                try await Task.sleep(for: .milliseconds(250))
+                let poster = posters[1]
+                let caption = captions[1]
+                let slot = caption.convert(caption.bounds, to: fixture.window)
+                let bitmap = poster.image
+                let title = try XCTUnwrap(descendants(UILabel.self, in: caption.title).first)
+                let context = "\(density), \(style)"
+                for focused in [false, true, false] {
+                    host.target = posters[focused ? 1 : 0]
+                    system.requestFocusUpdate(to: host)
+                    system.updateFocusIfNeeded()
+                    try await waitUntil { poster.isFocused == focused }
+                    try await Task.sleep(for: .milliseconds(250))
+                    let artwork = try XCTUnwrap(
+                        NativeFocusProjection.artworkFrame(of: poster.imageView, in: fixture.window)
+                    )
+                    let text = try XCTUnwrap(
+                        NativeFocusProjection.artworkFrame(of: title, in: fixture.window)
+                    )
+                    XCTAssertEqual(caption.convert(caption.bounds, to: fixture.window), slot,
+                                   "Focus must not move the caption's layout slot: \(context)")
+                    XCTAssertTrue(poster.image === bitmap, "Spacing must not regenerate artwork: \(context)")
+                    if !focused {
+                        XCTAssertEqual(slot.minY - artwork.maxY, metrics.landscapeCaptionTopSpacing, accuracy: 1,
+                                       "Media captions need the same resting gap as libraries: \(context)")
+                    }
+                    XCTAssertGreaterThanOrEqual(text.minY - artwork.maxY, metrics.landscapeCaptionTopSpacing - 1,
+                                                "Focused artwork must stay clear of its title: \(context)")
+                }
+            }
+        }
+    }
+
     func testNativePosterArtworkKeepsPreCaptionSeparationSizing() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

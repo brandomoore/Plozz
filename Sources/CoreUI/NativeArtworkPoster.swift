@@ -49,9 +49,7 @@ public struct NativeArtworkPoster<Artwork: View, Overlay: View>: View {
     }
 
     public var body: some View {
-        VStack(spacing: providerKind == nil
-               ? metrics.nativePosterCaptionSpacing
-               : metrics.landscapeCaptionTopSpacing) {
+        VStack(spacing: metrics.nativePosterCaptionSpacing) {
             NativeTVPoster(
                 image: resolution.image, treatment: .original, aspectRatio: aspectRatio,
                 fallbackWidth: width, title: title, subtitle: subtitle,
