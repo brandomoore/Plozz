@@ -93,7 +93,7 @@ struct PlayerOptionsPanel: View {
                 if category == .subtitles, subtitleScreen != .tracks {
                     openSubtitleScreen(subtitleScreen.parent)
                 } else if category == .playback, playbackScreen != .options {
-                    openPlaybackScreen(.options)
+                    openPlaybackScreen(playbackScreen.parent)
                 }
             }
             .onChange(of: model.subtitleDownload.state) { _, state in
@@ -116,7 +116,7 @@ struct PlayerOptionsPanel: View {
         Self.preferredFocus(
             for: category, subtitleScreen: subtitleScreen, model: model,
             offersDualSubtitles: offersDualSubtitles, playbackScreen: playbackScreen,
-            offersPlaybackSpeed: offersPlaybackSpeed
+            offersPlaybackSpeed: offersPlaybackSpeed, zoomMode: videoZoom.settings.mode
         )
     }
 
@@ -127,7 +127,8 @@ struct PlayerOptionsPanel: View {
         for panel: Category, subtitleScreen: SubtitleScreen, model: PlayerControlsModel,
         offersDualSubtitles: Bool = true,
         playbackScreen: PlaybackScreen = .options,
-        offersPlaybackSpeed: Bool = true
+        offersPlaybackSpeed: Bool = true,
+        zoomMode: PlayerVideoZoom.Mode? = nil
     ) -> FocusSlot? {
         switch panel {
         case .info, .cast, .episodes, .playlist:
@@ -165,9 +166,11 @@ struct PlayerOptionsPanel: View {
                 return .row(0)
             }
         case .playback:
-            if playbackScreen == .speed {
-                return .row(selectedRowIndex(for: .playback, model: model))
+            if playbackScreen == .zoom {
+                let mode = zoomMode ?? model.videoZoom.settings.mode
+                return .row(PlaybackOptionsPane.modeSlot(mode))
             }
+            if playbackScreen == .customZoom { return .row(PlaybackOptionsPane.amountSlot) }
             if model.engineCapabilities.contains(.videoZoom) { return .row(PlaybackOptionsPane.zoomSlot) }
             if offersPlaybackSpeed, model.engineCapabilities.contains(.playbackSpeed) {
                 return .row(PlaybackOptionsPane.speedSlot)
@@ -190,7 +193,7 @@ struct PlayerOptionsPanel: View {
         DispatchQueue.main.async { focus = slot }
     }
 
-    /// Playback keeps its parent width in Speed so the Back control and localized
+    /// Playback keeps its parent width in submenus so the Back control and localized
     /// title fit without wrapping or moving the menu's horizontal anchor.
     func panelWidth(for category: Category) -> CGFloat {
         Self.width(for: category, subtitleScreen: subtitleScreen)
@@ -415,7 +418,7 @@ struct PlayerOptionsPanel: View {
                 model: model, zoom: videoZoom, palette: palette, actions: actions,
                 screen: playbackScreen, focus: $focus,
                 offersPlaybackSpeed: offersPlaybackSpeed,
-                openSpeed: { openPlaybackScreen(.speed) }
+                openScreen: openPlaybackScreen
             )
         case .sync: SyncPaneView(model: model, actions: actions, focus: $focus)
         // Card tabs render in the bottom card, never in the floating menu.
@@ -436,7 +439,7 @@ struct PlayerOptionsPanel: View {
                 || (category == .playback && playbackScreen != .options) {
                 Button {
                     if category == .playback {
-                        openPlaybackScreen(.options)
+                        openPlaybackScreen(playbackScreen.parent)
                     } else {
                         openSubtitleScreen(subtitleScreen.parent)
                     }
@@ -497,7 +500,13 @@ struct PlayerOptionsPanel: View {
         for category: Category, subtitleScreen: SubtitleScreen,
         playbackScreen: PlaybackScreen = .options
     ) -> LocalizedStringResource {
-        if category == .playback, playbackScreen == .speed { return "Playback Speed" }
+        if category == .playback {
+            switch playbackScreen {
+            case .options: return category.title
+            case .zoom: return "Zoom Mode"
+            case .customZoom: return "Custom Zoom"
+            }
+        }
         guard category == .subtitles else { return category.title }
         switch subtitleScreen {
         case .tracks: return category.title
@@ -604,7 +613,7 @@ struct PlayerOptionsPanel: View {
         withAnimation(.easeInOut(duration: 0.28)) {
             playbackScreen = screen
         }
-        restoreFocus(screen == .options ? .row(PlaybackOptionsPane.speedSlot) : preferredFocus)
+        restoreFocus(screen == .options ? .row(PlaybackOptionsPane.zoomSlot) : preferredFocus)
     }
 
     private func openSubtitleScreen(_ screen: SubtitleScreen) {
@@ -730,7 +739,7 @@ struct PlayerOptionsPanel: View {
         case .audio:
             return audioRows(model: model, actions: actions).first(where: { $0.isSelected })?.id ?? 0
         case .playback:
-            return PlayerControls.speedPresets.firstIndex(where: { abs(model.playbackSpeed - $0) < 0.001 }) ?? 0
+            return model.engineCapabilities.contains(.videoZoom) ? PlaybackOptionsPane.zoomSlot : PlaybackOptionsPane.speedSlot
         case .sync:
             return 0
         case .info, .cast, .episodes, .playlist:

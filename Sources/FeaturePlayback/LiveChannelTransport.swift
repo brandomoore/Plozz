@@ -998,8 +998,8 @@ struct LiveChannelOverlay: View {
     }
 
     private func handleExit() {
-        if openMenu == .subtitles, subtitleScreen != .tracks {
-            // Back out of a Subtitles screen to the track list first, as VOD.
+        if (openMenu == .subtitles && subtitleScreen != .tracks)
+            || (openMenu == .playback && playbackScreen != .options) {
             panelBackRequest &+= 1
         } else if openMenu != nil {
             closeMenu()

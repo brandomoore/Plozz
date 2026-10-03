@@ -77,37 +77,55 @@ final class PlayerVideoZoomTests: XCTestCase {
         XCTAssertEqual(second.settings, PlayerVideoZoom())
     }
 
-    func testInlineChoiceAndSpeedSubmenuUseTheSharedSubtitleRowKinds() throws {
+    func testInlineSpeedAndZoomSubmenuUseTheSharedSubtitleRowKinds() throws {
         let model = PlayerControlsModel()
         model.engineCapabilities = [.videoZoom, .playbackSpeed]
         model.playbackSpeed = 1.5
-        var speedOpens = 0
-        let rows = PlaybackOptionsPane.rows(model: model, zoom: model.videoZoom) { speedOpens += 1 }
+        var opened: [PlayerControls.PlaybackScreen] = []
+        let actions = PlayerOptionsActions(setPlaybackSpeed: { model.playbackSpeed = $0 })
+        let rows = PlaybackOptionsPane.rows(model: model, zoom: model.videoZoom, actions: actions) { opened.append($0) }
         XCTAssertEqual(rows.map(\.slot), [PlaybackOptionsPane.zoomSlot, PlaybackOptionsPane.speedSlot])
-        guard case let .choice(_, previous, next) = rows[0].kind else {
-            return XCTFail("Zoom must adjust inline, not open a submenu.")
-        }
-        next()
-        XCTAssertEqual(model.videoZoom.settings.mode, .fill)
-        previous()
-        XCTAssertEqual(model.videoZoom.settings.mode, .fit)
-        guard case let .submenu(_, open) = rows[1].kind else {
-            return XCTFail("Speed must open the existing fine-control/presets screen.")
+        guard case let .submenu(_, open) = rows[0].kind else {
+            return XCTFail("Zoom must open a normal submenu.")
         }
         open()
-        XCTAssertEqual(speedOpens, 1)
-        model.videoZoom.settings.mode = .custom
-        let custom = PlaybackOptionsPane.rows(model: model, zoom: model.videoZoom, openSpeed: {})
-        XCTAssertEqual(custom.map(\.slot), [0, 1, 2])
-        guard case let .number(_, step) = custom[1].kind else {
+        XCTAssertEqual(opened, [.zoom])
+        XCTAssertEqual(model.videoZoom.settings.mode, .fit)
+        guard case let .number(_, changeSpeed) = rows[1].kind else {
+            return XCTFail("Speed must use the existing inline numeric row.")
+        }
+        changeSpeed(1)
+        XCTAssertEqual(model.playbackSpeed, 1.55)
+        changeSpeed(-1)
+        XCTAssertEqual(model.playbackSpeed, 1.5)
+        changeSpeed(100)
+        XCTAssertEqual(model.playbackSpeed, 2)
+        changeSpeed(-100)
+        XCTAssertEqual(model.playbackSpeed, 0.25)
+        let choices = PlaybackOptionsPane.rows(
+            model: model, zoom: model.videoZoom, actions: actions, screen: .zoom, openScreen: { opened.append($0) }
+        )
+        guard case let .submenu(_, openCustom) = choices[0].kind else {
+            return XCTFail("Custom opens its own percentage screen.")
+        }
+        openCustom()
+        XCTAssertEqual(opened, [.zoom, .customZoom])
+        let custom = PlaybackOptionsPane.rows(
+            model: model, zoom: model.videoZoom, actions: actions, screen: .customZoom, openScreen: { _ in }
+        )
+        XCTAssertEqual(custom.map(\.slot), [PlaybackOptionsPane.amountSlot])
+        guard case let .number(_, step) = custom[0].kind else {
             return XCTFail("Custom zoom must reuse the inline numeric adjustment.")
         }
         step(34)
         XCTAssertEqual(model.videoZoom.settings.customPercent, 134)
+        XCTAssertEqual(PlaybackOptionsPane.rows(
+            model: model, zoom: model.videoZoom, actions: actions, openScreen: { _ in }
+        ).map(\.slot), [0, 2], "Custom zoom must never add a third parent row.")
         let live = PlaybackOptionsPane.rows(
-            model: model, zoom: model.videoZoom, offersPlaybackSpeed: false, openSpeed: {}
+            model: model, zoom: model.videoZoom, actions: actions, offersPlaybackSpeed: false, openScreen: { _ in }
         )
-        XCTAssertEqual(live.map(\.slot), [0, 1])
+        XCTAssertEqual(live.map(\.slot), [0])
     }
 
     func testCapabilityGatesAndSelectedSpeedFocus() {
@@ -121,13 +139,20 @@ final class PlayerVideoZoomTests: XCTestCase {
         XCTAssertEqual(PlayerOptionsPanel.preferredFocus(
             for: .playback, subtitleScreen: .tracks, model: model
         ), .row(PlaybackOptionsPane.speedSlot))
-        model.playbackSpeed = 1.75
+        model.videoZoom.settings.mode = .custom
         XCTAssertEqual(PlayerOptionsPanel.preferredFocus(
-            for: .playback, subtitleScreen: .tracks, model: model, playbackScreen: .speed
-        ), .row(3))
+            for: .playback, subtitleScreen: .tracks, model: model, playbackScreen: .zoom
+        ), .row(PlaybackOptionsPane.customSlot))
+        XCTAssertEqual(PlayerOptionsPanel.preferredFocus(
+            for: .playback, subtitleScreen: .tracks, model: model, playbackScreen: .customZoom
+        ), .row(PlaybackOptionsPane.amountSlot))
+        XCTAssertEqual(PlayerControls.PlaybackScreen.customZoom.parent, .zoom)
+        XCTAssertEqual(PlayerControls.PlaybackScreen.zoom.parent, .options)
         model.engineCapabilities = []
         XCTAssertTrue(model.trackControlCategories.isEmpty)
-        XCTAssertTrue(PlaybackOptionsPane.rows(model: model, zoom: model.videoZoom, openSpeed: {}).isEmpty)
+        XCTAssertTrue(PlaybackOptionsPane.rows(
+            model: model, zoom: model.videoZoom, actions: PlayerOptionsActions(), openScreen: { _ in }
+        ).isEmpty)
     }
 
     func testVideoSurfaceChangesWithoutResizingOverlaysOrRestartingTheEngine() throws {

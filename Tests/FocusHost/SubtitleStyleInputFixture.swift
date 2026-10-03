@@ -106,6 +106,8 @@ struct SubtitleStyleInputFixture: View {
                         .accessibilityIdentifier("player-options-panel-open")
                     Text(verbatim: String(playPauseCommands))
                         .accessibilityIdentifier("player-options-play-pause")
+                    Text(verbatim: String(model.playbackSpeed))
+                        .accessibilityIdentifier("player-options-speed")
                 }
             }
             .allowsHitTesting(false)

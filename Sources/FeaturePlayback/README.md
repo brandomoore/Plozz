@@ -102,12 +102,13 @@ path. None of these diagnostics change the audio selection policy.
 
 ## Playback options and zoom
 
-The tvOS Playback control replaces the standalone Speed control. Zoom Mode is
-an inline left/right choice using the same rows and native input scope as
-subtitle appearance. Custom reveals a Zoom Amount row (100–200%, in 1% steps).
-Playback Speed opens the existing fine-control/presets screen; Back returns to
-its entry row, then closes the menu. Both screens retain one native input host
-and menu width. The host forwards presentation environment values explicitly,
+The tvOS Playback control replaces the standalone Speed control. Its two rows
+stay fixed: Playback Speed adjusts inline (0.25–2x, in 0.05 steps), while Zoom
+Mode opens a normal submenu. Fit and Fill apply and return; Custom opens a
+percentage adjustment (100–200%, in 1% steps). Back follows each submenu's parent
+and restores its entry row. The rows and native input scope are shared with
+subtitle appearance. All screens retain one native input host and menu width.
+The host forwards presentation environment values explicitly,
 not the outer SwiftUI graph's focus environment, which can retain duplicate
 highlights. Mobile adds Zoom Mode to its existing native
 playback menu. Live TV offers the same zoom controls without playback-speed changes.

@@ -50,24 +50,38 @@ final class PlaybackOptionsHostedTests: XCTestCase {
         XCTAssertEqual(report.foreground, ThemePalette.light.primaryText)
     }
 
-    func testInlineZoomKeepsNativeFocusAndSpeedBackRestoresItsEntryRow() async throws {
+    func testInlineSpeedKeepsNativeFocusAndZoomBackRestoresItsEntryRow() async throws {
         try await withPanel { probe, host, window in
             let input = try XCTUnwrap(self.inputController(in: host))
-            XCTAssertTrue(input.ownsHorizontalNavigationInput)
+            XCTAssertFalse(input.ownsHorizontalNavigationInput)
             try self.assertFocusedText("Zoom Mode", in: window)
+            probe.request(.row(PlaybackOptionsPane.speedSlot))
+            try await self.waitUntil { probe.focus == .row(PlaybackOptionsPane.speedSlot) }
+            try self.assertFocusedText("Playback Speed", in: window)
             let initialFrame = try XCTUnwrap(self.focusFrame(in: window))
             input.beginPress(.right)
             input.stopRepeating()
-            try await self.waitUntil { probe.model.videoZoom.settings.mode == .fill }
+            try await self.waitUntil { probe.model.playbackSpeed == 1.55 }
             try await Task.sleep(for: .milliseconds(100))
             XCTAssertEqual(self.focusFrame(in: window), initialFrame)
-            try self.assertFocusedText("Zoom Mode", in: window)
+            try self.assertFocusedText("Playback Speed", in: window)
+            input.beginPress(.left)
+            input.stopRepeating()
+            XCTAssertEqual(probe.model.playbackSpeed, 1.5)
 
+            probe.request(.row(PlaybackOptionsPane.zoomSlot))
+            try await self.waitUntil { probe.focus == .row(PlaybackOptionsPane.zoomSlot) }
             input.beginPress(.right)
             input.stopRepeating()
-            try await self.waitUntil { probe.model.videoZoom.settings.mode == .custom }
-            probe.request(.row(PlaybackOptionsPane.amountSlot))
-            try await self.waitUntil { probe.focus == .row(PlaybackOptionsPane.amountSlot) }
+            try await self.waitUntil { probe.screen == .zoom && probe.focus == .row(PlaybackOptionsPane.modeSlot(.fit)) }
+            try await Task.sleep(for: .milliseconds(350))
+            try self.assertFocusedText("Fit", in: window)
+            probe.request(.row(PlaybackOptionsPane.customSlot))
+            try await self.waitUntil { probe.focus == .row(PlaybackOptionsPane.customSlot) }
+            input.beginPress(.right)
+            input.stopRepeating()
+            try await self.waitUntil { probe.screen == .customZoom && probe.focus == .row(PlaybackOptionsPane.amountSlot) }
+            try await Task.sleep(for: .milliseconds(350))
             try self.assertFocusedText("Zoom Amount", in: window)
             input.beginPress(.right)
             try await self.waitUntil { probe.model.videoZoom.settings.customPercent >= 103 }
@@ -77,32 +91,29 @@ final class PlaybackOptionsHostedTests: XCTestCase {
             XCTAssertEqual(probe.model.videoZoom.settings.customPercent, percent)
             try self.assertFocusedText("Zoom Amount", in: window)
 
-            probe.request(.row(PlaybackOptionsPane.speedSlot))
-            try await self.waitUntil { probe.focus == .row(PlaybackOptionsPane.speedSlot) }
-            try self.assertFocusedText("Playback Speed", in: window)
-            input.beginPress(.right)
-            input.stopRepeating()
-            try await self.waitUntil { probe.screen == .speed && probe.focus == .row(2) }
-            try await Task.sleep(for: .milliseconds(350))
-            try self.assertFocusedText("1.5", in: window)
-            XCTAssertFalse(self.inputController(in: host)?.ownsHorizontalNavigationInput ?? false)
-            self.attach(window, name: "Playback speed submenu")
+            self.attach(window, name: "Custom zoom submenu")
 
             probe.backRequest += 1
             try await self.waitUntil {
-                probe.screen == .options && probe.focus == .row(PlaybackOptionsPane.speedSlot)
+                probe.screen == .zoom && probe.focus == .row(PlaybackOptionsPane.customSlot)
             }
             try await Task.sleep(for: .milliseconds(350))
-            try self.assertFocusedText("Playback Speed", in: window)
+            try self.assertFocusedText("Custom", in: window)
+            probe.backRequest += 1
+            try await self.waitUntil {
+                probe.screen == .options && probe.focus == .row(PlaybackOptionsPane.zoomSlot)
+            }
+            try await Task.sleep(for: .milliseconds(350))
+            try self.assertFocusedText("Zoom Mode", in: window)
             XCTAssertTrue(try XCTUnwrap(self.inputController(in: host)) === input,
                           "Submenu navigation must retain the native input host.")
             XCTAssertEqual(probe.model.videoZoom.settings.customPercent, percent)
             XCTAssertEqual(probe.model.playbackSpeed, 1.5)
-            self.attach(window, name: "Playback inline zoom and speed")
+            self.attach(window, name: "Playback fixed zoom and speed rows")
         }
     }
 
-    func testDefaultPlaybackMenuHasNoAdditionalZoomScreenOrCaptionStyleDependency() async throws {
+    func testCustomZoomDoesNotAddParentRowsOrObserveCaptionStyle() async throws {
         try await withPanel { probe, host, window in
             let input = try XCTUnwrap(self.inputController(in: host))
             let image = DetailTransitionSnapshot.image(of: window)
@@ -112,10 +123,14 @@ final class PlaybackOptionsHostedTests: XCTestCase {
             XCTAssertFalse(lines.contains { $0.contains("Zoom Amount") })
             input.beginPress(.left)
             input.stopRepeating()
-            try await self.waitUntil { probe.model.videoZoom.settings.mode == .custom }
+            XCTAssertEqual(probe.model.videoZoom.settings.mode, .fit, "Left must not change a submenu row.")
+            probe.model.videoZoom.setCustomPercent(134)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertFalse(try self.text(in: DetailTransitionSnapshot.image(of: window))
+                .contains { $0.text.contains("Zoom Amount") })
             XCTAssertEqual(probe.screen, .options)
             XCTAssertEqual(probe.focus, .row(PlaybackOptionsPane.zoomSlot))
-            XCTAssertTrue(input.ownsHorizontalNavigationInput)
+            XCTAssertFalse(input.ownsHorizontalNavigationInput)
             let zoom = probe.model.videoZoom.settings
             probe.model.subtitleStyle.fontScale = 1.4
             probe.model.currentSeconds = 200
@@ -197,7 +212,7 @@ final class PlaybackOptionsHostedTests: XCTestCase {
         probe.request(.row(PlaybackOptionsPane.zoomSlot))
         try await waitUntil {
             probe.focus == .row(PlaybackOptionsPane.zoomSlot)
-                && self.inputController(in: host)?.ownsHorizontalNavigationInput == true
+                && self.inputController(in: host) != nil
         }
         try await Task.sleep(for: .milliseconds(150))
         try await body(probe, host, window)

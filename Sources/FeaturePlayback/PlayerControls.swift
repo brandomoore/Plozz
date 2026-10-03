@@ -180,7 +180,9 @@ struct PlayerControls: View {
     }
 
     enum PlaybackScreen: Equatable {
-        case options, speed
+        case options, zoom, customZoom
+
+        var parent: Self { self == .customZoom ? .zoom : .options }
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
