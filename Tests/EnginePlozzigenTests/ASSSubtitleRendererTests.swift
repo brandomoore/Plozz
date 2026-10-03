@@ -85,7 +85,7 @@ final class ASSSubtitleRendererTests: XCTestCase {
             ASSSubtitleEvent(packet: #"0,1,Default,,0,0,0,,{\an7\pos(125,60)\p1\c&H00FF00&}m 0 0 l 30 0 30 20 0 20"#, start: 1, end: 3)
         ]
         let result = try await renderer.render(document: document(), events: events, time: 1.5)
-        let image = try XCTUnwrap(result.image)
+        let image = try XCTUnwrap(result.images.first)
         XCTAssertEqual(image.normalizedRect.minX, 100.0 / 640, accuracy: 0.01)
         XCTAssertEqual(image.normalizedRect.minY, 50.0 / 360, accuracy: 0.01)
         XCTAssertLessThan(image.cgImage.width, 128, "Libass's padded vector bitmap must remain near the 100px drawing width.")
@@ -99,9 +99,9 @@ final class ASSSubtitleRendererTests: XCTestCase {
         XCTAssertFalse(unchanged.changed)
         let ended = try await renderer.render(document: document(), events: events, time: 3.5)
         XCTAssertTrue(ended.changed)
-        XCTAssertNil(ended.image)
+        XCTAssertTrue(ended.images.isEmpty)
         let seekBack = try await renderer.render(document: document(), events: events, time: 1.5)
-        XCTAssertNotNil(seekBack.image)
+        XCTAssertFalse(seekBack.images.isEmpty)
     }
 
     func testAnimationChangesFramesAndTrackSwitchRetiresPreviousEvents() async throws {
@@ -113,10 +113,31 @@ final class ASSSubtitleRendererTests: XCTestCase {
         let first = try await renderer.render(document: document(), events: events, time: 0.1)
         let second = try await renderer.render(document: document(), events: events, time: 1)
         XCTAssertTrue(second.changed)
-        XCTAssertGreaterThan(try XCTUnwrap(second.image).normalizedRect.minX,
-                             try XCTUnwrap(first.image).normalizedRect.minX + 0.1)
+        XCTAssertGreaterThan(try XCTUnwrap(second.images.first).normalizedRect.minX,
+                             try XCTUnwrap(first.images.first).normalizedRect.minX + 0.1)
         let switched = try await renderer.render(document: document("other"), events: [], time: 1)
-        XCTAssertNil(switched.image)
+        XCTAssertTrue(switched.images.isEmpty)
+    }
+
+    func testTopAndBottomDrawingsBecomeIndependentImagesWithoutChangingSourcePixels() async throws {
+        let renderer = ASSSubtitleRasterizer()
+        let frame = try await renderer.render(document: document(), events: [
+            .init(packet: #"0,0,Default,,0,0,0,,{\an7\pos(100,20)\p1\c&H0000FF&}m 0 0 l 100 0 100 30 0 30"#,
+                  start: 0, end: 2),
+            .init(packet: #"1,0,Default,,0,0,0,,{\an7\pos(100,300)\p1\c&H00FF00&}m 0 0 l 100 0 100 30 0 30"#,
+                  start: 0, end: 2)
+        ], time: 1)
+        XCTAssertEqual(frame.images.count, 2)
+        let top = try XCTUnwrap(frame.images.first)
+        let bottom = try XCTUnwrap(frame.images.last)
+        XCTAssertEqual(top.controlAvoidance, .fixed)
+        guard case .lowerRegion = bottom.controlAvoidance else { return XCTFail("Expected movable lower artwork") }
+        XCTAssertEqual(top.normalizedRect.minY, 20.0 / 360, accuracy: 0.01)
+        XCTAssertEqual(bottom.normalizedRect.minY, 300.0 / 360, accuracy: 0.01)
+        XCTAssertGreaterThan(try pixel(top.cgImage, x: 10, y: 10)[0], 240)
+        XCTAssertGreaterThan(try pixel(bottom.cgImage, x: 10, y: 10)[1], 240)
+        XCTAssertLessThan(top.cgImage.height + bottom.cgImage.height, 150,
+                          "Do not allocate or move the empty space between the regions")
     }
 
     func testJoinedEnginePacketsRenderTheSameLayersAfterActorNormalization() async throws {
@@ -128,7 +149,7 @@ final class ASSSubtitleRendererTests: XCTestCase {
         let joined = try await renderer.render(document: document(), events: [
             .init(packet: packets.joined(separator: "\n"), start: 1, end: 3)
         ], time: 1.5)
-        let image = try XCTUnwrap(joined.image)
+        let image = try XCTUnwrap(joined.images.first)
         XCTAssertGreaterThan(try pixel(image.cgImage, x: 10, y: 10)[0], 240)
         XCTAssertGreaterThan(try pixel(image.cgImage, x: 35, y: 20)[1], 240)
         let repeated = try await renderer.render(document: document(), events: [
@@ -143,7 +164,7 @@ final class ASSSubtitleRendererTests: XCTestCase {
             packet: #"0,0,Default,,0,0,0,,{\an7\pos(-10,-5)\p1\c&H0000FF&}m 0 0 l 30 0 30 20 0 20"#,
             start: 0, end: 2
         )], time: 1)
-        let image = try XCTUnwrap(frame.image)
+        let image = try XCTUnwrap(frame.images.first)
         XCTAssertEqual(image.normalizedRect.minX, 0, accuracy: 0.001)
         XCTAssertEqual(image.normalizedRect.minY, 0, accuracy: 0.001)
         let color = try pixel(image.cgImage, x: 2, y: 2)
@@ -230,15 +251,17 @@ final class ASSSubtitleRendererTests: XCTestCase {
         for time in input.times {
             let start = ContinuousClock.now
             let frame = try await renderer.render(document: document, events: events, time: time)
-            guard let image = frame.image else {
+            guard !frame.images.isEmpty else {
                 print("ASS reproduction time=\(time) no visible image changed=\(frame.changed)")
                 continue
             }
-            let url = URL(fileURLWithPath: input.output).appendingPathComponent("ass-\(time).png")
-            let destination = try XCTUnwrap(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
-            CGImageDestinationAddImage(destination, image.cgImage, nil)
-            XCTAssertTrue(CGImageDestinationFinalize(destination))
-            print("ASS reproduction time=\(time) raster=\(image.cgImage.width)x\(image.cgImage.height) rect=\(image.normalizedRect) elapsed=\(start.duration(to: .now))")
+            for (index, image) in frame.images.enumerated() {
+                let url = URL(fileURLWithPath: input.output).appendingPathComponent("ass-\(time)-region-\(index).png")
+                let destination = try XCTUnwrap(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
+                CGImageDestinationAddImage(destination, image.cgImage, nil)
+                XCTAssertTrue(CGImageDestinationFinalize(destination))
+                print("ASS reproduction time=\(time) raster=\(image.cgImage.width)x\(image.cgImage.height) rect=\(image.normalizedRect) elapsed=\(start.duration(to: .now))")
+            }
         }
     }
 

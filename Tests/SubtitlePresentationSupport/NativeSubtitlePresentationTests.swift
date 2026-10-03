@@ -4,6 +4,7 @@ import CoreModels
 import Network
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 @testable import FeaturePlayback
 @testable import CoreUI
@@ -198,7 +199,9 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         model.beginLiveFeed()
         var latest: [SubtitleCue] = []
         engine.onSubtitleCues = { latest = $0; model.updateLiveCues($0) }
-        let window = try await mount(engine, subtitles: model)
+        let controls = PlayerControlsModel()
+        controls.title = "Subtitle region fixture"
+        let window = try await mount(engine, subtitles: model, controls: controls)
         defer { engine.stop(); window.isHidden = true; window.rootViewController = nil }
         let mediaURL = path.hasPrefix("cache:")
             ? try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
@@ -229,6 +232,43 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         attachment.name = "Local ASS artwork at actual player position"
         attachment.lifetime = .keepAlways
         add(attachment)
+        let regions = latest.compactMap { cue -> SubtitleImage? in
+            guard case .image(let image) = cue.body else { return nil }
+            return image
+        }
+        XCTAssertEqual(regions.count, 2, "The supplied opening has clearly separate top and bottom artwork")
+        let top = try XCTUnwrap(regions.first { $0.controlAvoidance == .fixed })
+        let bottom = try XCTUnwrap(regions.first {
+            if case .lowerRegion = $0.controlAvoidance { return true }
+            return false
+        })
+        controls.controlsVisible = true
+        try await waitUntil { !controls.subtitleLayout.frames.isEmpty }
+        let video = model.videoRect ?? window.bounds
+        XCTAssertEqual(SubtitleOverlayGeometry.bitmapOffset(
+            for: top, videoRect: video, controls: controls.subtitleLayout.frames, bounds: window.bounds
+        ), 0)
+        XCTAssertLessThan(SubtitleOverlayGeometry.bitmapOffset(
+            for: bottom, videoRect: video, controls: controls.subtitleLayout.frames, bounds: window.bounds
+        ), 0)
+        var paintedControls: UIImage?
+        let paintDeadline = ContinuousClock.now + .seconds(5)
+        repeat {
+            let image = DetailTransitionSnapshot.image(of: window)
+            let recognition = VNRecognizeTextRequest()
+            recognition.recognitionLevel = .accurate
+            recognition.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([recognition])
+            let text = (recognition.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            if text.contains("Subtitle region fixture") { paintedControls = image; break }
+            try await Task.sleep(for: .milliseconds(50))
+        } while ContinuousClock.now < paintDeadline
+        let raised = XCTAttachment(image: try XCTUnwrap(paintedControls, "Capture must show the actual controls, not just their reserved bounds"))
+        raised.name = "Original upper artwork with independently raised lower artwork"
+        raised.lifetime = .keepAlways
+        add(raised)
+        controls.controlsVisible = false
+        try await waitUntil { controls.subtitleLayout.frames.isEmpty }
         let initialID = latest.first?.id
         await engine.seek(to: 3)
         try await waitUntil(timeout: 30) { latest.first?.id != initialID && latest.contains(where: \.isImage) }
@@ -680,7 +720,10 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         return url
     }
 
-    private func mount(_ engine: any VideoEngine, subtitles: LiveSubtitleModel, liveClock: Bool = false) async throws -> UIWindow {
+    private func mount(
+        _ engine: any VideoEngine, subtitles: LiveSubtitleModel, liveClock: Bool = false,
+        controls sharedControls: PlayerControlsModel? = nil
+    ) async throws -> UIWindow {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
         }
@@ -688,6 +731,7 @@ final class NativeSubtitlePresentationTests: XCTestCase {
             .first { $0.activationState == .foregroundActive })
         let window = UIWindow(windowScene: scene)
         let controller: UIViewController
+        let controls = sharedControls ?? PlayerControlsModel()
         subtitles.style.fontFamily = .system
         if liveClock {
             controller = UIViewController()
@@ -697,7 +741,7 @@ final class NativeSubtitlePresentationTests: XCTestCase {
             surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             controller.view.addSubview(surface)
             let overlay = UIHostingController(rootView:
-                LiveSubtitleOverlay(model: subtitles, controls: PlayerControlsModel())
+                LiveSubtitleOverlay(model: subtitles, controls: controls)
                     .background(SubtitleDisplayClock(engine: engine, subtitles: subtitles))
             )
             overlay.safeAreaRegions = []
@@ -708,11 +752,26 @@ final class NativeSubtitlePresentationTests: XCTestCase {
             controller.view.addSubview(overlay.view)
             overlay.didMove(toParent: controller)
         } else {
-            let player = PlayerInputViewController(engine: engine, model: PlayerControlsModel(), actions: PlayerActions())
+            let player = PlayerInputViewController(engine: engine, model: controls, actions: PlayerActions())
             player.loadViewIfNeeded()
             player.attachVideoSurface()
             player.attachSubtitleOverlay(subtitles)
             controller = player
+        }
+        if sharedControls != nil {
+            let chrome = UIHostingController(rootView: PlayerControls(
+                model: controls, palette: .dark, actions: .init(), onExitToSurface: {}
+            ).transaction {
+                $0.disablesAnimations = true
+                $0.animation = nil
+            })
+            chrome.safeAreaRegions = []
+            chrome.view.backgroundColor = .clear
+            chrome.view.frame = controller.view.bounds
+            chrome.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            controller.addChild(chrome)
+            controller.view.addSubview(chrome.view)
+            chrome.didMove(toParent: controller)
         }
         window.rootViewController = controller
         window.makeKeyAndVisible()

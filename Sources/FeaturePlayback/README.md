@@ -199,6 +199,16 @@ cue data; backward seeks rebuild the retained event set. Track changes, Off,
 native presentation and teardown fence late output. The existing overlay retains
 video-rect mapping, HDR brightness and control avoidance.
 
+Authored ASS frames keep clearly separated upper and lower artwork in separate
+bitmap regions. The upper region stays fixed; only a lower region that intersects
+visible controls can lift. Its clearance envelope absorbs small animated
+glyph/shadow changes so the whole effect keeps moving together instead of being
+re-aligned every frame. Movement must fit below the protected upper artwork and
+above the controls; otherwise the original placement is retained.
+Center/crossing/full-screen compositions remain one fixed authored image. This
+uses the existing libass mask bounds in one render pass, never title-specific
+rules or pixel scanning. Ordinary PGS/DVD bitmap avoidance is unchanged.
+
 The pinned libass 0.17.5 source target enables ARM NEON acceleration and uses
 checksum-pinned font dependencies without adding another FFmpeg or MPV. Glyph
 masks blend directly into premultiplied RGBA, avoiding one CoreGraphics mask

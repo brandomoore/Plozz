@@ -50,7 +50,7 @@ actor ASSSubtitleRasterizer {
 
     struct Frame: Sendable {
         let changed: Bool
-        let image: SubtitleImage?
+        let images: [SubtitleImage]
     }
 
     func render(document: ASSSubtitleDocument, events incoming: [ASSSubtitleEvent], time: Double) throws -> Frame {
@@ -68,6 +68,7 @@ actor ASSSubtitleRasterizer {
         if movedBackward || prunable {
             let retained = movedBackward ? [] : events.filter { $0.end >= time - 5 }
             ass_flush_events(context.track)
+            if movedBackward { context.regionLayout = .init() }
             events.removeAll(keepingCapacity: true)
             eventBytes = 0
             for event in retained {
@@ -88,8 +89,8 @@ actor ASSSubtitleRasterizer {
         }
         var changed: Int32 = 0
         let images = ass_render_frame(context.renderer, context.track, Int64((time * 1_000).rounded()), &changed)
-        guard changed != 0 else { return Frame(changed: false, image: nil) }
-        return Frame(changed: true, image: try context.composite(images))
+        guard changed != 0 else { return Frame(changed: false, images: []) }
+        return Frame(changed: true, images: try context.composite(images))
     }
 
     private final class Context {
@@ -97,6 +98,7 @@ actor ASSSubtitleRasterizer {
         let renderer: OpaquePointer
         let track: UnsafeMutablePointer<ASS_Track>
         let size: CGSize
+        var regionLayout = ASSSubtitleRegionLayout()
 
         init(document: ASSSubtitleDocument) throws {
             guard document.size.width > 0, document.size.height > 0,
@@ -169,19 +171,29 @@ actor ASSSubtitleRasterizer {
             }
         }
 
-        func composite(_ first: UnsafeMutablePointer<ASS_Image>?) throws -> SubtitleImage? {
+        func composite(_ first: UnsafeMutablePointer<ASS_Image>?) throws -> [SubtitleImage] {
             let canvas = CGRect(origin: .zero, size: size)
-            var bounds = CGRect.null
+            var layers: [ASS_Image] = []
+            var rectangles: [CGRect] = []
             var pointer = first
             while let image = pointer?.pointee {
                 if image.w > 0, image.h > 0 {
-                    bounds = bounds.union(CGRect(x: Int(image.dst_x), y: Int(image.dst_y),
-                                                width: Int(image.w), height: Int(image.h)).intersection(canvas))
+                    let bounds = CGRect(x: Int(image.dst_x), y: Int(image.dst_y),
+                                        width: Int(image.w), height: Int(image.h)).intersection(canvas)
+                    if !bounds.isNull, !bounds.isEmpty {
+                        layers.append(image)
+                        rectangles.append(bounds)
+                    }
                 }
                 pointer = image.next
             }
-            guard !bounds.isNull, !bounds.isEmpty else { return nil }
-            bounds = bounds.integral
+            return try regionLayout.regions(for: rectangles, canvas: size).map {
+                try composite(layers, region: $0)
+            }
+        }
+
+        private func composite(_ layers: [ASS_Image], region: ASSSubtitleRegionLayout.Region) throws -> SubtitleImage {
+            let bounds = region.bounds.integral
             guard let context = CGContext(
                 data: nil, width: Int(bounds.width), height: Int(bounds.height),
                 bitsPerComponent: 8, bytesPerRow: Int(bounds.width) * 4,
@@ -190,12 +202,9 @@ actor ASSSubtitleRasterizer {
             ), let output = context.data?.assumingMemoryBound(to: UInt8.self) else {
                 throw ASSSubtitleRenderError.allocation
             }
-            pointer = first
-            while let image = pointer?.pointee {
-                defer { pointer = image.next }
-                guard image.w > 0, image.h > 0 else { continue }
+            for index in region.indices {
+                let image = layers[index]
                 let rect = CGRect(x: Int(image.dst_x), y: Int(image.dst_y), width: Int(image.w), height: Int(image.h))
-                guard rect.intersects(canvas) else { continue }
                 guard let bitmap = image.bitmap, image.stride >= image.w,
                       image.w <= 16_384, image.h <= 16_384,
                       Int64(image.stride) * Int64(image.h) <= 64 * 1_024 * 1_024 else {
@@ -217,7 +226,7 @@ actor ASSSubtitleRasterizer {
             return SubtitleImage(cgImage: image,
                                  normalizedRect: CGRect(x: bounds.minX / size.width, y: bounds.minY / size.height,
                                                         width: bounds.width / size.width, height: bounds.height / size.height),
-                                 canvasSize: size)
+                                 canvasSize: size, controlAvoidance: region.avoidance)
         }
     }
 }
@@ -263,10 +272,10 @@ final class ASSSubtitleRenderer {
                 pending = nil
                 defer { renderPendingFrame() }
                 guard frame.changed else { return }
-                frameID &+= 1
-                onFrame?(frame.image.map {
-                    [SubtitleCue(id: frameID, start: 0, end: .greatestFiniteMagnitude, body: .image($0))]
-                } ?? [])
+                onFrame?(frame.images.map {
+                    frameID &+= 1
+                    return SubtitleCue(id: frameID, start: 0, end: .greatestFiniteMagnitude, body: .image($0))
+                })
             } catch {
                 guard let self, !Task.isCancelled, self.revision == revision else { return }
                 pending = nil
