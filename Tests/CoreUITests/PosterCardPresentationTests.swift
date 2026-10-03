@@ -467,20 +467,26 @@ final class TextlessBackdropStoreKeyTests: XCTestCase {
     func testEpisodesAreKeyedByTheirSeries() {
         let first = MediaItem(id: "ep1", title: "E1", kind: .episode, seriesID: "show")
         let second = MediaItem(id: "ep2", title: "E2", kind: .episode, seriesID: "show")
-        XCTAssertEqual(TextlessBackdropStore.key(for: first), "show")
-        XCTAssertEqual(TextlessBackdropStore.key(for: second), "show")
+        XCTAssertEqual(TextlessBackdropStore.key(for: first), TextlessBackdropStore.key(for: second))
+        var differentSeries = first
+        differentSeries.seriesID = "other-show"
+        XCTAssertNotEqual(TextlessBackdropStore.key(for: first), TextlessBackdropStore.key(for: differentSeries))
     }
 
     /// An episode with no series id still has to key to something stable.
     func testAnOrphanEpisodeFallsBackToItsOwnID() {
         let orphan = MediaItem(id: "ep1", title: "E1", kind: .episode)
-        XCTAssertEqual(TextlessBackdropStore.key(for: orphan), "ep1")
+        var another = orphan
+        another.id = "ep2"
+        XCTAssertNotEqual(TextlessBackdropStore.key(for: orphan), TextlessBackdropStore.key(for: another))
     }
 
     /// A movie or series already *is* the show, so it keys to itself.
     func testAMovieKeysToItself() {
         let movie = MediaItem(id: "m1", title: "Movie", kind: .movie)
-        XCTAssertEqual(TextlessBackdropStore.key(for: movie), "m1")
+        var another = movie
+        another.id = "m2"
+        XCTAssertNotEqual(TextlessBackdropStore.key(for: movie), TextlessBackdropStore.key(for: another))
     }
 
     /// Nothing is published until the picture behind it is decoded, so a store

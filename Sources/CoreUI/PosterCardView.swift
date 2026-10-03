@@ -989,24 +989,42 @@ public struct PosterCardView: View {
 
     /// A lightweight *series-level* item synthesized from an episode, used only to
     /// resolve a wide series hero (TMDb backdrop or the keyless AniList banner) as
-    /// a guaranteed non-blank fallback for episode cards. Carries the episode's
-    /// normalized provider IDs, title, genres and tags so anime detection and
-    /// cross-provider lookups stay accurate at the series level.
+    /// a guaranteed non-blank fallback for episode cards. Child IDs must be
+    /// scoped before changing the kind, or metadata providers treat an episode's
+    /// external ID as an authoritative series ID.
     ///
     /// Internal rather than private so `EpisodeColumnCard` can resolve spoiler-safe
     /// series art through the same synthesized item.
     static func seriesArtworkItem(for episode: MediaItem) -> MediaItem {
-        MediaItem(
+        guard episode.kind == .episode || episode.kind == .season else { return episode }
+        let query = MetadataQuery(episode).seriesScoped
+        let hasSeriesTitle = episode.parentTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        var ids = query.providerIDs
+        ids.removeProviderID(.plexGuid)
+        // Anime providers already use show-level IDs on episodes. Preserve the
+        // shared query's anime identity unless an explicit series ID supersedes it.
+        let animeIDs: [(ProviderIDNamespace, Int?)] = [
+            (.aniList, query.animeIDs.anilist),
+            (.myAnimeList, query.animeIDs.mal),
+            (.aniDB, query.animeIDs.anidb)
+        ]
+        for (namespace, value) in animeIDs where ids.providerID(namespace) == nil {
+            if let value { ids[namespace.canonicalKey] = String(value) }
+        }
+        var series = MediaItem(
             id: episode.seriesID ?? episode.id,
             title: episode.parentTitle ?? episode.title,
             kind: .series,
-            productionYear: episode.productionYear,
             genres: episode.genres,
             tags: episode.tags,
             seriesID: episode.seriesID,
             fallbackArtworkURL: episode.fallbackArtworkURL,
-            providerIDs: episode.providerIDs
+            logoURL: episode.logoURL,
+            providerIDs: ids,
+            allowsTitleBasedMetadataMatching: episode.allowsTitleBasedMetadataMatching && hasSeriesTitle
         )
+        series.sourceAccountID = episode.sourceAccountID
+        return series
     }
 
     /// Poster cards reject any source image wider than ~0.9:1 (a real poster is
@@ -1145,7 +1163,7 @@ public struct PosterCardView: View {
         // Settles this show's source, then lets the body re-read it. A plain
         // synchronous read gives SwiftUI nothing to invalidate on, so without this
         // the answer would land in a dictionary no view was watching.
-        .task(id: item.id) {
+        .task(id: TextlessBackdropStore.key(for: item)) {
             guard !TextlessBackdropStore.shared.hasAnswer(for: item) else { return }
             // Ask on the card's own behalf. The row warms its forward window, but
             // a card must not depend on having been prefetched — the first card of

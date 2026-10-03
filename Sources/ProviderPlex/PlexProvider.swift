@@ -165,14 +165,14 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
     /// the plain hub is tried next, and `onDeck` last.
     public func continueWatching(limit: Int) async throws -> [MediaItem] {
         let (items, endpoint) = try await resumeFeed(limit: limit)
-        let seriesDates = try await seriesLastPlayedDatesBestEffort(for: items)
+        let seriesMetadata = try await seriesMetadataBestEffort(for: items)
         logContinueWatchingFeed(
             items,
             endpoint: endpoint,
             requestedLimit: limit
         )
         let mapped = items.map(map(metadata:))
-        let stamped = mapped.map { stampingSeriesRecency($0, using: seriesDates) }
+        let stamped = mapped.map { stampingSeriesMetadata($0, using: seriesMetadata) }
         logSeriesRecencyLifts(from: mapped, to: stamped)
         return stamped
     }
@@ -313,15 +313,20 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         )
     }
 
-    /// Best-effort map of `series ratingKey → last-viewed date`, used to stamp
-    /// next episodes with their series' true recency. A suggested episode may
-    /// already have an older resume date, so timestamped episodes need this too.
+    private struct ContinueWatchingSeriesMetadata {
+        let lastPlayedAt: Date?
+        let logoURL: URL?
+        let providerIDs: [String: String]
+    }
+
+    /// Reuses the recency lookup for parent artwork and identity, without retaining
+    /// each show's full cast, summary and other unrelated detail metadata.
     /// Only series actually referenced by this feed are
     /// fetched. That keeps both finite and exhaustive Continue Watching loads from
     /// turning into a broad `/library/all` scan or an `Int.max` HTTP request.
-    private func seriesLastPlayedDatesBestEffort(
+    private func seriesMetadataBestEffort(
         for items: [PlexMetadata]
-    ) async throws -> [String: Date] {
+    ) async throws -> [String: ContinueWatchingSeriesMetadata] {
         let seriesIDs = Set(
             items.compactMap { item -> String? in
                 guard item.type == "episode" else {
@@ -335,14 +340,15 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         guard !seriesIDs.isEmpty else { return [:] }
 
         let batchSize = 50
-        var result: [String: Date] = [:]
+        var result: [String: ContinueWatchingSeriesMetadata] = [:]
         for start in stride(from: 0, to: seriesIDs.count, by: batchSize) {
             try Task.checkCancellation()
             let end = min(start + batchSize, seriesIDs.count)
+            let requestedIDs = Array(seriesIDs[start..<end])
             let shows: [PlexMetadata]
             do {
                 shows = try await client.metadata(
-                    ratingKeys: Array(seriesIDs[start..<end])
+                    ratingKeys: requestedIDs
                 )
             } catch let cancellation as CancellationError {
                 throw cancellation
@@ -351,15 +357,21 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             } catch {
                 try Task.checkCancellation()
                 PlozzLog.networking.error(
-                    "Plex Continue Watching series-recency enrichment failed: \(String(describing: error))"
+                    "Plex Continue Watching series metadata enrichment failed: \(String(describing: error))"
                 )
                 return result
             }
             for show in shows {
                 guard let ratingKey = show.ratingKey,
-                      let seconds = show.lastViewedAt else { continue }
-                result[ratingKey] = Date(
-                    timeIntervalSince1970: TimeInterval(seconds)
+                      requestedIDs.contains(ratingKey),
+                      Self.kind(forItemType: show.type) == .series else {
+                    PlozzLog.networking.error("Plex Continue Watching returned unrelated or non-series parent metadata")
+                    continue
+                }
+                result[ratingKey] = ContinueWatchingSeriesMetadata(
+                    lastPlayedAt: show.lastViewedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+                    logoURL: logoURL(from: show),
+                    providerIDs: Self.providerIDs(from: show)
                 )
             }
         }
@@ -367,16 +379,21 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
     }
 
     /// Uses the newer of an episode's own activity and its exact series' activity
-    /// to order Plex's chosen Continue Watching card. Finishing one episode must
-    /// not bury its successor under an old resume date. Membership, resume
-    /// position and watched state remain server-owned; no timestamp is backdated.
-    private func stampingSeriesRecency(_ item: MediaItem, using seriesDates: [String: Date]) -> MediaItem {
+    /// to order Plex's chosen Continue Watching card. The same already-fetched
+    /// parent supplies missing logos and series-scoped external IDs; playable
+    /// episode identity and watched/resume state remain unchanged.
+    private func stampingSeriesMetadata(
+        _ item: MediaItem, using seriesMetadata: [String: ContinueWatchingSeriesMetadata]
+    ) -> MediaItem {
         guard item.kind == .episode,
               let seriesID = item.seriesID,
-              let date = seriesDates[seriesID],
-              item.lastPlayedAt.map({ date > $0 }) ?? true else { return item }
+              let series = seriesMetadata[seriesID] else { return item }
         var copy = item
-        copy.lastPlayedAt = date
+        if let date = series.lastPlayedAt, copy.lastPlayedAt.map({ date > $0 }) ?? true {
+            copy.lastPlayedAt = date
+        }
+        if copy.logoURL == nil { copy.logoURL = series.logoURL }
+        copy.providerIDs.mergeSeriesProviderIDs(from: series.providerIDs)
         return copy
     }
 

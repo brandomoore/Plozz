@@ -246,8 +246,11 @@ public final class TextlessBackdropStore {
     /// Continue Watching is one card per *show*, so an episode's art is keyed by
     /// its series — otherwise every episode of the same show resolves separately
     /// and the row asks the router once per card instead of once per show.
+    /// Qualify the account and lookup identity so an old child-ID miss cannot
+    /// suppress a logo after the series metadata is corrected.
     static func key(for item: MediaItem) -> String {
-        item.kind == .episode ? (item.seriesID ?? item.id) : item.id
+        let subject = seriesItem(for: item)
+        return "series-art-v2|\(subject.stablePresentationID)|\(MetadataQuery(subject).cacheKey(for: .hero))"
     }
 
     private static func seriesItem(for item: MediaItem) -> MediaItem {

@@ -39,6 +39,14 @@ cache that every feature module reuses. tvOS-only — guarded behind
   points when the logo blends into its background (65% maximum). The dim sits
   behind the logo; existing color-preserving logo treatments and Home/detail
   hero shading are unchanged.
+- **Series artwork identity** — episode-backed cards normalize through
+  `MetadataQuery.seriesScoped` before creating a series artwork subject. Child
+  IDs and Plex episode GUIDs must not become show IDs. Explicit series IDs,
+  show-scoped anime IDs, account scope, and title-matching restrictions survive.
+  Corrected logo queries share the series metadata-cache key and do not reuse
+  misses stored under an episode ID; the image/memo caches remain shared.
+  The textless-backdrop index also qualifies its account and series lookup, so
+  a legacy ID-only miss cannot keep suppressing a newly resolvable logo.
 - **Circadian Mode** — profile-scoped warmth/dimming still uses the window-wide
   multiply tint while active. Disabled, daytime, and zero-strength states remove
   the view and its filter rather than leave an opaque white layer above video.

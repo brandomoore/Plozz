@@ -34,6 +34,16 @@ first-class backends; co-equal with `ProviderJellyfin`.
   rewrites the stored admin account's token; per-user tokens live in a
   short-lived override map.
 
+## Continue Watching artwork
+
+The existing parent-series metadata batches (at most 50 referenced series per
+request) provide both recency and artwork context. Episodes retain their own
+playable IDs, external IDs, resume positions, and watched state; the parent fills
+missing `clearLogo` URLs and `Series*` external IDs. Existing feed logos win.
+This adds no requests and also works when the parent has no last-viewed date.
+Unrequested or non-series records are rejected, and a failed parent lookup keeps
+the original feed available.
+
 ## Collections
 
 `libraries()` returns actual server sections only. Collection discovery is an
