@@ -7,6 +7,20 @@ import XCTest
 @testable import EnginePlozzigen
 
 final class ASSSubtitleRendererTests: XCTestCase {
+    func testPacketNormalizationKeepsSinglePacketsAndFlattensJoinedPacketsIdentically() {
+        let packets = [
+            "", "0,0,Default,,0,0,0,,{\\t(0,100,\\blur10)}花\\Nflower",
+            "\n", "\n0,0,Default,,0,0,0,,One\n\n1,1,Default,,0,0,0,,Two\n"
+        ]
+        for packet in packets {
+            var events: [ASSSubtitleEvent] = []
+            ASSSubtitleEvent.appendPackets(packet, start: 2, end: 4, to: &events)
+            XCTAssertEqual(events, packet.split(separator: "\n").map {
+                ASSSubtitleEvent(packet: String($0), start: 2, end: 4)
+            })
+        }
+    }
+
     func testDirectMaskCompositingMatchesCoreGraphicsPremultipliedLayers() throws {
         let width = 17, height = 5, stride = 24
         let length = stride * (height - 1) + width
@@ -103,6 +117,24 @@ final class ASSSubtitleRendererTests: XCTestCase {
                              try XCTUnwrap(first.image).normalizedRect.minX + 0.1)
         let switched = try await renderer.render(document: document("other"), events: [], time: 1)
         XCTAssertNil(switched.image)
+    }
+
+    func testJoinedEnginePacketsRenderTheSameLayersAfterActorNormalization() async throws {
+        let packets = [
+            #"0,0,Default,,0,0,0,,{\an7\pos(100,50)\p1\c&H0000FF&}m 0 0 l 100 0 100 40 0 40"#,
+            #"0,1,Default,,0,0,0,,{\an7\pos(125,60)\p1\c&H00FF00&}m 0 0 l 30 0 30 20 0 20"#
+        ]
+        let renderer = ASSSubtitleRasterizer()
+        let joined = try await renderer.render(document: document(), events: [
+            .init(packet: packets.joined(separator: "\n"), start: 1, end: 3)
+        ], time: 1.5)
+        let image = try XCTUnwrap(joined.image)
+        XCTAssertGreaterThan(try pixel(image.cgImage, x: 10, y: 10)[0], 240)
+        XCTAssertGreaterThan(try pixel(image.cgImage, x: 35, y: 20)[1], 240)
+        let repeated = try await renderer.render(document: document(), events: [
+            .init(packet: packets.joined(separator: "\n"), start: 1, end: 3)
+        ], time: 1.6)
+        XCTAssertFalse(repeated.changed, "Replayed snapshots must not append duplicate layers")
     }
 
     func testPartiallyOffscreenDrawingClipsWithoutChangingItsCanvasPosition() async throws {

@@ -183,6 +183,11 @@ Plozzigen's primary embedded ASS/SSA tracks preserve their packet text, script
 header and embedded font attachments for libass. With source position, colour and
 emphasis enabled (and system-style matching off), the adapter composites authored layers, vector drawings, transforms and
 karaoke into bitmap cues; it does not flatten animation fragments into dialogue.
+The main-thread cue bridge passes raw packet strings through without scanning or
+rebuilding their contents. Only newly admitted events are split on the rasterizer
+actor; replayed read-ahead snapshots must not reparse thousands of old packets
+on the presentation thread. Plain-style fallback still normalizes joined packets
+before parsing text.
 Rendering is serialized off the main actor with at most one frame in flight,
 coalescing busy display ticks to one latest timestamp rather than building a
 backlog. Animated ASS reads the software presentation timebase directly; native

@@ -123,7 +123,10 @@ retain their existing probe behavior.
 `PLOZZ_ASS_HTTP_REPRO` enables the hosted full-file HTTP regression using a local
 two-audio/two-ASS-track fixture; media is never checked in. It separately measures
 startup over a 512 KiB/s connection and sustained AV1/ASS playback over a
-2.5 MiB/s connection. The distinction matters: the reproduction averages about
+2.5 MiB/s connection through the full opening. Five-second animation windows and
+a main-thread display-link probe expose long pauses that an overall fps average
+can hide. Static authored frames do not emit replacement images, so presentation
+gaps alone are not proof of dropped animation. The distinction matters: the reproduction averages about
 2.7 Mbps but its opening peaks near 16 Mbps. Reducing probe work cannot make a
 4 Mbps connection sustain those peaks.
 

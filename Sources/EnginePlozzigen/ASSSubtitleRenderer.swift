@@ -8,6 +8,19 @@ struct ASSSubtitleEvent: Hashable, Sendable {
     let packet: String
     let start: Double
     let end: Double
+
+    static func appendPackets(_ packet: String, start: Double, end: Double, to events: inout [Self]) {
+        guard !packet.isEmpty else { return }
+        // Aether normally emits one packet per cue. Splitting every long override
+        // string into Characters and rebuilding it stalls the presentation thread.
+        if !packet.utf8.contains(10) {
+            events.append(.init(packet: packet, start: start, end: end))
+        } else {
+            for line in packet.split(separator: "\n", maxSplits: 30_000) {
+                events.append(.init(packet: String(line), start: start, end: end))
+            }
+        }
+    }
 }
 
 struct ASSSubtitleFont: Sendable {
@@ -138,16 +151,21 @@ actor ASSSubtitleRasterizer {
         }
 
         func append(_ event: ASSSubtitleEvent) throws {
-            guard event.packet.utf8.count < 1_000_000,
-                  abs(event.start) < Double(Int64.max) / 2_000,
+            guard abs(event.start) < Double(Int64.max) / 2_000,
                   event.end - event.start < Double(Int64.max) / 2_000 else {
                 throw ASSSubtitleRenderError.invalidBitmap
             }
-            var packet = Array(event.packet.utf8CString)
-            let count = packet.count - 1
-            packet.withUnsafeMutableBufferPointer {
-                ass_process_chunk(track, $0.baseAddress, Int32(count),
-                                  Int64((event.start * 1_000).rounded()), Int64(((event.end - event.start) * 1_000).rounded()))
+            var packets: [ASSSubtitleEvent] = []
+            ASSSubtitleEvent.appendPackets(event.packet, start: event.start, end: event.end, to: &packets)
+            for event in packets {
+                guard event.packet.utf8.count < 1_000_000 else { throw ASSSubtitleRenderError.invalidBitmap }
+                guard track.pointee.n_events < 30_000 else { throw ASSSubtitleRenderError.allocation }
+                var packet = Array(event.packet.utf8CString)
+                let count = packet.count - 1
+                packet.withUnsafeMutableBufferPointer {
+                    ass_process_chunk(track, $0.baseAddress, Int32(count),
+                                      Int64((event.start * 1_000).rounded()), Int64(((event.end - event.start) * 1_000).rounded()))
+                }
             }
         }
 

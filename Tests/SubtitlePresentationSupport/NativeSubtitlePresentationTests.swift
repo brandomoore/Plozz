@@ -54,6 +54,19 @@ final class NativeSubtitlePresentationTests: XCTestCase {
             print("ASS_ANIMATION start=\(start) meanMs=\(samples.reduce(0,+)/Double(samples.count)) p95Ms=\(samples[56])")
             XCTAssertLessThan(samples[56], 33.3, "Animated ASS must fit a 30fps frame budget")
         }
+        if ProcessInfo.processInfo.environment["PLOZZ_ASS_REFERENCE_CADENCE"] == "1" {
+            var lastChange = 0.0
+            for frame in 0...2_850 {
+                let time = Double(frame) / 30
+                let result = try await rasterizer.render(document: document, events: events, time: time)
+                if result.changed {
+                    if time - lastChange > 0.1 {
+                        print("ASS_REFERENCE_HOLD from=\(lastChange) to=\(time)")
+                    }
+                    lastChange = time
+                }
+            }
+        }
     }
 
     func testRemoteASSStartupPreservesTracksOnABoundedLink() async throws {
@@ -128,21 +141,42 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         try await Task.sleep(for: .seconds(3))
         let playbackStart = engine.currentTime
         let droppedStart = engine.liveTelemetry?.droppedFrameCount
+        let previousIdleTimer = UIApplication.shared.isIdleTimerDisabled
+        UIApplication.shared.isIdleTimerDisabled = true
+        defer { UIApplication.shared.isIdleTimerDisabled = previousIdleTimer }
         var frameRates: [Double] = []
+        let cadence = SubtitleCadenceProbe()
+        cadence.start()
+        defer { cadence.stop() }
         subtitleFrameTimes = []
         let animationStart = CACurrentMediaTime()
-        for _ in 0..<10 {
+        var lastWindowStart = animationStart
+        for sample in 1...90 {
             try await Task.sleep(for: .seconds(1))
+            guard window.windowScene?.activationState == .foregroundActive else {
+                return XCTFail("Subtitle cadence reproduction interrupted: the test host left the foreground")
+            }
             if let fps = engine.liveTelemetry?.observedFps { frameRates.append(fps) }
+            if sample.isMultiple(of: 5) {
+                let now = CACurrentMediaTime()
+                let windowFrames = subtitleFrameTimes.filter { $0 >= lastWindowStart }
+                let windowGaps = zip(windowFrames, windowFrames.dropFirst()).map { $1 - $0 }.sorted()
+                print("ASS_WINDOW elapsed=\(sample) fps=\(Double(windowFrames.count)/(now-lastWindowStart)) maxGapMs=\((windowGaps.last ?? 0)*1000) videoTime=\(engine.currentTime)")
+                lastWindowStart = now
+            }
         }
         let meanFPS = frameRates.isEmpty ? 0 : frameRates.reduce(0, +) / Double(frameRates.count)
         print("REMOTE_ASS_PLAYBACK advance=\(engine.currentTime - playbackStart) meanFPS=\(meanFPS) droppedStart=\(String(describing: droppedStart)) droppedEnd=\(String(describing: engine.liveTelemetry?.droppedFrameCount))")
-        XCTAssertGreaterThan(engine.currentTime - playbackStart, 8.5)
+        XCTAssertGreaterThan(engine.currentTime - playbackStart, 85)
         XCTAssertGreaterThan(meanFPS, 20, "1080p/24 AV1 with authored ASS must remain playable after opening")
         let subtitleFPS = Double(subtitleFrameTimes.count) / (CACurrentMediaTime() - animationStart)
         let gaps = zip(subtitleFrameTimes, subtitleFrameTimes.dropFirst()).map { $1 - $0 }.sorted()
         print("ASS_PRESENTATION fps=\(subtitleFPS) p95GapMs=\(gaps.isEmpty ? 0 : gaps[Int(Double(gaps.count-1)*0.95)]*1000)")
         XCTAssertGreaterThan(subtitleFPS, 20, "Animated subtitle frames must reach the display loop, not just render quickly in isolation")
+        let displayGaps = zip(cadence.times, cadence.times.dropFirst()).map { $1 - $0 }.sorted()
+        let longHitches = displayGaps.filter { $0 > 0.1 }.count
+        print("ASS_MAIN_CADENCE ticks=\(cadence.times.count) maxGapMs=\((displayGaps.last ?? 0)*1000) over100ms=\(longHitches)")
+        XCTAssertEqual(longHitches, 0, "Growing subtitle snapshots must not freeze the main presentation thread")
         engine.pause()
         let pausedTime = engine.subtitlePresentationTime
         try await Task.sleep(for: .milliseconds(150))
@@ -697,6 +731,21 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         }
         XCTAssertTrue(condition(), "Native subtitle presentation did not settle. \(detail())", file: file, line: line)
     }
+}
+
+@MainActor
+private final class SubtitleCadenceProbe: NSObject {
+    private var link: CADisplayLink?
+    private(set) var times: [CFTimeInterval] = []
+
+    func start() {
+        let link = CADisplayLink(target: self, selector: #selector(tick))
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    @objc private func tick() { times.append(CACurrentMediaTime()) }
+    func stop() { link?.invalidate(); link = nil }
 }
 
 @MainActor

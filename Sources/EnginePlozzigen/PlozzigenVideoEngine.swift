@@ -1104,7 +1104,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     private func publishPlainASS() {
         guard let assDocument else { return }
-        let cues = assEvents.enumerated().compactMap { index, event -> CoreModels.SubtitleCue? in
+        var events: [ASSSubtitleEvent] = []
+        for event in assEvents {
+            ASSSubtitleEvent.appendPackets(event.packet, start: event.start, end: event.end, to: &events)
+        }
+        let cues = events.enumerated().compactMap { index, event -> CoreModels.SubtitleCue? in
             let text = SubtitleCueParser.textFromASSPacket(event.packet, header: assDocument.header)
             guard !text.string.isEmpty else { return nil }
             return CoreModels.SubtitleCue(id: index, start: event.start, end: event.end, body: .text(text))
@@ -1476,11 +1480,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 guard let self, !self.usesNativeSubtitleCues else { return }
                 let selected = self.engine.subtitleTracks.first { $0.id == self.engine.activeSubtitleTrackIndex }
                 if let header = self.engine.sidecarASSHeader ?? selected?.assHeader {
-                    let events = cues.flatMap { cue -> [ASSSubtitleEvent] in
-                        guard case .text(let packet) = cue.body else { return [] }
-                        return packet.split(separator: "\n").map {
-                            ASSSubtitleEvent(packet: String($0), start: cue.startTime, end: cue.endTime)
-                        }
+                    var events: [ASSSubtitleEvent] = []
+                    events.reserveCapacity(cues.count)
+                    for cue in cues {
+                        guard case .text(let packet) = cue.body, !packet.isEmpty else { continue }
+                        events.append(.init(packet: packet, start: cue.startTime, end: cue.endTime))
                     }
                     self.updateASS(events: events, header: header, trackID: selected?.id)
                     return
