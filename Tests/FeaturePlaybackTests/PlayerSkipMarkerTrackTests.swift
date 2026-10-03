@@ -156,15 +156,37 @@ final class PlayerSkipMarkerTrackTests: XCTestCase {
     }
 
     #if DEBUG && os(tvOS)
-    func testManualPreviewAccessDoesNotDependOnALaunchFlag() async {
+    func testManualPreviewRequiresDeveloperModeButNotALaunchFlag() async throws {
         XCTAssertFalse(PlayerMarkerPreviewRequest.isRequested(environment: [:]))
+        let suite = "MarkerPreviewDeveloperMode.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let developerMode = DeveloperModeModel(store: DeveloperModeStore(defaults: defaults))
+        let hidden = expectation(description: "marker preview stays hidden without Developer Mode")
+        hidden.isInverted = true
+        let hiddenObserver = NotificationCenter.default.addObserver(
+            forName: PlayerMarkerPreviewRequest.notification, object: nil, queue: .main
+        ) { _ in hidden.fulfill() }
+        PlayerMarkerPreviewRequest.open(developerMode: developerMode)
+        await fulfillment(of: [hidden], timeout: 0.05)
+        NotificationCenter.default.removeObserver(hiddenObserver)
+        for _ in 0..<DeveloperModeModel.requiredActivations { developerMode.registerUnlockActivation() }
         let opened = expectation(description: "manual marker preview request")
         let observer = NotificationCenter.default.addObserver(
             forName: PlayerMarkerPreviewRequest.notification, object: nil, queue: .main
         ) { _ in opened.fulfill() }
-        defer { NotificationCenter.default.removeObserver(observer) }
-        PlayerMarkerPreviewRequest.open()
+        PlayerMarkerPreviewRequest.open(developerMode: developerMode)
         await fulfillment(of: [opened], timeout: 1)
+        NotificationCenter.default.removeObserver(observer)
+        developerMode.disable()
+        let disabled = expectation(description: "disabling Developer Mode revokes marker preview requests")
+        disabled.isInverted = true
+        let disabledObserver = NotificationCenter.default.addObserver(
+            forName: PlayerMarkerPreviewRequest.notification, object: nil, queue: .main
+        ) { _ in disabled.fulfill() }
+        defer { NotificationCenter.default.removeObserver(disabledObserver) }
+        PlayerMarkerPreviewRequest.open(developerMode: developerMode)
+        await fulfillment(of: [disabled], timeout: 0.05)
     }
 
     func testNativeComparisonRequiresExplicitOptInAndUsesOnlyLocalExampleState() {

@@ -62,6 +62,7 @@ private struct PlozzSurfaceModifier: ViewModifier {
     let level: SurfaceLevel
     let cornerRadius: CGFloat
     let fillOpacity: Double
+    var borderOverride: Color? = nil
 
     func body(content: Content) -> some View {
         let style = palette.surface(level)
@@ -71,7 +72,7 @@ private struct PlozzSurfaceModifier: ViewModifier {
                 shape
                     .fill(style.fill.opacity(fillOpacity))
                     .overlay {
-                        if let border = style.border {
+                        if let border = borderOverride ?? style.border {
                             shape.strokeBorder(border, lineWidth: style.borderWidth)
                         }
                     }
@@ -98,13 +99,16 @@ struct OptionalSurfaceShadow: ViewModifier {
 
 private struct SettingsGroupSurface: ViewModifier {
     let cornerRadius: CGFloat
+    @Environment(\.themePalette) private var palette
     @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
 
     func body(content: Content) -> some View {
+        let translucent = gradientEnabled && !reduceTransparency
         content.modifier(PlozzSurfaceModifier(
             level: .raised, cornerRadius: cornerRadius,
-            fillOpacity: gradientEnabled && !reduceTransparency ? 0.2 : 1
+            fillOpacity: translucent ? 0.2 : 1,
+            borderOverride: translucent && !palette.isLight ? .white.opacity(0.05) : nil
         ))
     }
 }

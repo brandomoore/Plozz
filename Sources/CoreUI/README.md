@@ -23,9 +23,10 @@ cache that every feature module reuses. tvOS-only — guarded behind
   Reduce Motion disables the palette crossfade. Dark uses a softer wash and Black
   retains more visible colour while staying darker; Light's palette is unchanged.
   Settings groups blend their existing surface colour at 20% opacity over an
-  enabled gradient, keeping their border/shadow and opaque content. Gradient Off
-  or Reduce Transparency restores the solid surface. Other raised cards and
-  overlays keep their existing treatment.
+  enabled gradient, keeping their shadow and opaque content. Dark and Black use
+  a shared 5%-white edge. Gradient Off or Reduce Transparency restores the
+  original solid surface and border. Light, other raised cards, and overlays
+  keep their existing border treatment.
 - **Focusable building blocks** — focus-aware buttons, cards, tab bars,
   parallax containers, brand QR code rendering, code-font numerals.
   Native card focus observation is separate from explicit focus requests.

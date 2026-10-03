@@ -373,7 +373,7 @@ public struct RootView: View {
                 if appState.profileFlow.isChoosingProfile {
                     ProfileSelectionView(appState: appState, canCancel: appState.profileFlow.isProfileSelectionCancelable)
                         .transition(.opacity)
-                } else if showsMarkerPreview {
+                } else if showsMarkerPreview, !appState.profilesModel.activeProfile.isKids {
                     markerPreview
                 } else {
                     // Rendered even when `homeAccounts` is EMPTY. Switching the
@@ -850,7 +850,13 @@ public struct RootView: View {
             crashReporting.setScreen(CrashReportScreen(context: MainThreadStallProbe.context))
         }
         .onReceive(NotificationCenter.default.publisher(for: PlayerMarkerPreviewRequest.notification)) { _ in
-            if PlayerMarkerPreviewRequest.isAvailable { showsMarkerPreview = true }
+            if PlayerMarkerPreviewRequest.isAvailable, DeveloperModeModel.shared.isEnabled,
+               !appState.profilesModel.activeProfile.isKids {
+                showsMarkerPreview = true
+            }
+        }
+        .onChange(of: DeveloperModeModel.shared.isEnabled) { _, enabled in
+            if !enabled { showsMarkerPreview = false }
         }
         .onChange(of: appState.state, initial: true) { _, _ in
             #if DEBUG && os(tvOS)

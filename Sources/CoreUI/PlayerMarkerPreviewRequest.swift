@@ -1,4 +1,5 @@
 import Foundation
+import CoreModels
 
 /// Process-scoped access to the local marker comparison, never a saved setting.
 public enum PlayerMarkerPreviewRequest {
@@ -20,8 +21,8 @@ public enum PlayerMarkerPreviewRequest {
         #endif
     }
 
-    @MainActor public static func open() {
-        guard isAvailable else { return }
+    @MainActor public static func open(developerMode: DeveloperModeModel) {
+        guard isAvailable, developerMode.isEnabled else { return }
         NotificationCenter.default.post(name: notification, object: nil)
     }
 }

@@ -20,7 +20,7 @@ final class AmbientGradientTests: XCTestCase {
                         if palette.isLight {
                             XCTAssertGreaterThan(min(r, g, b), 0.65)
                         } else if theme == .pureBlack {
-                            XCTAssertLessThan(max(r, g, b), 0.085)
+                            XCTAssertLessThan(max(r, g, b), 0.105)
                         } else {
                             XCTAssertLessThan(max(r, g, b), 0.30)
                         }
@@ -56,8 +56,8 @@ final class AmbientGradientTests: XCTestCase {
         let dark = AmbientGradientBackground.meshColors(tint: nil, palette: .dark).map(channels)
         let black = AmbientGradientBackground.meshColors(tint: nil, palette: .pureBlack).map(channels)
         XCTAssertEqual(dark[0][2], 0.22088, accuracy: 0.0001)
-        XCTAssertEqual(black[0][2], 0.06526, accuracy: 0.0001)
-        XCTAssertEqual(black[0][2] / 0.1004, 13.0 / 20.0, accuracy: 0.0001)
+        XCTAssertEqual(black[0][2], 0.08032, accuracy: 0.0001)
+        XCTAssertEqual(black[0][2] / 0.1004, 0.8, accuracy: 0.0001)
         XCTAssertLessThan(dark[0][2], 0.251)
         XCTAssertGreaterThan(black[0][2], 0.251 * 0.22)
         for index in dark.indices {

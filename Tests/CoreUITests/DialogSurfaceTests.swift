@@ -6,6 +6,46 @@ import XCTest
 
 @MainActor
 final class DialogSurfaceTests: XCTestCase {
+    func testGradientSettingsUseFivePercentWhiteEdgesInDarkAndBlack() throws {
+        for palette in [ThemePalette.dark, .pureBlack] {
+            let pixels = try render(
+                Color.clear.frame(width: 120, height: 80)
+                    .settingsGroupSurface(cornerRadius: 16)
+                    .padding(40).background(.black)
+                    .environment(\.themePalette, palette)
+                    .environment(\.gradientBackgroundsEnabled, true)
+                    .environment(\.plozzReduceTransparency, false)
+            )
+            let edge = pixel(pixels, x: 100, y: 40)
+            let fill = pixel(pixels, x: 100, y: 44)
+            for channel in 0..<3 {
+                XCTAssertEqual(Double(edge[channel]), Double(fill[channel]) * 0.95 + 255 * 0.05, accuracy: 2)
+            }
+        }
+    }
+
+    func testSolidSettingsFallbackRetainsItsOriginalBorderAndFill() throws {
+        for palette in [ThemePalette.dark, .pureBlack, .light] {
+            let original = try render(
+                Color.clear.frame(width: 120, height: 80)
+                    .plozzSurface(.raised, cornerRadius: 16)
+                    .padding(40).background(.black)
+                    .environment(\.themePalette, palette)
+            )
+            for (gradient, reduced) in [(false, false), (true, true)] {
+                let settings = try render(
+                    Color.clear.frame(width: 120, height: 80)
+                        .settingsGroupSurface(cornerRadius: 16)
+                        .padding(40).background(.black)
+                        .environment(\.themePalette, palette)
+                        .environment(\.gradientBackgroundsEnabled, gradient)
+                        .environment(\.plozzReduceTransparency, reduced)
+                )
+                XCTAssertEqual(settings, original)
+            }
+        }
+    }
+
     func testSettingsGroupsBlendOnlyTheirFillWhenGradientsAllowTransparency() throws {
         let backdrop = Color(red: 0.7, green: 0.3, blue: 0.1)
         for palette in [ThemePalette.dark, .pureBlack, .light] {

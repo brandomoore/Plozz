@@ -795,19 +795,6 @@ public struct SettingsView: View {
                    value: nil,
                    route: .help)
 
-            if PlayerMarkerPreviewRequest.isAvailable {
-                Button(action: PlayerMarkerPreviewRequest.open) {
-                    Label {
-                        Text(verbatim: "Player marker examples")
-                    } icon: {
-                        Image(systemName: "play.rectangle")
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                }
-                .buttonStyle(SettingsFocusButtonStyle(size: .prominent))
-            }
-
             // The only Sign-Out-All entry point now lives here, inline, guarded
             // by the are-you-sure confirmation alert on the root view.
             if !accounts.isEmpty, !activeProfile.isKids {
@@ -823,6 +810,21 @@ public struct SettingsView: View {
             // back to the child.
             if developerMode.isEnabled, !activeProfile.isKids {
                 developerInfoPanel
+                if PlayerMarkerPreviewRequest.isAvailable {
+                    Button {
+                        PlayerMarkerPreviewRequest.open(developerMode: developerMode)
+                    } label: {
+                        Label {
+                            Text(verbatim: "Player marker examples")
+                        } icon: {
+                            Image(systemName: "play.rectangle")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                    }
+                    .buttonStyle(SettingsFocusButtonStyle(size: .prominent))
+                    .accessibilityIdentifier("settings-player-marker-examples")
+                }
                 developerModeRow
 
                 // Only meaningful in Debug builds (the hero A/B override the

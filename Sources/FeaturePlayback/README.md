@@ -762,8 +762,11 @@ still honor the existing profile/OS transparency resolution, and older OS
 versions retain their non-glass fallback.
 
 The real app enters the synthetic comparison through its normal profile route;
-Settings also exposes **Player marker examples** in Debug builds, so reopening
-does not depend on launch flags. Library footage additionally requires the complete profile/Plex
+Settings exposes **Player marker examples** only in Debug builds after Developer
+Mode is unlocked, never in ordinary Settings or a Kids Profile. Notification
+requests recheck the developer gate; turning Developer Mode off closes the
+preview. Release builds have no entry point. Explicit Debug-only launch flags
+remain available to the test harness. Library footage additionally requires the complete profile/Plex
 authorization gates. `MarkerPreviewLibrarySource` selects an episode from an enabled library
 on an active source; mapped Plex Home users require their resolved server
 identity. It rechecks profile, credentials, and library visibility across each
