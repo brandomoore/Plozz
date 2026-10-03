@@ -976,22 +976,24 @@ private struct PlozziOSSubtitleOptionsSheet: View {
 
     @ViewBuilder
     private var appearance: some View {
-        Section("Appearance") {
-            if let format =
-                viewModel.controls.secondarySubtitleImagePrimaryFormat {
-                Label(
-                    "\(format) subtitles are rendered as images and can’t be restyled.",
-                    systemImage: "photo"
-                )
-                .plozzForeground(.secondary)
-            } else {
-                NavigationLink {
-                    MobileSubtitleStyleEditor(viewModel: .init(player: viewModel))
-                } label: {
-                    LabeledContent {
-                        viewModel.controls.subtitleStyle.fontDisplayName
+        if viewModel.controls.subtitleStyleAdjustable {
+            Section("Appearance") {
+                if let format =
+                    viewModel.controls.secondarySubtitleImagePrimaryFormat {
+                    Label(
+                        "\(format) subtitles are rendered as images and can’t be restyled.",
+                        systemImage: "photo"
+                    )
+                    .plozzForeground(.secondary)
+                } else {
+                    NavigationLink {
+                        MobileSubtitleStyleEditor(viewModel: .init(player: viewModel))
                     } label: {
-                        Text("Style")
+                        LabeledContent {
+                            viewModel.controls.subtitleStyle.fontDisplayName
+                        } label: {
+                            Text("Style")
+                        }
                     }
                 }
             }

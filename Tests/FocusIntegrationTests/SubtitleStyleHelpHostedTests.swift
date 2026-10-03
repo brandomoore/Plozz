@@ -9,6 +9,59 @@ import XCTest
 
 @MainActor
 final class SubtitleStyleHelpHostedTests: XCTestCase {
+    func testBurnedInSubtitleMenuHidesStyleButKeepsDualSelectionReachable() async throws {
+        try await waitUntil {
+            UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = BurnedSubtitleMenuModel()
+        model.controls.primarySubtitleIsBurnedIn = true
+        model.controls.subtitleOptions = [
+            .init(id: PlayerTrackOption.offID, title: Text("Off"), isSelected: false),
+            .init(id: 3, title: Text("English ASS"), isSelected: true)
+        ]
+        model.setSecondary(false)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView: BurnedSubtitleMenuFixture(model: model))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await waitUntil { self.focusFrame(in: window) != nil }
+        try await Task.sleep(for: .milliseconds(300))
+        func labels() throws -> [String] {
+            window.layoutIfNeeded()
+            return try recognize(window).compactMap { $0.topCandidates(1).first?.string }
+        }
+        let text = try labels()
+        XCTAssertTrue(text.contains("Dual Subtitles"), "\(text)")
+        XCTAssertFalse(text.contains("Style"), "\(text)")
+
+        model.screen = .styleDual
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(try labels().contains("Second Track"))
+        model.setSecondary(true)
+        model.screen = .tracks
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(try labels().contains("Style"))
+
+        model.screen = .styleFont
+        try await Task.sleep(for: .milliseconds(100))
+        model.setSecondary(false)
+        try await waitUntil { model.screen == .tracks }
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(try labels().contains("Style"))
+
+        model.controls.primarySubtitleIsBurnedIn = false
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(try labels().contains("Style"))
+    }
+
     func testSystemStyleLabelExplainsTheDeviceWithoutAChangingHelperRow() async throws {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
@@ -79,6 +132,40 @@ final class SubtitleStyleHelpHostedTests: XCTestCase {
         let deadline = ContinuousClock.now + .seconds(5)
         while !condition(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertTrue(condition())
+    }
+}
+
+@MainActor @Observable
+private final class BurnedSubtitleMenuModel {
+    let controls = PlayerControlsModel()
+    var screen = PlayerControls.SubtitleScreen.tracks
+    var heights: [PlayerControls.Category: CGFloat] = [:]
+
+    func setSecondary(_ enabled: Bool) {
+        controls.secondarySubtitleOptions = [
+            .init(id: PlayerTrackOption.offID, title: Text("Off"), isSelected: !enabled),
+            .init(id: 4, title: Text("Signs"), isSelected: enabled)
+        ]
+    }
+}
+
+private struct BurnedSubtitleMenuFixture: View {
+    let model: BurnedSubtitleMenuModel
+    @FocusState private var focus: PlayerControls.FocusSlot?
+
+    var body: some View {
+        PlayerOptionsPanel(
+            category: .subtitles, model: model.controls, palette: .dark, actions: .init(),
+            subtitleScreen: Binding(get: { model.screen }, set: { model.screen = $0 }),
+            heightCache: Binding(get: { model.heights }, set: { model.heights = $0 }),
+            focus: $focus, close: {}, backRequest: 0, maximumHeight: 850
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.black)
+        .environment(\.locale, Locale(identifier: "en_US"))
+        .onChange(of: model.screen, initial: true) { _, screen in
+            focus = PlayerOptionsPanel.preferredFocus(for: .subtitles, subtitleScreen: screen, model: model.controls)
+        }
     }
 }
 

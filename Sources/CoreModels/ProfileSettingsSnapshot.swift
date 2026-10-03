@@ -37,6 +37,7 @@ public enum ProfileSettingsTransfer {
     ///  - `com.plozz.musicAvailability` (a per-device capability, not a preference)
     public static let transferableBaseKeys: [String] = [
         "com.plozz.appTheme",
+        ThemeSettingsStore.gradientStorageKey,
         "transparencyPreference",
         "com.plozz.cardStyle",
         "com.plozz.watchStatusIndicator",

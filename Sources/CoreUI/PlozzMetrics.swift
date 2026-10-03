@@ -291,9 +291,14 @@ public struct PlozzMetrics: Equatable, Sendable {
         PlozzTheme.Metrics.cardCaptionSpacing + landscapeCaptionInset * PlozzTheme.Metrics.captionTopClearanceFactor
     }
 
-    /// No extra resting gap beyond the native image's reserved focus frame.
-    /// Caption travel is reserved separately, without resizing its slot.
-    public var nativePosterCaptionSpacing: CGFloat { 0 }
+    /// Shared resting clearance for native media and library captions. Native
+    /// focus margins are drawing overflow, not space in the artwork layout slot.
+    public var nativePosterCaptionSpacing: CGFloat { landscapeCaptionTopSpacing }
+
+    /// TVPosterView overflow needs more clearance than other native media controls.
+    public var nativePosterCaptionFocusTravel: CGFloat {
+        max(focusCaptionPush, PlozzTheme.Metrics.nativeFocusCaptionMinimumPush)
+    }
 
     /// - Parameter dynamicTypeSize: the reader's current text size. Pass the
     ///   view's `\.dynamicTypeSize` so the metrics REBUILD when it changes —

@@ -477,6 +477,8 @@ public enum PlozzTheme {
         /// the drop never changes the tile's footprint. Base value; density-scaled
         /// in `PlozzMetrics` so it tracks the display-size preference.
         public static let focusCaptionPush: CGFloat = 16
+        /// TVUIKit's artwork expansion does not shrink with compact card density.
+        public static let nativeFocusCaptionMinimumPush: CGFloat = 24
 
         // MARK: Borderless ("Posters") card style
 

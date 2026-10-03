@@ -83,6 +83,17 @@ extension PlaybackInfoResponse {
 }
 
 extension MediaSourceInfo {
+    var burnedInSubtitleTrackID: Int? {
+        guard let TranscodingUrl,
+              let query = URLComponents(string: TranscodingUrl)?.queryItems,
+              query.first(where: { $0.name.caseInsensitiveCompare("SubtitleMethod") == .orderedSame })?
+                .value?.caseInsensitiveCompare("Encode") == .orderedSame else { return nil }
+        let index = query.first { $0.name.caseInsensitiveCompare("SubtitleStreamIndex") == .orderedSame }?.value
+            ?? query.first { $0.name.caseInsensitiveCompare("SubtitleStreamIndexes") == .orderedSame }?.value
+        guard let index, let id = Int(index), id >= 0 else { return nil }
+        return id
+    }
+
     func fits(_ quality: StreamingQuality) -> Bool {
         let video = MediaStreams?.first { $0.Type == "Video" }
         return quality.permitsOriginal(bitrate: Bitrate, width: video?.Width, height: video?.Height)

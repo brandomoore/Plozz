@@ -85,6 +85,17 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         if usesNativeSubtitleCues, let time = engine.currentAVPlayer?.currentTime().seconds, time.isFinite {
             return time
         }
+        if assDocument != nil, engine.hasFirstFrameReadyForDisplay, !engine.isSeeking {
+            if let timebase = engine.softwarePresentationTimebase {
+                let time = CMTimebaseGetTime(timebase).seconds
+                if time.isFinite { return time }
+            } else if let player = engine.currentAVPlayer,
+                      player.timeControlStatus != .waitingToPlayAtSpecifiedRate,
+                      let time = engine.presentationAxisMap.sourceSeconds(forItemSeconds: player.currentTime().seconds),
+                      time.isFinite {
+                return time
+            }
+        }
         return engine.sourceTime
     }
     private var nativeSubtitleOutput: NativeSubtitleCueOutput?
@@ -265,6 +276,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     /// Plozz's cue model, so the owned overlay draws them. This is the decoded
     /// read-ahead buffer — the host time-filters it against the playhead.
     public var onSubtitleCues: (@MainActor ([CoreModels.SubtitleCue]) -> Void)?
+    private let assRenderer = ASSSubtitleRenderer()
+    private var assDocument: ASSSubtitleDocument?
+    private var assEvents: [ASSSubtitleEvent] = []
+    private var rendersAuthoredASS = true
     /// Fired with AetherEngine's decoded *secondary* (dual-line) subtitle cues,
     /// mapped to Plozz's cue model, so the owned overlay draws a second line from
     /// the container itself — no fetchable sidecar URL needed. This is what makes
@@ -362,6 +377,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public func load(request: PlaybackRequest, startPosition: TimeInterval) async {
         guard let outputGeneration = await beginOutputLoad() else { return }
+        clearASS()
         let outputPolicy = liveOutputPolicy
         defer { finishOutputLoad(outputGeneration, policy: outputPolicy) }
         endLiveAttempt()
@@ -393,6 +409,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         // ASS/SSA keeps the overlay for normal playback; the native copy is plain
         // text, which is the trade for being visible in the window at all.
         options.prepareNativeSubtitles = true
+        options.preserveASSMarkup = true
         // Populate the readers at load, so a window opened mid-playback has cues
         // immediately instead of starting with a gap.
         options.eagerNativeSubtitleReaders = true
@@ -445,13 +462,31 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                     for: request,
                     sourceURL: url
                 )
+                let boundedProbe = PlozzigenRemoteProbePolicy.apply(to: &options, request: request, url: url)
+                if boundedProbe {
+                    HandoffDiagnostics.emit("aether PROBE_POLICY kind=bounded-remote-av1")
+                }
                 stage = "engine.load"
-                try await engine.load(
+                let probe = try await engine.load(
                     url: url,
                     startPosition: startPosition > 0 ? startPosition : nil,
                     options: options,
                     audioSourceStreamIndex: request.preferredAudioTrackID.map(Int32.init)
                 )
+                if boundedProbe, !PlozzigenRemoteProbePolicy.isComplete(probe, for: request) {
+                    guard probePublicationGate.accepts(probeGeneration), !Task.isCancelled else { return }
+                    HandoffDiagnostics.emit("aether PROBE_RETRY reason=incomplete-remote-matroska")
+                    PlozzLog.playback.info("Bounded remote MKV probe missed required media facts; retrying the full probe.")
+                    options.probesize = nil
+                    options.maxAnalyzeDuration = nil
+                    stage = "engine.fullProbeRetry"
+                    try await engine.load(
+                        url: url,
+                        startPosition: startPosition > 0 ? startPosition : nil,
+                        options: options,
+                        audioSourceStreamIndex: request.preferredAudioTrackID.map(Int32.init)
+                    )
+                }
             }
             // Engine state can already be `.playing` by the time load returns,
             // which advances the adapter status to `.ready`. Generation truth,
@@ -850,10 +885,12 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public func seek(to seconds: TimeInterval) async {
+        resetASSFrameForSeek()
         await engine.seek(to: seconds)
     }
 
     public func seek(to seconds: TimeInterval, kind: VideoSeekKind) async {
+        resetASSFrameForSeek()
         PlaybackTrace.note("engine.seek BEGIN target=\(String(format: "%.2f", seconds)) kind=\(kind) state=\(engine.state) curr=\(String(format: "%.2f", currentTime)) dur=\(String(format: "%.2f", duration))")
         await engine.seek(to: seconds)
         PlaybackTrace.note("engine.seek END   target=\(String(format: "%.2f", seconds)) state=\(engine.state) curr=\(String(format: "%.2f", currentTime))")
@@ -872,6 +909,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func stopEngine(resetDisplayCriteria: Bool) {
+        clearASS()
         nativeSubtitleOutput?.detach()
         nativeSubtitleOutput = nil
         nativeSubtitleItem = nil
@@ -925,6 +963,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public func selectSubtitleTrack(_ track: MediaTrack?) {
+        clearASS()
         synchronizeNativeSubtitleOutput()
         if nativeSubtitleOutput != nil {
             nativeSubtitleSelectionID = track?.id
@@ -1022,6 +1061,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     /// the way out and then double-draws with the overlay on the way back.
     public func setNativeSubtitlesActive(_ active: Bool) {
         wantsNativeSubtitles = active
+        if active { assRenderer.clear() }
+        else if let assDocument { assRenderer.update(document: assDocument, events: assEvents) }
         nativeSubtitleOutput?.setSystemPresentation(active)
         applyNativeSubtitleSelection()
     }
@@ -1042,6 +1083,63 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     public func updateSubtitleStyle(_ style: SubtitleStyle) {
         avPlayerSubtitleStyle = style
         applyAVPlayerSubtitleStyle(to: engine.currentAVPlayer)
+    }
+
+    public func renderSubtitles(at time: TimeInterval, style: SubtitleStyle) {
+        guard let assDocument, !wantsNativeSubtitles else { return }
+        let authored = !style.followsSystemStyle && style.usesSourcePosition
+            && style.usesSourceColors && style.usesSourceEmphasis
+        if authored != rendersAuthoredASS {
+            rendersAuthoredASS = authored
+            if authored { assRenderer.update(document: assDocument, events: assEvents) }
+            else { assRenderer.clear(); publishPlainASS() }
+        }
+        if authored { assRenderer.tick(time) }
+    }
+
+    private func clearASS() {
+        assDocument = nil
+        assEvents = []
+        assRenderer.clear()
+    }
+
+    private func resetASSFrameForSeek() {
+        assRenderer.clear()
+        if let assDocument { assRenderer.update(document: assDocument, events: assEvents) }
+    }
+
+    private func publishPlainASS() {
+        guard let assDocument else { return }
+        var events: [ASSSubtitleEvent] = []
+        for event in assEvents {
+            ASSSubtitleEvent.appendPackets(event.packet, start: event.start, end: event.end, to: &events)
+        }
+        let cues = events.enumerated().compactMap { index, event -> CoreModels.SubtitleCue? in
+            let text = SubtitleCueParser.textFromASSPacket(event.packet, header: assDocument.header)
+            guard !text.string.isEmpty else { return nil }
+            return CoreModels.SubtitleCue(id: index, start: event.start, end: event.end, body: .text(text))
+        }
+        onSubtitleCues?(cues)
+    }
+
+    private func updateASS(events: [ASSSubtitleEvent], header: String, trackID: Int?) {
+        let width = max(1, Double(engine.sourceVideoWidth))
+        let height = max(1, Double(engine.sourceVideoHeight))
+        let scale = min(1, 1_920 / width, 1_080 / height)
+        let document = ASSSubtitleDocument(
+            identity: "\(outputLoadGeneration):\(trackID ?? -1):\(header)",
+            header: header,
+            fonts: engine.fontAttachments.map { ASSSubtitleFont(name: $0.filename, data: $0.data) },
+            size: CGSize(width: (width * scale).rounded(), height: (height * scale).rounded())
+        )
+        assDocument = document
+        assEvents = events
+        assRenderer.onFrame = { [weak self] cues in
+            guard let self, self.assDocument != nil, !self.wantsNativeSubtitles, self.rendersAuthoredASS else { return }
+            self.onSubtitleCues?(cues)
+        }
+        if rendersAuthoredASS { assRenderer.update(document: document, events: events) }
+        else { publishPlainASS() }
     }
 
     /// Re-applied whenever the engine rebuilds its player or session, since the
@@ -1386,6 +1484,18 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] cues in
                 guard let self, !self.usesNativeSubtitleCues else { return }
+                let selected = self.engine.subtitleTracks.first { $0.id == self.engine.activeSubtitleTrackIndex }
+                if let header = self.engine.sidecarASSHeader ?? selected?.assHeader {
+                    var events: [ASSSubtitleEvent] = []
+                    events.reserveCapacity(cues.count)
+                    for cue in cues {
+                        guard case .text(let packet) = cue.body, !packet.isEmpty else { continue }
+                        events.append(.init(packet: packet, start: cue.startTime, end: cue.endTime))
+                    }
+                    self.updateASS(events: events, header: header, trackID: selected?.id)
+                    return
+                }
+                if self.assDocument != nil { self.clearASS() }
                 // Map AetherEngine cues → Plozz's cue model inline so the
                 // element type is inferred (the module and the engine class share
                 // the name `AetherEngine`, so naming `AetherEngine.SubtitleCue`

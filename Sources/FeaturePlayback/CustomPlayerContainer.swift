@@ -436,6 +436,9 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
 
     @objc private func tickSubtitleClock() {
         updateSubtitleVideoRect()
+        if let subtitleModel, subtitleModel.hasContent {
+            engine.renderSubtitles(at: engine.subtitlePresentationTime - subtitleModel.offset, style: subtitleModel.style)
+        }
         subtitleModel?.tick(engine.subtitlePresentationTime)
     }
 

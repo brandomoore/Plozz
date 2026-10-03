@@ -49,6 +49,9 @@ public final class WatchlistModel {
     @ObservationIgnored private var statesByProfile:
         [String: WatchlistIntentStoreState] = [:]
     @ObservationIgnored private var removedProfileIDs: Set<String> = []
+    @ObservationIgnored private var localPresentationScope: String?
+    @ObservationIgnored private var localPresentationItems:
+        [MediaAliasID: MediaItem] = [:]
 
     public init(
         storageDirectory: URL? = nil,
@@ -109,6 +112,9 @@ public final class WatchlistModel {
             }
         }
         try hydrate(profileID: profileID)
+        if activeProfileID != profileID {
+            resetLocalPresentation(scope: nil)
+        }
         activeProfileID = profileID
     }
 
@@ -182,6 +188,9 @@ public final class WatchlistModel {
         )!
         replace(intent, in: &state)
         try persist(state, profileID: profileID)
+        if activeProfileID == profileID {
+            localPresentationItems[aliasID] = nil
+        }
         return intent
     }
 
@@ -324,19 +333,63 @@ public final class WatchlistModel {
         try persist(state, profileID: profileID, aliasSnapshot: aliasSnapshot)
     }
 
+    /// Keeps a locally verified add usable before Home, native import or the
+    /// identity index knows the item. Never persisted or synced with intent.
+    public func retainLocalPresentation(
+        _ item: MediaItem,
+        aliasID: MediaAliasID,
+        scope: String
+    ) {
+        resetLocalPresentation(scope: scope)
+        guard item.locallyValidatedPlayableSource,
+              item.sourceAccountID != nil,
+              activeSnapshot.contains(aliasID: aliasID)
+        else { return }
+        localPresentationItems[aliasID] = item
+    }
+
+    private func resetLocalPresentation(scope: String?) {
+        guard localPresentationScope != scope else { return }
+        localPresentationItems = [:]
+        localPresentationScope = scope
+    }
+
     public func presentationSnapshot(
         profileID: String,
         union: WatchlistUnion,
         aliasSnapshot: MediaAliasSnapshot,
         currentItemsByAliasID: [MediaAliasID: MediaItem],
         indexedSources: ((MediaItem) -> [MediaSourceRef])? = nil,
-        capabilities: MediaCapabilities? = nil
+        capabilities: MediaCapabilities? = nil,
+        localPresentationScope: String? = nil
     ) throws -> [WatchlistPresentationEntry] {
         try ensureHydrated(profileID)
+        resetLocalPresentation(
+            scope: profileID == activeProfileID ? localPresentationScope : nil
+        )
+        let members = Set(union.orderedEntries.map(\.aliasID))
+        localPresentationItems = localPresentationItems.reduce(into: [:]) {
+            result, entry in
+            let aliasID = aliasSnapshot.resolvedAliasID(for: entry.key) ?? entry.key
+            if members.contains(aliasID) {
+                result[aliasID] = entry.value
+            }
+        }
+        let current = localPresentationItems.merging(currentItemsByAliasID) {
+            retained, candidate in
+            // A verified Discovery rejection is not an unresolved native row.
+            candidate.locallyValidatedPlayableSource || !candidate.discoverySources.isEmpty
+                ? candidate : retained
+        }
+        for aliasID in localPresentationItems.keys {
+            let refreshed = current[aliasID]
+            localPresentationItems[aliasID] =
+                refreshed?.locallyValidatedPlayableSource == true ? refreshed : nil
+        }
         let entries = WatchlistPresentationResolver.resolve(
             union: union,
             aliasSnapshot: aliasSnapshot,
-            currentItemsByAliasID: currentItemsByAliasID,
+            currentItemsByAliasID: current,
             indexedSources: indexedSources,
             capabilities: capabilities
         )
@@ -468,7 +521,10 @@ public final class WatchlistModel {
         storesByProfile[profileID] = nil
         statesByProfile[profileID] = nil
         snapshotsByProfile[profileID] = nil
-        if activeProfileID == profileID { activeProfileID = nil }
+        if activeProfileID == profileID {
+            activeProfileID = nil
+            resetLocalPresentation(scope: nil)
+        }
     }
 
     public func isProfileDeleted(_ profileID: String) -> Bool {

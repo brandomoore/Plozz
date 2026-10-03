@@ -89,6 +89,8 @@ struct PlayerOptionsPanel: View {
 
     var body: some View {
         morphingPanel(for: category)
+            .onAppear { reconcileSubtitleScreen() }
+            .onChange(of: model.subtitleStyleAdjustable) { _, _ in reconcileSubtitleScreen() }
             .onChange(of: backRequest) { _, _ in
                 if category == .subtitles, subtitleScreen != .tracks {
                     openSubtitleScreen(subtitleScreen.parent)
@@ -130,6 +132,9 @@ struct PlayerOptionsPanel: View {
         offersPlaybackSpeed: Bool = true,
         zoomMode: PlayerVideoZoom.Mode? = nil
     ) -> FocusSlot? {
+        let subtitleScreen = model.subtitleStyleAdjustable ? subtitleScreen : availableSubtitleScreen(
+            subtitleScreen, model: model, offersDualSubtitles: offersDualSubtitles
+        )
         switch panel {
         case .info, .cast, .episodes, .playlist:
             // The tab, not the card: the row above the card behaves like a
@@ -474,16 +479,27 @@ struct PlayerOptionsPanel: View {
                     .focusEffectDisabled()
                     .focused($focus, equals: .subSync)
                 }
-                Button {
-                    openSubtitleScreen(.style)
-                } label: {
-                    Label("Style", systemImage: "paintpalette")
+                if model.subtitleStyleAdjustable {
+                    Button {
+                        openSubtitleScreen(.style)
+                    } label: {
+                        Label("Style", systemImage: "paintpalette")
+                    }
+                    .buttonStyle(PlozzPanelHeaderButtonStyle())
+                    .focusEffectDisabled()
+                    .focused($focus, equals: .edit)
+                    .padding(.trailing, -10)
+                } else if offersDualSubtitles && !model.secondarySubtitleOptions.isEmpty {
+                    Button {
+                        openSubtitleScreen(.styleDual)
+                    } label: {
+                        Label("Dual Subtitles", systemImage: "captions.bubble")
+                    }
+                    .buttonStyle(PlozzPanelHeaderButtonStyle())
+                    .focusEffectDisabled()
+                    .focused($focus, equals: .edit)
+                    .padding(.trailing, -10)
                 }
-                .buttonStyle(PlozzPanelHeaderButtonStyle())
-                .focusEffectDisabled()
-                .focused($focus, equals: .edit)
-                // Style remains available while matching system captions.
-                .padding(.trailing, -10)
             }
         }
         .padding(.horizontal, 28)
@@ -614,8 +630,28 @@ struct PlayerOptionsPanel: View {
         restoreFocus(screen == .options ? .row(PlaybackOptionsPane.zoomSlot) : preferredFocus)
     }
 
-    private func openSubtitleScreen(_ screen: SubtitleScreen) {
+    static func availableSubtitleScreen(
+        _ screen: SubtitleScreen, model: PlayerControlsModel, offersDualSubtitles: Bool
+    ) -> SubtitleScreen {
         let screen = screen == .styleDual && !offersDualSubtitles ? .style : screen
+        if screen.isStyleFamily && screen != .styleDual && !model.subtitleStyleAdjustable {
+            return .tracks
+        }
+        return screen
+    }
+
+    private func reconcileSubtitleScreen() {
+        guard category == .subtitles else { return }
+        let available = Self.availableSubtitleScreen(
+            subtitleScreen, model: model, offersDualSubtitles: offersDualSubtitles
+        )
+        if available != subtitleScreen { openSubtitleScreen(available) }
+    }
+
+    private func openSubtitleScreen(_ screen: SubtitleScreen) {
+        let screen = Self.availableSubtitleScreen(
+            screen, model: model, offersDualSubtitles: offersDualSubtitles
+        )
         // Entering the Style editor from the (non-style) track list flips the body
         // from the compact list cap to the larger Style viewport. At this point
         // `bodyHeight` still holds the track list's full measured content height,

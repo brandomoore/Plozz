@@ -2,8 +2,10 @@
 import CoreModels
 import CoreSecureStore
 import FeatureAuthCore
+import FeatureHomeCore
 import FeatureWatchlistCore
 import Foundation
+import ProviderJellyfin
 @testable import ProviderPlex
 import XCTest
 
@@ -110,6 +112,129 @@ final class UniversalWatchlistMembershipTests: XCTestCase {
         // The whole bug: this was false, on a title that had just been added and
         // really was on the list.
         XCTAssertTrue(host.universalWatchlistMembership(item))
+    }
+
+    func testAddingLibrarySeriesPreservesItsDetailRouteBeforeNativeRefreshOrIndexWarmup() async throws {
+        let host = try await UniversalWatchlistHostDouble()
+        var searched = MediaItem(
+            id: "library-show-35",
+            title: "New Girl",
+            kind: .series,
+            sourceAccountID: UniversalWatchlistHostDouble.accountID
+        )
+        searched.productionYear = 2011
+        searched.providerIDs = ["imdb": "tt1826940"]
+        searched.overview = "The server's curated description"
+        searched.posterURL = URL(string: "http://plex.local:32400/library/metadata/35/thumb")!
+        searched.backdropURL = URL(string: "http://plex.local:32400/library/metadata/35/art")!
+        searched.heroBackdropURL = searched.backdropURL
+
+        XCTAssertTrue(host.identityIndex.identitySourcesProvider(searched).isEmpty)
+        XCTAssertTrue(host.universalWatchlistNativeView.bucketsByDestinationID.isEmpty)
+        let added = await host.performUniversalWatchlist(adding: true, item: searched)
+        XCTAssertTrue(added)
+
+        let row = try XCTUnwrap(host.resolvedUniversalWatchlistItems(candidates: []).first)
+        XCTAssertEqual(row.id, searched.id)
+        XCTAssertEqual(row.sourceAccountID, searched.sourceAccountID)
+        XCTAssertEqual(row.overview, searched.overview)
+        XCTAssertEqual(row.backdropURL, searched.backdropURL)
+        XCTAssertFalse(TitleClassifier.isDiscoveryRouting(row, identitySources: []))
+
+        let rediscovered = try XCTUnwrap(
+            host.resolvedUniversalWatchlistItems(candidates: [searched]).first
+        )
+        XCTAssertEqual(rediscovered.id, searched.id)
+        XCTAssertFalse(TitleClassifier.isDiscoveryRouting(rediscovered, identitySources: []))
+
+        var discover = searched
+        discover.id = "discover-show"
+        discover.locallyValidatedPlayableSource = false
+        discover.availability = .unknown
+        discover.backdropURL = URL(string: "https://metadata.example/other-art.jpg")!
+        let refreshed = try XCTUnwrap(
+            host.resolvedUniversalWatchlistItems(candidates: [discover]).first
+        )
+        XCTAssertEqual(refreshed.id, searched.id)
+        XCTAssertEqual(refreshed.backdropURL, searched.backdropURL)
+
+        let provider = try XCTUnwrap(host.accountsProviders.resolvedActiveAccounts.first?.provider)
+        let environment = DetailOpenEnvironment(
+            resolveProvider: { _ in provider },
+            resolveOptionalProvider: { _ in provider },
+            identitySources: { _ in [] },
+            crossServerSourceResolver: nil
+        )
+        let detail = environment.makeViewModel(for: refreshed, libraryOrigin: nil)
+        XCTAssertFalse(detail.isDiscoveryItem)
+        XCTAssertEqual(detail.currentSourceForDisplay.itemID, searched.id)
+        XCTAssertEqual(detail.currentSourceForDisplay.accountID, searched.sourceAccountID)
+    }
+
+    func testPromotedSeriesWithoutExternalIDsKeepsPlexAndMediaBrowserLibraryRoutes() async throws {
+        for kind in [ProviderKind.plex, .jellyfin, .emby] {
+            let host = try await UniversalWatchlistHostDouble(providerKind: kind)
+            let added = await host.performUniversalWatchlist(adding: true, item: promotedSeries)
+            XCTAssertTrue(added)
+            let row = try XCTUnwrap(host.resolvedUniversalWatchlistItems(candidates: []).first)
+            XCTAssertEqual(row.id, promotedSeries.id, "\(kind)")
+            XCTAssertEqual(row.sourceAccountID, promotedSeries.sourceAccountID, "\(kind)")
+            XCTAssertFalse(TitleClassifier.isDiscoveryRouting(row, identitySources: []), "\(kind)")
+        }
+    }
+
+    func testDiscoveryAddDoesNotTurnAliasSourceHintsIntoOwnership() async throws {
+        let host = try await UniversalWatchlistHostDouble()
+        var discover = promotedSeries
+        discover.locallyValidatedPlayableSource = false
+        discover.availability = .unknown
+        let added = await host.performUniversalWatchlist(adding: true, item: discover)
+        XCTAssertTrue(added)
+        let row = try XCTUnwrap(host.resolvedUniversalWatchlistItems(candidates: []).first)
+        XCTAssertTrue(TitleClassifier.isDiscoveryRouting(row, identitySources: []))
+        XCTAssertFalse(row.locallyValidatedPlayableSource)
+        XCTAssertNil(row.sourceAccountID)
+    }
+
+    func testLocalPresentationIsDiscardedWhenCredentialsChange() async throws {
+        let host = try await UniversalWatchlistHostDouble()
+        let added = await host.performUniversalWatchlist(adding: true, item: promotedSeries)
+        XCTAssertTrue(added)
+        let revision = CredentialRevision()
+        host.accountsProviders.credentialRevision = { _ in revision }
+
+        let row = try XCTUnwrap(host.resolvedUniversalWatchlistItems(candidates: []).first)
+        XCTAssertTrue(TitleClassifier.isDiscoveryRouting(row, identitySources: []))
+        XCTAssertNil(row.sourceAccountID)
+    }
+
+    func testLocalPresentationIsDiscardedWhenPlexHomeIdentityChanges() async throws {
+        let host = try await UniversalWatchlistHostDouble()
+        let added = await host.performUniversalWatchlist(adding: true, item: promotedSeries)
+        XCTAssertTrue(added)
+        host.plexWatchlistIdentityGeneration += 1
+
+        let row = try XCTUnwrap(host.resolvedUniversalWatchlistItems(candidates: []).first)
+        XCTAssertTrue(TitleClassifier.isDiscoveryRouting(row, identitySources: []))
+        XCTAssertNil(row.sourceAccountID)
+    }
+
+    func testLocalPresentationCannotUseAnInactiveAccount() async throws {
+        let host = try await UniversalWatchlistHostDouble()
+        let added = await host.performUniversalWatchlist(adding: true, item: promotedSeries)
+        XCTAssertTrue(added)
+        host.accountsProviders.accountStore.setActiveAccountIDs([])
+        host.accountsProviders.reloadAccounts()
+        XCTAssertTrue(host.accountsProviders.resolvedActiveAccounts.isEmpty)
+
+        let row = try XCTUnwrap(host.resolvedUniversalWatchlistItems(candidates: []).first)
+        XCTAssertTrue(TitleClassifier.isDiscoveryRouting(row, identitySources: []))
+        XCTAssertNil(row.sourceAccountID)
+
+        let readded = await host.performUniversalWatchlist(adding: true, item: promotedSeries)
+        XCTAssertTrue(readded)
+        let readdedRow = try XCTUnwrap(host.resolvedUniversalWatchlistItems(candidates: []).first)
+        XCTAssertTrue(TitleClassifier.isDiscoveryRouting(readdedRow, identitySources: []))
     }
 
     /// And the alias the write addressed is the one the read answers from — the
@@ -680,7 +805,7 @@ final class UniversalWatchlistHostDouble: UniversalWatchlistHost {
     var universalWatchlistDestinationIDs: Set<WatchlistDestinationID> = []
     var universalWatchlistRefreshGeneration: UInt64 = 0
     var universalWatchlistProfileID: String?
-    let plexWatchlistIdentityGeneration = 0
+    var plexWatchlistIdentityGeneration = 0
     var universalWatchlistRetryScheduler: WatchlistRetryScheduler?
     var universalWatchlistShouldResumeAuthentication = false
     var universalWatchlistIdentityUpdateTask: Task<Void, Never>?
@@ -692,9 +817,9 @@ final class UniversalWatchlistHostDouble: UniversalWatchlistHost {
     static let accountID = "acct"
     static let baseURL = URL(string: "http://plex.local:32400")!
 
-    init() async throws {
+    init(providerKind: ProviderKind = .plex) async throws {
         mediaAliasLedger = await MediaAliasLedgerModel()
-        // A real signed-in Plex account, because the write derives its provider
+        // A real signed-in account, because the write derives its provider
         // binding from one: `universalWatchlistEvidence` looks the account's
         // provider kind up to decide whether the `(account, id)` pair is a
         // media-browser binding at all.
@@ -704,9 +829,9 @@ final class UniversalWatchlistHostDouble: UniversalWatchlistHost {
                 id: Self.accountID,
                 server: MediaServer(
                     id: "universal-watchlist-\(UUID().uuidString)",
-                    name: "Plex",
+                    name: providerKind.rawValue,
                     baseURL: Self.baseURL,
-                    provider: .plex
+                    provider: providerKind
                 ),
                 userID: "u",
                 userName: "Viewer",
@@ -722,6 +847,15 @@ final class UniversalWatchlistHostDouble: UniversalWatchlistHost {
                 accountID: context.accountID,
                 credentialRevision: context.credentialRevision
             )
+        }
+        for kind in [ProviderKind.jellyfin, .emby] {
+            registry.register(kind) { context in
+                JellyfinProvider(
+                    session: context.session,
+                    accountID: context.accountID,
+                    credentialRevision: context.credentialRevision
+                )
+            }
         }
         accountsProviders = AccountsProvidersModel(
             accountStore: store,

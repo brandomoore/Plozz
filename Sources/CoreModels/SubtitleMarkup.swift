@@ -116,6 +116,7 @@ enum SubtitleMarkup {
         var alignment: SubtitleAlignment?
         var anchor: CGPoint?
         var builder = RunBuilder()
+        var drawing = false
         var depth = 0
         var block = ""
         for ch in raw {
@@ -134,9 +135,10 @@ enum SubtitleMarkup {
                 }
                 if overrides.resetsColor { builder.color = nil }
                 if let color = overrides.color { builder.color = color }
+                if let mode = overrides.drawingMode { drawing = mode > 0 }
             } else if depth > 0 {
                 block.append(ch)
-            } else {
+            } else if !drawing {
                 builder.append(ch)
             }
         }
@@ -164,6 +166,7 @@ enum SubtitleMarkup {
         var position: CGPoint?
         var color: SubtitleColor?
         var resetsColor = false
+        var drawingMode: Int?
     }
 
     /// Reads the tags inside one `{…}` block (without the braces).
@@ -171,7 +174,9 @@ enum SubtitleMarkup {
         var result = ASSOverrides()
         for tag in block.split(separator: "\\").map({ $0.trimmingCharacters(in: .whitespaces) }) {
             let lowered = tag.lowercased()
-            if lowered.hasPrefix("an"), let n = Int(lowered.dropFirst(2)), let a = SubtitleAlignment(rawValue: n) {
+            if lowered.hasPrefix("p"), let mode = Int(lowered.dropFirst()) {
+                result.drawingMode = mode
+            } else if lowered.hasPrefix("an"), let n = Int(lowered.dropFirst(2)), let a = SubtitleAlignment(rawValue: n) {
                 result.alignment = a
             } else if lowered.hasPrefix("pos("), lowered.hasSuffix(")") {
                 let numbers = lowered.dropFirst(4).dropLast().split(separator: ",")
@@ -188,6 +193,7 @@ enum SubtitleMarkup {
             } else if lowered == "r" || (lowered.hasPrefix("r") && !lowered.hasPrefix("rnd")) {
                 result.resetsColor = true
                 result.color = nil
+                result.drawingMode = 0
             }
         }
         return result

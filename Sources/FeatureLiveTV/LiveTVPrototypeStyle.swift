@@ -366,12 +366,15 @@ struct PrototypeGuideSurface: View {
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.themePalette) private var palette
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
 
     var body: some View {
         Group {
             if reduceTransparency || contrast == .increased {
                 Color.clear.plozzSurface(.raised, cornerRadius: 0)
                     .clipShape(PrototypeLayout.guideShape)
+            } else if gradientEnabled {
+                Color.clear
             } else {
                 PrototypeLayout.guideShape
                     .fill(LinearGradient(

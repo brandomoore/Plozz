@@ -537,9 +537,27 @@ public extension UniversalWatchlistHost {
             // library film watchlisted in Plozz appears in no other Home row, so
             // without this it renders as "not in your library" while sitting in it.
             indexedSources: identityIndex.identitySourcesProvider,
-            capabilities: .detected()
+            capabilities: .detected(),
+            localPresentationScope: universalWatchlistPresentationScope
         ).map(\.item)) ?? []
         return resolved
+    }
+
+    private var universalWatchlistPresentationScope: String {
+        let accounts = accountsProviders.resolvedActiveAccounts.map(\.account)
+        let accountsKey = accounts.map { account in
+            let fields = [
+                account.id, account.server.id, account.server.provider.rawValue,
+                account.server.baseURL.absoluteString, account.userID,
+                accountsProviders.credentialRevision(account).rawValue.uuidString
+            ]
+            return fields.map { "\($0.utf8.count):\($0)" }.joined()
+        }.sorted().joined(separator: "|")
+        return UniversalWatchlistScope.live(
+            profileID: profiles.activeProfileID,
+            identityGeneration: plexWatchlistIdentityGeneration,
+            accountsKey: accountsKey + "#" + profiles.activeProfile.plexPlaybackIdentityKey(for: accounts)
+        )
     }
 
     /// Re-signs last-known artwork for this process without a network lookup.
@@ -860,8 +878,8 @@ public extension UniversalWatchlistHost {
         guard runtimeFeatureFlags.isEnabled(.universalWatchlist),
               item.kind == .movie || item.kind == .series else { return false }
         let profileID = profiles.activeProfileID
-        guard profileID == profiles.activeProfileID,
-              let evidence = universalWatchlistEvidence(for: item)
+        let presentationScope = universalWatchlistPresentationScope
+        guard let evidence = universalWatchlistEvidence(for: item)
         else { return false }
         do {
             let aliasID = try await mediaAliasLedger.resolveOrCreate(
@@ -869,6 +887,11 @@ public extension UniversalWatchlistHost {
                 evidence: evidence,
                 preferredAliasID: universalWatchlistPreferredAliasID(for: item)
             )
+            guard profileID == profiles.activeProfileID,
+                  presentationScope == universalWatchlistPresentationScope else {
+                PlozzLog.app.info("Watchlist local mutation dropped — scope changed during identity resolution")
+                return false
+            }
             if adding {
                 try universalWatchlist.add(
                     profileID: profileID,
@@ -876,6 +899,21 @@ public extension UniversalWatchlistHost {
                     kind: item.kind,
                     presentation: evidence.presentation
                 )
+                let activeAccountIDs = Set(
+                    accountsProviders.resolvedActiveAccounts.map(\.account.id)
+                )
+                if let accountID = item.sourceAccountID,
+                   activeAccountIDs.contains(accountID) {
+                    var retained = item
+                    retained.sources.removeAll {
+                        !activeAccountIDs.contains($0.accountID)
+                    }
+                    universalWatchlist.retainLocalPresentation(
+                        retained,
+                        aliasID: aliasID,
+                        scope: presentationScope
+                    )
+                }
             } else {
                 try universalWatchlist.remove(
                     profileID: profileID,

@@ -6,6 +6,28 @@ with the best possible quality (Dolby Vision, Atmos, full-timeline seek).
 
 ## Dependency version
 
+Authored primary ASS/SSA subtitles use libass **0.17.5**, built from the
+unmodified upstream sources in `Vendor/Libass/libass`. `UPSTREAM.json` records
+the official archive and SHA-256; Apple configuration and assembly wrappers live
+outside that directory. SwiftPM compiles ARM NEON kernels on arm64 and the scalar
+fallback on Intel, with optimization enabled even in Debug. The former prebuilt
+wrapper disabled assembly and spent 36–67 ms per frame on a font-heavy opening
+on Apple TV 4K (2nd generation). The optimized renderer and direct premultiplied
+RGBA compositor measured 15–28 ms at the same 1920×1080 resolution; no effects or
+font sizing are removed to reach the frame budget.
+
+FreeType 2.14.3, HarfBuzz 14.2.0, FriBidi 1.0.16 and libunibreak 6.1 use
+checksum-pinned standalone artifacts from `mpvkit/libass-build` 0.17.5.
+Their exact public headers are retained in `Vendor/Libass/dependency-headers`
+for the C build. These add standalone text-rendering libraries, not MPV or another FFmpeg.
+The adapter consumes Aether's public raw-packet/header/font APIs and emits
+composited bitmap cues through Plozz's existing subtitle overlay. Font data is
+session-local, frame work is serialized off-main, and late frames are fenced
+across track changes, seeks and teardown. `App/Resources/LibassNotices.txt`
+ships the upstream and transitive-library notices. Preserve all upstream license
+headers when updating the vendored sources, and update sources, public headers,
+binary checksums, and bundled notices together.
+
 Plozz pins upstream release **7.22.2**, commit
 `0e2f5c967b5f92e692e03edf612f2753289029cf`. This release waits for an observed,
 still-running display switch before offering an unproven HDR master. A rejection
@@ -79,6 +101,34 @@ The 7.1.1 to 7.7.1 update preserves HDR routing during audio changes and
 background recovery, retains the native Now Playing host across screensaver
 recovery, and avoids dispatch-pool starvation in loopback connections and source
 size probes. FFmpegBuild 3.4.x adds AV1 Dolby Vision sample-entry support.
+
+## Remote AV1 Matroska startup
+
+For HTTP(S) original-file AV1 in MKV/Matroska/WebM with provider-known video
+dimensions, Plozz bounds Aether's initial stream-information analysis to 2 MiB
+and two seconds of media analysis. The upstream default is 50 MiB / 60 seconds;
+font-rich files can spend that budget chasing unresolvable attachment metadata
+and hit Plozz's 30-second startup watchdog before presenting video.
+
+This is an analysis budget, not a total download cap or wall-clock deadline.
+Container headers, read-ahead, seeking, and subtitle readers can transfer more.
+Before accepting the bounded result, the adapter checks the declared video codec
+and dimensions, audio parameters and selected track, all declared embedded
+audio/subtitle indexes, and ASS headers. An incomplete result is logged and gets
+one ordinary full-probe retry, fenced against cancellation and replacement.
+External sidecars are not expected in the demuxed inventory. Local files, live
+streams, server renditions, other codecs, and sources without sufficient metadata
+retain their existing probe behavior.
+
+`PLOZZ_ASS_HTTP_REPRO` enables the hosted full-file HTTP regression using a local
+two-audio/two-ASS-track fixture; media is never checked in. It separately measures
+startup over a 512 KiB/s connection and sustained AV1/ASS playback over a
+2.5 MiB/s connection through the full opening. Five-second animation windows and
+a main-thread display-link probe expose long pauses that an overall fps average
+can hide. Static authored frames do not emit replacement images, so presentation
+gaps alone are not proof of dropped animation. The distinction matters: the reproduction averages about
+2.7 Mbps but its opening peaks near 16 Mbps. Reducing probe work cannot make a
+4 Mbps connection sustain those peaks.
 
 ## HDR10+ source preservation
 

@@ -92,8 +92,11 @@ public enum PlozzAttributions {
         PlozzAttribution(
             title: "libass & Text Rendering",
             detail:
-                "Subtitle rendering uses libass, FreeType, HarfBuzz, Fribidi, and "
-                + "Unibreak.",
+                "Authored ASS/SSA rendering uses libass 0.17.5 (ISC), "
+                + "with FreeType, HarfBuzz, FriBidi and libunibreak. "
+                + "Source: https://github.com/libass/libass/tree/0.17.5. "
+                + "Font-library builds: https://github.com/mpvkit/libass-build/tree/0.17.5. "
+                + "Complete notices are bundled in LibassNotices.txt.",
             licenses: [
                 .init("ISC", family: .isc),
                 .init("LGPL-2.1", family: .lgpl),

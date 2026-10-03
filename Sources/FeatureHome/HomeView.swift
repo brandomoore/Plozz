@@ -816,6 +816,7 @@ public struct HomeView: View {
             navigationActivity.recordInteraction()
             viewModel.noteHomeNavigationInteraction()
         }
+        .homeGradientBackground(scope: ObjectIdentifier(viewModel), isVisible: heroIsFrontmost)
         .background(
             HomeShareScanRefreshObserver(
                 onRefresh: { Task { await viewModel.load(showLoadingState: false) } },

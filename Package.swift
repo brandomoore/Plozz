@@ -670,6 +670,61 @@ let package = Package(
             swiftSettings: [.unsafeFlags(["-strict-concurrency=complete"])]
         ),
 
+        // libass is built from pinned upstream source to retain ARM NEON kernels.
+        // Only font/text libraries are prebuilt; no second media engine is linked.
+        .binaryTarget(
+            name: "Libfreetype",
+            url: "https://github.com/mpvkit/libass-build/releases/download/0.17.5/Libfreetype.xcframework.zip",
+            checksum: "496ca62488530e14b1e4624d20ee2b237c0bd675cd70c19da578a5768302d02d"
+        ),
+        .binaryTarget(
+            name: "Libfribidi",
+            url: "https://github.com/mpvkit/libass-build/releases/download/0.17.5/Libfribidi.xcframework.zip",
+            checksum: "bc15e097b892f2f90424e4a27ba287070cc2f98a74a4da10e6d2481d15cf5ff9"
+        ),
+        .binaryTarget(
+            name: "Libharfbuzz",
+            url: "https://github.com/mpvkit/libass-build/releases/download/0.17.5/Libharfbuzz.xcframework.zip",
+            checksum: "aa8e0b9ca0387dac74e3e93c86e34d11982bb013b28022d0e6966a8427a35b2e"
+        ),
+        .binaryTarget(
+            name: "Libunibreak",
+            url: "https://github.com/mpvkit/libass-build/releases/download/0.17.5/Libunibreak.xcframework.zip",
+            checksum: "940d9833cf4477d0a260d9f2b4066125bc0ff7bbc111ac3c90e774765b77a559"
+        ),
+        .target(
+            name: "Libass",
+            dependencies: ["Libfreetype", "Libfribidi", "Libharfbuzz", "Libunibreak"],
+            path: "Vendor/Libass",
+            exclude: [
+                "COPYING", "UPSTREAM.json", "FreeType-LICENSE.txt", "HarfBuzz-LICENSE.txt",
+                "FriBidi-LICENSE.txt", "libunibreak-LICENSE.txt"
+            ],
+            sources: [
+                "asm", "libass/c", "PlozzASSBlend.c",
+                "libass/ass.c", "libass/ass_arabic_charmap.c", "libass/ass_bitmap.c",
+                "libass/ass_bitmap_engine.c", "libass/ass_blur.c", "libass/ass_cache.c",
+                "libass/ass_coretext.c", "libass/ass_drawing.c", "libass/ass_filesystem.c",
+                "libass/ass_font.c", "libass/ass_fontselect.c", "libass/ass_library.c",
+                "libass/ass_outline.c", "libass/ass_parse.c", "libass/ass_rasterizer.c",
+                "libass/ass_render.c", "libass/ass_render_api.c", "libass/ass_shaper.c",
+                "libass/ass_string.c", "libass/ass_strtod.c", "libass/ass_utils.c"
+            ],
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath("."), .headerSearchPath("libass"),
+                .headerSearchPath("dependency-headers/Libfreetype/freetype2"),
+                .headerSearchPath("dependency-headers/Libfribidi/fribidi"),
+                .headerSearchPath("dependency-headers/Libharfbuzz/harfbuzz"),
+                .headerSearchPath("dependency-headers/Libunibreak"),
+                .unsafeFlags(["-O3"])
+            ],
+            linkerSettings: [
+                .linkedFramework("CoreText"), .linkedFramework("CoreGraphics"),
+                .linkedLibrary("iconv"), .linkedLibrary("z"), .linkedLibrary("c++")
+            ]
+        ),
+
         // MARK: AetherEngine integration (native HLS-fMP4 remux engine)
         //
         // Wraps AetherEngine (the upstream media-player library) behind Plozz's
@@ -687,6 +742,7 @@ let package = Package(
                 "MediaTransportCore",
                 "FeaturePlayback",
                 .product(name: "AetherEngine", package: "AetherEngine"),
+                "Libass",
             ]
         ),
 

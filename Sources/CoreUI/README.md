@@ -8,6 +8,20 @@ cache that every feature module reuses. tvOS-only — guarded behind
 
 - **Theme** — `Theme`, `ThemeOption` (System / Dark / Pure Black / Light) and
   the per-profile theme model, observed at the app root.
+  Gradient Backgrounds is a separate default-on profile preference, transferred
+  with that profile. Turning it off restores the existing flat page/settings
+  fills without changing the selected theme or music-player appearance.
+  The static mesh layout is adapted from tresby's
+  [Ambient proposal (#75)](https://github.com/brandomoore/Plozz/pull/75), with
+  separate light, dark, and near-black treatments rather than another theme.
+  Home owns its tint/cache locally: classic hero, Showcase, and mobile sources
+  publish only while frontmost. Palette extraction reuses cached artwork, runs
+  off the main actor, waits 180ms for navigation to settle, and retains at most
+  24 artwork-identity-keyed palettes. Replaced/cancelled sources cannot publish
+  stale colours or clear another source. Only the background leaf observes the
+  colour array; no full-screen clock, blur, or per-frame Home invalidation runs.
+  Reduce Motion disables the palette crossfade. Readable surfaces keep their
+  existing theme colours rather than inheriting artwork hues.
 - **Focusable building blocks** — focus-aware buttons, cards, tab bars,
   parallax containers, brand QR code rendering, code-font numerals.
   Native card focus observation is separate from explicit focus requests.

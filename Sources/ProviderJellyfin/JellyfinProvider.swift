@@ -1354,6 +1354,7 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             sourceFileName: PlaybackRequest.sourceFileName(from: originalSource.Path)
                 ?? PlaybackRequest.sourceFileName(from: originalSource.Name)
         )
+        request.burnedInSubtitleTrackID = source.burnedInSubtitleTrackID
         if let streaming {
             request.streamingOptions = streaming
             request.streamingSessionID = info.PlaySessionId

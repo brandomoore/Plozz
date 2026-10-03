@@ -1,15 +1,298 @@
 import AVFoundation
 import CoreModels
-import EnginePlozzigen
+@testable import EnginePlozzigen
 import Network
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 @testable import FeaturePlayback
 @testable import CoreUI
 
 @MainActor
 final class NativeSubtitlePresentationTests: XCTestCase {
+    func testLocalASSAnimationFrameBudget() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PLOZZ_ASS_ANIMATION_REPRO"] else {
+            throw XCTSkip("Requires the explicitly supplied private ASS animation fixture.")
+        }
+        struct Input: Decodable {
+            struct Event: Decodable { let packet: String; let start: Double; let end: Double }
+            struct Font: Decodable { let name: String; let path: String }
+            let header: String
+            let events: [Event]
+            let fonts: [Font]
+        }
+        let url = path.hasPrefix("cache:")
+            ? try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
+                .appendingPathComponent(String(path.dropFirst("cache:".count)))
+            : URL(fileURLWithPath: path)
+        if path == "cache:ass-animation-fixture/input.json" {
+            addTeardownBlock { try FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        }
+        let input = try JSONDecoder().decode(Input.self, from: Data(contentsOf: url))
+        let document = ASSSubtitleDocument(
+            identity: "animation-repro", header: input.header,
+            fonts: try input.fonts.map {
+                let font = $0.path.hasPrefix("/") ? URL(fileURLWithPath: $0.path)
+                    : url.deletingLastPathComponent().appendingPathComponent($0.path)
+                return .init(name: $0.name, data: try Data(contentsOf: font))
+            },
+            size: .init(width: 1920, height: 1080)
+        )
+        let events = input.events.map { ASSSubtitleEvent(packet: $0.packet, start: $0.start, end: $0.end) }
+        let rasterizer = ASSSubtitleRasterizer()
+        for start in [5.0, 20, 40] {
+            _ = try await rasterizer.render(document: document, events: events, time: start)
+            var samples: [Double] = []
+            for frame in 1...60 {
+                let before = CACurrentMediaTime()
+                _ = try await rasterizer.render(
+                    document: document, events: events, time: start + Double(frame) / 60
+                )
+                samples.append((CACurrentMediaTime() - before) * 1_000)
+            }
+            samples.sort()
+            print("ASS_ANIMATION start=\(start) meanMs=\(samples.reduce(0,+)/Double(samples.count)) p95Ms=\(samples[56])")
+            XCTAssertLessThan(samples[56], 33.3, "Animated ASS must fit a 30fps frame budget")
+        }
+        if ProcessInfo.processInfo.environment["PLOZZ_ASS_REFERENCE_CADENCE"] == "1" {
+            var lastChange = 0.0
+            for frame in 0...2_850 {
+                let time = Double(frame) / 30
+                let result = try await rasterizer.render(document: document, events: events, time: time)
+                if result.changed {
+                    if time - lastChange > 0.1 {
+                        print("ASS_REFERENCE_HOLD from=\(lastChange) to=\(time)")
+                    }
+                    lastChange = time
+                }
+            }
+        }
+    }
+
+    func testRemoteASSStartupPreservesTracksOnABoundedLink() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PLOZZ_ASS_HTTP_REPRO"] else {
+            throw XCTSkip("Requires an explicitly supplied local media fixture for HTTP startup reproduction.")
+        }
+        let mediaURL = path.hasPrefix("cache:")
+            ? try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
+                .appendingPathComponent(String(path.dropFirst("cache:".count)))
+            : URL(fileURLWithPath: path)
+        if path == "cache:apothecary-startup.mkv" {
+            addTeardownBlock { try FileManager.default.removeItem(at: mediaURL) }
+        }
+        try await checkRemoteASS(mediaURL, bytesPerSecond: 512 * 1024, sustainedPlayback: false)
+        // The opening itself peaks near 16 Mbps despite the file's 2.7 Mbps average.
+        try await checkRemoteASS(mediaURL, bytesPerSecond: 2_560 * 1024, sustainedPlayback: true)
+    }
+
+    private func checkRemoteASS(_ mediaURL: URL, bytesPerSecond: Int, sustainedPlayback: Bool) async throws {
+        let server = try SubtitleFixtureServer(fileURL: mediaURL, bytesPerSecond: bytesPerSecond)
+        let port = try await server.start()
+        defer { server.stop() }
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/media.mkv"))
+        let engine = try PlozzigenVideoEngine()
+        engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        let subtitles = LiveSubtitleModel()
+        subtitles.beginLiveFeed()
+        var subtitleFrameTimes: [CFTimeInterval] = []
+        engine.onSubtitleCues = {
+            subtitles.updateLiveCues($0)
+            if $0.contains(where: \.isImage) { subtitleFrameTimes.append(CACurrentMediaTime()) }
+        }
+        let window = try await mount(engine, subtitles: subtitles)
+        defer { engine.stop(); window.isHidden = true; window.rootViewController = nil }
+        var playback = request(url, tracks: [])
+        playback.sourceMetadata = .init(
+            container: "mkv", video: .init(codec: "av1", width: 1920, height: 1080),
+            audio: .init(codec: "opus", channels: 2)
+        )
+        playback.preferredAudioLanguages = ["ja"]
+        playback.preferredAudioTrackID = 1
+        playback.audioTracks = [
+            .init(id: 1, kind: .audio, displayTitle: "Japanese", language: "jpn", codec: "opus", channels: 2),
+            .init(id: 2, kind: .audio, displayTitle: "English", language: "eng", codec: "eac3", channels: 2)
+        ]
+        playback.subtitleTracks = [
+            .init(id: 3, kind: .subtitle, displayTitle: "Full", codec: "ass"),
+            .init(id: 4, kind: .subtitle, displayTitle: "Signs", codec: "ass")
+        ]
+        let started = ContinuousClock.now
+        let load = Task { await engine.load(request: playback, startPosition: 12) }
+        let deadline = started + .seconds(35)
+        while (!engine.isPlaybackPositionReady || engine.currentTime < 12.5), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        print("REMOTE_ASS_STARTUP bytesPerSecond=\(bytesPerSecond) elapsed=\(started.duration(to: .now)) bytes=\(server.transferredBytes) ready=\(engine.isPlaybackPositionReady)")
+        guard engine.isPlaybackPositionReady else {
+            load.cancel()
+            engine.stop()
+            await load.value
+            return XCTFail("Remote startup exceeded the production fallback deadline")
+        }
+        await load.value
+        XCTAssertLessThan(started.duration(to: .now), .seconds(30))
+        XCTAssertEqual(engine.audioTracks.count, 2)
+        XCTAssertEqual(engine.subtitleTracks.filter { $0.codec == "ass" }.count, 2)
+        XCTAssertEqual(engine.currentAudioTrackID, 1)
+        XCTAssertGreaterThanOrEqual(engine.currentTime, 12.5)
+        guard sustainedPlayback else { return }
+        engine.selectSubtitleTrack(try XCTUnwrap(engine.subtitleTracks.first { $0.id == 3 }))
+        try await waitUntil(timeout: 15) { subtitles.primary.contains(where: \.isImage) }
+        try await Task.sleep(for: .seconds(3))
+        let playbackStart = engine.currentTime
+        let droppedStart = engine.liveTelemetry?.droppedFrameCount
+        let previousIdleTimer = UIApplication.shared.isIdleTimerDisabled
+        UIApplication.shared.isIdleTimerDisabled = true
+        defer { UIApplication.shared.isIdleTimerDisabled = previousIdleTimer }
+        var frameRates: [Double] = []
+        let cadence = SubtitleCadenceProbe()
+        cadence.start()
+        defer { cadence.stop() }
+        subtitleFrameTimes = []
+        let animationStart = CACurrentMediaTime()
+        var lastWindowStart = animationStart
+        for sample in 1...90 {
+            try await Task.sleep(for: .seconds(1))
+            guard window.windowScene?.activationState == .foregroundActive else {
+                return XCTFail("Subtitle cadence reproduction interrupted: the test host left the foreground")
+            }
+            if let fps = engine.liveTelemetry?.observedFps { frameRates.append(fps) }
+            if sample.isMultiple(of: 5) {
+                let now = CACurrentMediaTime()
+                let windowFrames = subtitleFrameTimes.filter { $0 >= lastWindowStart }
+                let windowGaps = zip(windowFrames, windowFrames.dropFirst()).map { $1 - $0 }.sorted()
+                print("ASS_WINDOW elapsed=\(sample) fps=\(Double(windowFrames.count)/(now-lastWindowStart)) maxGapMs=\((windowGaps.last ?? 0)*1000) videoTime=\(engine.currentTime)")
+                lastWindowStart = now
+            }
+        }
+        let meanFPS = frameRates.isEmpty ? 0 : frameRates.reduce(0, +) / Double(frameRates.count)
+        print("REMOTE_ASS_PLAYBACK advance=\(engine.currentTime - playbackStart) meanFPS=\(meanFPS) droppedStart=\(String(describing: droppedStart)) droppedEnd=\(String(describing: engine.liveTelemetry?.droppedFrameCount))")
+        XCTAssertGreaterThan(engine.currentTime - playbackStart, 85)
+        XCTAssertGreaterThan(meanFPS, 20, "1080p/24 AV1 with authored ASS must remain playable after opening")
+        let subtitleFPS = Double(subtitleFrameTimes.count) / (CACurrentMediaTime() - animationStart)
+        let gaps = zip(subtitleFrameTimes, subtitleFrameTimes.dropFirst()).map { $1 - $0 }.sorted()
+        print("ASS_PRESENTATION fps=\(subtitleFPS) p95GapMs=\(gaps.isEmpty ? 0 : gaps[Int(Double(gaps.count-1)*0.95)]*1000)")
+        XCTAssertGreaterThan(subtitleFPS, 20, "Animated subtitle frames must reach the display loop, not just render quickly in isolation")
+        let displayGaps = zip(cadence.times, cadence.times.dropFirst()).map { $1 - $0 }.sorted()
+        let longHitches = displayGaps.filter { $0 > 0.1 }.count
+        print("ASS_MAIN_CADENCE ticks=\(cadence.times.count) maxGapMs=\((displayGaps.last ?? 0)*1000) over100ms=\(longHitches)")
+        XCTAssertEqual(longHitches, 0, "Growing subtitle snapshots must not freeze the main presentation thread")
+        engine.pause()
+        let pausedTime = engine.subtitlePresentationTime
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(engine.subtitlePresentationTime, pausedTime, accuracy: 0.01,
+                       "The continuous subtitle clock must freeze with the actual video timebase")
+        await engine.seek(to: 3)
+        XCTAssertEqual(engine.subtitlePresentationTime, 3, accuracy: 0.15)
+        engine.selectSubtitleTrack(nil)
+        try await waitUntil { subtitles.primary.isEmpty }
+    }
+
+    func testLocalEmbeddedASSKeepsAuthoredGraphicsThroughSeekAndOff() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PLOZZ_ASS_MEDIA_REPRO"] else {
+            throw XCTSkip("Requires an explicitly supplied local ASS media fixture.")
+        }
+        let engine = try PlozzigenVideoEngine()
+        engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        let model = LiveSubtitleModel()
+        model.beginLiveFeed()
+        var latest: [SubtitleCue] = []
+        engine.onSubtitleCues = { latest = $0; model.updateLiveCues($0) }
+        let controls = PlayerControlsModel()
+        controls.title = "Subtitle region fixture"
+        let window = try await mount(engine, subtitles: model, controls: controls)
+        defer { engine.stop(); window.isHidden = true; window.rootViewController = nil }
+        let mediaURL = path.hasPrefix("cache:")
+            ? try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
+                .appendingPathComponent(String(path.dropFirst("cache:".count)))
+            : URL(fileURLWithPath: path)
+        let mediaHandle = try FileHandle(forReadingFrom: mediaURL)
+        try mediaHandle.close()
+        if path == "cache:apothecary-repro.mkv" {
+            addTeardownBlock { try FileManager.default.removeItem(at: mediaURL) }
+        }
+        await engine.load(request: request(mediaURL, tracks: []), startPosition: 0)
+        try await waitUntil(timeout: 30) { engine.isPlaybackPositionReady }
+        let track = try XCTUnwrap(engine.subtitleTracks.first { $0.codec == "ass" })
+        engine.selectSubtitleTrack(track)
+        try await waitUntil(timeout: 30) { latest.contains(where: \.isImage) && model.primary.contains(where: \.isImage) }
+        engine.pause()
+        await engine.seek(to: 8)
+        try await waitUntil(timeout: 30) {
+            abs(engine.subtitlePresentationTime - 8) < 0.1
+                && latest.contains(where: \.isImage) && model.primary.contains(where: \.isImage)
+        }
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertTrue(latest.allSatisfy(\.isImage), "ASS drawings and glyph layers must never reach the plain text overlay.")
+        let rendered = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
+        let attachment = XCTAttachment(image: rendered)
+        attachment.name = "Local ASS artwork at actual player position"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let regions = latest.compactMap { cue -> SubtitleImage? in
+            guard case .image(let image) = cue.body else { return nil }
+            return image
+        }
+        XCTAssertEqual(regions.count, 2, "The supplied opening has clearly separate top and bottom artwork")
+        let top = try XCTUnwrap(regions.first { $0.controlAvoidance == .fixed })
+        let bottom = try XCTUnwrap(regions.first {
+            if case .lowerRegion = $0.controlAvoidance { return true }
+            return false
+        })
+        controls.controlsVisible = true
+        try await waitUntil { !controls.subtitleLayout.frames.isEmpty }
+        let video = model.videoRect ?? window.bounds
+        XCTAssertEqual(SubtitleOverlayGeometry.bitmapOffset(
+            for: top, videoRect: video, controls: controls.subtitleLayout.frames, bounds: window.bounds
+        ), 0)
+        XCTAssertLessThan(SubtitleOverlayGeometry.bitmapOffset(
+            for: bottom, videoRect: video, controls: controls.subtitleLayout.frames, bounds: window.bounds
+        ), 0)
+        var paintedControls: UIImage?
+        let paintDeadline = ContinuousClock.now + .seconds(5)
+        repeat {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let recognition = VNRecognizeTextRequest()
+            recognition.recognitionLevel = .accurate
+            recognition.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([recognition])
+            let text = (recognition.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            if text.contains("Subtitle region fixture") { paintedControls = image; break }
+            try await Task.sleep(for: .milliseconds(50))
+        } while ContinuousClock.now < paintDeadline
+        let raised = XCTAttachment(image: try XCTUnwrap(paintedControls, "Capture must show the actual controls, not just their reserved bounds"))
+        raised.name = "Original upper artwork with independently raised lower artwork"
+        raised.lifetime = .keepAlways
+        add(raised)
+        controls.controlsVisible = false
+        try await waitUntil { controls.subtitleLayout.frames.isEmpty }
+        let initialID = latest.first?.id
+        await engine.seek(to: 3)
+        try await waitUntil(timeout: 30) { latest.first?.id != initialID && latest.contains(where: \.isImage) }
+        XCTAssertTrue(engine.isPaused)
+        engine.selectSubtitleTrack(nil)
+        try await waitUntil { latest.isEmpty && model.primary.isEmpty }
+        engine.selectSubtitleTrack(track)
+        try await waitUntil(timeout: 30) { latest.contains(where: \.isImage) }
+        if let alternate = engine.subtitleTracks.first(where: { $0.codec == "ass" && $0.id != track.id }) {
+            engine.selectSubtitleTrack(alternate)
+            try await waitUntil(timeout: 30) { latest.contains(where: \.isImage) }
+        }
+        model.style.followsSystemStyle = true
+        try await waitUntil {
+            !latest.isEmpty && latest.allSatisfy { !$0.isImage }
+        }
+        XCTAssertFalse(latest.contains { $0.text?.hasPrefix("m ") == true },
+                       "Explicit system-style fallback must not expose vector coordinates.")
+        model.style.followsSystemStyle = false
+        try await waitUntil(timeout: 30) { latest.contains(where: \.isImage) }
+    }
+
     func testEngineMetricsAreJournaledWithoutOpeningPlaybackInfo() async throws {
         let tracing = HandoffDiagnostics.isEnabled
         HandoffDiagnostics.setEnabled(true)
@@ -223,6 +506,56 @@ final class NativeSubtitlePresentationTests: XCTestCase {
     }
     #endif
 
+    func testServerBurnInSuppressesNativeAndSidecarCopiesAcrossSeek() async throws {
+        let server = try SubtitleFixtureServer(directory: fixtureDirectory())
+        let port = try await server.start()
+        defer { server.stop() }
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/master.m3u8"))
+        let locator = try AuthenticatedHTTPPlaybackLocator(
+            provider: .jellyfin, accountID: "fixture", credentialRevision: CredentialRevision(),
+            itemID: "fixture", deliveryMode: .directFile, purpose: .subtitle,
+            resource: try AuthenticatedHTTPResource(pathBase: .configuredBaseURL, path: "full.vtt")
+        )
+        let resolver = SidecarResolver(
+            locator: locator, url: try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/full.vtt"))
+        )
+        let engine = NativeVideoEngine(authenticatedHTTPResolver: resolver, startsMuted: true)
+        let track = MediaTrack(
+            id: 2, kind: .subtitle, displayTitle: "Full", language: "en", codec: "ass",
+            deliverySource: .authenticatedHTTP(locator)
+        )
+        var playback = request(url, tracks: [track])
+        playback.isTranscoding = true
+        playback.burnedInSubtitleTrackID = track.id
+        let host = SidecarTrackHost(engine: engine, request: playback, resolver: resolver)
+        engine.onSubtitleCues = { [model = host.subtitles] in model.updateLiveCues($0) }
+        let window = try await mount(engine, subtitles: host.subtitles, liveClock: true)
+        defer {
+            host.loader.cancelAll()
+            engine.stop()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        await engine.load(request: playback, startPosition: 0)
+        host.controller.applyInitialSubtitleForNewLoad(for: playback)
+        try await waitUntil { engine.currentTime > 0.1 }
+        engine.pause()
+        let item = try XCTUnwrap(engine.underlyingPlayer?.currentItem)
+        let loadedGroup = try await item.asset.loadMediaSelectionGroup(for: .legible)
+        let group = try XCTUnwrap(loadedGroup)
+        for position in [1.5, 7.5, 1.5] {
+            await engine.seek(to: position)
+            host.controller.selectSubtitleOption(id: track.id)
+            window.layoutIfNeeded()
+            XCTAssertNil(item.currentMediaSelection.selectedMediaOption(in: group))
+            XCTAssertFalse(host.subtitles.rendersPrimary)
+            XCTAssertTrue(host.subtitles.primary.isEmpty)
+            XCTAssertTrue(captionFrames(in: window, relativeTo: window).isEmpty)
+            XCTAssertTrue(resolver.resolutions.isEmpty, "A burned-in track must not load its text sidecar")
+            XCTAssertEqual(host.controller.selectedSubtitleTrackID, track.id)
+        }
+    }
+
     func testNativeHLSOverlapsSameLanguageSwitchingPresentationStatesAndClearing() async throws {
         let server = try SubtitleFixtureServer(directory: fixtureDirectory())
         let port = try await server.start()
@@ -389,7 +722,10 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         return url
     }
 
-    private func mount(_ engine: any VideoEngine, subtitles: LiveSubtitleModel, liveClock: Bool = false) async throws -> UIWindow {
+    private func mount(
+        _ engine: any VideoEngine, subtitles: LiveSubtitleModel, liveClock: Bool = false,
+        controls sharedControls: PlayerControlsModel? = nil
+    ) async throws -> UIWindow {
         try await waitUntil {
             UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
         }
@@ -397,6 +733,7 @@ final class NativeSubtitlePresentationTests: XCTestCase {
             .first { $0.activationState == .foregroundActive })
         let window = UIWindow(windowScene: scene)
         let controller: UIViewController
+        let controls = sharedControls ?? PlayerControlsModel()
         subtitles.style.fontFamily = .system
         if liveClock {
             controller = UIViewController()
@@ -406,7 +743,7 @@ final class NativeSubtitlePresentationTests: XCTestCase {
             surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             controller.view.addSubview(surface)
             let overlay = UIHostingController(rootView:
-                LiveSubtitleOverlay(model: subtitles, controls: PlayerControlsModel())
+                LiveSubtitleOverlay(model: subtitles, controls: controls)
                     .background(SubtitleDisplayClock(engine: engine, subtitles: subtitles))
             )
             overlay.safeAreaRegions = []
@@ -417,11 +754,26 @@ final class NativeSubtitlePresentationTests: XCTestCase {
             controller.view.addSubview(overlay.view)
             overlay.didMove(toParent: controller)
         } else {
-            let player = PlayerInputViewController(engine: engine, model: PlayerControlsModel(), actions: PlayerActions())
+            let player = PlayerInputViewController(engine: engine, model: controls, actions: PlayerActions())
             player.loadViewIfNeeded()
             player.attachVideoSurface()
             player.attachSubtitleOverlay(subtitles)
             controller = player
+        }
+        if sharedControls != nil {
+            let chrome = UIHostingController(rootView: PlayerControls(
+                model: controls, palette: .dark, actions: .init(), onExitToSurface: {}
+            ).transaction {
+                $0.disablesAnimations = true
+                $0.animation = nil
+            })
+            chrome.safeAreaRegions = []
+            chrome.view.backgroundColor = .clear
+            chrome.view.frame = controller.view.bounds
+            chrome.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            controller.addChild(chrome)
+            controller.view.addSubview(chrome.view)
+            chrome.didMove(toParent: controller)
         }
         window.rootViewController = controller
         window.makeKeyAndVisible()
@@ -440,6 +792,21 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         }
         XCTAssertTrue(condition(), "Native subtitle presentation did not settle. \(detail())", file: file, line: line)
     }
+}
+
+@MainActor
+private final class SubtitleCadenceProbe: NSObject {
+    private var link: CADisplayLink?
+    private(set) var times: [CFTimeInterval] = []
+
+    func start() {
+        let link = CADisplayLink(target: self, selector: #selector(tick))
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    @objc private func tick() { times.append(CACurrentMediaTime()) }
+    func stop() { link?.invalidate(); link = nil }
 }
 
 @MainActor
@@ -517,11 +884,24 @@ private final class SubtitleFixtureServer: @unchecked Sendable {
     private let files: [String: Data]
     private let queue = DispatchQueue(label: "SubtitleFixtureServer")
     private var connections: [NWConnection] = []
+    private var stopped = false
+    private var sentBytes = 0
+    private let bytesPerSecond: Int?
+    var transferredBytes: Int { queue.sync { sentBytes } }
 
     init(directory: URL) throws {
+        bytesPerSecond = nil
         files = try Dictionary(uniqueKeysWithValues: FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: nil
         ).map { ($0.lastPathComponent, try Data(contentsOf: $0)) })
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
+        listener = try NWListener(using: parameters)
+    }
+
+    init(fileURL: URL, bytesPerSecond: Int) throws {
+        self.bytesPerSecond = bytesPerSecond
+        files = ["media.mkv": try Data(contentsOf: fileURL, options: .mappedIfSafe)]
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
@@ -554,6 +934,7 @@ private final class SubtitleFixtureServer: @unchecked Sendable {
     func stop() {
         listener.cancel()
         queue.sync {
+            stopped = true
             connections.forEach { $0.cancel() }
             connections.removeAll()
         }
@@ -571,7 +952,7 @@ private final class SubtitleFixtureServer: @unchecked Sendable {
             let path = header.split(separator: " ").dropFirst().first ?? ""
             let name = path.split(separator: "/").last.map(String.init) ?? ""
             let body = files[name] ?? Data()
-            var payload = body
+            var payloadRange = 0..<body.count
             var status = files[name] == nil ? "404 Not Found" : "200 OK"
             var contentRange = ""
             if files[name] != nil,
@@ -580,11 +961,11 @@ private final class SubtitleFixtureServer: @unchecked Sendable {
                }) {
                 let value = rangeLine.dropFirst("range:".count).trimmingCharacters(in: .whitespaces)
                 if let range = byteRange(value, count: body.count) {
-                    payload = body.subdata(in: range)
+                    payloadRange = range
                     status = "206 Partial Content"
                     contentRange = "Content-Range: bytes \(range.lowerBound)-\(range.upperBound - 1)/\(body.count)\r\n"
                 } else {
-                    payload = Data()
+                    payloadRange = 0..<0
                     status = "416 Range Not Satisfiable"
                     contentRange = "Content-Range: bytes */\(body.count)\r\n"
                 }
@@ -592,10 +973,30 @@ private final class SubtitleFixtureServer: @unchecked Sendable {
             let type = name.hasSuffix(".m3u8") ? "application/vnd.apple.mpegurl"
                 : name.hasSuffix(".vtt") ? "text/vtt"
                 : name.hasSuffix(".srt") ? "application/x-subrip" : "video/mp4"
-            let headers = "HTTP/1.1 \(status)\r\nContent-Type: \(type)\r\nAccept-Ranges: bytes\r\n\(contentRange)Content-Length: \(payload.count)\r\nConnection: close\r\n\r\n"
-            let response = Data(headers.utf8) + (header.hasPrefix("HEAD ") ? Data() : payload)
-            connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
+            let headers = "HTTP/1.1 \(status)\r\nContent-Type: \(type)\r\nAccept-Ranges: bytes\r\n\(contentRange)Content-Length: \(payloadRange.count)\r\nConnection: close\r\n\r\n"
+            if bytesPerSecond != nil, !header.hasPrefix("HEAD ") {
+                connection.send(content: Data(headers.utf8), completion: .contentProcessed { [weak self] error in
+                    guard let self, error == nil else { connection.cancel(); return }
+                    sendThrottled(connection, body: body, range: payloadRange)
+                })
+            } else {
+                let response = Data(headers.utf8) + (header.hasPrefix("HEAD ") ? Data() : body.subdata(in: payloadRange))
+                connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
+            }
         }
+    }
+
+    private func sendThrottled(_ connection: NWConnection, body: Data, range: Range<Int>) {
+        guard !stopped, !range.isEmpty, let bytesPerSecond else { connection.cancel(); return }
+        let end = min(range.upperBound, range.lowerBound + 16_384)
+        let count = end - range.lowerBound
+        connection.send(content: body.subdata(in: range.lowerBound..<end), completion: .contentProcessed { [weak self] error in
+            guard let self, error == nil else { connection.cancel(); return }
+            sentBytes += count
+            queue.asyncAfter(deadline: .now() + Double(count) / Double(bytesPerSecond)) { [weak self] in
+                self?.sendThrottled(connection, body: body, range: end..<range.upperBound)
+            }
+        })
     }
 
     private func byteRange(_ value: String, count: Int) -> Range<Int>? {

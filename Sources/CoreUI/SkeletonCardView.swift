@@ -201,7 +201,7 @@ public struct SkeletonCardView: View {
             nativeArtwork.frame(maxWidth: .infinity)
             if showsCaption {
                 nativeCaption
-                    .offset(y: isFocused ? metrics.focusCaptionPush(for: .system) : 0)
+                    .offset(y: isFocused ? metrics.nativePosterCaptionFocusTravel : 0)
             }
         }
         .padding(.horizontal, metrics.borderlessCardSideMargin)
@@ -240,7 +240,7 @@ public struct SkeletonCardView: View {
             nativeCaptionLine(height: ceil(title.lineHeight), fraction: 0.7, pill: (16 * metrics.scale).rounded())
             nativeCaptionLine(height: ceil(subtitle.lineHeight), fraction: 0.45, pill: (13 * metrics.scale).rounded())
         }
-        .padding(.bottom, metrics.focusCaptionPush(for: .system))
+        .padding(.bottom, metrics.nativePosterCaptionFocusTravel)
         .shimmering()
     }
 

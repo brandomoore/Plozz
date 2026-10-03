@@ -4,6 +4,133 @@ import XCTest
 
 @MainActor
 final class WatchlistModelTests: XCTestCase {
+    func testLocalPresentationDoesNotPersistOwnershipOrArtworkCredentials() throws {
+        let store = InMemoryWatchlistIntentStore()
+        let model = WatchlistModel(storeFactory: { _ in store })
+        let aliasID = MediaAliasID()
+        var item = MediaItem(id: "local-film", title: "Film", kind: .movie, sourceAccountID: "server")
+        item.posterURL = URL(string: "https://server.example/art?X-Plex-Token=LOCAL-ART-TOKEN")!
+        try model.activate(profileID: "p")
+        try model.add(
+            profileID: "p", aliasID: aliasID, kind: .movie,
+            presentation: MediaAliasEvidence(item: item)?.presentation
+        )
+        model.retainLocalPresentation(item, aliasID: aliasID, scope: "p/server/revision")
+        XCTAssertEqual(try localPresentationRow(model).posterURL, item.posterURL)
+        let persisted = try JSONEncoder().encode(store.load())
+        XCTAssertFalse(String(decoding: persisted, as: UTF8.self).contains("LOCAL-ART-TOKEN"))
+
+        let restored = WatchlistModel(storeFactory: { _ in store })
+        try restored.activate(profileID: "p")
+        let row = try localPresentationRow(restored)
+        XCTAssertFalse(row.locallyValidatedPlayableSource)
+        XCTAssertNil(row.sourceAccountID)
+    }
+
+    func testLocalPresentationDoesNotSurviveProfileSwitchOrDeletion() throws {
+        let model = WatchlistModel()
+        let aliasID = MediaAliasID()
+        let item = MediaItem(id: "local-film", title: "Film", kind: .movie, sourceAccountID: "server")
+        try model.activate(profileID: "p")
+        try model.add(
+            profileID: "p", aliasID: aliasID, kind: .movie,
+            presentation: MediaAliasPresentation(title: "Film")
+        )
+        model.retainLocalPresentation(item, aliasID: aliasID, scope: "p/server/revision")
+        XCTAssertTrue(try localPresentationRow(model).locallyValidatedPlayableSource)
+
+        try model.activate(profileID: "q")
+        try model.activate(profileID: "p")
+        XCTAssertFalse(try localPresentationRow(model).locallyValidatedPlayableSource)
+        model.retainLocalPresentation(item, aliasID: aliasID, scope: "p/server/revision")
+        try model.removeProfile("p")
+        try model.activate(profileID: "p")
+        try model.add(
+            profileID: "p", aliasID: aliasID, kind: .movie,
+            presentation: MediaAliasPresentation(title: "Film")
+        )
+        XCTAssertFalse(try localPresentationRow(model).locallyValidatedPlayableSource)
+    }
+
+    func testRemovingOrChangingScopeDiscardsRetainedOwnership() throws {
+        let model = WatchlistModel()
+        let aliasID = MediaAliasID()
+        let item = MediaItem(id: "local-film", title: "Film", kind: .movie, sourceAccountID: "server")
+        try model.activate(profileID: "p")
+        try model.add(
+            profileID: "p", aliasID: aliasID, kind: .movie,
+            presentation: MediaAliasPresentation(title: "Film")
+        )
+        model.retainLocalPresentation(item, aliasID: aliasID, scope: "p/server/revision")
+        try model.remove(profileID: "p", aliasID: aliasID, kind: .movie)
+        try model.add(profileID: "p", aliasID: aliasID, kind: .movie)
+        XCTAssertFalse(try localPresentationRow(model).locallyValidatedPlayableSource)
+
+        model.retainLocalPresentation(item, aliasID: aliasID, scope: "p/server/revision")
+        XCTAssertFalse(
+            try localPresentationRow(model, scope: "p/server/rotated").locallyValidatedPlayableSource
+        )
+        XCTAssertFalse(try localPresentationRow(model).locallyValidatedPlayableSource)
+    }
+
+    func testRetainedPresentationFollowsAliasRedirectAndFreshCandidate() throws {
+        let model = WatchlistModel()
+        let original = MediaAliasID()
+        let winner = MediaAliasID()
+        let item = MediaItem(id: "local-film", title: "Film", kind: .movie, sourceAccountID: "server")
+        try model.activate(profileID: "p")
+        try model.add(
+            profileID: "p", aliasID: original, kind: .movie,
+            presentation: MediaAliasPresentation(title: "Film")
+        )
+        model.retainLocalPresentation(item, aliasID: original, scope: "p/server/revision")
+        let aliases = MediaAliasSnapshot(records: [
+            MediaAliasRecord(id: original, kind: .movie, redirectTarget: winner)!,
+            MediaAliasRecord(id: winner, kind: .movie)!
+        ])
+        try model.reconcileAliases(profileID: "p", aliasSnapshot: aliases)
+        let row = try localPresentationRow(model, aliases: aliases)
+        XCTAssertEqual(row.id, item.id)
+        XCTAssertEqual(row.watchlistAliasID, winner)
+
+        var fresh = item
+        fresh.overview = "Updated on the server"
+        let updated = try localPresentationRow(model, aliases: aliases, candidates: [winner: fresh])
+        XCTAssertEqual(updated.overview, fresh.overview)
+        XCTAssertEqual(updated.watchlistAliasID, winner)
+        XCTAssertEqual(try localPresentationRow(model, aliases: aliases).overview, fresh.overview)
+
+        var rejected = fresh
+        rejected.locallyValidatedPlayableSource = false
+        rejected.discoverySources = [.tmdb]
+        rejected.availability = .unknown
+        let rejectedRow = try localPresentationRow(
+            model, aliases: aliases, candidates: [winner: rejected]
+        )
+        XCTAssertTrue(TitleClassifier.isDiscoveryRouting(rejectedRow, identitySources: []))
+        XCTAssertFalse(try localPresentationRow(model, aliases: aliases).locallyValidatedPlayableSource)
+    }
+
+    private func localPresentationRow(
+        _ model: WatchlistModel,
+        scope: String = "p/server/revision",
+        aliases: MediaAliasSnapshot = .empty,
+        candidates: [MediaAliasID: MediaItem] = [:]
+    ) throws -> MediaItem {
+        let profileID = try XCTUnwrap(model.activeProfileID)
+        let entries = try model.presentationSnapshot(
+            profileID: profileID,
+            union: model.union(
+                profileID: profileID, nativeView: .empty,
+                aliasSnapshot: aliases, enabledDestinationIDs: []
+            ),
+            aliasSnapshot: aliases,
+            currentItemsByAliasID: candidates,
+            localPresentationScope: scope
+        )
+        return try XCTUnwrap(entries.first?.item)
+    }
+
     func testExplicitAddsInsertAtFrontWithoutReorderingExistingEntries() throws {
         let model = WatchlistModel()
         let first = MediaAliasID()

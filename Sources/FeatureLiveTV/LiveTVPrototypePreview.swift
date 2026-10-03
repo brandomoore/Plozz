@@ -141,6 +141,7 @@ struct PrototypePreviewScrim: View {
     let layout: PrototypePreviewLayout
     let reduceTransparency: Bool
     @Environment(\.themePalette) private var palette
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -148,16 +149,27 @@ struct PrototypePreviewScrim: View {
                 tone: palette.backgroundBase, edgePeak: 0.96, wash: 0.08,
                 edges: [.leading], bottomFadeTop: 0.3
             )
-            VStack(spacing: 0) {
-                LinearGradient(
-                    stops: (0 ... 24).map { step in
-                        let t = Double(step) / 24
-                        return .init(color: palette.backgroundBase.opacity(t * t * (3 - 2 * t)), location: t)
-                    },
-                    startPoint: .top, endPoint: .bottom
-                )
-                .frame(height: layout.fadeEnd)
-                palette.backgroundBase
+            if gradientEnabled {
+                AppBackground(palette: palette)
+                    .mask {
+                        VStack(spacing: 0) {
+                            LinearGradient(colors: [.clear, .white], startPoint: .top, endPoint: .bottom)
+                                .frame(height: layout.fadeEnd)
+                            Color.white
+                        }
+                    }
+            } else {
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        stops: (0 ... 24).map { step in
+                            let t = Double(step) / 24
+                            return .init(color: palette.backgroundBase.opacity(t * t * (3 - 2 * t)), location: t)
+                        },
+                        startPoint: .top, endPoint: .bottom
+                    )
+                    .frame(height: layout.fadeEnd)
+                    palette.backgroundBase
+                }
             }
             if reduceTransparency {
                 palette.backgroundBase

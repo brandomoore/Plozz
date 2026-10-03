@@ -168,6 +168,42 @@ enum SubtitleOverlayGeometry {
             height: normalizedRect.height * canvasRect.height
         )
     }
+
+    static func bitmapOffset(
+        for image: SubtitleImage, videoRect: CGRect, controls: [CGRect], bounds: CGRect,
+        sourceAspectRatio: CGFloat? = nil
+    ) -> CGFloat {
+        let frame = bitmapRect(
+            normalizedRect: image.normalizedRect, canvasSize: image.canvasSize,
+            videoRect: videoRect, sourceAspectRatio: sourceAspectRatio
+        )
+        switch image.controlAvoidance {
+        case .automatic:
+            return upwardOffset(for: frame, avoiding: controls, in: bounds)
+        case .fixed:
+            return 0
+        case let .lowerRegion(envelope, minimumY):
+            let layout = bitmapRect(
+                normalizedRect: envelope, canvasSize: image.canvasSize,
+                videoRect: videoRect, sourceAspectRatio: sourceAspectRatio
+            )
+            let limit = bitmapRect(
+                normalizedRect: CGRect(x: 0, y: minimumY, width: 1, height: 1 - minimumY),
+                canvasSize: image.canvasSize, videoRect: videoRect, sourceAspectRatio: sourceAspectRatio
+            ).intersection(bounds)
+            let lift = upwardOffset(for: layout, avoiding: controls, in: limit)
+            let moved = layout.offsetBy(dx: 0, dy: lift)
+            let obstructions = controls.map { $0.intersection(bounds) }.filter { !$0.isNull && !$0.isEmpty }
+            let tolerance: CGFloat = 0.001
+            guard limit.insetBy(dx: -tolerance, dy: -tolerance).contains(moved),
+                  !obstructions.contains(where: {
+                      moved.intersects($0.insetBy(dx: 0, dy: -max(0, controlsClearance - tolerance)))
+                  }) else {
+                return 0
+            }
+            return lift
+        }
+    }
 }
 
 private struct SubtitleLaneHeight: LayoutValueKey {
@@ -421,7 +457,10 @@ public struct SubtitleOverlayView: View {
                 )
                 let w = max(1, frame.width)
                 let h = max(1, frame.height)
-                let lift = SubtitleOverlayGeometry.upwardOffset(for: frame, avoiding: controls, in: bounds)
+                let lift = SubtitleOverlayGeometry.bitmapOffset(
+                    for: img, videoRect: rect, controls: controls, bounds: bounds,
+                    sourceAspectRatio: sourceVideoAspectRatio.map { CGFloat($0) }
+                )
                 Image(decorative: img.cgImage, scale: 1)
                     .resizable()
                     .interpolation(.high)

@@ -3,12 +3,16 @@ import SwiftUI
 
 public struct SettingsPageBackground: View {
     @Environment(\.themePalette) private var palette
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
 
     public init() {}
 
     public var body: some View {
-        palette.settingsBackground
-            .ignoresSafeArea()
+        if gradientEnabled {
+            AmbientGradientBackground(palette: palette)
+        } else {
+            palette.settingsBackground.ignoresSafeArea()
+        }
     }
 }
 
