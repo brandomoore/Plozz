@@ -9,6 +9,52 @@ import XCTest
 final class PlayerVideoZoomTests: XCTestCase {
     private let television = CGRect(x: 0, y: 0, width: 1920, height: 1080)
 
+    func testZoomModeCopyUsesFamiliarNamesAndIdentifiesTheDefaultWithoutDescriptions() {
+        XCTAssertEqual(PlayerVideoZoom().mode, .fit)
+        XCTAssertEqual(PlayerVideoZoom.Mode.allCases.map { String(localized: $0.title) },
+                       ["Normal", "Crop", "Stretch", "Custom"])
+        XCTAssertEqual(PlayerVideoZoom.Mode.allCases.map { String(localized: $0.menuTitle) },
+                       ["Normal (Default)", "Crop", "Stretch", "Custom"])
+    }
+
+    func testStretchFillsWithoutCroppingUnlikeTheProportionalModes() throws {
+        let stretch = PlayerVideoZoom(mode: .stretch)
+        XCTAssertEqual(stretch.videoRect(in: television, aspectRatio: 4 / 3), television)
+        XCTAssertEqual(stretch.videoRect(in: television, aspectRatio: 2.4), television)
+        let scale = stretch.scaleFactors(in: television, aspectRatio: 4 / 3)
+        XCTAssertEqual(scale.dx, 4 / 3, accuracy: 0.0001)
+        XCTAssertEqual(scale.dy, 1)
+        let engine = ZoomVideoEngine()
+        let surface = VideoPresentationView(frame: television)
+        surface.attach(engine)
+        surface.update(zoom: stretch)
+        XCTAssertEqual(engine.output.bounds, television)
+        XCTAssertEqual(engine.output.transform.a, 4 / 3, accuracy: 0.0001)
+        XCTAssertEqual(engine.output.transform.d, 1)
+        let originalPicture = CGRect(x: 240, y: 0, width: 1440, height: 1080)
+        let transformed = engine.output.convert(originalPicture, to: surface)
+        XCTAssertEqual(transformed.minX, television.minX, accuracy: 0.001)
+        XCTAssertEqual(transformed.minY, television.minY, accuracy: 0.001)
+        XCTAssertEqual(transformed.width, television.width, accuracy: 0.001)
+        XCTAssertEqual(transformed.height, television.height, accuracy: 0.001)
+        XCTAssertTrue(engine.transportCalls.isEmpty)
+        surface.update(zoom: PlayerVideoZoom())
+        XCTAssertEqual(engine.output.transform, .identity)
+        XCTAssertEqual(engine.output.frame, television)
+    }
+
+    func testBitmapCanvasFollowsBothStretchAxes() {
+        let bitmap = SubtitleOverlayGeometry.bitmapRect(
+            normalizedRect: CGRect(x: 0.1, y: 0.8, width: 0.8, height: 0.1),
+            canvasSize: CGSize(width: 800, height: 600),
+            videoRect: television, sourceAspectRatio: 4 / 3
+        )
+        XCTAssertEqual(bitmap.minX, 192, accuracy: 0.0001)
+        XCTAssertEqual(bitmap.minY, 864, accuracy: 0.0001)
+        XCTAssertEqual(bitmap.width, 1536, accuracy: 0.0001)
+        XCTAssertEqual(bitmap.height, 108, accuracy: 0.0001)
+    }
+
     func testFitKeepsTheOriginalFrameAndFillCropsProportionally() throws {
         let fit = PlayerVideoZoom()
         XCTAssertEqual(fit.surfaceFrame(in: television, aspectRatio: 4 / 3), television)
@@ -64,6 +110,8 @@ final class PlayerVideoZoomTests: XCTestCase {
         first.cycleMode(forward: true)
         XCTAssertEqual(first.settings.mode, .fill)
         first.cycleMode(forward: true)
+        XCTAssertEqual(first.settings.mode, .stretch)
+        first.cycleMode(forward: true)
         XCTAssertEqual(first.settings.mode, .custom)
         first.setCustomPercent(134)
         first.cycleMode(forward: true)
@@ -111,6 +159,9 @@ final class PlayerVideoZoomTests: XCTestCase {
         }
         step(-10)
         XCTAssertEqual(model.videoZoom.settings, PlayerVideoZoom(mode: .custom, customPercent: 90))
+        XCTAssertTrue(PlaybackOptionsPane.rows(
+            model: model, zoom: model.videoZoom, actions: actions, screen: .zoom, openScreen: { _ in }
+        )[0].isSelected)
         XCTAssertEqual(opened, [.zoom], "Adjusting Custom must not open another screen.")
         step(10)
         step(34)

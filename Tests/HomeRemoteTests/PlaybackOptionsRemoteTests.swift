@@ -26,14 +26,23 @@ final class PlaybackOptionsRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.select)
         let fit = app.buttons["player-option-row-10"]
         let fill = app.buttons["player-option-row-11"]
-        let custom = app.buttons["player-settings-row-12"]
+        let stretch = app.buttons["player-option-row-12"]
+        let custom = app.buttons["player-settings-row-13"]
         XCTAssertTrue(waitUntil { fit.exists && fit.hasFocus })
+        XCTAssertTrue(fit.label.contains("Normal (Default)"))
+        XCTAssertEqual(fill.label, "Crop")
         XCUIRemote.shared.press(.down)
         XCTAssertTrue(waitUntil { fill.hasFocus })
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(waitUntil { app.staticTexts["player-zoom-mode"].label == "fill" && zoom.hasFocus })
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(waitUntil { fill.exists && fill.hasFocus })
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(waitUntil { stretch.hasFocus })
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(waitUntil { app.staticTexts["player-zoom-mode"].label == "stretch" && zoom.hasFocus })
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(waitUntil { stretch.exists && stretch.hasFocus })
         XCUIRemote.shared.press(.down)
         XCTAssertTrue(waitUntil { custom.hasFocus })
         XCUIRemote.shared.press(.left)

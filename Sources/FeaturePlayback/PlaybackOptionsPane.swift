@@ -5,7 +5,7 @@ import SwiftUI
 struct PlaybackOptionsPane: View {
     static let zoomSlot = 0
     static let speedSlot = 2
-    static let customSlot = 12
+    static var customSlot: Int { modeSlot(.custom) }
 
     static func modeSlot(_ mode: PlayerVideoZoom.Mode) -> Int { 10 + mode.rawValue }
 
@@ -30,9 +30,9 @@ struct PlaybackOptionsPane: View {
     private func content(rows: [PlayerOptionsRowSpec]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             if screen == .zoom {
-                PlayerMenuRowStack(rows: [PlayerVideoZoom.Mode.fit, .fill].map { mode in
+                PlayerMenuRowStack(rows: [PlayerVideoZoom.Mode.fit, .fill, .stretch].map { mode in
                     PlayerControls.TrackRow(
-                        id: Self.modeSlot(mode), header: nil, title: Text(mode.title), subtitle: nil,
+                        id: Self.modeSlot(mode), header: nil, title: Text(mode.menuTitle), subtitle: nil,
                         isSelected: zoom.settings.mode == mode, isToggle: false,
                         action: {
                             zoom.settings.mode = mode
@@ -67,7 +67,7 @@ struct PlaybackOptionsPane: View {
             return [.init(slot: Self.customSlot, title: "Custom", kind: .number(
                 value: Text(Double(zoom.settings.customPercent) / 100, format: .percent.precision(.fractionLength(0))),
                 step: { zoom.setCustomPercent(zoom.settings.customPercent + $0) }
-            ))]
+            ), isSelected: zoom.settings.mode == .custom)]
         }
         var rows: [PlayerOptionsRowSpec] = []
         if model.engineCapabilities.contains(.videoZoom) {

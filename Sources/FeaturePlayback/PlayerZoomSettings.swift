@@ -10,7 +10,7 @@ public enum PlayerZoomMenu {
     ) -> UIMenu {
         let selection = model.settings.mode
         let choices = PlayerVideoZoom.Mode.allCases.map { mode in
-            var title = mode.title
+            var title = mode.menuTitle
             title.locale = locale
             return UIAction(
                 title: String(localized: title), // l10n:content - UIKit menu boundary.
@@ -34,7 +34,7 @@ struct PlayerZoomSettingsRows: View {
     var body: some View {
         Picker("Zoom Mode", selection: $model.settings.mode) {
             ForEach(PlayerVideoZoom.Mode.allCases, id: \.self) { mode in
-                Text(mode.title).tag(mode)
+                Text(mode.menuTitle).tag(mode)
             }
         }
         if model.settings.mode == .custom {
@@ -61,7 +61,7 @@ public struct PlayerZoomSettingsSheet: View {
         NavigationStack {
             Form {
                 PlayerZoomSettingsRows(model: model)
-                Button("Reset") { model.settings = PlayerVideoZoom() }
+                Button("Reset to Normal") { model.settings = PlayerVideoZoom() }
             }
             .navigationTitle("Zoom Mode")
             .navigationBarTitleDisplayMode(.inline)

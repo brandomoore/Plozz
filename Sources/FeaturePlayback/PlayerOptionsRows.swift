@@ -14,6 +14,7 @@ struct PlayerOptionsRowSpec: Identifiable {
     let slot: Int
     let title: LocalizedStringResource
     let kind: Kind
+    var isSelected = false
     var id: Int { slot }
 }
 
@@ -51,6 +52,7 @@ struct PlayerOptionsRow: View {
         .focusEffectDisabled()
         .focused($focus, equals: .row(row.slot))
         .accessibilityIdentifier("player-settings-row-\(row.slot)")
+        .accessibilityAddTraits(row.isSelected ? .isSelected : [])
     }
 
     private var trailing: some View {
@@ -68,6 +70,11 @@ struct PlayerOptionsRow: View {
                     .playerMenuRowSecondary()
             default:
                 EmptyView()
+            }
+            if row.isSelected {
+                Image(systemName: "checkmark")
+                    .font(.body.weight(.semibold))
+                    .playerMenuRowMark(isSelected: true, accent: palette.accent)
             }
         }
     }

@@ -135,7 +135,8 @@ enum SubtitleOverlayGeometry {
     static func bitmapRect(
         normalizedRect: CGRect,
         canvasSize: CGSize,
-        videoRect: CGRect
+        videoRect: CGRect,
+        sourceAspectRatio: CGFloat? = nil
     ) -> CGRect {
         let canvasRect: CGRect
         if canvasSize.width > 0,
@@ -143,7 +144,13 @@ enum SubtitleOverlayGeometry {
            canvasSize.width.isFinite,
            canvasSize.height.isFinite {
             let scale = videoRect.width / canvasSize.width
-            let mappedHeight = canvasSize.height * scale
+            let verticalScale: CGFloat
+            if let sourceAspectRatio, sourceAspectRatio.isFinite, sourceAspectRatio > 0, videoRect.width > 0 {
+                verticalScale = videoRect.height * sourceAspectRatio / videoRect.width
+            } else {
+                verticalScale = 1
+            }
+            let mappedHeight = canvasSize.height * scale * verticalScale
             canvasRect = CGRect(
                 x: videoRect.minX,
                 y: videoRect.midY - mappedHeight / 2,
@@ -343,6 +350,7 @@ public struct SubtitleOverlayView: View {
     /// The on-screen rect of the video image, used to place bitmap cues. `nil`
     /// means "fill the container" (fine for text and for the harness).
     public var videoRect: CGRect?
+    public var sourceVideoAspectRatio: Double?
     /// Visible bottom controls in global coordinates; never a persisted position.
     public var controlsFrame: CGRect?
     public var controlsFrames: [CGRect]
@@ -354,6 +362,7 @@ public struct SubtitleOverlayView: View {
         style: SubtitleStyle,
         isHDR: Bool = false,
         videoRect: CGRect? = nil,
+        sourceVideoAspectRatio: Double? = nil,
         controlsFrame: CGRect? = nil,
         controlsFrames: [CGRect] = []
     ) {
@@ -363,6 +372,7 @@ public struct SubtitleOverlayView: View {
         self.style = style
         self.isHDR = isHDR
         self.videoRect = videoRect
+        self.sourceVideoAspectRatio = sourceVideoAspectRatio
         self.controlsFrame = controlsFrame
         self.controlsFrames = controlsFrames
     }
@@ -406,7 +416,8 @@ public struct SubtitleOverlayView: View {
                 let frame = SubtitleOverlayGeometry.bitmapRect(
                     normalizedRect: img.normalizedRect,
                     canvasSize: img.canvasSize,
-                    videoRect: rect
+                    videoRect: rect,
+                    sourceAspectRatio: sourceVideoAspectRatio.map { CGFloat($0) }
                 )
                 let w = max(1, frame.width)
                 let h = max(1, frame.height)

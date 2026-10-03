@@ -1958,7 +1958,7 @@ private struct LiveChannelTrackPanel: View {
         switch kind {
         case .playback:
             return PlayerVideoZoom.Mode.allCases.map { mode in
-                Row(id: mode.rawValue, title: Text(mode.title), isSelected: model.videoZoom.settings.mode == mode) {
+                Row(id: mode.rawValue, title: Text(mode.menuTitle), isSelected: model.videoZoom.settings.mode == mode) {
                     model.videoZoom.settings.mode = mode
                 }
             }

@@ -26,6 +26,13 @@ final class VideoZoomPresentationTests: XCTestCase {
         try await verify(engine: engine, fixture: "anamorphic.mp4", expectedAspect: 16 / 9)
     }
 
+    func testFourByThreeStretchKeepsTheWholePictureOnBothEngines() async throws {
+        try await verify(engine: NativeVideoEngine(), fixture: "four-three.mp4", expectedAspect: 4 / 3)
+        let engine = try PlozzigenVideoEngine()
+        engine.configureLiveOutput(.init(isAudible: false, sharesAudioSession: true, suppressesDisplayMatching: true))
+        try await verify(engine: engine, fixture: "four-three.mp4", expectedAspect: 4 / 3)
+    }
+
     private func verify(
         engine: any VideoEngine, fixture: String = "embedded.mp4", expectedAspect: Double? = nil
     ) async throws {
@@ -84,14 +91,18 @@ final class VideoZoomPresentationTests: XCTestCase {
         let caption = try XCTUnwrap(captionFrames(in: controller.view, relativeTo: window).first)
         let position = engine.currentTime
 
-        for zoom in [PlayerVideoZoom(mode: .fill),
+        for zoom in [PlayerVideoZoom(mode: .fill), PlayerVideoZoom(mode: .stretch),
                      PlayerVideoZoom(mode: .custom, customPercent: 150),
                      PlayerVideoZoom(mode: .custom, customPercent: 90), PlayerVideoZoom()] {
             controls.videoZoom.settings = zoom
             let expected = zoom.surfaceFrame(in: viewport.bounds, aspectRatio: engine.videoAspectRatio)
             try await waitUntil {
                 window.layoutIfNeeded()
-                return surface.frame == expected && subtitles.videoRect == viewport.videoRect
+                return abs(surface.frame.minX - expected.minX) < 0.001
+                    && abs(surface.frame.minY - expected.minY) < 0.001
+                    && abs(surface.frame.width - expected.width) < 0.001
+                    && abs(surface.frame.height - expected.height) < 0.001
+                    && subtitles.videoRect == viewport.videoRect
             }
             let currentCaption = try XCTUnwrap(captionFrames(in: controller.view, relativeTo: window).first)
             XCTAssertEqual(currentCaption.width, caption.width, accuracy: 1)
@@ -102,6 +113,26 @@ final class VideoZoomPresentationTests: XCTestCase {
             XCTAssertTrue(engine.nowPlayingPlayer === player)
             XCTAssertTrue(player?.currentItem === item)
             XCTAssertTrue(layers.elementsEqual(surface.layer.sublayers ?? [], by: { $0 === $1 }))
+            let sourceRect = try XCTUnwrap(SubtitleOverlayGeometry.aspectFitRect(
+                in: surface.bounds, aspectRatio: engine.videoAspectRatio.map { CGFloat($0) }
+            ))
+            let mappedPicture = surface.convert(sourceRect, to: viewport)
+            let expectedPicture = try XCTUnwrap(viewport.videoRect)
+            XCTAssertEqual(mappedPicture.minX, expectedPicture.minX, accuracy: 0.001)
+            XCTAssertEqual(mappedPicture.minY, expectedPicture.minY, accuracy: 0.001)
+            XCTAssertEqual(mappedPicture.width, expectedPicture.width, accuracy: 0.001)
+            XCTAssertEqual(mappedPicture.height, expectedPicture.height, accuracy: 0.001)
+            if zoom.mode == .stretch {
+                XCTAssertEqual(subtitles.sourceVideoAspectRatio, engine.videoAspectRatio)
+                XCTAssertEqual(mappedPicture.width, viewport.bounds.width, accuracy: 0.001)
+                XCTAssertEqual(mappedPicture.height, viewport.bounds.height, accuracy: 0.001)
+            } else {
+                XCTAssertNil(subtitles.sourceVideoAspectRatio)
+            }
+            for layer in [surface.layer] + layers {
+                if let native = layer as? AVPlayerLayer { XCTAssertEqual(native.videoGravity, .resizeAspect) }
+                if let software = layer as? AVSampleBufferDisplayLayer { XCTAssertEqual(software.videoGravity, .resizeAspect) }
+            }
             XCTAssertTrue(engine.isPaused)
             XCTAssertEqual(engine.currentTime, position, accuracy: 0.1)
             XCTAssertEqual(subtitles.style, originalStyle)

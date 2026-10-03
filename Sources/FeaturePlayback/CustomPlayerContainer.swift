@@ -419,6 +419,10 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         if subtitleModel.videoRect != rect {
             subtitleModel.videoRect = rect
         }
+        let sourceAspect = model.videoZoom.settings.mode == .stretch ? videoPresentation.sourceAspectRatio : nil
+        if subtitleModel.sourceVideoAspectRatio != sourceAspect {
+            subtitleModel.sourceVideoAspectRatio = sourceAspect
+        }
     }
 
     /// Starts the per-frame subtitle clock. Cheap when no cues are loaded (the

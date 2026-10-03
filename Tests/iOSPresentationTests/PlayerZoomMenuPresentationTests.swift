@@ -12,7 +12,9 @@ final class PlayerZoomMenuPresentationTests: XCTestCase {
         var opened = 0
         let menu = PlayerZoomMenu.make(model: model, locale: Locale(identifier: "en-US")) { opened += 1 }
         let choices = menu.children.compactMap { $0 as? UIAction }
-        XCTAssertEqual(choices.count, 3)
+        XCTAssertEqual(choices.count, 4)
+        XCTAssertEqual(choices.map(\.title), ["Normal (Default)", "Crop", "Stretch", "Custom"])
+        XCTAssertTrue(choices.allSatisfy { $0.subtitle?.isEmpty != false }, "Keep the choices concise without extra descriptions.")
         for mode in PlayerVideoZoom.Mode.allCases {
             let button = UIButton(type: .system)
             button.addAction(choices[mode.rawValue], for: .primaryActionTriggered)
@@ -46,8 +48,8 @@ final class PlayerZoomMenuPresentationTests: XCTestCase {
         let menu = try XCTUnwrap(button.presentedMenu)
         let zoomMenu = try XCTUnwrap(menu.children.first as? UIMenu)
         let rows = zoomMenu.children.compactMap { $0 as? UIAction }
-        XCTAssertEqual(rows.map(\.title), ["Fit", "Fill", "Custom"])
-        XCTAssertEqual(rows.map(\.state), [.on, .off, .off])
+        XCTAssertEqual(rows.map(\.title), ["Normal (Default)", "Crop", "Stretch", "Custom"])
+        XCTAssertEqual(rows.map(\.state), [.on, .off, .off, .off])
         for tick in 1...10 {
             state.seconds = tick
             window.layoutIfNeeded()
@@ -62,7 +64,7 @@ final class PlayerZoomMenuPresentationTests: XCTestCase {
         button.performPrimaryAction()
         try await waitUntil { button.presentedMenu != nil }
         let reopened = try XCTUnwrap(button.presentedMenu?.children.first as? UIMenu)
-        XCTAssertEqual(reopened.children.compactMap { ($0 as? UIAction)?.state }, [.off, .on, .off])
+        XCTAssertEqual(reopened.children.compactMap { ($0 as? UIAction)?.state }, [.off, .on, .off, .off])
         XCTAssertEqual(state.builds, 2)
         interaction.dismissMenu()
         try await waitUntil { button.presentedMenu == nil }

@@ -104,30 +104,33 @@ path. None of these diagnostics change the audio selection policy.
 
 The tvOS Playback control replaces the standalone Speed control. Its two rows
 stay fixed: Playback Speed adjusts inline (0.25–2x, in 0.05 steps), while Zoom
-Mode opens a normal submenu. Fit and Fill apply and return; Custom adjusts
-directly on its row (50–200%, in 1% steps), including values below 100% for
-zooming out. Back returns to Playback and restores the Zoom Mode row.
-The rows and native input scope are shared with
-subtitle appearance. All screens retain one native input host and menu width.
-The host forwards presentation environment values explicitly,
-not the outer SwiftUI graph's focus environment, which can retain duplicate
-highlights. Mobile adds Zoom Mode to its existing native
-playback menu. Live TV offers the same zoom controls without playback-speed changes.
+Mode opens a normal submenu. Normal, Crop, and Stretch apply and return; Custom
+adjusts directly on its row (50–200%, in 1% steps), including values below 100%
+for zooming out. Back returns to Playback and restores the Zoom Mode row.
+The rows and native input scope are shared with subtitle appearance. All screens
+retain one native input host and menu width. The host forwards presentation
+environment values explicitly, not the outer SwiftUI graph's focus environment,
+which can retain duplicate highlights. Mobile adds Zoom Mode to its existing
+native playback menu. Live TV offers the same zoom controls without playback-speed
+changes.
 
-Fit is the default. Fill crops proportionally; Custom enlarges the fitted frame
-to handle bars encoded into the source. `VideoPresentationView` resizes and clips
-only the stable video surface, without restarting playback or processing frames.
+The picker labels Normal as the default; concise names follow Infuse's Zoom Mode
+terminology. Crop enlarges proportionally, Stretch fills both axes without
+preserving proportions, and Custom scales relative to Normal. `VideoPresentationView`
+transforms and clips only the stable video surface, without restarting playback,
+changing the engine layer's gravity, or processing frames.
 The subtitle overlay uses the same displayed-video rectangle for source-positioned
-and bitmap cues; ordinary text size, screen position, and transport geometry stay
-independent. Plozzigen uses the software renderer's displayed size or the native
-item's presentation size before falling back to coded dimensions.
+and bitmap cues, including both axes under Stretch; ordinary text size, screen
+position, and transport geometry stay independent. Plozzigen uses the software
+renderer's displayed size or the native item's presentation size before falling
+back to coded dimensions.
 
 Zoom belongs to the current player session, not a global/profile preference.
-A new VOD player or a different live channel starts at Fit. PiP and AirPlay retain
+A new VOD player or a different live channel starts at Normal. PiP and AirPlay retain
 their system-owned presentation rather than inheriting this local viewport crop.
-Hosted coverage includes a synthetic 720x576 H.264 fixture with 64:45 sample
-aspect (16:9 display), checking real native and software playback without changing
-the video layer, playback position, or subtitle text geometry.
+Hosted coverage includes synthetic 4:3 video and a 720x576 H.264 fixture with 64:45
+sample aspect (16:9 display), checking real native and software playback without
+changing the video layer, playback position, or subtitle text geometry.
 
 ## Subtitle appearance
 

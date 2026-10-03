@@ -45,15 +45,22 @@ final class VideoPresentationView: UIView {
         super.layoutSubviews()
         aspectRatio = engine?.videoAspectRatio
         guard let surface, surface.superview === self else { return }
-        let frame = zoom.surfaceFrame(in: bounds, aspectRatio: aspectRatio)
-        if surface.frame != frame {
+        let contentBounds = CGRect(origin: .zero, size: bounds.size)
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let scale = zoom.scaleFactors(in: bounds, aspectRatio: aspectRatio)
+        let transform = CGAffineTransform(scaleX: scale.dx, y: scale.dy)
+        if surface.bounds != contentBounds || surface.center != center || surface.transform != transform {
             UIView.performWithoutAnimation {
-                surface.frame = frame
+                surface.transform = .identity
+                surface.bounds = contentBounds
+                surface.center = center
+                surface.transform = transform
                 surface.layoutIfNeeded()
             }
         }
     }
 
     var videoRect: CGRect? { zoom.videoRect(in: bounds, aspectRatio: aspectRatio) }
+    var sourceAspectRatio: Double? { aspectRatio }
 }
 #endif
