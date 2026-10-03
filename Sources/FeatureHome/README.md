@@ -113,6 +113,16 @@ once its own sources are complete, preserving cross-server deduplication and
 ordering. A slow Continue Watching feed therefore retains its own skeleton
 without holding up Watchlist, Recently Added, or per-library rows.
 
+Adding an owned library title to Watchlist retains its verified source and full
+presentation in memory, even when Search is the only place that loaded it.
+Opening that entry does not depend on a native-watchlist refresh or a warm
+identity index to recover Play, episodes, or the selected server artwork.
+Both shells share this handoff. Retained items follow alias redirects, are
+pruned with membership, and are discarded when the profile, active accounts,
+credentials, or Plex Home identity changes. They are not persisted or synced as
+ownership evidence; discovery items and synced identity hints remain unowned
+until a local provider verifies a copy.
+
 Enabled library rows start as soon as their inventory is known. Recently Added
 and recommendation requests complete independently, in stable library/row slots.
 Both shells use the same loading/error state; failed rows can be retried without
