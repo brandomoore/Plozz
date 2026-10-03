@@ -220,14 +220,26 @@ karaoke into bitmap cues; it does not flatten animation fragments into dialogue.
 The main-thread cue bridge passes raw packet strings through without scanning or
 rebuilding their contents. Only newly admitted events are split on the rasterizer
 actor; replayed read-ahead snapshots must not reparse thousands of old packets
-on the presentation thread. Plain-style fallback still normalizes joined packets
-before parsing text.
+on the presentation thread. The rasterizer skips unchanged snapshot revisions,
+admits only appended packets on cumulative updates, and periodically extends
+its future-cue window without losing cues after a seek. Plain-style fallback
+still normalizes joined packets before parsing text.
+The read-ahead window is two seconds, and libass's native pruning periodically
+removes expired packets without rebuilding the live track, reducing work without
+lowering text resolution or modifying authored effects.
 Rendering is serialized off the main actor with at most one frame in flight,
 coalescing busy display ticks to one latest timestamp rather than building a
 backlog. Authored animation follows the source video frame rate (24–60 fps)
 rather than rendering duplicate 60 Hz display ticks for 24 fps material.
 When a frame exceeds its budget, subtitle rendering yields more time to audio
-and video instead of running continuously; seeking still draws immediately.
+and video instead of running continuously. Authored cue starts and ends bypass
+that animation backoff so short-lived glyphs appear and expired artwork clears
+at the next available display tick; seeking still draws immediately.
+Recent render latency leads the sampling clock by at most 200 ms while playback
+is advancing, compensating for slow frames without pushing paused subtitles
+ahead of the video. Costly, heavily layered ASS animations can still drop
+subtitle frames on older hardware; the renderer reserves video/audio headroom
+rather than degrading the underlying playback.
 Animated ASS reads the software presentation timebase directly; native
 playback converts the item's continuous clock through Aether's presentation-axis
 map. Seek/wait states retain the engine's held picture time. The published status

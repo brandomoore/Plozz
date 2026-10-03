@@ -119,6 +119,76 @@ final class ASSSubtitleRendererTests: XCTestCase {
         XCTAssertTrue(switched.images.isEmpty)
     }
 
+    func testUnchangedASSReadAheadDoesNotReprocessPacketsButStillAdmitsFutureAndSeekedCues() async throws {
+        let renderer = ASSSubtitleRasterizer()
+        let early = ASSSubtitleEvent(
+            packet: #"0,0,Default,,0,0,0,,{\an7\pos(20,20)\p1}m 0 0 l 30 0 30 30 0 30"#,
+            start: 1, end: 3
+        )
+        let future = ASSSubtitleEvent(
+            packet: #"1,0,Default,,0,0,0,,{\an7\pos(100,20)\p1}m 0 0 l 30 0 30 30 0 30"#,
+            start: 15, end: 17
+        )
+        let snapshot = [early, future]
+        let first = try await renderer.render(document: document(), events: snapshot, time: 1.5, snapshotRevision: 1)
+        XCTAssertEqual(first.addedEvents, 1)
+        XCTAssertFalse(first.images.isEmpty)
+
+        let repeated = try await renderer.render(document: document(), events: snapshot, time: 1.6,
+                                                 snapshotRevision: 1)
+        XCTAssertEqual(repeated.addedEvents, 0)
+        XCTAssertFalse(repeated.changed)
+
+        let extended = try await renderer.render(document: document(), events: snapshot, time: 13.5,
+                                                 snapshotRevision: 1)
+        XCTAssertEqual(extended.addedEvents, 1, "A stable snapshot still admits events entering read-ahead.")
+        let late = try await renderer.render(document: document(), events: snapshot, time: 15.5,
+                                             snapshotRevision: 1)
+        XCTAssertEqual(late.addedEvents, 0)
+        XCTAssertFalse(late.images.isEmpty)
+
+        let back = try await renderer.render(document: document(), events: snapshot, time: 1.5,
+                                             snapshotRevision: 1)
+        XCTAssertEqual(back.addedEvents, 1, "A backward seek must rebuild the previously admitted cue.")
+        XCTAssertFalse(back.images.isEmpty)
+
+        let next = ASSSubtitleEvent(
+            packet: #"2,0,Default,,0,0,0,,{\an7\pos(160,20)\p1}m 0 0 l 30 0 30 30 0 30"#,
+            start: 1, end: 3
+        )
+        let appended = try await renderer.render(document: document(), events: snapshot + [next], time: 1.6,
+                                                 snapshotRevision: 2)
+        XCTAssertEqual(appended.addedEvents, 1, "Cumulative updates should process only their new suffix.")
+        XCTAssertFalse(appended.images.isEmpty)
+    }
+
+    func testPruningExpiredDenseEventsPreservesActiveLayerOrder() async throws {
+        let renderer = ASSSubtitleRasterizer()
+        let red = ASSSubtitleEvent(
+            packet: #"0,0,Default,,0,0,0,,{\an7\pos(100,50)\p1\c&H0000FF&}m 0 0 l 30 0 30 30 0 30"#,
+            start: 0, end: 10
+        )
+        let green = ASSSubtitleEvent(
+            packet: #"1,0,Default,,0,0,0,,{\an7\pos(100,50)\p1\c&H00FF00&}m 0 0 l 30 0 30 30 0 30"#,
+            start: 0, end: 10
+        )
+        let expired = (0..<1_001).map { index in
+            ASSSubtitleEvent(packet: "\(index + 2),0,Default,,0,0,0,,", start: 0, end: 1)
+        }
+        let initial = try await renderer.render(document: document(), events: [red, green] + expired, time: 0.5)
+        XCTAssertEqual(initial.addedEvents, 1_003)
+        XCTAssertGreaterThan(try pixel(XCTUnwrap(initial.images.first).cgImage, x: 10, y: 10)[1], 240)
+
+        let added = ASSSubtitleEvent(
+            packet: #"1003,0,Default,,0,0,0,,{\an7\pos(200,50)\p1}m 0 0 l 30 0 30 30 0 30"#,
+            start: 4, end: 10
+        )
+        let pruned = try await renderer.render(document: document(), events: [red, green] + expired + [added],
+                                               time: 4.5)
+        XCTAssertEqual(pruned.addedEvents, 1)
+        XCTAssertGreaterThan(try pixel(XCTUnwrap(pruned.images.first).cgImage, x: 10, y: 10)[1], 240)
+    }
+
     func testTopAndBottomDrawingsBecomeIndependentImagesWithoutChangingSourcePixels() async throws {
         let renderer = ASSSubtitleRasterizer()
         let frame = try await renderer.render(document: document(), events: [
@@ -198,6 +268,62 @@ final class ASSSubtitleRendererTests: XCTestCase {
         XCTAssertTrue(paced.admit(0, frameRate: 1))
         XCTAssertTrue(paced.admit(1.0 / 24, frameRate: 1),
                       "Very low video rates must not delay an independent subtitle cue by a second")
+    }
+
+    func testRenderLeadOffsetsOnlyRunningPlaybackByRecentRenderingDelay() {
+        var lead = ASSSubtitleRenderLead()
+        lead.tick(1, uptime: 10)
+        lead.tick(1.02, uptime: 10.02)
+        XCTAssertEqual(lead.time(for: 1.02), 1.02, accuracy: 0.001)
+        lead.complete(elapsed: 0.12)
+        XCTAssertEqual(lead.time(for: 1.02), 1.14, accuracy: 0.001)
+        lead.complete(elapsed: 0.04)
+        XCTAssertEqual(lead.time(for: 1.02), 1.10, accuracy: 0.001)
+        lead.tick(1.02, uptime: 10.04)
+        XCTAssertEqual(lead.time(for: 1.02), 1.02, accuracy: 0.001, "Paused video must not show future subtitles")
+        lead.tick(0.5, uptime: 10.06)
+        XCTAssertEqual(lead.time(for: 0.5), 0.5, accuracy: 0.001, "Seeking backward must not lead the cue")
+        lead.tick(0.52, uptime: 10.08)
+        lead.complete(elapsed: 2)
+        XCTAssertLessThanOrEqual(lead.time(for: 0.52), 0.72, "Latency spikes must not leap ahead of dialogue")
+    }
+
+    func testExpiringASSGlyphReplacesOldArtworkDespiteAnExpensiveFrame() async throws {
+        let renderer = ASSSubtitleRasterizer()
+        let events = [
+            ASSSubtitleEvent(packet: #"0,0,Default,,0,0,0,,{\an7\pos(20,20)\p1}m 0 0 l 30 0 30 30 0 30"#,
+                             start: 152.3, end: 152.55),
+            ASSSubtitleEvent(packet: #"1,0,Default,,0,0,0,,{\an7\pos(120,20)\p1}m 0 0 l 30 0 30 30 0 30"#,
+                             start: 152.8, end: 153.2)
+        ]
+        var pacer = ASSSubtitleFramePacer()
+        XCTAssertTrue(pacer.admit(152.3, frameRate: 24))
+        let first = try await renderer.render(document: document(), events: events, time: 152.3,
+                                              snapshotRevision: 1)
+        XCTAssertEqual(first.nextCueBoundary, 152.55)
+        XCTAssertEqual(try XCTUnwrap(first.images.first).normalizedRect.minX, 20.0 / 640, accuracy: 0.01)
+        pacer.complete(renderSeconds: 0.03)
+
+        XCTAssertTrue(pacer.admit(152.38, frameRate: 24, cueBoundary: first.nextCueBoundary))
+        let expensive = try await renderer.render(document: document(), events: events, time: 152.38,
+                                                  snapshotRevision: 1)
+        pacer.complete(renderSeconds: 0.2)
+        XCTAssertFalse(pacer.admit(152.5, frameRate: 24, cueBoundary: expensive.nextCueBoundary),
+                       "Animation still yields to video and audio before the glyph ends")
+        XCTAssertTrue(pacer.admit(152.56, frameRate: 24, cueBoundary: expensive.nextCueBoundary),
+                      "A cue boundary must not inherit the 250ms animation backoff")
+        let cleared = try await renderer.render(document: document(), events: events, time: 152.56,
+                                                snapshotRevision: 1)
+        XCTAssertTrue(cleared.changed)
+        XCTAssertTrue(cleared.images.isEmpty, "The old glyph must disappear even before another line arrives")
+        XCTAssertEqual(cleared.nextCueBoundary, 152.8)
+        pacer.complete(renderSeconds: 0.2)
+        XCTAssertTrue(pacer.admit(152.81, frameRate: 24, cueBoundary: cleared.nextCueBoundary))
+        let replacement = try await renderer.render(document: document(), events: events, time: 152.81,
+                                                    snapshotRevision: 1)
+        XCTAssertEqual(replacement.images.count, 1, "The expired glyph must not remain behind the new line")
+        XCTAssertEqual(try XCTUnwrap(replacement.images.first).normalizedRect.minX,
+                       120.0 / 640, accuracy: 0.01)
     }
 
     @MainActor
