@@ -382,7 +382,7 @@ final class ASSSubtitleRenderer {
         let revision = revision, events = events, eventSnapshotRevision = eventSnapshotRevision, rasterizer = rasterizer
         let renderTime = renderLead.time(for: time)
         let started = ProcessInfo.processInfo.systemUptime
-        pending = Task(priority: .utility) { [weak self] in
+        pending = Task(priority: .userInitiated) { [weak self] in
             do {
                 let frame = try await rasterizer.render(document: document, events: events, time: renderTime,
                                                         snapshotRevision: eventSnapshotRevision)

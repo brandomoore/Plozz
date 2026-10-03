@@ -231,6 +231,9 @@ Rendering is serialized off the main actor with at most one frame in flight,
 coalescing busy display ticks to one latest timestamp rather than building a
 backlog. Authored animation follows the source video frame rate (24–60 fps)
 rather than rendering duplicate 60 Hz display ticks for 24 fps material.
+The raster task runs at user-initiated priority because its result is needed
+for the current video frame, while the frame pacer still reserves time for
+software video and audio work.
 When a frame exceeds its budget, subtitle rendering yields more time to audio
 and video instead of running continuously. Authored cue starts and ends bypass
 that animation backoff so short-lived glyphs appear and expired artwork clears
