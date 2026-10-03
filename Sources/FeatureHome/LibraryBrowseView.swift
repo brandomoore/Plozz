@@ -1,8 +1,36 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import Observation
 import CoreModels
 import CoreUI
 import FeatureHomeCore
+
+#if os(tvOS)
+@MainActor
+@Observable
+private final class ShowcaseNavigationVisibility {
+    var showsNavigation = true
+
+    func focusEntered(rowID: String, firstRowID: String?) {
+        let shouldShow = rowID == firstRowID
+        if showsNavigation != shouldShow { showsNavigation = shouldShow }
+    }
+}
+
+private struct ShowcaseNavigationVisibilityModifier: ViewModifier {
+    let visibility: ShowcaseNavigationVisibility
+    let isRecommended: Bool
+
+    func body(content: Content) -> some View {
+        let isVisible = !isRecommended || visibility.showsNavigation
+        content
+            .opacity(isVisible ? 1 : 0)
+            .disabled(!isVisible)
+            .accessibilityHidden(!isVisible)
+            .animation(.easeOut(duration: 0.18), value: isVisible)
+    }
+}
+#endif
 
 /// A sparse, lazily-loaded poster grid for browsing a single library. System
 /// focus uses reusable UIKit media cells; custom styles use `PosterCardView`.
@@ -16,18 +44,7 @@ import FeatureHomeCore
 public struct LibraryBrowseView: View {
     @State private var viewModel: LibraryBrowseViewModel
     #if os(tvOS)
-    private enum RecommendedLayout: String, CaseIterable {
-        case showcase
-        case rows
-
-        var title: LocalizedStringResource {
-            switch self {
-            case .showcase: "Showcase"
-            case .rows: "Rows"
-            }
-        }
-    }
-    @State private var recommendedLayout: RecommendedLayout = .showcase
+    @State private var showcaseNavigation = ShowcaseNavigationVisibility()
     @State private var isFrontmost = false
     #endif
     /// Tracks which items we've already warmed artwork for. A reference type (not a
@@ -51,6 +68,7 @@ public struct LibraryBrowseView: View {
     /// our translated copy while a server's own name stays verbatim.
     private let title: Text
     private let spoilerSettings: SpoilerSettings
+    private let continueWatchingShowsSeriesArtwork: Bool
     private let onSelect: (MediaItem) -> Void
     private let onSelectAtIndex: ((MediaItem, VideoPlaylistPlaybackOrigin?) -> Void)?
 
@@ -78,12 +96,14 @@ public struct LibraryBrowseView: View {
         viewModel: LibraryBrowseViewModel,
         title: Text,
         spoilerSettings: SpoilerSettings = .default,
+        continueWatchingShowsSeriesArtwork: Bool = true,
         onSelect: @escaping (MediaItem) -> Void,
         onSelectAtIndex: ((MediaItem, VideoPlaylistPlaybackOrigin?) -> Void)? = nil
     ) {
         _viewModel = State(initialValue: viewModel)
         self.title = title
         self.spoilerSettings = spoilerSettings
+        self.continueWatchingShowsSeriesArtwork = continueWatchingShowsSeriesArtwork
         self.onSelect = onSelect
         self.onSelectAtIndex = onSelectAtIndex
     }
@@ -127,10 +147,21 @@ public struct LibraryBrowseView: View {
         // dedicated destination with no navigation chrome pinned at the top.
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .top, spacing: 0) {
-            // Keep switching available when there is no grid to scroll.
-            if viewModel.contentMode == .recommended
-                ? viewModel.recommendationState.value == nil : viewModel.state.value == nil {
-                header
+            if viewModel.availableContentModes.count > 1 {
+                modeHeader
+                    .padding(.top, PlozzTheme.Spacing.large)
+                    .padding(.bottom, PlozzTheme.Spacing.large)
+                    #if os(tvOS)
+                    .modifier(
+                        ShowcaseNavigationVisibilityModifier(
+                            visibility: showcaseNavigation,
+                            isRecommended: viewModel.contentMode == .recommended
+                        )
+                    )
+                    #endif
+            }
+            if viewModel.contentMode != .recommended, viewModel.state.value == nil {
+                browseHeader
                     .padding(.top, PlozzTheme.Spacing.large)
             }
         }
@@ -225,11 +256,7 @@ public struct LibraryBrowseView: View {
             onRetry: { Task { await viewModel.loadRecommendations() } }
         ) { sections in
             #if os(tvOS)
-            if recommendedLayout == .showcase {
-                recommendedShowcase(sections)
-            } else {
-                recommendedRows(sections)
-            }
+            recommendedShowcase(sections)
             #else
             recommendedRows(sections)
             #endif
@@ -239,7 +266,6 @@ public struct LibraryBrowseView: View {
     private func recommendedRows(_ sections: [LibrarySection]) -> some View {
         ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-                header
                 ForEach(sections) { section in
                     recommendedRow(section)
                 }
@@ -255,6 +281,8 @@ public struct LibraryBrowseView: View {
             items: section.items,
             style: section.style == .poster ? .poster : .landscape,
             spoilerSettings: spoilerSettings,
+            showsSeriesArtwork: section.id == "continueWatching" && continueWatchingShowsSeriesArtwork,
+            showsResumeChip: section.id == "continueWatching",
             onSelect: onSelect
         )
     }
@@ -268,7 +296,10 @@ public struct LibraryBrowseView: View {
                 leadItem: section.items.first,
                 items: section.items,
                 cardArtwork: section.style == .landscape
-                    ? { PosterCardView.leadingLandscapeArtwork(for: $0, showsSeriesArtwork: false) } : nil
+                    ? { PosterCardView.leadingLandscapeArtwork(
+                        for: $0,
+                        showsSeriesArtwork: section.id == "continueWatching" && continueWatchingShowsSeriesArtwork
+                    ) } : nil
             )
         }
         let sectionsByID = Dictionary(uniqueKeysWithValues: sections.map { ($0.id, $0) })
@@ -285,18 +316,22 @@ public struct LibraryBrowseView: View {
                     items: section.items,
                     style: section.style == .poster ? .poster : .landscape,
                     spoilerSettings: spoilerSettings,
-                    onFocusEntered: reporter.entered,
+                    showsSeriesArtwork: section.id == "continueWatching" && continueWatchingShowsSeriesArtwork,
+                    onFocusEntered: {
+                        reporter.entered()
+                        showcaseNavigation.focusEntered(rowID: row.id, firstRowID: rows.first?.id)
+                    },
                     onFocusChange: { item in
                         if let item { reporter.focusedItem(item) }
                     },
-                    onCardFocused: reporter.cardFocused,
+                    onCardFocused: { item in
+                        reporter.cardFocused(item)
+                        showcaseNavigation.focusEntered(rowID: row.id, firstRowID: rows.first?.id)
+                    },
+                    showsResumeChip: section.id == "continueWatching",
                     onSelect: onSelect
                 )
             }
-        }
-        .overlay(alignment: .top) {
-            header
-                .padding(.top, PlozzTheme.Spacing.large)
         }
     }
     #endif
@@ -310,7 +345,7 @@ public struct LibraryBrowseView: View {
             scrollTarget: nativeScrollTarget,
             hidesScrollIndicator: isRailVisible,
             header: VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-                header
+                browseHeader
                 scanBanner
             }
             .padding(.top, PlozzTheme.Spacing.large),
@@ -351,7 +386,7 @@ public struct LibraryBrowseView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-                    header
+                    browseHeader
                     scanBanner
                     LazyVGrid(columns: columns, spacing: metrics.gridSpacing) {
                         ForEach(0..<total, id: \.self) { index in
@@ -451,33 +486,25 @@ public struct LibraryBrowseView: View {
     /// actually flying through the library rather than sitting at the top.
     private var railRevealThreshold: Int { max(1, metrics.libraryPosterColumns.count) * 2 }
 
-    /// The library title and controls scroll with the loaded grid.
-    private var header: some View {
+    /// Keep the selected mode's focus target mounted while the grid is replaced.
+    private var modeHeader: some View {
+        HStack(alignment: .firstTextBaseline) {
+            LibraryContentModeControl(viewModel: viewModel, buttonHeight: sortButtonHeight)
+            Spacer(minLength: PlozzTheme.Spacing.large)
+        }
+        .padding(.leading, contentLeadingPadding)
+        .padding(.trailing, HomeLayout.horizontalPadding)
+        .focusSection()
+    }
+
+    /// Grid-specific menus stay inside the native collection's focus hierarchy,
+    /// so an A–Z jump can hand focus directly from its menu to a loaded card.
+    private var browseHeader: some View {
         HStack(alignment: .firstTextBaseline) {
             if viewModel.browseScope != .library {
                 title.font(.largeTitle.bold())
             }
-            if viewModel.availableContentModes.count > 1 {
-                LibraryContentModeControl(viewModel: viewModel, buttonHeight: sortButtonHeight)
-            }
             Spacer(minLength: PlozzTheme.Spacing.large)
-            #if os(tvOS)
-            if viewModel.contentMode == .recommended {
-                Menu {
-                    Picker("Recommended Layout", selection: $recommendedLayout) {
-                        ForEach(RecommendedLayout.allCases, id: \.self) { layout in
-                            Text(layout.title).tag(layout)
-                        }
-                    }
-                } label: {
-                    Label(
-                        recommendedLayout == .showcase ? "Showcase" : "Rows",
-                        systemImage: "square.grid.2x2"
-                    )
-                }
-                .accessibilityIdentifier("library-recommendation-layout")
-            }
-            #endif
             if let library = viewModel.fileBrowserLibrary {
                 LibraryFileBrowseButton(library: library, onSelect: onSelect)
             }

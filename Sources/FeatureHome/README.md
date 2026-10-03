@@ -48,8 +48,11 @@ fallback when the user's server has no attached trailer.
 - **Library browsing** — `LibraryBrowseView` + `LibraryBrowseViewModel`
   show Recommended by default for server-backed video libraries, with
   library-scoped Continue Watching and Recently Added plus native Plex hubs
-  or Jellyfin/Emby movie recommendation categories. TV offers a Showcase/Rows
-  comparison in Recommended; mobile uses rows. Browse retains its paged grid,
+  or Jellyfin/Emby movie recommendation categories. TV uses Showcase, showing
+  its mode tabs only while the first row is active; mobile uses rows.
+  Library Continue Watching uses Home's profile-selected series artwork and
+  resume progress treatment; changing tabs keeps the focused mode control
+  mounted while replacing content below it. Browse retains its paged grid,
   and video libraries can also switch to Collections and Playlists when their
   provider advertises those capabilities. File shares and collection/playlist
   members continue to open in Browse. Plex, Jellyfin, and Emby discover existing video

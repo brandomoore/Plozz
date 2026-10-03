@@ -10,6 +10,86 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testLibraryModeSwitchKeepsFocusOnSelectedTab() async throws {
+        let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true)
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie,
+            defaults: UserDefaults(suiteName: UUID().uuidString)!
+        )
+        await model.loadRecommendationsIfNeeded()
+        try await withLibrary(model: model) { _, window in
+            let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
+            let headerControls = self.focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                      frame.midY < window.bounds.height * 0.2,
+                      frame.maxX < window.bounds.width * 0.6 else { return nil }
+                return (item, frame)
+            }.sorted { $0.1.minX < $1.1.minX }
+            XCTAssertEqual(headerControls.count, model.availableContentModes.count)
+            guard headerControls.count == model.availableContentModes.count else { return }
+            for mode: LibraryContentMode in [.titles, .collections, .playlists, .recommended] {
+                let index = try XCTUnwrap(model.availableContentModes.firstIndex(of: mode))
+                let control = headerControls[index].0
+                controller.target = control
+                focus.requestFocusUpdate(to: controller)
+                focus.updateFocusIfNeeded()
+                XCTAssertTrue(focus.focusedItem === control, "\(mode) must be focused before selection")
+                controller.target = nil
+
+                await model.setContentMode(mode)
+                try await Task.sleep(for: .milliseconds(120))
+                window.layoutIfNeeded()
+                XCTAssertTrue(focus.focusedItem === control, "\(mode) must retain actual focus after selection")
+            }
+        }
+    }
+
+    func testRecommendedShowcaseHidesNavigationBelowFirstRowAndRestoresItOnReturn() async throws {
+        let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, recommendationHub: true)
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie,
+            defaults: UserDefaults(suiteName: UUID().uuidString)!
+        )
+        await model.loadRecommendationsIfNeeded()
+        try await withLibrary(model: model) { _, window in
+            let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
+            @MainActor func headerControls() -> [any UIFocusItem] {
+                self.focusItems(in: window).filter { item in
+                    guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window) else {
+                        return false
+                    }
+                    return frame.midY < window.bounds.height * 0.2 && frame.height < 150 &&
+                        frame.maxX < window.bounds.width * 0.6
+                }
+            }
+            let cards = focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                      frame.midY > window.bounds.height * 0.3,
+                      frame.width > 100 else { return nil }
+                return (item, frame)
+            }.sorted { $0.1.midY < $1.1.midY }
+            XCTAssertEqual(headerControls().count, model.availableContentModes.count)
+            let first = try XCTUnwrap(cards.first)
+            let next = try XCTUnwrap(cards.first { $0.1.midY > first.1.midY + 100 })
+
+            for (card, expectedHeaderCount) in [
+                (next.0, 0),
+                (first.0, model.availableContentModes.count),
+            ] {
+                controller.target = card
+                focus.requestFocusUpdate(to: controller)
+                focus.updateFocusIfNeeded()
+                XCTAssertTrue(focus.focusedItem === card, "The requested Showcase row must receive focus")
+                controller.target = nil
+                try await Task.sleep(for: .milliseconds(200))
+                window.layoutIfNeeded()
+                XCTAssertEqual(headerControls().count, expectedHeaderCount)
+            }
+        }
+    }
+
     func testWatchlistAndJumpToastsShareOpaqueThemeSurfaceAndHeight() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -664,12 +744,23 @@ private final class LibraryFocusFixtureController: UIViewController {
     }
 }
 
-private actor RefreshLibraryProvider: MediaProvider {
-    nonisolated let kind = ProviderKind.mediaShare
-    nonisolated let session = UserSession(
-        server: MediaServer(id: "fixture", name: "Fixture", baseURL: URL(string: "https://fixture.test")!, provider: .mediaShare),
-        userID: "viewer", userName: "Viewer", deviceID: "fixture", accessToken: "fixture"
-    )
+private actor RefreshLibraryProvider: MediaProvider, CapabilityReporting {
+    nonisolated let kind: ProviderKind
+    nonisolated let session: UserSession
+    nonisolated let capabilities: ProviderCapability
+    private let recommendationHub: Bool
+    init(kind: ProviderKind = .mediaShare, supportsModes: Bool = false, recommendationHub: Bool = false) {
+        self.kind = kind
+        self.capabilities = supportsModes ? [.libraryCollections, .videoPlaylists] : []
+        self.recommendationHub = recommendationHub
+        self.session = UserSession(
+            server: MediaServer(
+                id: "fixture", name: "Fixture", baseURL: URL(string: "https://fixture.test")!,
+                provider: kind
+            ),
+            userID: "viewer", userName: "Viewer", deviceID: "fixture", accessToken: "fixture"
+        )
+    }
     private var total = 240
     private var prefix = "Before"
     private var fails = false
@@ -719,7 +810,20 @@ private actor RefreshLibraryProvider: MediaProvider {
         }
         return response
     }
+    func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
+        try await items(in: libraryID, kind: .collection, page: page)
+    }
+    func videoPlaylists(in libraryID: String, page: PageRequest) async throws -> MediaPage {
+        try await items(in: libraryID, kind: .playlist, page: page)
+    }
     func libraries() async throws -> [MediaLibrary] { [] }
+    func libraryHubs(libraryID: String, kind: MediaItemKind, limit: Int) async throws -> [LibrarySection] {
+        guard recommendationHub else { return [] }
+        return [LibrarySection(
+            id: "featured", title: "Featured",
+            items: (0..<4).map { MediaItem(id: "Featured-\($0)", title: "Featured \($0)", kind: .movie) }
+        )]
+    }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func item(id: String) async throws -> MediaItem { throw AppError.notFound }

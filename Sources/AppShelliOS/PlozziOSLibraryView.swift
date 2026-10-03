@@ -321,6 +321,9 @@ struct PlozziOSLibraryGridView: View {
                             title: Text(verbatim: section.title),
                             items: section.items,
                             style: section.style == .poster ? .poster : .landscape,
+                            showsSeriesArtwork: section.id == "continueWatching"
+                                && settings.homeVisibility.continueWatchingShowsSeriesArtwork,
+                            showsResumeChip: section.id == "continueWatching",
                             onSelect: { selectedRecommendedItem = $0 }
                         )
                     }

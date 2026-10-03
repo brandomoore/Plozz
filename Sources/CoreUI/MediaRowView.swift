@@ -138,6 +138,8 @@ public struct MediaRowView: View {
     /// show the resume chip (play glyph + progress bar + time). Threaded to
     /// `PosterCardView.playsOnSelect`.
     private let playsOnSelect: Bool
+    /// Shows resume progress when selection opens details rather than playing.
+    private let showsResumeChip: Bool
     /// Called whenever focus moves onto a card (with that item). Used by series
     /// detail to mirror the focused episode into the page hero. When set, every
     /// card becomes individually focus-tracked.
@@ -201,6 +203,7 @@ public struct MediaRowView: View {
         reservesLoadingFocus: Bool = false,
         episodeEntry: MediaRowEpisodeEntry? = nil,
         playsOnSelect: Bool = false,
+        showsResumeChip: Bool = false,
         onSelect: @escaping (MediaItem) -> Void
     ) {
         self.init(
@@ -228,6 +231,7 @@ public struct MediaRowView: View {
             reservesLoadingFocus: reservesLoadingFocus,
             episodeEntry: episodeEntry,
             playsOnSelect: playsOnSelect,
+            showsResumeChip: showsResumeChip,
             onSelect: onSelect
         )
     }
@@ -257,6 +261,7 @@ public struct MediaRowView: View {
         reservesLoadingFocus: Bool = false,
         episodeEntry: MediaRowEpisodeEntry? = nil,
         playsOnSelect: Bool = false,
+        showsResumeChip: Bool = false,
         onSelect: @escaping (MediaItem) -> Void
     ) {
         self.title = title
@@ -294,6 +299,7 @@ public struct MediaRowView: View {
         self.statusCue = statusCue
         self.pendingRemovalIDs = pendingRemovalIDs
         self.playsOnSelect = playsOnSelect
+        self.showsResumeChip = showsResumeChip
         self.onSelect = onSelect
         // Every derived table is built from the DEDUPED array, never from the
         // caller's. Building them from the original left indices pointing at
@@ -750,6 +756,7 @@ public struct MediaRowView: View {
                     showsSeriesArtwork: showsSeriesArtwork,
                     statusCue: statusCue?(item),
                     playsOnSelect: playsOnSelect,
+                    showsResumeChip: showsResumeChip,
                     isPendingRemoval: pendingRemovalIDs.contains(
                         item.stablePresentationID
                     )
@@ -766,6 +773,7 @@ public struct MediaRowView: View {
                     showsSeriesArtwork: showsSeriesArtwork,
                     statusCue: statusCue?(item),
                     playsOnSelect: playsOnSelect,
+                    showsResumeChip: showsResumeChip,
                     isPendingRemoval: pendingRemovalIDs.contains(
                         item.stablePresentationID
                     )
