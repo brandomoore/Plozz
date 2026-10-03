@@ -2,6 +2,80 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/047",
+      "version": "2026.10.3",
+      "marketingVersion": "2026.9.25",
+      "build": 47,
+      "releasedAt": "2026-10-03",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Gradient backgrounds throughout the app.",
+            "Zoom modes: Normal, Crop, Stretch, and adjustable Custom zoom.",
+            "Intro and credits markers on the scrub bar."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            {
+              "text": "Smoother Home and Showcase navigation, with stable Discover recommendations while browsing.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Smoother player controls and faster Info, Cast, and Subtitle menus while keeping Liquid Glass.",
+              "platforms": ["tvOS"]
+            },
+            "Improved ASS/SSA subtitles with authored fonts, positioning, and animation.",
+            "Faster startup for remote AV1 videos.",
+            "Library cards show poster collages when no library cover is available.",
+            "Simpler network-share setup with an Anime library type.",
+            {
+              "text": "Smoother network-share folder browsing.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Smoother HDR episode transitions, including previous and manually selected episodes.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "More consistent poster captions and subtler focus on detail information cards.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Missing or incorrect Continue Watching logos, including low-contrast logos in Light mode.",
+            "Plex family guidance and watchlists for Plex Home users.",
+            "Library details disappearing after adding titles to Watchlist.",
+            "Episodes getting stuck loading in the player.",
+            "Loading indicators lingering after video has started.",
+            "Duplicate subtitles and subtitle switching on Jellyfin and Emby transcodes.",
+            "Network-share scanning now follows the active profile and enabled libraries.",
+            {
+              "text": "Detail-page navigation and trailer interruptions when moving between titles.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Low-contrast text and icons in focused Settings rows.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Home reserving space for the hero when it is disabled.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Device-setup screens remain usable with many servers, profiles, or larger text.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/046",
       "version": "2026.9.30",
       "marketingVersion": "2026.9.25",
