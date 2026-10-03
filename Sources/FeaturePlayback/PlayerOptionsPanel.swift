@@ -124,7 +124,6 @@ struct PlayerOptionsPanel: View {
             // steps into the card's actions.
             return .button(panel)
         case .subtitles:
-            let style = SystemCaptionStyle.shared.resolved(model.subtitleStyle)
             switch subtitleScreen {
             case .tracks:
                 return model.subtitleTrackListFocus
@@ -141,10 +140,12 @@ struct PlayerOptionsPanel: View {
             case .style:
                 return model.secondarySubtitleImagePrimaryFormat == nil ? .row(0) : .subBack
             case .styleFont:
+                let style = SystemCaptionStyle.shared.resolved(model.subtitleStyle)
                 return .row(style.systemFont == nil && style.fontDescriptor == nil
                     ? SubtitleFontFamily.allCases.firstIndex(of: style.fontFamily) ?? 0
                     : SubtitleFontFamily.allCases.count)
             case .styleSystemFont:
+                let style = SystemCaptionStyle.shared.resolved(model.subtitleStyle)
                 return .row(SubtitleSystemFonts.all.firstIndex { $0.id == style.systemFont } ?? 0)
             case .styleDual:
                 return offersDualSubtitles ? .row(0) : .subBack

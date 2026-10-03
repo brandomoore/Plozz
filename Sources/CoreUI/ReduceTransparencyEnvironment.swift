@@ -15,9 +15,9 @@ private struct PlozzReduceTransparencyKey: EnvironmentKey {
     static let defaultValue: Bool = false
 }
 
-/// As `PlozzReduceTransparencyKey`, plus performance.
+/// An explicit surface override for previews; normal panels follow transparency.
 private struct PlozzReducePanelGlassKey: EnvironmentKey {
-    static let defaultValue: Bool = false
+    static let defaultValue: Bool? = nil
 }
 
 /// Whether the display is currently being driven in HDR.
@@ -31,22 +31,11 @@ public extension EnvironmentValues {
         set { self[PlozzReduceTransparencyKey.self] = newValue }
     }
 
-    /// Reduce transparency for LARGE surfaces only — panels, cards, anything
-    /// with a broad backdrop sample drawn over live video.
-    ///
-    /// Everything above, OR the device and the content being unable to afford
-    /// glass. The split exists because the cost of this material is
-    /// proportional to the area behind it: a panel spanning the screen
-    /// resamples the whole frame, while a capsule button samples a sliver, and
-    /// giving up both to protect the frame rate costs the interface far more
-    /// than it saves.
-    ///
-    /// Accessibility is deliberately NOT split this way — a viewer who cannot
-    /// read text over glass cannot read it on a button either, so
-    /// `plozzReduceTransparency` still applies everywhere and this is only ever
-    /// wider than it, never narrower.
+    /// Panels follow the same resolved accessibility/profile preference as small
+    /// controls. Hardware and source metadata no longer switch their material.
+    /// An explicit override remains available for material previews and tests.
     var plozzReducePanelGlass: Bool {
-        get { self[PlozzReducePanelGlassKey.self] }
+        get { self[PlozzReducePanelGlassKey.self] ?? plozzReduceTransparency }
         set { self[PlozzReducePanelGlassKey.self] = newValue }
     }
 

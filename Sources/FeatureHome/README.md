@@ -66,6 +66,11 @@ fallback when the user's server has no attached trailer.
 
 ## Home loading
 
+On iPhone and iPad, the loading and loaded Home layouts share the hero visibility
+gate. Disabling the hero or deselecting all its sources removes both the carousel
+and its placeholder, including the reserved height. Only an active hero extends
+under the top safe area; a rows-only Home keeps its first row below navigation.
+
 Library cards preserve server-supplied cover artwork. Missing covers use a stable,
 locally composed poster collage from that exact library, with a provider-colored
 fallback for empty or unavailable sources. All cards carry the shared provider
@@ -107,6 +112,16 @@ needed to start other row types. Each global row arrives
 once its own sources are complete, preserving cross-server deduplication and
 ordering. A slow Continue Watching feed therefore retains its own skeleton
 without holding up Watchlist, Recently Added, or per-library rows.
+
+Adding an owned library title to Watchlist retains its verified source and full
+presentation in memory, even when Search is the only place that loaded it.
+Opening that entry does not depend on a native-watchlist refresh or a warm
+identity index to recover Play, episodes, or the selected server artwork.
+Both shells share this handoff. Retained items follow alias redirects, are
+pruned with membership, and are discarded when the profile, active accounts,
+credentials, or Plex Home identity changes. They are not persisted or synced as
+ownership evidence; discovery items and synced identity hints remain unowned
+until a local provider verifies a copy.
 
 Enabled library rows start as soon as their inventory is known. Recently Added
 and recommendation requests complete independently, in stable library/row slots.

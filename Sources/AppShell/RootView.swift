@@ -96,10 +96,9 @@ public struct RootView: View {
     /// Appearance) and injected as `\.plozzReduceTransparency`. `tvOS Default`
     /// follows this OS value; `On` forces glass; `Off` forces solid.
     @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
-    /// Whether this device, playing whatever is playing, can afford glass.
+    /// Retained playback classification for HDR-compensated presentation.
     ///
-    /// Owned here so a change reaches every surface at once, and injected so the
-    /// player can raise and lower it without reaching back up through the app.
+    /// Owned here so players can balance their presentation state across handoffs.
     @State private var glassPerformance = GlassPerformanceModel()
     /// Window-level black veil that survives the player's dismiss into Home so it
     /// can cover the TV's *physical* HDR/DV → SDR panel switch (which on some TVs
@@ -627,15 +626,6 @@ public struct RootView: View {
             \.plozzReduceTransparency,
             appState.profileSettings.transparencyModel.preference.reducesTransparency(
                 systemReduceTransparency: systemReduceTransparency
-            )
-        )
-        // The same, plus performance — read by panels and cards, whose backdrop
-        // sample is the whole reason the frame rate suffers.
-        .environment(
-            \.plozzReducePanelGlass,
-            appState.profileSettings.transparencyModel.preference.reducesTransparency(
-                systemReduceTransparency: systemReduceTransparency,
-                performance: glassPerformance.budget
             )
         )
         // So a hairline tuned against an SDR backdrop can compensate for SDR

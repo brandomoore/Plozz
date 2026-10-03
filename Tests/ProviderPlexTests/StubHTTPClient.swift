@@ -1,26 +1,42 @@
 import Foundation
 import CoreModels
 import CoreNetworking
+import Synchronization
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
 
 /// Configurable `HTTPClient` test double matching by path suffix, mirroring the
 /// ProviderJellyfin test stub.
-final class StubHTTPClient: HTTPClient, @unchecked Sendable {
+final class StubHTTPClient: HTTPClient {
     struct Stub {
         var status: Int = 200
         var body: Data
         var headers: [String: String] = [:]
     }
 
-    var responses: [(suffix: String, stub: Stub)] = []
-    private var queues: [String: [Stub]] = [:]
-    var error: AppError?
-    private(set) var sentPaths: [String] = []
-    private(set) var sentMethods: [HTTPMethod] = []
-    private(set) var sentQueryItems: [[URLQueryItem]] = []
-    private(set) var sentBaseURLs: [URL] = []
+    private struct Request {
+        let endpoint: Endpoint
+        let baseURL: URL
+    }
+
+    private struct State {
+        var responses: [(suffix: String, stub: Stub)] = []
+        var queues: [String: [Stub]] = [:]
+        var error: AppError?
+        var requests: [Request] = []
+    }
+
+    private let state = Mutex(State())
+
+    var error: AppError? {
+        get { state.withLock { $0.error } }
+        set { state.withLock { $0.error = newValue } }
+    }
+    var sentPaths: [String] { state.withLock { $0.requests.map(\.endpoint.path) } }
+    var sentMethods: [HTTPMethod] { state.withLock { $0.requests.map(\.endpoint.method) } }
+    var sentQueryItems: [[URLQueryItem]] { state.withLock { $0.requests.map(\.endpoint.queryItems) } }
+    var sentBaseURLs: [URL] { state.withLock { $0.requests.map(\.baseURL) } }
 
     func stub(
         pathSuffix: String,
@@ -28,52 +44,55 @@ final class StubHTTPClient: HTTPClient, @unchecked Sendable {
         status: Int = 200,
         headers: [String: String] = [:]
     ) {
-        responses.append((
-            pathSuffix,
-            Stub(status: status, body: Data(json.utf8), headers: headers)
-        ))
+        state.withLock {
+            $0.responses.append((
+                pathSuffix,
+                Stub(status: status, body: Data(json.utf8), headers: headers)
+            ))
+        }
     }
 
     /// Adds a sequence of responses returned in order for `suffix` (for polling).
     func stubSequence(pathSuffix: String, jsons: [String]) {
-        queues[pathSuffix, default: []].append(
-            contentsOf: jsons.map { Stub(body: Data($0.utf8)) }
-        )
+        state.withLock {
+            $0.queues[pathSuffix, default: []].append(
+                contentsOf: jsons.map { Stub(body: Data($0.utf8)) }
+            )
+        }
     }
 
     func stubSequence(
         pathSuffix: String,
         responses: [(json: String, status: Int)]
     ) {
-        queues[pathSuffix, default: []].append(
-            contentsOf: responses.map {
-                Stub(status: $0.status, body: Data($0.json.utf8))
-            }
-        )
+        state.withLock {
+            $0.queues[pathSuffix, default: []].append(
+                contentsOf: responses.map {
+                    Stub(status: $0.status, body: Data($0.json.utf8))
+                }
+            )
+        }
     }
 
     /// All query items sent for the most recent request whose path ends in `suffix`.
     func queryItems(forPathSuffix suffix: String) -> [URLQueryItem]? {
-        for (index, path) in sentPaths.enumerated().reversed() where path.hasSuffix(suffix) {
-            return sentQueryItems[index]
+        state.withLock {
+            $0.requests.last { $0.endpoint.path.hasSuffix(suffix) }?.endpoint.queryItems
         }
-        return nil
     }
 
     /// The method of the most recent request whose path ends in `suffix`.
     func method(forPathSuffix suffix: String) -> HTTPMethod? {
-        for (index, path) in sentPaths.enumerated().reversed() where path.hasSuffix(suffix) {
-            return sentMethods[index]
+        state.withLock {
+            $0.requests.last { $0.endpoint.path.hasSuffix(suffix) }?.endpoint.method
         }
-        return nil
     }
 
     /// The base URL (host) of the most recent request whose path ends in `suffix`.
     func baseURL(forPathSuffix suffix: String) -> URL? {
-        for (index, path) in sentPaths.enumerated().reversed() where path.hasSuffix(suffix) {
-            return sentBaseURLs[index]
+        state.withLock {
+            $0.requests.last { $0.endpoint.path.hasSuffix(suffix) }?.baseURL
         }
-        return nil
     }
 
     func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
@@ -91,36 +110,28 @@ final class StubHTTPClient: HTTPClient, @unchecked Sendable {
     }
 
     func sendRaw(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
-        sentPaths.append(endpoint.path)
-        sentMethods.append(endpoint.method)
-        sentQueryItems.append(endpoint.queryItems)
-        sentBaseURLs.append(baseURL)
-        if let error { throw error }
-
-        func response(
-            _ data: Data,
-            _ status: Int = 200,
-            headers: [String: String] = [:]
-        ) -> (Data, HTTPURLResponse) {
-            (
-                data,
-                HTTPURLResponse(
-                    url: baseURL,
-                    statusCode: status,
-                    httpVersion: nil,
-                    headerFields: headers
-                )!
-            )
+        let match = try state.withLock { state in
+            state.requests.append(Request(endpoint: endpoint, baseURL: baseURL))
+            if let error = state.error { throw error }
+            if let key = state.queues.keys.first(where: { endpoint.path.hasSuffix($0) }),
+               var queue = state.queues[key], !queue.isEmpty {
+                let next = queue.removeFirst()
+                state.queues[key] = queue
+                return next
+            }
+            guard let match = state.responses.first(where: { endpoint.path.hasSuffix($0.suffix) })?.stub else {
+                throw AppError.notFound
+            }
+            return match
         }
-
-        if let key = queues.keys.first(where: { endpoint.path.hasSuffix($0) }), var q = queues[key], !q.isEmpty {
-            let next = q.removeFirst()
-            queues[key] = q
-            return response(next.body, next.status, headers: next.headers)
-        }
-        guard let match = responses.first(where: { endpoint.path.hasSuffix($0.suffix) })?.stub else {
-            throw AppError.notFound
-        }
-        return response(match.body, match.status, headers: match.headers)
+        return (
+            match.body,
+            HTTPURLResponse(
+                url: baseURL,
+                statusCode: match.status,
+                httpVersion: nil,
+                headerFields: match.headers
+            )!
+        )
     }
 }

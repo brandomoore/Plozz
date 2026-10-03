@@ -66,6 +66,26 @@ struct PlozziOSHomeLoadID: Equatable {
     }
 }
 
+struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
+    let heroActive: Bool
+    @ViewBuilder var hero: Hero
+    @ViewBuilder var rows: Rows
+
+    var body: some View {
+        ScrollView {
+            // Rows own their horizontal laziness; keep the vertical layout eager.
+            VStack(alignment: .leading, spacing: 30) {
+                if heroActive {
+                    hero
+                }
+                rows
+            }
+            .padding(.bottom)
+        }
+        .ignoresSafeArea(.container, edges: heroActive ? .top : [])
+    }
+}
+
 struct PlozziOSHomeView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -179,7 +199,9 @@ struct PlozziOSHomeView: View {
                 // Skeleton rails rather than a bare spinner, matching tvOS: the
                 // placeholders occupy the same geometry the real rows will, so
                 // content swaps in without the page reflowing.
-                PlozziOSHomeSkeletonScreen()
+                PlozziOSHomeSkeletonScreen(
+                    heroActive: appModel.settings.hero.settings.isActive
+                )
             case .empty:
                 ContentUnavailableView {
                     Label("Your Home is empty", systemImage: "house")
@@ -422,191 +444,177 @@ struct PlozziOSHomeView: View {
             dynamicTypeSize: dynamicTypeSize,
             containerHeight: heroContainerHeight
         ) / 2
-        let scroll = ScrollView {
-            // NOT lazy, deliberately. Each row is itself a horizontal ScrollView
-            // containing a LazyHStack, and when the outer stack was lazy it
-            // materialised a row before that row had real geometry — so the inner
-            // lazy stack computed an empty viewport and built no cells. The row
-            // rendered as a title over blank space until a scroll invalidated the
-            // layout and the cards appeared. Home has a handful of rows, and the
-            // per-card laziness that actually matters (artwork loading) lives in
-            // the inner LazyHStacks, which are untouched.
-            VStack(alignment: .leading, spacing: 30) {
-                // Retire a carousel the viewer's own settings just invalidated
-                // WITHOUT waiting for the async re-curation, exactly as tvOS's
-                // `HomeHeroDisplayResolver` does. Otherwise sources they just
-                // switched off keep rendering for the whole refresh.
-                let heroConfiguration = HeroConfigurationKey(
-                    settings: appModel.settings.hero.settings
+        let scroll = PlozziOSHomeScrollView(heroActive: settings.isActive) {
+            // Retire a carousel the viewer's own settings just invalidated
+            // WITHOUT waiting for the async re-curation, exactly as tvOS's
+            // `HomeHeroDisplayResolver` does. Otherwise sources they just
+            // switched off keep rendering for the whole refresh.
+            let heroConfiguration = HeroConfigurationKey(
+                settings: appModel.settings.hero.settings
+            )
+            if displayHeroItems.isEmpty || heroCuratedConfiguration != heroConfiguration
+                || heroCuratedDisabledLibraryKeys != visibility.visibility.disabledKeys
+            {
+                // Reserve the hero's height while it resolves, so the rows
+                // below don't get shoved down when it lands (tvOS has had
+                // HomeHeroSkeletonView for this).
+                PlozziOSHomeHeroSkeleton(style: heroStyle)
+            } else {
+                PlozziOSHomeHeroCarousel(
+                    items: displayHeroItems,
+                    autoAdvance: appModel.settings.hero.settings.autoAdvance,
+                    autoAdvanceSeconds:
+                        appModel.settings.hero.settings.autoAdvanceSeconds,
+                    onPlay: play,
+                    isRequesting: isRequestingHero,
+                    requestStatus: { heroRequestStatuses[$0.id] },
+                    onRequest: beginHeroRequest,
+                    onRequestSeasons: beginHeroSeasonRequest,
+                    seasonRequestState: {
+                        heroSeasonRequestContext
+                            == appModel.plozziOSSeasonRequestContextID
+                            ? heroSeasonRequestStates[
+                                heroSeasonRequestKey(for: $0)
+                            ]
+                            : nil
+                    },
+                    seasonRefreshFailed: {
+                        heroSeasonRequestContext
+                            == appModel.plozziOSSeasonRequestContextID
+                            && heroSeasonLookupFailures.contains(
+                                heroSeasonRequestKey(for: $0)
+                            )
+                    },
+                    onRefreshSeasonRequests: {
+                        await refreshHeroSeasonAvailability(for: $0)
+                    },
+                    onPinnedItemsChanged: { heroPinnedItemIDs = $0 },
+                    onItemExposed: { viewModel.recordHeroExposure($0) },
+                    exposureScopeID: ObjectIdentifier(viewModel),
+                    identityIndexRevision: discoveryIdentityRevision,
+                    isFrontmost: homeIsFrontmost && homeHasAppeared
+                        && playbackRequest == nil && heroRequestConfirmItem == nil
+                        && heroRequestError == nil,
+                    pullModel: heroPullModel
                 )
-                if displayHeroItems.isEmpty || heroCuratedConfiguration != heroConfiguration
-                    || heroCuratedDisabledLibraryKeys != visibility.visibility.disabledKeys {
-                    // Reserve the hero's height while it resolves, so the rows
-                    // below don't get shoved down when it lands (tvOS has had
-                    // HomeHeroSkeletonView for this).
-                    PlozziOSHomeHeroSkeleton(style: heroStyle)
-                } else {
-                    PlozziOSHomeHeroCarousel(
-                        items: displayHeroItems,
-                        autoAdvance: appModel.settings.hero.settings.autoAdvance,
-                        autoAdvanceSeconds:
-                            appModel.settings.hero.settings.autoAdvanceSeconds,
-                        onPlay: play,
-                        isRequesting: isRequestingHero,
-                        requestStatus: { heroRequestStatuses[$0.id] },
-                        onRequest: beginHeroRequest,
-                        onRequestSeasons: beginHeroSeasonRequest,
-                        seasonRequestState: {
-                            heroSeasonRequestContext
-                                == appModel.plozziOSSeasonRequestContextID
-                                ? heroSeasonRequestStates[
-                                    heroSeasonRequestKey(for: $0)
-                                ]
-                                : nil
-                        },
-                        seasonRefreshFailed: {
-                            heroSeasonRequestContext
-                                == appModel.plozziOSSeasonRequestContextID
-                                && heroSeasonLookupFailures.contains(
-                                    heroSeasonRequestKey(for: $0)
-                                )
-                        },
-                        onRefreshSeasonRequests: {
-                            await refreshHeroSeasonAvailability(for: $0)
-                        },
-                        onPinnedItemsChanged: { heroPinnedItemIDs = $0 },
-                        onItemExposed: { viewModel.recordHeroExposure($0) },
-                        exposureScopeID: ObjectIdentifier(viewModel),
-                        identityIndexRevision: discoveryIdentityRevision,
-                        isFrontmost: homeIsFrontmost && homeHasAppeared
-                            && playbackRequest == nil && heroRequestConfirmItem == nil
-                            && heroRequestError == nil,
-                        pullModel: heroPullModel
-                    )
-                    // Warm every slide's logo as soon as the carousel exists.
-                    //
-                    // `HeroLogoArtwork` shows the styled title while the logo
-                    // resolves, so a cold logo reads as the show's name flashing
-                    // and then being replaced — the artwork arriving looks like a
-                    // glitch rather than like loading. tvOS has warmed logos on its
-                    // hero for a while (`HeroLogoPreloader` on the carousel's
-                    // lookahead); iOS never did, so it paid the swap on every
-                    // slide.
-                    //
-                    // Deliberately NOT paired with `.onArrival`, which is how tvOS
-                    // suppresses a late swap: that keeps the *text* when a logo
-                    // misses the window, and the ask here is to see the logo. This
-                    // wins the race instead of hiding the loser.
-                    .task(id: displayHeroItems.map(\.id).joined(separator: "|")) {
-                        await warmHeroLogos(for: displayHeroItems)
-                    }
-                }
-
-                // Trending row intentionally NOT shown on iOS/iPadOS (2026-07-25).
-                // It came from Seerr (`seerService.trending`) and had no tvOS
-                // counterpart, so the two platforms disagreed about what Home
-                // contains. `featuredItems` is still loaded because the hero
-                // carousel consumes it via its `.featured` source; only the
-                // standalone row is gone. Restore by re-adding
-                // `PlozziOSFeaturedRow(items: featuredItems, appModel: appModel)`
-                // here — the view itself is left in place.
-
-                if content.mergeLibraries {
-                    ForEach(rows) { row in
-                        PlozziOSHomeRowView(
-                            row: row,
-                            appModel: appModel,
-                            viewModel: viewModel,
-                            watchlistIntentRevision: watchlistIntentRevision,
-                            watchlistLoadingPlaceholderCount:
-                                viewModel.watchlistLoadingPlaceholderCount
-                        )
-                    }
-                } else {
-                    ForEach(rows.filter { $0.kind != .libraries }) { row in
-                        PlozziOSHomeRowView(
-                            row: row,
-                            appModel: appModel,
-                            viewModel: viewModel,
-                            watchlistIntentRevision: watchlistIntentRevision,
-                            watchlistLoadingPlaceholderCount:
-                                viewModel.watchlistLoadingPlaceholderCount
-                        )
-                    }
-                    ForEach(content.librarySections) { group in
-                        ForEach(group.rows) { row in
-                            let section = row.section
-                            if let failure = row.failure {
-                                PlozziOSHomeRowFailure(
-                                    title: Text(verbatim: section.title),
-                                    error: failure, viewModel: viewModel
-                                )
-                            } else if row.isLoading {
-                                PlozziOSHomeSkeletonRail(
-                                    title: Text(verbatim: section.title), style: .poster
-                                )
-                            } else {
-                                PlozziOSHomeMediaRail(
-                                    title: Text(verbatim: section.title),
-                                    items: section.items,
-                                    style: section.style == .landscape
-                                        ? .landscape
-                                        : .poster,
-                                    appModel: appModel,
-                                    onNavigationInteraction:
-                                        viewModel.noteHomeNavigationInteraction
-                                )
-                            }
-                        }
-                    }
-                    if let libraries = rows.first(where: {
-                        $0.kind == .libraries
-                    }) {
-                        PlozziOSHomeRowView(
-                            row: libraries,
-                            appModel: appModel,
-                            viewModel: viewModel,
-                            watchlistIntentRevision: watchlistIntentRevision,
-                            watchlistLoadingPlaceholderCount: 0
-                        )
-                    }
+                // Warm every slide's logo as soon as the carousel exists.
+                //
+                // `HeroLogoArtwork` shows the styled title while the logo
+                // resolves, so a cold logo reads as the show's name flashing
+                // and then being replaced — the artwork arriving looks like a
+                // glitch rather than like loading. tvOS has warmed logos on its
+                // hero for a while (`HeroLogoPreloader` on the carousel's
+                // lookahead); iOS never did, so it paid the swap on every
+                // slide.
+                //
+                // Deliberately NOT paired with `.onArrival`, which is how tvOS
+                // suppresses a late swap: that keeps the *text* when a logo
+                // misses the window, and the ask here is to see the logo. This
+                // wins the race instead of hiding the loser.
+                .task(id: displayHeroItems.map(\.id).joined(separator: "|")) {
+                    await warmHeroLogos(for: displayHeroItems)
                 }
             }
-            .padding(.bottom)
+        } rows: {
+            // Trending row intentionally NOT shown on iOS/iPadOS (2026-07-25).
+            // It came from Seerr (`seerService.trending`) and had no tvOS
+            // counterpart, so the two platforms disagreed about what Home
+            // contains. `featuredItems` is still loaded because the hero
+            // carousel consumes it via its `.featured` source; only the
+            // standalone row is gone. Restore by re-adding
+            // `PlozziOSFeaturedRow(items: featuredItems, appModel: appModel)`
+            // here — the view itself is left in place.
+
+            if content.mergeLibraries {
+                ForEach(rows) { row in
+                    PlozziOSHomeRowView(
+                        row: row,
+                        appModel: appModel,
+                        viewModel: viewModel,
+                        watchlistIntentRevision: watchlistIntentRevision,
+                        watchlistLoadingPlaceholderCount:
+                            viewModel.watchlistLoadingPlaceholderCount
+                    )
+                }
+            } else {
+                ForEach(rows.filter { $0.kind != .libraries }) { row in
+                    PlozziOSHomeRowView(
+                        row: row,
+                        appModel: appModel,
+                        viewModel: viewModel,
+                        watchlistIntentRevision: watchlistIntentRevision,
+                        watchlistLoadingPlaceholderCount:
+                            viewModel.watchlistLoadingPlaceholderCount
+                    )
+                }
+                ForEach(content.librarySections) { group in
+                    ForEach(group.rows) { row in
+                        let section = row.section
+                        if let failure = row.failure {
+                            PlozziOSHomeRowFailure(
+                                title: Text(verbatim: section.title),
+                                error: failure, viewModel: viewModel
+                            )
+                        } else if row.isLoading {
+                            PlozziOSHomeSkeletonRail(
+                                title: Text(verbatim: section.title), style: .poster
+                            )
+                        } else {
+                            PlozziOSHomeMediaRail(
+                                title: Text(verbatim: section.title),
+                                items: section.items,
+                                style: section.style == .landscape
+                                    ? .landscape
+                                    : .poster,
+                                appModel: appModel,
+                                onNavigationInteraction:
+                                    viewModel.noteHomeNavigationInteraction
+                            )
+                        }
+                    }
+                }
+                if let libraries = rows.first(where: {
+                    $0.kind == .libraries
+                }) {
+                    PlozziOSHomeRowView(
+                        row: libraries,
+                        appModel: appModel,
+                        viewModel: viewModel,
+                        watchlistIntentRevision: watchlistIntentRevision,
+                        watchlistLoadingPlaceholderCount: 0
+                    )
+                }
+            }
         }
-        // The hero — real OR its placeholder — is a full-bleed surface that runs
-        // up under the status bar. Gating this on `heroItems.isEmpty` predated
-        // the placeholder and left it starting below the safe area, so it
-        // rendered lower AND pushed every row down by the inset.
-        return scroll.ignoresSafeArea(.container, edges: .top)
-        .scrollClipDisabled()
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y > trailerPauseThreshold
-        } action: { _, isPastHalfHero in
-            trailerController.setPaused(isPastHalfHero)
-            heroPullModel.isVisible = !isPastHalfHero
-        }
-        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-            let topOffset = geometry.contentOffset.y
-                + geometry.contentInsets.top
-            return max(0, -topOffset)
-        } action: { _, pullDistance in
-            heroPullModel.update(pullDistance)
-        }
-        .task(
-            id: HeroCurationLoadKey(
-                content: heroContent,
-                settings: appModel.settings.hero.settings,
-                visibility: appModel.settings.homeVisibility.visibility,
-                freshnessRevision: heroFreshnessRefresh.revision,
-                identityIndexRevision: discoveryIdentityRevision,
-                watchlistMembershipRevision: watchlistIntentRevision,
-                scopeID: ObjectIdentifier(viewModel),
-                seerRevision: appModel.seerService.connectionRevision
-            )
-        ) {
-            await loadHero(from: heroContent)
-        }
+        return scroll
+            .scrollClipDisabled()
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y > trailerPauseThreshold
+            } action: { _, isPastHalfHero in
+                trailerController.setPaused(isPastHalfHero)
+                heroPullModel.isVisible = !isPastHalfHero
+            }
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                let topOffset = geometry.contentOffset.y
+                    + geometry.contentInsets.top
+                return max(0, -topOffset)
+            } action: { _, pullDistance in
+                heroPullModel.update(pullDistance)
+            }
+            .task(
+                id: HeroCurationLoadKey(
+                    content: heroContent,
+                    settings: appModel.settings.hero.settings,
+                    visibility: appModel.settings.homeVisibility.visibility,
+                    freshnessRevision: heroFreshnessRefresh.revision,
+                    identityIndexRevision: discoveryIdentityRevision,
+                    watchlistMembershipRevision: watchlistIntentRevision,
+                    scopeID: ObjectIdentifier(viewModel),
+                    seerRevision: appModel.seerService.connectionRevision
+                )
+            ) {
+                await loadHero(from: heroContent)
+            }
     }
 
     /// Fast cadence while a title is requested but not yet downloading — the

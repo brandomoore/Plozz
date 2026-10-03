@@ -2,6 +2,54 @@ import CoreModels
 import CoreUI
 import SwiftUI
 import UIKit
+@testable import FeaturePlayback
+
+struct PlayerCastFocusFixture: View {
+    @State private var model = Self.makeModel()
+    @State private var person: MediaPerson?
+    @State private var closeRequest = 0
+    @State private var realizedFaces = 0
+    @FocusState private var focus: PlayerControls.FocusSlot?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 32) {
+            Button("Browse cast") {}
+                .focused($focus, equals: .button(.cast))
+                .accessibilityIdentifier("player-cast-browse")
+            CastPanelView(
+                model: model, focus: $focus, detailPerson: $person,
+                closeRequest: $closeRequest, isCardOpen: true, revealClock: .smooth(duration: 0.5)
+            )
+            .frame(width: 1400)
+            .onPreferenceChange(CastCardFrameKey.self) { realizedFaces = $0.count }
+            Text(verbatim: String(realizedFaces))
+                .accessibilityIdentifier("player-cast-realized")
+            Text(verbatim: person?.id ?? "none")
+                .accessibilityIdentifier("player-cast-opened")
+            Text(verbatim: String(describing: focus))
+                .accessibilityIdentifier("player-cast-focus")
+        }
+        .frame(width: 1400, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.colorScheme, .dark)
+        .environment(\.layoutDirection, ProcessInfo.processInfo.arguments.contains("--rtl") ? .rightToLeft : .leftToRight)
+        .environment(\.plozzReducePanelGlass, ProcessInfo.processInfo.arguments.contains("--flat"))
+        .background(.black)
+        .onAppear { focus = .button(.cast) }
+        .onExitCommand { closeRequest += 1 }
+    }
+
+    private static func makeModel() -> PlayerControlsModel {
+        let model = PlayerControlsModel()
+        model.infoCard.cast = (0..<20).map {
+            MediaPerson(
+                id: String($0), name: "Actor \($0)", role: "Character \($0)",
+                biography: "A local biography used to verify the actual player cast transition."
+            )
+        }
+        return model
+    }
+}
 
 struct CastFocusFixture: View {
     @State private var people: [MediaPerson] = []
