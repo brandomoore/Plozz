@@ -20,14 +20,59 @@ final class AmbientGradientTests: XCTestCase {
                         if palette.isLight {
                             XCTAssertGreaterThan(min(r, g, b), 0.65)
                         } else if theme == .pureBlack {
-                            XCTAssertLessThan(max(r, g, b), 0.08)
+                            XCTAssertLessThan(max(r, g, b), 0.13)
                         } else {
-                            XCTAssertLessThan(max(r, g, b), 0.37)
+                            XCTAssertLessThan(max(r, g, b), 0.30)
                         }
                     }
                 }
             }
         }
+    }
+
+    func testLightGradientIsUnchangedWithAndWithoutArtworkTint() throws {
+        let original: [[Double]] = [
+            [0.86, 0.89, 0.93], [0.88, 0.90, 0.93], [0.91, 0.90, 0.91],
+            [0.88, 0.90, 0.92], [0.93, 0.93, 0.93], [0.92, 0.91, 0.90],
+            [0.91, 0.89, 0.84], [0.94, 0.94, 0.92], [0.89, 0.92, 0.89]
+        ]
+        let untinted = AmbientGradientBackground.meshColors(tint: nil, palette: .light)
+        let tinted = AmbientGradientBackground.meshColors(
+            tint: [Color(red: 1, green: 0, blue: 0)], palette: .light
+        )
+        for index in original.indices {
+            let baseline = original[index]
+            let plain = channels(untinted[index])
+            for channel in 0..<3 { XCTAssertEqual(plain[channel], baseline[channel], accuracy: 0.0001) }
+            let red = try XCTUnwrap(baseline.max())
+            let actual = channels(tinted[index])
+            XCTAssertEqual(actual[0], red, accuracy: 0.0001)
+            XCTAssertEqual(actual[1], red * 0.82, accuracy: 0.0001)
+            XCTAssertEqual(actual[2], red * 0.82, accuracy: 0.0001)
+        }
+    }
+
+    func testDarkIsSofterAndBlackIsMoreVisibleWithoutBecomingDark() throws {
+        let dark = AmbientGradientBackground.meshColors(tint: nil, palette: .dark).map(channels)
+        let black = AmbientGradientBackground.meshColors(tint: nil, palette: .pureBlack).map(channels)
+        XCTAssertEqual(dark[0][2], 0.22088, accuracy: 0.0001)
+        XCTAssertEqual(black[0][2], 0.1004, accuracy: 0.0001)
+        XCTAssertLessThan(dark[0][2], 0.251)
+        XCTAssertGreaterThan(black[0][2], 0.251 * 0.22)
+        for index in dark.indices {
+            for channel in 0..<3 {
+                XCTAssertLessThan(black[index][channel], dark[index][channel] * 0.5)
+            }
+        }
+        let values = black.flatMap { $0 }
+        let contrast = try XCTUnwrap(values.max()) - XCTUnwrap(values.min())
+        XCTAssertGreaterThan(contrast, 0.05, "Black must retain visible variation instead of crushing the gradient.")
+    }
+
+    private func channels(_ color: Color) -> [Double] {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        XCTAssertTrue(UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a))
+        return [Double(r), Double(g), Double(b)]
     }
 
     func testRapidNavigationCoalescesToOneSampleAndCachesArtworkIdentity() async {

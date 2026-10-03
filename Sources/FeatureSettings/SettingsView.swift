@@ -525,7 +525,7 @@ public struct SettingsView: View {
                 .padding(.top, 16)
                 .padding(.bottom, 16)
         }
-        .plozzSurface(.raised, cornerRadius: PlozzTheme.Metrics.mediumCardCornerRadius)
+        .settingsGroupSurface(cornerRadius: PlozzTheme.Metrics.mediumCardCornerRadius)
     }
 
     /// Whether this profile shows a separate parent-controlled group.
@@ -601,7 +601,7 @@ public struct SettingsView: View {
             .padding(.top, 16)
             .padding(.bottom, 16)
         }
-        .plozzSurface(.raised, cornerRadius: PlozzTheme.Metrics.mediumCardCornerRadius)
+        .settingsGroupSurface(cornerRadius: PlozzTheme.Metrics.mediumCardCornerRadius)
     }
 
     /// Rows nested inside the profile container — the settings this profile
@@ -761,7 +761,7 @@ public struct SettingsView: View {
             .padding(.top, 16)
             .padding(.bottom, 16)
         }
-        .plozzSurface(.raised, cornerRadius: PlozzTheme.Metrics.mediumCardCornerRadius)
+        .settingsGroupSurface(cornerRadius: PlozzTheme.Metrics.mediumCardCornerRadius)
     }
 
     /// About info + Attributions entry + Sign Out, rendered INLINE at the

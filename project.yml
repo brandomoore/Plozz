@@ -480,6 +480,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSPresentationTests
+      - path: Tests/AppearancePresentationSupport
       - path: Tests/AuthPresentationSupport
       - path: Tests/SubtitlePresentationSupport
         excludes: ["Fixtures"]
@@ -513,6 +514,7 @@ targets:
     platform: tvOS
     sources:
       - path: Tests/FocusIntegrationTests
+      - path: Tests/AppearancePresentationSupport
       - path: Tests/AuthPresentationSupport
       - path: Tests/SubtitlePresentationSupport
         excludes: ["Fixtures"]

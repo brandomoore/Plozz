@@ -61,6 +61,7 @@ private struct PlozzSurfaceModifier: ViewModifier {
     @Environment(\.themePalette) private var palette
     let level: SurfaceLevel
     let cornerRadius: CGFloat
+    let fillOpacity: Double
 
     func body(content: Content) -> some View {
         let style = palette.surface(level)
@@ -68,7 +69,7 @@ private struct PlozzSurfaceModifier: ViewModifier {
         content
             .background {
                 shape
-                    .fill(style.fill)
+                    .fill(style.fill.opacity(fillOpacity))
                     .overlay {
                         if let border = style.border {
                             shape.strokeBorder(border, lineWidth: style.borderWidth)
@@ -97,9 +98,14 @@ struct OptionalSurfaceShadow: ViewModifier {
 
 private struct SettingsGroupSurface: ViewModifier {
     let cornerRadius: CGFloat
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
 
     func body(content: Content) -> some View {
-        content.plozzSurface(.raised, cornerRadius: cornerRadius)
+        content.modifier(PlozzSurfaceModifier(
+            level: .raised, cornerRadius: cornerRadius,
+            fillOpacity: gradientEnabled && !reduceTransparency ? 0.5 : 1
+        ))
     }
 }
 
@@ -107,7 +113,7 @@ public extension View {
     /// Paints an elevated surface behind this view at the given rung, using the
     /// palette's shared elevation table.
     func plozzSurface(_ level: SurfaceLevel, cornerRadius: CGFloat) -> some View {
-        modifier(PlozzSurfaceModifier(level: level, cornerRadius: cornerRadius))
+        modifier(PlozzSurfaceModifier(level: level, cornerRadius: cornerRadius, fillOpacity: 1))
     }
 
     func settingsGroupSurface(cornerRadius: CGFloat) -> some View {

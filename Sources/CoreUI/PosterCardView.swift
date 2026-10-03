@@ -1380,6 +1380,8 @@ struct ContinueWatchingSeriesLogo: View {
                         .shadow(color: .black.opacity(0.65), radius: 6, y: 2)
                         .padding(.horizontal, width * 0.08)
                 }
+                // The card's artwork is darkened independently of the page theme.
+                .environment(\.colorScheme, .dark)
                 .frame(width: width, height: box.height)
                 .offset(y: height * ContinueWatchingCardShape.logoCenter - box.height / 2)
             }

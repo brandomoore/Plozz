@@ -238,7 +238,7 @@ private struct ConditionalRaisedSurface: ViewModifier {
 
     func body(content: Content) -> some View {
         if active {
-            content.plozzSurface(.raised, cornerRadius: cornerRadius)
+            content.settingsGroupSurface(cornerRadius: cornerRadius)
         } else {
             content
         }

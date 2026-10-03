@@ -6,6 +6,58 @@ import XCTest
 
 @MainActor
 final class DialogSurfaceTests: XCTestCase {
+    func testSettingsGroupsBlendOnlyTheirFillWhenGradientsAllowTransparency() throws {
+        let backdrop = Color(red: 0.7, green: 0.3, blue: 0.1)
+        for palette in [ThemePalette.dark, .pureBlack, .light] {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            XCTAssertTrue(UIColor(palette.raised.fill).getRed(&r, green: &g, blue: &b, alpha: &a))
+            let fill = [Double(r), Double(g), Double(b)]
+            for gradient in [false, true] {
+                for reduced in [false, true] {
+                    let pixels = try render(
+                        Color.white.frame(width: 20, height: 20)
+                            .frame(width: 120, height: 80)
+                            .settingsGroupSurface(cornerRadius: 16)
+                            .padding(40)
+                            .background(backdrop)
+                            .environment(\.themePalette, palette)
+                            .environment(\.gradientBackgroundsEnabled, gradient)
+                            .environment(\.plozzReduceTransparency, reduced)
+                    )
+                    let opacity = gradient && !reduced ? 0.5 : 1.0
+                    let actual = pixel(pixels, x: 60, y: 60)
+                    for channel in 0..<3 {
+                        let expected = (fill[channel] * opacity + [0.7, 0.3, 0.1][channel] * (1 - opacity)) * 255
+                        XCTAssertEqual(Double(actual[channel]), expected, accuracy: 4,
+                                       "Only gradient-backed Settings fills should blend; existing shadows remain.")
+                    }
+                    XCTAssertEqual(pixel(pixels, x: 100, y: 80), [255, 255, 255, 255],
+                                   "The surface must not make its content translucent.")
+                }
+            }
+        }
+    }
+
+    func testOrdinaryRaisedSurfacesAndDialogsStayOpaqueWithGradientsOn() throws {
+        for palette in [ThemePalette.dark, .pureBlack, .light] {
+            for level in [SurfaceLevel.raised, .overlay] {
+                let pixels = try render(
+                    Color.clear.frame(width: 120, height: 80)
+                        .plozzSurface(level, cornerRadius: 16)
+                        .padding(40).background(.red)
+                        .environment(\.themePalette, palette)
+                        .environment(\.gradientBackgroundsEnabled, true)
+                )
+                var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+                XCTAssertTrue(UIColor(palette.surface(level).fill).getRed(&r, green: &g, blue: &b, alpha: &a))
+                let actual = pixel(pixels, x: 100, y: 80)
+                for (channel, value) in [r, g, b].enumerated() {
+                    XCTAssertEqual(Double(actual[channel]), Double(value) * 255, accuracy: 2)
+                }
+            }
+        }
+    }
+
     func testDarkAndBlackBackdropDimsEightyFivePercentWhileLightStaysUnchanged() throws {
         for (palette, opacity) in [
             (ThemePalette.dark, 0.85), (.pureBlack, 0.85), (.light, 0.4)

@@ -46,11 +46,12 @@ public struct AmbientGradientBackground: View {
 
     static func meshColors(tint: [Color]?, palette: ThemePalette) -> [Color] {
         let stock = palette.isLight ? light : dark
-        let black = palette == .pureBlack
+        let brightnessScale = palette.isLight ? 1.0 : (palette == .pureBlack ? 0.40 : 0.88)
         return stock.indices.map { index in
             let stop = stock[index]
-            let floor = black ? 0.22 : 1.0
-            let fallback = Color(red: stop.0 * floor, green: stop.1 * floor, blue: stop.2 * floor)
+            let fallback = Color(
+                red: stop.0 * brightnessScale, green: stop.1 * brightnessScale, blue: stop.2 * brightnessScale
+            )
             guard let tint, !tint.isEmpty else { return fallback }
             #if canImport(UIKit)
             var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
@@ -62,7 +63,7 @@ public struct AmbientGradientBackground: View {
             return Color(
                 hue: Double(hue),
                 saturation: palette.isLight ? Double(min(saturation, 0.6)) * 0.3 : Double(min(saturation, 0.75)) * 0.8,
-                brightness: palette.isLight ? value : min(value * 1.25, 0.36) * floor
+                brightness: palette.isLight ? value : min(value * 1.25, 0.36) * brightnessScale
             )
             #else
             return fallback

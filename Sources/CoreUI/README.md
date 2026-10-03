@@ -20,8 +20,12 @@ cache that every feature module reuses. tvOS-only — guarded behind
   24 artwork-identity-keyed palettes. Replaced/cancelled sources cannot publish
   stale colours or clear another source. Only the background leaf observes the
   colour array; no full-screen clock, blur, or per-frame Home invalidation runs.
-  Reduce Motion disables the palette crossfade. Readable surfaces keep their
-  existing theme colours rather than inheriting artwork hues.
+  Reduce Motion disables the palette crossfade. Dark uses a softer wash and Black
+  retains more visible colour while staying darker; Light's palette is unchanged.
+  Settings groups blend their existing surface colour at 50% opacity over an
+  enabled gradient, keeping their border/shadow and opaque content. Gradient Off
+  or Reduce Transparency restores the solid surface. Other raised cards and
+  overlays keep their existing treatment.
 - **Focusable building blocks** — focus-aware buttons, cards, tab bars,
   parallax containers, brand QR code rendering, code-font numerals.
   Native card focus observation is separate from explicit focus requests.
@@ -51,8 +55,10 @@ cache that every feature module reuses. tvOS-only — guarded behind
 - **Continue Watching logo contrast** — logo-overlay cards use a 40% base
   artwork dim, reduced for dark artwork and increased by up to 25 percentage
   points when the logo blends into its background (65% maximum). The dim sits
-  behind the logo; existing color-preserving logo treatments and Home/detail
-  hero shading are unchanged.
+  behind the logo. Their logo subtree always uses the on-dark-artwork treatment,
+  independent of the page theme; coloured logos retain their palette. Home/detail
+  and Spotlight heroes still adapt monochrome ink to their own background, so
+  Light keeps dark hero logos.
 - **Series artwork identity** — episode-backed cards normalize through
   `MetadataQuery.seriesScoped` before creating a series artwork subject. Child
   IDs and Plex episode GUIDs must not become show IDs. Explicit series IDs,
