@@ -14,7 +14,6 @@ final class PlaybackOptionsRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.select)
 
         let zoom = app.buttons["player-settings-row-0"]
-        let amount = app.buttons["player-settings-row-20"]
         let speed = app.buttons["player-settings-row-2"]
         XCTAssertTrue(waitUntil { zoom.exists && zoom.hasFocus })
         XCUIRemote.shared.press(.down)
@@ -22,7 +21,6 @@ final class PlaybackOptionsRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.right)
         XCTAssertTrue(waitUntil { app.staticTexts["player-options-speed"].label == "1.55" })
         XCTAssertTrue(speed.hasFocus)
-        XCTAssertFalse(amount.exists)
         XCUIRemote.shared.press(.up)
         XCTAssertTrue(waitUntil { zoom.hasFocus })
         XCUIRemote.shared.press(.select)
@@ -38,23 +36,22 @@ final class PlaybackOptionsRemoteTests: XCTestCase {
         XCTAssertTrue(waitUntil { fill.exists && fill.hasFocus })
         XCUIRemote.shared.press(.down)
         XCTAssertTrue(waitUntil { custom.hasFocus })
-        XCUIRemote.shared.press(.right)
-        XCTAssertTrue(waitUntil { amount.exists && amount.hasFocus })
+        XCUIRemote.shared.press(.left)
+        XCTAssertTrue(waitUntil { app.staticTexts["player-zoom-percent"].label == "99" })
+        XCTAssertTrue(custom.hasFocus)
+        XCTAssertTrue(fit.exists && fill.exists, "Custom adjusts in the same Zoom Mode list.")
         XCUIRemote.shared.press(.right, forDuration: 0.8)
         let percent = try XCTUnwrap(Int(app.staticTexts["player-zoom-percent"].label))
         XCTAssertGreaterThan(percent, 101)
-        XCTAssertTrue(amount.hasFocus)
+        XCTAssertTrue(custom.hasFocus)
         XCTAssertEqual(app.staticTexts["subtitle-navigation-open-attempts"].label, "0")
 
-        XCTAssertFalse(zoom.exists, "Custom zoom has its own percentage screen.")
+        XCTAssertFalse(zoom.exists, "The Zoom Mode list replaces the parent menu.")
         XCUIRemote.shared.press(.playPause)
         XCTAssertTrue(waitUntil { app.staticTexts["player-options-play-pause"].label == "1" },
                       "The native input host must not swallow the player's Play/Pause command.")
         XCUIRemote.shared.press(.menu)
-        XCTAssertTrue(waitUntil { custom.exists && custom.hasFocus },
-                      "Back returns to the Zoom Mode list with Custom focused.")
-        XCUIRemote.shared.press(.menu)
-        XCTAssertTrue(waitUntil { zoom.exists && zoom.hasFocus && speed.exists && !amount.exists },
+        XCTAssertTrue(waitUntil { zoom.exists && zoom.hasFocus && speed.exists },
                       "Back returns to the same two Playback rows with Zoom Mode focused.")
         XCTAssertEqual(app.staticTexts["player-zoom-percent"].label, String(percent))
         XCUIRemote.shared.press(.menu)

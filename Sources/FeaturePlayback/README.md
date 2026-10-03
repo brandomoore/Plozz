@@ -104,9 +104,10 @@ path. None of these diagnostics change the audio selection policy.
 
 The tvOS Playback control replaces the standalone Speed control. Its two rows
 stay fixed: Playback Speed adjusts inline (0.25–2x, in 0.05 steps), while Zoom
-Mode opens a normal submenu. Fit and Fill apply and return; Custom opens a
-percentage adjustment (100–200%, in 1% steps). Back follows each submenu's parent
-and restores its entry row. The rows and native input scope are shared with
+Mode opens a normal submenu. Fit and Fill apply and return; Custom adjusts
+directly on its row (50–200%, in 1% steps), including values below 100% for
+zooming out. Back returns to Playback and restores the Zoom Mode row.
+The rows and native input scope are shared with
 subtitle appearance. All screens retain one native input host and menu width.
 The host forwards presentation environment values explicitly,
 not the outer SwiftUI graph's focus environment, which can retain duplicate

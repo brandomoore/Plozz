@@ -170,7 +170,6 @@ struct PlayerOptionsPanel: View {
                 let mode = zoomMode ?? model.videoZoom.settings.mode
                 return .row(PlaybackOptionsPane.modeSlot(mode))
             }
-            if playbackScreen == .customZoom { return .row(PlaybackOptionsPane.amountSlot) }
             if model.engineCapabilities.contains(.videoZoom) { return .row(PlaybackOptionsPane.zoomSlot) }
             if offersPlaybackSpeed, model.engineCapabilities.contains(.playbackSpeed) {
                 return .row(PlaybackOptionsPane.speedSlot)
@@ -504,7 +503,6 @@ struct PlayerOptionsPanel: View {
             switch playbackScreen {
             case .options: return category.title
             case .zoom: return "Zoom Mode"
-            case .customZoom: return "Custom Zoom"
             }
         }
         guard category == .subtitles else { return category.title }

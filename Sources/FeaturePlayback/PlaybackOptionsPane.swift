@@ -4,7 +4,6 @@ import SwiftUI
 
 struct PlaybackOptionsPane: View {
     static let zoomSlot = 0
-    static let amountSlot = 20
     static let speedSlot = 2
     static let customSlot = 12
 
@@ -64,19 +63,10 @@ struct PlaybackOptionsPane: View {
         offersPlaybackSpeed: Bool = true,
         openScreen: @escaping (PlayerControls.PlaybackScreen) -> Void
     ) -> [PlayerOptionsRowSpec] {
-        if screen == .customZoom {
-            return [.init(slot: Self.amountSlot, title: "Zoom Amount", kind: .number(
+        if screen == .zoom {
+            return [.init(slot: Self.customSlot, title: "Custom", kind: .number(
                 value: Text(Double(zoom.settings.customPercent) / 100, format: .percent.precision(.fractionLength(0))),
                 step: { zoom.setCustomPercent(zoom.settings.customPercent + $0) }
-            ))]
-        }
-        if screen == .zoom {
-            return [.init(slot: Self.customSlot, title: "Custom", kind: .submenu(
-                summary: Text(Double(zoom.settings.customPercent) / 100, format: .percent.precision(.fractionLength(0))),
-                open: {
-                    zoom.settings.mode = .custom
-                    openScreen(.customZoom)
-                }
             ))]
         }
         var rows: [PlayerOptionsRowSpec] = []

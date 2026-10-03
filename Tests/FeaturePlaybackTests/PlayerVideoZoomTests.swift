@@ -73,7 +73,7 @@ final class PlayerVideoZoomTests: XCTestCase {
         first.setCustomPercent(999)
         XCTAssertEqual(first.settings.customPercent, 200)
         first.setCustomPercent(-1)
-        XCTAssertEqual(first.settings.customPercent, 100)
+        XCTAssertEqual(first.settings.customPercent, 50)
         XCTAssertEqual(second.settings, PlayerVideoZoom())
     }
 
@@ -105,18 +105,14 @@ final class PlayerVideoZoomTests: XCTestCase {
         let choices = PlaybackOptionsPane.rows(
             model: model, zoom: model.videoZoom, actions: actions, screen: .zoom, openScreen: { opened.append($0) }
         )
-        guard case let .submenu(_, openCustom) = choices[0].kind else {
-            return XCTFail("Custom opens its own percentage screen.")
+        XCTAssertEqual(choices.map(\.slot), [PlaybackOptionsPane.customSlot])
+        guard case let .number(_, step) = choices[0].kind else {
+            return XCTFail("Custom must adjust directly on the Zoom Mode screen.")
         }
-        openCustom()
-        XCTAssertEqual(opened, [.zoom, .customZoom])
-        let custom = PlaybackOptionsPane.rows(
-            model: model, zoom: model.videoZoom, actions: actions, screen: .customZoom, openScreen: { _ in }
-        )
-        XCTAssertEqual(custom.map(\.slot), [PlaybackOptionsPane.amountSlot])
-        guard case let .number(_, step) = custom[0].kind else {
-            return XCTFail("Custom zoom must reuse the inline numeric adjustment.")
-        }
+        step(-10)
+        XCTAssertEqual(model.videoZoom.settings, PlayerVideoZoom(mode: .custom, customPercent: 90))
+        XCTAssertEqual(opened, [.zoom], "Adjusting Custom must not open another screen.")
+        step(10)
         step(34)
         XCTAssertEqual(model.videoZoom.settings.customPercent, 134)
         XCTAssertEqual(PlaybackOptionsPane.rows(
@@ -143,10 +139,6 @@ final class PlayerVideoZoomTests: XCTestCase {
         XCTAssertEqual(PlayerOptionsPanel.preferredFocus(
             for: .playback, subtitleScreen: .tracks, model: model, playbackScreen: .zoom
         ), .row(PlaybackOptionsPane.customSlot))
-        XCTAssertEqual(PlayerOptionsPanel.preferredFocus(
-            for: .playback, subtitleScreen: .tracks, model: model, playbackScreen: .customZoom
-        ), .row(PlaybackOptionsPane.amountSlot))
-        XCTAssertEqual(PlayerControls.PlaybackScreen.customZoom.parent, .zoom)
         XCTAssertEqual(PlayerControls.PlaybackScreen.zoom.parent, .options)
         model.engineCapabilities = []
         XCTAssertTrue(model.trackControlCategories.isEmpty)
@@ -183,6 +175,21 @@ final class PlayerVideoZoomTests: XCTestCase {
         host.update(zoom: PlayerVideoZoom())
         XCTAssertEqual(engine.output.frame, television)
         XCTAssertTrue(engine.transportCalls.isEmpty)
+    }
+
+    func testZoomOutInsetsThePictureWithoutInvertingIt() throws {
+        let zoom = PlayerVideoZoom(mode: .custom, customPercent: 90)
+        XCTAssertEqual(zoom.surfaceFrame(in: television, aspectRatio: 16 / 9),
+                       CGRect(x: 96, y: 54, width: 1728, height: 972))
+        XCTAssertEqual(zoom.videoRect(in: television, aspectRatio: 16 / 9),
+                       CGRect(x: 96, y: 54, width: 1728, height: 972))
+        let smallest = try XCTUnwrap(PlayerVideoZoom(mode: .custom, customPercent: -100)
+            .videoRect(in: television, aspectRatio: 4 / 3))
+        XCTAssertGreaterThan(smallest.width, 0)
+        XCTAssertGreaterThan(smallest.height, 0)
+        XCTAssertEqual(smallest.midX, television.midX)
+        XCTAssertEqual(smallest.midY, television.midY)
+        XCTAssertEqual(smallest.width / smallest.height, 4 / 3, accuracy: 0.0001)
     }
 
     func testRetiredVideoHostDoesNotResizeASurfaceAdoptedByAnotherHost() {

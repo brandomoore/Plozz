@@ -78,27 +78,21 @@ final class PlaybackOptionsHostedTests: XCTestCase {
             try self.assertFocusedText("Fit", in: window)
             probe.request(.row(PlaybackOptionsPane.customSlot))
             try await self.waitUntil { probe.focus == .row(PlaybackOptionsPane.customSlot) }
-            input.beginPress(.right)
+            input.beginPress(.left)
             input.stopRepeating()
-            try await self.waitUntil { probe.screen == .customZoom && probe.focus == .row(PlaybackOptionsPane.amountSlot) }
-            try await Task.sleep(for: .milliseconds(350))
-            try self.assertFocusedText("Zoom Amount", in: window)
+            try await self.waitUntil { probe.model.videoZoom.settings.customPercent == 99 }
+            XCTAssertEqual(probe.screen, .zoom)
+            XCTAssertEqual(probe.focus, .row(PlaybackOptionsPane.customSlot))
+            try self.assertFocusedText("Custom", in: window)
             input.beginPress(.right)
             try await self.waitUntil { probe.model.videoZoom.settings.customPercent >= 103 }
             input.stopRepeating()
             let percent = probe.model.videoZoom.settings.customPercent
             try await Task.sleep(for: .milliseconds(160))
             XCTAssertEqual(probe.model.videoZoom.settings.customPercent, percent)
-            try self.assertFocusedText("Zoom Amount", in: window)
-
-            self.attach(window, name: "Custom zoom submenu")
-
-            probe.backRequest += 1
-            try await self.waitUntil {
-                probe.screen == .zoom && probe.focus == .row(PlaybackOptionsPane.customSlot)
-            }
-            try await Task.sleep(for: .milliseconds(350))
             try self.assertFocusedText("Custom", in: window)
+
+            self.attach(window, name: "Zoom Mode with inline custom adjustment")
             probe.backRequest += 1
             try await self.waitUntil {
                 probe.screen == .options && probe.focus == .row(PlaybackOptionsPane.zoomSlot)

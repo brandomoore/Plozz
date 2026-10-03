@@ -85,7 +85,8 @@ final class VideoZoomPresentationTests: XCTestCase {
         let position = engine.currentTime
 
         for zoom in [PlayerVideoZoom(mode: .fill),
-                     PlayerVideoZoom(mode: .custom, customPercent: 150), PlayerVideoZoom()] {
+                     PlayerVideoZoom(mode: .custom, customPercent: 150),
+                     PlayerVideoZoom(mode: .custom, customPercent: 90), PlayerVideoZoom()] {
             controls.videoZoom.settings = zoom
             let expected = zoom.surfaceFrame(in: viewport.bounds, aspectRatio: engine.videoAspectRatio)
             try await waitUntil {

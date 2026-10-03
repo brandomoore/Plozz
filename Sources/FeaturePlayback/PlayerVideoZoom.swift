@@ -16,7 +16,7 @@ public struct PlayerVideoZoom: Equatable, Sendable {
         }
     }
 
-    public static let customPercentRange = 100...200
+    public static let customPercentRange = 50...200
     public var mode: Mode
     public let customPercent: Int
 
