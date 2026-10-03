@@ -1,5 +1,6 @@
 import XCTest
 import CoreModels
+import MetadataKit
 @testable import ProviderShare
 
 /// Direct tests for the Batch-4 extractions out of `ShareCatalogStore`:
@@ -107,6 +108,44 @@ final class ShareCatalogDecompositionTests: XCTestCase {
         XCTAssertNil(out.overview, "Episode must not inherit the series overview")
         XCTAssertEqual(out.seriesPosterURL, URL(string: "https://img/show.jpg"))
         XCTAssertNil(out.posterURL, "Series art is a fallback field, not the episode's own poster")
+    }
+
+    func testChildArtworkKeepsInheritedShowIDsInExplicitSeriesNamespaces() {
+        for kind in [MediaItemKind.episode, .season] {
+            var item = MediaItem(
+                id: "child", title: "Child", kind: kind, parentTitle: "The Show",
+                seriesID: "series:show", resumePosition: 120,
+                providerIDs: ["Tmdb": "child-tmdb", "Imdb": "ttChild", "SeriesTvdb": "trusted-show-tvdb"]
+            )
+            item.sourceAccountID = "share-account"
+            var record = EnrichmentRecord()
+            record.providerIDs = ["Tmdb": "show-tmdb", "Imdb": "ttShow", "Tvdb": "other-show-tvdb"]
+            record.logoURL = URL(string: "https://artwork.example.test/show-logo.png")
+            let projected = ShareCatalogReadProjection.applyEnrichment(item, record)
+            XCTAssertEqual(projected.providerID(.tmdb), "child-tmdb")
+            XCTAssertEqual(projected.providerID(.imdb), "ttChild")
+            XCTAssertEqual(projected.providerID(.seriesTmdb), "show-tmdb")
+            XCTAssertEqual(projected.providerID(.seriesImdb), "ttShow")
+            XCTAssertEqual(projected.providerID(.seriesTvdb), "trusted-show-tvdb")
+            XCTAssertEqual(MetadataQuery(projected).seriesScoped.providerIDs.providerID(.tmdb), "show-tmdb")
+            XCTAssertEqual(projected.logoURL, record.logoURL)
+            XCTAssertEqual(projected.id, item.id)
+            XCTAssertEqual(projected.sourceAccountID, item.sourceAccountID)
+            XCTAssertEqual(projected.resumePosition, item.resumePosition)
+        }
+    }
+
+    func testEpisodeNFOOverridesOnlyItsOwnIDNotTheInheritedSeriesIdentity() {
+        let episode = MediaItem(id: "f:episode.mkv", title: "Episode", kind: .episode, seriesID: "series:show")
+        var record = EnrichmentRecord()
+        record.providerIDs = ["Tmdb": "show-tmdb"]
+        let enriched = ShareCatalogReadProjection.applyEnrichment(episode, record)
+        let projected = ShareCatalogReadProjection.applyLocalMetadata(enriched, [
+            MetadataField(rawValue: "providerID.tmdb"): localRow(.localNFO, CatalogJSON.encode("episode-tmdb")!)
+        ])
+        XCTAssertEqual(projected.providerID(.tmdb), "episode-tmdb")
+        XCTAssertEqual(projected.providerID(.seriesTmdb), "show-tmdb")
+        XCTAssertEqual(MetadataQuery(projected).seriesScoped.providerIDs.providerID(.tmdb), "show-tmdb")
     }
 
     /// The "fallback field" the test above names must actually be populated.

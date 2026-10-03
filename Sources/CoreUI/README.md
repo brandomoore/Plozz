@@ -47,6 +47,10 @@ cache that every feature module reuses. tvOS-only — guarded behind
   misses stored under an episode ID; the image/memo caches remain shared.
   The textless-backdrop index also qualifies its account and series lookup, so
   a legacy ID-only miss cannot keep suppressing a newly resolvable logo.
+  Providers applying parent enrichment to episodes/seasons must publish the
+  inherited identifiers under `Series*` namespaces; unqualified IDs may identify
+  the child. Share catalog read projection adds these scopes before an episode's
+  local NFO overlays its own IDs, so persisted enrichment needs no rescan.
 - **Circadian Mode** — profile-scoped warmth/dimming still uses the window-wide
   multiply tint while active. Disabled, daytime, and zero-strength states remove
   the view and its filter rather than leave an opaque white layer above video.

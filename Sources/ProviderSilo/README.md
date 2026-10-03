@@ -70,6 +70,11 @@ disclosure instead of repeating the same instructions.
   Progress is read through the paged, library-scoped progress endpoint; Home's
   native next-up selections are corroborated before inclusion in a restricted
   library view. Versions use the original Silo file ID.
+  Parent series cards already present in the Home response fill missing episode
+  logos and `Series*` identities, including episodes also returned by progress.
+  The exact series relationship is checked; resume state and playable episode
+  IDs are not replaced. This reuses existing responses rather than adding a
+  parent lookup per card. Series-detail resume uses the same inheritance.
 - Playback requests a fixed file when the server advertises that optional
   extension. Older protocol-3 servers remain supported, but a returned plan
   naming a different file is always rejected and released. Signed stream and

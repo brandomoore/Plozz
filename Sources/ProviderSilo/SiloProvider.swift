@@ -160,9 +160,18 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
             } while cursor != nil && result.count < limit
         }
         let sections: SiloSections = try await client.request("/home/sections")
+        var parentSeries: [String: MediaItem] = [:]
         for section in sections.sections where ["continue_watching", "next_up"].contains(section.section_type) {
-            for dto in section.items where !seen.contains(dto.play_content_id ?? dto.content_id) {
-                var candidate = map(dto)
+            for dto in section.items {
+                let summary = map(dto)
+                if summary.kind == .series {
+                    var parent = parentSeries[summary.id] ?? summary
+                    if parent.logoURL == nil { parent.logoURL = summary.logoURL }
+                    parent.providerIDs.merge(summary.providerIDs) { first, _ in first }
+                    parentSeries[summary.id] = parent
+                }
+                guard !seen.contains(dto.play_content_id ?? dto.content_id) else { continue }
+                var candidate = summary
                 if let target = dto.play_content_id, target != dto.content_id { candidate = try await item(id: target) }
                 if let libraryIDs {
                     var membership: String?
@@ -180,6 +189,10 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
                 guard candidate.kind == .movie || candidate.kind == .episode else { continue }
                 if seen.insert(candidate.id).inserted { result.append(candidate) }
             }
+        }
+        for index in result.indices {
+            guard let seriesID = result[index].seriesID, let parent = parentSeries[seriesID] else { continue }
+            result[index] = inheritingSeriesArtwork(result[index], from: parent)
         }
         result.sort { ($0.lastPlayedAt ?? .distantPast) > ($1.lastPlayedAt ?? .distantPast) }
         return Array(result.prefix(limit))
@@ -334,6 +347,17 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
             lastPlayedAt: dto.progress_updated_at.flatMap(Self.date))
     }
 
+    private func inheritingSeriesArtwork(_ episode: MediaItem, from series: MediaItem) -> MediaItem {
+        guard episode.kind == .episode, series.kind == .series, episode.seriesID == series.id else { return episode }
+        var item = episode
+        if item.logoURL == nil {
+            item.logoURL = series.logoURL
+            artwork.record(item.logoURL, itemID: item.id, kind: .logo)
+        }
+        item.providerIDs.mergeSeriesProviderIDs(from: series.providerIDs)
+        return item
+    }
+
     static func date(_ value: String) -> Date? {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -383,7 +407,7 @@ extension SiloProvider: SeriesResumeProviding, SeriesIdentityProviding {
         guard let target = dto.play_content_id, target != seriesID else { return nil }
         let episode = try await item(id: target)
         guard episode.kind == .episode, episode.seriesID == seriesID else { throw AppError.invalidResponse }
-        return episode
+        return inheritingSeriesArtwork(episode, from: map(dto))
     }
 
     public func seriesProviderIDs(for seriesIDs: [String]) async throws -> [String: [String: String]] {

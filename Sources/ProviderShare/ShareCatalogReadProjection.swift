@@ -322,6 +322,9 @@ enum ShareCatalogReadProjection {
                 ids[k] = v
                 adopt(.providerID(k))
             }
+            if item.kind == .episode || item.kind == .season {
+                ids.mergeSeriesProviderIDs(from: rec.providerIDs)
+            }
             copy.providerIDs = ids
         }
         if (copy.overview?.isEmpty ?? true), item.kind != .episode, let overview = rec.overview {

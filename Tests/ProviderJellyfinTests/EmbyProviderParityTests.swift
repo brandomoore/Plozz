@@ -47,6 +47,33 @@ final class EmbyProviderParityTests: XCTestCase {
         XCTAssertTrue(provider.kind.usesMediaBrowserAPI)
     }
 
+    func testContinueWatchingUsesTheSeriesLogoForBothJellyfinAndEmby() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let http = StubHTTPClient()
+            http.stub(pathSuffix: "/Users/u1/Items/Resume", json: """
+            {"Items":[{"Id":"episode","Name":"Episode","Type":"Episode","SeriesId":"show",
+              "SeriesName":"The Show","ProviderIds":{"Tmdb":"episode-tmdb"},
+              "UserData":{"PlaybackPositionTicks":1200000000,"Played":false}}],"TotalRecordCount":1}
+            """)
+            http.stub(pathSuffix: "/Shows/NextUp", json: #"{"Items":[],"TotalRecordCount":0}"#)
+            http.stub(pathSuffix: "/Users/u1/Items", requiring: [URLQueryItem(name: "Ids", value: "show")],
+                      json: #"{"Items":[{"Id":"show","Name":"The Show","Type":"Series"}]}"#)
+            http.stub(pathSuffix: "/Users/u1/Items/show", json: """
+            {"Id":"show","Name":"The Show","Type":"Series","ImageTags":{"Logo":"revision"}}
+            """)
+            let provider = JellyfinProvider(session: makeSession(provider: kind), http: http)
+            let items = try await provider.continueWatching(limit: 10)
+            let episode = try XCTUnwrap(items.first)
+            let detail = try await provider.item(id: "show")
+            XCTAssertEqual(episode.logoURL?.path, detail.logoURL?.path)
+            XCTAssertTrue(episode.logoURL?.path.hasSuffix("/Items/show/Images/Logo") == true)
+            XCTAssertEqual(episode.id, "episode")
+            XCTAssertEqual(episode.providerID(.tmdb), "episode-tmdb")
+            XCTAssertEqual(episode.resumePosition, 120)
+            XCTAssertFalse(episode.isPlayed)
+        }
+    }
+
     func testUndatedNextUpUsesLatestEpisodeActivityWhenSeriesHasNoDate() async throws {
         for kind in [ProviderKind.jellyfin, .emby] {
             let stub = StubHTTPClient()
