@@ -78,10 +78,10 @@ final class SubtitleMenuAvailabilityTests: XCTestCase {
             PlayerTrackOption(id: 2, title: Text("French"), isSelected: false)
         ]
         model.subtitleDownload.canSearch = true
-        XCTAssertEqual(model.trackControlCategories, [.speed, .audio, .subtitles])
+        XCTAssertEqual(model.trackControlCategories, [.playback, .audio, .subtitles])
 
         model.subtitleDownload.canSearch = false
-        XCTAssertEqual(model.trackControlCategories, [.speed, .audio])
+        XCTAssertEqual(model.trackControlCategories, [.playback, .audio])
     }
 }
 
@@ -94,7 +94,7 @@ final class AudioMenuAvailabilityTests: XCTestCase {
         model.audioOptions = [.init(id: 1, title: Text("Dolby Digital 5.1"), isSelected: true)]
         XCTAssertFalse(model.hasSelectableAudio)
         XCTAssertFalse(model.hasAudioControls)
-        XCTAssertEqual(model.trackControlCategories, [.speed])
+        XCTAssertEqual(model.trackControlCategories, [.playback])
         XCTAssertEqual(model.audioOptions.count, 1, "Hiding the control must not discard track metadata")
     }
 

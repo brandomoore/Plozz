@@ -37,7 +37,7 @@ struct PlayerOptionsActions {
 ///  * **Options panel slot** — the now-playing title, which cross-fades to an open
 ///    options panel. It sits ABOVE the track-control row, so a menu always opens
 ///    over its own buttons rather than under them.
-///  * **Track controls** — Speed · Audio · Subtitles, directly above the scrub bar.
+///  * **Track controls** — Playback · Audio · Subtitles, directly above the scrub bar.
 ///    Reached by pressing **Up** from the scrub surface; Menu (or the idle
 ///    auto-hide) returns to the video, since nothing sits above them.
 ///  * **Scrub bar** — buffered/played fill + floating trickplay thumbnail.
@@ -64,7 +64,7 @@ struct PlayerControls: View {
     let onExitToSurface: () -> Void
 
     enum Category: Hashable {
-        case subtitles, audio, speed, sync, info, cast, episodes, playlist, version
+        case subtitles, audio, playback, sync, info, cast, episodes, playlist, version
 
         var title: LocalizedStringResource {
             switch self {
@@ -82,12 +82,7 @@ struct PlayerControls: View {
                     defaultValue: "Audio",
                     comment: "Tab in the in-player options panel listing audio tracks."
                 )
-            case .speed:
-                return LocalizedStringResource(
-                    "player.category.speed",
-                    defaultValue: "Speed",
-                    comment: "Tab in the in-player options panel for playback speed."
-                )
+            case .playback: return "Playback"
             case .sync:
                 return LocalizedStringResource(
                     "player.category.sync",
@@ -116,7 +111,7 @@ struct PlayerControls: View {
             case .version: return "rectangle.stack"
             case .subtitles: return "captions.bubble"
             case .audio: return "waveform"
-            case .speed: return "speedometer"
+            case .playback: return "slider.horizontal.3"
             case .sync: return "slider.horizontal.below.square.and.square.filled"
             case .info: return "info.circle"
             case .cast: return "person.2"
@@ -153,7 +148,7 @@ struct PlayerControls: View {
         case row(Int)
         case edit       // Subtitles header ✎ Edit (appearance) button
         case download   // Trailing "Search for subtitles…" row
-        case subBack    // Back control inside a Subtitles sub-screen
+        case subBack    // Back control inside an options sub-screen
         case subSync    // Subtitles header Sync (timing) button
     }
 
@@ -184,39 +179,25 @@ struct PlayerControls: View {
         }
     }
 
+    enum PlaybackScreen: Equatable {
+        case options, speed
+    }
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.plozzHDRDisplayActive) private var hdrDisplayActive
     @Environment(\.plozzReducePanelGlass) private var reducePanelGlass
 
     @State private var openPanel: Category?
     @State private var subtitleScreen: SubtitleScreen = .tracks
+    @State private var playbackScreen: PlaybackScreen = .options
     @FocusState private var focus: FocusSlot?
 
-    /// Named coordinate space spanning the WHOLE controls layer, so the Speed
-    /// button's leading edge can be measured in the same frame its panel — laid out
-    /// in a different sub-stack of the cluster — is positioned in.
-    private static let controlsSpace = "PlayerControlsLayer"
-
-    /// Coordinate space of the track-control row, which the options menus are
-    /// anchored to. See `trackControlButtons`.
-    private static let trackControlsSpace = "PlayerTrackControls"
-
-    /// Side margin of the controls layer. Subtracted from the whole-layer
-    /// measurement above so a panel aligned to a button lands in the cluster's own
-    /// content coordinates.
+    /// Side margin shared by the controls layer and its trailing options panels.
     private static let horizontalMargin: CGFloat = 60
 
     /// Extra lift under an open options panel so it clears the transport instead of
     /// sitting right on top of the scrub bar.
     private static let panelLift: CGFloat = 18
-
-    /// Measured leading-edge X of the Speed button, in `trackControlsSpace`. The
-    /// Speed panel left-aligns to this so it opens directly above its own button.
-    @State private var speedButtonLeading: CGFloat = 0
-
-    /// Measured width of the track-control row, so a button-aligned menu wider than
-    /// the row can be clamped instead of running off the screen.
-    @State private var trackControlsWidth: CGFloat = 0
 
     /// Measured top edge of the track-control row, in GLOBAL space, so the menus can
     /// sit just above the buttons while living outside the transport.
@@ -325,11 +306,6 @@ struct PlayerControls: View {
         }
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 0.3), value: styleEditing)
-        // One space across the whole layer: the Speed button and its panel sit in
-        // different sub-stacks of the cluster, so the alignment measurement has to
-        // cross them.
-        .coordinateSpace(name: Self.controlsSpace)
-        .onPreferenceChange(SpeedButtonLeadingKey.self) { speedButtonLeading = $0 }
         .background(
             GeometryReader { proxy in
                 Color.clear.preference(key: ControlsHeightKey.self, value: proxy.size.height)
@@ -492,6 +468,7 @@ struct PlayerControls: View {
             }
             model.controlBarActivity &+= 1
             subtitleScreen = .tracks
+            playbackScreen = .options
             guard let panel else {
                 // Panel fully closed. Reset the measured panel height so the next
                 // open snaps to its natural size instead of morphing from a stale
@@ -830,7 +807,7 @@ struct PlayerControls: View {
         }
     }
 
-    /// The track controls (Speed · Audio · Subtitles), at the trailing edge their
+    /// The track controls (Playback · Audio · Subtitles), at the trailing edge their
     /// panels open from. An open options panel floats above the whole transport, so
     /// the menu always sits above its own buttons.
     ///
@@ -849,18 +826,6 @@ struct PlayerControls: View {
                 .accessibilityIdentifier("player-control-\(category.icon)")
                 .focused($focus, equals: .button(category))
                 .disabled(entryLocksOut(.button(category)))
-                .background {
-                    // Publish the Speed button's leading edge so its panel can
-                    // open left-aligned to the button rather than the far edge.
-                    if category == .speed {
-                        GeometryReader { proxy in
-                            Color.clear.preference(
-                                key: SpeedButtonLeadingKey.self,
-                                value: proxy.frame(in: .named(Self.trackControlsSpace)).minX
-                            )
-                        }
-                    }
-                }
             }
         }
         .reportSubtitleControlsFrame(
@@ -894,14 +859,9 @@ struct PlayerControls: View {
         // horizontal offset between them.
         .disabled(openPanel != nil)
         .plozzFocusSection()
-        // The menus are anchored to this row, so the Speed button's leading edge is
-        // measured in ITS space — the offset that aligns the Speed menu to its own
-        // button is then just that number.
-        .coordinateSpace(name: Self.trackControlsSpace)
         .background(
             GeometryReader { proxy in
                 Color.clear
-                    .preference(key: TrackControlsWidthKey.self, value: proxy.size.width)
                     // GLOBAL, not the named controls space: the cluster carries an
                     // `.offset` for the Info reveal, and a named-space measurement is
                     // taken from the pre-transform layout, so the menus were placed
@@ -920,7 +880,6 @@ struct PlayerControls: View {
                     )
             }
         )
-        .onPreferenceChange(TrackControlsWidthKey.self) { trackControlsWidth = $0 }
         .onPreferenceChange(TrackControlsTopKey.self) { trackControlsTop = $0 }
     }
 
@@ -1228,7 +1187,8 @@ struct PlayerControls: View {
                     subtitleScreen: $subtitleScreen, heightCache: $cachedPanelHeight, focus: $focus,
                     close: { openPanel = nil }, backRequest: panelBackRequest,
                     maximumHeight: max(0, availableHeight - Self.horizontalMargin
-                        - (styleEditing ? Self.horizontalMargin : menuBottomInset))
+                        - (styleEditing ? Self.horizontalMargin : menuBottomInset)),
+                    playbackScreen: $playbackScreen
                 )
                 .reportSubtitleControlsFrame(
                     in: model.subtitleLayout, region: .menu, isVisible: model.controlsVisible && !styleEditing
@@ -1237,8 +1197,6 @@ struct PlayerControls: View {
                 .id(panel)
                     .plozzFocusSection()
                     .frame(maxWidth: .infinity, alignment: .trailing)
-                    // Horizontal placement, measured LEFTWARD from the trailing edge.
-                    .offset(x: -panelTrailingShift(for: panel))
                 if styleEditing { Spacer(minLength: 0) }
             }
             .padding(.horizontal, Self.horizontalMargin)
@@ -1487,23 +1445,12 @@ struct PlayerControls: View {
     /// onto `focus` in `onChange(of: openPanel)` via `restoreFocus`.
     private var preferredPanelFocus: FocusSlot? {
         guard let panel = openPanel else { return nil }
-        return PlayerOptionsPanel.preferredFocus(for: panel, subtitleScreen: subtitleScreen, model: model)
+        return PlayerOptionsPanel.preferredFocus(
+            for: panel, subtitleScreen: subtitleScreen, model: model, playbackScreen: playbackScreen
+        )
     }
 
     // MARK: Panels
-
-    /// How far LEFT of the button row's trailing edge a menu sits.
-    ///
-    /// Zero for the wide menus (Audio / Subtitles / Sync): they hang off that trailing
-    /// edge, growing leftward, which is what keeps them on screen — they are wider than
-    /// the row they're anchored to. Speed instead lines up with its own button, so it
-    /// shifts left by however far that button is from the trailing edge, and is clamped
-    /// so a menu wider than the remaining space can't push back out past the edge.
-    private func panelTrailingShift(for category: Category) -> CGFloat {
-        guard category == .speed, trackControlsWidth > 0 else { return 0 }
-        let fromTrailing = trackControlsWidth - speedButtonLeading
-        return max(0, fromTrailing - PlayerOptionsPanel.width(for: category, subtitleScreen: subtitleScreen))
-    }
 
     /// Whether the transport's chrome (title, buttons, scrub bar, tab) hides itself,
     /// leaving the live subtitles clear behind the full-height appearance editor.
@@ -1546,9 +1493,9 @@ struct PlayerControls: View {
     }
 
     private func handleExit() {
-        // Back out of a Subtitles sub-screen to the track list first; only then
-        // does Menu close the whole panel.
-        if openPanel == .subtitles && subtitleScreen != .tracks {
+        // Back returns from a submenu before closing its parent panel.
+        if (openPanel == .subtitles && subtitleScreen != .tracks)
+            || (openPanel == .playback && playbackScreen != .options) {
             panelBackRequest &+= 1
             return
         }
@@ -1674,7 +1621,7 @@ extension PlayerControlsModel {
     }
 
     /// The track controls the current engine/source can actually offer, in the
-    /// order the track row lays them out: Speed · Audio · **Subtitles** (Subtitles
+    /// order the track row lays them out: Playback · Audio · **Subtitles** (Subtitles
     /// nearest the trailing edge, where its panel opens from).
     ///
     /// Lives on the model rather than the view so `CustomPlayerContainer` can ask
@@ -1688,8 +1635,8 @@ extension PlayerControlsModel {
         if versions.isAvailable {
             result.append(.version)
         }
-        if engineCapabilities.contains(.playbackSpeed) {
-            result.append(.speed)
+        if !engineCapabilities.intersection([.playbackSpeed, .videoZoom]).isEmpty {
+            result.append(.playback)
         }
         if hasAudioControls {
             result.append(.audio)

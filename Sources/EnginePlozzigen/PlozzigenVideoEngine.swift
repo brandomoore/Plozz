@@ -104,6 +104,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     public var duration: TimeInterval { engine.duration }
 
     public var videoAspectRatio: Double? {
+        if let size = engine.softwareDisplaySize ?? engine.currentAVPlayer?.currentItem?.presentationSize,
+           size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 {
+            return Double(size.width / size.height)
+        }
         let width = Double(engine.sourceVideoWidth)
         let height = Double(engine.sourceVideoHeight)
         guard width > 0, height > 0 else { return nil }
@@ -236,7 +240,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     public var displayName: String { "Plozzigen" }
 
     public var capabilities: PlayerEngineCapabilities {
-        engine.videoRoute == .remoteBypass ? [.playbackSpeed] : [.playbackSpeed, .dualSubtitleDecode]
+        engine.videoRoute == .remoteBypass
+            ? [.playbackSpeed, .videoZoom]
+            : [.playbackSpeed, .dualSubtitleDecode, .videoZoom]
     }
 
     deinit {

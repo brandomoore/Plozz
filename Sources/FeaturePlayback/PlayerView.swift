@@ -289,7 +289,7 @@ public struct PlayerView: View {
             // surface. The bring-up spinner is a top-level overlay
             // (`showBringUpSpinner`) so it spans this and the `.ready`-but-
             // awaiting-first-frame window as one continuous indicator.
-            VideoSurfaceContainer(engine: viewModel.videoEngine)
+            VideoSurfaceContainer(engine: viewModel.videoEngine, zoom: viewModel.controls.videoZoom.settings)
                 .id(viewModel.engineToken)
                 .ignoresSafeArea()
 

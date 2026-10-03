@@ -648,7 +648,7 @@ public final class NativeVideoEngine: VideoEngine {
     /// Audio/subtitle delay are not exposed by AVPlayer in a useful way (it
     /// owns the audio mix in the asset graph), so we honestly opt out instead
     /// of pretending — the menu hides those rows for this engine.
-    public var capabilities: PlayerEngineCapabilities { [.playbackSpeed] }
+    public var capabilities: PlayerEngineCapabilities { [.playbackSpeed, .videoZoom] }
 
     /// Last requested speed, so a subsequent play() doesn't snap back to 1.0
     /// (AVPlayer resets rate to 1.0 on pause and on some item transitions).

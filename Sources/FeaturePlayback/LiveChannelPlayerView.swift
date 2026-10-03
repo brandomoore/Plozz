@@ -257,7 +257,7 @@ public struct LiveChannelPlayerView: View {
                     channelID: channelID,
                     input: input
                 )
-                VideoSurfaceContainer(engine: model.engine)
+                VideoSurfaceContainer(engine: model.engine, zoom: model.videoZoom.settings)
                     .ignoresSafeArea()
 
                 if sourceMatches, model.networkBlock == nil, !model.continuesExternally {
@@ -1025,6 +1025,7 @@ enum LiveChannelControl: Hashable {
     case openLibraryTitle
     /// The transport's hub, as the scrub bar is for VOD.
     case timeline
+    case playback
     case audio
     case subtitles
     case cardTab(LiveChannelCardTab)
@@ -1073,7 +1074,7 @@ enum LiveChannelPlaybackFocusPolicy {
         func contains(_ control: LiveChannelControl?) -> Bool {
             guard isPresented, let control else { return false }
             switch control {
-            case .previous, .next, .timeline, .audio, .subtitles, .cardTab, .cardExit,
+            case .previous, .next, .timeline, .playback, .audio, .subtitles, .cardTab, .cardExit,
                  .onNowItem, .trackRow, .playbackInfo:
                 return true
             case .playPause:
@@ -1360,6 +1361,7 @@ private final class LiveChannelPlayerTrackState {
 @Observable
 final class LiveChannelPlayerModel {
     let engine: any LiveChannelEngine
+    let videoZoom = PlayerVideoZoomModel()
     private let outputGroup: LiveChannelOutputGroup?
     private var outputPolicy: LiveChannelOutputPolicy
     private let outputID: UUID
@@ -1730,6 +1732,7 @@ final class LiveChannelPlayerModel {
         setSessionReporting(reporting, reset: changed)
         guard changed else { return }
 
+        if nextSource != source { videoZoom.settings = PlayerVideoZoom() }
         source = nextSource
         resetProgrammeTracks()
         isRecoveringProgramme = false

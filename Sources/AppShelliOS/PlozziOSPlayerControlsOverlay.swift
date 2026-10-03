@@ -8,6 +8,7 @@ import CoreUI
 
 private enum PlozziOSPlayerSheet: String, Identifiable {
     case speed
+    case zoom
     case subtitles
     case sync
     case quality
@@ -172,6 +173,12 @@ struct PlozziOSPlayerControlsOverlay: View {
                         presentedSheet = .speed
                         cancelAutoHide()
                     },
+                    supportsVideoZoom: !isPlayingElsewhere
+                        && viewModel.controls.engineCapabilities.contains(.videoZoom),
+                    onShowCustomZoom: {
+                        presentedSheet = .zoom
+                        cancelAutoHide()
+                    },
                     onShowSubtitles: {
                         presentedSheet = .subtitles
                         cancelAutoHide()
@@ -266,6 +273,8 @@ struct PlozziOSPlayerControlsOverlay: View {
             switch sheet {
             case .speed:
                 PlozziOSPlaybackSpeedSheet(viewModel: viewModel)
+            case .zoom:
+                PlayerZoomSettingsSheet(model: viewModel.controls.videoZoom)
             case .subtitles:
                 PlozziOSSubtitleOptionsSheet(viewModel: viewModel)
             case .sync:
@@ -518,6 +527,7 @@ private struct PlozziOSPlaybackOptionsMenu: View {
     let audioOptions: [PlayerTrackOption]
     let hasAudioControls: Bool
     let supportsPlaybackSpeed: Bool
+    let videoZoom: PlayerVideoZoomModel?
     let supportsSync: Bool
     let supportsDialogEnhance: Bool
     let dialogEnhanceEnabled: Bool
@@ -526,6 +536,7 @@ private struct PlozziOSPlaybackOptionsMenu: View {
     let onSelectAudio: (PlayerTrackOption.ID) -> Void
     let onSetDialogEnhance: (Bool) -> Void
     let onShowSpeed: () -> Void
+    let onShowCustomZoom: () -> Void
     let onShowSync: () -> Void
     let onShowQuality: () -> Void
     let onShowVersions: () -> Void
@@ -540,6 +551,9 @@ private struct PlozziOSPlaybackOptionsMenu: View {
 
     private func makeMenu() -> UIMenu {
         var items: [UIMenuElement] = []
+        if let videoZoom {
+            items.append(PlayerZoomMenu.make(model: videoZoom, locale: locale, onCustomZoom: onShowCustomZoom))
+        }
         if supportsVersions {
             items.append(action("Version", icon: "rectangle.stack", perform: onShowVersions))
         }
@@ -598,6 +612,8 @@ private struct PlozziOSPlayerTransport: View {
     let onPlayPause: () -> Void
     let onSkipForward: () -> Void
     let onShowSpeed: () -> Void
+    let supportsVideoZoom: Bool
+    let onShowCustomZoom: () -> Void
     let onShowSubtitles: () -> Void
     let onShowSync: () -> Void
     let onShowQuality: () -> Void
@@ -750,6 +766,7 @@ private struct PlozziOSPlayerTransport: View {
             audioOptions: viewModel.controls.hasSelectableAudio ? viewModel.controls.audioOptions : [],
             hasAudioControls: viewModel.controls.hasAudioControls,
             supportsPlaybackSpeed: viewModel.controls.engineCapabilities.contains(.playbackSpeed),
+            videoZoom: supportsVideoZoom ? viewModel.controls.videoZoom : nil,
             supportsSync: supportsSync,
             supportsDialogEnhance: supportsDialogEnhance,
             dialogEnhanceEnabled: viewModel.controls.dialogEnhanceEnabled,
@@ -764,6 +781,7 @@ private struct PlozziOSPlayerTransport: View {
                 onInteraction()
             },
             onShowSpeed: onShowSpeed,
+            onShowCustomZoom: onShowCustomZoom,
             onShowSync: onShowSync,
             onShowQuality: onShowQuality,
             onShowVersions: onShowVersions,

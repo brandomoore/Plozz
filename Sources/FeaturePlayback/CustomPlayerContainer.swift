@@ -115,26 +115,18 @@ struct CustomPlayerContainer: UIViewControllerRepresentable {
 /// can initialize before playback reaches `.ready`.
 struct VideoSurfaceContainer: UIViewRepresentable {
     let engine: any VideoEngine
+    var zoom = PlayerVideoZoom()
 
-    func makeUIView(context: Context) -> UIView {
-        let root = UIView(frame: .zero)
-        root.backgroundColor = .black
-        attachSurface(to: root)
+    func makeUIView(context: Context) -> VideoPresentationView {
+        let root = VideoPresentationView(frame: .zero)
+        root.attach(engine)
+        root.update(zoom: zoom)
         return root
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {
-        attachSurface(to: uiView)
-    }
-
-    private func attachSurface(to root: UIView) {
-        let surface = engine.makeVideoOutputView()
-        guard surface.superview !== root else { return }
-        surface.removeFromSuperview()
-        surface.frame = root.bounds
-        surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        surface.isUserInteractionEnabled = false
-        root.insertSubview(surface, at: 0)
+    func updateUIView(_ uiView: VideoPresentationView, context: Context) {
+        uiView.attach(engine)
+        uiView.update(zoom: zoom)
     }
 }
 
@@ -279,6 +271,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     private var subtitleClock: CADisplayLink?
 
     private let playerInputView = PlayerInputView()
+    private let videoPresentation = VideoPresentationView(frame: .zero)
 
     init(engine: any VideoEngine, model: PlayerControlsModel, actions: PlayerActions) {
         self.engine = engine
@@ -393,11 +386,11 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     /// Hosts the engine's bare video surface as the backmost, non-interactive
     /// layer. The engine keeps it fed across reloads, so we add it once.
     func attachVideoSurface() {
-        let surface = engine.makeVideoOutputView()
-        surface.frame = view.bounds
-        surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        surface.isUserInteractionEnabled = false
-        view.insertSubview(surface, at: 0)
+        videoPresentation.frame = view.bounds
+        videoPresentation.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        videoPresentation.attach(engine)
+        videoPresentation.update(zoom: model.videoZoom.settings)
+        view.insertSubview(videoPresentation, at: 0)
     }
 
     /// Mounts the owned subtitle overlay directly above the video surface (and
@@ -420,12 +413,9 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     }
 
     private func updateSubtitleVideoRect() {
+        videoPresentation.update(zoom: model.videoZoom.settings)
         guard let subtitleModel else { return }
-        let aspectRatio = engine.videoAspectRatio.map { CGFloat($0) }
-        let rect = SubtitleOverlayGeometry.aspectFitRect(
-            in: CGRect(origin: .zero, size: view.bounds.size),
-            aspectRatio: aspectRatio
-        )
+        let rect = videoPresentation.videoRect
         if subtitleModel.videoRect != rect {
             subtitleModel.videoRect = rect
         }

@@ -48,6 +48,8 @@ enum SubtitleOverlayGeometry {
     ) -> CGRect? {
         guard bounds.width > 0,
               bounds.height > 0,
+              bounds.width.isFinite, bounds.height.isFinite,
+              bounds.minX.isFinite, bounds.minY.isFinite,
               let aspectRatio,
               aspectRatio.isFinite,
               aspectRatio > 0 else {
@@ -248,21 +250,22 @@ private struct SubtitleSourcePositionLayout: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         guard let subview = subviews.first else { return }
+        let viewport = CGRect(origin: .zero, size: bounds.size)
         let safe = CGRect(
             x: videoRect.minX + videoRect.width * (titleSafeFraction + layout.margins.leading),
             y: videoRect.minY + videoRect.height * (titleSafeFraction + layout.margins.top),
             width: max(0, videoRect.width * (1 - 2 * titleSafeFraction - layout.margins.leading - layout.margins.trailing)),
             height: max(0, videoRect.height * (1 - 2 * titleSafeFraction - layout.margins.top - layout.margins.bottom))
-        )
+        ).intersection(viewport)
         let titleSafe = videoRect.insetBy(
             dx: videoRect.width * titleSafeFraction, dy: videoRect.height * titleSafeFraction
-        )
+        ).intersection(viewport)
         let width: CGFloat
         if let anchor = layout.anchor {
             width = SubtitleOverlayGeometry.anchoredWrapWidth(
                 anchor: anchor, alignment: layout.alignment,
-                preferred: layout.boxWidth.map { videoRect.width * CGFloat($0) } ?? videoRect.width * 0.92,
-                videoRect: videoRect, limits: titleSafe, minimum: videoRect.width * 0.25
+                preferred: min(titleSafe.width, layout.boxWidth.map { videoRect.width * CGFloat($0) } ?? videoRect.width * 0.92),
+                videoRect: videoRect, limits: titleSafe, minimum: min(titleSafe.width, videoRect.width * 0.25)
             )
         } else {
             width = min(safe.width, videoRect.width * 0.92)

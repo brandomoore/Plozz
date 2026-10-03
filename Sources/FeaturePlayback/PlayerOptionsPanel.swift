@@ -4,7 +4,7 @@ import CoreUI
 import SwiftUI
 
 /// The transport's floating options panel — Audio, Subtitles (with its Style,
-/// Sync and Download screens), Speed, A/V Sync and Version — as one component
+/// Sync and Download screens), Playback, A/V Sync and Version — as one component
 /// every player hosts, so a live channel's menus are the VOD player's menus.
 ///
 /// The host decides which menu is open, where the panel sits and where focus
@@ -17,6 +17,8 @@ struct PlayerOptionsPanel: View {
     typealias FocusSlot = PlayerControls.FocusSlot
     typealias SubtitleScreen = PlayerControls.SubtitleScreen
     typealias TrackRow = PlayerControls.TrackRow
+    typealias PlaybackScreen = PlayerControls.PlaybackScreen
+    static let standardWidth: CGFloat = 520
 
     let category: Category
     let model: PlayerControlsModel
@@ -25,13 +27,16 @@ struct PlayerOptionsPanel: View {
     /// Which Subtitles screen shows. The host owns it: it resets it on open and
     /// reads it to know when the Style editor is up.
     @Binding var subtitleScreen: SubtitleScreen
+    @Binding var playbackScreen: PlaybackScreen
+    let videoZoom: PlayerVideoZoomModel
+    let offersPlaybackSpeed: Bool
     /// Each menu's last measured height, remembered across opens so a reopen
     /// lays out at its settled size from the first frame (see `bodyHeight`).
     @Binding var heightCache: [Category: CGFloat]
     @FocusState.Binding var focus: FocusSlot?
     /// Closes the panel: a picked version plays straight away.
     let close: () -> Void
-    /// Bumped by the host's Menu handling to step back one Subtitles screen.
+    /// Bumped by the host's Menu handling to return from a submenu.
     let backRequest: Int
     /// Whether the host can show a second subtitle line (a live channel can't).
     let offersDualSubtitles: Bool
@@ -53,13 +58,19 @@ struct PlayerOptionsPanel: View {
         actions: PlayerOptionsActions, subtitleScreen: Binding<SubtitleScreen>,
         heightCache: Binding<[Category: CGFloat]>, focus: FocusState<FocusSlot?>.Binding,
         close: @escaping () -> Void, backRequest: Int, maximumHeight: CGFloat,
-        offersDualSubtitles: Bool = true
+        offersDualSubtitles: Bool = true,
+        playbackScreen: Binding<PlaybackScreen> = .constant(.options),
+        videoZoom: PlayerVideoZoomModel? = nil,
+        offersPlaybackSpeed: Bool = true
     ) {
         self.category = category
         self.model = model
         self.palette = palette
         self.actions = actions
         _subtitleScreen = subtitleScreen
+        _playbackScreen = playbackScreen
+        self.videoZoom = videoZoom ?? model.videoZoom
+        self.offersPlaybackSpeed = offersPlaybackSpeed
         _heightCache = heightCache
         _focus = focus
         self.close = close
@@ -79,8 +90,11 @@ struct PlayerOptionsPanel: View {
     var body: some View {
         morphingPanel(for: category)
             .onChange(of: backRequest) { _, _ in
-                guard category == .subtitles, subtitleScreen != .tracks else { return }
-                openSubtitleScreen(subtitleScreen.parent)
+                if category == .subtitles, subtitleScreen != .tracks {
+                    openSubtitleScreen(subtitleScreen.parent)
+                } else if category == .playback, playbackScreen != .options {
+                    openPlaybackScreen(.options)
+                }
             }
             .onChange(of: model.subtitleDownload.state) { _, state in
                 // When search results land (async) while the Download screen is open,
@@ -101,7 +115,8 @@ struct PlayerOptionsPanel: View {
     var preferredFocus: FocusSlot? {
         Self.preferredFocus(
             for: category, subtitleScreen: subtitleScreen, model: model,
-            offersDualSubtitles: offersDualSubtitles
+            offersDualSubtitles: offersDualSubtitles, playbackScreen: playbackScreen,
+            offersPlaybackSpeed: offersPlaybackSpeed
         )
     }
 
@@ -110,7 +125,9 @@ struct PlayerOptionsPanel: View {
     /// right control for each Subtitles screen. Card tabs land on their tab.
     static func preferredFocus(
         for panel: Category, subtitleScreen: SubtitleScreen, model: PlayerControlsModel,
-        offersDualSubtitles: Bool = true
+        offersDualSubtitles: Bool = true,
+        playbackScreen: PlaybackScreen = .options,
+        offersPlaybackSpeed: Bool = true
     ) -> FocusSlot? {
         switch panel {
         case .info, .cast, .episodes, .playlist:
@@ -147,7 +164,16 @@ struct PlayerOptionsPanel: View {
             case .styleOutline, .styleBackground, .styleFileFormatting:
                 return .row(0)
             }
-        case .audio, .speed, .version:
+        case .playback:
+            if playbackScreen == .speed {
+                return .row(selectedRowIndex(for: .playback, model: model))
+            }
+            if model.engineCapabilities.contains(.videoZoom) { return .row(PlaybackOptionsPane.zoomSlot) }
+            if offersPlaybackSpeed, model.engineCapabilities.contains(.playbackSpeed) {
+                return .row(PlaybackOptionsPane.speedSlot)
+            }
+            return nil
+        case .audio, .version:
             return .row(selectedRowIndex(for: panel, model: model))
         case .sync:
             if model.engineCapabilities.contains(.audioDelay) { return .row(0) }
@@ -164,24 +190,21 @@ struct PlayerOptionsPanel: View {
         DispatchQueue.main.async { focus = slot }
     }
 
-    /// Fixed width for an open control panel, per category. Most menus share a
-    /// roomy 520pt column; the Speed menu only holds short preset labels
-    /// ("1.25×") and a compact stepper, so it uses roughly half the width to
-    /// avoid a mostly-empty panel.
+    /// Playback keeps its parent width in Speed so the Back control and localized
+    /// title fit without wrapping or moving the menu's horizontal anchor.
     func panelWidth(for category: Category) -> CGFloat {
         Self.width(for: category, subtitleScreen: subtitleScreen)
     }
 
     static func width(for category: Category, subtitleScreen: SubtitleScreen) -> CGFloat {
         switch category {
-        case .speed: return 260
         case .version: return 860
         // The Download screen lists scene-release filenames; it's wider than the
         // other menus, and the title marquee-scrolls the rest on focus, so it needs
         // room to be readable without being absurdly wide.
         case .subtitles where subtitleScreen == .download: return 860
         case .subtitles: return SubtitleStylePanel.panelWidth
-        default: return 520
+        default: return standardWidth
         }
     }
 
@@ -256,6 +279,7 @@ struct PlayerOptionsPanel: View {
         // explicit `withAnimation` in `openSubtitleScreen` + the height morph in
         // `onPreferenceChange` — both of which sit OUTSIDE this nil scope.
         .animation(nil, value: subtitleScreen)
+        .animation(nil, value: playbackScreen)
         .frame(width: panelWidth(for: category), alignment: .leading)
         // Stay inside the host even before the header's first measurement. Keep
         // short menus content-sized instead of stretching them to this ceiling.
@@ -293,7 +317,8 @@ struct PlayerOptionsPanel: View {
             // the pre-measure→measured swap (see heightCache). For Subtitles only
             // cache the tracks-list height — a fresh open always starts on the track list,
             // so we must not seed it with the taller Style-editor height.
-            if panel != .subtitles || subtitleScreen == .tracks {
+            if (panel != .subtitles || subtitleScreen == .tracks)
+                && (panel != .playback || playbackScreen == .options) {
                 heightCache[panel] = newHeight
             }
             if measuredFor != panel {
@@ -385,7 +410,13 @@ struct PlayerOptionsPanel: View {
             .padding(.horizontal, 14)
         case .subtitles: subtitleBody
         case .audio: AudioPaneView(rows: Self.audioRows(model: model, actions: actions), palette: palette, focus: $focus)
-        case .speed: SpeedPaneView(model: model, palette: palette, actions: actions, focus: $focus)
+        case .playback:
+            PlaybackOptionsPane(
+                model: model, zoom: videoZoom, palette: palette, actions: actions,
+                screen: playbackScreen, focus: $focus,
+                offersPlaybackSpeed: offersPlaybackSpeed,
+                openSpeed: { openPlaybackScreen(.speed) }
+            )
         case .sync: SyncPaneView(model: model, actions: actions, focus: $focus)
         // Card tabs render in the bottom card, never in the floating menu.
         case .info, .cast, .episodes, .playlist: EmptyView()
@@ -401,9 +432,14 @@ struct PlayerOptionsPanel: View {
             // On a Subtitles sub-screen (Style / Download), the Back control lives
             // in the header — leading the title — so it mirrors the other menus
             // rather than floating inside the scrollable content.
-            if category == .subtitles && subtitleScreen != .tracks {
+            if (category == .subtitles && subtitleScreen != .tracks)
+                || (category == .playback && playbackScreen != .options) {
                 Button {
-                    openSubtitleScreen(subtitleScreen.parent)
+                    if category == .playback {
+                        openPlaybackScreen(.options)
+                    } else {
+                        openSubtitleScreen(subtitleScreen.parent)
+                    }
                 } label: {
                     Image(systemName: "chevron.backward")
                 }
@@ -414,7 +450,9 @@ struct PlayerOptionsPanel: View {
                 // leading edge, concentric with the rounded corner.
                 .padding(.leading, -10)
             }
-            Text(Self.headerTitle(for: category, subtitleScreen: subtitleScreen))
+            Text(Self.headerTitle(
+                for: category, subtitleScreen: subtitleScreen, playbackScreen: playbackScreen
+            ))
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(.white)
             Spacer(minLength: 12)
@@ -455,7 +493,11 @@ struct PlayerOptionsPanel: View {
         .plozzFocusSection()
     }
 
-    static func headerTitle(for category: Category, subtitleScreen: SubtitleScreen) -> LocalizedStringResource {
+    static func headerTitle(
+        for category: Category, subtitleScreen: SubtitleScreen,
+        playbackScreen: PlaybackScreen = .options
+    ) -> LocalizedStringResource {
+        if category == .playback, playbackScreen == .speed { return "Playback Speed" }
         guard category == .subtitles else { return category.title }
         switch subtitleScreen {
         case .tracks: return category.title
@@ -556,6 +598,13 @@ struct PlayerOptionsPanel: View {
         .buttonStyle(PlayerMenuRowButtonStyle())
         .focusEffectDisabled()
         .focused($focus, equals: .download)
+    }
+
+    private func openPlaybackScreen(_ screen: PlaybackScreen) {
+        withAnimation(.easeInOut(duration: 0.28)) {
+            playbackScreen = screen
+        }
+        restoreFocus(screen == .options ? .row(PlaybackOptionsPane.speedSlot) : preferredFocus)
     }
 
     private func openSubtitleScreen(_ screen: SubtitleScreen) {
@@ -680,7 +729,7 @@ struct PlayerOptionsPanel: View {
             return subtitleRows(model: model, actions: actions).first(where: { $0.isSelected })?.id ?? 0
         case .audio:
             return audioRows(model: model, actions: actions).first(where: { $0.isSelected })?.id ?? 0
-        case .speed:
+        case .playback:
             return PlayerControls.speedPresets.firstIndex(where: { abs(model.playbackSpeed - $0) < 0.001 }) ?? 0
         case .sync:
             return 0

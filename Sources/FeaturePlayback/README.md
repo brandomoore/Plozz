@@ -100,6 +100,33 @@ loopback throughput must not be called the media server's network rate.
 plus the pipeline snapshot identify the engine's actual audio track and delivery
 path. None of these diagnostics change the audio selection policy.
 
+## Playback options and zoom
+
+The tvOS Playback control replaces the standalone Speed control. Zoom Mode is
+an inline left/right choice using the same rows and native input scope as
+subtitle appearance. Custom reveals a Zoom Amount row (100–200%, in 1% steps).
+Playback Speed opens the existing fine-control/presets screen; Back returns to
+its entry row, then closes the menu. Both screens retain one native input host
+and menu width. The host forwards presentation environment values explicitly,
+not the outer SwiftUI graph's focus environment, which can retain duplicate
+highlights. Mobile adds Zoom Mode to its existing native
+playback menu. Live TV offers the same zoom controls without playback-speed changes.
+
+Fit is the default. Fill crops proportionally; Custom enlarges the fitted frame
+to handle bars encoded into the source. `VideoPresentationView` resizes and clips
+only the stable video surface, without restarting playback or processing frames.
+The subtitle overlay uses the same displayed-video rectangle for source-positioned
+and bitmap cues; ordinary text size, screen position, and transport geometry stay
+independent. Plozzigen uses the software renderer's displayed size or the native
+item's presentation size before falling back to coded dimensions.
+
+Zoom belongs to the current player session, not a global/profile preference.
+A new VOD player or a different live channel starts at Fit. PiP and AirPlay retain
+their system-owned presentation rather than inheriting this local viewport crop.
+Hosted coverage includes a synthetic 720x576 H.264 fixture with 64:45 sample
+aspect (16:9 display), checking real native and software playback without changing
+the video layer, playback position, or subtitle text geometry.
+
 ## Subtitle appearance
 
 `Match Apple TV Subtitle Style` (`Match Device Subtitle Style` on mobile)

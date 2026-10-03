@@ -27,7 +27,11 @@ final class PlayerOptionsPanelIntegrationTests: XCTestCase {
         XCTAssertEqual(Screen.styleDual.parent, .style)
         XCTAssertEqual(PlayerOptionsPanel.width(for: .subtitles, subtitleScreen: .download), 860)
         XCTAssertEqual(PlayerOptionsPanel.width(for: .version, subtitleScreen: .tracks), 860)
-        XCTAssertEqual(PlayerOptionsPanel.width(for: .speed, subtitleScreen: .tracks), 260)
+        XCTAssertEqual(PlayerOptionsPanel.width(for: .playback, subtitleScreen: .tracks), 520)
+        XCTAssertEqual(
+            String(localized: PlayerOptionsPanel.headerTitle(for: .playback, subtitleScreen: .tracks, playbackScreen: .speed)),
+            String(localized: LocalizedStringResource("Playback Speed"))
+        )
         XCTAssertFalse(Screen.sync.isStyleFamily)
         XCTAssertEqual(
             String(localized: PlayerOptionsPanel.headerTitle(for: .subtitles, subtitleScreen: .styleSystemFont)),
@@ -163,7 +167,8 @@ final class PlayerOptionsPanelIntegrationTests: XCTestCase {
         XCTAssertEqual(events, ["close", "alternate"])
         XCTAssertEqual(PlayerOptionsPanel.preferredFocus(for: .version, subtitleScreen: .tracks, model: model), .row(0))
         model.playbackSpeed = 1.5
-        XCTAssertEqual(PlayerOptionsPanel.preferredFocus(for: .speed, subtitleScreen: .tracks, model: model),
+        XCTAssertEqual(PlayerOptionsPanel.preferredFocus(
+            for: .playback, subtitleScreen: .tracks, model: model, playbackScreen: .speed),
                        .row(PlayerControls.speedPresets.firstIndex(of: 1.5)!))
         model.engineCapabilities = []
         XCTAssertNil(PlayerOptionsPanel.preferredFocus(for: .sync, subtitleScreen: .tracks, model: model))

@@ -8,7 +8,7 @@ import XCTest
 
 @MainActor
 final class SubtitleStyleRepeatHostedTests: XCTestCase {
-    private typealias Scope = SubtitleStyleFocusScope<EmptyView>
+    private typealias Scope = PlayerOptionsFocusScope<EmptyView, PlayerControls.SubtitleScreen>
     private typealias Controller = Scope.Controller
 
     func testInlineSubtitleEditorOwnsInputEvenWithoutAPresentation() async throws {

@@ -8,14 +8,14 @@ import CoreModels
 /// Background / Dual Subtitles) over the running video so every tweak previews
 /// instantly on the real subtitles behind the panel.
 ///
-/// It owns only the appearance-editing content and its hold-to-accelerate ramp
-/// (`styleAccelerator`); the panel morph + focus-restore choreography stays in
+/// It owns the appearance-editing content; adjustable rows share the player's
+/// native input scope. The panel morph + focus-restore choreography stays in
 /// `PlayerControls` and is reached through the injected `openScreen` closure
 /// (which forwards to the parent's `openSubtitleScreen`, preserving the deferred
 /// focus write). Edits funnel through `updateStyle` -> `actions.setSubtitleStyle`
 /// exactly as before, so live preview + profile persistence are unchanged.
 struct SubtitleStylePanel: View {
-    static let panelWidth: CGFloat = 520
+    static let panelWidth = PlayerOptionsPanel.standardWidth
 
     /// Which style sub-screen to render (style / styleFont / styleOutline /
     /// styleBackground / styleDual). Non-style screens are never routed here.
@@ -33,10 +33,6 @@ struct SubtitleStylePanel: View {
     /// live channel) the Dual Subtitles entry is left out.
     var offersDualSubtitles = true
 
-    /// Hold-to-accelerate state for the numeric style rows (see the field in the
-    /// former PlayerControls home). Lives here because only `handleStyleMove`
-    /// touches it.
-    @State private var styleAccelerator = SubtitleStyleAccelerator()
     @State private var systemStyleConfirmation = SystemCaptionStyleConfirmation()
     @Environment(\.locale) private var locale
     private var effectiveStyle: SubtitleStyle { SystemCaptionStyle.shared.resolved(model.subtitleStyle) }
@@ -78,25 +74,7 @@ struct SubtitleStylePanel: View {
         }
     }
 
-    struct StyleRowSpec: Identifiable {
-        enum Kind {
-            /// Numeric range: ←/→ step (hold to accelerate), Select nudges up one.
-            /// `step` moves by a signed number of grid indices, clamped at the ends.
-            case number(value: Text, step: (Int) -> Void)
-            /// Small enum: Select cycles next (wrap); ←/→ cycle; no ± glyphs.
-            case choice(value: Text, prev: () -> Void, next: () -> Void)
-            /// On/off: Select flips.
-            case toggle(isOn: Bool, flip: () -> Void)
-            /// Opens a detail sub-screen: Select or Right opens; shows a `›` chevron.
-            case submenu(summary: Text, open: () -> Void)
-            /// One-shot: Select runs it.
-            case action(run: () -> Void)
-        }
-        let slot: Int
-        let title: LocalizedStringResource
-        let kind: Kind
-        var id: Int { slot }
-    }
+    typealias StyleRowSpec = PlayerOptionsRowSpec
 
     /// The live subtitle-appearance editor, hosted over the running video so every
     /// tweak previews instantly on the real subtitles behind the panel. Each row is
@@ -116,34 +94,12 @@ struct SubtitleStylePanel: View {
     private func styleInputScope<Content: View>(
         _ rows: [StyleRowSpec], @ViewBuilder content: () -> Content
     ) -> some View {
-        #if os(tvOS)
-        SubtitleStyleFocusScope(
-            content: content(),
+        PlayerOptionsInputScope(
             screen: screen,
-            adjustableRow: {
-                guard case let .row(slot)? = focus,
-                      let row = rows.first(where: { $0.slot == slot }) else { return nil }
-                switch row.kind {
-                case .number, .choice: return slot
-                default: return nil
-                }
-            },
-            submenuRow: {
-                guard case let .row(slot)? = focus,
-                      let row = rows.first(where: { $0.slot == slot }),
-                      case .submenu = row.kind else { return nil }
-                return slot
-            },
-            onMove: { direction, isRepeat in
-                if !isRepeat {
-                    styleAccelerator = SubtitleStyleAccelerator()
-                }
-                handleStyleMove(direction, rows: rows)
-            }
+            rows: rows,
+            focus: $focus,
+            content: content()
         )
-        #else
-        content()
-        #endif
     }
 
     private func styleRows(_ rows: [StyleRowSpec], dividerBefore: Int?) -> some View {
@@ -154,7 +110,10 @@ struct SubtitleStylePanel: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 6)
                 }
-                styleRow(row)
+                PlayerOptionsRow(
+                    row: row, palette: palette, focus: $focus,
+                    titleLineLimit: screen == .style && row.slot == 0 ? 2 : 1
+                )
                 if screen == .style, row.slot == 0 {
                     PlozzDivider()
                         .padding(.horizontal, 16)
@@ -172,106 +131,6 @@ struct SubtitleStylePanel: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .top)
-    }
-
-    /// One rendered row, laid out to match the track/audio rows exactly: a full-width
-    /// Button with the title hard-left and the value/glyph hard-right, so titles and
-    /// values carry equal edge gutters. Steppers reveal −/+ flanking the value on
-    /// focus; submenus show a trailing chevron.
-    @ViewBuilder
-    private func styleRow(_ row: StyleRowSpec) -> some View {
-        let isFocused = focus == .row(row.slot)
-        Button {
-            switch row.kind {
-            case let .number(_, step): step(1)
-            case let .choice(_, _, next): next()
-            case let .toggle(_, flip): flip()
-            case let .submenu(_, open): open()
-            case let .action(run): run()
-            }
-        } label: {
-            // Mirror the track/audio rows exactly: title hard-left, a Spacer, and
-            // the value/glyph hard-right against the same trailing padding the
-            // checkmark uses. Title and trailing element therefore carry equal edge
-            // gutters (no extra leading slot pushing the title in).
-            HStack(spacing: 10) {
-                Text(row.title)
-                    .font(.body)
-                    .lineLimit(screen == .style && row.slot == 0 ? 2 : 1)
-                    .multilineTextAlignment(.leading)
-                Spacer(minLength: 8)
-                styleRowTrailing(row, isFocused: isFocused)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(PlayerMenuRowButtonStyle())
-        .focusEffectDisabled()
-        .focused($focus, equals: .row(row.slot))
-    }
-
-    @ViewBuilder
-    private func styleRowTrailing(_ row: StyleRowSpec, isFocused: Bool) -> some View {
-        HStack(spacing: 8) {
-            // − appears on focus for steppers, immediately left of the value.
-            if case .number = row.kind, isFocused {
-                Image(systemName: "minus").font(.body.weight(.semibold))
-            }
-
-            styleRowValue(row)
-
-            // + on focus for steppers, or a persistent chevron for submenus — both
-            // sit at the trailing edge, exactly where the track rows put their
-            // checkmark, so the value column hugs the right like every other menu.
-            switch row.kind {
-            case .number:
-                if isFocused { Image(systemName: "plus").font(.body.weight(.semibold)) }
-            case .submenu:
-                Image(systemName: "chevron.forward")
-                    .font(.footnote.weight(.semibold))
-                    .playerMenuRowSecondary()
-            default:
-                EmptyView()
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func styleRowValue(_ row: StyleRowSpec) -> some View {
-        switch row.kind {
-        case let .number(value, _):
-            value.font(.body).monospacedDigit().playerMenuRowSecondary()
-        case let .choice(value, _, _):
-            value.font(.body).lineLimit(2).multilineTextAlignment(.trailing).playerMenuRowSecondary()
-        case let .toggle(isOn, _):
-            Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
-                .font(.body)
-                .playerMenuRowMark(isSelected: isOn, accent: palette.accent)
-        case let .submenu(summary, _):
-            summary.font(.body).playerMenuRowSecondary()
-        case .action:
-            EmptyView()
-        }
-    }
-
-    private func handleStyleMove(_ direction: PlozzMoveCommandDirection, rows: [StyleRowSpec]) {
-        guard case let .row(slot)? = focus,
-              let row = rows.first(where: { $0.slot == slot }) else { return }
-        switch (direction, row.kind) {
-        case let (.left, .number(_, step)):
-            step(-styleAccelerator.magnitude(slot: slot, sign: -1))
-        case let (.right, .number(_, step)):
-            step(styleAccelerator.magnitude(slot: slot, sign: 1))
-        case let (.left, .choice(_, prev, _)):
-            prev()
-        case let (.right, .choice(_, _, next)):
-            next()
-        case let (.right, .submenu(_, open)):
-            open()
-        default:
-            break
-        }
     }
 
     // MARK: Per-screen row builders
@@ -377,7 +236,7 @@ struct SubtitleStylePanel: View {
             PlozzDivider()
                 .padding(.horizontal, 16)
                 .padding(.vertical, 6)
-            styleRow(systemFontRow)
+            PlayerOptionsRow(row: systemFontRow, palette: palette, focus: $focus)
                 .font(.body)
         }
         .padding(.horizontal, 14)

@@ -93,6 +93,7 @@ struct LiveChannelOverlay: View {
     @Environment(\.playerCardMetrics) private var metrics
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.themePalette) private var palette
+    @Environment(\.locale) private var locale
     @State private var openMenu: LiveChannelTrackMenuKind?
     @State private var menuReturnFocus: LiveChannelControl?
     /// The VOD player's options panel, fed the channel's tracks: its model, the
@@ -100,6 +101,9 @@ struct LiveChannelOverlay: View {
     /// steps it back, and the focus inside it.
     @State private var trackOptions = PlayerControlsModel()
     @State private var subtitleScreen: PlayerControls.SubtitleScreen = .tracks
+    @State private var playbackScreen: PlayerControls.PlaybackScreen = .options
+    @State private var nativePlaybackMenuPresented = false
+    @State private var showsCustomZoom = false
     @State private var panelHeights: [PlayerControls.Category: CGFloat] = [:]
     @State private var panelBackRequest = 0
     @FocusState private var panelFocus: PlayerControls.FocusSlot?
@@ -138,7 +142,9 @@ struct LiveChannelOverlay: View {
         .animation(.easeInOut(duration: 0.3), value: styleEditing)
         .onChange(of: trackOptionsSource, initial: true) { _, source in syncTrackOptions(source) }
         .onChange(of: focus) { _, control in focusChanged(control) }
-        .onChange(of: openMenu != nil || cardOpen) { _, pinned in onTracksPresentationChange(pinned) }
+        .onChange(of: openMenu != nil || cardOpen || nativePlaybackMenuPresented || showsCustomZoom) { _, pinned in
+            onTracksPresentationChange(pinned)
+        }
         .onChange(of: cardOpen && cardTab == .guide) { _, showing in onGuideCardChange(showing) }
         .onChange(of: pendingGuideOpen, initial: true) { _, pending in
             guard pending else { return }
@@ -157,6 +163,11 @@ struct LiveChannelOverlay: View {
             }
         }
         .onDisappear { onTracksPresentationChange(false) }
+        #if os(iOS)
+        .sheet(isPresented: $showsCustomZoom) {
+            PlayerZoomSettingsSheet(model: tracks.videoZoom)
+        }
+        #endif
         #if os(tvOS)
         .onExitCommand(perform: handleExit)
         .background(TVFocusActivityObserver(onActivity: onControlActivity))
@@ -482,7 +493,9 @@ struct LiveChannelOverlay: View {
                     - (styleEditing ? Self.horizontalMargin : menuBottomInset)
             ),
             // A live channel draws one subtitle line.
-            offersDualSubtitles: false
+            offersDualSubtitles: false,
+            playbackScreen: $playbackScreen, videoZoom: tracks.videoZoom,
+            offersPlaybackSpeed: false
         )
         .reportSubtitleControlsFrame(in: tracks.subtitles.controlsLayout, region: .menu, isVisible: !styleEditing)
         .id(kind)
@@ -498,6 +511,9 @@ struct LiveChannelOverlay: View {
 
     /// Subtitles once the stream offers any, as VOD.
     private var showsSubtitles: Bool { !tracks.subtitleTracks.isEmpty }
+    private var showsZoom: Bool {
+        tracks.engine.capabilities.contains(.videoZoom) && !tracks.continuesExternally
+    }
 
     /// VOD's track-control badges, plus the live-only actions.
     private var badges: some View {
@@ -509,6 +525,13 @@ struct LiveChannelOverlay: View {
                     control: .goLive, prominent: true, action: onGoLive
                 )
                 .accessibilityIdentifier("live-channel-go-live")
+            }
+            if showsZoom {
+                badge(
+                    LiveChannelTrackMenuKind.playback.title, systemImage: LiveChannelTrackMenuKind.playback.icon,
+                    control: .playback, prominent: openMenu == .playback
+                ) { toggleMenu(.playback) }
+                    .accessibilityIdentifier("live-channel-playback")
             }
             if showsAudio {
                 badge(
@@ -950,6 +973,7 @@ struct LiveChannelOverlay: View {
         }
         menuReturnFocus = focus ?? kind.control
         subtitleScreen = .tracks
+        playbackScreen = .options
         openMenu = kind
         // After tvOS's own default-focus pass over the new rows — see
         // `PlayerControls.restoreFocus`.
@@ -969,6 +993,7 @@ struct LiveChannelOverlay: View {
         openMenu = nil
         menuReturnFocus = nil
         subtitleScreen = .tracks
+        playbackScreen = .options
         DispatchQueue.main.async { focus = returnFocus }
     }
 
@@ -1257,6 +1282,20 @@ extension LiveChannelOverlay {
     /// bar stood up.
     private var touchTrackBadges: some View {
         HStack(spacing: 12) {
+            if showsZoom {
+                PlayerOptionsMenuButton(
+                    makeMenu: {
+                        UIMenu(children: [PlayerZoomMenu.make(
+                            model: tracks.videoZoom, locale: locale,
+                            onCustomZoom: { showsCustomZoom = true }
+                        )])
+                    },
+                    onPresentationChange: { nativePlaybackMenuPresented = $0 }
+                )
+                .frame(width: 44, height: 44)
+                .background { PlayerGlassCircleSurface() }
+                .clipShape(Circle())
+            }
             if showsAudio {
                 touchBadge(
                     LiveChannelTrackMenuKind.audio.title, systemImage: LiveChannelTrackMenuKind.audio.icon,
@@ -1844,10 +1883,11 @@ private struct LiveChannelStatusPill: View {
 // MARK: - Track menus
 
 enum LiveChannelTrackMenuKind: Hashable {
-    case audio, subtitles
+    case audio, subtitles, playback
 
     var title: LocalizedStringResource {
         switch self {
+        case .playback: "Playback"
         case .audio:
             LocalizedStringResource(
                 "player.category.audio", defaultValue: "Audio",
@@ -1863,6 +1903,7 @@ enum LiveChannelTrackMenuKind: Hashable {
 
     var icon: String {
         switch self {
+        case .playback: "slider.horizontal.3"
         case .audio: "waveform"
         case .subtitles: "captions.bubble"
         }
@@ -1870,6 +1911,7 @@ enum LiveChannelTrackMenuKind: Hashable {
 
     var control: LiveChannelControl {
         switch self {
+        case .playback: .playback
         case .audio: .audio
         case .subtitles: .subtitles
         }
@@ -1878,6 +1920,7 @@ enum LiveChannelTrackMenuKind: Hashable {
     /// The VOD options panel's menu for this kind.
     var category: PlayerControls.Category {
         switch self {
+        case .playback: .playback
         case .audio: .audio
         case .subtitles: .subtitles
         }
@@ -1903,6 +1946,7 @@ private struct LiveChannelTrackPanel: View {
 
     static func selectedRow(kind: LiveChannelTrackMenuKind, model: LiveChannelPlayerModel) -> Int {
         switch kind {
+        case .playback: model.videoZoom.settings.mode.rawValue
         case .audio:
             model.audioTracks.firstIndex { $0.id == model.selectedAudioID } ?? 0
         case .subtitles:
@@ -1912,6 +1956,12 @@ private struct LiveChannelTrackPanel: View {
 
     private var rows: [Row] {
         switch kind {
+        case .playback:
+            return PlayerVideoZoom.Mode.allCases.map { mode in
+                Row(id: mode.rawValue, title: Text(mode.title), isSelected: model.videoZoom.settings.mode == mode) {
+                    model.videoZoom.settings.mode = mode
+                }
+            }
         case .audio:
             // Always one row, so the menu has somewhere for focus to land even
             // when the stream carries a single, unlabelled audio track.

@@ -12,9 +12,9 @@ struct LiveChannelSubtitleSurface: View {
                 primary: model.subtitles.primary,
                 style: SystemCaptionStyle.shared.resolved(model.subtitles.style),
                 isHDR: model.subtitles.isHDR,
-                videoRect: SubtitleOverlayGeometry.aspectFitRect(
+                videoRect: model.videoZoom.settings.videoRect(
                     in: CGRect(origin: .zero, size: geometry.size),
-                    aspectRatio: model.engine.videoAspectRatio.map { CGFloat($0) }
+                    aspectRatio: model.engine.videoAspectRatio
                 ),
                 controlsFrames: model.subtitles.controlsLayout.frames
             )

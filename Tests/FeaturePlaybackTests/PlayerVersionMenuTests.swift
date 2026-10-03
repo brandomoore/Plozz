@@ -7,13 +7,13 @@ final class PlayerVersionMenuTests: XCTestCase {
     func testVersionControlAppearsOnlyForRealAlternativesAndPreservesOtherControls() {
         let controls = PlayerControlsModel()
         controls.engineCapabilities = [.playbackSpeed]
-        XCTAssertEqual(controls.trackControlCategories, [.speed])
+        XCTAssertEqual(controls.trackControlCategories, [.playback])
         controls.versions.options = [
             .init(version: .init(id: "current"), isSelected: true)
         ]
-        XCTAssertEqual(controls.trackControlCategories, [.speed])
+        XCTAssertEqual(controls.trackControlCategories, [.playback])
         controls.versions.options.append(.init(version: .init(id: "alternate"), isSelected: false))
-        XCTAssertEqual(controls.trackControlCategories, [.version, .speed])
+        XCTAssertEqual(controls.trackControlCategories, [.version, .playback])
     }
 
     func testSelectionForwardsQualifiedIdentityAndNeverRestartsTheSelectedFile() {

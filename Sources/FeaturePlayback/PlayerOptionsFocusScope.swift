@@ -3,17 +3,23 @@ import CoreUI
 import SwiftUI
 import UIKit
 
+@MainActor
+protocol PlayerOptionsRemoteInput: AnyObject, HorizontalNavigationInputOwning {
+    func beginPress(_ direction: PlozzMoveCommandDirection)
+    func stopRepeating()
+}
+
 /// Owns horizontal press/swipe input before native directional focus can consume
 /// it. Up/Down and non-adjustable rows remain under the native focus engine.
-struct SubtitleStyleFocusScope<Content: View>: UIViewControllerRepresentable {
+struct PlayerOptionsFocusScope<Content: View, Screen: Equatable>: UIViewControllerRepresentable {
     let content: Content
-    let screen: PlayerControls.SubtitleScreen
+    let screen: Screen
     let adjustableRow: () -> Int?
     let submenuRow: () -> Int?
     let onMove: (PlozzMoveCommandDirection, Bool) -> Void
 
     func makeUIViewController(context: Context) -> Controller {
-        let controller = Controller(rootView: AnyView(content.environment(\.self, context.environment)))
+        let controller = Controller(rootView: hostedContent(environment: context.environment))
         controller.view.backgroundColor = .clear
         controller.safeAreaRegions = []
         controller.screen = screen
@@ -25,11 +31,27 @@ struct SubtitleStyleFocusScope<Content: View>: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: Controller, context: Context) {
         controller.screen = screen
-        controller.rootView = AnyView(content.environment(\.self, context.environment))
+        controller.rootView = hostedContent(environment: context.environment)
         controller.adjustableRow = adjustableRow
         controller.submenuRow = submenuRow
         controller.onMove = onMove
         controller.cancelRepeatIfFocusChanged()
+    }
+
+    private func hostedContent(environment: EnvironmentValues) -> AnyView {
+        // Copy appearance, not the outer graph's focus coordination. Forwarding
+        // the entire environment leaves two controls highlighted after navigation.
+        AnyView(content
+            .environment(\.colorScheme, environment.colorScheme)
+            .environment(\.locale, environment.locale)
+            .environment(\.layoutDirection, environment.layoutDirection)
+            .environment(\.dynamicTypeSize, environment.dynamicTypeSize)
+            .environment(\.isEnabled, environment.isEnabled)
+            .environment(\.themePalette, environment.themePalette)
+            .environment(\.plozzHDRDisplayActive, environment.plozzHDRDisplayActive)
+            .environment(\.plozzReduceTransparency, environment.plozzReduceTransparency)
+            .environment(\.plozzReducePanelGlass, environment.plozzReducePanelGlass)
+        )
     }
 
     static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
@@ -38,16 +60,16 @@ struct SubtitleStyleFocusScope<Content: View>: UIViewControllerRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiViewController: Controller, context: Context) -> CGSize? {
         uiViewController.sizeThatFits(in: CGSize(
-            width: proposal.width ?? SubtitleStylePanel.panelWidth,
+            width: proposal.width ?? PlayerOptionsPanel.standardWidth,
             height: proposal.height ?? .greatestFiniteMagnitude
         ))
     }
 
-    final class Controller: UIHostingController<AnyView>, UIGestureRecognizerDelegate, HorizontalNavigationInputOwning {
+    final class Controller: UIHostingController<AnyView>, UIGestureRecognizerDelegate, PlayerOptionsRemoteInput {
         var adjustableRow: (() -> Int?)?
         var submenuRow: (() -> Int?)?
         var onMove: ((PlozzMoveCommandDirection, Bool) -> Void)?
-        var screen: PlayerControls.SubtitleScreen? {
+        var screen: Screen? {
             didSet {
                 if oldValue != screen { stopRepeating() }
             }

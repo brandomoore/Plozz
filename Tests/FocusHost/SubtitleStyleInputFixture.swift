@@ -11,12 +11,17 @@ struct SubtitleStyleInputFixture: View {
     @State private var subtitles = LiveSubtitleModel()
     @State private var playerPresented = false
     @State private var navigationOpenAttempts = 0
+    @State private var playPauseCommands = 0
 
     init() {
         let model = PlayerControlsModel()
         model.controlsVisible = true
         model.duration = 7200
         model.engineCapabilities = []
+        if ProcessInfo.processInfo.arguments.contains("--playback-options") {
+            model.engineCapabilities = [.videoZoom, .playbackSpeed]
+            model.playbackSpeed = 1.5
+        }
         model.subtitleOptions = [PlayerTrackOption(id: PlayerTrackOption.offID, title: Text("Off"), isSelected: true)]
         model.subtitleStyle = .default
         if ProcessInfo.processInfo.arguments.contains("--minimum-text-size") {
@@ -56,7 +61,11 @@ struct SubtitleStyleInputFixture: View {
                 CustomPlayerContainer(
                     engine: engine,
                     model: model, subtitleModel: subtitles,
-                    actions: PlayerActions(setSubtitleStyle: { model.subtitleStyle = $0 }),
+                    actions: PlayerActions(
+                        togglePlayPause: { playPauseCommands += 1 },
+                        setPlaybackSpeed: { model.playbackSpeed = $0 },
+                        setSubtitleStyle: { model.subtitleStyle = $0 }
+                    ),
                     scrubPreview: nil, authenticatedHTTPResolver: nil,
                     themePalette: ThemePaletteBox(
                         makeControls: { model, actions, exit in
@@ -88,6 +97,16 @@ struct SubtitleStyleInputFixture: View {
                     .accessibilityIdentifier("subtitle-text-size-value")
                 Text(verbatim: String(navigationOpenAttempts))
                     .accessibilityIdentifier("subtitle-navigation-open-attempts")
+                if ProcessInfo.processInfo.arguments.contains("--playback-options") {
+                    Text(verbatim: String(describing: model.videoZoom.settings.mode))
+                        .accessibilityIdentifier("player-zoom-mode")
+                    Text(verbatim: String(model.videoZoom.settings.customPercent))
+                        .accessibilityIdentifier("player-zoom-percent")
+                    Text(verbatim: String(model.isPanelOpen))
+                        .accessibilityIdentifier("player-options-panel-open")
+                    Text(verbatim: String(playPauseCommands))
+                        .accessibilityIdentifier("player-options-play-pause")
+                }
             }
             .allowsHitTesting(false)
         }

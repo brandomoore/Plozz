@@ -105,7 +105,7 @@ public enum SubtitleDownloadState: Equatable, Sendable {
 public final class ControlBarEntryModel {
     /// The two ways focus enters the control layer, one per direction.
     public enum Entry: Equatable, Sendable {
-        /// Up from the scrub surface: land in the track row (Speed/Audio/Subtitles).
+        /// Up from the scrub surface: land in the track row (Playback/Audio/Subtitles).
         case trackControls
         /// Down from the scrub surface: open the Info card with its tab focused.
         case info
@@ -406,6 +406,7 @@ public final class PlayerControlsModel {
 
     // MARK: Track menus
     public let versions = PlayerVersionMenuModel()
+    public let videoZoom = PlayerVideoZoomModel()
     public var audioOptions: [PlayerTrackOption] = []
     public var subtitleOptions: [PlayerTrackOption] = []
     /// Eligible tracks for the **second** (dual) subtitle line, as an ordered
@@ -487,7 +488,7 @@ public final class PlayerControlsModel {
     /// keeps this god object's observable surface from growing — see
     /// `ControlBarEntryModel`.
     public let controlBar = ControlBarEntryModel()
-    /// True while an options menu (Audio & Subtitles / Speed / A·V Sync / Info)
+    /// True while an options menu (Audio & Subtitles / Playback / A·V Sync / Info)
     /// is open above the control bar. The input controller keeps the transport
     /// pinned visible while a menu is open and only lets the idle auto-hide fire
     /// once every menu is closed — navigating the bar's buttons still times out.

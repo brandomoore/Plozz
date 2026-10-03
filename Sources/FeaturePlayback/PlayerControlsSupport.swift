@@ -645,26 +645,6 @@ struct TrackControlsTopKey: PreferenceKey {
     }
 }
 
-/// Reports the track-control row's width so a menu aligned to one of its buttons
-/// can be clamped against the row's trailing edge.
-struct TrackControlsWidthKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-/// Carries the Speed button's measured leading-edge X (within the track-control
-/// row) up to `PlayerControls` so the Speed panel can align to the button. Only the
-/// Speed button publishes a value; sibling buttons contribute the default (0), so
-/// the reduce keeps the largest (the real measurement) rather than letting a 0
-/// clobber it.
-struct SpeedButtonLeadingKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
 #endif
 
 extension View {
