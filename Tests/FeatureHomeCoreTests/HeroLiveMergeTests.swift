@@ -27,6 +27,85 @@ final class HeroLiveMergeTests: XCTestCase {
 
     // MARK: - Nothing on screen yet
 
+    func testSessionLineupSurvivesRepeatedReplacementsAndAuthoritativeEmptyRefreshes() {
+        let original = (0..<20).map { item("cached-\($0)") }
+        var showing = original
+        for pass in 0..<30 {
+            let fresh = pass.isMultiple(of: 2) ? [] : (0..<20).map { item("new-\(pass)-\($0)") }
+            let outcome = HeroLiveMerge.merge(
+                showing: showing, fresh: fresh, limit: 20,
+                freshIsAuthoritative: true, preservesLineup: true
+            )
+            XCTAssertEqual(outcome.items, original)
+            XCTAssertFalse(outcome.changedIdentitySet)
+            showing = outcome.items
+        }
+    }
+
+    func testSessionLineupDoesNotFillUnusedSlotsButAcceptsMatchingStatus() {
+        let first = item("first")
+        var updated = item("first", overview: "Updated")
+        updated.isPlayed = true
+        updated.hasBeenPlayed = true
+        let result = HeroLiveMerge.merge(
+            showing: [first], fresh: [item("new"), updated], limit: 20,
+            preservesLineup: true
+        )
+        XCTAssertEqual(result.items, [updated])
+        XCTAssertFalse(result.changedIdentitySet)
+    }
+
+    func testSessionLineupStartsWithTheFirstNonemptyCuration() {
+        let fresh = [item("first"), item("second")]
+        XCTAssertEqual(HeroLiveMerge.merge(
+            showing: [], fresh: fresh, limit: 20, preservesLineup: true
+        ).items, fresh)
+    }
+
+    func testSessionLineupKeepsCatalogIdentityWhenOwnershipArrives() throws {
+        var showing = item("tmdb:movie:42")
+        showing.discoverySources = [.tmdb]
+        showing.providerIDs = ["Tmdb": "42"]
+        showing.locallyValidatedPlayableSource = false
+        var fresh = item("physical", account: "server")
+        fresh.discoverySources = [.tmdb]
+        fresh.providerIDs = showing.providerIDs
+        fresh.sources = [.init(accountID: "server", itemID: "physical", kind: .movie)]
+        fresh.locallyValidatedPlayableSource = true
+        let upgraded = try XCTUnwrap(HeroLiveMerge.merge(
+            showing: [showing], fresh: [fresh], limit: 20, preservesLineup: true
+        ).items.first)
+        XCTAssertEqual(upgraded.stablePresentationID, showing.stablePresentationID)
+        XCTAssertEqual(upgraded.sources, fresh.sources)
+        XCTAssertTrue(upgraded.locallyValidatedPlayableSource)
+
+        var rejected = showing
+        rejected.availability = .unknown
+        let revoked = try XCTUnwrap(HeroLiveMerge.merge(
+            showing: [upgraded], fresh: [rejected], limit: 20, preservesLineup: true
+        ).items.first)
+        XCTAssertEqual(revoked.stablePresentationID, showing.stablePresentationID)
+        XCTAssertFalse(revoked.locallyValidatedPlayableSource)
+        XCTAssertTrue(revoked.sources.isEmpty)
+    }
+
+    func testSessionLineupDoesNotSwapAccountsWithTheSameProviderItemID() throws {
+        var showing = item("42", account: "original")
+        showing.discoverySources = [.tmdb]
+        showing.providerIDs = ["Tmdb": "movie-42"]
+        showing.locallyValidatedPlayableSource = true
+        let original = MediaSourceRef(accountID: "original", itemID: "42", kind: .movie)
+        showing.sources = [original]
+        var fresh = showing.taggingSource("other")
+        fresh.sources = [MediaSourceRef(accountID: "other", itemID: "42", kind: .movie), original]
+        let retained = try XCTUnwrap(HeroLiveMerge.merge(
+            showing: [showing], fresh: [fresh], limit: 20, preservesLineup: true
+        ).items.first)
+        XCTAssertEqual(retained.stablePresentationID, showing.stablePresentationID)
+        XCTAssertEqual(retained.sources, fresh.sources)
+        XCTAssertTrue(retained.locallyValidatedPlayableSource)
+    }
+
     func testFirstCurationIsAdoptedWhole() {
         let fresh = [item("a"), item("b")]
 

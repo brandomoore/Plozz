@@ -2,12 +2,15 @@ import SwiftUI
 import UIKit
 import CoreUI
 import CoreModels
+import FeaturePlayback
 
 @main
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--share-folder-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--skip-marker-preview") {
+                SkipMarkerPreviewFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--share-folder-fixture") {
                 ShareFolderBrowserFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--episode-row-fixture") {
                 EpisodeRowRemoteFixture()
@@ -46,6 +49,19 @@ struct FocusHostApp: App {
             } else {
                 Color.black
             }
+        }
+    }
+}
+
+private struct SkipMarkerPreviewFixture: View {
+    @State private var showsPreview = true
+
+    var body: some View {
+        if showsPreview {
+            PlayerSkipMarkerPreview { showsPreview = false }
+        } else {
+            Text(verbatim: "Preview closed")
+                .accessibilityIdentifier("marker-preview-closed")
         }
     }
 }

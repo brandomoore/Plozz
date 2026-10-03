@@ -4,6 +4,59 @@ import notify
 
 @MainActor
 final class ShowcaseNavigationTests: XCTestCase {
+    func testDiscoverUsesCachedCardsBeforeTheLiveRequestFinishes() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        let notification = "com.thatcube.Plozz.HomeFixtureDiscover.\(UUID().uuidString)"
+        app.launchArguments = [
+            "--production-home-fixture", "--pinned-home", "--immersive-home",
+            "--showcase-discover-fixture", "--cached-showcase-discover"
+        ]
+        app.launchEnvironment["PLOZZ_HOME_DISCOVER_RELEASE_NOTIFICATION"] = notification
+        app.launch()
+        defer { notify_post(notification); app.terminate() }
+        XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
+        try enterMediaRow(in: app)
+        XCTAssertTrue(app.staticTexts["Discover"].exists)
+        XCUIRemote.shared.press(.down)
+        waitForStableCard(in: app)
+        let card = focusedCard(in: app)
+        XCTAssertEqual(card.label, "Fixture movie 34", "The first Down must reach cached Discover without the network.")
+        let before = card.frame
+        XCTAssertEqual(notify_post(notification), UInt32(NOTIFY_STATUS_OK))
+        let fresh = NSPredicate { _, _ in app.staticTexts["home-fixture-discover-state"].label == "ready" }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: fresh, object: nil)], timeout: 10
+        ), .completed)
+        waitForStableCard(in: app)
+        XCTAssertEqual(focusedCard(in: app).label, card.label)
+        XCTAssertEqual(focusedCard(in: app).frame.minY, before.minY, accuracy: 0.5)
+    }
+
+    func testDiscoverReservesItsHeadingBeforeAnUncachedRequestFinishes() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        let notification = "com.thatcube.Plozz.HomeFixtureDiscover.\(UUID().uuidString)"
+        app.launchArguments = [
+            "--production-home-fixture", "--pinned-home", "--immersive-home", "--showcase-discover-fixture"
+        ]
+        app.launchEnvironment["PLOZZ_HOME_DISCOVER_RELEASE_NOTIFICATION"] = notification
+        app.launch()
+        defer { notify_post(notification); app.terminate() }
+        XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
+        try enterMediaRow(in: app)
+        let heading = app.staticTexts["Discover"]
+        XCTAssertTrue(heading.exists, "An uncached row reserves its slot instead of inserting after navigation begins.")
+        let before = heading.frame
+        let focus = focusedCard(in: app).label
+        XCTAssertEqual(notify_post(notification), UInt32(NOTIFY_STATUS_OK))
+        let ready = NSPredicate { _, _ in app.staticTexts["home-fixture-discover-state"].label == "ready" }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: ready, object: nil)], timeout: 10
+        ), .completed)
+        waitForStableCard(in: app)
+        XCTAssertEqual(heading.frame.minY, before.minY, accuracy: 0.5)
+        XCTAssertEqual(focusedCard(in: app).label, focus)
+    }
+
     func testLowerRowArrivalDoesNotMoveFocusOrTheContinueWatchingAnchor() throws {
         try checkUnrequestedRowArrival(showcase: true)
     }
@@ -370,8 +423,8 @@ final class ShowcaseNavigationTests: XCTestCase {
         for _ in 0..<3 { XCUIRemote.shared.press(.right) }
         waitForStableCard(in: app)
         let second = focusedCard(in: app)
-        let secondLabel = second.label
-        let secondFrame = second.frame
+        var secondLabel = second.label
+        var secondFrame = second.frame
         let secondHeading = app.staticTexts["Recently Added"].frame
         let secondHeroY = description.frame.minY
         XCTAssertNotEqual(firstLabel, secondLabel)
@@ -382,7 +435,9 @@ final class ShowcaseNavigationTests: XCTestCase {
         firstLabel = focusedCard(in: app).label
         firstFrame = focusedCard(in: app).frame
         XCUIRemote.shared.press(.down)
-        waitForCard(in: app, label: secondLabel, frame: secondFrame)
+        waitForStableCard(in: app)
+        secondLabel = focusedCard(in: app).label
+        secondFrame = focusedCard(in: app).frame
         for _ in 0..<3 {
             XCUIRemote.shared.press(.down)
             XCTAssertEqual(focusedCard(in: app).label, secondLabel, "The last row must retain focus without drift.")
@@ -536,19 +591,23 @@ final class ShowcaseNavigationTests: XCTestCase {
         let headingY = heading.frame.minY
         let heroY = description.frame.minY
         let initialLabel = focusedCard(in: app).label
-        for _ in 0..<3 {
+        // A held press does not produce a fixed repeat count. Verify the actual
+        // endpoint as well as the anchors, rather than assuming three holds suffice.
+        for _ in 0..<4 {
             XCUIRemote.shared.press(.right, forDuration: 4)
             Thread.sleep(forTimeInterval: 0.3)
             XCTAssertEqual(heading.frame.minY, headingY, accuracy: 0.5)
             XCTAssertEqual(description.frame.minY, heroY, accuracy: 0.5)
+            if focusedCard(in: app).label == "Fixture movie 74" { break }
         }
         XCTAssertEqual(focusedCard(in: app).label, "Fixture movie 74",
                        "Traverse the entire long row, beyond its initially realized native posters.")
-        for _ in 0..<3 {
+        for _ in 0..<4 {
             XCUIRemote.shared.press(.left, forDuration: 4)
             Thread.sleep(forTimeInterval: 0.3)
             XCTAssertEqual(heading.frame.minY, headingY, accuracy: 0.5)
             XCTAssertEqual(description.frame.minY, heroY, accuracy: 0.5)
+            if focusedCard(in: app).label == initialLabel { break }
         }
         XCTAssertEqual(focusedCard(in: app).label, initialLabel)
     }
@@ -624,6 +683,12 @@ final class ShowcaseNavigationTests: XCTestCase {
                     && $0.frame.minY < inactiveTitle.frame.maxY + 100
             }
             .min { $0.frame.minX < $1.frame.minX }
+        if preview == nil {
+            let tree = XCTAttachment(string: app.debugDescription)
+            tree.name = "Missing Showcase preview card"
+            tree.lifetime = .keepAlways
+            add(tree)
+        }
         let next = try XCTUnwrap(preview)
         let inactiveGap = next.frame.minY - inactiveTitle.frame.maxY
         let gapAboveHeading = inactiveTitle.frame.minY - first.frame.maxY
@@ -636,6 +701,7 @@ final class ShowcaseNavigationTests: XCTestCase {
         add(previewScreenshot)
         XCTAssertGreaterThan(app.frame.maxY - next.frame.minY, 20, "Down needs real visible card area.")
         XCUIRemote.shared.press(.down)
+        waitForStableCard(in: app)
         let poster = focusedCard(in: app)
         let activeGap = poster.frame.minY - inactiveTitle.frame.maxY
         XCTAssertGreaterThanOrEqual(poster.frame.width, 280, "Showcase uses full-size posters instead of 70% artwork.")

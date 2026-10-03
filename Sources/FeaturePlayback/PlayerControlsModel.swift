@@ -333,9 +333,8 @@ public final class SkipGestureModel {
 @MainActor
 @Observable
 public final class SkipSegmentsModel {
-    /// Server-detected skippable segments (intros/credits) for the playing item.
-    /// Populated by the view model only when the per-profile Skip Intros setting is
-    /// on; empty otherwise, so no skip button is ever offered.
+    /// Available server/community skip ranges for the playing item. Loaded under
+    /// the existing skip/Up Next policy; timeline annotations do not fetch more.
     public var segments: [MediaSegment] = []
 
     /// Set while the user has dismissed the skip button for the *current* segment,

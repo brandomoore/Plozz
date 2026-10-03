@@ -1,6 +1,8 @@
 #if canImport(SwiftUI)
+import Observation
 import SwiftUI
 import CoreModels
+import CoreNetworking
 
 /// A horizontally-scrolling, focusable row of media cards with a title.
 /// Reused by Home (Continue Watching, Latest) and detail (episodes, related).
@@ -148,6 +150,8 @@ public struct MediaRowView: View {
     /// debounce and no once-per-entry gate. For layout that has to follow focus
     /// immediately, such as a Home that pins the focused row.
     private let onCardFocused: ((MediaItem) -> Void)?
+    private let onItemExposed: ((MediaItem) -> Void)?
+    private let isExposureActive: Bool
     /// Optional localized cue drawn on selected card kinds (e.g. a Related row
     /// marks sequels/spin-offs as "Continues"). The row owns card construction,
     /// so callers need this seam rather than rebuilding the whole rail.
@@ -159,45 +163,9 @@ public struct MediaRowView: View {
     private let itemIndexByID: [String: Int]
     private let itemByID: [String: MediaItem]
 
-    @FocusState private var focusedID: String?
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
-    @State private var didApplyInitialFocus = false
-    /// Whether focus currently sits inside this row. While `false` and a gate
-    /// target is set, the first card focus lands on (whatever tvOS picks
-    /// geometrically) is overridden by moving focus to the target. It is re-armed
-    /// when focus genuinely leaves the row (signalled by `focusResetToken`, e.g.
-    /// going up to the season bar) and when the supplied `defaultFocusID` changes
-    /// (e.g. season swap) — never from a transient mid-scroll `nil`.
-    @State private var focusEngaged = false
-    /// Card ids currently realised in the lazy stack. Used to avoid redundant
-    /// `scrollTo` work that can cause visible snap/jump when the target is already
-    /// on screen.
-    @State private var visibleIDs: Set<String> = []
-    /// Coalesces focus-change reporting to `onFocusChange` (the page hero). Holding
-    /// RIGHT moves focus through many cards per second; without coalescing the hero
-    /// would fully rebuild + cross-fade on each one, stuttering the scroll. We defer
-    /// the report a beat and only fire for the card focus actually settles on.
-    @State private var pendingReport: DispatchWorkItem?
-    /// The card focus last settled on inside this row, remembered after focus
-    /// leaves so the gate re-targets where the user actually was — not the
-    /// came-in/resume episode. A stale id from another season is ignored because it
-    /// won't exist in the current `items`.
-    @State private var lastFocusedID: String?
-    /// Whether the user has actually moved around this row since its target was
-    /// last re-pointed. Latches the entry gate off — see `cardIsDisabled`.
-    @State private var hasBrowsedSinceTargetChange = false
-    /// Items whose artwork has already been queued during the current directional
-    /// traversal. Cleared when direction reverses because a long row can evict the
-    /// outbound posters before the viewer comes back.
-    @State private var prefetchedIDs: Set<String> = []
-    @State private var prefetchedPreviewIDs: Set<String> = []
-    @State private var lastArtworkPrefetchIndex: Int?
-    @State private var artworkPrefetchDirection = 1
-    @State private var artworkPrefetchTasks = ArtworkPrefetchTasks()
-    /// Cards whose detail-hero backdrop has been warmed — see `prefetchHeroPreview`.
-    @State private var prefetchedHeroIDs: Set<String> = []
-    @State private var logoPrefetchHistory = MediaRowLogoPrefetchHistory()
+    @State private var activity = MediaRowActivity()
     /// The card focus was on when this row's page was covered — see `isCovered`.
     @State private var coveredFocusID: String?
     @Namespace private var episodeEntrySpace
@@ -225,6 +193,8 @@ public struct MediaRowView: View {
         onFocusEntered: (() -> Void)? = nil,
         onFocusChange: ((MediaItem?) -> Void)? = nil,
         onCardFocused: ((MediaItem) -> Void)? = nil,
+        onItemExposed: ((MediaItem) -> Void)? = nil,
+        isExposureActive: Bool = true,
         statusCue: ((MediaItem) -> LocalizedStringResource?)? = nil,
         pendingRemovalIDs: Set<String> = [],
         loadingPlaceholderCount: Int = 0,
@@ -250,6 +220,8 @@ public struct MediaRowView: View {
             onFocusEntered: onFocusEntered,
             onFocusChange: onFocusChange,
             onCardFocused: onCardFocused,
+            onItemExposed: onItemExposed,
+            isExposureActive: isExposureActive,
             statusCue: statusCue,
             pendingRemovalIDs: pendingRemovalIDs,
             loadingPlaceholderCount: loadingPlaceholderCount,
@@ -277,6 +249,8 @@ public struct MediaRowView: View {
         onFocusEntered: (() -> Void)? = nil,
         onFocusChange: ((MediaItem?) -> Void)? = nil,
         onCardFocused: ((MediaItem) -> Void)? = nil,
+        onItemExposed: ((MediaItem) -> Void)? = nil,
+        isExposureActive: Bool = true,
         statusCue: ((MediaItem) -> LocalizedStringResource?)? = nil,
         pendingRemovalIDs: Set<String> = [],
         loadingPlaceholderCount: Int = 0,
@@ -315,6 +289,8 @@ public struct MediaRowView: View {
         self.onFocusEntered = onFocusEntered
         self.onFocusChange = onFocusChange
         self.onCardFocused = onCardFocused
+        self.onItemExposed = onItemExposed
+        self.isExposureActive = isExposureActive
         self.statusCue = statusCue
         self.pendingRemovalIDs = pendingRemovalIDs
         self.playsOnSelect = playsOnSelect
@@ -363,11 +339,11 @@ public struct MediaRowView: View {
         guard usesFocusEntryGate else { return nil }
         if episodeEntry != nil {
             return MediaRowEpisodeEntryPolicy.target(
-                rememberedID: lastFocusedID, defaultID: defaultFocusID,
+                rememberedID: activity.lastFocusedID, defaultID: defaultFocusID,
                 itemIDs: itemIDSet, firstID: items.first?.stablePresentationID
             )
         }
-        if let lastFocusedID, itemIDSet.contains(lastFocusedID) {
+        if let lastFocusedID = activity.lastFocusedID, itemIDSet.contains(lastFocusedID) {
             return lastFocusedID
         }
         guard let defaultFocusID, itemIDSet.contains(defaultFocusID) else { return nil }
@@ -427,8 +403,8 @@ public struct MediaRowView: View {
         // i.e. season switch or open), so no token churn can revive the gate
         // under the user.
         return gatesFocus
-            && !focusEngaged
-            && !hasBrowsedSinceTargetChange
+            && !activity.focusEngaged
+            && !activity.hasBrowsedSinceTargetChange
             && item.stablePresentationID != gateTarget
     }
 
@@ -550,7 +526,7 @@ public struct MediaRowView: View {
                     .padding(.bottom, layoutMetrics.railBottomClearanceOffset)
                     .coordinateSpace(name: episodeEntrySpace)
                     .background {
-                        if episodeEntry != nil, !focusEngaged {
+                        if episodeEntry != nil, !activity.focusEngaged {
                             GeometryReader { geometry in
                                 Color.clear.preference(
                                     key: MediaRowEntryLayoutKey.self,
@@ -592,7 +568,7 @@ public struct MediaRowView: View {
                     .onChange(of: episodeEntry?.isActive) { _, active in
                         guard active == true else { return }
                         pendingEntryHandoff = false
-                        focusEngaged = false
+                        activity.focusEngaged = false
                         alignedEntryTarget = nil
                         if let target = gateTarget { scrollToInitialPosition(target, using: proxy) }
                     }
@@ -644,24 +620,24 @@ public struct MediaRowView: View {
                     .onChange(of: itemIDSet) { previous, _ in
                         if reservesLoadingFocus, previous.isEmpty, loadingCardFocused,
                            let first = items.first?.stablePresentationID {
-                            focusedID = first
+                            activity.requestFocus(first)
                         }
                         applyInitialFocus(using: proxy)
                     }
-                    .onChange(of: focusedID) { _, newValue in
+                    .modifier(MediaRowFocusObserver(activity: activity) { newValue in
                         handleFocusChange(to: newValue, using: proxy)
-                    }
+                    })
                     .onChange(of: defaultFocusID) { _, newTarget in
                         // The supplied target changed (e.g. switching seasons). Drop
                         // any remembered focus from the previous set, re-arm the gate,
                         // and bring the new target into view so it's realised and is
                         // the only focusable card on the next entry.
                         let remembersCurrentRow = episodeEntry != nil
-                            && lastFocusedID.map(itemIDSet.contains) == true
+                            && activity.lastFocusedID.map(itemIDSet.contains) == true
                         if remembersCurrentRow, episodeEntry?.isActive == false { return }
-                        focusEngaged = false
-                        if !remembersCurrentRow { lastFocusedID = nil }
-                        hasBrowsedSinceTargetChange = remembersCurrentRow
+                        activity.focusEngaged = false
+                        if !remembersCurrentRow { activity.lastFocusedID = nil }
+                        activity.hasBrowsedSinceTargetChange = remembersCurrentRow
                         alignedEntryTarget = nil
                         guard let target = episodeEntry != nil ? gateTarget : newTarget,
                               itemIDSet.contains(target) else { return }
@@ -673,7 +649,7 @@ public struct MediaRowView: View {
                         // lazy stack has usually "appeared" the target already, off to
                         // the right, so the row would open (or switch seasons) with the
                         // episode stranded mid-row instead of leading.
-                        didApplyInitialFocus = true
+                        activity.didApplyInitialFocus = true
                         scrollToInitialPosition(target, using: proxy)
                     }
                     .onChange(of: isCovered) { _, covered in
@@ -684,7 +660,7 @@ public struct MediaRowView: View {
                         // Snapshot on the way IN. Reading the live value on the
                         // way out is too late: the system's own focus moves can
                         // land on another card first and overwrite it.
-                        coveredFocusID = focusEngaged ? lastFocusedID : nil
+                        coveredFocusID = activity.focusEngaged ? activity.lastFocusedID : nil
                         pendingEntryHandoff = false
                     }
                     // Does the ITEMS ARRAY change mid-browse? If it does, the
@@ -701,7 +677,7 @@ public struct MediaRowView: View {
                         // lands on the episode you were last on (`lastFocusedID`, kept
                         // so re-entry returns there — not the came-in episode), and
                         // make sure it's realised/in view for the gate to target.
-                        focusEngaged = false
+                        activity.focusEngaged = false
                         if episodeEntry != nil {
                             pendingEntryHandoff = false
                             alignedEntryTarget = nil
@@ -712,15 +688,26 @@ public struct MediaRowView: View {
                     }
                 }
                 .onDisappear {
-                    pendingReport?.cancel()
-                    pendingReport = nil
-                    artworkPrefetchTasks.cancelAll()
-                    prefetchedIDs.removeAll(keepingCapacity: true)
-                    prefetchedPreviewIDs.removeAll(keepingCapacity: true)
-                    lastArtworkPrefetchIndex = nil
-                    logoPrefetchHistory = MediaRowLogoPrefetchHistory()
+                    activity.pendingReport?.cancel()
+                    activity.pendingReport = nil
+                    activity.artworkPrefetchTasks.cancelAll()
+                    activity.prefetchedIDs.removeAll(keepingCapacity: true)
+                    activity.prefetchedPreviewIDs.removeAll(keepingCapacity: true)
+                    activity.lastArtworkPrefetchIndex = nil
+                    activity.logoPrefetchHistory = MediaRowLogoPrefetchHistory()
                     pendingEntryHandoff = false
                 }
+            }
+            .background {
+                #if os(tvOS)
+                if let onItemExposed {
+                    MediaRowExposureDriver(
+                        tracker: activity.exposure,
+                        isActive: isExposureActive,
+                        onExposure: onItemExposed
+                    )
+                }
+                #endif
             }
         }
     }
@@ -819,7 +806,12 @@ public struct MediaRowView: View {
             .frame(width: cardSlotWidth)
             .id(item.stablePresentationID)
             .background {
-                if episodeEntry != nil, !focusEngaged, item.stablePresentationID == gateTarget {
+                #if os(tvOS)
+                if onItemExposed != nil {
+                    MediaRowExposureAnchor(tracker: activity.exposure, item: item)
+                }
+                #endif
+                if episodeEntry != nil, !activity.focusEngaged, item.stablePresentationID == gateTarget {
                     GeometryReader { geometry in
                         Color.clear.preference(
                             key: MediaRowEntryLayoutKey.self,
@@ -832,15 +824,15 @@ public struct MediaRowView: View {
                 }
             }
             .onAppear {
-                visibleIDs.insert(item.stablePresentationID)
+                activity.visibleIDs.insert(item.stablePresentationID)
                 prefetchArtwork(around: item)
             }
             .onDisappear {
-                visibleIDs.remove(item.stablePresentationID)
+                activity.visibleIDs.remove(item.stablePresentationID)
             }
         if tracksFocus {
             card
-                .focused($focusedID, equals: item.stablePresentationID)
+                .modifier(MediaRowCardFocus(id: item.stablePresentationID))
                 .disabled(cardIsDisabled(item))
         } else {
             card
@@ -935,7 +927,7 @@ public struct MediaRowView: View {
     private var showsEntryPlaceholder: Bool {
         guard let episodeEntry else { return false }
         return MediaRowEpisodeEntryPolicy.showsPlaceholder(
-            phase: episodeEntry.phase, targetReady: entryTargetReady, focusEngaged: focusEngaged
+            phase: episodeEntry.phase, targetReady: entryTargetReady, focusEngaged: activity.focusEngaged
         )
     }
 
@@ -997,7 +989,7 @@ public struct MediaRowView: View {
     }
 
     private func acceptEntryLayout(_ layout: MediaRowEntryLayout, using proxy: ScrollViewProxy) {
-        guard episodeEntry != nil, !focusEngaged else { return }
+        guard episodeEntry != nil, !activity.focusEngaged else { return }
         if entryLayout != layout { entryLayout = layout }
         guard episodeEntry?.phase == .ready,
               let target = gateTarget, itemIDSet.contains(target), !isCovered,
@@ -1008,7 +1000,7 @@ public struct MediaRowView: View {
             // assign its replacement in one update, not after focusing a neighbor.
             pendingEntryHandoff = false
             onFocusEntered?()
-            focusedID = target
+            activity.requestFocus(target)
         } else if (layout.viewportWidth ?? 0) > 0, alignedEntryTarget != target {
             alignedEntryTarget = target
             scrollToInitialPosition(target, using: proxy)
@@ -1027,18 +1019,18 @@ public struct MediaRowView: View {
             return
         }
         let direction = MediaRowPrefetchWindow.direction(
-            from: lastArtworkPrefetchIndex,
+            from: activity.lastArtworkPrefetchIndex,
             to: index,
-            fallback: artworkPrefetchDirection
+            fallback: activity.artworkPrefetchDirection
         )
-        if direction != artworkPrefetchDirection {
-            artworkPrefetchTasks.cancelAll()
-            prefetchedIDs.removeAll(keepingCapacity: true)
-            prefetchedPreviewIDs.removeAll(keepingCapacity: true)
-            logoPrefetchHistory = MediaRowLogoPrefetchHistory()
+        if direction != activity.artworkPrefetchDirection {
+            activity.artworkPrefetchTasks.cancelAll()
+            activity.prefetchedIDs.removeAll(keepingCapacity: true)
+            activity.prefetchedPreviewIDs.removeAll(keepingCapacity: true)
+            activity.logoPrefetchHistory = MediaRowLogoPrefetchHistory()
         }
-        artworkPrefetchDirection = direction
-        lastArtworkPrefetchIndex = index
+        activity.artworkPrefetchDirection = direction
+        activity.lastArtworkPrefetchIndex = index
         let variant: ArtworkImageVariant = {
             switch presentation {
             case .poster: return .posterCard
@@ -1054,9 +1046,9 @@ public struct MediaRowView: View {
         for i in fullIndices {
             let candidate = items[i]
             if presentation == .episodeColumn {
-                if prefetchedIDs.insert(candidate.stablePresentationID).inserted {
+                if activity.prefetchedIDs.insert(candidate.stablePresentationID).inserted {
                     let source = EpisodeArtworkSource(item: candidate, spoilerSettings: spoilerSettings)
-                    artworkPrefetchTasks.track(Task {
+                    activity.artworkPrefetchTasks.track(Task {
                         await ArtworkSession.warmLimiter.run {
                             guard !Task.isCancelled else { return }
                             await source.prepare()
@@ -1081,12 +1073,12 @@ public struct MediaRowView: View {
                    from: variant,
                    for: preview
                ),
-               prefetchedPreviewIDs.insert(
+               activity.prefetchedPreviewIDs.insert(
                    candidate.stablePresentationID
                ).inserted {
                 trackPrefetch(preview, variant: .posterPreview)
             }
-            if prefetchedIDs.insert(candidate.stablePresentationID).inserted {
+            if activity.prefetchedIDs.insert(candidate.stablePresentationID).inserted {
                 for url in candidates.prefix(2) {
                     trackPrefetch(url, variant: variant)
                 }
@@ -1098,7 +1090,7 @@ public struct MediaRowView: View {
             // under the viewer, which is the one thing a rail must not do. Warm
             // both, so the card is finished before it is reached.
             if showsSeriesArtwork {
-                let includeLogo = logoPrefetchHistory.shouldPrefetch(
+                let includeLogo = activity.logoPrefetchHistory.shouldPrefetch(
                     id: candidate.stablePresentationID,
                     references: candidate.artworkReferences(for: .logo)
                 )
@@ -1127,7 +1119,7 @@ public struct MediaRowView: View {
                           from: .posterCard,
                           for: preview
                       ),
-                      prefetchedPreviewIDs.insert(
+                      activity.prefetchedPreviewIDs.insert(
                           candidate.stablePresentationID
                       ).inserted
                 else { continue }
@@ -1145,7 +1137,7 @@ public struct MediaRowView: View {
             url,
             variant: variant
         ) {
-            artworkPrefetchTasks.track(task)
+            activity.artworkPrefetchTasks.track(task)
         }
     }
 
@@ -1157,23 +1149,23 @@ public struct MediaRowView: View {
     private func applyInitialFocus(using proxy: ScrollViewProxy) {
         guard !isCovered, episodeEntry?.isEnabled != false else { return }
         if episodeEntry != nil, initialFocusID != nil,
-           !didApplyInitialFocus, showsEntryPlaceholder {
-            didApplyInitialFocus = true
+           !activity.didApplyInitialFocus, showsEntryPlaceholder {
+            activity.didApplyInitialFocus = true
             entryPlaceholderFocused = true
             return
         }
         if let target = initialFocusID,
-           !didApplyInitialFocus,
+           !activity.didApplyInitialFocus,
            itemIDSet.contains(target) {
-            didApplyInitialFocus = true
+            activity.didApplyInitialFocus = true
             scrollToInitialPosition(target, using: proxy)
-            DispatchQueue.main.async { focusedID = target }
+            DispatchQueue.main.async { activity.requestFocus(target) }
             return
         }
         if let target = initialScrollID,
-           !didApplyInitialFocus,
+           !activity.didApplyInitialFocus,
            itemIDSet.contains(target) {
-            didApplyInitialFocus = true
+            activity.didApplyInitialFocus = true
             // Defer a tick so the LazyHStack has realised enough cards to compute
             // the target's offset before we scroll; focus is deliberately left
             // wherever it currently is (typically the hero Play button).
@@ -1211,23 +1203,23 @@ public struct MediaRowView: View {
         // strand the focus indicator. The gate now re-arms only on `focusResetToken`
         // (focus actually left the row, up to the season bar).
         guard let newValue else { return }
-        hasBrowsedSinceTargetChange = true
+        activity.hasBrowsedSinceTargetChange = true
         if let onCardFocused, let item = itemByID[newValue] { onCardFocused(item) }
-        if !focusEngaged { onFocusEntered?() }
-        lastFocusedID = newValue
-        if !focusEngaged,
+        if !activity.focusEngaged { onFocusEntered?() }
+        activity.lastFocusedID = newValue
+        if !activity.focusEngaged,
            let target = gateTarget,
            newValue != target,
            itemIDSet.contains(target) {
             // Safety net: if focus somehow lands on a non-target card while gated
             // (e.g. a frame before `.disabled` applied), redirect to the target and
             // don't report the transient card to the hero.
-            focusEngaged = true
-            lastFocusedID = target
+            activity.focusEngaged = true
+            activity.lastFocusedID = target
             redirectFocus(to: target, using: proxy)
             return
         }
-        focusEngaged = true
+        activity.focusEngaged = true
         scheduleFocusReport(for: newValue)
     }
 
@@ -1257,10 +1249,10 @@ public struct MediaRowView: View {
     }
 
     private func claimFocus(_ target: String) {
-        guard focusedID != target else { return }
-        focusedID = target
-        lastFocusedID = target
-        focusEngaged = true
+        guard activity.focus?.wrappedValue != target else { return }
+        activity.requestFocus(target)
+        activity.lastFocusedID = target
+        activity.focusEngaged = true
     }
 
     /// Coalesces hero updates: each focus change schedules a deferred report and
@@ -1268,15 +1260,15 @@ public struct MediaRowView: View {
     /// the hero once — when focus settles — instead of once per card passed.
     private func scheduleFocusReport(for id: String) {
         let item = itemByID[id]
-        pendingReport?.cancel()
+        activity.pendingReport?.cancel()
         let work = DispatchWorkItem {
             // Only report the card focus actually settled on, skipping every card
             // blown past during a rapid hold.
-            guard focusedID == id else { return }
+            guard activity.focus?.wrappedValue == id else { return }
             prefetchHeroPreview(for: item)
             onFocusChange?(item)
         }
-        pendingReport = work
+        activity.pendingReport = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
     }
 
@@ -1308,7 +1300,7 @@ public struct MediaRowView: View {
         #if canImport(UIKit)
         guard artworkPolicy == .standard,
               let item,
-              !prefetchedHeroIDs.contains(item.stablePresentationID) else {
+              !activity.prefetchedHeroIDs.contains(item.stablePresentationID) else {
             return
         }
         #if os(tvOS)
@@ -1318,7 +1310,7 @@ public struct MediaRowView: View {
         #endif
         let references = item.artworkReferences(for: .detailBackdrop)
         guard let reference = references.first else { return }
-        prefetchedHeroIDs.insert(item.stablePresentationID)
+        activity.prefetchedHeroIDs.insert(item.stablePresentationID)
         ArtworkImageCache.shared.prefetch(reference, variant: .heroPreview)
         #endif
     }
@@ -1327,7 +1319,7 @@ public struct MediaRowView: View {
     /// then moves focus onto it a runloop tick later, once it exists.
     private func redirectFocus(to target: String, using proxy: ScrollViewProxy) {
         scrollToIfNeeded(target, using: proxy, animated: true)
-        DispatchQueue.main.async { focusedID = target }
+        DispatchQueue.main.async { activity.requestFocus(target) }
     }
 
     /// Avoids unnecessary `scrollTo` calls when the target is already realised and
@@ -1338,7 +1330,7 @@ public struct MediaRowView: View {
         anchor: UnitPoint = .leading,
         animated: Bool = false
     ) {
-        guard !visibleIDs.contains(target) else { return }
+        guard !activity.visibleIDs.contains(target) else { return }
         if animated {
             withAnimation(.easeInOut(duration: 0.25)) {
                 proxy.scrollTo(target, anchor: anchor)
@@ -1377,6 +1369,76 @@ public enum MediaRowPrefetchWindow {
         }
         let upper = min(count - 1, index + max(lookahead, 0))
         return Array(index...upper)
+    }
+}
+
+private struct MediaRowFocusObserver: ViewModifier {
+    let activity: MediaRowActivity
+    let onChange: (String?) -> Void
+    @FocusState private var focusedID: String?
+
+    func body(content: Content) -> some View {
+        activity.focus = $focusedID
+        return content
+            .environment(\.mediaRowFocus, $focusedID)
+            .onChange(of: focusedID) { _, value in onChange(value) }
+    }
+}
+
+private struct MediaRowFocusKey: EnvironmentKey {
+    static let defaultValue: FocusState<String?>.Binding? = nil
+}
+
+private extension EnvironmentValues {
+    var mediaRowFocus: FocusState<String?>.Binding? {
+        get { self[MediaRowFocusKey.self] }
+        set { self[MediaRowFocusKey.self] = newValue }
+    }
+}
+
+private struct MediaRowCardFocus: ViewModifier {
+    let id: String
+    @Environment(\.mediaRowFocus) private var focus
+
+    func body(content: Content) -> some View {
+        if let focus {
+            content.focused(focus, equals: id)
+        } else {
+            content
+        }
+    }
+}
+
+@MainActor
+@Observable
+private final class MediaRowActivity {
+    #if os(tvOS)
+    @ObservationIgnored let exposure = MediaRowExposureTracker()
+    #endif
+    // Only gated episode rows render these values. Ordinary Home rows report
+    // focus without rebuilding every card and its context menu.
+    var focusEngaged = false
+    var lastFocusedID: String?
+    var hasBrowsedSinceTargetChange = false
+
+    @ObservationIgnored var didApplyInitialFocus = false
+    @ObservationIgnored var visibleIDs: Set<String> = []
+    @ObservationIgnored var pendingReport: DispatchWorkItem?
+    @ObservationIgnored var prefetchedIDs: Set<String> = []
+    @ObservationIgnored var prefetchedPreviewIDs: Set<String> = []
+    @ObservationIgnored var lastArtworkPrefetchIndex: Int?
+    @ObservationIgnored var artworkPrefetchDirection = 1
+    @ObservationIgnored let artworkPrefetchTasks = ArtworkPrefetchTasks()
+    @ObservationIgnored var prefetchedHeroIDs: Set<String> = []
+    @ObservationIgnored var logoPrefetchHistory = MediaRowLogoPrefetchHistory()
+    @ObservationIgnored var focus: FocusState<String?>.Binding?
+
+    func requestFocus(_ id: String) {
+        guard let focus else {
+            PlozzLog.app.error("Media row focus requested before its focus scope was installed")
+            return
+        }
+        focus.wrappedValue = id
     }
 }
 

@@ -5,6 +5,75 @@ import XCTest
 @testable import FeatureHome
 
 final class HeroRefreshTriggerTests: XCTestCase {
+    @MainActor
+    func testShowcaseKeepsWatchedTitlesThroughCacheAndLoadedDisplayPasses() {
+        #if os(tvOS)
+        var settings = HeroSettings.default
+        settings.style = .followsFocus
+        settings.sources = [.featured]
+        settings.hideWatched = true
+        var item = MediaItem(id: "shown", title: "Shown", kind: .movie)
+        item.isPlayed = true
+        item.hasBeenPlayed = true
+        let runtime = HomeHeroRuntimeState()
+        runtime.cachedItems = [item]
+        runtime.cachedKey = .init(settings: settings)
+        let key = HeroRecomputeKey(content: .init(), settings: settings, randomLibraries: [])
+        func displayed() -> [MediaItem] {
+            HomeHeroDisplayResolver.resolve(
+                runtime: runtime, key: key, settings: settings,
+                continueWatching: [], watchlist: [], curator: HeroCurator()
+            )
+        }
+        XCTAssertEqual(displayed(), [item])
+        runtime.items = [item]
+        runtime.completedKey = key
+        runtime.cachedItems = []
+        XCTAssertEqual(displayed(), [item])
+        runtime.resetForSourceScopeChange()
+        XCTAssertTrue(displayed().isEmpty)
+        #endif
+    }
+
+    @MainActor
+    func testShowcaseCacheUsesTheSameFeaturedConfigurationAsLiveCuration() throws {
+        #if os(tvOS)
+        var settings = HeroSettings.default
+        settings.style = .followsFocus
+        settings.showsDiscoverRow = true
+        settings.sources = [.continueWatching, .randomFromLibrary]
+        let discovery = try XCTUnwrap(HomeView.curationSettings(for: settings))
+        XCTAssertEqual(discovery.sources, [.featured])
+        XCTAssertTrue(discovery.isActive)
+        XCTAssertEqual(discovery.discoverySources, settings.discoverySources)
+        XCTAssertEqual(discovery.maxItems, settings.maxItems)
+        XCTAssertNotEqual(HeroConfigurationKey(settings: settings), HeroConfigurationKey(settings: discovery))
+
+        let item = MediaItem(id: "cached", title: "Cached discovery", kind: .movie)
+        let runtime = HomeHeroRuntimeState()
+        runtime.cachedKey = HeroConfigurationKey(settings: discovery)
+        runtime.cachedItems = [item]
+        let key = HeroRecomputeKey(content: .init(), settings: discovery, randomLibraries: [])
+        let shown = HomeHeroDisplayResolver.resolve(
+            runtime: runtime, key: key, settings: discovery,
+            continueWatching: [], watchlist: [], curator: HeroCurator()
+        )
+        XCTAssertEqual(shown.map(\.id), [item.id], "Cached Discover must render before live curation finishes.")
+        XCTAssertNil(runtime.completedKey)
+        settings.showsDiscoverRow = false
+        XCTAssertNil(HomeView.curationSettings(for: settings))
+        #endif
+    }
+
+    @MainActor
+    func testCarouselCurationKeepsItsConfiguredSources() {
+        var settings = HeroSettings.default
+        settings.style = .carousel
+        settings.sources = [.watchlist, .randomFromLibrary]
+        XCTAssertEqual(HomeView.curationSettings(for: settings), settings)
+        XCTAssertNil(HomeView.curationSettings(for: nil))
+    }
+
     func testFeaturedTrendsDoNotReloadWhenUnrelatedWatchlistIDsChange() {
         var settings = HeroSettings.default
         settings.sources = [.featured]

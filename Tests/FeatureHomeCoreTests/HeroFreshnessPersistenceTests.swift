@@ -54,6 +54,30 @@ final class HeroFreshnessPersistenceTests: XCTestCase {
         XCTAssertNotNil(store.loadHeroExposureHistory().lastSeenAt(for: opener))
     }
 
+    func testDiscoverRefreshKeepsUnseenCacheWithoutChangingCurrentLaunchSelection() async throws {
+        let store = InMemoryHomeContentStore()
+        let config = settings(limit: 20)
+        store.saveHeroCandidatePool(pool((0..<20).map { "cached-\($0)" }), for: .init(settings: config))
+        let current = model(store)
+        let lineup = try XCTUnwrap(current.cachedHeroItems(for: config))
+        let visible = Array(lineup.prefix(6))
+        for item in visible { current.recordHeroExposure(item) }
+        await current.waitForHeroExposurePersistence()
+        current.cacheHeroCandidatePool(
+            pool((0..<40).map { "new-\($0)" }), for: config, preservingUnseen: true
+        )
+        await current.waitForHeroPersistence()
+
+        XCTAssertEqual(current.cachedHeroItems(for: config), lineup)
+        let saved = try XCTUnwrap(store.loadHeroCandidatePool(for: .init(settings: config)))
+        let savedIDs = Set(saved.buckets.flatMap(\.items).map(\.id))
+        XCTAssertTrue(Set(lineup.dropFirst(6).map(\.id)).isSubset(of: savedIDs))
+        XCTAssertEqual(savedIDs.count, HeroFreshnessCandidatePool.maximumItemsPerSource)
+        let nextLaunch = try XCTUnwrap(model(store).cachedHeroItems(for: config))
+        XCTAssertEqual(nextLaunch.count, 20)
+        XCTAssertTrue(Set(nextLaunch.prefix(6).map(\.id)).isDisjoint(with: visible.map(\.id)))
+    }
+
     func testExplicitNewSessionChangesSelectionButNotHistory() async throws {
         let store = InMemoryHomeContentStore()
         let config = settings()

@@ -19,7 +19,7 @@ private struct MediaItemActionContextKey: EnvironmentKey {
 }
 
 private struct MediaItemNavigatorKey: EnvironmentKey {
-    static let defaultValue: ((MediaItem) -> Void)? = nil
+    static let defaultValue: MediaItemNavigator? = nil
 }
 
 private struct MediaPersonNavigatorKey: EnvironmentKey {
@@ -48,7 +48,7 @@ public extension EnvironmentValues {
     /// The view-layer router used by navigation context-menu actions (e.g. "Go
     /// to Season") to push a destination. Each navigation stack installs one that
     /// appends to its own path. `nil` disables navigation actions.
-    var mediaItemNavigator: ((MediaItem) -> Void)? {
+    var mediaItemNavigator: MediaItemNavigator? {
         get { self[MediaItemNavigatorKey.self] }
         set { self[MediaItemNavigatorKey.self] = newValue }
     }
@@ -91,7 +91,7 @@ public extension View {
     /// Installs the router that navigation context-menu actions (e.g. "Go to
     /// Season") use to push a destination for this subtree's navigation stack.
     func mediaItemNavigator(_ navigate: ((MediaItem) -> Void)?) -> some View {
-        environment(\.mediaItemNavigator, navigate)
+        modifier(MediaItemNavigatorScope(navigate: navigate))
     }
 
     /// Installs the router that cast tiles in this subtree use to open a person.
@@ -111,6 +111,51 @@ public extension View {
     /// the item has no available actions.
     func mediaItemContextMenu(for item: MediaItem) -> some View {
         modifier(MediaItemContextMenu(item: item))
+    }
+}
+
+private struct MediaItemNavigatorScope: ViewModifier {
+    let navigate: ((MediaItem) -> Void)?
+    @State private var relay = MediaItemNavigationRelay()
+
+    func body(content: Content) -> some View {
+        content.environment(\.mediaItemNavigator, relay.update(navigate))
+    }
+}
+
+/// Identity-stable routing whose latest callback can change without rebuilding
+/// every card's menu. Availability still propagates through the optional value.
+public struct MediaItemNavigator: Equatable {
+    fileprivate let relay: MediaItemNavigationRelay
+
+    @MainActor public init(_ navigate: @escaping (MediaItem) -> Void) {
+        relay = MediaItemNavigationRelay()
+        _ = relay.update(navigate)
+    }
+
+    fileprivate init(relay: MediaItemNavigationRelay) {
+        self.relay = relay
+    }
+
+    @MainActor public func callAsFunction(_ item: MediaItem) {
+        relay.perform(item)
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool { lhs.relay === rhs.relay }
+}
+
+@MainActor
+fileprivate final class MediaItemNavigationRelay {
+    private var navigate: ((MediaItem) -> Void)?
+
+    func perform(_ item: MediaItem) {
+        navigate?(item)
+    }
+
+    // Refresh the route's captured inputs without invalidating every card menu.
+    func update(_ navigate: ((MediaItem) -> Void)?) -> MediaItemNavigator? {
+        self.navigate = navigate
+        return navigate == nil ? nil : MediaItemNavigator(relay: self)
     }
 }
 

@@ -82,7 +82,7 @@ final class NativeTVMediaCoordinator {
     }
 
     func observe(_ focused: Bool) {
-        if focus.observed.wrappedValue != focused { focus.observed.wrappedValue = focused }
+        if focus.observation.isFocused != focused { focus.observation.isFocused = focused }
     }
 
     func activate() { action() }
@@ -363,10 +363,14 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         // Materializing imageView with a nil image freezes TVUIKit's native
         // focus expansion at zero, even after an image arrives.
         let view = Poster(image: initialImage)
+        view.updateImage(initialImage)
         view.defaultAccessibilityElement = view.isAccessibilityElement
         view.contentSize = size
         view.hostedOverlay = overlayConfiguration(in: context).makeContentView()
         if let overlay = view.hostedOverlay {
+            // Native focus and row scrolling move the same logo/badge composite.
+            overlay.layer.shouldRasterize = true
+            overlay.layer.rasterizationScale = context.environment.displayScale
             let container = view.imageView.overlayContentView
             container.addSubview(overlay)
             overlay.translatesAutoresizingMaskIntoConstraints = false
@@ -403,10 +407,11 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         view.accessibilityValue = subtitle
         view.accessibilityTraits.insert(.button)
         view.hostedOverlay?.configuration = overlayConfiguration(in: context)
+        view.hostedOverlay?.layer.rasterizationScale = context.environment.displayScale
         let prepared = context.coordinator.presentationImage(
             image, treatment: treatment, size: view.contentSize, scale: context.environment.displayScale
         )
-        if view.image !== prepared { view.image = prepared }
+        view.updateImage(prepared)
         view.isEnabled = context.environment.isEnabled
         source?.nativeArtworkView = view.imageView
         context.coordinator.focus.update(focus: focus, action: action, view: view)
@@ -425,7 +430,7 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         let prepared = context.coordinator.presentationImage(
             image, treatment: treatment, size: size, scale: context.environment.displayScale
         )
-        if poster.image !== prepared { poster.image = prepared }
+        poster.updateImage(prepared)
         return uiView.intrinsicContentSize
     }
 
@@ -482,6 +487,14 @@ struct NativeTVPoster<Overlay: View>: UIViewRepresentable {
         var hostedOverlay: (UIView & UIContentView)?
         var onFocus: ((Bool) -> Void)?
         var onAvailable: (() -> Void)?
+
+        func updateImage(_ image: UIImage) {
+            if self.image !== image { self.image = image }
+            // Transparent covers remain rounded posters, not alpha-shaped cutouts.
+            if imageView.masksFocusEffectToContents {
+                imageView.masksFocusEffectToContents = false
+            }
+        }
 
         override func didMoveToWindow() {
             super.didMoveToWindow()

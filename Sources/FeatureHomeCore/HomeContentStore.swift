@@ -25,6 +25,8 @@ public protocol HomeContentStoring: AnyObject, Sendable {
     /// Stable identity for ordering asynchronous writes. On-disk stores use their
     /// profile-scoped file path so replacement view models share one write stream.
     var persistenceScope: String { get }
+    /// Profile identity for artwork keys, independent of the installed container path.
+    var libraryArtworkScope: String { get }
     /// The last persisted snapshot, or `nil` on a miss (no file / stale / decode
     /// failure / empty). Read **synchronously** so `HomeViewModel` can hydrate its
     /// initial state at construction. `HomeContentStore` memoizes the first decode,
@@ -72,6 +74,8 @@ public extension HomeContentStoring {
     var persistenceScope: String {
         "instance:\(ObjectIdentifier(self))"
     }
+
+    var libraryArtworkScope: String { persistenceScope }
 
     func loadHeroCandidatePool(for key: HeroConfigurationKey) -> HeroFreshnessCandidatePool? { nil }
     func saveHeroCandidatePool(_ pool: HeroFreshnessCandidatePool, for key: HeroConfigurationKey) {
@@ -196,6 +200,10 @@ public final class HomeContentStore: HomeContentStoring, @unchecked Sendable {
     public var persistenceScope: String {
         fileURL?.standardizedFileURL.path
             ?? "disabled:\(ObjectIdentifier(self))"
+    }
+
+    public var libraryArtworkScope: String {
+        fileURL.map { "home-profile:\($0.lastPathComponent)" } ?? persistenceScope
     }
 
     /// Wire format: the bounded content plus the time it was captured (for

@@ -105,7 +105,7 @@ struct PlozziOSLiveTVDestination: View {
             prepareLibraryChannels: runtime.prepareForEditing,
             libraryIsAuthorized: { [weak runtime] in runtime?.authorizationID != nil },
             sourceApprovalContext: { [profiles] in LiveTVSourceApprovalContext(profiles: profiles) },
-            onOpenTitle: navigateToItem,
+            onOpenTitle: navigateToItem.map { navigator in { navigator($0) } },
             // The guide draws its own top row (browse controls and this), in
             // place of the navigation bar, which is hidden below.
             topBarAccessory: AnyView(PlozziOSSettingsAvatarButton(size: 36, action: onShowSettings))

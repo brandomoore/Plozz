@@ -183,38 +183,40 @@ public struct PosterCardView: View {
 
     public var body: some View {
         cardBody
-            // Hand this card's focus to the shared chrome drawn on its artwork
-            // (progress bar, resume chip) so it settles at rest and comes to full
-            // strength on focus. No-op off tvOS.
-            .plozzChromeFocused(isFocused)
+            .plozzChromeFocused(usesNativePoster ? false : isFocused)
             .mediaItemContextMenu(for: item)
-            .preloadDetailBackdropOnFocus(for: item, isFocused: isFocused)
-            .onChange(of: focusRequest, initial: true) { _, request in
-                guard request != nil else { return }
-                $isFocused.requestFocus(animated: false)
-                if isFocused { onFocusRequestHandled?() }
-            }
-            .onChange(of: isFocused) { _, focused in
-                if focused, focusRequest != nil { onFocusRequestHandled?() }
-            }
+            .modifier(PosterFocusBehavior(
+                item: item, focus: $isFocused,
+                request: focusRequest, onRequestHandled: onFocusRequestHandled
+            ))
             #if os(tvOS)
             .coordinateSpace(name: detailTransitionSource.coordinateSpace)
             .background {
-                DetailTransitionSourceAnchor(
-                    reference: detailTransitionSource,
-                    itemKey: item.stablePresentationID,
-                    cornerRadius: transitionArtworkCornerRadius,
-                    isFocused: isFocused,
-                    cardFocus: $isFocused
-                )
+                PosterFocusReader(focus: $isFocused) { focused in
+                    DetailTransitionSourceAnchor(
+                        reference: detailTransitionSource,
+                        itemKey: item.stablePresentationID,
+                        cornerRadius: transitionArtworkCornerRadius,
+                        isFocused: focused,
+                        cardFocus: $isFocused
+                    )
+                }
             }
             #endif
+    }
+
+    private var usesNativePoster: Bool {
+        #if os(tvOS)
+        focusStyle.usesSystemEffect && cardStyle == .borderless
+        #else
+        false
+        #endif
     }
 
     @ViewBuilder
     private var cardBody: some View {
         #if os(tvOS)
-        if focusStyle.usesSystemEffect && cardStyle == .borderless {
+        if usesNativePoster {
             nativePosterCard
         } else {
             styledCardBody
@@ -295,10 +297,12 @@ public struct PosterCardView: View {
                 .frame(maxWidth: .infinity)
             }
             if showsCaption {
-                SystemPosterCaption(
-                    title: nativePosterTitle, subtitle: subtitleText,
-                    reservesSubtitleSpace: reservesSubtitleSpace, isFocused: isFocused
-                )
+                PosterFocusReader(focus: $isFocused) { focused in
+                    SystemPosterCaption(
+                        title: nativePosterTitle, subtitle: subtitleText,
+                        reservesSubtitleSpace: reservesSubtitleSpace, isFocused: focused
+                    )
+                }
                 .accessibilityHidden(true)
             }
         }
@@ -306,6 +310,13 @@ public struct PosterCardView: View {
     }
 
     private func nativePosterOverlay(hasArtwork: Bool) -> some View {
+        PosterFocusReader(focus: $isFocused) { focused in
+            nativePosterIndicators(hasArtwork: hasArtwork)
+                .plozzChromeFocused(focused)
+        }
+    }
+
+    private func nativePosterIndicators(hasArtwork: Bool) -> some View {
         ZStack {
             if !hasArtwork { neutralPlaceholder }
             if showsSeriesArtwork && !suppressesSeriesLogo { seriesLogo }
@@ -385,6 +396,33 @@ public struct PosterCardView: View {
             accessibilityLabel: cardAccessibilityTitle, action: selectCard
         )
         .plozzCardFocusTransition(isFocused: isFocused)
+    }
+
+    private struct PosterFocusReader<Content: View>: View {
+        let focus: PlozzCardFocus.Binding
+        @ViewBuilder let content: (Bool) -> Content
+
+        var body: some View { content(focus.isFocused) }
+    }
+
+    private struct PosterFocusBehavior: ViewModifier {
+        let item: MediaItem
+        let focus: PlozzCardFocus.Binding
+        let request: UUID?
+        let onRequestHandled: (() -> Void)?
+
+        func body(content: Content) -> some View {
+            content
+                .preloadDetailBackdropOnFocus(for: item, isFocused: focus.isFocused)
+                .onChange(of: request, initial: true) { _, request in
+                    guard request != nil else { return }
+                    focus.requestFocus(animated: false)
+                    if focus.isFocused { onRequestHandled?() }
+                }
+                .onChange(of: focus.isFocused) { _, focused in
+                    if focused, request != nil { onRequestHandled?() }
+                }
+        }
     }
 
     // MARK: Landscape (medium) card
