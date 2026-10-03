@@ -245,6 +245,9 @@ private struct PinnedSidebarFeather: View {
         }
         .background {
             Color.black.opacity(0.1)
+                // Native Showcase hosts suppress safe-area propagation. Match
+                // their viewport's overflow without shifting the feather.
+                .padding(.leading, -160)
                 .ignoresSafeArea(.container, edges: .leading)
         }
         .environment(\.layoutDirection, .leftToRight)

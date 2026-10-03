@@ -242,8 +242,11 @@ Libraries uses the same unclipped horizontal viewport as media rows. Native
 navigation lets focused artwork and scrolling cards draw through the page gutter
 to the screen edge. Pinned navigation's shared feather retains 10% artwork
 opacity beneath the icons through the physical leading edge, rising smoothly to
-full opacity near the first card across a 38pt feather. It adds no second hard clip at
-the row's content inset and does not change scrolling, parking, or focus identity.
+full opacity near the first card across a 38pt feather. The faint floor explicitly
+overhangs the row because Showcase's nested native hosts suppress safe-area
+propagation; relying on `ignoresSafeArea` alone clips it before the icons.
+Extending that floor does not move or widen the feather, add a second mask, or
+change scrolling, parking, or focus identity.
 
 Discover hydrates and displays its saved candidates with the same featured-only
 configuration used by Showcase's live curation. Without eligible cached content,

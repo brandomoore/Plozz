@@ -348,6 +348,81 @@ final class HomeVerticalMotionHostedTests: XCTestCase {
         XCTAssertLessThan(maximumMaskDifference, 8, "The outgoing-row concealment must share the same motion.")
     }
 
+    func testPinnedShowcaseRowsRetainArtworkBehindIconsAndThroughTheScreenEdge() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = FocusHeroModel()
+        let rows = [FocusHeroRow(id: "underlay", itemIDs: [], leadItem: nil)]
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let host = UIHostingController(rootView:
+            FocusHeroScrollingRows(rows: rows, model: model) { _, _ in
+                PinnedSidebarLeadingFade(isActive: true, inset: 64, verticalOverhang: 64) {
+                    ScrollView(.horizontal) {
+                        Color.white.frame(width: 3200, height: 300)
+                    }
+                    .scrollClipDisabled()
+                }
+                .frame(height: 300)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea(.container, edges: [.vertical, .trailing])
+        )
+        host.view.backgroundColor = .black
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        func horizontalScroll(in view: UIView) -> UIScrollView? {
+            if let scroll = view as? UIScrollView, scroll.contentSize.width > scroll.bounds.width {
+                return scroll
+            }
+            return view.subviews.lazy.compactMap { horizontalScroll(in: $0) }.first
+        }
+        let scroll = try XCTUnwrap(horizontalScroll(in: window))
+        scroll.setContentOffset(CGPoint(x: 240, y: scroll.contentOffset.y), animated: false)
+        try await Task.sleep(for: .milliseconds(100))
+        let frame = scroll.convert(scroll.bounds, to: window)
+        XCTAssertGreaterThan(frame.minX, 49, "Reproduce the inset Showcase hosting surface beside the icons.")
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        format.preferredRange = .standard
+        let image = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Pinned Showcase artwork beneath the sidebar"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let cg = try XCTUnwrap(image.cgImage)
+        XCTAssertEqual(cg.bitsPerPixel, 32)
+        let bytes = Array(try XCTUnwrap(cg.dataProvider?.data) as Data)
+        let y = Int(frame.midY)
+        for x in [2, 49, Int(frame.minX) - 2, Int(frame.minX) + 16] {
+            let offset = y * cg.bytesPerRow + x * 4
+            XCTAssertEqual(Double(bytes[offset]), 25.5, accuracy: 3,
+                           "Keep 10% of scrolling artwork at x=\(x), including behind the icons.")
+        }
+        for distance in [20, 30, 42, 50, 54, 64] {
+            let offset = y * cg.bytesPerRow + (Int(frame.minX) + distance) * 4
+            let t = min(1, (Double(distance - 16) + 0.5) / 38)
+            let opacity = 0.1 + 0.9 * t * t * (3 - 2 * t)
+            XCTAssertEqual(Double(bytes[offset]), 255 * opacity, accuracy: 3,
+                           "Keep the requested 38pt feather and its shifted start at distance=\(distance).")
+        }
+    }
+
     func testRapidCompositorMovesKeepRowsPaintedBetweenDestinations() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
