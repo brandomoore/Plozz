@@ -443,7 +443,9 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
     }
 
     private func coloredRegions(in window: UIWindow) -> (top: CGRect, bottom: CGRect) {
-        let image = DetailTransitionSnapshot.image(of: window)
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
         guard let image = image.cgImage else { return (.null, .null) }
         let width = 480
         let height = max(1, Int(CGFloat(width) * window.bounds.height / window.bounds.width))

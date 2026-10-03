@@ -254,7 +254,9 @@ final class NativeSubtitlePresentationTests: XCTestCase {
         var paintedControls: UIImage?
         let paintDeadline = ContinuousClock.now + .seconds(5)
         repeat {
-            let image = DetailTransitionSnapshot.image(of: window)
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
             let recognition = VNRecognizeTextRequest()
             recognition.recognitionLevel = .accurate
             recognition.recognitionLanguages = ["en-US"]
