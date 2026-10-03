@@ -149,9 +149,17 @@ final class FakeMediaProvider: MediaProvider, InteractiveBrowseActivityReporting
     /// tests are unaffected; a test that exercises the Continue Watching row sets it.
     var continueWatchingItems: [MediaItem] = []
     var continueWatchingGate: (@Sendable () async -> Void)?
+    var continueWatchingError: AppError?
     func continueWatching(limit: Int) async throws -> [MediaItem] {
         await continueWatchingGate?()
+        if let continueWatchingError { throw continueWatchingError }
         return Array(continueWatchingItems.prefix(limit))
+    }
+    var recommendationHubs: [LibrarySection] = []
+    var recommendationHubError: AppError?
+    func libraryHubs(libraryID: String, kind: MediaItemKind, limit: Int) async throws -> [LibrarySection] {
+        if let recommendationHubError { throw recommendationHubError }
+        return recommendationHubs
     }
     var latestGate: (@Sendable () async -> Void)?
     func latest(limit: Int) async throws -> [MediaItem] {

@@ -185,6 +185,7 @@ struct PlozziOSLibraryGridView: View {
     /// artwork, which is what the banner's edges have to match.
     @Environment(\.plozzCardStyle) private var cardStyle
     @State private var viewModel: LibraryBrowseViewModel
+    @State private var selectedRecommendedItem: MediaItem?
     private let title: String   // l10n:content — library name from the server
     private let provider: any MediaProvider
     private let settings: PlozziOSSettingsModel
@@ -210,6 +211,135 @@ struct PlozziOSLibraryGridView: View {
     var body: some View {
         let generation = viewModel.contentGeneration
         Group {
+            if viewModel.contentMode == .recommended {
+                recommendedContent
+            } else {
+                browseContent(generation: generation)
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $selectedRecommendedItem) { item in
+            PlozziOSItemDetailView(
+                appModel: appModel,
+                provider: provider,
+                item: item,
+                originSourceAccountID: item.sourceAccountID
+            )
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if (viewModel.availableContentModes.count > 1 || !viewModel.availableSortFields.isEmpty),
+               viewModel.contentMode == .recommended
+                    ? viewModel.recommendationState.value == nil
+                    : (viewModel.state.value == nil || viewModel.state.value == 0) {
+                browseControls
+                    .background(.bar)
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if viewModel.contentMode == .recommended, let error = viewModel.recommendationError,
+               viewModel.recommendationState.value != nil {
+                HStack {
+                    Text(error.userMessage).plozzForeground(.secondary)
+                    Button("Try Again") { Task { await viewModel.loadRecommendations() } }
+                }
+                .padding()
+                .background(.regularMaterial)
+            }
+            if viewModel.contentMode != .recommended, let error = viewModel.pageError {
+                HStack {
+                    Text(error.userMessage)
+                        .plozzForeground(.secondary)
+                    Button("Try Again") {
+                        Task { await viewModel.retryFailedPages() }
+                    }
+                }
+                .padding()
+                .background(.regularMaterial)
+            }
+        }
+        .toolbar {
+            if viewModel.alphabet.isVisible {
+                ToolbarItem(placement: .primaryAction) {
+                    LibraryAlphabetMenu(entries: viewModel.letterEntries, isLoading: viewModel.alphabet.isLoading,
+                                        isJumping: viewModel.alphabet.jumpingTo != nil,
+                                        onSelect: { letter, id in viewModel.beginLetterJump(letter, menuPresentationID: id) },
+                                        onDismiss: viewModel.alphabet.menuDidDismiss,
+                                        onCancel: viewModel.cancelLetterJump,
+                                        onRetry: viewModel.retryLetterIndex)
+                }
+            }
+            if let library = viewModel.fileBrowserLibrary {
+                ToolbarItem(placement: .primaryAction) {
+                    NavigationLink(
+                        value: PlozziOSLibraryRoute(
+                            library: library,
+                            accountID: library.sourceAccountID ?? provider.session.server.id
+                        )
+                    ) {
+                        Label("Browse Files", systemImage: "folder")
+                    }
+                }
+            }
+        }
+        .task { await viewModel.loadFirstPageIfNeeded() }
+        .background {
+            LibraryAlphabetFeedback(letter: viewModel.alphabet.jumpingTo, message: viewModel.alphabet.message)
+        }
+        .onDisappear { viewModel.cancelLetterJump() }
+        .plozziOSLibraryDestination(appModel: appModel)
+        .background {
+            if viewModel.isMediaShare {
+                ShareCatalogRefreshObserver(
+                    shareID: viewModel.sourceServerID,
+                    status: scanStatus
+                ) {
+                    await viewModel.refreshAfterCatalogChange()
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .mediaItemDidMutate)) { note in
+            if let mutation = MediaItemMutation.from(note) {
+                viewModel.applyWatchedState(mutation)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var recommendedContent: some View {
+        switch viewModel.recommendationState {
+        case .idle, .loading:
+            ProgressView("Loading recommendations…")
+        case .empty:
+            ContentUnavailableView("No recommendations in this library", systemImage: "sparkles")
+        case .loaded(let sections):
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 24) {
+                    browseControls
+                    ForEach(sections) { section in
+                        MediaRowView(
+                            title: Text(verbatim: section.title),
+                            items: section.items,
+                            style: section.style == .poster ? .poster : .landscape,
+                            onSelect: { selectedRecommendedItem = $0 }
+                        )
+                    }
+                }
+                .padding(.vertical, 12)
+            }
+        case .failed(let error):
+            ContentUnavailableView {
+                Label("Unable to load recommendations", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(error.userMessage)
+            } actions: {
+                Button("Try Again") { Task { await viewModel.loadRecommendations() } }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func browseContent(generation: Int) -> some View {
             switch viewModel.state {
             case .idle, .loading:
                 ProgressView("Loading \(title)…")
@@ -274,74 +404,6 @@ struct PlozziOSLibraryGridView: View {
                 }
             }
         }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if (viewModel.availableContentModes.count > 1 || !viewModel.availableSortFields.isEmpty),
-               viewModel.state.value == nil || viewModel.state.value == 0 {
-                browseControls
-                    .background(.bar)
-            }
-        }
-        .safeAreaInset(edge: .bottom) {
-            if let error = viewModel.pageError {
-                HStack {
-                    Text(error.userMessage)
-                        .plozzForeground(.secondary)
-                    Button("Try Again") {
-                        Task { await viewModel.retryFailedPages() }
-                    }
-                }
-                .padding()
-                .background(.regularMaterial)
-            }
-        }
-        .toolbar {
-            if viewModel.alphabet.isVisible {
-                ToolbarItem(placement: .primaryAction) {
-                    LibraryAlphabetMenu(entries: viewModel.letterEntries, isLoading: viewModel.alphabet.isLoading,
-                                        isJumping: viewModel.alphabet.jumpingTo != nil,
-                                        onSelect: { letter, id in viewModel.beginLetterJump(letter, menuPresentationID: id) },
-                                        onDismiss: viewModel.alphabet.menuDidDismiss,
-                                        onCancel: viewModel.cancelLetterJump,
-                                        onRetry: viewModel.retryLetterIndex)
-                }
-            }
-            if let library = viewModel.fileBrowserLibrary {
-                ToolbarItem(placement: .primaryAction) {
-                    NavigationLink(
-                        value: PlozziOSLibraryRoute(
-                            library: library,
-                            accountID: library.sourceAccountID ?? provider.session.server.id
-                        )
-                    ) {
-                        Label("Browse Files", systemImage: "folder")
-                    }
-                }
-            }
-        }
-        .task { await viewModel.loadFirstPageIfNeeded() }
-        .background {
-            LibraryAlphabetFeedback(letter: viewModel.alphabet.jumpingTo, message: viewModel.alphabet.message)
-        }
-        .onDisappear { viewModel.cancelLetterJump() }
-        .plozziOSLibraryDestination(appModel: appModel)
-        .background {
-            if viewModel.isMediaShare {
-                ShareCatalogRefreshObserver(
-                    shareID: viewModel.sourceServerID,
-                    status: scanStatus
-                ) {
-                    await viewModel.refreshAfterCatalogChange()
-                }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .mediaItemDidMutate)) { note in
-            if let mutation = MediaItemMutation.from(note) {
-                viewModel.applyWatchedState(mutation)
-            }
-        }
-    }
 
     @ViewBuilder
     private var browseControls: some View {
@@ -447,8 +509,20 @@ struct PlozziOSLibraryGridView: View {
 
 private struct PlozziOSLibraryContentModeControl: View {
     let viewModel: LibraryBrowseViewModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
+        Group {
+            if horizontalSizeClass == .compact {
+                modePicker.pickerStyle(.menu)
+            } else {
+                modePicker.pickerStyle(.segmented)
+            }
+        }
+        .accessibilityIdentifier("library-content-mode")
+    }
+
+    private var modePicker: some View {
         Picker("Show", selection: Binding(
             get: { viewModel.contentMode },
             set: { mode in Task { await viewModel.setContentMode(mode) } }
@@ -457,8 +531,6 @@ private struct PlozziOSLibraryContentModeControl: View {
                 Text(mode.displayName).tag(mode)
             }
         }
-        .pickerStyle(.segmented)
-        .accessibilityIdentifier("library-content-mode")
     }
 }
 

@@ -46,9 +46,13 @@ fallback when the user's server has no attached trailer.
   The sidebar's mask changes without replacing the scroll view, preserving
   browse position and restoring the normal feather when navigation returns.
 - **Library browsing** — `LibraryBrowseView` + `LibraryBrowseViewModel`
-  for the per-library grid behind a Home row. Video libraries can switch
-  among Browse, Collections, and Playlists when their provider advertises
-  those capabilities. Plex, Jellyfin, and Emby discover existing video
+  show Recommended by default for server-backed video libraries, with
+  library-scoped Continue Watching and Recently Added plus native Plex hubs
+  or Jellyfin/Emby movie recommendation categories. TV offers a Showcase/Rows
+  comparison in Recommended; mobile uses rows. Browse retains its paged grid,
+  and video libraries can also switch to Collections and Playlists when their
+  provider advertises those capabilities. File shares and collection/playlist
+  members continue to open in Browse. Plex, Jellyfin, and Emby discover existing video
   playlists by actual member/library intersection; a mixed playlist appears
   in each matching library but opens with its full authored order. Music
   playlists remain in `MusicProvider`. Unsupported sources (including Silo)

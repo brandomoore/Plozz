@@ -66,6 +66,13 @@ struct ItemsResponse: Decodable {
     let TotalRecordCount: Int?
 }
 
+struct MovieRecommendationDto: Decodable {
+    let Items: [BaseItemDto]?
+    let RecommendationType: String
+    let BaselineItemName: String?
+    let CategoryId: String?
+}
+
 struct ThemeMediaResponse: Decodable {
     let ThemeSongsResult: ItemsResponse?
 }

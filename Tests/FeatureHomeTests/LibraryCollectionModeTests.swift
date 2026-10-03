@@ -26,21 +26,23 @@ final class LibraryCollectionModeTests: XCTestCase {
                 let model = model(provider, kind: kind)
                 let expected = supported && (kind == .movie || kind == .series)
                 XCTAssertEqual(model.supportsCollections, expected)
-                XCTAssertEqual(model.contentMode, .titles)
+                let initial: LibraryContentMode = kind == .movie || kind == .series ? .recommended : .titles
+                XCTAssertEqual(model.contentMode, initial)
                 await model.setContentMode(.collections)
-                XCTAssertEqual(model.contentMode, expected ? .collections : .titles)
+                XCTAssertEqual(model.contentMode, expected ? .collections : initial)
                 let requests = await provider.requests
                 XCTAssertEqual(requests.count, expected ? 1 : 0)
             }
         }
     }
 
-    func testEveryBackendUsesLibraryScopedCollectionsAndKeepsTitleBrowseDefault() async {
-        for kind: ProviderKind in [.plex, .jellyfin, .emby] {
+    func testEveryBackendUsesLibraryScopedCollectionsAndStartsInRecommended() async {
+        for kind: ProviderKind in [.plex, .jellyfin, .emby, .silo] {
             let provider = LibraryModeProvider(kind: kind)
             let model = model(provider)
-            await model.loadFirstPage()
-            XCTAssertEqual(model.contentMode, .titles)
+            XCTAssertEqual(model.contentMode, .recommended)
+            XCTAssertEqual(model.availableContentModes.first, .recommended)
+            await model.setContentMode(.titles)
             XCTAssertEqual(model.item(at: 0)?.kind, .movie)
             await model.setContentMode(.collections)
             XCTAssertEqual(model.item(at: 0)?.kind, .collection)
@@ -53,15 +55,76 @@ final class LibraryCollectionModeTests: XCTestCase {
         }
     }
 
+    func testRecommendedRowsStayScopedAndHaveDistinctPresentationIDs() async {
+        let watching = MediaItem(id: "watching", title: "Watching", kind: .movie)
+            .taggingLibrary("real-library")
+        let hubItem = MediaItem(id: "suggested", title: "Suggested", kind: .movie)
+        let provider = LibraryModeProvider(
+            watchingItems: [watching, watching.taggingLibrary("other-library")],
+            nativeSections: [
+                LibrarySection(id: "recentlyAdded", title: "For You", items: [hubItem]),
+                LibrarySection(id: "recentlyAdded", title: "More For You", items: [hubItem])
+            ]
+        )
+        let model = model(provider)
+        await model.loadFirstPageIfNeeded()
+
+        guard case .loaded(let sections) = model.recommendationState else {
+            return XCTFail("Expected scoped recommendation rows")
+        }
+        XCTAssertEqual(sections.map(\.title), ["Continue Watching", "For You", "More For You", "Recently Added"])
+        XCTAssertEqual(Set(sections.map(\.id)).count, sections.count)
+        XCTAssertEqual(sections.first?.items.map(\.id), ["watching"])
+        XCTAssertTrue(sections.flatMap(\.items).allSatisfy { $0.sourceAccountID == "owning-account" })
+        XCTAssertEqual(sections[1].items.first?.libraryID, "real-library")
+        let requestedLibraries = await provider.requestedWatchingLibraries
+        let requestedHubs = await provider.requestedHubLibraries
+        let firstRequest = await provider.requests.first
+        XCTAssertEqual(requestedLibraries, [["real-library"]])
+        XCTAssertEqual(requestedHubs, ["real-library"])
+        XCTAssertEqual(firstRequest?.page.sort.field, .dateAdded)
+    }
+
+    func testRecommendationFailurePreservesOtherRowsAndCanRetry() async {
+        let provider = LibraryModeProvider(failHubs: true)
+        let model = model(provider)
+        await model.loadFirstPageIfNeeded()
+        XCTAssertEqual(model.recommendationError, .serverUnreachable)
+        guard case .loaded(let sections) = model.recommendationState else {
+            return XCTFail("Recent titles should survive a hub failure")
+        }
+        XCTAssertEqual(sections.map(\.id), ["recentlyAdded"])
+
+        await provider.setFailHubs(false)
+        await model.loadRecommendations()
+        XCTAssertNil(model.recommendationError)
+        XCTAssertNotNil(model.recommendationState.value)
+    }
+
+    func testCancelledRecommendationsCanRetryOnReappear() async {
+        let provider = LibraryModeProvider()
+        let model = model(provider)
+        await provider.hold(.titles, at: 0)
+        let loading = Task { await model.loadFirstPageIfNeeded() }
+        await provider.waitForHeldRequest(.titles, at: 0)
+        loading.cancel()
+        await provider.release(.titles, at: 0)
+        await loading.value
+        XCTAssertEqual(model.recommendationState, .idle)
+
+        await model.loadFirstPageIfNeeded()
+        XCTAssertNotNil(model.recommendationState.value)
+    }
+
     func testVideoPlaylistModeIsCapabilityGatedAndKeepsAccountAndSortSeparate() async {
         let unsupported = model(LibraryModeProvider(supportsPlaylists: false))
-        XCTAssertEqual(unsupported.availableContentModes, [.titles, .collections])
+        XCTAssertEqual(unsupported.availableContentModes, [.recommended, .titles, .collections])
         await unsupported.setContentMode(.playlists)
-        XCTAssertEqual(unsupported.contentMode, .titles)
+        XCTAssertEqual(unsupported.contentMode, .recommended)
 
         let provider = LibraryModeProvider(supportsPlaylists: true)
         let model = model(provider)
-        XCTAssertEqual(model.availableContentModes, [.titles, .collections, .playlists])
+        XCTAssertEqual(model.availableContentModes, [.recommended, .titles, .collections, .playlists])
         await model.setContentMode(.playlists)
         XCTAssertEqual(model.item(at: 0)?.kind, .playlist)
         XCTAssertEqual(model.item(at: 0)?.sourceAccountID, "owning-account")
@@ -110,7 +173,7 @@ final class LibraryCollectionModeTests: XCTestCase {
     func testSwitchClearsCountSlotsScrollAndLatePagesBeforeResponse() async {
         let provider = LibraryModeProvider(titleCount: 40, collectionCount: 12)
         let model = model(provider)
-        await model.loadFirstPage()
+        await model.setContentMode(.titles)
         await model.itemAppeared(at: 8)
         XCTAssertNotNil(model.item(at: 8))
         XCTAssertEqual(model.topVisibleIndex, 8)
@@ -149,6 +212,7 @@ final class LibraryCollectionModeTests: XCTestCase {
     func testTitleAndCollectionSortsRestoreIndependently() async {
         let provider = LibraryModeProvider()
         let model = model(provider)
+        await model.setContentMode(.titles)
         let titleSort = CoreModels.SortDescriptor(field: .communityRating, direction: .descending)
         let collectionSort = CoreModels.SortDescriptor(field: .dateAdded, direction: .descending)
         await model.setSort(titleSort)
@@ -185,7 +249,7 @@ final class LibraryCollectionModeTests: XCTestCase {
         XCTAssertEqual(model.item(at: 8)?.id, "collection-8")
     }
 
-    func testNewLibraryOrAccountStartsInTitlesAndRetainsItsOwnSource() async {
+    func testNewLibraryOrAccountStartsInRecommendedAndRetainsItsOwnSource() async {
         let firstProvider = LibraryModeProvider(accountID: "server-a")
         let first = model(firstProvider, accountID: "account-a")
         await first.setContentMode(.collections)
@@ -193,8 +257,8 @@ final class LibraryCollectionModeTests: XCTestCase {
 
         let secondProvider = LibraryModeProvider(accountID: "server-b")
         let second = model(secondProvider, accountID: "account-b")
-        XCTAssertEqual(second.contentMode, .titles)
-        await second.loadFirstPage()
+        XCTAssertEqual(second.contentMode, .recommended)
+        await second.setContentMode(.titles)
         XCTAssertEqual(second.item(at: 0)?.sourceAccountID, "account-b")
         await second.setContentMode(.collections)
         XCTAssertEqual(second.item(at: 0)?.sourceAccountID, "account-b")
@@ -203,7 +267,7 @@ final class LibraryCollectionModeTests: XCTestCase {
         XCTAssertEqual(second.sourceServerID, "server-b")
 
         let anotherLibrary = model(firstProvider, libraryID: "other-library", accountID: "account-a")
-        XCTAssertEqual(anotherLibrary.contentMode, .titles)
+        XCTAssertEqual(anotherLibrary.contentMode, .recommended)
         await anotherLibrary.setContentMode(.collections)
         let request = await firstProvider.requests.last
         XCTAssertEqual(request?.containerID, "other-library")
@@ -212,7 +276,7 @@ final class LibraryCollectionModeTests: XCTestCase {
     func testEmptyCollectionsAreNotTheMovieCountAndCanSwitchBack() async {
         let provider = LibraryModeProvider(titleCount: 40, collectionCount: 0)
         let model = model(provider)
-        await model.loadFirstPage()
+        await model.setContentMode(.titles)
         await model.setContentMode(.collections)
         XCTAssertEqual(model.state, .empty)
         XCTAssertEqual(model.totalCount, 0)
@@ -241,6 +305,7 @@ final class LibraryCollectionModeTests: XCTestCase {
     func testSlowFirstPageCannotOverwriteNewMode() async {
         let provider = LibraryModeProvider()
         let model = model(provider)
+        await model.setContentMode(.titles)
         await provider.hold(.titles, at: 0)
         let titleLoad = Task { await model.loadFirstPage() }
         await provider.waitForHeldRequest(.titles, at: 0)
@@ -276,6 +341,7 @@ final class LibraryCollectionModeTests: XCTestCase {
     func testSlowCollectionFirstPageCannotOverwriteReturnedTitlesOrSort() async {
         let provider = LibraryModeProvider()
         let model = model(provider)
+        await model.setContentMode(.titles)
         let chosen = CoreModels.SortDescriptor(field: .dateAdded, direction: .descending)
         await model.setSort(chosen)
         await provider.hold(.collections, at: 0)
@@ -336,7 +402,7 @@ final class LibraryCollectionModeTests: XCTestCase {
     func testCollectionModeClearsAndDoesNotRequestTitleLetterIndex() async {
         let provider = LibraryModeProvider(collectionCount: 40)
         let model = model(provider)
-        await model.loadFirstPage()
+        await model.setContentMode(.titles)
         let deadline = Date().addingTimeInterval(1)
         while model.letterEntries.isEmpty && Date() < deadline {
             try? await Task.sleep(nanoseconds: 10_000_000)
@@ -381,12 +447,17 @@ private actor LibraryModeProvider: MediaProvider, CapabilityReporting {
     private let titleCount: Int
     private let collectionCount: Int
     private let supportsPlaylists: Bool
+    private let watchingItems: [MediaItem]
+    private let nativeSections: [LibrarySection]
+    private var failHubs: Bool
     private var holds: Set<Key> = []
     private var held: [Key: CheckedContinuation<Void, Never>] = [:]
     private var heldObservers: [Key: CheckedContinuation<Void, Never>] = [:]
     private var failures: Set<Key> = []
     private(set) var requests: [Request] = []
     private(set) var letterRequests: [MediaItemKind] = []
+    private(set) var requestedWatchingLibraries: [[String]?] = []
+    private(set) var requestedHubLibraries: [String] = []
 
     init(
         kind: ProviderKind = .jellyfin,
@@ -394,12 +465,18 @@ private actor LibraryModeProvider: MediaProvider, CapabilityReporting {
         supportsCollections: Bool = true,
         supportsPlaylists: Bool = false,
         titleCount: Int = 40,
-        collectionCount: Int = 12
+        collectionCount: Int = 12,
+        watchingItems: [MediaItem] = [],
+        nativeSections: [LibrarySection] = [],
+        failHubs: Bool = false
     ) {
         self.kind = kind
         self.titleCount = titleCount
         self.collectionCount = collectionCount
         self.supportsPlaylists = supportsPlaylists
+        self.watchingItems = watchingItems
+        self.nativeSections = nativeSections
+        self.failHubs = failHubs
         let base: ProviderCapability = supportsCollections ? [.video, .libraryCollections] : [.video]
         capabilities = supportsPlaylists ? base.union(.videoPlaylists) : base
         session = UserSession(
@@ -430,6 +507,7 @@ private actor LibraryModeProvider: MediaProvider, CapabilityReporting {
     }
 
     func clearFailures() { failures = [] }
+    func setFailHubs(_ value: Bool) { failHubs = value }
 
     func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
         try await response(.collections, containerID: libraryID, kind: .collection, page: page)
@@ -493,6 +571,15 @@ private actor LibraryModeProvider: MediaProvider, CapabilityReporting {
 
     func libraries() async throws -> [MediaLibrary] { [] }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func continueWatching(limit: Int, inLibraries libraryIDs: [String]?) async throws -> [MediaItem] {
+        requestedWatchingLibraries.append(libraryIDs)
+        return Array(watchingItems.prefix(limit))
+    }
+    func libraryHubs(libraryID: String, kind: MediaItemKind, limit: Int) async throws -> [LibrarySection] {
+        requestedHubLibraries.append(libraryID)
+        if failHubs { throw AppError.serverUnreachable }
+        return nativeSections
+    }
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func item(id: String) async throws -> MediaItem { throw AppError.notFound }
     func children(of itemID: String) async throws -> [MediaItem] { [] }

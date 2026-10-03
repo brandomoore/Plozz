@@ -24,6 +24,36 @@ final class JellyfinLibraryScopingTests: XCTestCase {
         }
     }
 
+    func testMovieRecommendationsUseLibraryScopeAndMapCategoriesForJellyfinAndEmby() async throws {
+        for kind: ProviderKind in [.jellyfin, .emby] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/Movies/Recommendations", json: """
+            [{"Items":[{"Id":"m1","Name":"Suggested Movie","Type":"Movie"}],
+              "RecommendationType":"SimilarToRecentlyPlayed",
+              "BaselineItemName":"A Favorite","CategoryId":"because-1"},
+             {"Items":[{"Id":"m2","Name":"Another Movie","Type":"Movie"}],
+              "RecommendationType":"HasLikedDirector"}]
+            """)
+            let session = UserSession(
+                server: MediaServer(id: "s", name: "Home", baseURL: URL(string: "http://host:8096")!, provider: kind),
+                userID: "u1", userName: "Alice", deviceID: "d1", accessToken: "TOKEN"
+            )
+            let provider = JellyfinProvider(session: session, http: stub)
+            let sections = try await provider.libraryHubs(libraryID: "LIB1", kind: .movie, limit: 10)
+            XCTAssertEqual(sections.map(\.id), ["because-1", "recommendation-1"])
+            XCTAssertEqual(sections.map(\.title), ["Because you watched A Favorite", "More from directors you like"])
+            XCTAssertEqual(sections.map { $0.items.map(\.id) }, [["m1"], ["m2"]])
+
+            let query = try XCTUnwrap(stub.queryItems(forPathSuffix: "/Movies/Recommendations"))
+            XCTAssertEqual(query.first(where: { $0.name == "parentId" })?.value, "LIB1")
+            XCTAssertEqual(query.first(where: { $0.name == "userId" })?.value, "u1")
+            XCTAssertEqual(query.first(where: { $0.name == "itemLimit" })?.value, "10")
+            XCTAssertEqual(query.first(where: { $0.name == "categoryLimit" })?.value, "5")
+            let seriesHubs = try await provider.libraryHubs(libraryID: "LIB1", kind: .series, limit: 10)
+            XCTAssertTrue(seriesHubs.isEmpty)
+        }
+    }
+
     // MARK: Continue Watching
 
     func testScopedContinueWatchingSendsParentIDAndStampsLibrary() async throws {

@@ -15,6 +15,21 @@ import FeatureHomeCore
 /// a single all-items request.
 public struct LibraryBrowseView: View {
     @State private var viewModel: LibraryBrowseViewModel
+    #if os(tvOS)
+    private enum RecommendedLayout: String, CaseIterable {
+        case showcase
+        case rows
+
+        var title: LocalizedStringResource {
+            switch self {
+            case .showcase: "Showcase"
+            case .rows: "Rows"
+            }
+        }
+    }
+    @State private var recommendedLayout: RecommendedLayout = .showcase
+    @State private var isFrontmost = false
+    #endif
     /// Tracks which items we've already warmed artwork for. A reference type (not a
     /// `@State` `Set`) so inserting during scroll does not invalidate the view body.
     @State private var artworkPrefetch = ArtworkPrefetchTracker()
@@ -79,41 +94,57 @@ public struct LibraryBrowseView: View {
         // scales with the UI-density setting, with six columns at default density.
         let columns = metrics.libraryPosterColumns
         let generation = viewModel.contentGeneration
-        return ContentStateView(
-            state: viewModel.state,
-            emptyMessage: viewModel.emptyMessage,
-            onRetry: { Task { await viewModel.loadFirstPage() } },
-            loadingContent: {
-                if viewModel.isMediaShare || viewModel.browseScope == .collectionMembers {
-                    LibraryBrowseLoadingView()
-                } else {
-                    LoadingMessagesView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        return Group {
+            if viewModel.contentMode == .recommended {
+                recommendedContent
+            } else {
+                ContentStateView(
+                    state: viewModel.state,
+                    emptyMessage: viewModel.emptyMessage,
+                    onRetry: { Task { await viewModel.loadFirstPage() } },
+                    loadingContent: {
+                        if viewModel.isMediaShare || viewModel.browseScope == .collectionMembers {
+                            LibraryBrowseLoadingView()
+                        } else {
+                            LoadingMessagesView()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                    }
+                ) { total in
+                    #if os(tvOS)
+                    if focusStyle.usesSystemEffect {
+                        nativeGrid(total: total, generation: generation)
+                    } else {
+                        swiftUIGrid(total: total, generation: generation, columns: columns)
+                    }
+                    #else
+                    swiftUIGrid(total: total, generation: generation, columns: columns)
+                    #endif
                 }
             }
-        ) { total in
-            #if os(tvOS)
-            if focusStyle.usesSystemEffect {
-                nativeGrid(total: total, generation: generation)
-            } else {
-                swiftUIGrid(total: total, generation: generation, columns: columns)
-            }
-            #else
-            swiftUIGrid(total: total, generation: generation, columns: columns)
-            #endif
         }
         // Browse is a full-screen sub-page: hide the top tab bar so it reads as a
         // dedicated destination with no navigation chrome pinned at the top.
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .top, spacing: 0) {
             // Keep switching available when there is no grid to scroll.
-            if viewModel.state.value == nil {
+            if viewModel.contentMode == .recommended
+                ? viewModel.recommendationState.value == nil : viewModel.state.value == nil {
                 header
                     .padding(.top, PlozzTheme.Spacing.large)
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if let error = viewModel.pageError {
+            if viewModel.contentMode == .recommended, let error = viewModel.recommendationError,
+               viewModel.recommendationState.value != nil {
+                HStack(spacing: PlozzTheme.Spacing.large) {
+                    Text(error.userMessage).plozzForeground(.secondary)
+                    Button("Try Again") { Task { await viewModel.loadRecommendations() } }
+                        .plozzActionButton()
+                }
+                .padding()
+            }
+            if viewModel.contentMode != .recommended, let error = viewModel.pageError {
                 HStack(spacing: PlozzTheme.Spacing.large) {
                     Text(error.userMessage)
                         .plozzForeground(.secondary)
@@ -124,7 +155,8 @@ public struct LibraryBrowseView: View {
                 }
                 .padding()
             }
-            if viewModel.state.value == nil, let library = viewModel.fileBrowserLibrary {
+            if viewModel.contentMode != .recommended, viewModel.state.value == nil,
+               let library = viewModel.fileBrowserLibrary {
                 LibraryFileBrowseButton(library: library, onSelect: onSelect)
                     .plozzActionButton()
                     .padding()
@@ -140,7 +172,15 @@ public struct LibraryBrowseView: View {
             railHasRevealed = false
             artworkPrefetch = ArtworkPrefetchTracker()
         }
-        .onAppear { MainThreadStallProbe.context = "library" }
+        .onAppear {
+            MainThreadStallProbe.context = "library"
+            #if os(tvOS)
+            isFrontmost = true
+            #endif
+        }
+        #if os(tvOS)
+        .onDisappear { isFrontmost = false }
+        #endif
         .background {
             if viewModel.isMediaShare {
                 ShareCatalogRefreshObserver(
@@ -177,6 +217,89 @@ public struct LibraryBrowseView: View {
             while !Task.isCancelled { try? await Task.sleep(nanoseconds: 1_000_000_000) }
         }
     }
+
+    private var recommendedContent: some View {
+        ContentStateView(
+            state: viewModel.recommendationState,
+            emptyMessage: viewModel.emptyMessage,
+            onRetry: { Task { await viewModel.loadRecommendations() } }
+        ) { sections in
+            #if os(tvOS)
+            if recommendedLayout == .showcase {
+                recommendedShowcase(sections)
+            } else {
+                recommendedRows(sections)
+            }
+            #else
+            recommendedRows(sections)
+            #endif
+        }
+    }
+
+    private func recommendedRows(_ sections: [LibrarySection]) -> some View {
+        ScrollView(.vertical) {
+            LazyVStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
+                header
+                ForEach(sections) { section in
+                    recommendedRow(section)
+                }
+            }
+            .padding(.top, PlozzTheme.Spacing.large)
+            .padding(.bottom, PlozzTheme.Metrics.screenVerticalPadding)
+        }
+    }
+
+    private func recommendedRow(_ section: LibrarySection) -> some View {
+        MediaRowView(
+            title: Text(verbatim: section.title),
+            items: section.items,
+            style: section.style == .poster ? .poster : .landscape,
+            spoilerSettings: spoilerSettings,
+            onSelect: onSelect
+        )
+    }
+
+    #if os(tvOS)
+    private func recommendedShowcase(_ sections: [LibrarySection]) -> some View {
+        let rows = sections.map { section in
+            FocusHeroRow(
+                id: section.id,
+                itemIDs: section.items.map(\.stablePresentationID),
+                leadItem: section.items.first,
+                items: section.items,
+                cardArtwork: section.style == .landscape
+                    ? { PosterCardView.leadingLandscapeArtwork(for: $0, showsSeriesArtwork: false) } : nil
+            )
+        }
+        let sectionsByID = Dictionary(uniqueKeysWithValues: sections.map { ($0.id, $0) })
+        return FocusHeroHomeView(
+            rows: rows,
+            settings: .default,
+            spoilerSettings: spoilerSettings,
+            navigationStyle: .tabBar,
+            isFrontmost: isFrontmost
+        ) { row, reporter in
+            if let section = sectionsByID[row.id] {
+                MediaRowView(
+                    title: Text(verbatim: section.title),
+                    items: section.items,
+                    style: section.style == .poster ? .poster : .landscape,
+                    spoilerSettings: spoilerSettings,
+                    onFocusEntered: reporter.entered,
+                    onFocusChange: { item in
+                        if let item { reporter.focusedItem(item) }
+                    },
+                    onCardFocused: reporter.cardFocused,
+                    onSelect: onSelect
+                )
+            }
+        }
+        .overlay(alignment: .top) {
+            header
+                .padding(.top, PlozzTheme.Spacing.large)
+        }
+    }
+    #endif
 
     #if os(tvOS)
     private func nativeGrid(total: Int, generation: Int) -> some View {
@@ -338,6 +461,23 @@ public struct LibraryBrowseView: View {
                 LibraryContentModeControl(viewModel: viewModel, buttonHeight: sortButtonHeight)
             }
             Spacer(minLength: PlozzTheme.Spacing.large)
+            #if os(tvOS)
+            if viewModel.contentMode == .recommended {
+                Menu {
+                    Picker("Recommended Layout", selection: $recommendedLayout) {
+                        ForEach(RecommendedLayout.allCases, id: \.self) { layout in
+                            Text(layout.title).tag(layout)
+                        }
+                    }
+                } label: {
+                    Label(
+                        recommendedLayout == .showcase ? "Showcase" : "Rows",
+                        systemImage: "square.grid.2x2"
+                    )
+                }
+                .accessibilityIdentifier("library-recommendation-layout")
+            }
+            #endif
             if let library = viewModel.fileBrowserLibrary {
                 LibraryFileBrowseButton(library: library, onSelect: onSelect)
             }

@@ -6,7 +6,8 @@ import XCTest
 final class LibraryAlphabetTests: XCTestCase {
     private func model(_ provider: FakeMediaProvider) -> LibraryBrowseViewModel {
         LibraryBrowseViewModel(provider: provider, containerID: "movies", containerKind: .movie,
-                               pageSize: 10, defaults: UserDefaults(suiteName: UUID().uuidString)!)
+                               pageSize: 10, defaults: UserDefaults(suiteName: UUID().uuidString)!,
+                               initialContentMode: .titles)
     }
 
     private func provider(count: Int = 100) -> FakeMediaProvider {

@@ -80,6 +80,35 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
         }
     }
 
+    public func libraryHubs(libraryID: String, kind: MediaItemKind, limit: Int) async throws -> [LibrarySection] {
+        guard kind == .movie else { return [] }
+        let recommendations = try await client.movieRecommendations(
+            userID: session.userID, parentID: libraryID, limit: limit
+        )
+        return recommendations.enumerated().compactMap { index, recommendation in
+            let items = (recommendation.Items ?? []).map(map(item:))
+            guard !items.isEmpty else { return nil }
+            let subject = recommendation.BaselineItemName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let title: String
+            switch (recommendation.RecommendationType, subject) {
+            case ("SimilarToRecentlyPlayed", let subject?) where !subject.isEmpty:
+                title = String(localized: "Because you watched \(subject)")
+            case ("SimilarToLikedItem", let subject?) where !subject.isEmpty:
+                title = String(localized: "Because you liked \(subject)")
+            case ("HasDirectorFromRecentlyPlayed", _), ("HasLikedDirector", _):
+                title = String(localized: "More from directors you like")
+            case ("HasActorFromRecentlyPlayed", _), ("HasLikedActor", _):
+                title = String(localized: "More with actors you like")
+            default:
+                title = String(localized: "Suggested movies")
+            }
+            return LibrarySection(
+                id: recommendation.CategoryId ?? "recommendation-\(index)", title: title,
+                items: Array(items.prefix(limit))
+            )
+        }
+    }
+
     /// Continue Watching = in-progress items (`/Items/Resume`) followed by the
     /// next unwatched episode of series the user has progressed through
     /// (`/Shows/NextUp`). Jellyfin splits these across two endpoints, whereas

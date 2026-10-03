@@ -85,6 +85,40 @@ final class AggregatedLibraryProviderTests: XCTestCase {
         XCTAssertFalse(result.hasMore)
     }
 
+    func testRecommendationsRetainHealthyAccountAndSourceIdentity() async throws {
+        let offline = FakeMediaProvider(allItems: [])
+        offline.continueWatchingError = .serverUnreachable
+        offline.recommendationHubError = .serverUnreachable
+        let healthy = FakeMediaProvider(allItems: [])
+        healthy.continueWatchingItems = [
+            movie("playing", title: "Playing", year: 2020, tmdb: "100")
+                .taggingLibrary("lib-healthy")
+        ]
+        healthy.recommendationHubs = [
+            LibrarySection(id: "native", title: "Because You Watched", items: [
+                movie("suggested", title: "Suggested", year: 2021, tmdb: "101")
+            ])
+        ]
+        let provider = AggregatedLibraryProvider(sources: [
+            source("offline", offline), source("healthy", healthy)
+        ])
+
+        let watching = try await provider.continueWatching(limit: 10, inLibraries: ["merged"])
+        XCTAssertEqual(watching.map(\.id), ["playing"])
+        XCTAssertEqual(watching.first?.sourceAccountID, "healthy")
+        let hubs = try await provider.libraryHubs(libraryID: "merged", kind: .movie, limit: 10)
+        XCTAssertEqual(hubs.map(\.id), ["healthy:native"])
+        XCTAssertEqual(hubs.first?.items.first?.libraryID, "lib-healthy")
+        XCTAssertEqual(hubs.first?.items.first?.sourceAccountID, "healthy")
+
+        healthy.recommendationHubError = .serverUnreachable
+        do {
+            _ = try await provider.libraryHubs(libraryID: "merged", kind: .movie, limit: 10)
+            XCTFail("An entirely failed recommendation feed must be retryable")
+        } catch AppError.serverUnreachable {
+        }
+    }
+
     func testTransientFailureDoesNotPermanentlyExhaustSource() async throws {
         // r8-agg-transient-exhaust: a one-off network blip on a healthy server used
         // to trip the one-way `markExhausted` latch, silencing that server for the

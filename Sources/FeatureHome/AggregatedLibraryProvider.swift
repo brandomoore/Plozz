@@ -1,5 +1,6 @@
 import Foundation
 import CoreModels
+import CoreNetworking
 
 /// One backend source that participates in an aggregated cross-server library
 /// browse session: which account, that account's own container id for the
@@ -419,6 +420,77 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
     public func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     public func latest(limit: Int) async throws -> [MediaItem] { [] }
     public func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+
+    public func continueWatching(limit: Int, inLibraries _: [String]?) async throws -> [MediaItem] {
+        let results = await withTaskGroup(of: (Int, Result<[MediaItem], Error>).self) { group in
+            for (index, source) in sources.enumerated() {
+                group.addTask {
+                    do {
+                        let items = try await source.provider.continueWatching(
+                            limit: limit, inLibraries: [source.containerID]
+                        )
+                        return (index, .success(items.filter { $0.libraryID == source.containerID }.map {
+                            $0.taggingSource(source.accountID)
+                        }))
+                    } catch {
+                        return (index, .failure(error))
+                    }
+                }
+            }
+            var bySource: [Int: [MediaItem]] = [:]
+            var firstError: Error?
+            for await (index, result) in group {
+                switch result {
+                case .success(let items): bySource[index] = items
+                case .failure(let error):
+                    firstError = firstError ?? error
+                    PlozzLog.app.error("Continue Watching failed for library source \(self.sources[index].accountID): \(String(describing: error))")
+                }
+            }
+            return (bySource, firstError)
+        }
+        if results.0.isEmpty, let error = results.1 { throw error }
+        return Array(sources.indices.flatMap { results.0[$0] ?? [] }.prefix(limit))
+    }
+
+    public func libraryHubs(libraryID _: String, kind: MediaItemKind, limit: Int) async throws -> [LibrarySection] {
+        let results = await withTaskGroup(of: (Int, Result<[LibrarySection], Error>).self) { group in
+            for (index, source) in sources.enumerated() {
+                group.addTask {
+                    do {
+                        let sections = try await source.provider.libraryHubs(
+                            libraryID: source.containerID, kind: source.kind ?? kind, limit: limit
+                        )
+                        return (index, .success(sections.map { section in
+                            LibrarySection(
+                                id: "\(source.accountID):\(section.id)",
+                                title: "\(section.title) · \(source.provider.session.server.name)",
+                                style: section.style,
+                                items: section.items.map {
+                                    $0.taggingSource(source.accountID).taggingLibrary(source.containerID)
+                                }
+                            )
+                        }))
+                    } catch {
+                        return (index, .failure(error))
+                    }
+                }
+            }
+            var result: [Int: [LibrarySection]] = [:]
+            var firstError: Error?
+            for await (index, outcome) in group {
+                switch outcome {
+                case .success(let sections): result[index] = sections
+                case .failure(let error):
+                    firstError = firstError ?? error
+                    PlozzLog.app.error("Recommendation hubs failed for library source \(self.sources[index].accountID): \(String(describing: error))")
+                }
+            }
+            return (result, firstError)
+        }
+        if results.0.isEmpty, let error = results.1 { throw error }
+        return sources.indices.flatMap { results.0[$0] ?? [] }
+    }
 
     /// Protocol-conformance fallback only — **not** the routing path for a user
     /// action. The grid uses paged title or collection discovery, and every

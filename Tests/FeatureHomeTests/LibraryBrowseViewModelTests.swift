@@ -6,7 +6,10 @@ import CoreModels
 final class LibraryBrowseViewModelTests: XCTestCase {
     private func makeVM(itemCount: Int, pageSize: Int = 10) -> (LibraryBrowseViewModel, FakeMediaProvider) {
         let provider = FakeMediaProvider(allItems: makeItems(itemCount))
-        let vm = LibraryBrowseViewModel(provider: provider, containerID: "lib1", containerKind: .movie, pageSize: pageSize)
+        let vm = LibraryBrowseViewModel(
+            provider: provider, containerID: "lib1", containerKind: .movie,
+            pageSize: pageSize, initialContentMode: .titles
+        )
         return (vm, provider)
     }
 
@@ -344,7 +347,7 @@ final class LibraryBrowseViewModelTests: XCTestCase {
 
     func testSetSortReloadsFirstPageWithNewSortAndResetsPaging() async {
         let provider = FakeMediaProvider(allItems: makeItems(100))
-        let vm = LibraryBrowseViewModel(provider: provider, containerID: "lib1", containerKind: .movie, pageSize: 10, defaults: isolatedDefaults())
+        let vm = LibraryBrowseViewModel(provider: provider, containerID: "lib1", containerKind: .movie, pageSize: 10, defaults: isolatedDefaults(), initialContentMode: .titles)
         await vm.loadFirstPage()
         await vm.itemAppeared(at: 20) // load a later page so paging state is non-trivial
 
@@ -362,7 +365,7 @@ final class LibraryBrowseViewModelTests: XCTestCase {
 
     func testSetSortToCurrentValueIsNoOp() async {
         let provider = FakeMediaProvider(allItems: makeItems(50))
-        let vm = LibraryBrowseViewModel(provider: provider, containerID: "lib1", containerKind: .movie, pageSize: 10, defaults: isolatedDefaults())
+        let vm = LibraryBrowseViewModel(provider: provider, containerID: "lib1", containerKind: .movie, pageSize: 10, defaults: isolatedDefaults(), initialContentMode: .titles)
         await vm.loadFirstPage()
         let requestsBefore = provider.requestedPages.count
 
@@ -376,7 +379,7 @@ final class LibraryBrowseViewModelTests: XCTestCase {
         let chosen = CoreModels.SortDescriptor(field: .communityRating, direction: .descending)
 
         let provider = FakeMediaProvider(allItems: makeItems(10))
-        let vm = LibraryBrowseViewModel(provider: provider, containerID: "lib1", containerKind: .movie, defaults: defaults)
+        let vm = LibraryBrowseViewModel(provider: provider, containerID: "lib1", containerKind: .movie, defaults: defaults, initialContentMode: .titles)
         await vm.setSort(chosen)
 
         // A fresh VM for the same kind restores the persisted choice.

@@ -4,12 +4,14 @@ import CoreModels
 import CoreNetworking
 
 public enum LibraryContentMode: String, CaseIterable, Sendable {
+    case recommended
     case titles
     case collections
     case playlists
 
     public var displayName: LocalizedStringResource {
         switch self {
+        case .recommended: "Recommended"
         case .titles: "Browse"
         case .collections: "Collections"
         case .playlists: "Playlists"
@@ -58,6 +60,13 @@ public final class LibraryBrowseViewModel {
     /// diagnostics; the failed page is retried when its cells reappear.
     public private(set) var pageError: AppError?
     public private(set) var contentMode: LibraryContentMode = .titles
+    public private(set) var recommendationState: LoadState<[LibrarySection]> = .idle
+    public private(set) var recommendationError: AppError?
+
+    public var supportsRecommendations: Bool {
+        browseScope == .library && provider.kind != .mediaShare
+            && (containerKind == .movie || containerKind == .series || containerKind == .video)
+    }
 
     public var supportsCollections: Bool {
         browseScope == .library && (containerKind == .movie || containerKind == .series)
@@ -70,7 +79,8 @@ public final class LibraryBrowseViewModel {
     }
 
     public var availableContentModes: [LibraryContentMode] {
-        [.titles] + (supportsCollections ? [.collections] : [])
+        (supportsRecommendations ? [.recommended] : []) + [.titles]
+            + (supportsCollections ? [.collections] : [])
             + (supportsPlaylists ? [.playlists] : [])
     }
 
@@ -82,6 +92,7 @@ public final class LibraryBrowseViewModel {
         if browseScope == .collectionMembers { return "This collection is empty." }
         if browseScope == .playlistMembers { return "This playlist is empty." }
         switch contentMode {
+        case .recommended: return "No recommendations in this library."
         case .titles: return "This library is empty."
         case .collections: return "No collections in this library."
         case .playlists: return "No playlists in this library."
@@ -130,7 +141,7 @@ public final class LibraryBrowseViewModel {
     public var sourceServerID: String { provider.session.server.id }
 
     public var availableSortFields: [SortField] {
-        if browseScope != .library { return [] }
+        if browseScope != .library || contentMode == .recommended { return [] }
         if browseKind == .collection { return [.name, .dateAdded] }
         if browseKind == .playlist { return [.name] }
         return (provider as? any MediaSortFieldProviding)?
@@ -140,6 +151,7 @@ public final class LibraryBrowseViewModel {
 
     private var browseKind: MediaItemKind {
         switch contentMode {
+        case .recommended: containerKind
         case .titles: containerKind
         case .collections: .collection
         case .playlists: .playlist
@@ -218,7 +230,8 @@ public final class LibraryBrowseViewModel {
         defaults: UserDefaults = .standard,
         sortKeySuffix: String? = nil,
         sourceAccountID: String? = nil,
-        browseScope: LibraryBrowseScope = .library
+        browseScope: LibraryBrowseScope = .library,
+        initialContentMode: LibraryContentMode? = nil
     ) {
         self.provider = provider
         self.containerID = containerID
@@ -237,6 +250,10 @@ public final class LibraryBrowseViewModel {
             let field = availableSortFields.first ?? .name
             self.sort = CoreModels.SortDescriptor(field: field, direction: field.defaultDirection)
         }
+        let defaultMode: LibraryContentMode = supportsRecommendations ? .recommended : .titles
+        self.contentMode = initialContentMode.flatMap {
+            availableContentModes.contains($0) ? $0 : nil
+        } ?? defaultMode
     }
 
     /// The item at `index`, or `nil` if it hasn't been loaded yet (placeholder).
@@ -289,6 +306,10 @@ public final class LibraryBrowseViewModel {
     /// (``loadFirstPage()`` for pull-to-refresh or a sort change, and
     /// ``refreshAfterCatalogChange()`` after a scan).
     public func loadFirstPageIfNeeded() async {
+        if contentMode == .recommended {
+            await loadRecommendationsIfNeeded()
+            return
+        }
         switch state {
         case .loaded:
             // Already showing this library. Keep the presentation, and with it the
@@ -451,6 +472,12 @@ public final class LibraryBrowseViewModel {
             if updated != item {
                 slot.item = updated
             }
+        }
+        if case .loaded(var sections) = recommendationState {
+            for index in sections.indices {
+                sections[index].items = sections[index].items.map { mutation.applied(to: $0) }
+            }
+            recommendationState = .loaded(sections)
         }
     }
 
@@ -701,12 +728,121 @@ public final class LibraryBrowseViewModel {
     public func setContentMode(_ newMode: LibraryContentMode) async {
         guard newMode != contentMode, availableContentModes.contains(newMode) else { return }
         contentMode = newMode
+        if newMode == .recommended {
+            await loadRecommendationsIfNeeded()
+            return
+        }
         let restoredSort = Self.loadSort(for: browseKind, suffix: currentSortKeySuffix, from: defaults)
         let field = availableSortFields.first ?? .name
         sort = availableSortFields.contains(restoredSort.field)
             ? restoredSort
             : CoreModels.SortDescriptor(field: field, direction: field.defaultDirection)
         await loadFirstPage()
+    }
+
+    private var recommendationGeneration = 0
+
+    public func loadRecommendationsIfNeeded() async {
+        switch recommendationState {
+        case .loaded, .loading: return
+        case .idle, .empty, .failed: await loadRecommendations()
+        }
+    }
+
+    public func loadRecommendations() async {
+        guard supportsRecommendations else { return }
+        recommendationGeneration += 1
+        let generation = recommendationGeneration
+        recommendationState = .loading
+        recommendationError = nil
+        defer {
+            if generation == recommendationGeneration, case .loading = recommendationState {
+                recommendationState = .idle
+            }
+        }
+        let provider = provider
+        let libraryID = containerID
+        let kind = containerKind
+        let accountID = sourceAccountID
+        let limit = 20
+        async let recent = Self.recommendationResult {
+            try await provider.items(
+                in: libraryID, kind: kind,
+                page: PageRequest(
+                    startIndex: 0, limit: limit,
+                    sort: SortDescriptor(field: .dateAdded, direction: .descending)
+                )
+            )
+        }
+        async let continueWatching = Self.recommendationResult {
+            try await provider.continueWatching(limit: limit, inLibraries: [libraryID])
+        }
+        async let hubs = Self.recommendationResult {
+            try await provider.libraryHubs(libraryID: libraryID, kind: kind, limit: limit)
+        }
+        let (latestResult, watchingResult, hubResult) = await (recent, continueWatching, hubs)
+        guard !Task.isCancelled, generation == recommendationGeneration else { return }
+        var sections: [LibrarySection] = []
+        var firstError: AppError?
+        func record(_ error: Error) {
+            let mapped = (error as? AppError) ?? .unknown(error.localizedDescription)
+            firstError = firstError ?? mapped
+            PlozzLog.app.error("Library recommendations failed for \(libraryID): \(String(describing: error))")
+        }
+        switch watchingResult {
+        case .success(let items):
+            let scoped = items.filter { $0.libraryID == libraryID }
+            if !scoped.isEmpty {
+                sections.append(LibrarySection(
+                    id: "continueWatching", title: String(localized: "Continue Watching"),
+                    style: .landscape, items: scoped.map { item in
+                        accountID.map { item.taggingSource($0) } ?? item
+                    }
+                ))
+            }
+        case .failure(let error): record(error)
+        }
+        switch hubResult {
+        case .success(let hubs):
+            sections += hubs.enumerated().compactMap { index, section -> LibrarySection? in
+                guard !section.items.isEmpty else { return nil }
+                return LibrarySection(
+                    id: "hub:\(index):\(section.id)", title: section.title, style: section.style,
+                    items: section.items.map {
+                    let item = $0.libraryID == nil ? $0.taggingLibrary(libraryID) : $0
+                    return accountID.map { item.taggingSource($0) } ?? item
+                    }
+                )
+            }
+        case .failure(let error): record(error)
+        }
+        switch latestResult {
+        case .success(let page):
+            if !page.items.isEmpty {
+                sections.append(LibrarySection(
+                    id: "recentlyAdded", title: String(localized: "Recently Added"),
+                    items: page.items.map { item in
+                        accountID.map { item.taggingSource($0) } ?? item
+                    }
+                ))
+            }
+        case .failure(let error): record(error)
+        }
+        recommendationError = firstError
+        if !sections.isEmpty {
+            recommendationState = .loaded(sections)
+        } else if let firstError {
+            recommendationState = .failed(firstError)
+        } else {
+            recommendationState = .empty
+        }
+    }
+
+    private nonisolated static func recommendationResult<T: Sendable>(
+        _ operation: @escaping @Sendable () async throws -> T
+    ) async -> Result<T, Error> {
+        do { return .success(try await operation()) }
+        catch { return .failure(error) }
     }
 
     public func retryFailedPages() async {

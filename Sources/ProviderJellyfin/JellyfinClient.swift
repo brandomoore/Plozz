@@ -523,6 +523,21 @@ public struct JellyfinClient: Sendable {
         return items
     }
 
+    func movieRecommendations(userID: String, parentID: String, limit: Int) async throws -> [MovieRecommendationDto] {
+        let endpoint = Endpoint(
+            path: "/Movies/Recommendations",
+            queryItems: [
+                URLQueryItem(name: "userId", value: userID),
+                URLQueryItem(name: "parentId", value: parentID),
+                URLQueryItem(name: "categoryLimit", value: "5"),
+                URLQueryItem(name: "itemLimit", value: String(limit)),
+                URLQueryItem(name: "fields", value: "Overview,OriginalTitle,ProviderIds")
+            ],
+            headers: authHeaders
+        )
+        return try await http.decode([MovieRecommendationDto].self, from: endpoint, baseURL: baseURL)
+    }
+
     func item(userID: String, id: String) async throws -> BaseItemDto {
         let endpoint = Endpoint(
             path: "/Users/\(userID)/Items/\(id)",
