@@ -30,6 +30,51 @@ private struct ResumeMutationApplier: WatchMutationApplying {
 }
 
 final class JellyfinStreamingQualityTests: XCTestCase {
+    func testOrdinaryServerFallbackReportsAuthoredASSBurnIn() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let (provider, http) = fixture(kind: kind, rendition: true)
+            http.stubSequence(pathSuffix: "/Items/movie/PlaybackInfo", jsons: ["""
+            {"PlaySessionId":"session","MediaSources":[{
+              "Id":"version","Container":"mkv","SupportsDirectPlay":false,
+              "TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=hevc&SubtitleMethod=Encode&SubtitleStreamIndex=3",
+              "MediaStreams":[
+                {"Index":0,"Type":"Video","Codec":"av1","Width":1920,"Height":1080},
+                {"Index":1,"Type":"Audio","Codec":"opus","IsDefault":true},
+                {"Index":3,"Type":"Subtitle","Codec":"ass","IsDefault":true,"IsTextSubtitleStream":true}
+              ]}]}
+            """])
+            let request = try await provider.playbackInfo(
+                for: "movie", mediaSourceID: "version", forceTranscode: true
+            )
+            XCTAssertTrue(request.isTranscoding)
+            XCTAssertNil(request.streamingOptions, "Exercise the ordinary TV fallback, not bounded streaming")
+            XCTAssertEqual(request.burnedInSubtitleTrackID, 3)
+            XCTAssertNotNil(request.subtitleTracks.first?.deliverySource,
+                            "Keep the sidecar selectable after rebuilding without burn-in")
+        }
+    }
+
+    func testBurnInRequiresExplicitEncodeAndAValidSubtitleIndex() throws {
+        let cases: [(String, Int?)] = [
+            ("SubtitleMethod=Encode&SubtitleStreamIndex=3", 3),
+            ("subtitlemethod=encode&subtitlestreamindex=3", 3),
+            ("SubtitleMethod=Encode&SubtitleStreamIndexes=4", 4),
+            ("SubtitleMethod=Encode&SubtitleStreamIndex=-1", nil),
+            ("SubtitleMethod=Encode&SubtitleStreamIndex=invalid", nil),
+            ("SubtitleMethod=Encode", nil),
+            ("SubtitleStreamIndex=3", nil),
+            ("SubtitleMethod=External&SubtitleStreamIndex=3", nil),
+            ("SubtitleMethod=Embed&SubtitleStreamIndex=3", nil)
+        ]
+        for (query, expected) in cases {
+            let data = try JSONSerialization.data(withJSONObject: [
+                "TranscodingUrl": "/Videos/movie/master.m3u8?\(query)"
+            ])
+            let source = try JSONDecoder().decode(MediaSourceInfo.self, from: data)
+            XCTAssertEqual(source.burnedInSubtitleTrackID, expected, query)
+        }
+    }
+
     func testCustom1080pAt2000KbpsConstrainsJellyfinAndEmbyWithoutForcingCodec() async throws {
         let quality = try StreamingQuality.custom(maximumHeight: 1080, bitrateKbps: 2_000)
         for kind in [ProviderKind.jellyfin, .emby] {
@@ -366,6 +411,7 @@ final class JellyfinStreamingQualityTests: XCTestCase {
             XCTAssertEqual(locator.resource.queryItems.first { $0.name == "SubtitleStreamIndexes" }?.value, "-1")
             XCTAssertFalse(locator.resource.queryItems.contains { $0.name == "ManifestSubtitles" })
             XCTAssertNotNil(request.subtitleTracks.first { $0.id == 2 }?.deliverySource)
+            XCTAssertNil(request.burnedInSubtitleTrackID, "Use the final bounded URL, not the server's stale decision")
             XCTAssertEqual(request.streamingOptions?.subtitleTrack?.id, 2)
             XCTAssertEqual(http.queryItems(forPathSuffix: "/PlaybackInfo")?.first { $0.name == "SubtitleStreamIndex" }?.value, "-1")
             XCTAssertEqual(http.queryItems(forPathSuffix: "/PlaybackInfo")?.first { $0.name == "SubtitleMethod" }?.value, "External")

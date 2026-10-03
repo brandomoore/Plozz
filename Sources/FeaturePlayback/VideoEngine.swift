@@ -216,6 +216,8 @@ public protocol VideoEngine: AnyObject {
     /// Clock on the emitted subtitle cues' axis, following the presented picture
     /// rather than a transport position advanced to a pending seek target.
     var subtitlePresentationTime: TimeInterval { get }
+    /// Advances authored animated subtitles on the same clock as ordinary cues.
+    func renderSubtitles(at time: TimeInterval, style: SubtitleStyle)
 
     /// Whether position is settled enough for corrective seeks. A decoder can
     /// report ready before its initial frame/seek or a retained reload settles.
@@ -356,6 +358,7 @@ public protocol VideoEngine: AnyObject {
 
 public extension VideoEngine {
     var subtitlePresentationTime: TimeInterval { currentTime }
+    func renderSubtitles(at time: TimeInterval, style: SubtitleStyle) {}
     func supportsSubtitleTimingAdjustments(for track: MediaTrack) -> Bool { true }
     var streamingFailure: StreamingPlaybackFailure? { nil }
     var streamingOutputDynamicRange: SourceDynamicRange? { nil }

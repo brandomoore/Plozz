@@ -179,6 +179,54 @@ rendering supports fewer effects than the overlay.
 
 ### Caption timing and control avoidance
 
+Plozzigen's primary embedded ASS/SSA tracks preserve their packet text, script
+header and embedded font attachments for libass. With source position, colour and
+emphasis enabled (and system-style matching off), the adapter composites authored layers, vector drawings, transforms and
+karaoke into bitmap cues; it does not flatten animation fragments into dialogue.
+The main-thread cue bridge passes raw packet strings through without scanning or
+rebuilding their contents. Only newly admitted events are split on the rasterizer
+actor; replayed read-ahead snapshots must not reparse thousands of old packets
+on the presentation thread. Plain-style fallback still normalizes joined packets
+before parsing text.
+Rendering is serialized off the main actor with at most one frame in flight,
+coalescing busy display ticks to one latest timestamp rather than building a
+backlog. Animated ASS reads the software presentation timebase directly; native
+playback converts the item's continuous clock through Aether's presentation-axis
+map. Seek/wait states retain the engine's held picture time. The published status
+clock is too coarse for animation and must not throttle it to roughly five fps.
+Rendering uses source time minus the subtitle offset. Paused frames redraw only for changed
+cue data; backward seeks rebuild the retained event set. Track changes, Off,
+native presentation and teardown fence late output. The existing overlay retains
+video-rect mapping, HDR brightness and control avoidance.
+
+Authored ASS frames keep clearly separated upper and lower artwork in separate
+bitmap regions. The upper region stays fixed; only a lower region that intersects
+visible controls can lift. Its clearance envelope absorbs small animated
+glyph/shadow changes so the whole effect keeps moving together instead of being
+re-aligned every frame. Movement must fit below the protected upper artwork and
+above the controls; otherwise the original placement is retained.
+Center/crossing/full-screen compositions remain one fixed authored image. This
+uses the existing libass mask bounds in one render pass, never title-specific
+rules or pixel scanning. Ordinary PGS/DVD bitmap avoidance is unchanged.
+
+The pinned libass 0.17.5 source target enables ARM NEON acceleration and uses
+checksum-pinned font dependencies without adding another FFmpeg or MPV. Glyph
+masks blend directly into premultiplied RGBA, avoiding one CoreGraphics mask
+allocation and clip per layer. Raster output is capped at 1080p;
+render caches and retained events are bounded. Turning off source position or
+colour uses the ordinary styled-text fallback, which discards vector drawing
+commands rather than displaying coordinates. System-style matching also retains
+the normal text renderer so explicit device caption preferences win. Embedded
+fonts are session-local libass data; they are never installed into the system.
+Secondary ASS and separately
+downloaded ASS files retain the existing text path; native PiP uses its plain
+subtitle rendition rather than promising authored ASS effects outside the app.
+
+The full-screen startup indicator covers an absent picture only. Actual frame
+readiness retires it even if a rewind occurs before the original resume position
+is reached; a parked displayed frame also needs no startup cover. Seek and
+buffering delays use the scrub-bar indicator, not a center overlay over video.
+
 `NativeSubtitleCueOutput` receives complete caption presentation states from
 AVFoundation, including empty states that clear the display. They are scheduled
 at the supplied **item presentation time**, never callback arrival time or a
@@ -432,12 +480,24 @@ Plex hardware transcoding generally requires Plex Pass. Force transcoding is
 an advanced option, not a server hardware-encoder selector. Transcoding may
 change HDR/audio formats. A failed bounded rendition never retries the original
 file or an on-device remux; errors leave the Quality control available.
-For Jellyfin/Emby conversion, only bitmap subtitles request server burn-in.
+For bounded Jellyfin/Emby conversion, only bitmap subtitles request server burn-in.
 Text tracks remain available through the existing subtitle overlay; a stale
 server-generated `SubtitleMethod=Encode` is replaced by explicit `External`
 delivery for text/off renditions. Both singular and Emby's plural track selectors
 are disabled, and manifest-subtitle requests are removed from that video URL.
 Omitting the delivery method alone can still trigger Emby's default burn-in.
+An ordinary server fallback can instead return ASS already burned into the video.
+The final rendition's explicit `Encode` method and subtitle index are carried in
+`PlaybackRequest.burnedInSubtitleTrackID`. That primary remains selected in the
+menu but owns no client overlay or native legible track, avoiding duplicate text
+and ASS drawing commands. Off or another primary rebuilds the server rendition
+at the current position, preserving pause, speed, version, audio, and secondary
+selection. Burn-in cannot be moved or restyled by the client; timing controls stay
+disabled. Rewriting to an offline original clears this rendition-only fact.
+The in-player Style entry is hidden for a burned-in primary unless an editable
+second track is selected. tvOS still exposes Dual Subtitles directly so a second
+track can be enabled; mobile retains its Second Track section. Global appearance
+settings and styling for locally rendered ASS remain available.
 An engine load that returns after a terminal startup failure cannot publish ready.
 Managed native resume waits for actual item readiness rather than seeking an
 unknown HLS item after five seconds. The existing startup watchdog bounds that

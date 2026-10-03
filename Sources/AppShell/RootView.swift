@@ -596,6 +596,7 @@ public struct RootView: View {
         }
         .background { AppBackground(palette: resolvedPalette) }
         .environment(\.themePalette, resolvedPalette)
+        .environment(\.gradientBackgroundsEnabled, appState.profileSettings.themeModel.gradientEnabled)
         .environment(\.familyGuidanceProvider, appState.familyGuidance)
         .environment(\.detailHeaderSettings, appState.profileSettings.detailPageModel)
         // `dynamicTypeSize` is read here on purpose: PlozzMetrics samples its

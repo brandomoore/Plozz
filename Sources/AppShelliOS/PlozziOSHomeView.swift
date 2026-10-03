@@ -234,6 +234,7 @@ struct PlozziOSHomeView: View {
         // `HeroStageMetrics`. Published here so the loading skeleton reserves the
         // same height the real hero will take, rather than reflowing when it lands.
         .plozziOSTracksHeroContainerHeight()
+        .homeGradientBackground(scope: ObjectIdentifier(viewModel), isVisible: homeIsFrontmost && homeHasAppeared)
         .onAppear { homeHasAppeared = true }
         .onDisappear { homeHasAppeared = false }
         .onChange(of: ObjectIdentifier(viewModel)) { _, _ in
@@ -1432,6 +1433,13 @@ private struct PlozziOSHomeHeroCarousel: View {
             }
         }
         .frame(height: heroHeight)
+        .ambientBackdropSource(
+            id: currentItem?.stablePresentationID,
+            references: currentItem.map {
+                HeroPresentation(item: $0, artworkStyle: style, surface: .home).artworkReferences
+            } ?? [],
+            isActive: isFrontmost
+        )
         .overlay(alignment: .topLeading) {
             if let currentItem, foregroundVisible, !transitionInProgress, dragOffset == 0 {
                 let attributionSources = appModel.settings.hero.settings

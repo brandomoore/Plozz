@@ -150,6 +150,37 @@ final class PlayerOptionsPanelIntegrationTests: XCTestCase {
         XCTAssertEqual(PlayerOptionsPanel.preferredFocus(for: .subtitles, subtitleScreen: .download, model: model), .row(0))
     }
 
+    func testBurnInHidesStyleScreensWithoutRemovingDualTrackSelection() {
+        let model = PlayerControlsModel()
+        model.primarySubtitleIsBurnedIn = true
+        model.subtitleOptions = [.init(id: 3, title: Text("ASS"), isSelected: true)]
+        for screen in [Screen.style, .styleFont, .styleOutline, .styleBackground, .styleFileFormatting] {
+            XCTAssertEqual(PlayerOptionsPanel.availableSubtitleScreen(
+                screen, model: model, offersDualSubtitles: true
+            ), .tracks)
+            XCTAssertEqual(PlayerOptionsPanel.preferredFocus(
+                for: .subtitles, subtitleScreen: screen, model: model
+            ), .row(0))
+        }
+        XCTAssertEqual(PlayerOptionsPanel.availableSubtitleScreen(
+            .styleDual, model: model, offersDualSubtitles: true
+        ), .styleDual)
+        XCTAssertEqual(PlayerOptionsPanel.availableSubtitleScreen(
+            .styleDual, model: model, offersDualSubtitles: false
+        ), .tracks)
+        model.secondarySubtitleOptions = [.init(id: 4, title: Text("Second Track"), isSelected: true)]
+        XCTAssertEqual(PlayerOptionsPanel.availableSubtitleScreen(
+            .style, model: model, offersDualSubtitles: true
+        ), .style)
+        model.secondarySubtitleOptions = []
+        model.subtitleOptions = []
+        XCTAssertEqual(model.subtitleTrackListFocus, .button(.subtitles),
+                       "Never focus a hidden Style entry")
+        model.primarySubtitleIsBurnedIn = false
+        XCTAssertEqual(model.subtitleTrackListFocus, .edit)
+        XCTAssertTrue(model.subtitleStyleAdjustable, "Ordinary local ASS and global style editors remain editable")
+    }
+
     func testVersionsSpeedAndSyncKeepTheirOriginalActionsAndFocus() {
         let model = PlayerControlsModel()
         model.versions.options = [

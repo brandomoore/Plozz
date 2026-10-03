@@ -882,6 +882,12 @@ struct HomeHeroView: View {
                 alignsArtworkToLeadingEdge: navigationStyle == .rail,
                 scrimOpacity: isFrontmost ? 1 : 0
             )
+            .ambientBackdropSource(
+                id: item.stablePresentationID,
+                references: primaryBackdropReferences(for: item),
+                isActive: isFrontmost,
+                fallbackURL: backdropFallback(for: item)
+            )
         } else {
             Color.clear.frame(width: w, height: height)
         }

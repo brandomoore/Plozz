@@ -322,22 +322,10 @@ final class NextEpisodeCoordinator {
     /// steady, so a couple of frames of real advance is an unambiguous "playing".
     private static let firstFramePresentThreshold: TimeInterval = 0.10
 
-    /// Holds the bring-up spinner until the engine is genuinely presenting moving
-    /// frames, so tap → first frame shows ONE continuous indicator. Called after
-    /// `engine.load()`, passing the resolved `resumeClock` (start/resume position).
-    ///
-    /// The true "first frame on screen" signal is the engine's rendered clock
-    /// *advancing past* where it was pinned during bring-up — NOT
-    /// `preventsDisplaySleep` alone. On the native path `preventsDisplaySleep`
-    /// (`timeControlStatus == .playing`) already only flips once frames present,
-    /// so it's unaffected. But on the Plozzigen/custom-source path
-    /// `preventsDisplaySleep` is `state == .playing`, which flips the instant the
-    /// play command is issued (~a beat after load) — up to ~20s before a cold
-    /// SMB/WebDAV source actually renders its first frame. Gating on `preventsDisplaySleep`
-    /// alone therefore dropped the spinner ~20s early, leaving a black screen that
-    /// looked broken. Requiring the clock to have advanced past the buffering
-    /// baseline holds the single bring-up spinner across the whole cold-start,
-    /// however slow the connection — and clears the instant playback truly starts.
+    /// The center indicator covers an absent picture, not seek completion.
+    /// Engines with frame-readiness evidence retire it even after a rewind below
+    /// the original resume clock. Clock advance remains a fallback for engines
+    /// without that signal; ordinary seek delays belong on the scrub bar.
     func beginAwaitingFirstFrame(resumeClock: TimeInterval) {
         guard let host else { return }
         firstFrameTask?.cancel()
@@ -345,7 +333,8 @@ final class NextEpisodeCoordinator {
         // (it holds the last frame in `waitingToPlay`); `max` guards a baseline
         // captured before the resume seek has settled the clock.
         let baselineClock = max(host.upNextEngine.currentTime, resumeClock)
-        awaitingFirstFrame = true
+        awaitingFirstFrame = !host.upNextEngine.hasPresentedVideoFrame
+        guard awaitingFirstFrame else { finishFirstFrameWait(); return }
         firstFrameTask = Task { @MainActor [weak self] in
             // Poll for the rendered clock advancing past the buffering baseline
             // while the engine reports playing — finer than the ~report-cadence
@@ -354,18 +343,21 @@ final class NextEpisodeCoordinator {
             while !Task.isCancelled {
                 guard let self, self.awaitingFirstFrame, let host = self.host else { return }
                 let engine = host.upNextEngine
-                let pausedFrameReady = engine.isPaused && engine.hasPresentedVideoFrame
-                    && abs(engine.currentTime - baselineClock) <= 1.1
-                if pausedFrameReady || (engine.preventsDisplaySleep
+                if engine.hasPresentedVideoFrame || (engine.preventsDisplaySleep
                     && engine.currentTime > baselineClock + Self.firstFramePresentThreshold) {
-                    self.awaitingFirstFrame = false
-                    if let start = host.upNextBringUpStartedAt {
-                        HandoffDiagnostics.emit("first-frame PRESENTED total=\(HandoffDiagnostics.ms(start)) engine=\(host.upNextCurrentEngineKind.rawValue)")
-                    }
+                    self.finishFirstFrameWait()
                     return
                 }
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
+        }
+    }
+
+    private func finishFirstFrameWait() {
+        awaitingFirstFrame = false
+        firstFrameTask = nil
+        if let host, let start = host.upNextBringUpStartedAt {
+            HandoffDiagnostics.emit("first-frame PRESENTED total=\(HandoffDiagnostics.ms(start)) engine=\(host.upNextCurrentEngineKind.rawValue)")
         }
     }
 

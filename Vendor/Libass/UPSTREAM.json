@@ -1,0 +1,9 @@
+{
+  "version": "0.17.5",
+  "archive": "https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz",
+  "sha256": "2dca25c0e0c837ddf00b52011b3f82cac1e4ddd3ad018227806b0c2288864acc",
+  "source_directory": "libass",
+  "modifications": "Upstream C, headers and assembly are unchanged. Apple configuration, architecture-gated assembly wrappers and the SwiftPM umbrella header are maintained outside libass/.",
+  "dependency_headers": "Unmodified Headers directories from the matching checksum-pinned mpvkit/libass-build 0.17.5 XCFrameworks in Package.swift; FreeType 2.14.3, FriBidi 1.0.16, HarfBuzz 14.2.0 and libunibreak 6.1.",
+  "license": "COPYING; additional file notices are retained in their original source headers."
+}

@@ -16,6 +16,13 @@ import Foundation
 /// It is **pure** (Foundation only, no AVFoundation/UIKit), so it lives in
 /// CoreModels next to the model it builds and is exhaustively unit-tested.
 public enum SubtitleCueParser {
+    /// Plain rendering fallback for a codec-normalized ASS packet. Vector
+    /// commands are drawing payload, never dialogue.
+    public static func textFromASSPacket(_ packet: String, header: String) -> SubtitleText { // l10n:content — provider ASS script header and event, not UI copy
+        let fields = packet.split(separator: ",", maxSplits: 8, omittingEmptySubsequences: false)
+        guard fields.count == 9 else { return SubtitleText("") }
+        return SubtitleMarkup.parseASS(String(fields[8]), playResolution: SubtitleMarkup.playResolution(in: header.components(separatedBy: .newlines)))
+    }
 
     /// Parses `text` (auto-detecting SubRip vs WebVTT) into a cue stream.
     ///

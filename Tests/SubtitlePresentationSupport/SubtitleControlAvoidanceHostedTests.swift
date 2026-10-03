@@ -9,6 +9,83 @@ import XCTest
 
 @MainActor
 final class SubtitleControlAvoidanceHostedTests: XCTestCase {
+    func testRenderedTopArtworkStaysFixedWhileOnlyBottomArtworkAvoidsControls() async throws {
+        let scene = try await activeScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let root = UIViewController()
+        root.view.backgroundColor = .black
+        window.rootViewController = root
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        func bitmap(_ color: UIColor) throws -> CGImage {
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 30, height: 12)).image { context in
+                color.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 30, height: 12))
+            }
+            return try XCTUnwrap(image.cgImage)
+        }
+        let model = LiveSubtitleModel()
+        model.style.followsSystemStyle = false
+        model.style.opacity = 1
+        model.beginLiveFeed()
+        model.updateLiveCues([
+            .init(id: 1, start: 0, end: 60, body: .image(.init(
+                cgImage: try bitmap(.red), normalizedRect: CGRect(x: 0.2, y: 0.06, width: 0.6, height: 0.08),
+                controlAvoidance: .fixed
+            ))),
+            .init(id: 2, start: 0, end: 60, body: .image(.init(
+                cgImage: try bitmap(.green), normalizedRect: CGRect(x: 0.2, y: 0.86, width: 0.6, height: 0.08),
+                controlAvoidance: .lowerRegion(
+                    envelope: CGRect(x: 0.2, y: 0.84, width: 0.6, height: 0.12), minimumY: 0.18
+                )
+            )))
+        ])
+        model.tick(1)
+        let controls = PlayerControlsModel()
+        let fixture = ControlsFixture()
+        fixture.height = root.view.bounds.height * 0.25
+        let captions = UIHostingController(rootView: LiveSubtitleOverlay(model: model, controls: controls))
+        let chrome = UIHostingController(rootView: FixtureControls(model: fixture, layout: controls.subtitleLayout))
+        captions.safeAreaRegions = []
+        chrome.safeAreaRegions = []
+        for host in [captions as UIViewController, chrome as UIViewController] {
+            root.addChild(host)
+            host.view.backgroundColor = .clear
+            host.view.frame = root.view.bounds
+            host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            root.view.addSubview(host.view)
+            host.didMove(toParent: root)
+        }
+        var resting = (top: CGRect.null, bottom: CGRect.null)
+        try await waitUntil {
+            window.layoutIfNeeded()
+            resting = self.coloredRegions(in: window)
+            return !resting.top.isNull && !resting.bottom.isNull
+        }
+        fixture.visible = true
+        var raised = resting
+        try await waitUntil {
+            window.layoutIfNeeded()
+            raised = self.coloredRegions(in: window)
+            return !raised.bottom.isNull && raised.bottom.minY < resting.bottom.minY - 10
+        }
+        XCTAssertEqual(raised.top, resting.top)
+        XCTAssertEqual(raised.bottom.height, resting.bottom.height, accuracy: window.bounds.width / 480,
+                       "Allow one row of quantization in the downsampled pixel capture")
+        XCTAssertLessThanOrEqual(raised.bottom.maxY, try XCTUnwrap(controls.subtitleLayout.frame).minY)
+        fixture.visible = false
+        try await waitUntil {
+            window.layoutIfNeeded()
+            let restored = self.coloredRegions(in: window)
+            return restored.top == resting.top && restored.bottom == resting.bottom
+        }
+    }
+
     func testDisplayClockReleasesItsDisplayLinkAndDoesNotOwnThePlayer() async throws {
         let scene = try await activeScene()
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -363,6 +440,36 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
     private func frames(in view: UIView, relativeTo window: UIWindow) -> [CGRect] {
         if let line = view as? SubtitleLineView { return [line.convert(line.bounds, to: window)] }
         return view.subviews.flatMap { frames(in: $0, relativeTo: window) }
+    }
+
+    private func coloredRegions(in window: UIWindow) -> (top: CGRect, bottom: CGRect) {
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        guard let image = image.cgImage else { return (.null, .null) }
+        let width = 480
+        let height = max(1, Int(CGFloat(width) * window.bounds.height / window.bounds.width))
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        bytes.withUnsafeMutableBytes { raw in
+            guard let context = CGContext(
+                data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        var red = CGRect.null, green = CGRect.null
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 4
+                let point = CGRect(x: x, y: y, width: 1, height: 1)
+                if bytes[offset] > 220 && bytes[offset + 1] < 40 { red = red.union(point) }
+                if bytes[offset + 1] > 220 && bytes[offset] < 40 { green = green.union(point) }
+            }
+        }
+        let transform = CGAffineTransform(scaleX: window.bounds.width / CGFloat(width),
+                                          y: window.bounds.height / CGFloat(height))
+        return (red.applying(transform), green.applying(transform))
     }
 
     private func activeScene() async throws -> UIWindowScene {

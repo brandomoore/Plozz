@@ -9,6 +9,40 @@ import UIKit
 
 @MainActor
 final class StreamingPlaybackTests: XCTestCase {
+    func testBurnedSubtitleOffAndTrackSwitchRebuildLegacyAndBoundedRenditions() async {
+        for options: StreamingPlaybackOptions? in [nil, .init(quality: .hd720)] {
+            for selection in [PlayerTrackOption.offID, 7] {
+                let provider = QualityPlaybackProvider()
+                await provider.setBurnedSubtitle()
+                let (model, engine, _) = make(options: options, provider: provider)
+                await model.load()
+                XCTAssertNil(engine.selectedSubtitleID, "Burn-in must not select a native legible copy")
+                XCTAssertTrue(model.liveSubtitles.primary.isEmpty)
+                XCTAssertFalse(model.controls.subtitleDelayAdjustable)
+                XCTAssertEqual(model.continuationForVersionChange().tracks.primary?.id, 6)
+                model.selectSubtitleOption(id: 6)
+                XCTAssertEqual(engine.positions.count, 1, "Reselecting burn-in must not restart")
+                engine.currentTime = 123
+                model.setPaused(true)
+                model.setPlaybackSpeed(1.5)
+                model.selectSubtitleOption(id: selection)
+                await wait { engine.positions.count == 2 && model.phase == .ready }
+                XCTAssertEqual(engine.positions.last, 123)
+                XCTAssertTrue(engine.isPaused)
+                XCTAssertEqual(model.controls.playbackSpeed, 1.5)
+                XCTAssertEqual(engine.selectedSubtitleID, selection == 7 ? 7 : nil)
+                let calls = await provider.calls
+                XCTAssertEqual(calls.last?.options.subtitlesOff, selection == PlayerTrackOption.offID)
+                XCTAssertEqual(calls.last?.options.subtitleTrack?.id, selection == 7 ? 7 : nil)
+                XCTAssertEqual(calls.last?.options.audioTrack?.id, 3)
+                XCTAssertEqual(calls.last?.source, "version")
+                XCTAssertEqual(calls.last?.options.quality, options?.quality ?? .original)
+                if options == nil { XCTAssertEqual(calls.last?.options.forceTranscoding, true) }
+                await model.stop()
+            }
+        }
+    }
+
     func testStoppingAfterBackgroundClockResetReportsThePreservedPosition() async {
         let (model, engine, provider) = make(options: .init(quality: .original))
         await model.load()
@@ -683,12 +717,14 @@ final class StreamingPlaybackTests: XCTestCase {
         request.streamingOptions = .init(quality: .hd720)
         request.streamingSessionID = "session"
         request.negotiatedStreamingVideoCodec = .hevc
+        request.burnedInSubtitleTrackID = 6
         let local = PlayerViewModel.applyingOfflineRewrite(
             to: request, localURL: URL(fileURLWithPath: "/fixture/movie.mp4")
         )
         XCTAssertNil(local.streamingOptions)
         XCTAssertNil(local.streamingSessionID)
         XCTAssertNil(local.negotiatedStreamingVideoCodec)
+        XCTAssertNil(local.burnedInSubtitleTrackID)
         XCTAssertFalse(local.isTranscoding)
         XCTAssertFalse(PlayerViewModel.streamingSelectionMatches(.init(quality: .hd720), .init(quality: .original)))
         XCTAssertFalse(PlayerViewModel.streamingSelectionMatches(.init(quality: .hd720), nil))
@@ -728,6 +764,7 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
     private var negotiatedCodec: DirectPlayVideoCodec?
     private var sourceRange: String?
     private var plexSubtitleRenditions = false
+    private var burnedSubtitle = false
     private var gate: QualityDecisionGate?
     init(gate: QualityDecisionGate? = nil) { self.gate = gate }
     func installGate(_ gate: QualityDecisionGate) { self.gate = gate }
@@ -736,6 +773,7 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
     func setNegotiatedCodec(_ codec: DirectPlayVideoCodec) { negotiatedCodec = codec }
     func setSourceRange(_ range: String) { sourceRange = range }
     func setPlexSubtitleRenditions() { plexSubtitleRenditions = true }
+    func setBurnedSubtitle() { burnedSubtitle = true }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest {
         ordinaryCalls += 1
         return baseRequest()
@@ -752,25 +790,30 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
         request.streamingOptions = streaming
         request.streamingSessionID = "quality-\(sequence)"
         request.negotiatedStreamingVideoCodec = negotiatedCodec
+        if burnedSubtitle, calls.count > 1 || ordinaryCalls > 0 {
+            request.burnedInSubtitleTrackID = nil
+        }
         return request
     }
     func releaseStreamingSession(_ request: PlaybackRequest) {
         if let id = request.streamingSessionID { released.append(id) }
     }
     private func baseRequest() -> PlaybackRequest {
-        PlaybackRequest(item: MediaItem(id: "movie", title: "Movie", kind: .movie, runtime: 600),
+        var request = PlaybackRequest(item: MediaItem(id: "movie", title: "Movie", kind: .movie, runtime: 600),
                         streamURL: URL(string: "https://fixture.test/master.m3u8")!,
                         audioTracks: [
                             .init(id: 3, kind: .audio, displayTitle: "English", language: "eng", isDefault: true),
                             .init(id: 4, kind: .audio, displayTitle: "Japanese", language: "jpn")
                         ],
-                        subtitleTracks: plexSubtitleRenditions ? [
+                        subtitleTracks: plexSubtitleRenditions || burnedSubtitle ? [
                             .init(id: 6, kind: .subtitle, displayTitle: "English", language: "eng"),
                             .init(id: 7, kind: .subtitle, displayTitle: "French", language: "fra")
                         ] : [.init(id: 6, kind: .subtitle, displayTitle: "English", language: "eng")],
                         isTranscoding: true,
                         sourceMetadata: sourceRange.map { .init(video: .init(videoRangeType: $0)) },
                         sourceProvider: plexSubtitleRenditions ? .plex : nil)
+        if burnedSubtitle { request.burnedInSubtitleTrackID = 6 }
+        return request
     }
     func libraries() async throws -> [MediaLibrary] { [] }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }

@@ -32,8 +32,8 @@ public struct SubtitleCue: Identifiable, Sendable {
 
     public enum Body: Sendable {
         case text(SubtitleText)
-        /// A pre-rendered bitmap cue (PGS / HDMV-PGS / DVB / DVD). Decoded by the
-        /// engine; the renderer only composites + luminance-clamps it.
+        /// A decoded bitmap (PGS / DVB / DVD) or a libass-composited authored
+        /// frame. The overlay places and luminance-clamps it.
         case image(SubtitleImage)
     }
 
@@ -177,20 +177,31 @@ public extension SubtitleText {
 /// rect before placing the image.
 ///
 /// `canvasSize == .zero` means the subtitle canvas matches the video frame.
-/// Matches AetherEngine's `SubtitleImage` so Plozzigen cues pass straight through.
+/// Ordinary decoded bitmaps keep automatic avoidance; authored renderers can
+/// protect fixed artwork or bound movement to an independent lower region.
 public struct SubtitleImage: @unchecked Sendable {
+    public enum ControlAvoidance: Sendable, Equatable {
+        case automatic
+        case fixed
+        /// A stable source-canvas envelope and the protected artwork's lower edge.
+        case lowerRegion(envelope: CGRect, minimumY: CGFloat)
+    }
+
     public var cgImage: CGImage
     public var normalizedRect: CGRect
     public var canvasSize: CGSize
+    public var controlAvoidance: ControlAvoidance
 
     public init(
         cgImage: CGImage,
         normalizedRect: CGRect,
-        canvasSize: CGSize = .zero
+        canvasSize: CGSize = .zero,
+        controlAvoidance: ControlAvoidance = .automatic
     ) {
         self.cgImage = cgImage
         self.normalizedRect = normalizedRect
         self.canvasSize = canvasSize
+        self.controlAvoidance = controlAvoidance
     }
 }
 

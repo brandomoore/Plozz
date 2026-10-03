@@ -239,6 +239,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
     func testGuideSurfaceNeverDisappearsBehindTheTimeHeader() throws {
         let samples = try alphaSamples(
             PrototypeGuideSurface()
+                .environment(\.gradientBackgroundsEnabled, false)
                 .environment(\.plozzReduceTransparency, false)
                 .environment(\.themePalette, ThemePalette.dark),
             size: CGSize(width: 600, height: 400),
@@ -247,6 +248,19 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         XCTAssertEqual(PrototypeLayout.minimumGuideOpacity, 0.05)
         XCTAssertTrue(samples.allSatisfy { $0 >= 12 })
         XCTAssertLessThan(try XCTUnwrap(samples.first), 25)
+    }
+
+    func testGradientGuideAvoidsASecondPageWashButPreservesSolidAccessibilitySurface() throws {
+        for reduced in [false, true] {
+            let samples = try alphaSamples(
+                PrototypeGuideSurface()
+                    .environment(\.gradientBackgroundsEnabled, true)
+                    .environment(\.plozzReduceTransparency, reduced)
+                    .environment(\.themePalette, ThemePalette.dark),
+                size: CGSize(width: 600, height: 400), points: [(300, 40), (300, 200)]
+            )
+            XCTAssertTrue(samples.allSatisfy { reduced ? $0 == 255 : $0 == 0 })
+        }
     }
 
     func testNowMarkerIsACompactPointerWithoutALineThroughTheRows() throws {

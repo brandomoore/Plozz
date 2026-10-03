@@ -259,6 +259,19 @@ the real app's accounts or settings. Select it explicitly with
 `PLOZZ_HOME_APP_BUNDLE_ID=com.thatcube.Plozz.FocusHost`; the default remains Plozz.
 Synthetic assets and a small number of rows are not a substitute for real Home.
 
+For gradient-background comparisons, `ShowcaseNavigationTests` accepts
+`TEST_RUNNER_PLOZZ_GRADIENT_COMPARISON=1` and
+`TEST_RUNNER_PLOZZ_GRADIENT_DISABLED=1` (baseline) or `0` (enabled).
+Run horizontal and vertical Showcase workloads plus
+`testCarouselHeroGradientNavigationHitches`: the latter verifies actual classic
+hero slide changes, not just movement among its action buttons. The fixture uses
+distinct, coloured cached artwork per title. Both arms keep the same Black theme,
+data and input sequence. Retain native metric arrays and authoritative results;
+a testmanagerd disconnect is incomplete even when it prints partial metrics.
+These compare rendering, palette work and native navigation, not real-server
+latency or the user's artwork variety. Verify both layouts with real libraries
+before treating fixture results as end-to-end performance acceptance.
+
 **Calibrate a new metric target before trusting zero hitches.** The fixture's
 `--home-hitch-positive-control` injects bounded 120 ms main-thread stalls. Run
 that case with `PLOZZ_HOME_EXPECT_HITCHES=1` so the driver rejects all-zero results.

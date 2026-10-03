@@ -10,6 +10,28 @@ import UIKit
 
 @MainActor
 final class PlayerViewModelEOFTests: XCTestCase {
+    func testCenterSpinnerDisappearsForDisplayedVideoWhileScrubSeekRemainsPending() async {
+        let request = PlaybackRequest(
+            item: .init(id: "movie", title: "Movie", kind: .movie),
+            streamURL: URL(string: "https://fixture.test/movie.mp4")!, startPosition: 134
+        )
+        let engine = SpyVideoEngine()
+        let viewModel = PlayerViewModel(
+            provider: RecordingPlaybackProvider(request: request), itemID: "movie",
+            engineFactory: .init(makeNative: { _ in engine })
+        )
+        await viewModel.load()
+        XCTAssertTrue(viewModel.showBringUpSpinner)
+        viewModel.controls.isSeeking = true
+        engine.currentTime = 0.5
+        engine.hasPresentedVideoFrame = true
+        XCTAssertFalse(viewModel.showBringUpSpinner)
+        XCTAssertTrue(viewModel.controls.isSeeking, "The center cover must not fake completion of the scrub-bar seek")
+        engine.isPaused = true
+        XCTAssertFalse(viewModel.showBringUpSpinner, "An already displayed paused picture needs no center cover")
+        await viewModel.stop()
+    }
+
     func testSequenceCardsFillThePlayerBandWithRoomForArtworkAndTitles() {
         for metrics in [PlayerCardMetrics.tv, .horizontalWide, .horizontalNarrow] {
             let layout = PlayerSequenceLayout(
@@ -2301,6 +2323,7 @@ private final class SpyVideoEngine: VideoEngine {
     var status: VideoEngineStatus = .idle
     var isPaused = false
     var preventsDisplaySleep = false
+    var hasPresentedVideoFrame = false
     var currentTime: TimeInterval = 0
     var duration: TimeInterval = 0
     var furthestObservedPosition: TimeInterval = 0

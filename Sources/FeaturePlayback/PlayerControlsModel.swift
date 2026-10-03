@@ -5,6 +5,16 @@ import Observation
 import SwiftUI
 import CoreModels
 
+@MainActor
+@Observable
+public final class SubtitleAppearanceModel {
+    public var style: SubtitleStyle = .default
+    public var rendersHDR = false
+    public var primaryIsBurnedIn = false
+
+    public init() {}
+}
+
 /// A selectable audio or subtitle option for the in-player track menu.
 ///
 /// `id` is the option's index within its `AVMediaSelectionGroup`; the special
@@ -440,13 +450,29 @@ public final class PlayerControlsModel {
     /// view model seeds this from the profile's persisted style and updates it
     /// on every edit, keeping the live overlay, this mirror, and persistence in
     /// lock-step.
-    public var subtitleStyle: SubtitleStyle = .default
+    public let subtitleAppearance = SubtitleAppearanceModel()
+    public var subtitleStyle: SubtitleStyle {
+        get { subtitleAppearance.style }
+        set { subtitleAppearance.style = newValue }
+    }
+    public var primarySubtitleIsBurnedIn: Bool {
+        get { subtitleAppearance.primaryIsBurnedIn }
+        set { subtitleAppearance.primaryIsBurnedIn = newValue }
+    }
+    public var subtitleStyleAdjustable: Bool {
+        !primarySubtitleIsBurnedIn || secondarySubtitleOptions.contains {
+            $0.isSelected && $0.id != PlayerTrackOption.offID
+        }
+    }
 
     /// Whether the subtitle overlay is currently rendering over an HDR frame
     /// (the panel is being driven to an HDR/DV display mode). Only then does the
     /// style's `hdrLuminanceScale` do anything, so the menu shows the "HDR
     /// Brightness" row exclusively while this is true — no dead control on SDR.
-    public var subtitlesRenderHDR: Bool = false
+    public var subtitlesRenderHDR: Bool {
+        get { subtitleAppearance.rendersHDR }
+        set { subtitleAppearance.rendersHDR = newValue }
+    }
 
     // MARK: Live tunables (mirrors of engine state)
     /// What the active engine supports — drives which rows the options menu
