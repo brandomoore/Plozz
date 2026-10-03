@@ -148,8 +148,8 @@ public struct PinnedSidebarLeadingFade<Content: View>: View {
                 // The first card parks right at the gutter's inner edge, and
                 // focus grows it back across that edge. The feather keeps its
                 // full width but sits that much further left, so a focused first
-                // card and its shadow stay whole while cards scrolling out still
-                // dissolve smoothly before they pass under the sidebar.
+                // card and its shadow stay whole while cards scrolling out fade
+                // to a faint glimpse underneath the sidebar.
                 .mask {
                     Group {
                         if inset > 0 {
@@ -217,16 +217,15 @@ private struct RowSlotTargets: ScrollTargetBehavior {
     }
 }
 
-/// The pinned sidebar's feather: clear under the sidebar's icons, rising to
-/// solid just before a focused first card's lift, so cards scrolling out
-/// dissolve before they reach the icons.
+/// Retains a 10% glimpse under the icons, rising to solid before a focused
+/// first card's lift. The same mask carries the floor through the overscan gutter.
 private struct PinnedSidebarFeather: View {
     /// Where the first card's slot opens.
     let start: CGFloat
 
     /// How far a focused first card's lift reaches back from its slot.
     static let lift: CGFloat = 18
-    /// The feather's width, ending clear just past the sidebar's icons.
+    /// The feather's width, ending faint just past the sidebar's icons.
     static let width: CGFloat = 34
 
     var body: some View {
@@ -244,6 +243,10 @@ private struct PinnedSidebarFeather: View {
             )
             .frame(width: solid - clear)
             Color.black
+        }
+        .background {
+            Color.black.opacity(0.1)
+                .ignoresSafeArea(.container, edges: .leading)
         }
         .environment(\.layoutDirection, .leftToRight)
     }

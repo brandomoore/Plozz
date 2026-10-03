@@ -1112,16 +1112,23 @@ match Home's current leading/bottom treatment. Regenerate with
 verify with `python3 tools/generate_home_scrim.py --check` plus
 `python3 tools/test_generate_home_scrim.py`.
 
-Pinned navigation selects a second baked texture with the same wash, leading
+Pinned Home navigation selects a second baked texture with the same wash, leading
 strength/width, and bottom curve, extending the leading fade to the full height.
 It replaces the standard texture rather than adding an overlay, blur, shadow,
-or runtime rasterization. Both Home and detail read `plozzPinnedSidebarActive`,
-not the changing content inset, so shading stays stable through navigation and
-trailer handoff. The analytic comparison and RTL/custom-tone fallback use the
-same full-height leading treatment. Native navigation and mobile keep the
+or runtime rasterization. Home reads `plozzPinnedSidebarActive`, not the changing
+content inset. Detail pages have no sidebar and use the original softer upper-left
+corner for every navigation style. The analytic comparison and RTL/custom-tone
+fallback use the same respective treatment. Native Home navigation and mobile keep the
 original texture/parameters. The lower field (from 62% height) and the artwork
 beyond the leading fade (42% width) are unchanged. Compact rail glyphs no longer
 carry individual shadows; the expanded menu keeps its existing glass backing.
+
+During a cinematic detail entrance, scrim opacity begins its existing 0.45-second
+reveal when the artwork cover hands off, before the logo's 0.10-second pause ends.
+It stays anchored inside the existing bottom dissolve; it does not use the
+foreground's translation or add another mask. Late artwork/video readiness still
+gates the sequence. Disabled transitions, Reduce Motion, and missing artwork
+show the completed shading without a separate entrance delay.
 
 An opaque color-fade experiment did not replace the original alpha mask: it
 introduced a visible seam and differed during intermediate animation frames.

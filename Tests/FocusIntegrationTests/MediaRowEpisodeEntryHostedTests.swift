@@ -118,6 +118,8 @@ final class MediaRowEpisodeEntryHostedTests: XCTestCase {
             let window = UIWindow(windowScene: scene)
             window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
             window.rootViewController = host
+            host.view.backgroundColor = .black
+            host.row.view.backgroundColor = .clear
             window.makeKeyAndVisible()
             defer {
                 window.isHidden = true
@@ -158,11 +160,20 @@ final class MediaRowEpisodeEntryHostedTests: XCTestCase {
             capture(window, system: system, name: "episode-at-screen-edge-\(style)")
 
             let offset = scroll.contentOffset
+            let unobscured = screenshot(window)
             model.navigationInset = 64
             try await assertRedPixel(
                 in: window, x: Int(insetEdge) + 2, y: y, present: false,
-                message: "The visible sidebar must still hide scrolling \(style) artwork under its icons."
+                message: "The visible sidebar must dim scrolling \(style) artwork under its icons."
             )
+            let underSidebar = screenshot(window)
+            for x in [2, Int(insetEdge) + 2] {
+                let original = try pixel(unobscured, x: x, y: y)
+                let faint = try pixel(underSidebar, x: x, y: y)
+                XCTAssertGreaterThan(original[0], 150, "Sample actual artwork, including at the physical screen edge.")
+                XCTAssertEqual(Double(faint[0]), Double(original[0]) * 0.1, accuracy: 3,
+                               "Retain 10% of \(style) artwork beneath the pinned sidebar.")
+            }
             try await assertRedPixel(
                 in: window, x: Int(insetEdge) + 64, y: y,
                 message: "The visible sidebar must keep \(style) artwork opaque past its feather."

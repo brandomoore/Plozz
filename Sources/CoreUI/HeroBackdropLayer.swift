@@ -228,9 +228,9 @@ public extension View {
 /// `EmptyView` by default (today), so the image-only path is byte-for-byte the
 /// same as the detail hero's original backdrop.
 public struct HeroBackdropLayer<Video: View>: View {
-    @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     #if os(tvOS)
     @Environment(\.detailEntranceSession) private var detailEntrance
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var artworkResolution = ArtworkResolutionState()
     #endif
     /// Ordered candidate backdrop URLs (first that loads and is wide enough wins).
@@ -367,10 +367,29 @@ public struct HeroBackdropLayer<Video: View>: View {
         .modifier(OverscanBreakout(enabled: ignoresOverscan))
     }
 
-    /// Shared Home/detail shading stays under the dissolve, including the
-    /// full-height leading fade when pinned navigation is enabled.
-    @ViewBuilder
+    /// Details have no rail: retain the softer upper corner for every navigation
+    /// style, and reveal the shading before the foreground without moving it.
     private var scrim: some View {
+        scrimContent
+            #if os(tvOS)
+            .opacity(isScrimVisible ? 1 : 0)
+            .animation(
+                reduceMotion ? nil : detailEntrance.map {
+                    DetailEntranceMotion.reveal(duration: $0.timing.reveal)
+                },
+                value: isScrimVisible
+            )
+            #endif
+    }
+
+    #if os(tvOS)
+    private var isScrimVisible: Bool {
+        reduceMotion || (detailEntrance?.isBackdropShadingVisible ?? true)
+    }
+    #endif
+
+    @ViewBuilder
+    private var scrimContent: some View {
         if usesCachedScrim {
             HeroLegibilityTexture(tone: scrimTone)
         } else {
@@ -392,7 +411,7 @@ public struct HeroBackdropLayer<Video: View>: View {
             tone: scrimTone,
             edgePeak: 0.55,
             edges: [.leading, .bottom],
-            sideDarkeningStart: pinnedSidebarActive ? 0 : 0.34
+            sideDarkeningStart: 0.34
         )
     }
 

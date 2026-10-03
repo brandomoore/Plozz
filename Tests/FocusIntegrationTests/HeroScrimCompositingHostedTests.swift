@@ -144,7 +144,10 @@ private struct ScrimFixtureView: View {
             .overlay {
                 Group {
                     if model.cached {
-                        HeroLegibilityTexture(tone: model.light ? .white : .black)
+                        HeroLegibilityTexture(
+                            tone: model.light ? .white : .black,
+                            extendsLeadingFade: model.pinned
+                        )
                     } else {
                         shading
                     }

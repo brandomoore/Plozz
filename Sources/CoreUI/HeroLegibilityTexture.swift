@@ -5,18 +5,19 @@ import SwiftUI
 /// shading is baked; the theme's opaque black/white tone stays live.
 public struct HeroLegibilityTexture: View {
     private let tone: Color
+    private let extendsLeadingFade: Bool
     @Environment(\.layoutDirection) private var layoutDirection
-    @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
 
-    public init(tone: Color) {
+    public init(tone: Color, extendsLeadingFade: Bool = false) {
         self.tone = tone
+        self.extendsLeadingFade = extendsLeadingFade
     }
 
     @ViewBuilder
     public var body: some View {
         if layoutDirection == .leftToRight && (tone == .black || tone == .white) {
             Image(
-                pinnedSidebarActive ? "HomeHeroLegibilityPinned" : "HomeHeroLegibility",
+                extendsLeadingFade ? "HomeHeroLegibilityPinned" : "HomeHeroLegibility",
                 bundle: .module
             )
                 .resizable()
@@ -28,7 +29,7 @@ public struct HeroLegibilityTexture: View {
             HeroLegibilityScrim(
                 tone: tone, edgePeak: 0.55,
                 edges: [.leading, .bottom],
-                sideDarkeningStart: pinnedSidebarActive ? 0 : 0.34
+                sideDarkeningStart: extendsLeadingFade ? 0 : 0.34
             )
         }
     }

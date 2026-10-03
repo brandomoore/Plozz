@@ -316,7 +316,7 @@ public struct HomeHeroBackdrop: View {
             sideDarkeningStart: pinnedSidebarActive ? 0 : 0.34
         )
         if HomeBackdropCompositing.usesCachedScrim {
-            HeroLegibilityTexture(tone: scrimTone)
+            HeroLegibilityTexture(tone: scrimTone, extendsLeadingFade: pinnedSidebarActive)
         } else {
             shading
         }
