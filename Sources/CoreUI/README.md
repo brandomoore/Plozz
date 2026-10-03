@@ -22,7 +22,7 @@ cache that every feature module reuses. tvOS-only — guarded behind
   colour array; no full-screen clock, blur, or per-frame Home invalidation runs.
   Reduce Motion disables the palette crossfade. Dark uses a softer wash and Black
   retains more visible colour while staying darker; Light's palette is unchanged.
-  Settings groups blend their existing surface colour at 50% opacity over an
+  Settings groups blend their existing surface colour at 20% opacity over an
   enabled gradient, keeping their border/shadow and opaque content. Gradient Off
   or Reduce Transparency restores the solid surface. Other raised cards and
   overlays keep their existing treatment.

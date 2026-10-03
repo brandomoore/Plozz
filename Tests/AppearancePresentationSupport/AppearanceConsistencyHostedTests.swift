@@ -116,21 +116,31 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
         let palette: ThemePalette
 
         var body: some View {
-            GeometryReader { geometry in
-                ZStack {
-                    SettingsPageBackground()
-                    VStack(alignment: .leading, spacing: 20) {
-                        Text("Profile").font(.title2.bold())
-                        PlozzDivider()
-                        Text("Appearance").font(.headline)
-                        Text("Theme, navigation, and cards").foregroundStyle(palette.secondaryText)
+            NavigationStack {
+                GeometryReader { geometry in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            Spacer(minLength: 0)
+                            Text("Profile").font(.title2.bold())
+                            PlozzDivider()
+                            Text("Appearance").font(.headline)
+                            Text("Theme, navigation, and cards").foregroundStyle(palette.secondaryText)
+                        }
+                        .foregroundStyle(palette.primaryText)
+                        .padding(28)
+                        .frame(width: geometry.size.width * 0.84, height: geometry.size.height * 0.84)
+                        .settingsGroupSurface(cornerRadius: 24)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, geometry.size.height * 0.08)
                     }
-                    .foregroundStyle(palette.primaryText)
-                    .padding(28)
-                    .frame(width: geometry.size.width * 0.84, height: geometry.size.height * 0.84, alignment: .bottomLeading)
-                    .settingsGroupSurface(cornerRadius: 24)
                 }
+                #if os(iOS)
+                // SettingsPageSurface paints inside the mobile navigation stack.
+                .background { SettingsPageBackground() }
+                .toolbarBackground(.hidden, for: .navigationBar)
+                #endif
             }
+            .background { SettingsPageBackground() }
             .environment(\.themePalette, palette)
             .environment(\.colorScheme, palette.isLight ? .light : .dark)
             .environment(\.gradientBackgroundsEnabled, state.gradient)

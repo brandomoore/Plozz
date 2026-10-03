@@ -20,7 +20,7 @@ final class AmbientGradientTests: XCTestCase {
                         if palette.isLight {
                             XCTAssertGreaterThan(min(r, g, b), 0.65)
                         } else if theme == .pureBlack {
-                            XCTAssertLessThan(max(r, g, b), 0.13)
+                            XCTAssertLessThan(max(r, g, b), 0.085)
                         } else {
                             XCTAssertLessThan(max(r, g, b), 0.30)
                         }
@@ -56,7 +56,8 @@ final class AmbientGradientTests: XCTestCase {
         let dark = AmbientGradientBackground.meshColors(tint: nil, palette: .dark).map(channels)
         let black = AmbientGradientBackground.meshColors(tint: nil, palette: .pureBlack).map(channels)
         XCTAssertEqual(dark[0][2], 0.22088, accuracy: 0.0001)
-        XCTAssertEqual(black[0][2], 0.1004, accuracy: 0.0001)
+        XCTAssertEqual(black[0][2], 0.06526, accuracy: 0.0001)
+        XCTAssertEqual(black[0][2] / 0.1004, 13.0 / 20.0, accuracy: 0.0001)
         XCTAssertLessThan(dark[0][2], 0.251)
         XCTAssertGreaterThan(black[0][2], 0.251 * 0.22)
         for index in dark.indices {
@@ -66,7 +67,7 @@ final class AmbientGradientTests: XCTestCase {
         }
         let values = black.flatMap { $0 }
         let contrast = try XCTUnwrap(values.max()) - XCTUnwrap(values.min())
-        XCTAssertGreaterThan(contrast, 0.05, "Black must retain visible variation instead of crushing the gradient.")
+        XCTAssertGreaterThan(contrast, 0.03, "Black must retain visible variation instead of crushing the gradient.")
     }
 
     private func channels(_ color: Color) -> [Double] {

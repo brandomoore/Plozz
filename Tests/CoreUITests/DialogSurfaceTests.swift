@@ -24,7 +24,7 @@ final class DialogSurfaceTests: XCTestCase {
                             .environment(\.gradientBackgroundsEnabled, gradient)
                             .environment(\.plozzReduceTransparency, reduced)
                     )
-                    let opacity = gradient && !reduced ? 0.5 : 1.0
+                    let opacity = gradient && !reduced ? 0.2 : 1.0
                     let actual = pixel(pixels, x: 60, y: 60)
                     for channel in 0..<3 {
                         let expected = (fill[channel] * opacity + [0.7, 0.3, 0.1][channel] * (1 - opacity)) * 255

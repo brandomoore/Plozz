@@ -104,7 +104,7 @@ private struct SettingsGroupSurface: ViewModifier {
     func body(content: Content) -> some View {
         content.modifier(PlozzSurfaceModifier(
             level: .raised, cornerRadius: cornerRadius,
-            fillOpacity: gradientEnabled && !reduceTransparency ? 0.5 : 1
+            fillOpacity: gradientEnabled && !reduceTransparency ? 0.2 : 1
         ))
     }
 }
