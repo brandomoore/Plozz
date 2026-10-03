@@ -262,7 +262,10 @@ struct NavigationRailShell<Content: View>: View {
             requestNavigationFocus()
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { allowsExitFromHome = false }
+            if phase != .active {
+                allowsExitFromHome = false
+                if railExpanded { returnFocusToPage() }
+            }
         }
         .onDisappear {
             destinationFocus.cancel()
@@ -318,7 +321,7 @@ struct NavigationRailShell<Content: View>: View {
     private var backAction: (() -> Void)? {
         guard !chrome.isChromeHidden else { return nil }
         // Remove the command entirely at the final step so tvOS owns exiting.
-        if selection == .home, allowsExitFromHome, !railExpanded, !isBackHandoffInProgress {
+        if selection == .home, railExpanded || allowsExitFromHome, !isBackHandoffInProgress {
             return nil
         }
         return handleBack

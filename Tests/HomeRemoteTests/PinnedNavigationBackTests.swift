@@ -2,9 +2,19 @@ import XCTest
 
 @MainActor
 final class PinnedNavigationBackTests: XCTestCase {
-    func testBackFromEveryPinnedRootOpensNavigationThenHomeThenExits() {
+    func testBackFromHomeOpensNavigationThenExitsWithoutReturningHomeAgain() {
+        let app = launch(root: "home")
+        defer { app.terminate() }
+        assertFocused(app.buttons["back-page-home"], app: app)
+        XCUIRemote.shared.press(.menu)
+        assertNavigationFocused("Home", app: app)
+        XCUIRemote.shared.press(.menu)
+        assertExited(app)
+    }
+
+    func testBackFromOtherPinnedRootsOpensNavigationThenHomeThenExits() {
         for (root, title) in [
-            ("home", "Home"), ("watchlist", "Watchlist"), ("search", "Search"),
+            ("watchlist", "Watchlist"), ("search", "Search"),
             ("liveTV", "Live TV"), ("music", "Music"), ("settings", "Settings")
         ] {
             let app = launch(root: root)
@@ -33,11 +43,11 @@ final class PinnedNavigationBackTests: XCTestCase {
     }
 
     func testPushedPagesPopBeforeBackOpensNavigationAndResetHomeExit() {
-        let app = launch(root: "home")
+        let app = launch(root: "settings")
         defer { app.terminate() }
-        assertFocused(app.buttons["back-page-home"], app: app)
+        assertFocused(app.buttons["back-page-settings"], app: app)
         XCUIRemote.shared.press(.menu)
-        assertNavigationFocused("Home", app: app)
+        assertNavigationFocused("Settings", app: app)
         XCUIRemote.shared.press(.menu)
         assertFocused(app.buttons["back-page-home"], app: app)
         XCUIRemote.shared.press(.select)
@@ -67,11 +77,11 @@ final class PinnedNavigationBackTests: XCTestCase {
     }
 
     func testExplicitlyOpeningNavigationAgainResetsTheHomeExitStep() {
-        let app = launch(root: "home")
+        let app = launch(root: "settings")
         defer { app.terminate() }
-        assertFocused(app.buttons["back-page-home"], app: app)
+        assertFocused(app.buttons["back-page-settings"], app: app)
         XCUIRemote.shared.press(.menu)
-        assertNavigationFocused("Home", app: app)
+        assertNavigationFocused("Settings", app: app)
         XCUIRemote.shared.press(.menu)
         assertFocused(app.buttons["back-page-home"], app: app)
         XCUIRemote.shared.press(.left)
@@ -88,8 +98,6 @@ final class PinnedNavigationBackTests: XCTestCase {
         assertFocused(app.buttons["back-page-home"], app: app)
         XCUIRemote.shared.press(.menu)
         assertNavigationFocused("Home", app: app)
-        XCUIRemote.shared.press(.menu)
-        assertFocused(app.buttons["back-page-home"], app: app)
         XCUIRemote.shared.press(.menu)
         assertExited(app)
         app.activate()

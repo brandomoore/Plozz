@@ -72,10 +72,12 @@ navigation style are independent choices.
 ## Pinned sidebar remote navigation
 
 At a visible pinned-navigation root, Back opens the menu on the current
-destination. Back from that menu returns focus to Home; the next Back is left to
-tvOS to exit. Returning Home uses the existing rendered-page focus handoff, and
+destination. If already on Home, the next Back exits directly from the menu.
+Otherwise, Back from the menu returns focus to Home; the following Back is left
+to tvOS to exit. Returning Home uses the existing rendered-page focus handoff, and
 extra Back presses during that handoff cannot exit early. Explicit navigation,
-opening a detail page, or leaving the active scene resets the sequence. Back
+opening a detail page, or leaving the active scene resets the sequence. Leaving
+the active scene also releases menu focus so reopening starts in the content. Back
 inside pushed pages and presentations still belongs to those surfaces. A hidden
 Home destination is temporarily available for this explicit return without
 changing the profile's hidden/order preferences. Native navigation and its
