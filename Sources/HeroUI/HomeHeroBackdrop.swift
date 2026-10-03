@@ -195,6 +195,7 @@ public struct HomeHeroBackdrop: View {
     }
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     private var isLight: Bool { colorScheme == .light }
 
     /// Height fraction at which the bottom melt BEGINS. Theme-aware: light mode
@@ -283,13 +284,8 @@ public struct HomeHeroBackdrop: View {
         #endif
     }
 
-    /// Legibility scrim: a seamless edge vignette (same darkening on every side)
-    /// plus a faint all-over wash, replacing the old left-only horizontal wash so
-    /// the darkening blends evenly across the whole hero instead of pooling on the
-    /// left — especially over bright art. `edgePeak` matches the old left strength
-    /// (0.55) so the content side is never lightened. Lives under the dissolve
-    /// mask so it fades away with the image at the bottom and never tints the
-    /// revealed background. Static across slides, so it never animates.
+    /// Static across slides and under the dissolve, so shading never tints the
+    /// revealed background or moves with individual artwork wipes.
     @ViewBuilder
     private var scrim: some View {
         switch scrimStyle {
@@ -313,17 +309,11 @@ public struct HomeHeroBackdrop: View {
 
     @ViewBuilder
     private var carouselScrim: some View {
-        // TEST: top and trailing dropped, matching the detail page. The hero's
-        // logo, metadata and buttons all sit along the LEFT and the image melts
-        // into the rows at the BOTTOM, so those are the only edges doing
-        // legibility work — the other two just cost contrast on the artwork.
         let shading = HeroLegibilityScrim(
             tone: scrimTone,
             edgePeak: 0.55,
             edges: [.leading, .bottom],
-            // Keep the top-left clean: nothing is drawn over it, so darkening it
-            // only flattens the artwork. The wash arrives where the content is.
-            sideDarkeningStart: 0.34
+            sideDarkeningStart: pinnedSidebarActive ? 0 : 0.34
         )
         if HomeBackdropCompositing.usesCachedScrim {
             HeroLegibilityTexture(tone: scrimTone)

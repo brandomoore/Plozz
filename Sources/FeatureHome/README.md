@@ -219,6 +219,12 @@ is ignored when reading older settings without resetting the remaining choices.
 Showcase's optional titles under cards remain in Customize Home > Home Layout;
 they do not control title visibility elsewhere in the app.
 
+With pinned navigation, the carousel and detail hero extend their shared leading
+fade to the top edge, blending into the unchanged bottom shading. This uses a
+pinned variant of the existing cached scrim, not an extra compositing pass.
+Native navigation retains the original shading; Showcase already fades its
+artwork into the background along the full leading edge.
+
 Native poster layout slots use artwork size on both axes, rounding fractional
 heights up so SwiftUI cannot round artwork down into its caption. TVUIKit's focus
 margins settle after realization and draw outside that slot; feeding their

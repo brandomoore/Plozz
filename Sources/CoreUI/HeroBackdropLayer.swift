@@ -228,6 +228,7 @@ public extension View {
 /// `EmptyView` by default (today), so the image-only path is byte-for-byte the
 /// same as the detail hero's original backdrop.
 public struct HeroBackdropLayer<Video: View>: View {
+    @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     #if os(tvOS)
     @Environment(\.detailEntranceSession) private var detailEntrance
     @State private var artworkResolution = ArtworkResolutionState()
@@ -366,11 +367,8 @@ public struct HeroBackdropLayer<Video: View>: View {
         .modifier(OverscanBreakout(enabled: ignoresOverscan))
     }
 
-    /// Legibility scrim: a seamless edge vignette (same darkening on every side)
-    /// plus a faint all-over wash, so the title/logo/overview read clearly against
-    /// the artwork while the darkening blends evenly across the whole hero instead
-    /// of pooling on one side — matching the Home hero. Lives *under* the dissolve
-    /// mask so it fades away with the image and never tints the revealed background.
+    /// Shared Home/detail shading stays under the dissolve, including the
+    /// full-height leading fade when pinned navigation is enabled.
     @ViewBuilder
     private var scrim: some View {
         if usesCachedScrim {
@@ -390,17 +388,11 @@ public struct HeroBackdropLayer<Video: View>: View {
     }
 
     private var analyticScrim: some View {
-        // TEST: top and trailing dropped. Detail-page content runs along the
-        // LEFT and fades out at the BOTTOM, so those two edges are the only ones
-        // doing legibility work; darkening the other two only costs contrast on
-        // the part of the artwork the viewer is actually looking at.
         HeroLegibilityScrim(
             tone: scrimTone,
             edgePeak: 0.55,
             edges: [.leading, .bottom],
-            // Keep the top-left clean: nothing is drawn over it, so darkening it
-            // only flattens the artwork. The wash arrives where the content is.
-            sideDarkeningStart: 0.34
+            sideDarkeningStart: pinnedSidebarActive ? 0 : 0.34
         )
     }
 

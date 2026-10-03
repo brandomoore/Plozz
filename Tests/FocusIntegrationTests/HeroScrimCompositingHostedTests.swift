@@ -8,24 +8,15 @@ import XCTest
 @MainActor
 final class HeroScrimCompositingHostedTests: XCTestCase {
     func testCachedScrimMatchesOriginalAcrossSizesThemesAndDirections() async throws {
-        let deadline = ContinuousClock.now + .seconds(5)
-        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
-              ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive })
         let model = ScrimFixture()
-        let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
-        window.rootViewController = UIHostingController(rootView: ScrimFixtureView(model: model))
-        window.makeKeyAndVisible()
+        let window = try await makeWindow(model: model)
         defer {
             window.isHidden = true
             window.rootViewController = nil
         }
-        for light in [false, true] {
+        for (light, pinned) in [(false, false), (false, true), (true, false), (true, true)] {
             model.light = light
+            model.pinned = pinned
             for rightToLeft in [false, true] {
                 model.rightToLeft = rightToLeft
                 for size in [CGSize(width: 640, height: 360), CGSize(width: 1280, height: 720)] {
@@ -49,7 +40,7 @@ final class HeroScrimCompositingHostedTests: XCTestCase {
                             }
                         }
                     }
-                    let result = XCTAttachment(string: "cached scrim max=\(maximum), size=\(size), light=\(light), rtl=\(rightToLeft), originalLayers=\(originalLayers), cachedLayers=\(candidateLayers)")
+                    let result = XCTAttachment(string: "cached scrim max=\(maximum), size=\(size), light=\(light), pinned=\(pinned), rtl=\(rightToLeft), originalLayers=\(originalLayers), cachedLayers=\(candidateLayers)")
                     result.name = "Cached scrim pixel comparison"
                     result.lifetime = .keepAlways
                     add(result)
@@ -57,6 +48,59 @@ final class HeroScrimCompositingHostedTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testPinnedSidebarSwitchChangesOnlyUpperLeadingShadingWithoutAddingLayers() async throws {
+        let model = ScrimFixture()
+        model.cached = true
+        model.size = CGSize(width: 1280, height: 720)
+        let window = try await makeWindow(model: model)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        for light in [false, true] {
+            model.light = light
+            model.pinned = false
+            try await Task.sleep(for: .milliseconds(200))
+            let original = try pixels(window)
+            let originalLayers = layerCounts(window.layer)
+            model.pinned = true
+            try await Task.sleep(for: .milliseconds(200))
+            let pinned = try pixels(window)
+            XCTAssertEqual(layerCounts(window.layer), originalLayers,
+                           "Pinned shading must replace the texture, not add a rendering layer.")
+            let leading = ((80 + 72) * 1920 + 80 + 64) * 4
+            let difference = (0..<3).map { abs(Int(original[leading + $0]) - Int(pinned[leading + $0])) }.max()!
+            XCTAssertGreaterThan(difference, 30, "The cached asset must shade behind the upper rail.")
+            for (x, y) in [(64, 504), (640, 72), (1200, 360)] {
+                let index = ((80 + y) * 1920 + 80 + x) * 4
+                for channel in 0..<4 {
+                    XCTAssertEqual(pinned[index + channel], original[index + channel],
+                                   "The lower field and center/right artwork must not change.")
+                }
+            }
+            model.pinned = false
+            try await Task.sleep(for: .milliseconds(200))
+            let restored = try pixels(window)
+            XCTAssertEqual(restored, original, "Switching back must restore the non-pinned appearance.")
+        }
+    }
+
+    private func makeWindow(model: ScrimFixture) async throws -> UIWindow {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView: ScrimFixtureView(model: model))
+        window.makeKeyAndVisible()
+        return window
     }
 
     private func pixels(_ window: UIWindow) throws -> [UInt8] {
@@ -88,6 +132,7 @@ private final class ScrimFixture {
     var cached = false
     var light = false
     var rightToLeft = false
+    var pinned = false
     var size = CGSize(width: 640, height: 360)
 }
 
@@ -105,6 +150,7 @@ private struct ScrimFixtureView: View {
                     }
                 }
                 .environment(\.layoutDirection, model.rightToLeft ? .rightToLeft : .leftToRight)
+                .environment(\.plozzPinnedSidebarActive, model.pinned)
             }
             .frame(width: model.size.width, height: model.size.height)
             .padding(.leading, 80)
@@ -118,7 +164,7 @@ private struct ScrimFixtureView: View {
             tone: model.light ? .white : .black,
             edgePeak: 0.55,
             edges: [.leading, .bottom],
-            sideDarkeningStart: 0.34
+            sideDarkeningStart: model.pinned ? 0 : 0.34
         )
     }
 }

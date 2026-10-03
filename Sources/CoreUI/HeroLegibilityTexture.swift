@@ -6,6 +6,7 @@ import SwiftUI
 public struct HeroLegibilityTexture: View {
     private let tone: Color
     @Environment(\.layoutDirection) private var layoutDirection
+    @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
 
     public init(tone: Color) {
         self.tone = tone
@@ -14,7 +15,10 @@ public struct HeroLegibilityTexture: View {
     @ViewBuilder
     public var body: some View {
         if layoutDirection == .leftToRight && (tone == .black || tone == .white) {
-            Image("HomeHeroLegibility", bundle: .module)
+            Image(
+                pinnedSidebarActive ? "HomeHeroLegibilityPinned" : "HomeHeroLegibility",
+                bundle: .module
+            )
                 .resizable()
                 .renderingMode(.template)
                 .foregroundStyle(tone)
@@ -23,7 +27,8 @@ public struct HeroLegibilityTexture: View {
         } else {
             HeroLegibilityScrim(
                 tone: tone, edgePeak: 0.55,
-                edges: [.leading, .bottom], sideDarkeningStart: 0.34
+                edges: [.leading, .bottom],
+                sideDarkeningStart: pinnedSidebarActive ? 0 : 0.34
             )
         }
     }

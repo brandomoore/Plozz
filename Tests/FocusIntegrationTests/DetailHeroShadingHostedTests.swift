@@ -25,13 +25,17 @@ final class DetailHeroShadingHostedTests: XCTestCase {
             window.rootViewController = nil
         }
 
-        for (name, tone, background) in [
-            ("dark", Color.black, Color.black),
-            ("light", Color.white, Color.white),
-            ("custom", Color.purple, Color.black)
+        for (name, tone, background, pinned) in [
+            ("dark", Color.black, Color.black, false),
+            ("dark", Color.black, Color.black, true),
+            ("light", Color.white, Color.white, false),
+            ("light", Color.white, Color.white, true),
+            ("custom", Color.purple, Color.black, false),
+            ("custom", Color.purple, Color.black, true)
         ] {
             state.tone = tone
             state.background = background
+            state.pinned = pinned
             for rightToLeft in [false, true] {
                 state.rightToLeft = rightToLeft
                 for size in [CGSize(width: 640, height: 360), CGSize(width: 1280, height: 576),
@@ -66,7 +70,7 @@ final class DetailHeroShadingHostedTests: XCTestCase {
                         }
                         XCTAssertGreaterThan(compared, 30)
                         let attachment = XCTAttachment(string:
-                            "detail max=\(maximum), theme=\(name), rtl=\(rightToLeft), size=\(size), offset=\(offset)")
+                            "detail max=\(maximum), theme=\(name), pinned=\(pinned), rtl=\(rightToLeft), size=\(size), offset=\(offset)")
                         attachment.name = "Detail shading pixel comparison"
                         attachment.lifetime = .keepAlways
                         add(attachment)
@@ -98,6 +102,7 @@ private final class DetailShadingFixtureState {
     var tone = Color.black
     var background = Color.black
     var rightToLeft = false
+    var pinned = false
     var size = CGSize(width: 640, height: 360)
     var offset: CGFloat = 0
 }
@@ -116,6 +121,7 @@ private struct DetailShadingFixture: View {
         }
         .frame(width: state.size.width, height: state.size.height)
         .environment(\.layoutDirection, state.rightToLeft ? .rightToLeft : .leftToRight)
+        .environment(\.plozzPinnedSidebarActive, state.pinned)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(state.background)
         .ignoresSafeArea()

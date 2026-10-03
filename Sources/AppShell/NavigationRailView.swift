@@ -733,15 +733,6 @@ private struct NavigationRailItemStyle: ButtonStyle {
             .padding(.trailing, NavigationRailMetrics.rowHorizontalPadding)
             .padding(.vertical, NavigationRailMetrics.rowInnerPadding)
             .foregroundStyle(foreground)
-            // The rail sits over artwork, so an unfocused glyph carries its own
-            // contrast while collapsed. The open menu panel supplies that contrast.
-            .shadow(
-                color: .black.opacity(
-                    isFocused ? 0 : 0.85 * Double(1 - expansionProgress)
-                ),
-                radius: 5,
-                y: 1
-            )
             .background(
                 Capsule(style: .continuous)
                     .fill(fill)

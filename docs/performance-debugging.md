@@ -1112,6 +1112,17 @@ match Home's current leading/bottom treatment. Regenerate with
 verify with `python3 tools/generate_home_scrim.py --check` plus
 `python3 tools/test_generate_home_scrim.py`.
 
+Pinned navigation selects a second baked texture with the same wash, leading
+strength/width, and bottom curve, extending the leading fade to the full height.
+It replaces the standard texture rather than adding an overlay, blur, shadow,
+or runtime rasterization. Both Home and detail read `plozzPinnedSidebarActive`,
+not the changing content inset, so shading stays stable through navigation and
+trailer handoff. The analytic comparison and RTL/custom-tone fallback use the
+same full-height leading treatment. Native navigation and mobile keep the
+original texture/parameters. The lower field (from 62% height) and the artwork
+beyond the leading fade (42% width) are unchanged. Compact rail glyphs no longer
+carry individual shadows; the expanded menu keeps its existing glass backing.
+
 An opaque color-fade experiment did not replace the original alpha mask: it
 introduced a visible seam and differed during intermediate animation frames.
 Adding rectangular clipping fixed a synthetic overdraw fixture but not the
