@@ -82,6 +82,52 @@ final class LibraryHeldScrollTests: XCTestCase {
         }
     }
 
+    func testHeaderLetterMenuSelectsAndFocusesItsNativeDestination() throws {
+        try checkHeaderLetterJump(customFocus: false)
+    }
+
+    func testHeaderLetterMenuSelectsAndFocusesItsCustomDestination() throws {
+        try checkHeaderLetterJump(customFocus: true)
+    }
+
+    private func checkHeaderLetterJump(customFocus: Bool) throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--library-held-scroll-fixture", "--library-interaction-fixture"]
+        if customFocus { app.launchArguments.append("--library-mode-custom-focus-fixture") }
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["library-content-mode-recommended"].waitForExistence(timeout: 15))
+        try selectMode("titles", in: app)
+        let alphabet = app.buttons["library-alphabet-menu"]
+        XCTAssertTrue(alphabet.waitForExistence(timeout: 5))
+        for _ in 0..<8 where !(try focusIsWithin(alphabet, in: app)) {
+            XCUIRemote.shared.press(.right)
+        }
+        XCTAssertTrue(try focusIsWithin(alphabet, in: app), app.debugDescription)
+        XCUIRemote.shared.press(.select)
+        let letter = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == 'Jump to M' OR label == 'M'")).firstMatch
+        XCTAssertTrue(letter.waitForExistence(timeout: 5), app.debugDescription)
+        for _ in 0..<4 where !(try focusIsWithin(letter, in: app)) { XCUIRemote.shared.press(.down) }
+        XCTAssertTrue(try focusIsWithin(letter, in: app), app.debugDescription)
+        XCUIRemote.shared.press(.select)
+        let landed = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in self.focusedIndex(in: app) == 250 }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [landed], timeout: 8), .completed,
+                       "A real menu selection must hand focus to its destination, not just scroll.")
+        XCUIRemote.shared.press(.select)
+        let detail = app.staticTexts["library-detail-identity"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        XCTAssertEqual(detail.label, "held-250|fixture")
+    }
+
+    private func focusIsWithin(_ element: XCUIElement, in app: XCUIApplication) throws -> Bool {
+        guard let frame = focusedFrame(in: try app.snapshot()) else { return false }
+        return element.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
+    }
+
     private func selectMode(_ mode: String, in app: XCUIApplication) throws {
         let tab = app.buttons["library-content-mode-\(mode)"]
         for _ in 0..<8 where !tab.hasFocus {
@@ -103,6 +149,13 @@ final class LibraryHeldScrollTests: XCTestCase {
             XCTAssertTrue(sort.exists, app.debugDescription)
             XCTAssertEqual(sort.frame.midY, tab.frame.midY, accuracy: 4,
                            "Sort must share the navigation row in \(mode).")
+            let alphabet = app.buttons["library-alphabet-menu"]
+            if alphabet.exists {
+                XCTAssertEqual(alphabet.frame.midY, tab.frame.midY, accuracy: 4,
+                               "Jump to letter must share the navigation row in \(mode).")
+                XCTAssertLessThanOrEqual(alphabet.frame.maxX, sort.frame.minX,
+                                         "Header menus must not overlap.")
+            }
         }
     }
 
@@ -113,6 +166,7 @@ final class LibraryHeldScrollTests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["library-hold-status"].waitForExistence(timeout: 15))
+        try selectMode("titles", in: app)
         for _ in 0..<4 where focusedIndex(in: app) == nil { XCUIRemote.shared.press(.down) }
         for _ in 0..<6 { XCUIRemote.shared.press(.down) }
         let selected = try XCTUnwrap(focusedIndex(in: app))

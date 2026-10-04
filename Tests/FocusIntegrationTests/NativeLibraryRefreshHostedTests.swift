@@ -10,6 +10,39 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testSortKeepsHeaderFocusWhenLetterJumpAppearsAndDisappears() async throws {
+        let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true)
+        await provider.enableAlphabet()
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie,
+            defaults: UserDefaults(suiteName: UUID().uuidString)!, initialContentMode: .titles
+        )
+        await model.loadFirstPage()
+        try await withLibrary(model: model) { _, window in
+            let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
+            let sort = try XCTUnwrap(self.focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                      frame.midY < window.bounds.height * 0.2 else { return nil }
+                return (item, frame)
+            }.max { $0.1.maxX < $1.1.maxX }?.0)
+            controller.target = sort
+            focus.requestFocusUpdate(to: controller)
+            focus.updateFocusIfNeeded()
+            XCTAssertTrue(focus.focusedItem === sort)
+            controller.target = nil
+
+            for field: SortField in [.runtime, .name] {
+                await model.setSort(CoreModels.SortDescriptor(field: field, direction: field.defaultDirection))
+                try await Task.sleep(for: .milliseconds(200))
+                window.layoutIfNeeded()
+                XCTAssertEqual(model.alphabet.isVisible, field == .name)
+                XCTAssertTrue(focus.focusedItem === sort,
+                              "Changing alphabet eligibility must not move focus out of Sort.")
+            }
+        }
+    }
+
     func testLibraryModeSwitchKeepsFocusOnSelectedTab() async throws {
         let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true)
         let model = LibraryBrowseViewModel(

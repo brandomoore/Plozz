@@ -10,9 +10,58 @@ import UIKit
 @MainActor
 final class NativeLibraryScrollTarget {
     weak var controller: NativeLibraryGridController?
+    weak var focusOwner: NativeLibraryFocusHostController?
 
     func scroll(to index: Int, focusesItem: Bool = false) {
         controller?.scroll(to: index, focusesItem: focusesItem)
+    }
+}
+
+struct NativeLibraryFocusHost<Content: View>: UIViewControllerRepresentable {
+    let scrollTarget: NativeLibraryScrollTarget
+    let content: Content
+
+    func makeUIViewController(context: Context) -> NativeLibraryFocusHostController {
+        let controller = NativeLibraryFocusHostController()
+        updateUIViewController(controller, context: context)
+        return controller
+    }
+
+    func updateUIViewController(_ controller: NativeLibraryFocusHostController, context: Context) {
+        scrollTarget.focusOwner = controller
+        controller.host.rootView = AnyView(content.environment(\.self, context.environment))
+    }
+
+    static func dismantleUIViewController(_ controller: NativeLibraryFocusHostController, coordinator: ()) {
+        controller.host.rootView = AnyView(EmptyView())
+    }
+}
+
+final class NativeLibraryFocusHostController: UIViewController {
+    let host = UIHostingController(rootView: AnyView(EmptyView()))
+    private weak var requestedFocusEnvironment: (any UIFocusEnvironment)?
+
+    override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+        requestedFocusEnvironment.map { [$0] } ?? super.preferredFocusEnvironments
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        host.view.backgroundColor = .clear
+        addChild(host)
+        view.addSubview(host.view)
+        host.view.frame = view.bounds
+        host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        host.didMove(toParent: self)
+    }
+
+    func requestFocus(to environment: any UIFocusEnvironment, using system: UIFocusSystem) {
+        // Header and grid are siblings; their common owner must request the handoff.
+        requestedFocusEnvironment = environment
+        defer { requestedFocusEnvironment = nil }
+        system.requestFocusUpdate(to: self)
+        system.updateFocusIfNeeded()
     }
 }
 
@@ -37,6 +86,7 @@ struct NativeLibraryGrid<Header: View>: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: NativeLibraryGridController, context: Context) {
+        controller.focusOwner = scrollTarget.focusOwner
         controller.update(
             model: viewModel, total: total, generation: generation, spoilerSettings: spoilerSettings,
             environment: context.environment, leadingInset: leadingInset, trailingInset: trailingInset,
@@ -52,6 +102,7 @@ struct NativeLibraryGrid<Header: View>: UIViewControllerRepresentable {
 }
 
 final class NativeLibraryGridController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate {
+    weak var focusOwner: NativeLibraryFocusHostController?
     private let layout = UICollectionViewFlowLayout()
     private lazy var collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
     private let headerHost = UIHostingController(rootView: AnyView(EmptyView()))
@@ -134,7 +185,8 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
                 .onGeometryChange(for: CGFloat.self) {
                     $0.size.height
                 } action: { [weak self] height in
-                    guard let self, height > 0, abs(self.measuredHeaderHeight - height) > 0.5 else { return }
+                    guard let self, height.isFinite, height >= 0,
+                          abs(self.measuredHeaderHeight - height) > 0.5 else { return }
                     self.measuredHeaderHeight = height
                     self.view.setNeedsLayout()
                 }
@@ -269,8 +321,12 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
                 let system = UIFocusSystem.focusSystem(for: self.collection)
             else { return false }
             self.requestedFocusIndex = path
-            system.requestFocusUpdate(to: self)
-            system.updateFocusIfNeeded()
+            if let owner = self.focusOwner {
+                owner.requestFocus(to: self.collection, using: system)
+            } else {
+                system.requestFocusUpdate(to: self)
+                system.updateFocusIfNeeded()
+            }
             self.requestedFocusIndex = nil
             return cell.isFocused
         }

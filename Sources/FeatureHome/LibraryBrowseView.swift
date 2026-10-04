@@ -108,6 +108,16 @@ public struct LibraryBrowseView: View {
     }
 
     public var body: some View {
+        #if os(tvOS)
+        NativeLibraryFocusHost(scrollTarget: nativeScrollTarget, content: libraryContent)
+            .ignoresSafeArea(.container, edges: .vertical)
+            .toolbar(.hidden, for: .tabBar)
+        #else
+        libraryContent
+        #endif
+    }
+
+    private var libraryContent: some View {
         // Shared dense "Browse" wall — flexible columns from the live density
         // metrics so each glass tile stretches to fill its column and the wall
         // scales with the UI-density setting, with six columns at default density.
@@ -148,7 +158,9 @@ public struct LibraryBrowseView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             if viewModel.availableContentModes.count > 1
                 || viewModel.browseScope != .library
-                || !viewModel.availableSortFields.isEmpty {
+                || !viewModel.availableSortFields.isEmpty
+                || viewModel.fileBrowserLibrary != nil
+                || viewModel.alphabet.isVisible {
                 navigationHeader
                     .padding(.top, PlozzTheme.Spacing.large)
                     .padding(.bottom, PlozzTheme.Spacing.large)
@@ -160,10 +172,6 @@ public struct LibraryBrowseView: View {
                         )
                     )
                     #endif
-            }
-            if viewModel.contentMode != .recommended, viewModel.state.value == nil {
-                browseHeader
-                    .padding(.top, PlozzTheme.Spacing.large)
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -186,12 +194,6 @@ public struct LibraryBrowseView: View {
                     .plozzActionButton()
                 }
                 .padding()
-            }
-            if viewModel.contentMode != .recommended, viewModel.state.value == nil,
-               let library = viewModel.fileBrowserLibrary {
-                LibraryFileBrowseButton(library: library, onSelect: onSelect)
-                    .plozzActionButton()
-                    .padding()
             }
         }
         .task { await viewModel.loadFirstPageIfNeeded() }
@@ -345,11 +347,7 @@ public struct LibraryBrowseView: View {
             leadingInset: contentLeadingPadding, trailingInset: HomeLayout.horizontalPadding,
             scrollTarget: nativeScrollTarget,
             hidesScrollIndicator: isRailVisible,
-            header: VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-                browseHeader
-                scanBanner
-            }
-            .padding(.top, PlozzTheme.Spacing.large),
+            header: scanBanner,
             onSelect: { item, index in select(item, at: index) },
             onLoaded: { prefetchArtwork(aheadFrom: $0) }
         )
@@ -387,7 +385,6 @@ public struct LibraryBrowseView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-                    browseHeader
                     scanBanner
                     LazyVGrid(columns: columns, spacing: metrics.gridSpacing) {
                         ForEach(0..<total, id: \.self) { index in
@@ -496,6 +493,21 @@ public struct LibraryBrowseView: View {
                 title.font(.largeTitle.bold())
             }
             Spacer(minLength: PlozzTheme.Spacing.large)
+            if viewModel.contentMode != .recommended {
+                if let library = viewModel.fileBrowserLibrary {
+                    LibraryFileBrowseButton(library: library, onSelect: onSelect)
+                }
+                if viewModel.alphabet.isVisible {
+                    LibraryAlphabetMenu(
+                        entries: viewModel.letterEntries, isLoading: viewModel.alphabet.isLoading,
+                        isJumping: viewModel.alphabet.jumpingTo != nil,
+                        onSelect: { letter, id in viewModel.beginLetterJump(letter, menuPresentationID: id) },
+                        onDismiss: viewModel.alphabet.menuDidDismiss,
+                        onCancel: viewModel.cancelLetterJump,
+                        onRetry: viewModel.retryLetterIndex
+                    )
+                }
+            }
             if !viewModel.availableSortFields.isEmpty {
                 sortControl
             }
@@ -503,30 +515,6 @@ public struct LibraryBrowseView: View {
         .padding(.leading, contentLeadingPadding)
         .padding(.trailing, HomeLayout.horizontalPadding)
         .focusSection()
-    }
-
-    /// Grid-specific menus stay inside the native collection's focus hierarchy,
-    /// so an A–Z jump can hand focus directly from its menu to a loaded card.
-    @ViewBuilder private var browseHeader: some View {
-        if viewModel.fileBrowserLibrary != nil || viewModel.alphabet.isVisible {
-            HStack(alignment: .firstTextBaseline) {
-                Spacer(minLength: PlozzTheme.Spacing.large)
-                if let library = viewModel.fileBrowserLibrary {
-                    LibraryFileBrowseButton(library: library, onSelect: onSelect)
-                }
-                if viewModel.alphabet.isVisible {
-                    LibraryAlphabetMenu(entries: viewModel.letterEntries, isLoading: viewModel.alphabet.isLoading,
-                                        isJumping: viewModel.alphabet.jumpingTo != nil,
-                                        onSelect: { letter, id in viewModel.beginLetterJump(letter, menuPresentationID: id) },
-                                        onDismiss: viewModel.alphabet.menuDidDismiss,
-                                        onCancel: viewModel.cancelLetterJump,
-                                        onRetry: viewModel.retryLetterIndex)
-                }
-            }
-            .padding(.leading, contentLeadingPadding)
-            .padding(.trailing, HomeLayout.horizontalPadding)
-            .focusSection()
-        }
     }
 
     /// Live scan/enrich progress for the media share backing THIS library, sitting

@@ -55,7 +55,10 @@ fallback when the user's server has no attached trailer.
   mounted while replacing content below it. A stable layout container owns the
   top inset across Recommended, Browse, Collections, and Playlists (a transparent
   `Group` would attach the inset to each replaceable content branch). Sort sits
-  on that same top navigation line; A–Z retains its native-grid focus ownership.
+  on that same top navigation line alongside Jump to letter and file browsing.
+  A persistent tvOS focus owner encloses the header and grid, so a committed
+  A–Z jump can hand focus from the header to its loaded native card without
+  changing the selected tab's focus identity. Scan progress remains in the grid.
   Showcase preserves the Home-sized details footprint under that header,
   keeping the same metadata-to-heading clearance as Home. A cold logo is adopted
   when it finishes for the still-current title, without requiring a focus round trip.

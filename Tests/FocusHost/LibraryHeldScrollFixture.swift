@@ -101,7 +101,9 @@ struct LibraryHeldScrollFixture: View {
                 containerID: "library", containerKind: .movie,
                 pageSize: ProcessInfo.processInfo.arguments.contains("--all-library-items")
                     ? 500 : PageRequest.defaultLimit,
-                sourceAccountID: "fixture"
+                defaults: UserDefaults(suiteName: UUID().uuidString)!,
+                sourceAccountID: "fixture",
+                initialContentMode: exercisesNavigation ? nil : .titles
             )
         }
     }
