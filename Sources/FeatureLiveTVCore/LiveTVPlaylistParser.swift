@@ -34,6 +34,7 @@ public enum LiveTVSourceImportError: Error, Equatable, Sendable {
     case streamManifest
     case invalidGuide
     case guideTooLarge
+    case guideSourceLimitReached
     case cacheFailed
     case unsafeGuideOrigin
     case guideWithoutPlaylist
@@ -57,6 +58,8 @@ public enum LiveTVSourceImportError: Error, Equatable, Sendable {
             "The Live TV guide isn't a supported XMLTV file."
         case .guideTooLarge:
             "The Live TV guide is too large to import safely."
+        case .guideSourceLimitReached:
+            "Some playlist-declared guides weren't added automatically. Use up to 32 preferred guide URLs for this source; its channels are still available."
         case .cacheFailed:
             "Your saved Live TV catalog couldn't be updated. The previous catalog has been kept."
         case .unsafeGuideOrigin:
@@ -146,9 +149,6 @@ public struct LiveTVPlaylistParser: Sendable {
                 if let url = supportedURL(
                     address.trimmingCharacters(in: .whitespacesAndNewlines), relativeTo: baseURL
                 ), !declaredGuideURLs.contains(url) {
-                    guard declaredGuideURLs.count < 32 else {
-                        throw LiveTVSourceImportError.responseTooLarge
-                    }
                     declaredGuideURLs.append(url)
                 }
             }

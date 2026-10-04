@@ -699,6 +699,13 @@ with imported channel identities, not synthetic layout scenarios. Unknown or
 ambiguous matches receive no schedule. Guide failure does not remove a working
 playlist; failed refreshes preserve the last successfully imported data that
 still belongs to current channels.
+Playlist-declared guide URLs are optional metadata: exceeding the automatic
+guide-source budget does not reject playable channels. Header/attribute size
+guards still bound parsing. Each playlist retains at most 32 configured and
+discovered guide sources, with explicit guide URLs taking priority and an
+informational notice when additional declarations cannot be added. Discovered
+guides still require the allowed origin; excess declarations do not authorize
+extra requests.
 
 Matching first uses exact native Pluto IDs from recognized stream URLs, then
 explicit guide IDs, verified aliases and unique display names. Provider guides
