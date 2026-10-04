@@ -37,7 +37,20 @@ struct NativeLibraryScrollingHeader<Content: View>: UIViewControllerRepresentabl
     }
 
     func updateUIViewController(_ controller: NativeLibraryHeaderController, context: Context) {
-        controller.host.rootView = AnyView(content.environment(\.self, context.environment))
+        let source = context.environment
+        // Another hosting tree's private accessibility state can keep restored controls hidden.
+        controller.host.rootView = AnyView(content.transformEnvironment(\.self) { target in
+            target.colorScheme = source.colorScheme
+            target.locale = source.locale
+            target.layoutDirection = source.layoutDirection
+            target.dynamicTypeSize = source.dynamicTypeSize
+            target.displayScale = source.displayScale
+            target.isEnabled = source.isEnabled
+            target.redactionReasons = source.redactionReasons
+            target.themePalette = source.themePalette
+            target.plozzMetrics = source.plozzMetrics
+            target.plozzReduceTransparency = source.plozzReduceTransparency
+        })
         controller.scrollOffset = scrollTarget.headerOffset
     }
 

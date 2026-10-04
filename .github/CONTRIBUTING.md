@@ -17,6 +17,11 @@ and pick a template:
 Please search [existing issues](https://github.com/thatcube/Plozz/issues) first,
 and never paste tokens, passwords, or credentialed server URLs.
 
+Plozz's Discord support forums can also feed the same GitHub backlog once their
+public-mirroring notice and bridge are activated. Forum guidelines explain what
+is copied and how votes work. See [Discord bridge behavior and privacy
+limits](../docs/discord-bridge.md); ordinary chat channels are not mirrored.
+
 ## Development pipeline
 
 The habit here: when a **real** bug turns up — a genuine defect, not a flaky

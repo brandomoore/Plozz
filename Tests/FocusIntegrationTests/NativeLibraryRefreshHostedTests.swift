@@ -501,7 +501,8 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                       frame.width > 100 else { return nil }
                 return (item, frame)
             }.sorted { $0.1.midY < $1.1.midY }
-            XCTAssertEqual(headerControls().count, model.availableContentModes.count)
+            let originalHeaders = headerControls()
+            XCTAssertEqual(originalHeaders.count, model.availableContentModes.count)
             let first = try XCTUnwrap(cards.first)
             controller.target = first.0
             focus.requestFocusUpdate(to: controller)
@@ -515,18 +516,42 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 return (item, frame)
             }.min { $0.1.midY < $1.1.midY })
 
-            for (card, expectedHeaderCount) in [
-                (next.0, 0),
-                (first.0, model.availableContentModes.count),
-            ] {
+            var nextCard = next.0
+            for isFirstRow in [false, true, false, true] {
+                let card = isFirstRow ? first.0 : nextCard
+                let expectedHeaderCount = isFirstRow ? model.availableContentModes.count : 0
                 controller.target = card
                 focus.requestFocusUpdate(to: controller)
                 focus.updateFocusIfNeeded()
                 XCTAssertTrue(focus.focusedItem === card, "The requested Showcase row must receive focus")
                 controller.target = nil
-                try await Task.sleep(for: .milliseconds(200))
-                window.layoutIfNeeded()
-                XCTAssertEqual(headerControls().count, expectedHeaderCount)
+                for _ in 0..<50 {
+                    window.layoutIfNeeded()
+                    if headerControls().count == expectedHeaderCount, focus.focusedItem is UIControl { break }
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                let restoredHeaders = headerControls()
+                XCTAssertEqual(restoredHeaders.count, expectedHeaderCount)
+                if !isFirstRow, !(nextCard is UIControl) {
+                    // A lazy row initially enters through a temporary SwiftUI focus proxy.
+                    nextCard = try XCTUnwrap(focus.focusedItem)
+                    XCTAssertTrue(nextCard is UIControl, "The row must realize its native poster.")
+                    XCTAssertFalse(nextCard === first.0)
+                }
+                XCTAssertTrue(focus.focusedItem === (isFirstRow ? first.0 : nextCard),
+                              "Changing header eligibility must not steal row focus.")
+                if expectedHeaderCount > 0 {
+                    XCTAssertTrue(originalHeaders.allSatisfy { original in
+                        restoredHeaders.contains { $0 === original }
+                    }, "Returning to the first row must restore the existing controls, not recreate them.")
+                }
+            }
+            for control in originalHeaders {
+                controller.target = control
+                focus.requestFocusUpdate(to: controller)
+                focus.updateFocusIfNeeded()
+                controller.target = nil
+                XCTAssertTrue(focus.focusedItem === control, "Every restored mode must accept native focus.")
             }
         }
     }
