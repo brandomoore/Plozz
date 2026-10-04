@@ -625,7 +625,7 @@ public struct PlexClient: Sendable {
         let endpoint = Endpoint(
             path: "/library/sections/\(sectionID)/collections",
             queryItems: containerQuery(start: start, size: size)
-                + [URLQueryItem(name: "sort", value: Self.sortQuery(for: sort))],
+                + [URLQueryItem(name: "sort", value: try Self.sortQuery(for: sort))],
             headers: headers
         )
         return try await decode(PlexMediaContainerResponse.self, endpoint).MediaContainer
@@ -638,18 +638,45 @@ public struct PlexClient: Sendable {
         type: Int?,
         start: Int,
         size: Int,
-        sort: CoreModels.SortDescriptor
+        sort: CoreModels.SortDescriptor,
+        filters: LibraryFilters = .all,
+        genreID: String? = nil
     ) async throws -> PlexMediaContainer {
         var query = containerQuery(start: start, size: size)
         if let type {
             query.append(URLQueryItem(name: "type", value: String(type)))
         }
-        query.append(URLQueryItem(name: "sort", value: Self.sortQuery(for: sort)))
+        query.append(URLQueryItem(name: "sort", value: try Self.sortQuery(for: sort)))
+        query += try Self.libraryFilterQuery(filters, genreID: genreID)
         return try await decodeStreamEnriched(
             PlexMediaContainerResponse.self,
             path: "/library/sections/\(sectionID)/all",
             query: query
         ).MediaContainer
+    }
+
+    static func libraryFilterQuery(_ filters: LibraryFilters, genreID: String?) throws -> [URLQueryItem] {
+        var query: [URLQueryItem] = []
+        switch filters.filter {
+        case .all: break
+        case .hdr: query.append(.init(name: "hdr", value: "1"))
+        case .unwatched: query.append(.init(name: "unwatched", value: "1"))
+        case .inProgress: query.append(.init(name: "inProgress", value: "1"))
+        case .unmatched: query.append(.init(name: "unmatched", value: "1"))
+        case .duplicates: query.append(.init(name: "duplicate", value: "1"))
+        case .dolbyVision, .hdr10Plus, .atmos: throw AppError.invalidResponse
+        }
+        if let genreID { query.append(.init(name: "genre", value: genreID)) }
+        if let year = filters.year { query.append(.init(name: "year", value: String(year))) }
+        return query
+    }
+
+    func libraryFacet(sectionID: String, type: Int?, field: String) async throws -> [PlexDirectory] {
+        let query = type.map { [URLQueryItem(name: "type", value: String($0))] } ?? []
+        return try await decode(
+            PlexMediaContainerResponse.self,
+            Endpoint(path: "/library/sections/\(sectionID)/\(field)", queryItems: query, headers: headers)
+        ).MediaContainer.Directory ?? []
     }
 
     /// `GET /hubs/sections/{id}` — the library's promoted "hubs" (Recently Added,
@@ -878,8 +905,9 @@ public struct PlexClient: Sendable {
     /// each letter's grid offset for the name-sorted browse, which drives the
     /// A–Z fast-scroll rail. `type` scopes the counts to the browsed content
     /// type so they match `sectionItems` in a mixed section.
-    func firstCharacter(sectionID: String, type: Int?) async throws -> [PlexDirectory] {
-        var query: [URLQueryItem] = []
+    func firstCharacter(sectionID: String, type: Int?, filters: LibraryFilters = .all,
+                        genreID: String? = nil) async throws -> [PlexDirectory] {
+        var query = try Self.libraryFilterQuery(filters, genreID: genreID)
         if let type {
             query.append(URLQueryItem(name: "type", value: String(type)))
         }
@@ -922,7 +950,7 @@ public struct PlexClient: Sendable {
             URLQueryItem(name: "type", value: String(type)),
             URLQueryItem(name: "X-Plex-Container-Start", value: String(start)),
             URLQueryItem(name: "X-Plex-Container-Size", value: String(size)),
-            URLQueryItem(name: "sort", value: Self.sortQuery(for: sort))
+            URLQueryItem(name: "sort", value: try Self.sortQuery(for: sort))
         ]
         let endpoint = Endpoint(path: "/library/sections/\(sectionID)/all", queryItems: query, headers: headers)
         return try await decode(PlexMediaContainerResponse.self, endpoint).MediaContainer
@@ -2076,7 +2104,7 @@ public struct PlexClient: Sendable {
 
     /// Maps provider-agnostic browse sorting to Plex's `sort` query language
     /// (`field:asc|desc`, with `random` as a standalone key).
-    private static func sortQuery(for sort: CoreModels.SortDescriptor) -> String {
+    private static func sortQuery(for sort: CoreModels.SortDescriptor) throws -> String {
         let field: String
         switch sort.field {
         case .name:
@@ -2086,11 +2114,18 @@ public struct PlexClient: Sendable {
         case .releaseDate:
             field = "originallyAvailableAt"
         case .communityRating:
-            field = "rating"
+            field = "audienceRating"
         case .runtime:
             field = "duration"
         case .random:
             return "random"
+        case .year: field = "year"
+        case .criticRating: field = "rating"
+        case .userRating: field = "userRating"
+        case .contentRating: field = "contentRating"
+        case .plays: field = "viewCount"
+        case .lastPlayed: field = "lastViewedAt"
+        case .progress: throw AppError.invalidResponse
         }
         let direction = (sort.direction == .ascending) ? "asc" : "desc"
         return "\(field):\(direction)"

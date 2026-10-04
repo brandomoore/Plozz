@@ -11,6 +11,7 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
     let playback: SiloPlaybackSessions
     let capabilitiesSnapshot: MediaCapabilities
     let artwork = SiloArtworkStore()
+    let libraryRatings = SiloLibraryRatings()
 
     public init(
         context: ProviderResolutionContext, credentials: any RotatingCredentialStoring,
@@ -230,7 +231,9 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
     }
 
     public func supportedSortFields(in containerID: String, kind: MediaItemKind) -> [SortField] {
-        kind == .collection ? [.name] : [.name, .dateAdded, .releaseDate, .communityRating, .runtime]
+        if kind == .collection { return [.name] }
+        return [.name, .year, .releaseDate] + (libraryRatings.contains("rt_critic") ? [.criticRating] : [])
+            + [.communityRating, .contentRating, .runtime, .progress, .plays, .lastPlayed, .dateAdded]
     }
 
     public func mediaSegments(for itemID: String) async throws -> [MediaSegment] {
@@ -256,12 +259,20 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         case .name: field = "title"
         case .dateAdded: field = "added_at"
         case .releaseDate: field = "release_date"
-        case .communityRating: field = "rating"
+        case .communityRating: field = libraryRatings.contains("rt_audience") ? "rating_rt_audience" : "rating_imdb"
+        case .criticRating:
+            guard libraryRatings.contains("rt_critic") else { throw AppError.invalidResponse }
+            field = "rating_rt_critic"
         case .runtime: field = "runtime"
-        case .random: throw AppError.invalidResponse
+        case .year: field = "year"
+        case .contentRating: field = "content_rating"
+        case .progress: field = "progress"
+        case .plays: field = "plays"
+        case .lastPlayed: field = "date_viewed"
+        case .random, .userRating: throw AppError.invalidResponse
         }
         let sort = (page.sort.direction == .descending ? "-" : "") + field
-        let response: SiloCatalogPage = try await client.request("/catalog", query: query + [
+        let response: SiloCatalogPage = try await client.request("/catalog", query: query + (try Self.libraryFilterQuery(page.filters)) + [
             URLQueryItem(name: "seek", value: String(page.startIndex)),
             URLQueryItem(name: "limit", value: String(min(page.limit, 200))),
             URLQueryItem(name: "sort", value: sort)
@@ -331,20 +342,38 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
             overview: dto.overview, parentTitle: dto.series_title,
             seasonNumber: dto.season_number ?? anchor?.seasonNumber,
             episodeNumber: dto.episode_number ?? anchor?.episodeNumber,
-            productionYear: dto.year, officialRating: dto.content_rating,
+            productionYear: dto.year,
+            releaseDate: (dto.release_date ?? dto.air_date ?? dto.sort_metrics?.release_date).flatMap(Self.date),
+            officialRating: dto.content_rating,
             genres: dto.genres ?? [], people: (dto.cast ?? []).map {
                 MediaPerson(id: $0.person_id ?? $0.name, name: $0.name, role: $0.character,
                             imageURL: resourceURL($0.photo_url))
             }, studios: dto.studios ?? [], seriesID: dto.series_id ?? anchor?.seriesID,
             runtime: dto.duration_seconds ?? dto.user_data?.duration_seconds ?? dto.runtime.map { $0 * 60 },
             resumePosition: dto.position_seconds ?? dto.user_data?.position_seconds,
+            playedPercentage: dto.sort_metrics?.progress_ratio,
             isPlayed: dto.user_state?.played ?? dto.user_data?.played ?? false,
             posterURL: resourceURL(dto.poster_url ?? dto.still_url),
             backdropURL: resourceURL(dto.backdrop_url), logoURL: resourceURL(dto.logo_url),
             providerIDs: ids, mediaInfo: versions.first?.sourceMetadata, sourceAccountID: accountID,
             libraryID: libraryID, versions: versions,
             isFavorite: dto.user_state?.in_watchlist ?? false,
-            lastPlayedAt: dto.progress_updated_at.flatMap(Self.date))
+            lastPlayedAt: (dto.sort_metrics?.viewed_at ?? dto.progress_updated_at).flatMap(Self.date),
+            librarySortValues: LibrarySortValues(
+                sortName: dto.sort_title, dateAdded: dto.added_at.flatMap(Self.date),
+                audienceRating: libraryRatings.contains("rt_audience") ? dto.rating_rt_audience : dto.rating_imdb.map { $0 * 10 },
+                criticRating: dto.rating_rt_critic,
+                playCount: dto.sort_metrics?.play_count,
+                watched: dto.user_state?.played ?? dto.user_data?.played,
+                matched: dto.status.map { $0 == "matched" },
+                hasAtmos: dto.versions?.contains { version in
+                    (version.audio_tracks ?? []).contains { audio in
+                        [audio.profile, audio.title].compactMap { $0 }.contains {
+                            $0.localizedCaseInsensitiveContains("atmos") || $0.localizedCaseInsensitiveContains("joc")
+                        }
+                    }
+                }
+            ))
     }
 
     private func inheritingSeriesArtwork(_ episode: MediaItem, from series: MediaItem) -> MediaItem {
@@ -361,7 +390,9 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
     static func date(_ value: String) -> Date? {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        if let date = formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value) { return date }
+        formatter.formatOptions = [.withFullDate]
+        return formatter.date(from: value)
     }
 
     func metadata(_ file: SiloFileVersion) -> MediaSourceMetadata {

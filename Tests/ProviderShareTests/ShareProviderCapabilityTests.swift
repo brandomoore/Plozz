@@ -412,7 +412,7 @@ final class ShareProviderCapabilityTests: XCTestCase {
                 in: ShareCatalogID.moviesLibrary,
                 kind: .movie
             ),
-            SortField.allCases
+            [.name, .dateAdded, .random]
         )
     }
 

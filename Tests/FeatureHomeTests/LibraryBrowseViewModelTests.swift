@@ -374,7 +374,7 @@ final class LibraryBrowseViewModelTests: XCTestCase {
         XCTAssertEqual(provider.requestedPages.count, requestsBefore, "Re-applying the same sort does not reload")
     }
 
-    func testSortPersistsAndIsRestoredPerContainerKind() async {
+    func testSortPersistsAndIsRestoredPerLibrary() async {
         let defaults = isolatedDefaults()
         let chosen = CoreModels.SortDescriptor(field: .communityRating, direction: .descending)
 
@@ -382,12 +382,13 @@ final class LibraryBrowseViewModelTests: XCTestCase {
         let vm = LibraryBrowseViewModel(provider: provider, containerID: "lib1", containerKind: .movie, defaults: defaults, initialContentMode: .titles)
         await vm.setSort(chosen)
 
-        // A fresh VM for the same kind restores the persisted choice.
-        let restored = LibraryBrowseViewModel(provider: provider, containerID: "lib1", containerKind: .movie, defaults: defaults)
+        // A fresh Browse model for the same library restores its choice.
+        let restored = LibraryBrowseViewModel(provider: provider, containerID: "lib1", containerKind: .movie, defaults: defaults, initialContentMode: .titles)
         XCTAssertEqual(restored.sort, chosen)
 
-        // A different kind keeps its own default.
-        let otherKind = LibraryBrowseViewModel(provider: provider, containerID: "lib2", containerKind: .series, defaults: defaults)
+        let otherLibrary = LibraryBrowseViewModel(provider: provider, containerID: "lib2", containerKind: .movie, defaults: defaults, initialContentMode: .titles)
+        XCTAssertEqual(otherLibrary.sort, .default)
+        let otherKind = LibraryBrowseViewModel(provider: provider, containerID: "lib2", containerKind: .series, defaults: defaults, initialContentMode: .titles)
         XCTAssertEqual(otherKind.sort, .default)
     }
 

@@ -8,34 +8,10 @@ import Foundation
 /// round-robin interleaving produces "Alien, Amélie, Arrival, Alien 3, Anatomy…",
 /// which reads as broken under a menu that says "Name A–Z".
 ///
-/// Two honest limits, both encoded in ``supportsLocalOrdering(_:)``:
-/// - `MediaItem` does not carry a date-added or community-rating field (they are
-///   server-side sort inputs the list payloads don't return), so those sorts
-///   cannot be merged locally; and
-/// - `random` has no order to merge by at all.
-///
-/// For those the caller falls back to interleaving, which is no worse than what a
-/// shuffled/opaque ordering already looks like.
-///
-/// ### This is an approximation, and that is safe by construction
-/// The comparison cannot be identical to the server's: it works from what a list
-/// payload actually returns, so it strips a leading article and compares
-/// case/diacritic-insensitively with numeric awareness (what Plex and Jellyfin
-/// sort names do in practice) rather than reading a provider `titleSort`, and
-/// release-date ordering has only `productionYear` to work with, not the exact
-/// premiere date the server sorts by.
-///
-/// A textbook k-way merge requires every source to be ordered by the *same*
-/// comparator, so a disagreement here is a real (if small) inaccuracy — two cards
-/// released in the same year can swap, and a custom sort title is ignored. What it
-/// is NOT is a correctness hazard: the merge only ever chooses which source's head
-/// to pop next, and each source's own queue stays in the server's order, so no item
-/// can be dropped, duplicated, or skipped. The failure mode is bounded, local
-/// mis-ordering — strictly better than the round-robin interleave it replaced,
-/// which mis-ordered everything.
-///
-/// If a provider ever starts returning its sort key on list items, carry it on
-/// `MediaItem` and compare that instead; the merge itself needs no change.
+/// Original server inputs are carried separately from enriched display metadata.
+/// Random has no merge order. Other fields can be compared locally, but callers
+/// still need matching source ordering; an inventory provides exact global
+/// ordering when native source comparators or null placement differ.
 public enum MediaItemSortOrder {
     public static func alphabetBucket(for item: MediaItem) -> String {
         LibraryLetterIndex.bucket(forPrefix: sortName(item))
@@ -45,8 +21,8 @@ public enum MediaItemSortOrder {
     /// browse can merge on it rather than interleave.
     public static func supportsLocalOrdering(_ field: SortField) -> Bool {
         switch field {
-        case .name, .releaseDate, .runtime: return true
-        case .dateAdded, .communityRating, .random: return false
+        case .random: return false
+        default: return true
         }
     }
 
@@ -58,28 +34,61 @@ public enum MediaItemSortOrder {
     public static func isOrderedBefore(
         _ lhs: MediaItem,
         _ rhs: MediaItem,
-        sort: SortDescriptor
+        sort: SortDescriptor,
+        identityTieBreak: Bool = true
     ) -> Bool {
         let ascending = sort.direction == .ascending
+        let order: Bool?
         switch sort.field {
-        case .name, .dateAdded, .communityRating, .random:
-            return compareNames(lhs, rhs, ascending: ascending) ?? false
+        case .name, .random:
+            order = compareNames(lhs, rhs, ascending: ascending)
+        case .dateAdded:
+            order = compare(lhs.librarySortValues?.dateAdded, rhs.librarySortValues?.dateAdded, ascending: ascending)
+        case .communityRating:
+            order = compare(lhs.librarySortValues?.audienceRating, rhs.librarySortValues?.audienceRating, ascending: ascending)
+        case .year:
+            order = compare(lhs.productionYear, rhs.productionYear, ascending: ascending)
+        case .criticRating:
+            order = compare(lhs.librarySortValues?.criticRating, rhs.librarySortValues?.criticRating, ascending: ascending)
+        case .userRating:
+            order = compare(lhs.librarySortValues?.userRating, rhs.librarySortValues?.userRating, ascending: ascending)
+        case .contentRating:
+            order = compare(lhs.officialRating, rhs.officialRating, ascending: ascending)
+        case .progress:
+            order = compare(lhs.playedPercentage ?? 0, rhs.playedPercentage ?? 0, ascending: ascending)
+        case .plays:
+            order = compare(lhs.librarySortValues?.playCount, rhs.librarySortValues?.playCount, ascending: ascending)
+        case .lastPlayed:
+            order = compare(lhs.lastPlayedAt, rhs.lastPlayedAt, ascending: ascending)
         case .releaseDate:
+            if let result = compare(lhs.releaseDate, rhs.releaseDate, ascending: ascending) {
+                return result
+            }
             if let result = compare(lhs.productionYear, rhs.productionYear, ascending: ascending) {
                 return result
             }
-            return compareNames(lhs, rhs, ascending: true) ?? false
+            order = compareNames(lhs, rhs, ascending: true)
         case .runtime:
             if let result = compare(lhs.runtime, rhs.runtime, ascending: ascending) {
                 return result
             }
-            return compareNames(lhs, rhs, ascending: true) ?? false
+            order = compareNames(lhs, rhs, ascending: true)
         }
+        if let order { return order }
+        if let names = compareNames(lhs, rhs, ascending: true) { return names }
+        guard identityTieBreak else { return false }
+        if lhs.sourceAccountID != rhs.sourceAccountID {
+            return (lhs.sourceAccountID ?? "") < (rhs.sourceAccountID ?? "")
+        }
+        return lhs.id < rhs.id
     }
 
     /// The name a server would sort by: lower-cased, diacritic-folded, with a
     /// leading English article dropped ("The Matrix" files under M).
-    static func sortName(_ item: MediaItem) -> String {
+    public static func sortName(_ item: MediaItem) -> String {
+        if let name = item.librarySortValues?.sortName, !name.isEmpty {
+            return name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        }
         let folded = item.title
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
             .trimmingCharacters(in: .whitespacesAndNewlines)

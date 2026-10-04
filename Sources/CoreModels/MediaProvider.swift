@@ -583,15 +583,18 @@ public struct PageRequest: Equatable, Sendable {
     /// How the container's children should be ordered. All pages of a browse
     /// session share one descriptor; changing it restarts paging from index 0.
     public var sort: SortDescriptor
+    public var filters: LibraryFilters
 
     public init(
         startIndex: Int = 0,
         limit: Int = PageRequest.defaultLimit,
-        sort: SortDescriptor = .default
+        sort: SortDescriptor = .default,
+        filters: LibraryFilters = .all
     ) {
         self.startIndex = startIndex
         self.limit = limit
         self.sort = sort
+        self.filters = filters
     }
 
     /// Default page size tuned for a tvOS 10-foot grid: large enough to fill the
@@ -600,7 +603,7 @@ public struct PageRequest: Equatable, Sendable {
 
     /// The request for the page that follows this one, preserving the sort order.
     public func next() -> PageRequest {
-        PageRequest(startIndex: startIndex + limit, limit: limit, sort: sort)
+        PageRequest(startIndex: startIndex + limit, limit: limit, sort: sort, filters: filters)
     }
 }
 
@@ -619,6 +622,19 @@ public enum SortField: String, CaseIterable, Codable, Sendable {
     case runtime
     /// Server-shuffled random order.
     case random
+    case year
+    case criticRating
+    case userRating
+    case contentRating
+    case progress
+    case plays
+    case lastPlayed
+
+    /// Providers without an explicit capability contract retain their original
+    /// options, rather than accidentally advertising newly added server keys.
+    public static let legacyFields: [Self] = [
+        .name, .dateAdded, .releaseDate, .communityRating, .runtime, .random
+    ]
 
     /// A short, human-readable label for a sort menu.
     public var displayName: LocalizedStringResource {
@@ -639,8 +655,8 @@ public enum SortField: String, CaseIterable, Codable, Sendable {
             )
         case .communityRating:
             return LocalizedStringResource(
-                "sortField.communityRating",
-                defaultValue: "Rating",
+                "sortField.audienceRating",
+                defaultValue: "Audience Rating",
                 comment: "Library sort menu option."
             )
         case .runtime:
@@ -655,6 +671,13 @@ public enum SortField: String, CaseIterable, Codable, Sendable {
                 defaultValue: "Random",
                 comment: "Library sort menu option."
             )
+        case .year: return "Year"
+        case .criticRating: return "Critic Rating"
+        case .userRating: return "Your Rating"
+        case .contentRating: return "Content Rating"
+        case .progress: return "Progress"
+        case .plays: return "Most Played"
+        case .lastPlayed: return "Last Watched"
         }
     }
 
@@ -662,7 +685,7 @@ public enum SortField: String, CaseIterable, Codable, Sendable {
     /// start A→Z; dates, ratings, runtime, and random order put the newest/highest
     /// values first.
     public var defaultDirection: SortDirection {
-        self == .name ? .ascending : .descending
+        self == .name || self == .contentRating ? .ascending : .descending
     }
 }
 

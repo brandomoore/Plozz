@@ -917,9 +917,14 @@ final class JellyfinProviderMappingTests: XCTestCase {
             .releaseDate: "PremiereDate",
             .communityRating: "CommunityRating",
             .runtime: "Runtime",
-            .random: "Random"
+            .random: "Random",
+            .year: "ProductionYear",
+            .criticRating: "CriticRating",
+            .contentRating: "OfficialRating",
+            .plays: "PlayCount",
+            .lastPlayed: "DatePlayed"
         ]
-        for field in SortField.allCases {
+        for field in expected.keys {
             let stub = StubHTTPClient()
             stub.stub(pathSuffix: "/Users/u1/Items", json: #"{"Items":[],"TotalRecordCount":0}"#)
             let provider = JellyfinProvider(session: makeSession(), http: stub)

@@ -85,6 +85,36 @@ final class AggregatedLibraryProviderTests: XCTestCase {
         XCTAssertFalse(result.hasMore)
     }
 
+    func testCompactQueryUsesNewestWatchHistoryWithoutLosingRewatchProgress() throws {
+        var old = movie("p", title: "Dune", year: 2021, tmdb: "1").taggingSource("plex")
+        old.isPlayed = true
+        old.lastPlayedAt = Date(timeIntervalSince1970: 100)
+        old.librarySortValues = .init(watched: true)
+        var recent = movie("j", title: "Dune", year: 2021, tmdb: "1").taggingSource("jelly")
+        recent.runtime = 100
+        recent.resumePosition = 25
+        recent.playedPercentage = 0.25
+        recent.lastPlayedAt = Date(timeIntervalSince1970: 200)
+        recent.librarySortValues = .init(watched: true)
+        let provider = AggregatedLibraryProvider(sources: [
+            source("plex", FakeMediaProvider(allItems: [old])),
+            source("jelly", FakeMediaProvider(allItems: [recent]))
+        ])
+        let merged = try XCTUnwrap(provider.libraryQueryMergeInventory([
+            LibraryQueryRecord(old), LibraryQueryRecord(recent)
+        ]).first)
+        XCTAssertTrue(merged.completed, "A rewatch retains historical completion")
+        XCTAssertFalse(merged.isPlayed)
+        XCTAssertTrue(merged.matches(.init(filter: .inProgress)))
+        XCTAssertFalse(merged.matches(.init(filter: .unwatched)))
+        XCTAssertEqual(merged.progress, 0.25)
+        recent.librarySortValues?.watched = false
+        let markedUnwatched = try XCTUnwrap(provider.libraryQueryMergeInventory([
+            LibraryQueryRecord(old), LibraryQueryRecord(recent)
+        ]).first)
+        XCTAssertFalse(markedUnwatched.completed, "Newer explicit history wins over another server's older completion")
+    }
+
     func testRecommendationsRetainHealthyAccountAndSourceIdentity() async throws {
         let offline = FakeMediaProvider(allItems: [])
         offline.continueWatchingError = .serverUnreachable

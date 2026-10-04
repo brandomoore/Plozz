@@ -63,6 +63,7 @@ struct HomeTab: View {
     /// Every server added to the device, regardless of what this profile has
     /// switched on. Home needs it to tell "no servers yet" from "all off".
     let configuredServerCount: Int
+    var libraryPreferencesNamespace: String? = nil
     /// Detail-snapshot cache scoped to the active content identity, threaded from
     /// `MainTabView` so revisit paints never cross a profile/account/credential.
     let detailSnapshotCache: DetailSnapshotCache
@@ -382,7 +383,8 @@ struct HomeTab: View {
                 provider: browse.provider,
                 containerID: library.id,
                 containerKind: library.kind,
-                sourceAccountID: browse.sourceAccountID
+                sourceAccountID: browse.sourceAccountID,
+                settingsNamespace: libraryPreferencesNamespace
             ),
             title: library.displayName,
             spoilerSettings: spoilerSettings,
@@ -416,7 +418,8 @@ struct HomeTab: View {
                     containerID: AllLibrariesBrowse.containerID,
                     containerKind: .unknown,
                     sortKeySuffix: AllLibrariesBrowse.sortKeySuffix,
-                    sourceAccountID: nil
+                    sourceAccountID: nil,
+                    settingsNamespace: libraryPreferencesNamespace
                 ),
                 title: Text(AllLibrariesBrowse.title),
                 spoilerSettings: spoilerSettings,
@@ -1098,7 +1101,8 @@ struct HomeTab: View {
                     containerID: route.collectionID,
                     containerKind: route.kind,
                     sourceAccountID: route.accountID,
-                    browseScope: route.kind == .playlist ? .playlistMembers : .collectionMembers
+                    browseScope: route.kind == .playlist ? .playlistMembers : .collectionMembers,
+                    settingsNamespace: libraryPreferencesNamespace
                 ),
                 title: Text(verbatim: route.title),
                 spoilerSettings: spoilerSettings,

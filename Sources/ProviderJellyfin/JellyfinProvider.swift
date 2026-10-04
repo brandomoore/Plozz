@@ -799,7 +799,8 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
                 recursive: recursive,
                 startIndex: page.startIndex,
                 limit: page.limit,
-                sort: page.sort
+                sort: page.sort,
+                filters: page.filters
             )
             let items = response.Items.map(map(item:))
             PlozzLog.networking.info(
@@ -977,6 +978,13 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
         kind: MediaItemKind,
         sort: CoreModels.SortDescriptor
     ) async throws -> [LibraryLetterIndexEntry] {
+        try await filteredLetterIndex(in: containerID, kind: kind, sort: sort, filters: .all)
+    }
+
+    func filteredLetterIndex(
+        in containerID: String, kind: MediaItemKind,
+        sort: CoreModels.SortDescriptor, filters: LibraryFilters
+    ) async throws -> [LibraryLetterIndexEntry] {
         guard sort.field == .name else { return [] }
         let (recursive, includeItemTypes) = Self.query(forContainerKind: kind)
         let letters = LibraryLetterIndex.railLetters.filter { $0 != "#" }
@@ -987,14 +995,14 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
         async let totalTask: Int = limiter.run {
             try await client.itemCount(
                 userID: userID, parentID: containerID,
-                includeItemTypes: includeItemTypes, recursive: recursive
+                includeItemTypes: includeItemTypes, recursive: recursive, filters: filters
             )
         }
         async let lastLetterTask: Int = limiter.run {
             try await client.itemCount(
                 userID: userID, parentID: containerID,
                 includeItemTypes: includeItemTypes, recursive: recursive,
-                nameStartsWith: "Z"
+                nameStartsWith: "Z", filters: filters
             )
         }
 
@@ -1006,7 +1014,7 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
                         try await client.itemCount(
                             userID: userID, parentID: containerID,
                             includeItemTypes: includeItemTypes, recursive: recursive,
-                            nameLessThan: letter
+                            nameLessThan: letter, filters: filters
                         )
                     }
                     return (letter, count)
@@ -1038,10 +1046,11 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
     /// Picks the Jellyfin query strategy for a container kind. Typed libraries
     /// use the fast recursive/indexed path; folders/collections list direct
     /// children.
-    private static func query(forContainerKind kind: MediaItemKind) -> (recursive: Bool, includeItemTypes: [String]) {
+    static func query(forContainerKind kind: MediaItemKind) -> (recursive: Bool, includeItemTypes: [String]) {
         switch kind {
         case .movie: return (true, ["Movie"])
         case .series: return (true, ["Series"])
+        case .episode: return (true, ["Episode"])
         default: return (false, [])
         }
     }
@@ -2118,7 +2127,13 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
                 defaultStreams: dto.MediaStreams
             ),
             isFavorite: dto.UserData?.IsFavorite ?? false,
-            lastPlayedAt: Self.parseDate(dto.UserData?.LastPlayedDate)
+            lastPlayedAt: Self.parseDate(dto.UserData?.LastPlayedDate),
+            librarySortValues: LibrarySortValues(
+                sortName: dto.SortName, dateAdded: Self.parseDate(dto.DateCreated),
+                audienceRating: dto.CommunityRating.map { $0 * 10 },
+                criticRating: dto.CriticRating, playCount: dto.UserData?.PlayCount ?? 0,
+                watched: dto.UserData?.Played ?? false
+            )
         )
     }
 

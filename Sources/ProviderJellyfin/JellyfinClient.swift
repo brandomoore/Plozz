@@ -701,13 +701,15 @@ public struct JellyfinClient: Sendable {
         startIndex: Int,
         limit: Int,
         sort: CoreModels.SortDescriptor,
-        fields: String = "PrimaryImageAspectRatio,ProviderIds"
+        fields: String = "PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,Genres",
+        filters: LibraryFilters = .all
     ) async throws -> ItemsResponse {
         var queryItems = [
             URLQueryItem(name: "ParentId", value: parentID),
             URLQueryItem(name: "StartIndex", value: String(startIndex)),
             URLQueryItem(name: "Limit", value: String(limit)),
-            URLQueryItem(name: "SortBy", value: Self.sortBy(for: sort.field)),
+            URLQueryItem(name: "SortBy", value: try sort.field == .lastPlayed && includeItemTypes == ["Series"]
+                         ? "SeriesDatePlayed" : Self.sortBy(for: sort.field)),
             URLQueryItem(name: "SortOrder", value: Self.sortOrder(for: sort.direction)),
             // Minimal fields keep the first-page payload small for a fast grid;
             // ProviderIds is included so the aggregated cross-server library
@@ -722,8 +724,43 @@ public struct JellyfinClient: Sendable {
         if !includeItemTypes.isEmpty {
             queryItems.append(URLQueryItem(name: "IncludeItemTypes", value: includeItemTypes.joined(separator: ",")))
         }
+        queryItems += try Self.libraryFilterQuery(filters)
         let endpoint = Endpoint(path: "/Users/\(userID)/Items", queryItems: queryItems, headers: authHeaders)
         return try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
+    }
+
+    static func libraryFilterQuery(_ filters: LibraryFilters) throws -> [URLQueryItem] {
+        var query: [URLQueryItem] = []
+        switch filters.filter {
+        case .all: break
+        case .unwatched: query.append(.init(name: "IsPlayed", value: "false"))
+        case .inProgress: query.append(.init(name: "Filters", value: "IsResumable"))
+        case .hdr, .dolbyVision, .hdr10Plus, .atmos, .unmatched, .duplicates:
+            throw AppError.invalidResponse
+        }
+        if let genre = filters.genre { query.append(.init(name: "Genres", value: genre)) }
+        if let year = filters.year { query.append(.init(name: "Years", value: String(year))) }
+        return query
+    }
+
+    func libraryFacets(userID: String, parentID: String, includeItemTypes: [String]) async throws -> LibraryQueryFacets {
+        struct Response: Decodable {
+            let Genres: [String]?
+            let Years: [Int]?
+        }
+        let response = try await http.decode(
+            Response.self,
+            from: Endpoint(
+                path: "/Items/Filters2",
+                queryItems: [
+                    .init(name: "UserId", value: userID), .init(name: "ParentId", value: parentID),
+                    .init(name: "IncludeItemTypes", value: includeItemTypes.joined(separator: ","))
+                ],
+                headers: authHeaders
+            ),
+            baseURL: baseURL
+        )
+        return LibraryQueryFacets(genres: response.Genres ?? [], years: response.Years ?? [])
     }
 
     /// Global BoxSets are intentional here: released Jellyfin and Emby servers
@@ -737,7 +774,7 @@ public struct JellyfinClient: Sendable {
                 URLQueryItem(name: "Recursive", value: "true"),
                 URLQueryItem(name: "StartIndex", value: String(page.startIndex)),
                 URLQueryItem(name: "Limit", value: String(page.limit)),
-                URLQueryItem(name: "SortBy", value: Self.sortBy(for: page.sort.field)),
+                URLQueryItem(name: "SortBy", value: try Self.sortBy(for: page.sort.field)),
                 URLQueryItem(name: "SortOrder", value: Self.sortOrder(for: page.sort.direction)),
                 URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio,ProviderIds"),
                 URLQueryItem(name: "ImageTypeLimit", value: "1"),
@@ -803,7 +840,8 @@ public struct JellyfinClient: Sendable {
         includeItemTypes: [String],
         recursive: Bool,
         nameLessThan: String? = nil,
-        nameStartsWith: String? = nil
+        nameStartsWith: String? = nil,
+        filters: LibraryFilters = .all
     ) async throws -> Int {
         var queryItems = [
             URLQueryItem(name: "ParentId", value: parentID),
@@ -824,6 +862,7 @@ public struct JellyfinClient: Sendable {
         if !includeItemTypes.isEmpty {
             queryItems.append(URLQueryItem(name: "IncludeItemTypes", value: includeItemTypes.joined(separator: ",")))
         }
+        queryItems += try Self.libraryFilterQuery(filters)
         let endpoint = Endpoint(path: "/Users/\(userID)/Items", queryItems: queryItems, headers: authHeaders)
         let response = try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL)
         guard let count = response.TotalRecordCount, count >= 0 else { throw AppError.invalidResponse }
@@ -831,7 +870,7 @@ public struct JellyfinClient: Sendable {
     }
 
     /// Maps a provider-agnostic `SortField` onto Jellyfin's `SortBy` key.
-    static func sortBy(for field: SortField) -> String {
+    static func sortBy(for field: SortField) throws -> String {
         switch field {
         case .name: return "SortName"
         case .dateAdded: return "DateCreated"
@@ -839,6 +878,12 @@ public struct JellyfinClient: Sendable {
         case .communityRating: return "CommunityRating"
         case .runtime: return "Runtime"
         case .random: return "Random"
+        case .year: return "ProductionYear"
+        case .criticRating: return "CriticRating"
+        case .contentRating: return "OfficialRating"
+        case .plays: return "PlayCount"
+        case .lastPlayed: return "DatePlayed"
+        case .progress, .userRating: throw AppError.invalidResponse
         }
     }
 

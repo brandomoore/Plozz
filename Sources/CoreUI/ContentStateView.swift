@@ -12,6 +12,7 @@ public struct ContentStateView<Value: Sendable, Content: View>: View {
     private let onRetry: () -> Void
     private let content: (Value) -> Content
     private let emptyMessage: LocalizedStringResource
+    private let errorMessage: LocalizedStringResource?
     /// Optional custom view for the `.idle`/`.loading` states. When `nil` the
     /// default `LoadingMessagesView` (spinner → playful messages) is shown; Home
     /// passes a 1:1 skeleton here so the loading state matches the loaded layout.
@@ -20,11 +21,13 @@ public struct ContentStateView<Value: Sendable, Content: View>: View {
     public init(
         state: LoadState<Value>,
         emptyMessage: LocalizedStringResource = "Nothing here yet.",
+        errorMessage: LocalizedStringResource? = nil,
         onRetry: @escaping () -> Void,
         @ViewBuilder content: @escaping (Value) -> Content
     ) {
         self.state = state
         self.emptyMessage = emptyMessage
+        self.errorMessage = errorMessage
         self.onRetry = onRetry
         self.content = content
         self.loadingContent = nil
@@ -35,12 +38,14 @@ public struct ContentStateView<Value: Sendable, Content: View>: View {
     public init<Loading: View>(
         state: LoadState<Value>,
         emptyMessage: LocalizedStringResource = "Nothing here yet.",
+        errorMessage: LocalizedStringResource? = nil,
         onRetry: @escaping () -> Void,
         @ViewBuilder loadingContent: @escaping () -> Loading,
         @ViewBuilder content: @escaping (Value) -> Content
     ) {
         self.state = state
         self.emptyMessage = emptyMessage
+        self.errorMessage = errorMessage
         self.onRetry = onRetry
         self.content = content
         self.loadingContent = { AnyView(loadingContent()) }
@@ -69,7 +74,7 @@ public struct ContentStateView<Value: Sendable, Content: View>: View {
         case let .failed(error):
             messageView(
                 icon: error == .serverUnreachable ? "wifi.slash" : "exclamationmark.triangle",
-                title: error.userMessage,
+                title: errorMessage ?? error.userMessage,
                 showRetry: true
             )
         }

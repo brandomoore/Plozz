@@ -59,6 +59,53 @@ public final class LibraryBrowseViewModel {
     /// A non-fatal error from loading a follow-up page, if any. Surfaced for
     /// diagnostics; the failed page is retried when its cells reappear.
     public private(set) var pageError: AppError?
+    private let queryPresentation = LibraryQueryPresentation()
+    public private(set) var filters: LibraryFilters {
+        get { queryPresentation.filters }
+        set { queryPresentation.filters = newValue }
+    }
+    public private(set) var queryFacets: LibraryQueryFacets {
+        get { queryPresentation.facets }
+        set { queryPresentation.facets = newValue }
+    }
+    public private(set) var facetsLoading: Bool {
+        get { queryPresentation.facetsLoading }
+        set { queryPresentation.facetsLoading = newValue }
+    }
+    public private(set) var facetsError: AppError? {
+        get { queryPresentation.facetsError }
+        set { queryPresentation.facetsError = newValue }
+    }
+    public private(set) var queryProgress: Double? {
+        get { queryPresentation.progress }
+        set { queryPresentation.progress = newValue }
+    }
+    public private(set) var queryMessage: LocalizedStringResource? {
+        get { queryPresentation.message }
+        set { queryPresentation.message = newValue }
+    }
+    @ObservationIgnored private var firstPageTask: Task<MediaPage, Error>?
+    private let querySession: LibraryQuerySession
+    private let preferencesStore: LibraryBrowsePreferencesStore
+    private let preferenceAccountID: String
+    private let settingsNamespace: String?
+    private var capabilitiesRevision: Int {
+        get { queryPresentation.capabilitiesRevision }
+        set { queryPresentation.capabilitiesRevision = newValue }
+    }
+    @ObservationIgnored private var browseVisible = false
+    @ObservationIgnored private var watchQueryDirty = false
+    @ObservationIgnored private var watchRefreshTask: Task<Void, Never>?
+
+    public var queryCapabilities: LibraryQueryCapabilities {
+        guard browseScope == .library, contentMode == .titles else { return LibraryQueryCapabilities() }
+        return (provider as? any MediaLibraryQueryProviding)?
+            .libraryQueryCapabilities(in: containerID, kind: containerKind) ?? LibraryQueryCapabilities()
+    }
+
+    public var showsFilterMenu: Bool {
+        queryCapabilities.filters.count > 1 || queryCapabilities.supportsGenres || queryCapabilities.supportsYears
+    }
     public private(set) var contentMode: LibraryContentMode = .titles
     public private(set) var recommendationState: LoadState<[LibrarySection]> = .idle
     public private(set) var recommendationError: AppError?
@@ -93,7 +140,7 @@ public final class LibraryBrowseViewModel {
         if browseScope == .playlistMembers { return "This playlist is empty." }
         switch contentMode {
         case .recommended: return "No recommendations in this library."
-        case .titles: return "This library is empty."
+        case .titles: return filters.isEmpty ? "This library is empty." : "No titles match these filters."
         case .collections: return "No collections in this library."
         case .playlists: return "No playlists in this library."
         }
@@ -121,8 +168,7 @@ public final class LibraryBrowseViewModel {
     private let sourceAccountID: String?
 
     /// The order the grid is currently sorted by. Changing it via `setSort`
-    /// restarts paging from the first page and persists the choice per container
-    /// kind so it is restored next time a library of that kind is opened.
+    /// restarts paging and remembers the choice for this library/account/profile.
     public private(set) var sort: CoreModels.SortDescriptor
 
     /// The A–Z fast-scroll rail's jump targets: for each present letter, the
@@ -141,12 +187,13 @@ public final class LibraryBrowseViewModel {
     public var sourceServerID: String { provider.session.server.id }
 
     public var availableSortFields: [SortField] {
+        _ = capabilitiesRevision
         if browseScope != .library || contentMode == .recommended { return [] }
         if browseKind == .collection { return [.name, .dateAdded] }
         if browseKind == .playlist { return [.name] }
         return (provider as? any MediaSortFieldProviding)?
             .supportedSortFields(in: containerID, kind: containerKind)
-            ?? SortField.allCases
+            ?? SortField.legacyFields
     }
 
     private var browseKind: MediaItemKind {
@@ -216,10 +263,7 @@ public final class LibraryBrowseViewModel {
 
     /// Distinguishes this grid's remembered sort from other grids of the same kind.
     ///
-    /// Sort is remembered per *kind* so every movie library opens the way the
-    /// viewer last left one. The combined "All Libraries" grid isn't a kind, so it
-    /// passes a suffix and gets its own remembered sort instead of silently
-    /// sharing (and overwriting) the `.unknown` bucket.
+    /// Used only to migrate the default profile's legacy per-kind sort.
     private let sortKeySuffix: String?
 
     public init(
@@ -231,7 +275,8 @@ public final class LibraryBrowseViewModel {
         sortKeySuffix: String? = nil,
         sourceAccountID: String? = nil,
         browseScope: LibraryBrowseScope = .library,
-        initialContentMode: LibraryContentMode? = nil
+        initialContentMode: LibraryContentMode? = nil,
+        settingsNamespace: String? = nil
     ) {
         self.provider = provider
         self.containerID = containerID
@@ -243,6 +288,10 @@ public final class LibraryBrowseViewModel {
         self.defaults = defaults
         self.sortKeySuffix = sortKeySuffix
         self.sourceAccountID = sourceAccountID
+        self.settingsNamespace = settingsNamespace
+        self.preferencesStore = LibraryBrowsePreferencesStore(namespace: settingsNamespace, defaults: defaults)
+        self.preferenceAccountID = sourceAccountID ?? "\(provider.session.server.id):\(provider.session.userID)"
+        self.querySession = LibraryQuerySession(provider: provider, containerID: containerID, kind: containerKind)
         self.sort = browseScope != .library
             ? .default
             : Self.loadSort(for: containerKind, suffix: sortKeySuffix, from: defaults)
@@ -254,6 +303,7 @@ public final class LibraryBrowseViewModel {
         self.contentMode = initialContentMode.flatMap {
             availableContentModes.contains($0) ? $0 : nil
         } ?? defaultMode
+        if contentMode == .titles { restorePreferences() }
     }
 
     /// The item at `index`, or `nil` if it hasn't been loaded yet (placeholder).
@@ -306,6 +356,7 @@ public final class LibraryBrowseViewModel {
     /// (``loadFirstPage()`` for pull-to-refresh or a sort change, and
     /// ``refreshAfterCatalogChange()`` after a scan).
     public func loadFirstPageIfNeeded() async {
+        browseVisible = true
         if contentMode == .recommended {
             await loadRecommendationsIfNeeded()
             return
@@ -314,6 +365,7 @@ public final class LibraryBrowseViewModel {
         case .loaded:
             // Already showing this library. Keep the presentation, and with it the
             // scroll position, exactly as the user left it.
+            if watchQueryDirty { await refreshAfterCatalogChange(preservingFileFacts: true) }
             return
         case .idle, .loading, .empty, .failed:
             // An empty or failed library keeps retrying on reappear: there is no
@@ -326,15 +378,17 @@ public final class LibraryBrowseViewModel {
 
     /// Loads (or reloads) the first page and sizes the grid to the full library.
     public func loadFirstPage() async {
+        firstPageTask?.cancel()
         loadGeneration += 1
         contentGeneration += 1
         let generation = loadGeneration
         let mode = contentMode
-        let request = pageRequest(forPage: 0)
         state = .loading
         loaded = []
         totalCount = 0
         pageError = nil
+        queryMessage = nil
+        queryProgress = nil
         cancelAllPageLoads()
         pagesInFlight = []
         pagesLoaded = []
@@ -352,31 +406,55 @@ public final class LibraryBrowseViewModel {
             "LibraryBrowse: loading first page for \(containerID) (\(containerKind.rawValue)) firstPage=\(firstPageSize) steadyPage=\(subsequentPageSize)"
         )
         do {
-            let page = try await Self.fetchPage(
+            if let source = provider as? any MediaLibraryQueryProviding, mode == .titles {
+                let before = availableSortFields
+                try await source.prepareLibraryQueryCapabilities()
+                guard !Task.isCancelled, generation == loadGeneration else { return }
+                capabilitiesRevision += 1
+                if before != availableSortFields { restorePreferences() }
+            }
+            if watchQueryDirty {
+                await querySession.invalidate(preservingFileFacts: true)
+                watchQueryDirty = false
+            }
+            let request = pageRequest(forPage: 0)
+            let task = Task {
+                try await Self.fetchPage(
                 provider: provider,
+                querySession: querySession,
                 containerID: containerID,
                 containerKind: containerKind,
                 browseScope: browseScope,
                 contentMode: mode,
                 request: request,
-                priority: .userInitiated
-            )
+                priority: .userInitiated,
+                progress: { [weak self] completed, total in
+                    await self?.reportQueryProgress(completed, total: total, generation: generation)
+                }
+                )
+            }
+            firstPageTask = task
+            let page = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
             guard !Task.isCancelled, generation == loadGeneration else { return }
             totalCount = page.totalCount
             loaded = Self.makeSlots(count: page.totalCount)
             fill(page)
             pagesLoaded.insert(0)
             state = page.totalCount == 0 ? .empty : .loaded(page.totalCount)
+            queryProgress = nil
             loadLetterIndexIfNeeded()
         } catch is CancellationError {
             return
         } catch let error as AppError {
             PlozzLog.app.error("LibraryBrowse: first page failed for \(containerID): \(String(describing: error))")
             guard !Task.isCancelled, generation == loadGeneration else { return }
+            queryProgress = nil
             state = .failed(error)
         } catch {
             PlozzLog.app.error("LibraryBrowse: first page failed for \(containerID): \(String(describing: error))")
             guard !Task.isCancelled, generation == loadGeneration else { return }
+            queryProgress = nil
+            queryMessage = (error as? LibraryQueryFailure)?.message
             state = .failed(.unknown(""))
         }
     }
@@ -386,7 +464,7 @@ public final class LibraryBrowseViewModel {
     /// until the fresh first page arrives, avoiding a full-screen loading flash.
     /// Resetting `pagesLoaded` ensures any currently-visible deeper page refetches
     /// against the new catalog instead of retaining pre-scan cards.
-    public func refreshAfterCatalogChange() async {
+    public func refreshAfterCatalogChange(preservingFileFacts: Bool = false) async {
         switch state {
         case .idle, .loading: return
         case .loaded, .empty, .failed: break
@@ -395,9 +473,13 @@ public final class LibraryBrowseViewModel {
         let generation = loadGeneration
         let mode = contentMode
         let sortAtRequest = sort
+        await querySession.invalidate(preservingFileFacts: preservingFileFacts)
+        guard !Task.isCancelled, generation == loadGeneration else { return }
+        watchQueryDirty = false
         do {
             let firstPage = try await Self.fetchPage(
                 provider: provider,
+                querySession: querySession,
                 containerID: containerID,
                 containerKind: containerKind,
                 browseScope: browseScope,
@@ -415,6 +497,7 @@ public final class LibraryBrowseViewModel {
                 .min() {
                 let page = try await Self.fetchPage(
                     provider: provider,
+                    querySession: querySession,
                     containerID: containerID,
                     containerKind: containerKind,
                     browseScope: browseScope,
@@ -422,7 +505,7 @@ public final class LibraryBrowseViewModel {
                     request: PageRequest(
                         startIndex: startIndex(forPage: pageIndex),
                         limit: pageSpan(forPage: pageIndex),
-                        sort: sortAtRequest
+                        sort: sortAtRequest, filters: filters
                     ),
                     priority: .userInitiated
                 )
@@ -453,12 +536,19 @@ public final class LibraryBrowseViewModel {
             letterIndexTask?.cancel()
             alphabet.reset()
             loadLetterIndexIfNeeded()
+        } catch is CancellationError {
+            return
         } catch {
             // Keep the still-usable old page on a transient refresh failure; normal
             // page/retry behavior remains available.
             PlozzLog.app.error(
                 "LibraryBrowse: catalog refresh failed for \(containerID): \(String(describing: error))"
             )
+            if !Task.isCancelled, generation == loadGeneration {
+                watchQueryDirty = true
+                pageError = (error as? AppError) ?? .unknown("")
+                queryMessage = (error as? LibraryQueryFailure)?.message
+            }
         }
     }
 
@@ -479,6 +569,16 @@ public final class LibraryBrowseViewModel {
             }
             recommendationState = .loaded(sections)
         }
+        guard browseScope == .library else { return }
+        watchQueryDirty = true
+        let dependsOnWatchState = [.unwatched, .inProgress].contains(filters.filter)
+            || [.progress, .plays, .lastPlayed].contains(sort.field)
+        if browseVisible, contentMode == .titles, dependsOnWatchState {
+            watchRefreshTask?.cancel()
+            watchRefreshTask = Task { [weak self] in
+                await self?.refreshAfterCatalogChange(preservingFileFacts: true)
+            }
+        }
     }
 
     /// Builds the alphabet fast-scroll index in the background when the grid is
@@ -498,12 +598,12 @@ public final class LibraryBrowseViewModel {
         alphabet.isLoading = true
         alphabet.message = nil
         let sortAtRequest = sort
+        let queryAtRequest = pageRequest(forPage: 0)
         let generation = contentGeneration
         letterIndexTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let entries = try await self.provider.letterIndex(
-                    in: self.containerID, kind: self.containerKind, sort: sortAtRequest)
+                let entries = try await self.querySession.letterIndex(page: queryAtRequest)
                 guard !Task.isCancelled, generation == self.contentGeneration,
                       sortAtRequest == self.sort else { return }
                 guard Set(entries.map(\.letter)).count == entries.count,
@@ -552,6 +652,7 @@ public final class LibraryBrowseViewModel {
         let id = alphabet.jumpID
         let generation = contentGeneration
         let requestedSort = sort
+        let queryAtRequest = pageRequest(forPage: 0)
         alphabet.jumpingTo = letter
         alphabet.message = nil
         let task = Task<Int?, Never> { [weak self] in
@@ -567,8 +668,7 @@ public final class LibraryBrowseViewModel {
                 let index: Int?
                 if let known = entry.startIndex { index = known }
                 else {
-                    index = try await self.provider.letterPosition(
-                        in: self.containerID, kind: self.containerKind, letter: letter, sort: requestedSort)
+                    index = try await self.querySession.letterPosition(letter, page: queryAtRequest)
                 }
                 guard !Task.isCancelled, self.alphabet.jumpID == id,
                       self.contentGeneration == generation, self.sort == requestedSort else { return nil }
@@ -719,7 +819,7 @@ public final class LibraryBrowseViewModel {
     public func setSort(_ newSort: CoreModels.SortDescriptor) async {
         guard availableSortFields.contains(newSort.field), newSort != sort else { return }
         sort = newSort
-        Self.saveSort(newSort, for: browseKind, suffix: currentSortKeySuffix, to: defaults)
+        savePreferences()
         await loadFirstPage()
     }
 
@@ -728,16 +828,91 @@ public final class LibraryBrowseViewModel {
     public func setContentMode(_ newMode: LibraryContentMode) async {
         guard newMode != contentMode, availableContentModes.contains(newMode) else { return }
         contentMode = newMode
+        loadGeneration += 1
+        firstPageTask?.cancel()
+        cancelAllPageLoads()
+        letterIndexTask?.cancel()
+        cancelLetterJump()
         if newMode == .recommended {
             await loadRecommendationsIfNeeded()
             return
         }
-        let restoredSort = Self.loadSort(for: browseKind, suffix: currentSortKeySuffix, from: defaults)
-        let field = availableSortFields.first ?? .name
-        sort = availableSortFields.contains(restoredSort.field)
-            ? restoredSort
-            : CoreModels.SortDescriptor(field: field, direction: field.defaultDirection)
+        restorePreferences()
         await loadFirstPage()
+    }
+
+    private var preferenceAddress: String {
+        LibraryBrowsePreferencesStore.address(accountID: preferenceAccountID, libraryID: containerID, mode: contentMode.rawValue)
+    }
+
+    private func restorePreferences() {
+        let saved = preferencesStore.preferences(at: preferenceAddress)
+        let legacy = settingsNamespace == nil
+            ? Self.loadSort(for: browseKind, suffix: currentSortKeySuffix, from: defaults) : .default
+        let desired = saved?.sort ?? legacy
+        let field = availableSortFields.first ?? .name
+        sort = availableSortFields.contains(desired.field)
+            ? desired : SortDescriptor(field: field, direction: field.defaultDirection)
+        filters = contentMode == .titles ? saved?.filters ?? .all : .all
+        let capabilities = queryCapabilities
+        if !capabilities.filters.contains(filters.filter) { filters.filter = .all }
+        if !capabilities.supportsGenres { filters.genre = nil }
+        if !capabilities.supportsYears { filters.year = nil }
+    }
+
+    private func savePreferences() {
+        preferencesStore.save(LibraryBrowsePreferences(sort: sort, filters: filters), at: preferenceAddress)
+    }
+
+    public func setFilters(_ value: LibraryFilters) async {
+        guard showsFilterMenu, value != filters,
+              queryCapabilities.filters.contains(value.filter),
+              value.genre == nil || queryCapabilities.supportsGenres,
+              value.year == nil || queryCapabilities.supportsYears else { return }
+        filters = value
+        savePreferences()
+        await loadFirstPage()
+    }
+
+    public func loadQueryFacetsIfNeeded(retry: Bool = false) async {
+        guard !facetsLoading, (queryFacets.genres.isEmpty && queryFacets.years.isEmpty) || retry,
+              showsFilterMenu, let source = provider as? any MediaLibraryQueryProviding else { return }
+        facetsLoading = true
+        facetsError = nil
+        defer { facetsLoading = false }
+        do {
+            queryFacets = try await source.libraryQueryFacets(in: containerID, kind: containerKind)
+        } catch is CancellationError {
+            return
+        } catch {
+            PlozzLog.app.error("Library facets failed: \(String(describing: error))")
+            facetsError = (error as? AppError) ?? .unknown("")
+        }
+    }
+
+    public func cancelPendingQuery() {
+        browseVisible = false
+        loadGeneration += 1
+        watchRefreshTask?.cancel()
+        firstPageTask?.cancel()
+        cancelAllPageLoads()
+        letterIndexTask?.cancel()
+        cancelLetterJump()
+    }
+
+    public func cancelIndex() async {
+        watchRefreshTask?.cancel()
+        firstPageTask?.cancel()
+        await querySession.invalidate(preservingFileFacts: true)
+        filters = .all
+        if !queryCapabilities.nativeSortFields.contains(sort.field) { sort = .default }
+        savePreferences()
+        await loadFirstPage()
+    }
+
+    private func reportQueryProgress(_ completed: Int, total: Int, generation: Int) {
+        guard generation == loadGeneration else { return }
+        queryProgress = total > 0 ? min(1, Double(completed) / Double(total)) : 0
     }
 
     private var recommendationGeneration = 0
@@ -870,16 +1045,6 @@ public final class LibraryBrowseViewModel {
         return descriptor
     }
 
-    private static func saveSort(
-        _ sort: CoreModels.SortDescriptor,
-        for kind: MediaItemKind,
-        suffix: String?,
-        to defaults: UserDefaults
-    ) {
-        guard let data = try? JSONEncoder().encode(sort) else { return }
-        defaults.set(data, forKey: defaultsKey(for: kind, suffix: suffix))
-    }
-
     /// Tuned paging plan for library browse. The default provider limit (60) is
     /// split into a small first page for near-instant first paint and a larger
     /// steady-state page size for efficient long-scroll throughput.
@@ -895,7 +1060,8 @@ public final class LibraryBrowseViewModel {
         PageRequest(
             startIndex: startIndex(forPage: page),
             limit: pageSpan(forPage: page),
-            sort: sort
+            sort: sort,
+            filters: browseScope == .library && contentMode == .titles ? filters : .all
         )
     }
 
@@ -971,6 +1137,7 @@ public final class LibraryBrowseViewModel {
         do {
             let response = try await Self.fetchPage(
                 provider: provider,
+                querySession: querySession,
                 containerID: containerID,
                 containerKind: containerKind,
                 browseScope: browseScope,
@@ -1054,12 +1221,14 @@ public final class LibraryBrowseViewModel {
 
     private nonisolated static func fetchPage(
         provider: any MediaProvider,
+        querySession: LibraryQuerySession,
         containerID: String,
         containerKind: MediaItemKind,
         browseScope: LibraryBrowseScope,
         contentMode: LibraryContentMode,
         request: PageRequest,
-        priority: TaskPriority
+        priority: TaskPriority,
+        progress: @escaping @Sendable (Int, Int) async -> Void = { _, _ in }
     ) async throws -> MediaPage {
         let task = Task.detached(priority: priority) {
             if browseScope == .collectionMembers {
@@ -1078,7 +1247,7 @@ public final class LibraryBrowseViewModel {
             if contentMode == .playlists {
                 return try await provider.videoPlaylists(in: containerID, page: request)
             }
-            return try await provider.items(in: containerID, kind: containerKind, page: request)
+            return try await querySession.page(request, progress: progress)
         }
         return try await withTaskCancellationHandler {
             try await task.value

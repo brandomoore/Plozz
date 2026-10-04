@@ -219,7 +219,11 @@ struct CatalogReadQueries {
                 title: self.columnText(stmt, 1) ?? "",
                 kind: .movie,
                 productionYear: self.columnOptInt(stmt, 2),
-                libraryID: ShareCatalogID.moviesLibrary
+                libraryID: ShareCatalogID.moviesLibrary,
+                librarySortValues: LibrarySortValues(
+                    sortName: self.columnText(stmt, 13),
+                    dateAdded: sqlite3_column_type(stmt, 14) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(stmt, 14))
+                )
             )
             out.append((sqlite3_column_int64(stmt, 3), self.columnDouble(stmt, 4), item))
         }
@@ -497,7 +501,11 @@ struct CatalogReadQueries {
             sqlite3_bind_int64($0, 2, Int64(limit)); sqlite3_bind_int64($0, 3, Int64(offset))
         }) { stmt in
             guard let key = self.columnText(stmt, 0) else { return }
-            let item = ShareCatalogReadProjection.seriesItem(key: key, title: self.columnText(stmt, 1) ?? key, library: library, year: self.columnOptInt(stmt, 2))
+            var item = ShareCatalogReadProjection.seriesItem(key: key, title: self.columnText(stmt, 1) ?? key, library: library, year: self.columnOptInt(stmt, 2))
+            item.librarySortValues = LibrarySortValues(
+                sortName: self.columnText(stmt, 13),
+                dateAdded: sqlite3_column_type(stmt, 14) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(stmt, 14))
+            )
             rows.append((
                 item,
                 ShareCatalogID.series(key),
@@ -531,7 +539,49 @@ struct CatalogReadQueries {
             return "catalog_runtime IS NULL, catalog_runtime \(direction), catalog_sort_name ASC, catalog_stable_id ASC"
         case .random:
             return "catalog_random \(direction), catalog_stable_id ASC"
+        case .year, .criticRating, .userRating, .contentRating, .progress, .plays, .lastPlayed:
+            // These are ordered from compact query facts, not this SQL page path.
+            return "catalog_sort_name ASC, catalog_stable_id ASC"
         }
+    }
+
+    func libraryQueryFacets(in library: CatalogLibrary) -> LibraryQueryFacets {
+        var genres = Set<String>()
+        var years = Set<Int>()
+        query("""
+        SELECT DISTINCT a.year, COALESCE(m.value_json, e.genres_json)
+        FROM assets a
+        LEFT JOIN enrichment e ON e.item_id = CASE WHEN a.kind='episode'
+            THEN 'series:' || a.series_key ELSE 'f:' || a.rel_path END
+        LEFT JOIN metadata_values m ON m.item_id=e.item_id AND m.field='genres' AND m.source='localNFO'
+        WHERE a.library=?;
+        """, bind: { self.bindText($0, 1, library.rawValue) }) { stmt in
+            if let year = self.columnOptInt(stmt, 0) { years.insert(year) }
+            if let json = self.columnText(stmt, 1), let values = CatalogJSON.decode([String].self, json) {
+                genres.formUnion(values)
+            }
+        }
+        return LibraryQueryFacets(genres: Array(genres), years: Array(years))
+    }
+
+    func libraryQueryEpisodes(in library: CatalogLibrary, offset: Int, limit: Int) -> MediaPage {
+        var total = 0
+        query("SELECT COUNT(*) FROM assets WHERE library=? AND kind='episode';",
+              bind: { self.bindText($0, 1, library.rawValue) }) { total = Int(sqlite3_column_int64($0, 0)) }
+        var items: [MediaItem] = []
+        query("""
+        SELECT rel_path, title, series_title, season, episode, library, year, series_key
+        FROM assets WHERE library=? AND kind='episode'
+        ORDER BY series_key, season, episode, rel_path LIMIT ? OFFSET ?;
+        """, bind: {
+            self.bindText($0, 1, library.rawValue)
+            sqlite3_bind_int64($0, 2, Int64(limit))
+            sqlite3_bind_int64($0, 3, Int64(offset))
+        }) { stmt in
+            guard let seriesKey = self.columnText(stmt, 7) else { return }
+            items.append(ShareCatalogReadProjection.episodeItem(from: stmt, seriesKey: seriesKey))
+        }
+        return MediaPage(items: withEnrichment(items), startIndex: offset, totalCount: total)
     }
 
     /// Deterministic local shuffle key. SQLite's `random()` would reorder between

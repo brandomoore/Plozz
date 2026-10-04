@@ -6,8 +6,12 @@ final class LibrarySortDefaultsTests: XCTestCase {
         XCTAssertEqual(SortField.name.defaultDirection, .ascending)
     }
 
-    func testNonNameFieldsDefaultDescending() {
-        for field in SortField.allCases where field != .name {
+    func testContentRatingDefaultsAscending() {
+        XCTAssertEqual(SortField.contentRating.defaultDirection, .ascending)
+    }
+
+    func testNumericAndDateFieldsDefaultDescending() {
+        for field in SortField.allCases where field != .name && field != .contentRating {
             XCTAssertEqual(
                 field.defaultDirection,
                 .descending,

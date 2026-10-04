@@ -197,6 +197,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// midnight and must be **formatted in UTC** — rendering it in the device's
     /// zone shifts a release west of Greenwich back a day.
     public var releaseDate: Date?
+    public var librarySortValues: LibrarySortValues?
 
     /// The content/age-classification certificate, e.g. `TV-14`, `PG-13`, `R`.
     /// Provider-native string (Jellyfin `OfficialRating`); `nil` when unrated or
@@ -519,7 +520,8 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         explicitSourceSelection: Bool = false,
         scheduledAirDate: Date? = nil,
         scheduledAirDateHasTime: Bool = false,
-        showsScheduledReleaseTime: Bool = false
+        showsScheduledReleaseTime: Bool = false,
+        librarySortValues: LibrarySortValues? = nil
     ) {
         self.scheduledAirDate = scheduledAirDate
         self.scheduledAirDateHasTime = scheduledAirDateHasTime
@@ -537,6 +539,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         self.episodeNumberEnd = episodeNumberEnd
         self.productionYear = productionYear
         self.releaseDate = releaseDate
+        self.librarySortValues = librarySortValues
         self.officialRating = officialRating
         self.familyGuidance = familyGuidance
         self.genres = genres
@@ -604,6 +607,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         case fileBrowserContainerID
         case originalTitle
         case productionYear, releaseDate, officialRating, genres, people, studios, tags, taglines
+        case librarySortValues
         case familyGuidance
         case seriesID, seasonID, runtime, resumePosition, playedPercentage, isPlayed, hasBeenPlayed
         case posterURL, seriesPosterURL, backdropURL, heroBackdropURL
@@ -644,6 +648,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         episodeNumberEnd = try container.decodeIfPresent(Int.self, forKey: .episodeNumberEnd)
         productionYear = try container.decodeIfPresent(Int.self, forKey: .productionYear)
         releaseDate = try container.decodeIfPresent(Date.self, forKey: .releaseDate)
+        librarySortValues = try container.decodeIfPresent(LibrarySortValues.self, forKey: .librarySortValues)
         officialRating = try container.decodeIfPresent(String.self, forKey: .officialRating)
         familyGuidance = try container.decodeIfPresent(FamilyGuidanceSummary.self, forKey: .familyGuidance)
         genres = try container.decodeIfPresent([String].self, forKey: .genres) ?? []

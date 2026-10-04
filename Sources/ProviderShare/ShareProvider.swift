@@ -18,7 +18,7 @@ import os
 /// watch-state stamping/writes through `ShareWatchStateService`, and playback
 /// file access (locator, sidecar subtitles, stream probe) through
 /// `SharePlaybackSourceService`. It keeps only browse/playback orchestration.
-public struct ShareProvider: MediaProvider, MediaFileBrowsing, MediaSortFieldProviding {
+public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
     public let kind: ProviderKind = .mediaShare
     public let session: UserSession
     public let localMediaContext: LocalMediaContext
@@ -29,14 +29,14 @@ public struct ShareProvider: MediaProvider, MediaFileBrowsing, MediaSortFieldPro
     /// injected coordinator outlives transient provider values). A test override
     /// short-circuits to a supplied reader.
     private let catalogAccessor: @Sendable () async -> any ShareCatalogReading
-    private let watchState: ShareWatchStateService
+    let watchState: ShareWatchStateService
     private let playbackSource: SharePlaybackSourceService
     /// Injected engine-side network-file header prober. It uses the same typed
     /// locator and transport resolver as playback.
     private let streamProber: NetworkFileStreamProbing?
     private let streamProbeCache = ShareStreamProbeCache()
 
-    private var libraryConfiguration: MediaShareLibraryConfiguration? {
+    var libraryConfiguration: MediaShareLibraryConfiguration? {
         session.server.mediaShareLibraryConfiguration
     }
 
@@ -53,8 +53,10 @@ public struct ShareProvider: MediaProvider, MediaFileBrowsing, MediaSortFieldPro
         in containerID: String,
         kind: MediaItemKind
     ) -> [SortField] {
+        if libraryConfiguration?.contentType == .personalVideos { return [.name, .dateAdded, .random] }
         if ShareCatalogID.catalogLibrary(forID: containerID) != nil {
-            return SortField.allCases
+            return [.name, .year, .releaseDate, .criticRating, .communityRating, .contentRating,
+                    .runtime, .progress, .lastPlayed, .dateAdded, .random]
         }
         if ShareCatalogID.isSeries(containerID) || ShareCatalogID.isSeason(containerID) {
             return [.name, .releaseDate, .communityRating, .runtime, .random]
@@ -65,7 +67,7 @@ public struct ShareProvider: MediaProvider, MediaFileBrowsing, MediaSortFieldPro
             // no fabricated runtime, release, or ratings metadata.
             return [.name, .dateAdded, .random]
         }
-        return SortField.allCases
+        return SortField.legacyFields
     }
 
     public init(
@@ -184,7 +186,7 @@ public struct ShareProvider: MediaProvider, MediaFileBrowsing, MediaSortFieldPro
     /// App-owned catalog for this share (SQLite index built by a background
     /// `ShareScanner`), resolved through the injected read capability so the
     /// concrete store never leaks into the facade.
-    private var catalog: any ShareCatalogReading {
+    var catalog: any ShareCatalogReading {
         get async { await catalogAccessor() }
     }
 
@@ -420,6 +422,9 @@ public struct ShareProvider: MediaProvider, MediaFileBrowsing, MediaSortFieldPro
     }
 
     public func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        guard page.filters.isEmpty,
+              ShareCatalogID.catalogLibrary(forID: containerID) == nil
+                || SortField.legacyFields.contains(page.sort.field) else { throw AppError.invalidResponse }
         if libraryConfiguration?.contentType == .personalVideos,
            ShareCatalogID.catalogLibrary(forID: containerID) != nil
                || ShareCatalogID.isSeries(containerID)
@@ -546,7 +551,10 @@ public struct ShareProvider: MediaProvider, MediaFileBrowsing, MediaSortFieldPro
             case .dateAdded:
                 // The store applies filesystem timestamps before projection.
                 ordered = nil
+            case .year, .criticRating, .userRating, .contentRating, .progress, .plays, .lastPlayed:
+                ordered = MediaItemSortOrder.isOrderedBefore(lhs, rhs, sort: sort)
             }
+
             if let ordered { return ordered }
 
             let titleOrder = lhs.title.localizedStandardCompare(rhs.title)

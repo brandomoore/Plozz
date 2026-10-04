@@ -130,9 +130,12 @@ public struct LibraryBrowseView: View {
                 ContentStateView(
                     state: viewModel.state,
                     emptyMessage: viewModel.emptyMessage,
+                    errorMessage: viewModel.queryMessage,
                     onRetry: { Task { await viewModel.loadFirstPage() } },
                     loadingContent: {
-                        if viewModel.isMediaShare || viewModel.browseScope == .collectionMembers {
+                        if let progress = viewModel.queryProgress {
+                            LibraryQueryPreparationView(progress: progress) { Task { await viewModel.cancelIndex() } }
+                        } else if viewModel.isMediaShare || viewModel.browseScope == .collectionMembers {
                             LibraryBrowseLoadingView()
                         } else {
                             LoadingMessagesView()
@@ -200,7 +203,7 @@ public struct LibraryBrowseView: View {
         .background {
             LibraryAlphabetFeedback(letter: viewModel.alphabet.jumpingTo, message: viewModel.alphabet.message)
         }
-        .onDisappear { viewModel.cancelLetterJump() }
+        .onDisappear { viewModel.cancelPendingQuery() }
         .onChange(of: viewModel.contentMode) { _, _ in
             railFocusedLetter = nil
             railHasRevealed = false
@@ -509,9 +512,20 @@ public struct LibraryBrowseView: View {
                 }
             }
             if !viewModel.availableSortFields.isEmpty {
+                if viewModel.showsFilterMenu {
+                    LibraryFilterMenu(
+                        filters: viewModel.filters, capabilities: viewModel.queryCapabilities, facets: viewModel.queryFacets,
+                        isLoading: viewModel.facetsLoading, hasError: viewModel.facetsError != nil,
+                        onChange: { value in Task { await viewModel.setFilters(value) } },
+                        onLoadFacets: { await viewModel.loadQueryFacetsIfNeeded() },
+                        onRetry: { Task { await viewModel.loadQueryFacetsIfNeeded(retry: true) } }
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
+                }
                 sortControl
             }
         }
+        .lineLimit(1)
         .padding(.leading, contentLeadingPadding)
         .padding(.trailing, HomeLayout.horizontalPadding)
         .focusSection()

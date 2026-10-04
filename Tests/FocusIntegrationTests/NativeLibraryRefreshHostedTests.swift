@@ -10,6 +10,43 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testFilterSharesHeaderLineAndRetainsNativeFocusAfterSelection() async throws {
+        let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, supportsFilters: true)
+        await provider.enableAlphabet()
+        let name = "LibraryFilterFocus.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie,
+            defaults: defaults, initialContentMode: .titles
+        )
+        await model.loadFirstPage()
+        try await withLibrary(model: model) { _, window in
+            let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
+            let controls = self.focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                      frame.midY < window.bounds.height * 0.2 else { return nil }
+                return (item, frame)
+            }.sorted { $0.1.minX < $1.1.minX }
+            XCTAssertGreaterThanOrEqual(controls.count, model.availableContentModes.count + 3)
+            guard controls.count >= 3 else { return }
+            let filter = controls[controls.count - 2]
+            let sort = try XCTUnwrap(controls.last)
+            XCTAssertEqual(filter.1.midY, sort.1.midY, accuracy: 1)
+            XCTAssertEqual(try XCTUnwrap(controls.first).1.midY, sort.1.midY, accuracy: 1)
+            controller.target = filter.0
+            focus.requestFocusUpdate(to: controller)
+            focus.updateFocusIfNeeded()
+            XCTAssertTrue(focus.focusedItem === filter.0)
+            controller.target = nil
+            await model.setFilters(.init(filter: .unwatched))
+            try await Task.sleep(for: .milliseconds(200))
+            window.layoutIfNeeded()
+            XCTAssertTrue(focus.focusedItem === filter.0, "Selecting a filter must retain the actual header control.")
+        }
+    }
+
     func testSortKeepsHeaderFocusWhenLetterJumpAppearsAndDisappears() async throws {
         let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true)
         await provider.enableAlphabet()
@@ -777,15 +814,18 @@ private final class LibraryFocusFixtureController: UIViewController {
     }
 }
 
-private actor RefreshLibraryProvider: MediaProvider, CapabilityReporting {
+private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityReporting {
     nonisolated let kind: ProviderKind
     nonisolated let session: UserSession
     nonisolated let capabilities: ProviderCapability
     private let recommendationHub: Bool
-    init(kind: ProviderKind = .mediaShare, supportsModes: Bool = false, recommendationHub: Bool = false) {
+    nonisolated let supportsFilters: Bool
+    init(kind: ProviderKind = .mediaShare, supportsModes: Bool = false, recommendationHub: Bool = false,
+         supportsFilters: Bool = false) {
         self.kind = kind
         self.capabilities = supportsModes ? [.libraryCollections, .videoPlaylists] : []
         self.recommendationHub = recommendationHub
+        self.supportsFilters = supportsFilters
         self.session = UserSession(
             server: MediaServer(
                 id: "fixture", name: "Fixture", baseURL: URL(string: "https://fixture.test")!,
@@ -803,6 +843,16 @@ private actor RefreshLibraryProvider: MediaProvider, CapabilityReporting {
     private var heldStart: Int?
     private var heldPage: CheckedContinuation<Void, Never>?
     var isHoldingPage: Bool { heldPage != nil }
+
+    nonisolated func supportedSortFields(in containerID: String, kind: MediaItemKind) -> [SortField] {
+        SortField.legacyFields
+    }
+    nonisolated func libraryQueryCapabilities(in containerID: String, kind: MediaItemKind) -> LibraryQueryCapabilities {
+        .init(filters: supportsFilters ? [.all, .unwatched] : [.all], nativeFilters: [.all, .unwatched])
+    }
+    func libraryQueryFacets(in containerID: String, kind: MediaItemKind) async throws -> LibraryQueryFacets {
+        .init()
+    }
 
     func enableAlphabet(letters: [String] = ["A", "M"]) {
         alphabetEnabled = true

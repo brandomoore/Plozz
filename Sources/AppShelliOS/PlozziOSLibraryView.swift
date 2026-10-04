@@ -286,7 +286,7 @@ struct PlozziOSLibraryGridView: View {
         .background {
             LibraryAlphabetFeedback(letter: viewModel.alphabet.jumpingTo, message: viewModel.alphabet.message)
         }
-        .onDisappear { viewModel.cancelLetterJump() }
+        .onDisappear { viewModel.cancelPendingQuery() }
         .plozziOSLibraryDestination(appModel: appModel)
         .background {
             if viewModel.isMediaShare {
@@ -345,7 +345,9 @@ struct PlozziOSLibraryGridView: View {
     private func browseContent(generation: Int) -> some View {
             switch viewModel.state {
             case .idle, .loading:
-                ProgressView("Loading \(title)…")
+                if let progress = viewModel.queryProgress {
+                    LibraryQueryPreparationView(progress: progress) { Task { await viewModel.cancelIndex() } }
+                } else { ProgressView("Loading \(title)…") }
             case .empty:
                 ContentUnavailableView {
                     Label {
@@ -399,7 +401,7 @@ struct PlozziOSLibraryGridView: View {
                 ContentUnavailableView {
                     Label("Unable to load \(title)", systemImage: "exclamationmark.triangle")
                 } description: {
-                    Text(error.userMessage)
+                    Text(viewModel.queryMessage ?? error.userMessage)
                 } actions: {
                     Button("Try Again") {
                         Task { await viewModel.loadFirstPage() }
@@ -416,6 +418,17 @@ struct PlozziOSLibraryGridView: View {
                     PlozziOSLibraryContentModeControl(viewModel: viewModel)
                 }
                 Spacer(minLength: 12)
+                if viewModel.showsFilterMenu {
+                    LibraryFilterMenu(
+                        filters: viewModel.filters, capabilities: viewModel.queryCapabilities, facets: viewModel.queryFacets,
+                        isLoading: viewModel.facetsLoading, hasError: viewModel.facetsError != nil,
+                        onChange: { value in Task { await viewModel.setFilters(value) } },
+                        onLoadFacets: { await viewModel.loadQueryFacetsIfNeeded() },
+                        onRetry: { Task { await viewModel.loadQueryFacetsIfNeeded(retry: true) } }
+                    )
+                    .labelStyle(.iconOnly)
+                    .frame(minWidth: 44, minHeight: 44)
+                }
                 if !viewModel.availableSortFields.isEmpty {
                     sortControl
                 }

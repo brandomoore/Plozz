@@ -55,6 +55,8 @@ public protocol ShareCatalogReading: Sendable {
     /// season and *logical* episode, so a season container's played state can be
     /// rolled up from its episodes in one pass instead of a query per season.
     func episodeWatchIdentities(seriesKey: String) async -> [(season: Int, logicalKey: String, fileID: String)]
+    func libraryQueryFacets(in library: CatalogLibrary) async throws -> LibraryQueryFacets
+    func libraryQueryEpisodes(in library: CatalogLibrary, offset: Int, limit: Int) async throws -> MediaPage
 
     /// A single indexed item, or nil for un-indexed raw file ids.
     func item(id: String) async -> MediaItem?
@@ -104,6 +106,8 @@ public protocol ShareCatalogReading: Sendable {
 extension ShareCatalogStore: ShareCatalogReading {}
 
 public extension ShareCatalogReading {
+    func libraryQueryFacets(in library: CatalogLibrary) async throws -> LibraryQueryFacets { throw AppError.notFound }
+    func libraryQueryEpisodes(in library: CatalogLibrary, offset: Int, limit: Int) async throws -> MediaPage { throw AppError.notFound }
     func movies(
         offset: Int,
         limit: Int,

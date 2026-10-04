@@ -51,7 +51,7 @@ final class LibraryFileBrowsingTests: XCTestCase {
             XCTAssertEqual(model.contentMode, .recommended)
             XCTAssertTrue(model.availableSortFields.isEmpty)
             await model.setContentMode(.titles)
-            XCTAssertEqual(model.availableSortFields, SortField.allCases)
+            XCTAssertEqual(model.availableSortFields, SortField.legacyFields)
         }
     }
 

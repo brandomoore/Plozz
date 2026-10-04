@@ -155,6 +155,8 @@ struct PlexMetadata: Decodable {
     /// whenever the agent dated them — including on hub and library listings, so
     /// it does not need the full metadata fetch.
     let originallyAvailableAt: String?
+    let addedAt: Int?
+    let titleSort: String?
     let duration: Int?         // milliseconds
     let viewOffset: Int?       // milliseconds resumed-to
     let viewCount: Int?
@@ -192,6 +194,7 @@ struct PlexMetadata: Decodable {
     let ratingImage: String?
     /// Audience score (0–10); `audienceRatingImage` names the source.
     let audienceRating: Double?
+    let userRating: Double?
     let audienceRatingImage: String?
     /// The **full** set of critic/audience scores the new Plex Movie agent
     /// records — IMDb, Rotten Tomatoes (critic + audience) and The Movie

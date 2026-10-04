@@ -25,9 +25,8 @@ final class MediaItemSortOrderTests: XCTestCase {
         XCTAssertTrue(MediaItemSortOrder.supportsLocalOrdering(.name))
         XCTAssertTrue(MediaItemSortOrder.supportsLocalOrdering(.releaseDate))
         XCTAssertTrue(MediaItemSortOrder.supportsLocalOrdering(.runtime))
-        // MediaItem carries neither of these, and random has no order at all.
-        XCTAssertFalse(MediaItemSortOrder.supportsLocalOrdering(.dateAdded))
-        XCTAssertFalse(MediaItemSortOrder.supportsLocalOrdering(.communityRating))
+        XCTAssertTrue(MediaItemSortOrder.supportsLocalOrdering(.dateAdded))
+        XCTAssertTrue(MediaItemSortOrder.supportsLocalOrdering(.communityRating))
         XCTAssertFalse(MediaItemSortOrder.supportsLocalOrdering(.random))
     }
 

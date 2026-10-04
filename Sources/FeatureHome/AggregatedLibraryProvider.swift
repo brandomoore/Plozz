@@ -59,11 +59,14 @@ public struct AggregatedLibrarySource: Sendable {
 /// fetches further batches when the caller scrolls past what's already merged.
 /// Each merged card keeps every server's source ref (via the merger) so tapping
 /// it opens a detail view with a working server picker and unified watch-state.
-public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting, @unchecked Sendable {
+public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, CapabilityReporting, @unchecked Sendable {
     public let kind: ProviderKind
     public let session: UserSession
 
-    private let sources: [AggregatedLibrarySource]
+    let sources: [AggregatedLibrarySource]
+    let inventoryCounts = InventoryCounts()
+    let inventoryServerInfo: [String: SourceServerInfo]
+    let inventoryIdentitySources: @Sendable (MediaItem) -> [MediaSourceRef]
     private let cache: Cache
     private let collectionCache: Cache
     private let videoPlaylistCache = VideoPlaylistSnapshotCache()
@@ -158,6 +161,7 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
         /// state — offsets, buffers, exhaustion, totals and the running merge — is
         /// only meaningful for ONE ordering, so a changed sort has to throw it away.
         private var activeSort: CoreModels.SortDescriptor?
+        private var activeFilters: LibraryFilters = .all
 
         func initialize(with sourceIDs: [String]) {
             guard offsets.isEmpty else { return }
@@ -170,9 +174,11 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
         /// provider instance, so without this the aggregate would answer the new
         /// sort out of a buffer built for the old one — a sort menu that appears to
         /// do nothing, or worse, silently mixes two orderings.
-        func prepare(for sort: CoreModels.SortDescriptor, sourceIDs: [String], force: Bool = false) {
-            guard force || activeSort != sort else { return }
+        func prepare(for sort: CoreModels.SortDescriptor, sourceIDs: [String], force: Bool = false,
+                     filters: LibraryFilters = .all) {
+            guard force || activeSort != sort || activeFilters != filters else { return }
             activeSort = sort
+            activeFilters = filters
             offsets = Dictionary(uniqueKeysWithValues: sourceIDs.map { ($0, 0) })
             totals.removeAll()
             exhausted.removeAll()
@@ -269,7 +275,7 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
                         if !exhausted.contains(key), !stalled.contains(key) { return emitted }
                         continue
                     }
-                    if best == nil || MediaItemSortOrder.isOrderedBefore(head, best!, sort: sort) {
+                    if best == nil || MediaItemSortOrder.isOrderedBefore(head, best!, sort: sort, identityTieBreak: false) {
                         best = head
                         bestKey = key
                     }
@@ -397,6 +403,8 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
     ) {
         precondition(!sources.isEmpty, "AggregatedLibraryProvider requires at least one source")
         self.sources = sources
+        self.inventoryServerInfo = serverInfo
+        self.inventoryIdentitySources = identitySources
         self.cache = Cache(
             serverInfo: serverInfo,
             identitySources: identitySources,
@@ -643,7 +651,7 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
         // a half-reset cache or fold a page fetched under the old ordering.
         await cache.prepare(
             for: page.sort, sourceIDs: sourceIDs,
-            force: content == .collections && page.startIndex == 0
+            force: content == .collections && page.startIndex == 0, filters: page.filters
         )
         /// Sources that have used up their in-fill retries and are being emitted
         /// past. Scoped per call so a blip never persists into the next request.
@@ -673,6 +681,7 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
                     into: hungry,
                     kind: kind,
                     sort: page.sort,
+                    filters: page.filters,
                     limit: page.limit,
                     content: content,
                     cache: cache,
@@ -767,6 +776,7 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
         into sourceKeys: [String],
         kind: MediaItemKind,
         sort: CoreModels.SortDescriptor,
+        filters: LibraryFilters,
         limit: Int,
         content: BrowseContent,
         cache: Cache,
@@ -785,7 +795,7 @@ public final class AggregatedLibraryProvider: MediaProvider, CapabilityReporting
                         return (source.sourceKey, source.accountID, nil, nil)
                     }
                     let offset = await cache.offset(for: source.sourceKey)
-                    let request = PageRequest(startIndex: offset, limit: chunkSize, sort: sort)
+                    let request = PageRequest(startIndex: offset, limit: chunkSize, sort: sort, filters: filters)
                     do {
                         let page: MediaPage
                         if content == .collections {

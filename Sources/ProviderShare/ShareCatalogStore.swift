@@ -2862,6 +2862,20 @@ actor ShareCatalogStore {
         }
     }
 
+    func libraryQueryFacets(in library: CatalogLibrary) async throws -> LibraryQueryFacets {
+        guard await waitUntilResumed() else { throw CancellationError() }
+        ensureOpen()
+        guard db != nil else { throw AppError.invalidResponse }
+        return readQueries.libraryQueryFacets(in: library)
+    }
+
+    func libraryQueryEpisodes(in library: CatalogLibrary, offset: Int, limit: Int) async throws -> MediaPage {
+        guard await waitUntilResumed() else { throw CancellationError() }
+        ensureOpen()
+        guard db != nil else { throw AppError.invalidResponse }
+        return readQueries.libraryQueryEpisodes(in: library, offset: offset, limit: limit)
+    }
+
     /// On-disk episode-title fingerprints for content-based series disambiguation.
     func episodeTitleHints(seriesKey: String, limit: Int = 12) -> [(season: Int, episode: Int, title: String)] {
         ensureOpen()

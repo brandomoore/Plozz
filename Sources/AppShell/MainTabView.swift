@@ -1072,6 +1072,7 @@ struct MainTabView: View {
                 root: root,
                 accounts: accounts,
                 configuredServerCount: displayAccounts.count,
+                libraryPreferencesNamespace: liveTVPreferencesNamespace,
                 detailSnapshotCache: detailSnapshotCache,
                 authenticatedHTTPResolver: authenticatedHTTPResolver,
                 seer: seer,

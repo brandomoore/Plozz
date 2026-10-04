@@ -62,6 +62,24 @@ fallback when the user's server has no attached trailer.
   Showcase preserves the Home-sized details footprint under that header,
   keeping the same metadata-to-heading clearance as Home. A cold logo is adopted
   when it finishes for the still-current title, without requiring a focus round trip.
+  Filter joins the same header line. Quick filters intersect genre and year;
+  sort/filter choices are remembered per library, account, mode, and profile.
+  Native provider operations remain paged. Explicit non-native options prepare
+  a cancellable utility-priority inventory of compact IDs/query facts, not a
+  full-card Home cache. Ordinary Home, Browse, and facet menus never inventory.
+  Inventory pages are bounded to 120, visible-card materialization to three
+  concurrent reads, and estimated retained facts to 24 MiB; inconsistent or
+  incomplete inventories fail explicitly instead of displaying partial totals.
+  Richer cached facts cover simpler subsequent sorts. Changing history sorts or
+  watch state reuses file facts for up to two minutes without retaining stale
+  history or repeating version hydration; catalog changes discard those facts.
+  Watch/catalog changes invalidate query membership/history without scanning covered library views.
+  Series format/history queries roll up logical episodes, not alternate files.
+  Missing sort values stay last; original provider ratings remain distinct from
+  externally enriched display ratings. Shares read existing catalog metadata
+  without initiating per-item network enrichment or media probing.
+  Your Rating is offered only where the provider exposes a personal rating;
+  Silo Rotten Tomatoes sorts require its authenticated ratings capability.
   Browse retains its paged grid,
   and video libraries can also switch to Collections and Playlists when their
   provider advertises those capabilities. File shares and collection/playlist

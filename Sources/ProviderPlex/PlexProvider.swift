@@ -14,6 +14,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
     public let credentialRevision: CredentialRevision
     let client: PlexClient
     let liveTVLeases = PlexLiveTVLeaseStore()
+    let libraryGenreCache = PlexLibraryGenreCache()
     private let videoPlaylistCache = VideoPlaylistSnapshotCache()
     let themeArchiveResolver: @Sendable (String?) async -> URL?
     private let artworkOriginHistoryKey: String
@@ -846,9 +847,13 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             "Plex library browse: section=\(containerID) kind=\(kind.rawValue) type=\(type.map(String.init) ?? "-") start=\(page.startIndex) size=\(page.limit) sort=\(page.sort.field.rawValue)/\(page.sort.direction.rawValue)"
         )
         do {
+            let genreID = try await libraryGenreID(page.filters.genre, in: containerID, kind: kind)
+            if page.filters.genre != nil, genreID == nil {
+                return MediaPage(items: [], startIndex: page.startIndex, totalCount: 0)
+            }
             let container = try await client.sectionItems(
                 sectionID: containerID, type: type, start: page.startIndex,
-                size: page.limit, sort: page.sort
+                size: page.limit, sort: page.sort, filters: page.filters, genreID: genreID
             )
             let items = (container.Metadata ?? []).map(map(metadata:))
             let total = container.totalSize ?? container.size ?? (page.startIndex + items.count)
@@ -1860,7 +1865,16 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             edition: dto.editionTitle,
             versions: Self.versions(from: dto.Media, edition: dto.editionTitle),
             isFavorite: false,
-            lastPlayedAt: dto.lastViewedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+            lastPlayedAt: dto.lastViewedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+            librarySortValues: LibrarySortValues(
+                sortName: dto.titleSort,
+                dateAdded: dto.addedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+                audienceRating: dto.audienceRating.map { $0 * 10 },
+                criticRating: dto.rating.map { $0 * 10 },
+                userRating: dto.userRating.map { $0 * 10 },
+                playCount: dto.viewCount ?? 0,
+                watched: isContainer ? completedContainer : viewCount > 0
+            )
         )
     }
 
@@ -2563,7 +2577,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
 
     /// Plex `type` query value for a library section's content kind, used by the
     /// paged `/all` query (1 = movie, 2 = show).
-    private static func sectionType(forContainerKind kind: MediaItemKind) -> Int? {
+    static func sectionType(forContainerKind kind: MediaItemKind) -> Int? {
         switch kind {
         case .movie: return 1
         case .series: return 2
