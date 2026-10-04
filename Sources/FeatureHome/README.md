@@ -242,7 +242,7 @@ Libraries uses the same unclipped horizontal viewport as media rows. Native
 navigation lets focused artwork and scrolling cards draw through the page gutter
 to the screen edge. Pinned navigation's shared feather retains 10% artwork
 opacity beneath the icons through the physical leading edge, rising smoothly to
-full opacity near the first card across a 42pt feather. The faint floor explicitly
+full opacity near the first card across a 48pt feather. The faint floor explicitly
 overhangs the row because Showcase's nested native hosts suppress safe-area
 propagation; relying on `ignoresSafeArea` alone clips it before the icons.
 Extending that floor does not move or widen the feather, add a second mask, or
