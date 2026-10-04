@@ -429,6 +429,15 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Capabi
     public func latest(limit: Int) async throws -> [MediaItem] { [] }
     public func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
 
+    public func contains(_ item: MediaItem, inLibrary _: String) -> Bool {
+        sources.contains { source in
+            (item.sourceAccountID == source.accountID && item.libraryID == source.containerID)
+                || item.sources.contains {
+                    $0.accountID == source.accountID && $0.libraryID == source.containerID
+                }
+        }
+    }
+
     public func continueWatching(limit: Int, inLibraries _: [String]?) async throws -> [MediaItem] {
         let results = await withTaskGroup(of: (Int, Result<[MediaItem], Error>).self) { group in
             for (index, source) in sources.enumerated() {

@@ -47,6 +47,10 @@ public protocol MediaProvider: Sendable {
     /// ignores the restriction and lets the row-level filter do the work.
     func continueWatching(limit: Int, inLibraries libraryIDs: [String]?) async throws -> [MediaItem]
 
+    /// Validates library provenance, including account-qualified sources when
+    /// one logical library spans multiple servers.
+    func contains(_ item: MediaItem, inLibrary libraryID: String) -> Bool
+
     /// Recently added items restricted to the given libraries. See
     /// ``continueWatching(limit:inLibraries:)`` for the scoping/tagging contract.
     func latest(limit: Int, inLibraries libraryIDs: [String]?) async throws -> [MediaItem]
@@ -531,6 +535,10 @@ public extension MediaProvider {
     /// fetch to learn provenance (Jellyfin) override it.
     func continueWatching(limit: Int, inLibraries libraryIDs: [String]?) async throws -> [MediaItem] {
         try await continueWatching(limit: limit)
+    }
+
+    func contains(_ item: MediaItem, inLibrary libraryID: String) -> Bool {
+        item.libraryID == libraryID
     }
 
     /// Default: ignore the library restriction. See

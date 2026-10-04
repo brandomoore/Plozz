@@ -108,6 +108,26 @@ final class LibraryQuerySessionTests: XCTestCase {
         }
     }
 
+    func testRandomFallbackRemainsStableAndCompleteAcrossMultiplePages() async throws {
+        let source = QueryInventoryProvider(items: queryItems(300))
+        let session = LibraryQuerySession(provider: source, containerID: "lib", kind: .movie)
+        let sort = SortDescriptor(field: .random, direction: .descending)
+        let filters = LibraryFilters(filter: .atmos)
+        var ids: [String] = []
+        for start in stride(from: 0, to: 100, by: 17) {
+            let page = try await session.page(
+                .init(startIndex: start, limit: 17, sort: sort, filters: filters), progress: { _, _ in })
+            XCTAssertEqual(page.totalCount, 100)
+            ids += page.items.map(\.id)
+        }
+        XCTAssertEqual(ids.count, 100)
+        XCTAssertEqual(Set(ids), Set(stride(from: 0, to: 300, by: 3).map { "i\($0)" }))
+        let again = try await session.page(.init(limit: 17, sort: sort, filters: filters), progress: { _, _ in })
+        XCTAssertEqual(again.items.map(\.id), Array(ids.prefix(17)))
+        let requests = await source.inventoryRequests
+        XCTAssertEqual(requests, 3)
+    }
+
     func testMetricChangesReuseFileFactsWithoutReusingWatchHistory() async throws {
         let source = QueryInventoryProvider(items: queryItems(12))
         let session = LibraryQuerySession(provider: source, containerID: "lib", kind: .movie)

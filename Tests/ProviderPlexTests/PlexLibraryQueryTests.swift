@@ -4,6 +4,24 @@ import XCTest
 @testable import ProviderPlex
 
 final class PlexLibraryQueryTests: XCTestCase {
+    func testRandomFilterInventoryUsesStablePagingWithoutChangingNativeRandomBrowse() async throws {
+        let http = StubHTTPClient()
+        http.stub(pathSuffix: "/library/sections/1/all",
+                  json: #"{"MediaContainer":{"totalSize":0,"Metadata":[]}}"#)
+        let source = provider(http)
+        let random = SortDescriptor(field: .random, direction: .descending)
+        for offset in [0, 120] {
+            _ = try await source.libraryQueryInventory(
+                in: "1", kind: .movie,
+                page: .init(startIndex: offset, sort: random, filters: .init(filter: .atmos)))
+            let query = try XCTUnwrap(http.queryItems(forPathSuffix: "/all"))
+            XCTAssertEqual(query.first { $0.name == "sort" }?.value, "titleSort:asc")
+        }
+        _ = try await source.items(in: "1", kind: .movie, page: .init(sort: random))
+        let native = try XCTUnwrap(http.queryItems(forPathSuffix: "/all"))
+        XCTAssertEqual(native.first { $0.name == "sort" }?.value, "random")
+    }
+
     func testGenreAndYearFacetsRemainNativeAndLibraryScoped() async throws {
         let http = StubHTTPClient()
         http.stub(pathSuffix: "/library/sections/1/genre",

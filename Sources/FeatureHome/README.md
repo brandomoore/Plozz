@@ -51,7 +51,12 @@ fallback when the user's server has no attached trailer.
   or Jellyfin/Emby movie recommendation categories. TV uses Showcase, showing
   its mode tabs only while the first row is active; mobile uses rows.
   Library Continue Watching uses Home's profile-selected series artwork and
-  resume progress treatment; changing tabs keeps the focused mode control
+  resume progress treatment, including profile spoiler protection on mobile.
+  Merged libraries validate Continue Watching against every account-qualified
+  source without replacing the item's real library provenance. Watch changes
+  refresh recommendations on return (or while visible), retaining the current
+  rows during the request and rejecting snapshots predating another watch change.
+  Changing tabs keeps the focused mode control
   mounted while replacing content below it. A stable layout container owns the
   top inset across Recommended, Browse, Collections, and Playlists (a transparent
   `Group` would attach the inset to each replaceable content branch). Sort sits
@@ -86,6 +91,9 @@ fallback when the user's server has no attached trailer.
   Inventory pages are bounded to 120, visible-card materialization to three
   concurrent reads, and estimated retained facts to 24 MiB; inconsistent or
   incomplete inventories fail explicitly instead of displaying partial totals.
+  Cancelled inventory tasks are retired before reuse; a live coalesced caller
+  retries when another caller cancels their shared task. Random filtering uses
+  deterministic server traversal before locally ordering the collected records.
   Richer cached facts cover simpler subsequent sorts. Changing history sorts or
   watch state reuses file facts for up to two minutes without retaining stale
   history or repeating version hydration; catalog changes discard those facts.

@@ -11,6 +11,42 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testRecommendedRefreshKeepsTheFocusedNativeCardMounted() async throws {
+        let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, recommendationHub: true)
+        let name = "LibraryRecommendationRefresh.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie, defaults: defaults)
+        await model.loadRecommendationsIfNeeded()
+        try await withLibrary(model: model) { _, window in
+            let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
+            let card = try XCTUnwrap(self.focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                      frame.midY > window.bounds.height * 0.3, frame.width > 100 else { return nil }
+                return (item, frame)
+            }.min { $0.1.midY < $1.1.midY }?.0)
+            controller.target = card
+            focus.requestFocusUpdate(to: controller)
+            focus.updateFocusIfNeeded()
+            controller.target = nil
+            XCTAssertTrue(focus.focusedItem === card)
+
+            await provider.holdNextPage(at: 0)
+            let refresh = Task { await model.loadRecommendations() }
+            await self.waitForHeldPage(provider)
+            window.layoutIfNeeded()
+            XCTAssertNotNil(model.recommendationState.value)
+            XCTAssertTrue(focus.focusedItem === card, "An in-flight refresh must not replace the row with loading UI.")
+            await provider.releasePage()
+            await refresh.value
+            try await Task.sleep(for: .milliseconds(200))
+            window.layoutIfNeeded()
+            XCTAssertTrue(focus.focusedItem === card, "Unchanged recommendation cards must retain native focus.")
+        }
+    }
+
     func testShareNameFillsHeaderOnlyWhenModeTabsAreAbsent() async throws {
         for hasTabs in [false, true] {
             let provider = RefreshLibraryProvider(

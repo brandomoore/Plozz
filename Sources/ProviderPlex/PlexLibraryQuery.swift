@@ -40,7 +40,7 @@ extension PlexProvider: MediaLibraryQueryProviding {
 
     public func libraryQueryInventory(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         let fields = libraryQueryCapabilities(in: containerID, kind: kind).nativeSortFields
-        let sort = fields.contains(page.sort.field) ? page.sort : .default
+        let sort = page.sort.field != .random && fields.contains(page.sort.field) ? page.sort : .default
         let response = try await client.sectionItems(
             sectionID: containerID, type: Self.sectionType(forContainerKind: kind),
             start: page.startIndex, size: page.limit, sort: sort

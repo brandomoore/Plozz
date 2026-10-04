@@ -96,6 +96,9 @@ public final class LibraryBrowseViewModel {
     @ObservationIgnored private var browseVisible = false
     @ObservationIgnored private var watchQueryDirty = false
     @ObservationIgnored private var watchRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var recommendationsDirty = false
+    @ObservationIgnored private var recommendationWatchRevision = 0
+    @ObservationIgnored private var recommendationTask: (id: UUID, task: Task<Void, Never>)?
 
     public var queryCapabilities: LibraryQueryCapabilities {
         guard browseScope == .library, contentMode == .titles else { return LibraryQueryCapabilities() }
@@ -571,6 +574,14 @@ public final class LibraryBrowseViewModel {
         }
         guard browseScope == .library else { return }
         watchQueryDirty = true
+        recommendationsDirty = true
+        recommendationWatchRevision += 1
+        if browseVisible, contentMode == .recommended, recommendationTask == nil {
+            Task { [weak self] in
+                guard let self, self.browseVisible, self.contentMode == .recommended else { return }
+                await self.loadRecommendationsIfNeeded()
+            }
+        }
         let dependsOnWatchState = [.unwatched, .inProgress].contains(filters.filter)
             || [.progress, .plays, .lastPlayed].contains(sort.field)
         if browseVisible, contentMode == .titles, dependsOnWatchState {
@@ -833,6 +844,7 @@ public final class LibraryBrowseViewModel {
         cancelAllPageLoads()
         letterIndexTask?.cancel()
         cancelLetterJump()
+        if newMode != .recommended { recommendationTask?.task.cancel() }
         if newMode == .recommended {
             await loadRecommendationsIfNeeded()
             return
@@ -900,6 +912,7 @@ public final class LibraryBrowseViewModel {
         loadGeneration += 1
         watchRefreshTask?.cancel()
         firstPageTask?.cancel()
+        recommendationTask?.task.cancel()
         cancelAllPageLoads()
         letterIndexTask?.cancel()
         cancelLetterJump()
@@ -924,16 +937,52 @@ public final class LibraryBrowseViewModel {
 
     public func loadRecommendationsIfNeeded() async {
         switch recommendationState {
-        case .loaded, .loading: return
-        case .idle, .empty, .failed: await loadRecommendations()
+        case .loaded where !recommendationsDirty: return
+        default: await loadRecommendations()
         }
     }
 
     public func loadRecommendations() async {
         guard supportsRecommendations else { return }
+        while !Task.isCancelled {
+            let pending: (id: UUID, task: Task<Void, Never>)
+            if let existing = recommendationTask {
+                if existing.task.isCancelled {
+                    await existing.task.value
+                    if recommendationTask?.id == existing.id { recommendationTask = nil }
+                    if !browseVisible || contentMode != .recommended { return }
+                    continue
+                }
+                pending = existing
+            } else {
+                let task = Task {
+                    while !Task.isCancelled {
+                        let revision = recommendationWatchRevision
+                        await loadRecommendationSnapshot(watchRevision: revision)
+                        guard revision != recommendationWatchRevision,
+                              browseVisible, contentMode == .recommended else { return }
+                    }
+                }
+                pending = (UUID(), task)
+                recommendationTask = pending
+            }
+            let task = pending.task
+            await withTaskCancellationHandler {
+                await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            if recommendationTask?.id == pending.id { recommendationTask = nil }
+            if !task.isCancelled { return }
+            if !browseVisible || contentMode != .recommended { return }
+        }
+    }
+
+    private func loadRecommendationSnapshot(watchRevision: Int) async {
         recommendationGeneration += 1
         let generation = recommendationGeneration
-        recommendationState = .loading
+        recommendationsDirty = true
+        if recommendationState.value == nil { recommendationState = .loading }
         recommendationError = nil
         defer {
             if generation == recommendationGeneration, case .loading = recommendationState {
@@ -961,7 +1010,8 @@ public final class LibraryBrowseViewModel {
             try await provider.libraryHubs(libraryID: libraryID, kind: kind, limit: limit)
         }
         let (latestResult, watchingResult, hubResult) = await (recent, continueWatching, hubs)
-        guard !Task.isCancelled, generation == recommendationGeneration else { return }
+        guard !Task.isCancelled, generation == recommendationGeneration,
+              watchRevision == recommendationWatchRevision else { return }
         var sections: [LibrarySection] = []
         var firstError: AppError?
         func record(_ error: Error) {
@@ -971,7 +1021,7 @@ public final class LibraryBrowseViewModel {
         }
         switch watchingResult {
         case .success(let items):
-            let scoped = items.filter { $0.libraryID == libraryID }
+            let scoped = items.filter { provider.contains($0, inLibrary: libraryID) }
             if !scoped.isEmpty {
                 sections.append(LibrarySection(
                     id: "continueWatching", title: String(localized: "Continue Watching"),
@@ -1009,10 +1059,11 @@ public final class LibraryBrowseViewModel {
         case .failure(let error): record(error)
         }
         recommendationError = firstError
+        recommendationsDirty = firstError != nil
         if !sections.isEmpty {
             recommendationState = .loaded(sections)
         } else if let firstError {
-            recommendationState = .failed(firstError)
+            if recommendationState.value == nil { recommendationState = .failed(firstError) }
         } else {
             recommendationState = .empty
         }

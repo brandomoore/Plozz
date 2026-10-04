@@ -311,6 +311,7 @@ struct PlozziOSLibraryGridView: View {
                             title: Text(verbatim: section.title),
                             items: section.items,
                             style: section.style == .poster ? .poster : .landscape,
+                            spoilerSettings: settings.spoilers.settings,
                             showsSeriesArtwork: section.id == "continueWatching"
                                 && settings.homeVisibility.continueWatchingShowsSeriesArtwork,
                             showsResumeChip: section.id == "continueWatching",

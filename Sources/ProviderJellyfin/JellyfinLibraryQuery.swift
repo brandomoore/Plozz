@@ -36,7 +36,7 @@ extension JellyfinProvider: MediaLibraryQueryProviding {
             userID: session.userID, parentID: containerID,
             includeItemTypes: query.includeItemTypes, recursive: query.recursive,
             startIndex: page.startIndex, limit: page.limit,
-            sort: fields.contains(page.sort.field) ? page.sort : .default,
+            sort: page.sort.field != .random && fields.contains(page.sort.field) ? page.sort : .default,
             fields: "PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,Genres"
                 + (page.filters.filter.needsFileMetadata ? ",MediaSources,MediaStreams" : "")
         )

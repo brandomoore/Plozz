@@ -116,6 +116,94 @@ final class LibraryCollectionModeTests: XCTestCase {
         XCTAssertNotNil(model.recommendationState.value)
     }
 
+    func testReturningAfterPlaybackReplacesCompletedEpisodeWithNextUp() async throws {
+        let first = MediaItem(id: "e1", title: "First", kind: .episode, libraryID: "real-library")
+        let next = MediaItem(id: "e2", title: "Next", kind: .episode, libraryID: "real-library")
+        let provider = LibraryModeProvider(watchingItems: [first])
+        let model = model(provider, kind: .series)
+        await model.loadFirstPageIfNeeded()
+        model.cancelPendingQuery()
+        await provider.setWatchingItems([next])
+        model.applyWatchedState(.init(itemIDs: ["e1"], played: true))
+        await model.loadFirstPageIfNeeded()
+        let sections = try XCTUnwrap(model.recommendationState.value)
+        XCTAssertEqual(sections.first { $0.id == "continueWatching" }?.items.map(\.id), ["e2"])
+        let requests = await provider.requestedWatchingLibraries
+        XCTAssertEqual(requests.count, 2)
+        await model.loadFirstPageIfNeeded()
+        let unchanged = await provider.requestedWatchingLibraries
+        XCTAssertEqual(unchanged.count, requests.count, "Clean returns must preserve the cached presentation.")
+    }
+
+    func testRecommendationRefreshPreservesRowsAndRetriesMutationDuringRequest() async throws {
+        let first = MediaItem(id: "e1", title: "First", kind: .episode, libraryID: "real-library")
+        let next = MediaItem(id: "e2", title: "Next", kind: .episode, libraryID: "real-library")
+        let provider = LibraryModeProvider(watchingItems: [first])
+        let model = model(provider, kind: .series)
+        await model.loadFirstPageIfNeeded()
+        await provider.hold(.titles, at: 0)
+        let refreshing = Task { await model.loadRecommendations() }
+        await provider.waitForHeldRequest(.titles, at: 0)
+        XCTAssertNotNil(model.recommendationState.value, "Refreshing must not replace focused rows with a spinner.")
+        await provider.setWatchingItems([next])
+        model.applyWatchedState(.init(itemIDs: ["e1"], played: true))
+        await provider.release(.titles, at: 0)
+        await refreshing.value
+        let sections = try XCTUnwrap(model.recommendationState.value)
+        XCTAssertEqual(sections.first { $0.id == "continueWatching" }?.items.map(\.id), ["e2"])
+        let requests = await provider.requestedWatchingLibraries
+        XCTAssertEqual(requests.count, 3, "An older in-flight snapshot cannot overwrite a watch mutation.")
+    }
+
+    func testVisibleRecommendationWatchMutationRefreshesWithoutAViewReentry() async throws {
+        let first = MediaItem(id: "e1", title: "First", kind: .episode, libraryID: "real-library")
+        let next = MediaItem(id: "e2", title: "Next", kind: .episode, libraryID: "real-library")
+        let provider = LibraryModeProvider(watchingItems: [first])
+        let model = model(provider, kind: .series)
+        await model.loadFirstPageIfNeeded()
+        await provider.hold(.titles, at: 0)
+        await provider.setWatchingItems([next])
+        model.applyWatchedState(.init(itemIDs: ["e1"], played: true))
+        await provider.waitForHeldRequest(.titles, at: 0)
+        XCTAssertNotNil(model.recommendationState.value)
+        await provider.release(.titles, at: 0)
+        await model.loadRecommendationsIfNeeded()
+        let sections = try XCTUnwrap(model.recommendationState.value)
+        XCTAssertEqual(sections.first { $0.id == "continueWatching" }?.items.map(\.id), ["e2"])
+    }
+
+    func testLeavingDuringRecommendationRefreshDoesNotRestartHiddenWork() async {
+        let provider = LibraryModeProvider()
+        let model = model(provider)
+        await model.loadFirstPageIfNeeded()
+        await provider.hold(.titles, at: 0)
+        let refreshing = Task { await model.loadRecommendations() }
+        await provider.waitForHeldRequest(.titles, at: 0)
+        model.cancelPendingQuery()
+        await provider.release(.titles, at: 0)
+        await refreshing.value
+        let requests = await provider.requestedWatchingLibraries
+        XCTAssertEqual(requests.count, 2, "A covered destination must not restart its cancelled refresh.")
+        XCTAssertNotNil(model.recommendationState.value)
+        await model.loadFirstPageIfNeeded()
+        let returned = await provider.requestedWatchingLibraries
+        XCTAssertEqual(returned.count, 3)
+    }
+
+    func testLeavingBeforeScheduledRecommendationRefreshDoesNotStartHiddenWork() async throws {
+        let provider = LibraryModeProvider()
+        let model = model(provider)
+        await model.loadFirstPageIfNeeded()
+        model.applyWatchedState(.init(itemIDs: ["title-0"], played: true))
+        model.cancelPendingQuery()
+        try await Task.sleep(for: .milliseconds(100))
+        let requests = await provider.requestedWatchingLibraries
+        XCTAssertEqual(requests.count, 1)
+        await model.loadFirstPageIfNeeded()
+        let returned = await provider.requestedWatchingLibraries
+        XCTAssertEqual(returned.count, 2, "Returning must still refresh the invalidated recommendations.")
+    }
+
     func testVideoPlaylistModeIsCapabilityGatedAndKeepsAccountAndSortSeparate() async {
         let unsupported = model(LibraryModeProvider(supportsPlaylists: false))
         XCTAssertEqual(unsupported.availableContentModes, [.recommended, .titles, .collections])
@@ -447,7 +535,7 @@ private actor LibraryModeProvider: MediaProvider, CapabilityReporting {
     private let titleCount: Int
     private let collectionCount: Int
     private let supportsPlaylists: Bool
-    private let watchingItems: [MediaItem]
+    private var watchingItems: [MediaItem]
     private let nativeSections: [LibrarySection]
     private var failHubs: Bool
     private var holds: Set<Key> = []
@@ -508,6 +596,7 @@ private actor LibraryModeProvider: MediaProvider, CapabilityReporting {
 
     func clearFailures() { failures = [] }
     func setFailHubs(_ value: Bool) { failHubs = value }
+    func setWatchingItems(_ items: [MediaItem]) { watchingItems = items }
 
     func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
         try await response(.collections, containerID: libraryID, kind: .collection, page: page)

@@ -149,6 +149,26 @@ final class AggregatedLibraryProviderTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testRecommendedContinueWatchingRetainsEveryAccountQualifiedLibrary() async throws {
+        let a = movie("a", title: "First", year: 2024, tmdb: "1").taggingLibrary("lib-a")
+        let b = movie("b", title: "Second", year: 2024, tmdb: "2").taggingLibrary("lib-b")
+        let first = FakeMediaProvider(allItems: [a])
+        let second = FakeMediaProvider(allItems: [b])
+        first.continueWatchingItems = [a, b]
+        second.continueWatchingItems = [b, a]
+        let provider = AggregatedLibraryProvider(sources: [source("a", first), source("b", second)])
+        let model = LibraryBrowseViewModel(provider: provider, containerID: "lib-a", containerKind: .movie)
+        await model.loadFirstPageIfNeeded()
+        let sections = try XCTUnwrap(model.recommendationState.value)
+        let watching = try XCTUnwrap(sections.first { $0.id == "continueWatching" }).items
+        XCTAssertEqual(watching.map(\.id), ["a", "b"])
+        XCTAssertEqual(watching.map(\.sourceAccountID), ["a", "b"])
+        XCTAssertEqual(watching.map(\.libraryID), ["lib-a", "lib-b"])
+        XCTAssertFalse(provider.contains(b.taggingSource("a"), inLibrary: "lib-a"))
+        XCTAssertFalse(provider.contains(a.taggingSource("foreign"), inLibrary: "lib-a"))
+    }
+
     func testTransientFailureDoesNotPermanentlyExhaustSource() async throws {
         // r8-agg-transient-exhaust: a one-off network blip on a healthy server used
         // to trip the one-way `markExhausted` latch, silencing that server for the

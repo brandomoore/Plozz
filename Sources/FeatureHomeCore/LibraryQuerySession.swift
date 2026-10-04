@@ -158,58 +158,58 @@ actor LibraryQuerySession {
             || (key.files && !filesFresh)
         {
             await progress(0, 0)
-            let pending: (id: UUID, key: Key, task: Task<[LibraryQueryRecord], Error>)
-            let ownsInventory: Bool
-            if let existing = pendingInventory, existing.key == key {
-                pending = existing
-                ownsInventory = false
-            } else {
-                if let previous = pendingInventory {
-                    previous.task.cancel()
-                    _ = await previous.task.result
-                    try Task.checkCancellation()
-                    guard generation == revision else { throw CancellationError() }
-                }
-                let task = Task.detached(priority: .utility) { [containerID, kind] in
-                    do {
-                        let result = try await Self.inventory(
-                            source, containerID: containerID, kind: kind, page: page,
-                            episodes: key.episodes,
-                            cachedFiles: cachedFiles, progress: progress)
-                        await source.finishLibraryQueryInventory()
-                        return result
-                    } catch {
-                        await source.finishLibraryQueryInventory()
-                        throw error
-                    }
-                }
-                pending = (UUID(), key, task)
-                pendingInventory = pending
-                ownsInventory = true
-            }
-            let task = pending.task
             let result: [LibraryQueryRecord]
-            do {
-                result = try await withTaskCancellationHandler {
-                    try await task.value
-                } onCancel: {
-                    task.cancel()
+            while true {
+                try Task.checkCancellation()
+                guard generation == revision else { throw CancellationError() }
+                let pending: (id: UUID, key: Key, task: Task<[LibraryQueryRecord], Error>)
+                if let existing = pendingInventory {
+                    if existing.key != key || existing.task.isCancelled {
+                        existing.task.cancel()
+                        _ = await existing.task.result
+                        if pendingInventory?.id == existing.id { pendingInventory = nil }
+                        continue
+                    }
+                    pending = existing
+                } else {
+                    let task = Task.detached(priority: .utility) { [containerID, kind] in
+                        do {
+                            let result = try await Self.inventory(
+                                source, containerID: containerID, kind: kind, page: page,
+                                episodes: key.episodes,
+                                cachedFiles: cachedFiles, progress: progress)
+                            await source.finishLibraryQueryInventory()
+                            return result
+                        } catch {
+                            await source.finishLibraryQueryInventory()
+                            throw error
+                        }
+                    }
+                    pending = (UUID(), key, task)
+                    pendingInventory = pending
                 }
-            } catch {
-                if generation == revision, case LibraryQueryFailure.changedInventory = error {
-                    fileFacts = nil
-                    fileFactsDate = nil
-                }
-                if ownsInventory {
+                let task = pending.task
+                do {
+                    result = try await withTaskCancellationHandler {
+                        try await task.value
+                    } onCancel: {
+                        task.cancel()
+                    }
+                } catch {
+                    if generation == revision, case LibraryQueryFailure.changedInventory = error {
+                        fileFacts = nil
+                        fileFactsDate = nil
+                    }
                     if pendingInventory?.id == pending.id { pendingInventory = nil }
+                    // A cancelled coalesced caller must not cancel a still-live query.
+                    if task.isCancelled && !Task.isCancelled && generation == revision { continue }
+                    throw error
                 }
-                throw error
-            }
-            if ownsInventory {
                 if pendingInventory?.id == pending.id { pendingInventory = nil }
+                try Task.checkCancellation()
+                guard generation == revision else { throw CancellationError() }
+                break
             }
-            try Task.checkCancellation()
-            guard generation == revision else { throw CancellationError() }
             records = result
             recordKey = Key(
                 files: key.files || cachedFiles != nil, sort: key.sort, episodes: key.episodes)

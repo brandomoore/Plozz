@@ -4,6 +4,26 @@ import XCTest
 @testable import ProviderJellyfin
 
 final class JellyfinLibraryQueryTests: XCTestCase {
+    func testRandomFilterInventoryUsesStablePagingOnBothBackends() async throws {
+        for kind: ProviderKind in [.jellyfin, .emby] {
+            let http = StubHTTPClient()
+            http.stub(pathSuffix: "/Users/user/Items", json: #"{"Items":[],"TotalRecordCount":0}"#)
+            let source = provider(http, kind: kind)
+            let random = SortDescriptor(field: .random, direction: .descending)
+            for offset in [0, 120] {
+                _ = try await source.libraryQueryInventory(
+                    in: "library", kind: .movie,
+                    page: .init(startIndex: offset, sort: random, filters: .init(filter: .atmos)))
+                let query = try XCTUnwrap(http.queryItems(forPathSuffix: "/Items"))
+                XCTAssertEqual(query.first { $0.name == "SortBy" }?.value, "SortName")
+                XCTAssertEqual(query.first { $0.name == "SortOrder" }?.value, "Ascending")
+            }
+            _ = try await source.items(in: "library", kind: .movie, page: .init(sort: random))
+            let native = try XCTUnwrap(http.queryItems(forPathSuffix: "/Items"))
+            XCTAssertEqual(native.first { $0.name == "SortBy" }?.value, "Random")
+        }
+    }
+
     func testGenreAndYearFacetsUseTheMatchingScopedEndpointForJellyfinAndEmby() async throws {
         for kind: ProviderKind in [.jellyfin, .emby] {
             for (itemKind, serverType): (MediaItemKind, String) in [(.movie, "Movie"), (.series, "Series")] {
