@@ -1,4 +1,5 @@
 import CoreModels
+import Observation
 import SwiftUI
 import UIKit
 import XCTest
@@ -104,7 +105,73 @@ final class HeroArtworkDisplayTests: XCTestCase {
         XCTAssertGreaterThan(try XCTUnwrap(state.backgroundSample).green, 0.95)
     }
 
-    func testCachedRendererRepublishesOnReactivationWithoutGradientOrExtraLoads() async throws {
+    func testQueuedPreviousSubjectCannotDiscardCurrentArtworkFromSameOwner() async throws {
+        let reference = ArtworkReference.networkFile(try networkReference())
+        let previous = FirstPaintArtwork(image: image(.blue), reference: reference, variant: .heroBackdrop)
+        let preview = FirstPaintArtwork(image: image(.red), reference: reference, variant: .heroPreview)
+        let full = FirstPaintArtwork(image: image(.green), reference: reference, variant: .heroBackdrop)
+        let staleReports: [FirstPaintArtwork?] = [previous, nil]
+
+        for activateBeforeReports in [true, false] {
+            for staleReport in staleReports {
+                let state = HeroArtworkDisplayState()
+                let owner = UUID()
+                let previousReporter = HeroArtworkDisplayReporter(
+                    state: state, owner: owner, itemID: "previous", isActive: true
+                )
+                let currentReporter = HeroArtworkDisplayReporter(
+                    state: state, owner: owner, itemID: "current", isActive: true
+                )
+                state.activate(owner: owner, itemID: "previous")
+                state.publish(previous, itemID: "previous", owner: owner)
+                if activateBeforeReports {
+                    state.activate(owner: owner, itemID: "current")
+                }
+                currentReporter.publish(preview, itemID: "current")
+                currentReporter.publish(full, itemID: "current")
+                previousReporter.publish(staleReport, itemID: "previous")
+                if !activateBeforeReports {
+                    state.activate(owner: owner, itemID: "current")
+                }
+
+                await waitUntil { state.sample(for: "current") != nil }
+                XCTAssertEqual(state.displayed?.itemID, "current")
+                XCTAssertEqual(state.displayed?.artwork.variant, .heroBackdrop)
+                XCTAssertTrue(state.displayed?.artwork.image === full.image)
+                XCTAssertGreaterThan(try XCTUnwrap(state.sample(for: "current")).green, 0.95)
+                XCTAssertNil(state.sample(for: "previous"))
+                state.release(owner: owner)
+            }
+        }
+    }
+
+    func testReleasingOwnerCancelsQueuedReportsForEverySubject() async throws {
+        let artwork = FirstPaintArtwork(
+            image: image(.green), reference: .networkFile(try networkReference()), variant: .heroBackdrop
+        )
+        for itemID in ["previous", "current"] {
+            let state = HeroArtworkDisplayState()
+            let owner = UUID()
+            state.activate(owner: owner, itemID: "previous")
+            state.enqueue(artwork, itemID: "previous", owner: owner)
+            state.enqueue(artwork, itemID: "current", owner: owner)
+            state.release(owner: owner)
+            state.activate(owner: owner, itemID: itemID)
+
+            let republished = expectation(description: "Released \(itemID) report must not publish")
+            republished.isInverted = true
+            withObservationTracking {
+                _ = state.displayed
+            } onChange: {
+                republished.fulfill()
+            }
+            await fulfillment(of: [republished], timeout: 0.1)
+            XCTAssertNil(state.displayed)
+            XCTAssertNil(state.backgroundSample)
+        }
+    }
+
+    func testCachedRendererRepublishesOnSubjectChangeAndReactivationWithoutGradientOrExtraLoads() async throws {
         let reference = ArtworkReference.networkFile(try networkReference())
         let incoming = ArtworkReference.networkFile(try networkReference())
         let loader = DisplayArtworkLoader(data: try XCTUnwrap(image(.green).pngData()))
@@ -113,11 +180,19 @@ final class HeroArtworkDisplayTests: XCTestCase {
         defer { cache.configure(networkFileService: nil) }
         let cachedImage = await cache.image(for: reference, variant: .heroBackdrop)
         let cached = try XCTUnwrap(cachedImage)
-        _ = await cache.image(for: incoming, variant: .heroBackdrop)
+        let incomingImage = await cache.image(for: incoming, variant: .heroBackdrop)
+        let cachedIncoming = try XCTUnwrap(incomingImage)
         let baselineLoads = await loader.count
         let state = HeroArtworkDisplayState()
-        func fixture(active: Bool) -> ReportingArtworkFixture {
-            ReportingArtworkFixture(state: state, reference: reference, incoming: incoming, isActive: active)
+        func fixture(active: Bool, showIncoming: Bool = false) -> ReportingArtworkFixture {
+            ReportingArtworkFixture(
+                state: state,
+                reference: showIncoming ? incoming : reference,
+                incoming: showIncoming ? reference : incoming,
+                isActive: active,
+                itemID: showIncoming ? "incoming" : "current",
+                incomingItemID: showIncoming ? "current" : "incoming"
+            )
         }
         let previousWindow = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows).first(where: \.isKeyWindow)
@@ -134,6 +209,17 @@ final class HeroArtworkDisplayTests: XCTestCase {
         await waitUntil { state.backgroundSample != nil }
         XCTAssertEqual(state.displayed?.itemID, "current")
         XCTAssertEqual(state.displayed?.artwork.reference, reference)
+        XCTAssertTrue(state.displayed?.artwork.image === cached)
+
+        controller.rootView = fixture(active: true, showIncoming: true)
+        controller.view.layoutIfNeeded()
+        await waitUntil { state.sample(for: "incoming") != nil }
+        XCTAssertEqual(state.displayed?.artwork.reference, incoming)
+        XCTAssertTrue(state.displayed?.artwork.image === cachedIncoming)
+        XCTAssertNil(state.sample(for: "current"))
+        controller.rootView = fixture(active: true)
+        controller.view.layoutIfNeeded()
+        await waitUntil { state.sample(for: "current") != nil }
         XCTAssertTrue(state.displayed?.artwork.image === cached)
 
         controller.rootView = fixture(active: false)
@@ -210,16 +296,18 @@ private struct ReportingArtworkFixture: View {
     let reference: ArtworkReference
     let incoming: ArtworkReference
     let isActive: Bool
+    let itemID: String
+    let incomingItemID: String
 
     var body: some View {
         ZStack {
-            FallbackAsyncImage(references: [reference], variant: .heroBackdrop, pinIdentity: "current") { Color.clear }
-                .reportingHeroArtwork(id: "current")
-            FallbackAsyncImage(references: [incoming], variant: .heroBackdrop, pinIdentity: "incoming") { Color.clear }
-                .reportingHeroArtwork(id: "incoming")
+            FallbackAsyncImage(references: [reference], variant: .heroBackdrop, pinIdentity: itemID) { Color.clear }
+                .reportingHeroArtwork(id: itemID)
+            FallbackAsyncImage(references: [incoming], variant: .heroBackdrop, pinIdentity: incomingItemID) { Color.clear }
+                .reportingHeroArtwork(id: incomingItemID)
                 .opacity(0.2)
         }
-        .heroArtworkSource(id: "current", isActive: isActive)
+        .heroArtworkSource(id: itemID, isActive: isActive)
         .environment(\.heroArtworkDisplayState, state)
         .environment(\.gradientBackgroundsEnabled, false)
     }

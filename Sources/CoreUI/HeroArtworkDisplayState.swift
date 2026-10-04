@@ -19,7 +19,7 @@ public final class HeroArtworkDisplayState {
     public private(set) var backgroundSample: HeroBackgroundSample?
     @ObservationIgnored private var owner: UUID?
     @ObservationIgnored private var activeItemID: String?
-    @ObservationIgnored private var pendingReports: [UUID: UUID] = [:]
+    @ObservationIgnored private var pendingReports: [UUID: [String: UUID]] = [:]
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var sampleTask: Task<Void, Never>?
 
@@ -38,12 +38,15 @@ public final class HeroArtworkDisplayState {
 
     func enqueue(_ artwork: FirstPaintArtwork?, itemID: String, owner: UUID) {
         let ticket = UUID()
-        pendingReports[owner] = ticket
-        // Arrival can precede source activation. Only the latest arrival from
-        // the still-active source may publish after this render pass.
+        pendingReports[owner, default: [:]][itemID] = ticket
+        // Arrival can precede activation. Coalesce per subject so an outgoing
+        // report cannot discard the current subject's pending image.
         Task { @MainActor [weak self] in
-            guard let self, self.pendingReports[owner] == ticket else { return }
-            self.pendingReports[owner] = nil
+            guard let self, self.pendingReports[owner]?[itemID] == ticket else { return }
+            self.pendingReports[owner]?[itemID] = nil
+            if self.pendingReports[owner]?.isEmpty == true {
+                self.pendingReports[owner] = nil
+            }
             self.publish(artwork, itemID: itemID, owner: owner)
         }
     }

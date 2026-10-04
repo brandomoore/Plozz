@@ -1093,7 +1093,10 @@ visible renderer, not another pass through the candidate artwork URLs. This
 includes first-paint online choices, library fallbacks, preview/full upgrades,
 and cached returns. Detail pages own separate display state; incoming carousel
 slides, reflections, and inactive/outgoing owners cannot replace the current
-sample. Derived colors remain bounded/cached, and palette extraction stays
+sample. Deferred reports coalesce per owner and item, so a late report from the
+previous item cannot discard the current item's pending image. Reports may
+precede source activation; releasing an owner cancels all of its pending items.
+Derived colors remain bounded/cached, and palette extraction stays
 off-main with the existing navigation coalescing. Disabling gradients does not
 disable the shared logo-contrast sample.
 
