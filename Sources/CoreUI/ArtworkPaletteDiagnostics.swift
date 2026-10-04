@@ -44,7 +44,7 @@ public enum ArtworkPaletteDiagnostics {
     }
 
     // Called only off the main actor, and only while tracing. No full-image encoding.
-    static func imageSummary(_ image: UIImage) -> String {
+    static func imageSummary(_ image: UIImage) -> String { // l10n:content - developer-facing artwork trace, not UI copy.
         guard let cgImage = image.cgImage else { return "pixels=unavailable" }
         let size = 24
         var pixels = [UInt8](repeating: 0, count: size * size * 4)

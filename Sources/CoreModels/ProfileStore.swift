@@ -445,7 +445,7 @@ public final class ProfilesModel {
         case unavailable
 
         public var errorDescription: String? {
-            String(localized: "Profile server selections couldn't be read. Try again before transferring setup.")
+            String(localized: "Profile server selections couldn't be read. Try again before transferring setup.") // l10n:content - LocalizedError requires resolved text; recomputed on each access.
         }
     }
 

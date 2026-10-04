@@ -146,7 +146,14 @@ private struct GradientHomeFixture: View {
     let url: URL
     var body: some View {
         GradientFixtureContent(counter: counter)
-            .ambientBackdropSource(id: "artwork", references: [.remote(url)], isActive: state.visible)
+            .overlay(alignment: .topLeading) {
+                FallbackAsyncImage(references: [.remote(url)], variant: .heroBackdrop, pinIdentity: "artwork") {
+                    Color.clear
+                }
+                .reportingHeroArtwork(id: "artwork")
+                .frame(width: 48, height: 48)
+            }
+            .heroArtworkSource(id: "artwork", isActive: state.visible)
             .homeGradientBackground(scope: ObjectIdentifier(state), isVisible: state.visible)
             .background { AppBackground(palette: .dark) }
             .environment(\.themePalette, .dark)
