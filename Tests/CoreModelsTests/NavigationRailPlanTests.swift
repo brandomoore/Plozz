@@ -5,6 +5,41 @@ import XCTest
 /// they're wrong — a library that vanishes when a server is added, an order that
 /// resets, or a hidden library that comes back on relaunch.
 final class NavigationRailPlanTests: XCTestCase {
+    func testPreparedEntriesPreserveEachStylesOrderAndVisibility() {
+        let libraries = [
+            library("1", title: "Movies", account: "a"),
+            library("2", title: "Shows", account: "a", kind: .series),
+            library("3", title: "Music", account: "a", isMusic: true),
+            library("1", title: "Other Movies", account: "b")
+        ]
+        let layouts: [NavigationLibraryLayout] = [
+            .default,
+            .init(order: ["b:1", "a:2", NavigationLibraryLayout.allLibrariesKey]),
+            .init(order: [NavigationLibraryLayout.settingsKey, "a:2"],
+                  hiddenKeys: [NavigationLibraryLayout.homeKey, "a:1"]),
+            .init(hiddenKeys: [NavigationLibraryLayout.allLibrariesKey, "b:1"])
+        ]
+        for visible in [libraries, Array(libraries.prefix(1)), []] {
+            for layout in layouts {
+                let entries = NavigationRailPlan.entries(visibleLibraries: visible, layout: layout)
+                for keys in [
+                    NavigationDestinationDefaults.compact(hasMusic: true),
+                    NavigationDestinationDefaults.sidebar(visibleLibraries: visible, hasMusic: true),
+                    NavigationDestinationDefaults.rail(visibleLibraries: visible, hasMusic: false)
+                ] {
+                    XCTAssertEqual(
+                        NavigationRailPlan.destinations(
+                            libraryEntries: entries, layout: layout, availableKeys: keys
+                        ),
+                        NavigationRailPlan.destinations(
+                            visibleLibraries: visible, layout: layout, availableKeys: keys
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     func testEditorDefaultsMatchEachTVNavigationStyle() {
         XCTAssertEqual(
             NavigationRailPlan.customizableKeys(visibleLibraries: [], style: .rail),

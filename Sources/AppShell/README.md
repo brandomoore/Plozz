@@ -69,6 +69,14 @@ prompt on first entry. iPhone and iPad retain their existing carousel layout.
 and Settings. Its illustrations omit navigation chrome, since Home layout and
 navigation style are independent choices.
 
+## Native navigation planning
+
+Native tab builders capture the resolved selection and library entries before
+constructing their children. The sidebar reuses that plan for content, labels,
+and focus eligibility; lazy tab evaluations must not rebuild it per destination.
+Recompute from current account visibility and profile layout when the shell
+updates, rather than retaining a cache that could expose removed libraries.
+
 ## Pinned sidebar remote navigation
 
 At a visible pinned-navigation root, Back opens the menu on the current

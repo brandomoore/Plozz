@@ -180,7 +180,18 @@ public enum NavigationRailPlan {
         layout: NavigationLibraryLayout,
         availableKeys: [String]
     ) -> [NavigationRailDestination] {
-        let libraryEntries = entries(visibleLibraries: visibleLibraries, layout: layout)
+        destinations(
+            libraryEntries: entries(visibleLibraries: visibleLibraries, layout: layout),
+            layout: layout,
+            availableKeys: availableKeys
+        )
+    }
+
+    public static func destinations(
+        libraryEntries: [NavigationRailLibraryEntry],
+        layout: NavigationLibraryLayout,
+        availableKeys: [String]
+    ) -> [NavigationRailDestination] {
         let libraryDestinations = Dictionary(
             uniqueKeysWithValues: libraryEntries.map { ($0.key, $0.destination) }
         )
