@@ -10,6 +10,96 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testLongCombinedFilterFitsHeaderWithoutReplacingFocusedControl() async throws {
+        let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, supportsFilters: true)
+        let name = "LibraryAdaptiveFilter.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie,
+            defaults: defaults, initialContentMode: .titles
+        )
+        await model.loadFirstPage()
+        try await withLibrary(model: model) { _, window in
+            @MainActor func controls() -> [(any UIFocusItem, CGRect)] {
+                self.focusItems(in: window).compactMap { item in
+                    guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                          frame.midY < window.bounds.height * 0.2 else { return nil }
+                    return (item, frame)
+                }.sorted { $0.1.minX < $1.1.minX }
+            }
+            let initial = controls()
+            XCTAssertEqual(initial.count, model.availableContentModes.count + 2)
+            guard initial.count >= 2 else { return }
+            let filter = initial[initial.count - 2].0
+            let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
+            controller.target = filter
+            focus.requestFocusUpdate(to: controller)
+            focus.updateFocusIfNeeded()
+            controller.target = nil
+            var widths: [CGFloat] = []
+            for selection in [
+                LibraryFilters(filter: .unwatched),
+                LibraryFilters(filter: .unwatched, genre: "Drama", year: 2024),
+                LibraryFilters(filter: .unwatched, genre: "Adapted From A Live-Action Movie", year: 2024),
+                LibraryFilters(filter: .unwatched, genre: "Drama", year: 2024),
+            ] {
+                await model.setFilters(selection)
+                try await Task.sleep(for: .milliseconds(200))
+                window.layoutIfNeeded()
+                let current = controls()
+                XCTAssertEqual(current.count, initial.count)
+                XCTAssertTrue(focus.focusedItem === filter, "Changing label representation must keep the same native Menu.")
+                guard current.count == initial.count else { continue }
+                widths.append(current[current.count - 2].1.width)
+                for (index, entry) in current.enumerated() {
+                    XCTAssertGreaterThanOrEqual(entry.1.minX, 0)
+                    XCTAssertLessThanOrEqual(entry.1.maxX, window.bounds.width)
+                    XCTAssertEqual(entry.1.midY, initial[index].1.midY, accuracy: 1)
+                    if index > 0 { XCTAssertGreaterThanOrEqual(entry.1.minX, current[index - 1].1.maxX) }
+                }
+                XCTAssertEqual(current.last!.1.maxX, initial.last!.1.maxX, accuracy: 1)
+            }
+            XCTAssertEqual(widths.count, 4)
+            guard widths.count == 4 else { return }
+            XCTAssertGreaterThan(widths[1], widths[0], "A short combined selection must still display its names.")
+            XCTAssertLessThan(widths[2], widths[0], "Only the overflowing selection should collapse to its count.")
+            XCTAssertEqual(widths[3], widths[1], accuracy: 1, "Names must return when the selection fits again.")
+        }
+    }
+
+    func testSameFilterSummaryUsesNamesAgainWhenMoreHeaderSpaceIsAvailable() async throws {
+        let name = "LibraryAdaptiveFilterWidth.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        var widths: [CGFloat] = []
+        for supportsModes in [true, false] {
+            let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: supportsModes, supportsFilters: true)
+            let model = LibraryBrowseViewModel(
+                provider: provider, containerID: "library-\(supportsModes)", containerKind: .movie,
+                defaults: defaults, initialContentMode: .titles
+            )
+            await model.setFilters(.init(filter: .unwatched, genre: "Adapted From A Live-Action Movie", year: 2024))
+            try await withLibrary(model: model) { _, window in
+                let controls = self.focusItems(in: window).compactMap { item -> CGRect? in
+                    guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                          frame.midY < window.bounds.height * 0.2 else { return nil }
+                    return frame
+                }.sorted { $0.minX < $1.minX }
+                XCTAssertEqual(controls.count, model.availableContentModes.count + 2)
+                guard controls.count >= 2 else { return }
+                widths.append(controls[controls.count - 2].width)
+                XCTAssertLessThanOrEqual(controls.last!.maxX, window.bounds.width)
+                XCTAssertGreaterThanOrEqual(controls.first!.minX, 0)
+            }
+        }
+        XCTAssertEqual(widths.count, 2)
+        guard widths.count == 2 else { return }
+        XCTAssertGreaterThan(widths[1], widths[0] * 2,
+                             "The same long selection must use available room, not a character-count cutoff.")
+    }
+
     func testFilterSharesHeaderLineAndRetainsNativeFocusAfterSelection() async throws {
         let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, supportsFilters: true)
         await provider.enableAlphabet()
@@ -909,7 +999,8 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
         SortField.legacyFields
     }
     nonisolated func libraryQueryCapabilities(in containerID: String, kind: MediaItemKind) -> LibraryQueryCapabilities {
-        .init(filters: supportsFilters ? [.all, .unwatched, .dolbyVision] : [.all], nativeFilters: [.all, .unwatched])
+        .init(filters: supportsFilters ? [.all, .unwatched, .dolbyVision] : [.all], nativeFilters: [.all, .unwatched],
+              supportsGenres: supportsFilters, supportsYears: supportsFilters, nativeFacets: true)
     }
     func libraryQueryFacets(in containerID: String, kind: MediaItemKind) async throws -> LibraryQueryFacets {
         .init()

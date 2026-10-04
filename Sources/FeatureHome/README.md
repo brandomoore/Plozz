@@ -70,8 +70,10 @@ fallback when the user's server has no attached trailer.
   Continue Watching is still realizing. Once entered, normal navigation and
   later data updates do not reclaim focus from another row.
   Filter joins the same header line. Quick filters intersect genre and year;
-  its label names all selected options instead of displaying only their count.
-  sort/filter choices are remembered per library, account, mode, and profile.
+  its label names the selected options while they fit, falling back to their
+  count only when the available header space is too narrow. Tabs and Sort retain
+  their room, and accessibility always announces the full selection.
+  Sort/filter choices are remembered per library, account, mode, and profile.
   Genre/year options use each server's scoped facet endpoint; Jellyfin/Emby use
   `/Items/Filters`, whose response contains genre names and years. Empty successful
   responses are cached, cancellation is not a load error, and actual failures

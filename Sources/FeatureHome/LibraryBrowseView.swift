@@ -492,6 +492,7 @@ public struct LibraryBrowseView: View {
         HStack {
             if viewModel.availableContentModes.count > 1 {
                 LibraryContentModeControl(viewModel: viewModel)
+                    .layoutPriority(1)
             } else if viewModel.browseScope != .library {
                 title.font(.largeTitle.bold())
             }
@@ -511,10 +512,10 @@ public struct LibraryBrowseView: View {
                             onLoadFacets: { await viewModel.loadQueryFacetsIfNeeded() },
                             onRetry: { Task { await viewModel.loadQueryFacetsIfNeeded(retry: true) } }
                         )
-                        .fixedSize(horizontal: true, vertical: false)
                     }
                     sortControl
                         .fixedSize(horizontal: true, vertical: false)
+                        .layoutPriority(1)
                 }
             }
         }

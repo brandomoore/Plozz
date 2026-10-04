@@ -56,7 +56,13 @@ public struct LibraryFilterMenu: View {
             if filters.isEmpty {
                 Label("Filter", systemImage: "line.3.horizontal.decrease")
             } else {
-                Label("Filter: \(filters.summary(in: locale))", systemImage: "line.3.horizontal.decrease")
+                ViewThatFits(in: .horizontal) {
+                    Label("Filter: \(filters.summary(in: locale))", systemImage: "line.3.horizontal.decrease")
+                        .fixedSize()
+                    Label("Filter: \(filters.activeCount)", systemImage: "line.3.horizontal.decrease")
+                        .fixedSize()
+                }
+                .accessibilityLabel(Text("Filter: \(filters.summary(in: locale))"))
             }
         }
         .accessibilityIdentifier("library-filter-menu")
