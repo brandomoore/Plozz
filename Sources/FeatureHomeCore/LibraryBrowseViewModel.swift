@@ -95,6 +95,7 @@ public final class LibraryBrowseViewModel {
     }
     @ObservationIgnored private var browseVisible = false
     @ObservationIgnored private var watchQueryDirty = false
+    @ObservationIgnored private var needsRefreshRetry = false
     @ObservationIgnored private var watchRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var recommendationsDirty = false
     @ObservationIgnored private var recommendationWatchRevision = 0
@@ -390,6 +391,7 @@ public final class LibraryBrowseViewModel {
         loaded = []
         totalCount = 0
         pageError = nil
+        needsRefreshRetry = false
         queryMessage = nil
         queryProgress = nil
         cancelAllPageLoads()
@@ -521,6 +523,8 @@ public final class LibraryBrowseViewModel {
             pagesLoaded = []
             failedPages = []
             pageError = nil
+            queryMessage = nil
+            needsRefreshRetry = false
             totalCount = firstPage.totalCount
             resize(to: firstPage.totalCount)
             // Native cells observe these objects directly. Replacing the array
@@ -549,6 +553,7 @@ public final class LibraryBrowseViewModel {
             )
             if !Task.isCancelled, generation == loadGeneration {
                 watchQueryDirty = true
+                needsRefreshRetry = true
                 pageError = (error as? AppError) ?? .unknown("")
                 queryMessage = (error as? LibraryQueryFailure)?.message
             }
@@ -1077,6 +1082,10 @@ public final class LibraryBrowseViewModel {
     }
 
     public func retryFailedPages() async {
+        if needsRefreshRetry {
+            await refreshAfterCatalogChange(preservingFileFacts: true)
+            return
+        }
         let generation = contentGeneration
         for page in failedPages.sorted() {
             guard !Task.isCancelled, generation == contentGeneration else { return }

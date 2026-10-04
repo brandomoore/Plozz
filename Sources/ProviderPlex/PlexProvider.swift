@@ -2576,11 +2576,12 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
     }
 
     /// Plex `type` query value for a library section's content kind, used by the
-    /// paged `/all` query (1 = movie, 2 = show).
+    /// paged `/all` query (1 = movie, 2 = show, 4 = episode).
     static func sectionType(forContainerKind kind: MediaItemKind) -> Int? {
         switch kind {
         case .movie: return 1
         case .series: return 2
+        case .episode: return 4
         default: return nil
         }
     }

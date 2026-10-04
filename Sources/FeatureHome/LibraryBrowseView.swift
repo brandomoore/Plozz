@@ -9,20 +9,21 @@ import FeatureHomeCore
 @MainActor
 @Observable
 private final class ShowcaseNavigationVisibility {
-    var showsNavigation = true
+    var focusedRowID: String?
 
-    func focusEntered(rowID: String, firstRowID: String?) {
-        let shouldShow = rowID == firstRowID
-        if showsNavigation != shouldShow { showsNavigation = shouldShow }
+    func showsNavigation(in rowIDs: [String]) -> Bool {
+        guard let focusedRowID, rowIDs.contains(focusedRowID) else { return true }
+        return focusedRowID == rowIDs.first
     }
 }
 
 private struct ShowcaseNavigationVisibilityModifier: ViewModifier {
     let visibility: ShowcaseNavigationVisibility
     let isRecommended: Bool
+    let rowIDs: [String]
 
     func body(content: Content) -> some View {
-        let isVisible = !isRecommended || visibility.showsNavigation
+        let isVisible = !isRecommended || visibility.showsNavigation(in: rowIDs)
         content
             .opacity(isVisible ? 1 : 0)
             .disabled(!isVisible)
@@ -167,7 +168,8 @@ public struct LibraryBrowseView: View {
                 .modifier(
                     ShowcaseNavigationVisibilityModifier(
                         visibility: showcaseNavigation,
-                        isRecommended: viewModel.contentMode == .recommended
+                        isRecommended: viewModel.contentMode == .recommended,
+                        rowIDs: viewModel.recommendationState.value?.map(\.id) ?? []
                     )
                 )
                 #endif
@@ -320,14 +322,14 @@ public struct LibraryBrowseView: View {
                     showsSeriesArtwork: section.id == "continueWatching" && continueWatchingShowsSeriesArtwork,
                     onFocusEntered: {
                         reporter.entered()
-                        showcaseNavigation.focusEntered(rowID: row.id, firstRowID: rows.first?.id)
+                        showcaseNavigation.focusedRowID = row.id
                     },
                     onFocusChange: { item in
                         if let item { reporter.focusedItem(item) }
                     },
                     onCardFocused: { item in
                         reporter.cardFocused(item)
-                        showcaseNavigation.focusEntered(rowID: row.id, firstRowID: rows.first?.id)
+                        showcaseNavigation.focusedRowID = row.id
                     },
                     showsResumeChip: section.id == "continueWatching",
                     onSelect: onSelect

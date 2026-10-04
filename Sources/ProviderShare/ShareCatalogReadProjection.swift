@@ -413,18 +413,10 @@ enum ShareCatalogReadProjection {
         )
     }
 
-    /// Build an episode item from a row selecting
-    /// `rel_path, title, [kind|series_title], ...` — the two episode query shapes
-    /// share column *names*, so read episode fields by a fixed layout:
-    /// col0 rel_path, col1 title, col2 series_title, col3 season, col4 episode,
-    /// col5 library, col6 year (used by `episodes(...)`), OR the `item(id:)` layout.
+    /// Accepts two fixed projections:
+    /// - Season: rel_path, title, series_title, season, episode, library, year.
+    /// - Item/inventory: rel_path, title, kind, library, year, series_title, series_key, season, episode.
     static func episodeItem(from stmt: OpaquePointer?, seriesKey: String) -> MediaItem {
-        // Read by name-agnostic positions used by the two callers. To stay robust,
-        // pull values via helper that tolerates either layout is overkill; instead
-        // both callers pass compatible column orders. `episodes(...)`:
-        //   0 rel_path,1 title,2 series_title,3 season,4 episode,5 library,6 year
-        // `item(id:)`:
-        //   0 rel_path,1 title,2 kind,3 library,4 year,5 series_title,6 series_key,7 season,8 episode
         let colCount = sqlite3_column_count(stmt)
         let relPath = CatalogConnection.columnText(stmt, 0) ?? ""
         let title = CatalogConnection.columnText(stmt, 1) ?? relPath

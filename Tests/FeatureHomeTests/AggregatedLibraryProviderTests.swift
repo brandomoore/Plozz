@@ -149,6 +149,30 @@ final class AggregatedLibraryProviderTests: XCTestCase {
         }
     }
 
+    func testContinueWatchingMergesSourcesAndOrdersByRecencyBeforeLimiting() async throws {
+        var a = movie("a", title: "Dune", year: 2021, tmdb: "1").taggingLibrary("lib-a")
+        var b = movie("b", title: "Dune", year: 2021, tmdb: "1").taggingLibrary("lib-b")
+        var arrival = movie("arrival", title: "Arrival", year: 2016, tmdb: "2").taggingLibrary("lib-a")
+        var heat = movie("heat", title: "Heat", year: 1995, tmdb: "3").taggingLibrary("lib-b")
+        a.lastPlayedAt = Date(timeIntervalSince1970: 10)
+        b.lastPlayedAt = Date(timeIntervalSince1970: 30)
+        arrival.lastPlayedAt = Date(timeIntervalSince1970: 20)
+        heat.lastPlayedAt = Date(timeIntervalSince1970: 40)
+        b.resumePosition = 120
+        let first = FakeMediaProvider(allItems: [a, arrival])
+        let second = FakeMediaProvider(allItems: [b, heat])
+        first.continueWatchingItems = [a, arrival]
+        second.continueWatchingItems = [b, heat]
+        let provider = AggregatedLibraryProvider(sources: [source("a", first), source("b", second)])
+        let items = try await provider.continueWatching(limit: 2, inLibraries: ["lib-a"])
+        XCTAssertEqual(items.map(\.title), ["Heat", "Dune"])
+        let dune = try XCTUnwrap(items.last)
+        XCTAssertEqual(Set(dune.allSourceAccountIDs), ["a", "b"])
+        XCTAssertEqual(Set(dune.sources.compactMap(\.libraryID)), ["lib-a", "lib-b"])
+        XCTAssertEqual(dune.lastPlayedAt, b.lastPlayedAt)
+        XCTAssertEqual(dune.resumePosition, b.resumePosition)
+    }
+
     @MainActor
     func testRecommendedContinueWatchingRetainsEveryAccountQualifiedLibrary() async throws {
         let a = movie("a", title: "First", year: 2024, tmdb: "1").taggingLibrary("lib-a")

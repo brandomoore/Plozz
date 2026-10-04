@@ -4,6 +4,27 @@ import XCTest
 @testable import ProviderPlex
 
 final class PlexLibraryQueryTests: XCTestCase {
+    func testEpisodeInventoryRequestsPlexEpisodeType() async throws {
+        let http = StubHTTPClient()
+        http.stub(pathSuffix: "/library/sections/1/all", json: """
+        {"MediaContainer":{"totalSize":1,"Metadata":[{
+        "ratingKey":"episode","type":"episode","title":"Episode 3",
+        "grandparentRatingKey":"show","grandparentTitle":"Show","parentIndex":2,"index":3
+        }]}}
+        """)
+        let source = provider(http)
+        let page = try await source.libraryQueryEpisodeInventory(
+            in: "1", page: .init(filters: .init(filter: .atmos)))
+        let query = try XCTUnwrap(http.queryItems(forPathSuffix: "/all"))
+        XCTAssertEqual(query.first { $0.name == "type" }?.value, "4")
+        let item = try XCTUnwrap(page.items.first)
+        XCTAssertEqual(item.kind, .episode)
+        XCTAssertEqual(item.seriesID, "show")
+        XCTAssertEqual(item.seasonNumber, 2)
+        XCTAssertEqual(item.episodeNumber, 3)
+        XCTAssertEqual(page.totalCount, 1)
+    }
+
     func testRandomFilterInventoryUsesStablePagingWithoutChangingNativeRandomBrowse() async throws {
         let http = StubHTTPClient()
         http.stub(pathSuffix: "/library/sections/1/all",

@@ -53,7 +53,8 @@ fallback when the user's server has no attached trailer.
   Library Continue Watching uses Home's profile-selected series artwork and
   resume progress treatment, including profile spoiler protection on mobile.
   Merged libraries validate Continue Watching against every account-qualified
-  source without replacing the item's real library provenance. Watch changes
+  source, merge duplicate titles with their source references, and order by
+  watch recency before limiting the row. Watch changes
   refresh recommendations on return (or while visible), retaining the current
   rows during the request and rejecting snapshots predating another watch change.
   Changing tabs keeps the focused mode control
@@ -76,6 +77,8 @@ fallback when the user's server has no attached trailer.
   focus, so an already-ready Discover row cannot win cold-start entry while
   Continue Watching is still realizing. Once entered, normal navigation and
   later data updates do not reclaim focus from another row.
+  Navigation eligibility follows the current row order when a refresh removes
+  or inserts a row, without requiring focus to move.
   Filter joins the same header line. Quick filters intersect genre and year;
   its label names the selected options while they fit, falling back to their
   count only when the available header space is too narrow. Tabs and Sort retain
@@ -98,6 +101,8 @@ fallback when the user's server has no attached trailer.
   watch state reuses file facts for up to two minutes without retaining stale
   history or repeating version hydration; catalog changes discard those facts.
   Watch/catalog changes invalidate query membership/history without scanning covered library views.
+  A failed background refresh retains the grid and retries the refresh itself
+  through Try Again, rather than only retrying failed paging requests.
   Series format/history queries roll up logical episodes, not alternate files.
   Missing sort values stay last; original provider ratings remain distinct from
   externally enriched display ratings. Shares read existing catalog metadata

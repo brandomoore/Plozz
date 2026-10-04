@@ -75,6 +75,43 @@ final class LibraryBrowseViewModelTests: XCTestCase {
         XCTAssertEqual(vm.item(at: 0)?.id, "scanned0")
     }
 
+    func testRetryRepeatsFailedBackgroundRefreshWithoutReplacingSlots() async throws {
+        let (vm, provider) = makeVM(itemCount: 10)
+        await vm.loadFirstPageIfNeeded()
+        let slot = try XCTUnwrap(vm.slot(at: 0))
+        let generation = vm.contentGeneration
+        provider.alwaysFail = true
+        await vm.refreshAfterCatalogChange()
+        XCTAssertNotNil(vm.pageError)
+        XCTAssertEqual(vm.state.value, 10)
+        let requests = provider.requestedPages.count
+        provider.alwaysFail = false
+        provider.allItems[0].title = "Refreshed"
+        await vm.retryFailedPages()
+        XCTAssertGreaterThan(provider.requestedPages.count, requests)
+        XCTAssertNil(vm.pageError)
+        XCTAssertTrue(vm.slot(at: 0) === slot)
+        XCTAssertEqual(slot.item?.title, "Refreshed")
+        XCTAssertEqual(vm.contentGeneration, generation)
+    }
+
+    func testCancelledRefreshRetryRemainsRetryableAndClearsQueryMessage() async {
+        let (vm, provider) = makeVM(itemCount: 10)
+        await vm.loadFirstPageIfNeeded()
+        provider.pageHooks[0] = { throw LibraryQueryFailure.changedInventory }
+        await vm.refreshAfterCatalogChange()
+        XCTAssertNotNil(vm.queryMessage)
+        provider.pageHooks[0] = { throw CancellationError() }
+        await vm.retryFailedPages()
+        XCTAssertNotNil(vm.pageError)
+        let requests = provider.requestedPages.count
+        provider.pageHooks[0] = nil
+        await vm.retryFailedPages()
+        XCTAssertGreaterThan(provider.requestedPages.count, requests)
+        XCTAssertNil(vm.pageError)
+        XCTAssertNil(vm.queryMessage)
+    }
+
     func testWatchMutationUpdatesLoadedGridSlotInPlace() async {
         let item = MediaItem(id: "movie", title: "Movie", kind: .movie)
         let provider = FakeMediaProvider(allItems: [item])

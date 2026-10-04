@@ -1,6 +1,7 @@
 import Foundation
 import CoreModels
 import CoreNetworking
+import FeatureHomeCore
 
 /// One backend source that participates in an aggregated cross-server library
 /// browse session: which account, that account's own container id for the
@@ -439,6 +440,7 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Capabi
     }
 
     public func continueWatching(limit: Int, inLibraries _: [String]?) async throws -> [MediaItem] {
+        guard limit > 0 else { return [] }
         let results = await withTaskGroup(of: (Int, Result<[MediaItem], Error>).self) { group in
             for (index, source) in sources.enumerated() {
                 group.addTask {
@@ -467,7 +469,11 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Capabi
             return (bySource, firstError)
         }
         if results.0.isEmpty, let error = results.1 { throw error }
-        return Array(sources.indices.flatMap { results.0[$0] ?? [] }.prefix(limit))
+        let merged = MediaItemMerger.merge(
+            sources.indices.flatMap { results.0[$0] ?? [] },
+            serverInfo: { inventoryServerInfo[$0] }
+        )
+        return Array(HomeAggregator.sortedByRecency(merged).prefix(limit))
     }
 
     public func libraryHubs(libraryID _: String, kind: MediaItemKind, limit: Int) async throws -> [LibrarySection] {

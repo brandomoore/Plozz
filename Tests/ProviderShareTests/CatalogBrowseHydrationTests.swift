@@ -4,6 +4,23 @@ import MetadataKit
 @testable import ProviderShare
 
 final class CatalogBrowseHydrationTests: XCTestCase {
+    func testLibraryEpisodeInventoryPreservesEpisodeCoordinatesAndLibrary() throws {
+        let connection = openConnection()
+        for library in [CatalogLibrary.tv, .anime] {
+            let seriesKey = "show-\(library.rawValue)"
+            seedEpisode(connection, relPath: "\(library.rawValue)/S02E03.mkv", seriesKey: seriesKey,
+                        seriesTitle: "Show", season: 2, episode: 3, library: library)
+            let page = makeQueries(connection).libraryQueryEpisodes(in: library, offset: 0, limit: 20)
+            let item = try XCTUnwrap(page.items.first)
+            XCTAssertEqual(page.totalCount, 1)
+            XCTAssertEqual(item.parentTitle, "Show")
+            XCTAssertEqual(item.seasonNumber, 2)
+            XCTAssertEqual(item.episodeNumber, 3)
+            XCTAssertEqual(item.seasonID, ShareCatalogID.season(seriesKey, 2))
+            XCTAssertEqual(item.libraryID, ShareCatalogID.library(library))
+        }
+    }
+
     private var fixtures: [ShareCatalogSQLiteFixture] = []
 
     override func tearDownWithError() throws {
@@ -61,7 +78,8 @@ final class CatalogBrowseHydrationTests: XCTestCase {
         seriesKey: String,
         seriesTitle: String,
         season: Int,
-        episode: Int
+        episode: Int,
+        library: CatalogLibrary = .tv
     ) {
         XCTAssertTrue(connection.exec("""
         INSERT INTO assets(
@@ -69,7 +87,7 @@ final class CatalogBrowseHydrationTests: XCTestCase {
           kind, library, title, sort_title, year, series_title, series_key, season, episode)
         VALUES(
           '\(relPath)', 'episode.mkv', 100, 1, 1, 1,
-          'episode', 'tv', 'Episode \(episode)', 'episode \(episode)', 2024,
+          'episode', '\(library.rawValue)', 'Episode \(episode)', 'episode \(episode)', 2024,
           '\(seriesTitle)', '\(seriesKey)', \(season), \(episode)
         );
         """))

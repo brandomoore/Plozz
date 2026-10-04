@@ -11,6 +11,56 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testRecommendedRowChangesReconcileHeaderWithoutMovingFocus() async throws {
+        let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, recommendationHub: true)
+        let name = "LibraryRecommendationRows.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie, defaults: defaults)
+        await model.loadRecommendationsIfNeeded()
+        try await withLibrary(model: model) { _, window in
+            let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
+            let first = try XCTUnwrap(self.focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                      frame.midY > window.bounds.height * 0.3, frame.width > 100 else { return nil }
+                return (item, frame)
+            }.min { $0.1.midY < $1.1.midY })
+            controller.target = first.0
+            focus.requestFocusUpdate(to: controller)
+            focus.updateFocusIfNeeded()
+            controller.target = nil
+            try await Task.sleep(for: .milliseconds(200))
+            let next = try XCTUnwrap(self.focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                      frame.width > 100, frame.midY > first.1.midY + 100 else { return nil }
+                return (item, frame)
+            }.min { $0.1.midY < $1.1.midY })
+            controller.target = next.0
+            focus.requestFocusUpdate(to: controller)
+            focus.updateFocusIfNeeded()
+            XCTAssertTrue(focus.focusedItem === next.0)
+            controller.target = nil
+            try await Task.sleep(for: .milliseconds(200))
+            let focusedBeforeRefresh = try XCTUnwrap(focus.focusedItem)
+            for hasHub in [false, true] {
+                await provider.setRecommendationHub(hasHub)
+                await model.loadRecommendations()
+                try await Task.sleep(for: .milliseconds(300))
+                window.layoutIfNeeded()
+                XCTAssertEqual(model.recommendationState.value?.count, hasHub ? 2 : 1)
+                XCTAssertTrue(focus.focusedItem === focusedBeforeRefresh)
+                let headers = self.focusItems(in: window).filter { item in
+                    guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window) else { return false }
+                    return frame.midY < window.bounds.height * 0.2 && frame.height < 150
+                        && frame.maxX < window.bounds.width * 0.6
+                }
+                XCTAssertEqual(headers.count, hasHub ? 0 : model.availableContentModes.count)
+            }
+        }
+    }
+
     func testRecommendedRefreshKeepsTheFocusedNativeCardMounted() async throws {
         let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, recommendationHub: true)
         let name = "LibraryRecommendationRefresh.\(UUID())"
@@ -1045,7 +1095,7 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
     nonisolated let kind: ProviderKind
     nonisolated let session: UserSession
     nonisolated let capabilities: ProviderCapability
-    private let recommendationHub: Bool
+    private var recommendationHub: Bool
     nonisolated let supportsFilters: Bool
     init(kind: ProviderKind = .mediaShare, supportsModes: Bool = false, recommendationHub: Bool = false,
          supportsFilters: Bool = false) {
@@ -1100,6 +1150,7 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
         self.prefix = prefix
     }
     func setFailure(_ value: Bool) { fails = value }
+    func setRecommendationHub(_ value: Bool) { recommendationHub = value }
     func setPageCap(_ value: Int) { pageCap = value }
     func holdNextPage(at start: Int) { heldStart = start }
     func releasePage() {

@@ -570,7 +570,7 @@ struct CatalogReadQueries {
               bind: { self.bindText($0, 1, library.rawValue) }) { total = Int(sqlite3_column_int64($0, 0)) }
         var items: [MediaItem] = []
         query("""
-        SELECT rel_path, title, series_title, season, episode, library, year, series_key
+        SELECT rel_path, title, kind, library, year, series_title, series_key, season, episode
         FROM assets WHERE library=? AND kind='episode'
         ORDER BY series_key, season, episode, rel_path LIMIT ? OFFSET ?;
         """, bind: {
@@ -578,7 +578,7 @@ struct CatalogReadQueries {
             sqlite3_bind_int64($0, 2, Int64(limit))
             sqlite3_bind_int64($0, 3, Int64(offset))
         }) { stmt in
-            guard let seriesKey = self.columnText(stmt, 7) else { return }
+            guard let seriesKey = self.columnText(stmt, 6) else { return }
             items.append(ShareCatalogReadProjection.episodeItem(from: stmt, seriesKey: seriesKey))
         }
         return MediaPage(items: withEnrichment(items), startIndex: offset, totalCount: total)
