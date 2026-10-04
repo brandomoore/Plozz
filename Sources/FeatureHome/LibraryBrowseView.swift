@@ -155,6 +155,7 @@ public struct LibraryBrowseView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Browse is a full-screen sub-page: hide the top tab bar so it reads as a
         // dedicated destination with no navigation chrome pinned at the top.
         .toolbar(.hidden, for: .tabBar)
@@ -162,8 +163,7 @@ public struct LibraryBrowseView: View {
             if viewModel.availableContentModes.count > 1
                 || viewModel.browseScope != .library
                 || !viewModel.availableSortFields.isEmpty
-                || viewModel.fileBrowserLibrary != nil
-                || viewModel.alphabet.isVisible {
+                || viewModel.fileBrowserLibrary != nil {
                 navigationHeader
                     .padding(.top, PlozzTheme.Spacing.large)
                     .padding(.bottom, PlozzTheme.Spacing.large)
@@ -500,29 +500,22 @@ public struct LibraryBrowseView: View {
                 if let library = viewModel.fileBrowserLibrary {
                     LibraryFileBrowseButton(library: library, onSelect: onSelect)
                 }
-                if viewModel.alphabet.isVisible {
-                    LibraryAlphabetMenu(
-                        entries: viewModel.letterEntries, isLoading: viewModel.alphabet.isLoading,
-                        isJumping: viewModel.alphabet.jumpingTo != nil,
-                        onSelect: { letter, id in viewModel.beginLetterJump(letter, menuPresentationID: id) },
-                        onDismiss: viewModel.alphabet.menuDidDismiss,
-                        onCancel: viewModel.cancelLetterJump,
-                        onRetry: viewModel.retryLetterIndex
-                    )
-                }
             }
             if !viewModel.availableSortFields.isEmpty {
-                if viewModel.showsFilterMenu {
-                    LibraryFilterMenu(
-                        filters: viewModel.filters, capabilities: viewModel.queryCapabilities, facets: viewModel.queryFacets,
-                        isLoading: viewModel.facetsLoading, hasError: viewModel.facetsError != nil,
-                        onChange: { value in Task { await viewModel.setFilters(value) } },
-                        onLoadFacets: { await viewModel.loadQueryFacetsIfNeeded() },
-                        onRetry: { Task { await viewModel.loadQueryFacetsIfNeeded(retry: true) } }
-                    )
-                    .fixedSize(horizontal: true, vertical: false)
+                HStack(spacing: PlozzTheme.Spacing.medium) {
+                    if viewModel.showsFilterMenu {
+                        LibraryFilterMenu(
+                            filters: viewModel.filters, capabilities: viewModel.queryCapabilities, facets: viewModel.queryFacets,
+                            isLoading: viewModel.facetsLoading, hasError: viewModel.facetsError != nil,
+                            onChange: { value in Task { await viewModel.setFilters(value) } },
+                            onLoadFacets: { await viewModel.loadQueryFacetsIfNeeded() },
+                            onRetry: { Task { await viewModel.loadQueryFacetsIfNeeded(retry: true) } }
+                        )
+                        .fixedSize(horizontal: true, vertical: false)
+                    }
+                    sortControl
+                        .fixedSize(horizontal: true, vertical: false)
                 }
-                sortControl
             }
         }
         .lineLimit(1)

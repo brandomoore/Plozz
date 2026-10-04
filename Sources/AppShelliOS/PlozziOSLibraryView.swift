@@ -259,16 +259,6 @@ struct PlozziOSLibraryGridView: View {
             }
         }
         .toolbar {
-            if viewModel.alphabet.isVisible {
-                ToolbarItem(placement: .primaryAction) {
-                    LibraryAlphabetMenu(entries: viewModel.letterEntries, isLoading: viewModel.alphabet.isLoading,
-                                        isJumping: viewModel.alphabet.jumpingTo != nil,
-                                        onSelect: { letter, id in viewModel.beginLetterJump(letter, menuPresentationID: id) },
-                                        onDismiss: viewModel.alphabet.menuDidDismiss,
-                                        onCancel: viewModel.cancelLetterJump,
-                                        onRetry: viewModel.retryLetterIndex)
-                }
-            }
             if let library = viewModel.fileBrowserLibrary {
                 ToolbarItem(placement: .primaryAction) {
                     NavigationLink(
@@ -418,19 +408,21 @@ struct PlozziOSLibraryGridView: View {
                     PlozziOSLibraryContentModeControl(viewModel: viewModel)
                 }
                 Spacer(minLength: 12)
-                if viewModel.showsFilterMenu {
-                    LibraryFilterMenu(
-                        filters: viewModel.filters, capabilities: viewModel.queryCapabilities, facets: viewModel.queryFacets,
-                        isLoading: viewModel.facetsLoading, hasError: viewModel.facetsError != nil,
-                        onChange: { value in Task { await viewModel.setFilters(value) } },
-                        onLoadFacets: { await viewModel.loadQueryFacetsIfNeeded() },
-                        onRetry: { Task { await viewModel.loadQueryFacetsIfNeeded(retry: true) } }
-                    )
-                    .labelStyle(.iconOnly)
-                    .frame(minWidth: 44, minHeight: 44)
-                }
-                if !viewModel.availableSortFields.isEmpty {
-                    sortControl
+                HStack(spacing: 8) {
+                    if viewModel.showsFilterMenu {
+                        LibraryFilterMenu(
+                            filters: viewModel.filters, capabilities: viewModel.queryCapabilities, facets: viewModel.queryFacets,
+                            isLoading: viewModel.facetsLoading, hasError: viewModel.facetsError != nil,
+                            onChange: { value in Task { await viewModel.setFilters(value) } },
+                            onLoadFacets: { await viewModel.loadQueryFacetsIfNeeded() },
+                            onRetry: { Task { await viewModel.loadQueryFacetsIfNeeded(retry: true) } }
+                        )
+                        .labelStyle(.iconOnly)
+                        .frame(minWidth: 44, minHeight: 44)
+                    }
+                    if !viewModel.availableSortFields.isEmpty {
+                        sortControl
+                    }
                 }
             }
             .padding(.horizontal)

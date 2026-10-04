@@ -55,13 +55,20 @@ fallback when the user's server has no attached trailer.
   mounted while replacing content below it. A stable layout container owns the
   top inset across Recommended, Browse, Collections, and Playlists (a transparent
   `Group` would attach the inset to each replaceable content branch). Sort sits
-  on that same top navigation line alongside Jump to letter and file browsing.
-  A persistent tvOS focus owner encloses the header and grid, so a committed
-  A–Z jump can hand focus from the header to its loaded native card without
-  changing the selected tab's focus identity. Scan progress remains in the grid.
+  on that same top navigation line alongside Filter and file browsing.
+  Filter and Sort form a compact pair. Alphabet navigation stays on the
+  scrolling rail; there is no separate Jump to letter button.
+  A persistent tvOS focus owner encloses the header and grid, preserving
+  the selected tab's focus identity as content changes. The content slot stays full-height
+  during loading, keeping the header in place and query progress vertically
+  centered below it. Scan progress remains in the grid.
   Showcase preserves the Home-sized details footprint under that header,
   keeping the same metadata-to-heading clearance as Home. A cold logo is adopted
   when it finishes for the still-current title, without requiring a focus round trip.
+  Showcase gates lower rows only until the first row actually receives native
+  focus, so an already-ready Discover row cannot win cold-start entry while
+  Continue Watching is still realizing. Once entered, normal navigation and
+  later data updates do not reclaim focus from another row.
   Filter joins the same header line. Quick filters intersect genre and year;
   sort/filter choices are remembered per library, account, mode, and profile.
   Native provider operations remain paged. Explicit non-native options prepare

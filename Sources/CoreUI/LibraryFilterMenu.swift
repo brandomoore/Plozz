@@ -84,14 +84,28 @@ public struct LibraryQueryPreparationView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 20) {
-            Text("Preparing library filter…")
-            ProgressView(value: progress)
-                .frame(maxWidth: 320)
-            Text("Preparing the selected option without changing your library. Results are cached while you browse.")
-                .font(.caption)
-            Button("Cancel", action: onCancel)
+        GeometryReader { geometry in
+            ZStack {
+                VStack(spacing: 0) {
+                    Text("Preparing library filter…")
+                        .padding(.bottom, 20)
+                        .frame(height: geometry.size.height / 2, alignment: .bottom)
+                    VStack(spacing: 20) {
+                        Text("Preparing the selected option without changing your library. Results are cached while you browse.")
+                            .font(.caption)
+                            .multilineTextAlignment(.center)
+                        Button("Cancel", action: onCancel)
+                    }
+                    .padding(.top, 20)
+                    .frame(height: geometry.size.height / 2, alignment: .top)
+                }
+                ProgressView(value: progress)
+                    .frame(maxWidth: 320)
+                    .accessibilityIdentifier("library-query-progress")
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
+        .padding()
         .accessibilityIdentifier("library-query-preparation")
     }
 }

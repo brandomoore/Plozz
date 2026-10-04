@@ -1,5 +1,6 @@
 #if os(tvOS)
-import CoreUI
+@testable import CoreUI
+@testable import AppShell
 import CoreModels
 @testable import FeatureHome
 import Observation
@@ -10,6 +11,156 @@ import XCTest
 
 @MainActor
 final class HomeVerticalMotionHostedTests: XCTestCase {
+    func testColdShowcaseWaitsForFirstRowInsteadOfEnteringDiscover() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let fixture = LoadingHomeRows()
+        fixture.firstRowReady = false
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let host = MotionFocusHost(rootView: AnyView(
+            LoadingHomeRowsView(fixture: fixture, seriesArtwork: true)
+                .environment(\.plozzCardStyle, .borderless)
+                .environment(\.plozzCardFocusStyle, .system)
+                .frame(width: 1920, height: 1080)
+                .ignoresSafeArea()
+        ))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        focus.requestFocusUpdate(to: window)
+        focus.updateFocusIfNeeded()
+        XCTAssertFalse(host.focusEvents.contains { $0.contains("Discover") },
+                       "An already-realized lower row must not win startup while the first row cannot accept focus.")
+        fixture.items = [MediaItem(id: "continue-0", title: "Continue 0", kind: .episode)]
+        fixture.firstRowReady = true
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertEqual((focus.focusedItem as? NSObject)?.accessibilityLabel, "Continue 0")
+        XCTAssertFalse(host.focusEvents.contains { $0.contains("Discover") },
+                       "Startup must enter Continue Watching directly, not bounce through Discover.")
+        XCTAssertEqual(fixture.activeRowID, "continue")
+        let discover = try XCTUnwrap(focusItems(in: window).first {
+            ($0 as? NSObject)?.accessibilityLabel == "Discover 0"
+        })
+        host.target = discover
+        focus.requestFocusUpdate(to: host)
+        focus.updateFocusIfNeeded()
+        XCTAssertTrue(focus.focusedItem === discover, "The startup gate must release normal access to lower rows.")
+        host.target = nil
+        fixture.items = [MediaItem(id: "continue-new", title: "Continue New", kind: .episode)]
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertTrue(focus.focusedItem === discover, "Later Continue Watching arrivals must not reclaim focus from the user.")
+    }
+
+    func testContinueWatchingArrivalKeepsFocusOutOfDiscover() async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        defer { previous?.makeKeyAndVisible() }
+        for focusStyle in CardFocusStyle.allCases {
+            for (cardStyle, cached, seriesArtwork) in CardStyle.allCases.flatMap({ style in
+                [false, true].flatMap { cached in [false, true].map { (style, cached, $0) } }
+            }) {
+                let fixture = LoadingHomeRows()
+                if cached {
+                    fixture.items = (0..<4).map {
+                        MediaItem(id: "cached-\($0)", title: "Cached \($0)", kind: .episode)
+                    }
+                }
+                let window = UIWindow(windowScene: scene)
+                window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+                let host = MotionFocusHost(rootView: AnyView(
+                    LoadingHomeRowsView(fixture: fixture, seriesArtwork: seriesArtwork)
+                        .environment(\.plozzCardStyle, cardStyle)
+                        .environment(\.plozzCardFocusStyle, focusStyle)
+                        .frame(width: 1920, height: 1080)
+                        .ignoresSafeArea()
+                ))
+                window.rootViewController = host
+                window.makeKeyAndVisible()
+                defer {
+                    window.isHidden = true
+                    window.rootViewController = nil
+                }
+                try await Task.sleep(for: .milliseconds(300))
+                let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                focus.requestFocusUpdate(to: window)
+                focus.updateFocusIfNeeded()
+                let candidates = focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                    guard (item as? UIControl)?.isEnabled != false,
+                          let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                          frame.width > 100, frame.height > 100 else { return nil }
+                    return (item, frame)
+                }.sorted {
+                    if abs($0.1.midY - $1.1.midY) > 1 { return $0.1.midY < $1.1.midY }
+                    return cached ? $0.1.minX > $1.1.minX : $0.1.minX < $1.1.minX
+                }
+                let loading = try XCTUnwrap(candidates.first?.0, "\(focusStyle)-\(cardStyle)")
+                host.target = loading
+                focus.requestFocusUpdate(to: host)
+                focus.updateFocusIfNeeded()
+                XCTAssertTrue(focus.focusedItem === loading, "Activate the actual Continue Watching target before \(cached ? "refresh" : "loading").")
+                host.target = nil
+                host.focusEvents = []
+                if cached {
+                    fixture.items = []
+                    try await Task.sleep(for: .milliseconds(300))
+                    XCTAssertFalse(host.focusEvents.contains { $0.contains("Discover") },
+                                   "Replacing cached cards with waiting slots must not hand focus to Discover: \(focusStyle)-\(cardStyle), \(host.focusEvents)")
+                }
+                fixture.items = (0..<4).map {
+                    MediaItem(id: "continue-\($0)", title: "Continue \($0)", kind: .episode)
+                }
+                try await Task.sleep(for: .milliseconds(500))
+                let focused = try XCTUnwrap(focus.focusedItem)
+                if let label = (focused as? NSObject)?.accessibilityLabel {
+                    XCTAssertEqual(label, "Continue 0", "\(focusStyle)-\(cardStyle)")
+                }
+                let focusedFrame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: focused, relativeTo: window))
+                let targetFrames = fixture.items.compactMap { self.firstSource($0.id, in: window) }
+                    .map { $0.convert($0.bounds, to: window) }
+                XCTAssertTrue(targetFrames.contains { $0.contains(CGPoint(x: focusedFrame.midX, y: focusedFrame.midY)) },
+                              "Actual focus must remain inside Continue Watching: \(focusStyle)-\(cardStyle), seriesArtwork=\(seriesArtwork), \(focusedFrame), \(targetFrames)")
+                XCTAssertFalse(host.focusEvents.contains { $0.contains("Discover") },
+                               "Loading must hand off directly, not focus Discover and bounce back: \(host.focusEvents)")
+                XCTAssertEqual(fixture.activeRowID, "continue")
+            }
+        }
+    }
+
+    private func firstSource(_ id: String, in view: UIView) -> DetailTransitionSourceView? {
+        if let source = view as? DetailTransitionSourceView, source.reference?.itemKey == id { return source }
+        return view.subviews.lazy.compactMap { self.firstSource(id, in: $0) }.first
+    }
+
+    private func focusItems(in window: UIWindow) -> [any UIFocusItem] {
+        var containers: [any UIFocusItemContainer] = [window]
+        var seen = Set<ObjectIdentifier>()
+        var result: [any UIFocusItem] = []
+        while let container = containers.popLast() {
+            guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
+            let frame = container.coordinateSpace.convert(window.bounds, from: window)
+            for item in container.focusItems(in: frame) {
+                if let children = item.focusItemContainer { containers.append(children) }
+                if let view = item as? UIView { containers.append(view) }
+                if item.canBecomeFocused, !(item is UIScrollView) { result.append(item) }
+            }
+        }
+        return result
+    }
+
     func testNativeScrollDoesNotSkipItsStartWhenTheCommitIsDelayed() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -680,9 +831,60 @@ private final class MotionReferences {
 }
 
 private final class MotionFocusHost: UIHostingController<AnyView> {
-    weak var target: UIView?
+    weak var target: (any UIFocusEnvironment)?
+    var focusEvents: [String] = []
     override var preferredFocusEnvironments: [any UIFocusEnvironment] {
         target.map { [$0] } ?? super.preferredFocusEnvironments
+    }
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        if let item = context.nextFocusedItem as? NSObject {
+            focusEvents.append(item.accessibilityLabel ?? "")
+        }
+    }
+}
+
+@MainActor @Observable
+private final class LoadingHomeRows {
+    var items: [MediaItem] = []
+    var activeRowID: String?
+    var firstRowReady = true
+}
+
+private struct LoadingHomeRowsView: View {
+    let fixture: LoadingHomeRows
+    let seriesArtwork: Bool
+
+    var body: some View {
+        let discover = (0..<4).map { MediaItem(id: "discover-\($0)", title: "Discover \($0)", kind: .movie) }
+        let rows = [
+            FocusHeroRow(id: "continue", itemIDs: fixture.items.map(\.stablePresentationID),
+                         leadItem: fixture.items.first, items: fixture.items, isPlaceholder: fixture.items.isEmpty),
+            FocusHeroRow(id: "discover", itemIDs: discover.map(\.stablePresentationID), leadItem: discover.first, items: discover)
+        ]
+        FocusHeroHomeView(
+            rows: rows, settings: .default, spoilerSettings: .default,
+            navigationStyle: .rail, isFrontmost: true
+        ) { row, reporter in
+            MediaRowView(
+                title: Text(verbatim: row.id), items: row.items,
+                style: row.id == "continue" ? .landscape : .poster,
+                showsSeriesArtwork: row.id == "continue" && seriesArtwork,
+                onFocusEntered: {
+                    fixture.activeRowID = row.id
+                    reporter.entered()
+                },
+                onFocusChange: { if let item = $0 { reporter.focusedItem(item) } },
+                onCardFocused: {
+                    fixture.activeRowID = row.id
+                    reporter.cardFocused($0)
+                },
+                loadingPlaceholderCount: row.isPlaceholder ? 8 : 0,
+                reservesLoadingFocus: row.id == "continue",
+                onSelect: { _ in }
+            )
+            .disabled(row.id == "continue" && !fixture.firstRowReady)
+        }
     }
 }
 

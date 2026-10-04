@@ -29,11 +29,13 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                       frame.midY < window.bounds.height * 0.2 else { return nil }
                 return (item, frame)
             }.sorted { $0.1.minX < $1.1.minX }
-            XCTAssertGreaterThanOrEqual(controls.count, model.availableContentModes.count + 3)
+            XCTAssertEqual(controls.count, model.availableContentModes.count + 2,
+                           "Alphabet navigation must not add a separate header control.")
             guard controls.count >= 3 else { return }
             let filter = controls[controls.count - 2]
             let sort = try XCTUnwrap(controls.last)
             XCTAssertEqual(filter.1.midY, sort.1.midY, accuracy: 1)
+            XCTAssertEqual(sort.1.minX - filter.1.maxX, PlozzTheme.Spacing.medium, accuracy: 1)
             XCTAssertEqual(try XCTUnwrap(controls.first).1.midY, sort.1.midY, accuracy: 1)
             controller.target = filter.0
             focus.requestFocusUpdate(to: controller)
@@ -47,7 +49,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         }
     }
 
-    func testSortKeepsHeaderFocusWhenLetterJumpAppearsAndDisappears() async throws {
+    func testSortKeepsHeaderFocusWhenScrollingAlphabetEligibilityChanges() async throws {
         let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true)
         await provider.enableAlphabet()
         let model = LibraryBrowseViewModel(
@@ -76,6 +78,51 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 XCTAssertEqual(model.alphabet.isVisible, field == .name)
                 XCTAssertTrue(focus.focusedItem === sort,
                               "Changing alphabet eligibility must not move focus out of Sort.")
+            }
+        }
+    }
+
+    func testIndexedFilterKeepsHeaderPositionAndCentersProgressInContent() async throws {
+        let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, supportsFilters: true)
+        let name = "LibraryQueryGeometry.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie,
+            defaults: defaults, initialContentMode: .titles
+        )
+        await model.loadFirstPage()
+        try await withLibrary(model: model) { root, window in
+            @MainActor func headerFrames() -> [CGRect] {
+                self.focusItems(in: window).compactMap {
+                    NavigationRowFocusRequester.frame(of: $0, relativeTo: window)
+                }.filter { $0.midY < window.bounds.height * 0.2 }.sorted { $0.minX < $1.minX }
+            }
+            let before = headerFrames()
+            XCTAssertEqual(before.count, model.availableContentModes.count + 2)
+            await provider.holdNextPage(at: 0)
+            let query = Task { await model.setFilters(.init(filter: .dolbyVision)) }
+            await self.waitForHeldPage(provider)
+            try await Task.sleep(for: .milliseconds(100))
+            window.layoutIfNeeded()
+            let during = headerFrames()
+            XCTAssertEqual(during.count, before.count, "Loading must not relocate the header out of its top band.")
+            for (old, current) in zip(before, during) {
+                XCTAssertEqual(current.midY, old.midY, accuracy: 1)
+            }
+            let progress = self.find(UIProgressView.self, in: root)
+            let progressFrame = progress.map { $0.convert($0.bounds, to: window) }
+            _ = self.capture(window, name: "indexed-filter-fixed-header")
+            await provider.releasePage()
+            await query.value
+            let bar = try XCTUnwrap(progressFrame, "Measure the actual rendered progress bar, not its enclosing screen.")
+            let contentTop = try XCTUnwrap(during.last).maxY + PlozzTheme.Spacing.large
+            XCTAssertEqual(bar.midY, (contentTop + window.safeAreaLayoutGuide.layoutFrame.maxY) / 2, accuracy: 3)
+            window.layoutIfNeeded()
+            let after = headerFrames()
+            XCTAssertEqual(after.count, before.count)
+            for (old, current) in zip(before, after) {
+                XCTAssertEqual(current.midY, old.midY, accuracy: 1)
             }
         }
     }
@@ -142,7 +189,17 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             }.sorted { $0.1.midY < $1.1.midY }
             XCTAssertEqual(headerControls().count, model.availableContentModes.count)
             let first = try XCTUnwrap(cards.first)
-            let next = try XCTUnwrap(cards.first { $0.1.midY > first.1.midY + 100 })
+            controller.target = first.0
+            focus.requestFocusUpdate(to: controller)
+            focus.updateFocusIfNeeded()
+            XCTAssertTrue(focus.focusedItem === first.0, "Enter the first row before navigating below it.")
+            controller.target = nil
+            try await Task.sleep(for: .milliseconds(200))
+            let next = try XCTUnwrap(focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                      frame.width > 100, frame.midY > first.1.midY + 100 else { return nil }
+                return (item, frame)
+            }.min { $0.1.midY < $1.1.midY })
 
             for (card, expectedHeaderCount) in [
                 (next.0, 0),
@@ -393,16 +450,19 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         await model.loadFirstPage()
         var selected: MediaItem?
         try await withGrid(model: model, onSelect: { selected = $0 }) { collection in
-            XCTAssertTrue(model.alphabet.isVisible, "The header entry must be available before scrolling")
+            XCTAssertTrue(model.alphabet.isVisible, "Alphabet indexing must remain available without a header button.")
             let window = try XCTUnwrap(collection.window)
             let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
-            let menu = try XCTUnwrap(findController(LibraryAlphabetMenuCompletion.Controller.self, in: controller))
-            let headerTarget = try XCTUnwrap(NavigationRowFocusRequester.target(for: menu.view, in: window))
+            let headerTarget = try XCTUnwrap(focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                      frame.midY < window.bounds.height * 0.2 else { return nil }
+                return (item, frame)
+            }.max { $0.1.maxX < $1.1.maxX }?.0)
             let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
             controller.target = headerTarget
             focus.requestFocusUpdate(to: controller)
             focus.updateFocusIfNeeded()
-            XCTAssertTrue(focus.focusedItem === headerTarget, "Begin with the actual header menu focused")
+            XCTAssertTrue(focus.focusedItem === headerTarget, "Begin with the remaining Sort control focused.")
             controller.target = nil
             let index = await model.jumpToLetter("M")
             XCTAssertEqual(index, 140)
@@ -848,7 +908,7 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
         SortField.legacyFields
     }
     nonisolated func libraryQueryCapabilities(in containerID: String, kind: MediaItemKind) -> LibraryQueryCapabilities {
-        .init(filters: supportsFilters ? [.all, .unwatched] : [.all], nativeFilters: [.all, .unwatched])
+        .init(filters: supportsFilters ? [.all, .unwatched, .dolbyVision] : [.all], nativeFilters: [.all, .unwatched])
     }
     func libraryQueryFacets(in containerID: String, kind: MediaItemKind) async throws -> LibraryQueryFacets {
         .init()

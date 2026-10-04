@@ -513,11 +513,17 @@ private struct FocusHeroRowStack<RowContent: View>: View {
     let model: FocusHeroModel
     let rowContent: (FocusHeroRow, FocusHeroRowReporter) -> RowContent
     @Namespace private var focusScope
+    @State private var hasEnteredContent = false
 
     var body: some View {
+        // Default-focus preference cannot stop an already-ready lower row
+        // from winning while the first native target is still being realized.
+        let awaitsFirstEntry = !hasEnteredContent && model.activeRowID == nil
+            && rows.first.map { $0.isPlaceholder || !$0.itemIDs.isEmpty } == true
         VStack(alignment: .leading, spacing: FocusHeroLayout.rowSpacing) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 rowBody(row)
+                    .disabled(awaitsFirstEntry && index > 0)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                         model.record(height: height, for: row.id)
                     }
@@ -545,10 +551,14 @@ private struct FocusHeroRowStack<RowContent: View>: View {
         let rows = rows
         let model = model
         return FocusHeroRowReporter(
-            entered: { model.activate(row, in: rows) },
+            entered: {
+                hasEnteredContent = true
+                model.activate(row, in: rows)
+            },
             // Along a row the hero waits for focus to settle; a new row has
             // no card to settle past, so its title shows as the row moves.
             cardFocused: { item in
+                hasEnteredContent = true
                 let changedRow = model.resolvedActiveRowID(in: rows) != row.id
                 model.activate(row, in: rows)
                 if changedRow { model.show(.item(item), in: row, withRow: true) }
@@ -556,10 +566,12 @@ private struct FocusHeroRowStack<RowContent: View>: View {
             // Also pins here: a row reports entry only the first time focus
             // arrives, but reports every card it settles on.
             focusedItem: { item in
+                hasEnteredContent = true
                 model.activate(row, in: rows)
                 model.show(.item(item), in: row)
             },
             focusedLibrary: { library in
+                hasEnteredContent = true
                 model.activate(row, in: rows)
                 model.show(.library(library), in: row)
             }
