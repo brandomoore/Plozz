@@ -4,11 +4,11 @@ import XCTest
 @testable import EnginePlozzigen
 
 final class AetherReleaseIntegrationTests: XCTestCase {
-    func testResolvedEngineAndSourceCreditIdentifyReleasedDisplaySwitchFix() throws {
-        XCTAssertEqual(AetherEngine.version, "7.22.2")
+    func testResolvedEngineAndSourceCreditIdentifyPinnedSubtitleFix() throws {
+        XCTAssertEqual(AetherEngine.version, "7.23.0")
         let credit = try XCTUnwrap(PlozzAttributions.entries.first { $0.title == "AetherEngine" })
         XCTAssertTrue(credit.detail.contains(
-            "https://github.com/superuser404notfound/AetherEngine/tree/\(AetherEngine.version)"
+            "https://github.com/brandomoore/AetherEngine/tree/53a85c708dcfb4fa539cc97909b0d1d67edbc920"
         ))
     }
 

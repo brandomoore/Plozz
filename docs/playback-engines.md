@@ -28,8 +28,20 @@ ships the upstream and transitive-library notices. Preserve all upstream license
 headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
-Plozz pins upstream release **7.22.2**, commit
-`0e2f5c967b5f92e692e03edf612f2753289029cf`. This release waits for an observed,
+Plozz pins the subtitle-corrected
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/53a85c708dcfb4fa539cc97909b0d1d67edbc920)
+at commit `53a85c708dcfb4fa539cc97909b0d1d67edbc920`, based directly on upstream
+release **7.23.0** (`cb439e8593cb9bfc052b0c80e16c0637d143eb3d`).
+ASS/SSA packets with neither a decoded end nor a packet duration are now discarded
+instead of lingering for a fabricated five seconds. This also applies to sidecars;
+other subtitle codecs retain their established fallback. The 7.23.0 audio-output
+flush epoch prevents a buffer decoded before a software seek from entering
+the newly flushed queue, where its old timestamp could leave playback silent.
+Its subtitle packet store appends in place rather than copying all retained
+packets on every addition, reducing contention during dense ASS openings.
+FFmpegBuild and LibDovi stay on their prior minor versions.
+
+The preceding 7.22.2 release waits for an observed,
 still-running display switch before offering an unproven HDR master. A rejection
 during a switch still falls back for that item but no longer latches a
 process-wide HDR-master refusal

@@ -21,6 +21,7 @@ struct ASSSubtitleEvent: Hashable, Sendable {
             }
         }
     }
+
 }
 
 struct ASSSubtitleFont: Sendable {
@@ -46,51 +47,104 @@ actor ASSSubtitleRasterizer {
     private var identity: String?
     private var events: Set<ASSSubtitleEvent> = []
     private var eventBytes = 0
+    private var earliestEnd = Double.infinity
+    private var lastPruneTime = -Double.infinity
+    private var snapshot: [ASSSubtitleEvent] = []
+    private var snapshotRevision: Int?
+    private var admittedThrough = -Double.infinity
+    private var nextCueBoundary = Double.infinity
     private var lastTime: Double?
 
     struct Frame: Sendable {
         let changed: Bool
         let images: [SubtitleImage]
+        let renderSeconds: Double
+        let addedEvents: Int
+        let nextCueBoundary: Double?
     }
 
-    func render(document: ASSSubtitleDocument, events incoming: [ASSSubtitleEvent], time: Double) throws -> Frame {
+    func render(document: ASSSubtitleDocument, events incoming: [ASSSubtitleEvent], time: Double,
+                snapshotRevision revision: Int? = nil) throws -> Frame {
+        let started = ProcessInfo.processInfo.systemUptime
         guard time.isFinite, abs(time) < Double(Int64.max) / 2_000 else { throw ASSSubtitleRenderError.invalidCanvas }
         if identity != document.identity {
             context = try Context(document: document)
             identity = document.identity
             events.removeAll(keepingCapacity: true)
             eventBytes = 0
+            earliestEnd = .infinity
+            lastPruneTime = -.infinity
+            snapshot = []
+            snapshotRevision = nil
+            admittedThrough = -.infinity
+            nextCueBoundary = .infinity
             lastTime = nil
         }
         guard let context else { throw ASSSubtitleRenderError.initialization }
         let movedBackward = lastTime.map { time < $0 - 0.1 } ?? false
-        let prunable = events.count > 4_000 && events.contains { $0.end < time - 5 }
-        if movedBackward || prunable {
-            let retained = movedBackward ? [] : events.filter { $0.end >= time - 5 }
+        if movedBackward {
             ass_flush_events(context.track)
-            if movedBackward { context.regionLayout = .init() }
+            context.regionLayout = .init()
             events.removeAll(keepingCapacity: true)
             eventBytes = 0
-            for event in retained {
-                try context.append(event)
-                events.insert(event)
-                eventBytes += event.packet.utf8.count
-            }
+            earliestEnd = .infinity
+            lastPruneTime = -.infinity
+            admittedThrough = -.infinity
+        } else if events.count > 1_000 && earliestEnd < time - 2 && time >= lastPruneTime + 3 {
+            ass_prune_events(context.track, Int64(((time - 2) * 1_000).rounded(.down)))
+            events = events.filter { $0.end >= time - 2 }
+            eventBytes = events.reduce(0) { $0 + $1.packet.utf8.count }
+            earliestEnd = events.map(\.end).min() ?? .infinity
+            lastPruneTime = time
         }
         lastTime = time
-        for event in incoming where event.start.isFinite && event.end.isFinite
-            && event.end > event.start && event.end >= time - 5 && event.start <= time + 10 {
+        let changedSnapshot = revision == nil || revision != snapshotRevision
+        let extendedWindow = time + 2 >= admittedThrough + 1
+        let appended = changedSnapshot && incoming.count >= snapshot.count
+            && incoming.prefix(snapshot.count).elementsEqual(snapshot)
+        let candidates: ArraySlice<ASSSubtitleEvent>
+        if movedBackward || extendedWindow || (changedSnapshot && !appended) {
+            candidates = incoming[...]
+        } else if changedSnapshot {
+            candidates = incoming.dropFirst(snapshot.count)
+        } else {
+            candidates = []
+        }
+        if changedSnapshot {
+            snapshot = incoming
+            snapshotRevision = revision
+        }
+        if changedSnapshot || time >= nextCueBoundary {
+            nextCueBoundary = .infinity
+            for event in incoming where event.start.isFinite && event.end.isFinite && event.end > event.start {
+                if event.start > time { nextCueBoundary = min(nextCueBoundary, event.start) }
+                if event.end > time { nextCueBoundary = min(nextCueBoundary, event.end) }
+            }
+        }
+        if extendedWindow { admittedThrough = time + 2 }
+        var addedEvents = 0
+        for event in candidates where event.start.isFinite && event.end.isFinite
+            && event.end > event.start && event.end >= time - 2 && event.start <= time + 2 {
             guard events.insert(event).inserted else { continue }
             eventBytes += event.packet.utf8.count
             guard events.count <= 30_000, eventBytes <= 32 * 1_024 * 1_024 else {
                 throw ASSSubtitleRenderError.allocation
             }
             try context.append(event)
+            earliestEnd = min(earliestEnd, event.end)
+            addedEvents += 1
         }
         var changed: Int32 = 0
         let images = ass_render_frame(context.renderer, context.track, Int64((time * 1_000).rounded()), &changed)
-        guard changed != 0 else { return Frame(changed: false, images: []) }
-        return Frame(changed: true, images: try context.composite(images))
+        guard changed != 0 else {
+            return Frame(changed: false, images: [],
+                         renderSeconds: ProcessInfo.processInfo.systemUptime - started, addedEvents: addedEvents,
+                         nextCueBoundary: nextCueBoundary.isFinite ? nextCueBoundary : nil)
+        }
+        let composited = try context.composite(images)
+        return Frame(changed: true, images: composited,
+                     renderSeconds: ProcessInfo.processInfo.systemUptime - started, addedEvents: addedEvents,
+                     nextCueBoundary: nextCueBoundary.isFinite ? nextCueBoundary : nil)
     }
 
     private final class Context {
@@ -231,16 +285,73 @@ actor ASSSubtitleRasterizer {
     }
 }
 
+struct ASSSubtitleFramePacer {
+    private var nextTime: Double?
+    private var lastTime: Double?
+
+    mutating func admit(_ time: Double, frameRate: Double?, cueBoundary: Double? = nil) -> Bool {
+        let interval = 1 / min(max(frameRate.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 60, 24), 60)
+        if let lastTime, time < lastTime - 0.1 {
+            nextTime = nil
+        }
+        if let scheduled = nextTime, time < scheduled {
+            guard let cueBoundary, let lastTime, lastTime < cueBoundary, time >= cueBoundary else {
+                return false
+            }
+            nextTime = time
+        }
+        let next = nextTime ?? time
+        // Advance from the frame slot, not the display tick, to preserve fractional video rates.
+        nextTime = time - next < interval ? next + interval : time + interval
+        lastTime = time
+        return true
+    }
+
+    mutating func complete(renderSeconds: Double) {
+        guard let lastTime, renderSeconds.isFinite else { return }
+        // Leave at least 30% of the interval for the software video and audio pipelines.
+        nextTime = max(nextTime ?? lastTime, lastTime + min(renderSeconds / 0.7, 0.25))
+    }
+}
+
+struct ASSSubtitleRenderLead {
+    private var latency = 0.0
+    private var lastTick: (time: Double, uptime: Double)?
+    private var playbackRate = 0.0
+
+    mutating func tick(_ time: Double, uptime: Double) {
+        if let lastTick, uptime > lastTick.uptime {
+            let rate = (time - lastTick.time) / (uptime - lastTick.uptime)
+            playbackRate = rate.isFinite ? min(max(rate, 0), 1.5) : 0
+        }
+        lastTick = (time, uptime)
+    }
+
+    mutating func complete(elapsed: Double) {
+        guard elapsed.isFinite, elapsed >= 0 else { return }
+        latency = latency == 0 ? elapsed : (latency + elapsed) / 2
+    }
+
+    func time(for playbackTime: Double) -> Double {
+        playbackTime + min(latency * playbackRate, 0.2)
+    }
+}
+
 @MainActor
 final class ASSSubtitleRenderer {
     private var rasterizer = ASSSubtitleRasterizer()
     private var document: ASSSubtitleDocument?
     private var events: [ASSSubtitleEvent] = []
+    private var eventSnapshotRevision = 0
     private var revision = 0
     private var frameID = 0
     private var pending: Task<Void, Never>?
     private var requestedTime: Double?
     private var lastTime: Double?
+    private var frameRate: Double?
+    private var nextCueBoundary: Double?
+    private var pacer = ASSSubtitleFramePacer()
+    private var renderLead = ASSSubtitleRenderLead()
     private var failed = false
     var onFrame: (([SubtitleCue]) -> Void)?
 
@@ -248,12 +359,15 @@ final class ASSSubtitleRenderer {
         if self.document?.identity != document.identity || events.isEmpty { clear() }
         self.document = document
         self.events = events
+        eventSnapshotRevision &+= 1
         lastTime = nil
     }
 
-    func tick(_ time: Double) {
+    func tick(_ time: Double, frameRate: Double? = nil) {
         guard !failed, document != nil, time.isFinite else { return }
+        renderLead.tick(time, uptime: ProcessInfo.processInfo.systemUptime)
         requestedTime = time
+        self.frameRate = frameRate
         renderPendingFrame()
     }
 
@@ -262,14 +376,21 @@ final class ASSSubtitleRenderer {
         // ticks on 59.94 Hz displays; libass itself uses millisecond timestamps.
         guard pending == nil, let document, let time = requestedTime,
               lastTime.map({ abs(time - $0) >= 0.001 }) ?? true else { return }
+        guard pacer.admit(time, frameRate: frameRate, cueBoundary: nextCueBoundary) else { return }
         requestedTime = nil
         lastTime = time
-        let revision = revision, events = events, rasterizer = rasterizer
-        pending = Task { [weak self] in
+        let revision = revision, events = events, eventSnapshotRevision = eventSnapshotRevision, rasterizer = rasterizer
+        let renderTime = renderLead.time(for: time)
+        let started = ProcessInfo.processInfo.systemUptime
+        pending = Task(priority: .userInitiated) { [weak self] in
             do {
-                let frame = try await rasterizer.render(document: document, events: events, time: time)
+                let frame = try await rasterizer.render(document: document, events: events, time: renderTime,
+                                                        snapshotRevision: eventSnapshotRevision)
                 guard let self, !Task.isCancelled, self.revision == revision else { return }
                 pending = nil
+                renderLead.complete(elapsed: ProcessInfo.processInfo.systemUptime - started)
+                pacer.complete(renderSeconds: frame.renderSeconds)
+                nextCueBoundary = frame.nextCueBoundary
                 defer { renderPendingFrame() }
                 guard frame.changed else { return }
                 onFrame?(frame.images.map {
@@ -295,6 +416,10 @@ final class ASSSubtitleRenderer {
         document = nil
         events = []
         lastTime = nil
+        frameRate = nil
+        nextCueBoundary = nil
+        pacer = ASSSubtitleFramePacer()
+        renderLead = ASSSubtitleRenderLead()
         failed = false
         rasterizer = ASSSubtitleRasterizer()
         onFrame?([])
