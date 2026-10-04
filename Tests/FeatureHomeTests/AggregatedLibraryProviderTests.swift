@@ -141,7 +141,8 @@ final class AggregatedLibraryProviderTests: XCTestCase {
                 .taggingLibrary("lib-healthy")
         ]
         healthy.recommendationHubs = [
-            LibrarySection(id: "native", title: "Because You Watched", items: [
+            LibrarySection(id: "native", title: "Because You Watched",
+                           localizedTitle: "Recommended", localizedTitleSuffix: " · Movies", items: [
                 movie("suggested", title: "Suggested", year: 2021, tmdb: "101")
             ])
         ]
@@ -156,6 +157,8 @@ final class AggregatedLibraryProviderTests: XCTestCase {
         XCTAssertEqual(hubs.map(\.id), ["healthy\u{1F}lib-healthy:native"])
         XCTAssertEqual(hubs.first?.items.first?.libraryID, "lib-healthy")
         XCTAssertEqual(hubs.first?.items.first?.sourceAccountID, "healthy")
+        XCTAssertEqual(hubs.first?.localizedTitle, LocalizedStringResource("Recommended"))
+        XCTAssertEqual(hubs.first?.localizedTitleSuffix, " · Movies · \(healthy.session.server.name)")
 
         healthy.recommendationHubError = .serverUnreachable
         do {

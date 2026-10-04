@@ -1630,11 +1630,11 @@ public struct HomeView: View {
             let section = row.section
             if let failure = row.failure {
                 rowFailureView(
-                    title: Text(verbatim: section.title), error: failure, onFocusEntered: reporter.entered
+                    title: section.displayName, error: failure, onFocusEntered: reporter.entered
                 )
             } else {
                 MediaRowView(
-                    title: Text(verbatim: section.title),
+                    title: section.displayName,
                     items: section.items,
                     style: cardStyle(section.style),
                     spoilerSettings: spoilerSettings,
@@ -1693,10 +1693,10 @@ public struct HomeView: View {
         ForEach(group.rows) { row in
             let section = row.section
             if let failure = row.failure {
-                rowFailureView(title: Text(verbatim: section.title), error: failure)
+                rowFailureView(title: section.displayName, error: failure)
             } else {
                 MediaRowView(
-                    title: Text(verbatim: section.title),
+                    title: section.displayName,
                     items: section.items,
                     style: cardStyle(section.style),
                     spoilerSettings: spoilerSettings,

@@ -280,7 +280,7 @@ public struct LibraryBrowseView: View {
 
     private func recommendedRow(_ section: LibrarySection) -> some View {
         MediaRowView(
-            title: Text(verbatim: section.title),
+            title: section.displayName,
             items: section.items,
             style: section.style == .poster ? .poster : .landscape,
             spoilerSettings: spoilerSettings,
@@ -315,7 +315,7 @@ public struct LibraryBrowseView: View {
         ) { row, reporter in
             if let section = sectionsByID[row.id] {
                 MediaRowView(
-                    title: Text(verbatim: section.title),
+                    title: section.displayName,
                     items: section.items,
                     style: section.style == .poster ? .poster : .landscape,
                     spoilerSettings: spoilerSettings,

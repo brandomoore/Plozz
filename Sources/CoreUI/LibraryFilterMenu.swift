@@ -30,7 +30,12 @@ public struct LibraryFilterMenu: View {
     public var body: some View {
         Menu {
             Picker("Filter", selection: binding(\.filter)) {
-                ForEach(capabilities.filters, id: \.self) { filter in Text(filter.displayName).tag(filter) }
+                ForEach(capabilities.filters, id: \.self) { filter in
+                    switch filter.displayName {
+                    case .localized(let name): Text(name).tag(filter)
+                    case .format(let name): Text(verbatim: name).tag(filter)
+                    }
+                }
             }
             Divider()
             if capabilities.supportsGenres {

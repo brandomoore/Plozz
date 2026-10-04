@@ -90,21 +90,28 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             guard !items.isEmpty else { return nil }
             let subject = recommendation.BaselineItemName?.trimmingCharacters(in: .whitespacesAndNewlines)
             let title: String
+            let localizedTitle: LocalizedStringResource
             switch (recommendation.RecommendationType, subject) {
             case ("SimilarToRecentlyPlayed", let subject?) where !subject.isEmpty:
-                title = String(localized: "Because you watched \(subject)")
+                title = "Because you watched \(subject)"
+                localizedTitle = "Because you watched \(subject)"
             case ("SimilarToLikedItem", let subject?) where !subject.isEmpty:
-                title = String(localized: "Because you liked \(subject)")
+                title = "Because you liked \(subject)"
+                localizedTitle = "Because you liked \(subject)"
             case ("HasDirectorFromRecentlyPlayed", _), ("HasLikedDirector", _):
-                title = String(localized: "More from directors you like")
+                title = "More from directors you like"
+                localizedTitle = "More from directors you like"
             case ("HasActorFromRecentlyPlayed", _), ("HasLikedActor", _):
-                title = String(localized: "More with actors you like")
+                title = "More with actors you like"
+                localizedTitle = "More with actors you like"
             default:
-                title = String(localized: "Suggested movies")
+                title = "Suggested movies"
+                localizedTitle = "Suggested movies"
             }
             return LibrarySection(
                 id: recommendation.CategoryId
                     ?? "\(recommendation.RecommendationType):\(subject ?? "")", title: title,
+                localizedTitle: localizedTitle,
                 items: Array(items.prefix(limit))
             )
         }

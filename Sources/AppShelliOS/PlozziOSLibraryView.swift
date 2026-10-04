@@ -308,7 +308,7 @@ struct PlozziOSLibraryGridView: View {
                     browseControls
                     ForEach(sections) { section in
                         MediaRowView(
-                            title: Text(verbatim: section.title),
+                            title: section.displayName,
                             items: section.items,
                             style: section.style == .poster ? .poster : .landscape,
                             spoilerSettings: settings.spoilers.settings,

@@ -27,4 +27,13 @@ public extension MediaLibrary {
         return String(localized: resource) // l10n:content — UIKit boundary for an existing localized library name
     }
 }
+
+public extension LibrarySection {
+    var displayName: Text {
+        guard let localizedTitle else { return Text(verbatim: title) }
+        let heading = Text(localizedTitle)
+        guard let localizedTitleSuffix else { return heading }
+        return heading + Text(verbatim: localizedTitleSuffix)
+    }
+}
 #endif

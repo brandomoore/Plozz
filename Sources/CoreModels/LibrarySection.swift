@@ -26,15 +26,10 @@ public struct LibrarySection: Identifiable, Equatable, Sendable {
     /// row without colliding.
     public let id: String
 
-    /// The row heading shown above the cards — always rendered `Text(verbatim:)`
-    /// today. Some producers pass pure provider content (Plex hub titles); the
-    /// Home aggregator's own "Recently Added in {library}" row mixes our copy
-    /// with the library's (content) name, baked into one `String` at
-    /// construction time. Because the same slot serves both, and every render
-    /// site already treats it as verbatim, it stays `String`/content here — the
-    /// aggregator's own wording is a real, reported localization gap, not a
-    /// mislabel.
-    public let title: String  // l10n:content — mixed producer field (provider hub titles + our own baked-in wording), see note above
+    /// Provider content or a locale-independent fallback. Views prefer the resource when present.
+    public let title: String  // l10n:content — provider heading or stable fallback, not localized presentation
+    public let localizedTitle: LocalizedStringResource?
+    public let localizedTitleSuffix: String?  // l10n:content — server-name qualification
 
     /// Poster vs landscape presentation.
     public let style: Style
@@ -44,9 +39,15 @@ public struct LibrarySection: Identifiable, Equatable, Sendable {
     /// row.
     public var items: [MediaItem]
 
-    public init(id: String, title: String, style: Style = .poster, items: [MediaItem] = []) {  // l10n:content — see `title` property doc
+    public init(
+        id: String, title: String,  // l10n:content — provider heading or stable fallback
+        localizedTitle: LocalizedStringResource? = nil,
+        localizedTitleSuffix: String? = nil, style: Style = .poster, items: [MediaItem] = []
+    ) {
         self.id = id
         self.title = title
+        self.localizedTitle = localizedTitle
+        self.localizedTitleSuffix = localizedTitleSuffix
         self.style = style
         self.items = items
     }

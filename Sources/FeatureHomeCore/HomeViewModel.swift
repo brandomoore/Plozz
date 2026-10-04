@@ -224,7 +224,9 @@ public final class HomeViewModel {
                     HomeLibrarySectionGroup(
                         library: $0.library,
                         sections: $0.sections.map {
-                            LibrarySection(id: $0.id, title: $0.title, style: $0.style,
+                            LibrarySection(id: $0.id, title: $0.title,
+                                           localizedTitle: $0.localizedTitle, localizedTitleSuffix: $0.localizedTitleSuffix,
+                                           style: $0.style,
                                            items: Array($0.items.prefix(perRow)))
                         }
                     )

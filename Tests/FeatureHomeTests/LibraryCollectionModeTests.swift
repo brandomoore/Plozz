@@ -62,7 +62,8 @@ final class LibraryCollectionModeTests: XCTestCase {
         let provider = LibraryModeProvider(
             watchingItems: [watching, watching.taggingLibrary("other-library")],
             nativeSections: [
-                LibrarySection(id: "recentlyAdded", title: "For You", items: [hubItem]),
+                LibrarySection(id: "recentlyAdded", title: "For You", localizedTitle: "Recommended",
+                               localizedTitleSuffix: " · Cinema", items: [hubItem]),
                 LibrarySection(id: "recentlyAdded", title: "More For You", items: [hubItem])
             ]
         )
@@ -73,6 +74,11 @@ final class LibraryCollectionModeTests: XCTestCase {
             return XCTFail("Expected scoped recommendation rows")
         }
         XCTAssertEqual(sections.map(\.title), ["Continue Watching", "For You", "More For You", "Recently Added"])
+        XCTAssertEqual(sections[0].localizedTitle, LocalizedStringResource("Continue Watching"))
+        XCTAssertEqual(sections[1].localizedTitle, LocalizedStringResource("Recommended"))
+        XCTAssertEqual(sections[1].localizedTitleSuffix, " · Cinema")
+        XCTAssertNil(sections[2].localizedTitle)
+        XCTAssertEqual(sections[3].localizedTitle, LocalizedStringResource("Recently Added"))
         XCTAssertEqual(Set(sections.map(\.id)).count, sections.count)
         XCTAssertEqual(sections.first?.items.map(\.id), ["watching"])
         XCTAssertTrue(sections.flatMap(\.items).allSatisfy { $0.sourceAccountID == "owning-account" })
@@ -99,6 +105,26 @@ final class LibraryCollectionModeTests: XCTestCase {
         await provider.setNativeSections([remaining, remaining])
         await model.loadRecommendations()
         XCTAssertEqual(model.recommendationState.value?.filter { $0.title == "Remaining" }.map(\.id), original)
+    }
+
+    func testLocalizedHubPresentationDoesNotChangeItsIdentity() async throws {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        var resource: LocalizedStringResource = "Recommended"
+        resource.locale = Locale(identifier: "de")
+        let provider = LibraryModeProvider(nativeSections: [
+            LibrarySection(id: "stable", title: "Recommended", localizedTitle: resource, items: [item])
+        ])
+        let model = model(provider)
+        await model.loadRecommendationsIfNeeded()
+        let original = try XCTUnwrap(model.recommendationState.value?.first { $0.title == "Recommended" })
+        resource.locale = Locale(identifier: "fr")
+        await provider.setNativeSections([
+            LibrarySection(id: "stable", title: "Recommended", localizedTitle: resource, items: [item])
+        ])
+        await model.loadRecommendations()
+        let updated = try XCTUnwrap(model.recommendationState.value?.first { $0.title == "Recommended" })
+        XCTAssertEqual(updated.id, original.id)
+        XCTAssertEqual(updated.localizedTitle, resource)
     }
 
     func testRecommendationFailurePreservesOtherRowsAndCanRetry() async {

@@ -203,6 +203,11 @@ Runner verdict regressions use the existing host-side unittest runner:
 rendered frames before comparing native fills. Liquid Glass can keep changing
 after layout; comparing its first frames must not be mistaken for a marker color
 regression or worked around by relaxing the pixel assertions.
+Capture at the window's native display scale and sample every backing pixel in
+the asserted point ranges. Downsampling a 2x TV render to 1x introduces ringing
+even around plain opaque capsules; a separate capsule fixture protects snapshot
+fidelity. Native-resolution captures retain three consecutive unchanged-frame
+comparisons within a six-second capture budget; pixel tolerances stay unchanged.
 
 `SettingsSubtitleContrastHostedTests` measures rendered text and glyph contrast
 while native focus moves between shared settings rows in Black, Dark, and Light.

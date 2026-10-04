@@ -1061,7 +1061,7 @@ public final class LibraryBrowseViewModel {
             let scoped = items.filter { provider.contains($0, inLibrary: libraryID) }
             if !scoped.isEmpty {
                 sections.append(LibrarySection(
-                    id: "continueWatching", title: String(localized: "Continue Watching"),
+                    id: "continueWatching", title: "Continue Watching", localizedTitle: "Continue Watching",
                     style: .landscape, items: scoped.map { item in
                         accountID.map { item.taggingSource($0) } ?? item
                     }
@@ -1078,7 +1078,9 @@ public final class LibraryBrowseViewModel {
                 let occurrence = occurrences[key, default: 0]
                 occurrences[key] = occurrence + 1
                 return LibrarySection(
-                    id: "hub:\(key):\(occurrence)", title: section.title, style: section.style,
+                    id: "hub:\(key):\(occurrence)", title: section.title,
+                    localizedTitle: section.localizedTitle, localizedTitleSuffix: section.localizedTitleSuffix,
+                    style: section.style,
                     items: section.items.map {
                         let item = $0.libraryID == nil ? $0.taggingLibrary(libraryID) : $0
                         return accountID.map { item.taggingSource($0) } ?? item
@@ -1091,7 +1093,7 @@ public final class LibraryBrowseViewModel {
         case .success(let page):
             if !page.items.isEmpty {
                 sections.append(LibrarySection(
-                    id: "recentlyAdded", title: String(localized: "Recently Added"),
+                    id: "recentlyAdded", title: "Recently Added", localizedTitle: "Recently Added",
                     items: page.items.map { item in
                         accountID.map { item.taggingSource($0) } ?? item
                     }

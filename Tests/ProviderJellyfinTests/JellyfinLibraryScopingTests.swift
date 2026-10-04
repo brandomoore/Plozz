@@ -42,6 +42,10 @@ final class JellyfinLibraryScopingTests: XCTestCase {
             let sections = try await provider.libraryHubs(libraryID: "LIB1", kind: .movie, limit: 10)
             XCTAssertEqual(sections.map(\.id), ["because-1", "HasLikedDirector:"])
             XCTAssertEqual(sections.map(\.title), ["Because you watched A Favorite", "More from directors you like"])
+            let expectedTitles: [LocalizedStringResource] = [
+                "Because you watched \("A Favorite")", "More from directors you like"
+            ]
+            XCTAssertEqual(sections.compactMap(\.localizedTitle), expectedTitles)
             XCTAssertEqual(sections.map { $0.items.map(\.id) }, [["m1"], ["m2"]])
 
             let query = try XCTUnwrap(stub.queryItems(forPathSuffix: "/Movies/Recommendations"))

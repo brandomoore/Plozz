@@ -11,17 +11,22 @@ public enum LibraryFilter: String, CaseIterable, Codable, Sendable {
     case unmatched
     case duplicates
 
-    public var displayName: LocalizedStringResource {
+    public enum DisplayName: Sendable {
+        case localized(LocalizedStringResource)
+        case format(String)
+    }
+
+    public var displayName: DisplayName {
         switch self {
-        case .all: return "All"
-        case .hdr: return "HDR"
-        case .dolbyVision: return "Dolby Vision"
-        case .hdr10Plus: return "HDR10+"
-        case .atmos: return "Atmos"
-        case .unwatched: return "Unwatched"
-        case .inProgress: return "In Progress"
-        case .unmatched: return "Unmatched"
-        case .duplicates: return "Duplicates"
+        case .all: return .localized("All")
+        case .hdr: return .format("HDR")
+        case .dolbyVision: return .format("Dolby Vision")
+        case .hdr10Plus: return .format("HDR10+")
+        case .atmos: return .format("Atmos")
+        case .unwatched: return .localized("Unwatched")
+        case .inProgress: return .localized("In Progress")
+        case .unmatched: return .localized("Unmatched")
+        case .duplicates: return .localized("Duplicates")
         }
     }
 
@@ -52,9 +57,13 @@ public struct LibraryFilters: Codable, Hashable, Sendable {
     public func summary(in locale: Locale) -> String {
         var values: [String] = []
         if filter != .all {
-            var name = filter.displayName
-            name.locale = locale
-            values.append(String(localized: name)) // l10n:content — resolves the existing quick-filter label for presentation
+            switch filter.displayName {
+            case .localized(var name):
+                name.locale = locale
+                values.append(String(localized: name)) // l10n:content — resolves the existing quick-filter label for presentation
+            case .format(let name):
+                values.append(name)
+            }
         }
         if let genre { values.append(genre) }
         if let year { values.append(String(year)) }

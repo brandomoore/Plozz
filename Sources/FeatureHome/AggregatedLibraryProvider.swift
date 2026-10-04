@@ -488,6 +488,9 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Capabi
                             LibrarySection(
                                 id: "\(source.sourceKey):\(section.id)",
                                 title: "\(section.title) · \(source.provider.session.server.name)",
+                                localizedTitle: section.localizedTitle,
+                                localizedTitleSuffix: (section.localizedTitleSuffix ?? "")
+                                    + " · \(source.provider.session.server.name)",
                                 style: section.style,
                                 items: section.items.map {
                                     $0.taggingSource(source.accountID).taggingLibrary(source.containerID)

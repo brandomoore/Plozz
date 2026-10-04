@@ -84,6 +84,11 @@ fallback when the user's server has no attached trailer.
   its label names the selected options while they fit, falling back to their
   count only when the available header space is too narrow. Tabs and Sort retain
   their room, and accessibility always announces the full selection.
+  The compact count uses localized plural forms; format names such as Dolby
+  Vision stay verbatim in both the menu and selection summary.
+  App-authored recommendation headings retain localization resources through
+  caching and source qualification, so language changes update existing rows
+  without changing their identities. Provider-authored headings stay verbatim.
   Sort/filter choices are remembered per library, account, mode, and profile.
   Genre/year options use each server's scoped facet endpoint; Jellyfin/Emby use
   `/Items/Filters`, whose response contains genre names and years. Empty successful

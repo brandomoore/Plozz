@@ -7,6 +7,33 @@ import XCTest
 
 @MainActor
 final class PlayerSkipMarkerHostedTests: XCTestCase {
+    func testCapturePreservesKnownTransparentGaps() async throws {
+        try await withWindow { window in
+            let host = UIHostingController(rootView:
+                Color(red: 0.15, green: 0.35, blue: 0.6)
+                    .overlay {
+                        HStack(spacing: 4) {
+                            Capsule().fill(.white).frame(width: 158)
+                            Capsule().fill(.white).frame(width: 956)
+                            Capsule().fill(.white).frame(width: 158)
+                        }
+                        .frame(width: 1280, height: 12)
+                    }
+                    .ignoresSafeArea()
+            )
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            window.layoutIfNeeded()
+            let frame = try await render(in: window)
+            for y in frame.pixels(534..<546) {
+                for x in [479, 480, 481, 1439, 1440, 1441].flatMap({ frame.pixels($0..<($0 + 1)) }) {
+                    XCTAssertEqual(frame.colorAtPixel(x, y), frame.colorAtPixel(x, frame.pixel(450)))
+                }
+            }
+            attach(frame.image, name: "Known transparent gaps")
+        }
+    }
+
     func testSegmentedTracksKeepNativeFillsAndRoundEverySectionWithoutInternalCutouts() async throws {
         XCTAssertEqual(PlayerScrubTrackSurface.glassBackingOpacity, 0.10)
         try await withWindow { window in
@@ -21,14 +48,16 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                     let frame = try await render(in: window)
                     let top = focused ? 580 : 584
                     let bottom = focused ? 600 : 596
-                    for y in top..<bottom {
-                        for x in [479, 480, 481, 1439, 1440, 1441] {
-                            XCTAssertEqual(frame.color(x, y), frame.color(x, 450),
+                    for y in frame.pixels(top..<bottom) {
+                        for x in [479, 480, 481, 1439, 1440, 1441].flatMap({ frame.pixels($0..<($0 + 1)) }) {
+                            XCTAssertEqual(frame.colorAtPixel(x, y), frame.colorAtPixel(x, frame.pixel(450)),
                                            "The entire gap, including the glass backing, reveals the picture.")
                         }
-                        for x in [640, 960, 1280] {
+                        for x in [640, 960, 1280].flatMap({ frame.pixels($0..<($0 + 1)) }) {
                             for channel in 0..<3 {
-                                XCTAssertEqual(Int(frame.color(x, y)[channel]), Int(frame.color(x, y - 100)[channel]), accuracy: 1,
+                                XCTAssertEqual(
+                                    Int(frame.colorAtPixel(x, y)[channel]),
+                                    Int(frame.colorAtPixel(x, y - frame.pixel(100))[channel]), accuracy: 1,
                                                "The sections retain the original played, buffered, and unplayed fills. flat=\(performance) focused=\(focused)")
                             }
                         }
@@ -103,7 +132,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
 
     private func render(in window: UIWindow) async throws -> Frame {
         // Native glass can still be transitioning after the first completed layout.
-        let deadline = ContinuousClock.now + .seconds(3)
+        let deadline = ContinuousClock.now + .seconds(6)
         var frame = try capture(in: window)
         var stableFrames = 0
         while ContinuousClock.now < deadline {
@@ -119,7 +148,7 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
 
     private func capture(in window: UIWindow) throws -> Frame {
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
+        format.scale = window.screen.scale
         format.preferredRange = .standard
         let snapshot = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
             XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
@@ -132,9 +161,9 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
                 bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
             ))
-            context.draw(image, in: window.bounds)
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         }
-        return Frame(image: snapshot, width: image.width, bytes: bytes)
+        return Frame(image: snapshot, width: image.width, scale: snapshot.scale, bytes: bytes)
     }
 
     private func attach(_ image: UIImage, name: String) {
@@ -147,9 +176,22 @@ final class PlayerSkipMarkerHostedTests: XCTestCase {
     private struct Frame {
         let image: UIImage
         let width: Int
+        let scale: CGFloat
         let bytes: [UInt8]
 
         func color(_ x: Int, _ y: Int) -> [UInt8] {
+            colorAtPixel(pixel(x), pixel(y))
+        }
+
+        func pixel(_ point: Int) -> Int {
+            Int((CGFloat(point) * scale).rounded())
+        }
+
+        func pixels(_ points: Range<Int>) -> Range<Int> {
+            pixel(points.lowerBound)..<pixel(points.upperBound)
+        }
+
+        func colorAtPixel(_ x: Int, _ y: Int) -> [UInt8] {
             let start = (y * width + x) * 4
             return Array(bytes[start..<(start + 3)])
         }

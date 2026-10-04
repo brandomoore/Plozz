@@ -2,6 +2,7 @@
 import XCTest
 import CoreModels
 @testable import FeatureHome
+@testable import FeatureHomeCore
 
 /// Locks down `HomeRow.rows(for:isLibraryVisible:)`: the data-driven layout that
 /// both the loaded Home view and (later) the skeleton/streaming view render from.
@@ -40,6 +41,23 @@ final class HomeRowTests: XCTestCase {
     func testEmptyContentProducesNoRows() {
         let rows = HomeRow.rows(for: content()) { _ in true }
         XCTAssertTrue(rows.isEmpty)
+    }
+
+    func testSnapshotBoundsRetainLocalizedLibraryHeadings() throws {
+        let section = LibrarySection(
+            id: "hub", title: "Recommended", localizedTitle: "Recommended",
+            localizedTitleSuffix: " · Cinema", items: [item("one"), item("two")]
+        )
+        let source = HomeViewModel.Content(
+            continueWatching: [], latest: [], watchlist: [], libraries: [],
+            librarySections: [.init(library: library(account: "a", id: "movies"), sections: [section])]
+        )
+        let bounded = source.bounded(perRow: 1, watchlistLimit: 1)
+        let retained = try XCTUnwrap(bounded.librarySections.first?.sections.first)
+        XCTAssertEqual(retained.localizedTitle, section.localizedTitle)
+        XCTAssertEqual(retained.localizedTitleSuffix, section.localizedTitleSuffix)
+        XCTAssertEqual(retained.id, section.id)
+        XCTAssertEqual(retained.items.map(\.id), ["one"])
     }
 
     func testPendingRowsKeepTheirSlotsWithoutExposingCachedCards() {

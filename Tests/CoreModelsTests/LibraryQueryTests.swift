@@ -18,9 +18,13 @@ final class LibraryQueryTests: XCTestCase {
         let locale = Locale(identifier: "en")
         XCTAssertEqual(LibraryFilters.all.summary(in: locale), "")
         for filter in LibraryFilter.allCases where filter != .all {
-            var name = filter.displayName
-            name.locale = locale
-            XCTAssertEqual(LibraryFilters(filter: filter).summary(in: locale), String(localized: name))
+            switch filter.displayName {
+            case .localized(var name):
+                name.locale = locale
+                XCTAssertEqual(LibraryFilters(filter: filter).summary(in: locale), String(localized: name))
+            case .format(let name):
+                XCTAssertEqual(LibraryFilters(filter: filter).summary(in: locale), name)
+            }
         }
         XCTAssertEqual(LibraryFilters(filter: .dolbyVision).summary(in: locale), "Dolby Vision")
         XCTAssertEqual(LibraryFilters(genre: "Science Fiction").summary(in: locale), "Science Fiction")
@@ -28,6 +32,27 @@ final class LibraryQueryTests: XCTestCase {
         XCTAssertEqual(LibraryFilters(genre: "Drama", year: 2024).summary(in: locale), "Drama · 2024")
         XCTAssertEqual(LibraryFilters(filter: .unwatched, genre: "Drama", year: 2024).summary(in: locale),
                        "Unwatched · Drama · 2024")
+    }
+
+    func testFilterFormatsStayVerbatimInEveryLocale() {
+        let formats: [LibraryFilter: String] = [
+            .hdr: "HDR", .dolbyVision: "Dolby Vision", .hdr10Plus: "HDR10+", .atmos: "Atmos"
+        ]
+        for filter in LibraryFilter.allCases {
+            switch filter.displayName {
+            case .localized:
+                XCTAssertNil(formats[filter])
+            case .format(let name):
+                XCTAssertEqual(name, formats[filter])
+            }
+        }
+        for locale in ["en", "de", "ar", "ja"].map({ Locale(identifier: $0) }) {
+            for (filter, name) in formats {
+                XCTAssertEqual(LibraryFilters(filter: filter).summary(in: locale), name)
+                XCTAssertEqual(LibraryFilters(filter: filter, genre: "Drama", year: 2024).summary(in: locale),
+                               "\(name) · Drama · 2024")
+            }
+        }
     }
 
     func testQuickFilterIntersectsGenreAndYear() {
