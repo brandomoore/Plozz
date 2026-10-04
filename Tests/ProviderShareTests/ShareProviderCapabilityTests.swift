@@ -388,6 +388,20 @@ final class ShareProviderCapabilityTests: XCTestCase {
         )
     }
 
+    func testIndexedShareAdvertisesOnlyProjectedSortFields() {
+        let provider = ShareProvider(
+            session: makeSession(),
+            catalogCoordinator: FakeCatalogCoordinator(reader: FakeCatalogReader())
+        )
+        for (container, kind) in [(ShareCatalogID.moviesLibrary, MediaItemKind.movie),
+                                  (ShareCatalogID.library(.tv), .series),
+                                  (ShareCatalogID.library(.anime), .series)] {
+            XCTAssertEqual(provider.supportedSortFields(in: container, kind: kind),
+                           [.name, .year, .releaseDate, .communityRating, .runtime,
+                            .progress, .lastPlayed, .dateAdded, .random])
+        }
+    }
+
     func testShareAdvertisesOnlySortsItsContainerCanHonor() {
         let personalProvider = ShareProvider(
             session: makeSession(

@@ -140,6 +140,12 @@ enum ShareCatalogReadProjection {
             copy.productionYear = value
             copy.metadataProvenance[.productionYear] = attribution(for: .productionYear)
         }
+        if let row = fields[.premiereDate],
+           let value = CatalogJSON.decode(String.self, row.valueJSON),
+           let date = MediaItem.calendarDayReleaseDate(from: value) {
+            copy.releaseDate = date
+            copy.metadataProvenance[.premiereDate] = attribution(for: .premiereDate)
+        }
         // seasonNumber/episodeNumber are EPISODE-only (C1, final projection boundary):
         // even if a stray value reached persistence, never overlay it onto a
         // non-episode item.

@@ -81,6 +81,37 @@ final class LibraryQuerySessionTests: XCTestCase {
         XCTAssertNil(model.facetsError)
     }
 
+    func testFacetCallersShareResultsAfterTheOriginalCallerIsCancelled() async {
+        for error: AppError? in [nil, .serverUnreachable] {
+            let source = QueryInventoryProvider(items: [])
+            let model = LibraryBrowseViewModel(
+                provider: source, containerID: "facet-reentry", containerKind: .movie, initialContentMode: .titles)
+            await source.setFacetError(error)
+            await source.holdNextFacetRequest()
+            let previous = Task { await model.loadQueryFacetsIfNeeded() }
+            await source.waitForHeldFacetRequest()
+            previous.cancel()
+            let release = Task { await source.releaseFacetRequest() }
+            await model.loadQueryFacetsIfNeeded()
+            await release.value
+            await previous.value
+            let requests = await source.facetRequests
+            XCTAssertEqual(requests, 1)
+            XCTAssertFalse(model.facetsLoading)
+            XCTAssertEqual(model.facetsError, error)
+            if error == nil {
+                XCTAssertEqual(model.queryFacets, .init(genres: ["Drama"], years: [2024]))
+            } else {
+                await source.setFacetError(nil)
+                await model.loadQueryFacetsIfNeeded(retry: true)
+                XCTAssertNil(model.facetsError)
+                XCTAssertEqual(model.queryFacets, .init(genres: ["Drama"], years: [2024]))
+                let retried = await source.facetRequests
+                XCTAssertEqual(retried, 2)
+            }
+        }
+    }
+
     func testPreRefreshFacetResponsesCannotOverwriteNewerOptionsOrErrors() async {
         for oldError: AppError? in [nil, .serverUnreachable] {
             let source = QueryInventoryProvider(items: queryItems(2), facets: .init())

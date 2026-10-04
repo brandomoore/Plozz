@@ -472,6 +472,8 @@ public final class LibraryBrowseViewModel {
     public func refreshAfterCatalogChange(preservingFileFacts: Bool = false) async {
         if !preservingFileFacts {
             queryPresentation.facetsRevision += 1
+            queryPresentation.facetsTask?.cancel()
+            queryPresentation.facetsTask = nil
             queryPresentation.hasLoadedFacets = false
             facetsLoading = false
             facetsError = nil
@@ -906,29 +908,40 @@ public final class LibraryBrowseViewModel {
     }
 
     public func loadQueryFacetsIfNeeded(retry: Bool = false) async {
-        guard !Task.isCancelled, !facetsLoading, !queryPresentation.hasLoadedFacets || retry,
+        guard !Task.isCancelled, !queryPresentation.hasLoadedFacets || retry,
               queryCapabilities.supportsGenres || queryCapabilities.supportsYears,
               showsFilterMenu, let source = provider as? any MediaLibraryQueryProviding else { return }
+        if let pending = queryPresentation.facetsTask {
+            await pending.value
+            return
+        }
         let revision = queryPresentation.facetsRevision
         facetsLoading = true
         facetsError = nil
-        defer {
-            if revision == queryPresentation.facetsRevision { facetsLoading = false }
+        let task = Task {
+            defer {
+                if revision == queryPresentation.facetsRevision {
+                    facetsLoading = false
+                    queryPresentation.facetsTask = nil
+                }
+            }
+            do {
+                let facets = try await source.libraryQueryFacets(in: containerID, kind: containerKind)
+                try Task.checkCancellation()
+                guard revision == queryPresentation.facetsRevision else { return }
+                queryFacets = facets
+                queryPresentation.hasLoadedFacets = true
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled, revision == queryPresentation.facetsRevision,
+                      (error as? AppError) != .cancelled else { return }
+                PlozzLog.app.error("Library facets failed: \(String(describing: error))")
+                facetsError = (error as? AppError) ?? .unknown("")
+            }
         }
-        do {
-            let facets = try await source.libraryQueryFacets(in: containerID, kind: containerKind)
-            try Task.checkCancellation()
-            guard revision == queryPresentation.facetsRevision else { return }
-            queryFacets = facets
-            queryPresentation.hasLoadedFacets = true
-        } catch is CancellationError {
-            return
-        } catch {
-            guard !Task.isCancelled, revision == queryPresentation.facetsRevision,
-                  (error as? AppError) != .cancelled else { return }
-            PlozzLog.app.error("Library facets failed: \(String(describing: error))")
-            facetsError = (error as? AppError) ?? .unknown("")
-        }
+        queryPresentation.facetsTask = task
+        await task.value
     }
 
     public func cancelPendingQuery() {

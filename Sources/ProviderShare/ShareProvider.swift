@@ -55,7 +55,7 @@ public struct ShareProvider: MediaLibraryQueryProviding, MediaFileBrowsing {
     ) -> [SortField] {
         if libraryConfiguration?.contentType == .personalVideos { return [.name, .dateAdded, .random] }
         if ShareCatalogID.catalogLibrary(forID: containerID) != nil {
-            return [.name, .year, .releaseDate, .criticRating, .communityRating, .contentRating,
+            return [.name, .year, .releaseDate, .communityRating,
                     .runtime, .progress, .lastPlayed, .dateAdded, .random]
         }
         if ShareCatalogID.isSeries(containerID) || ShareCatalogID.isSeason(containerID) {

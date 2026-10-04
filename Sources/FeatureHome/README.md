@@ -89,6 +89,8 @@ fallback when the user's server has no attached trailer.
   `/Items/Filters`, whose response contains genre names and years. Empty successful
   responses are cached, cancellation is not a load error, and actual failures
   retain a retry action separate from the selected quick filter.
+  Facet requests belong to the library model and are shared across menu mounts,
+  so canceling a disappearing menu does not discard a replacement menu's options.
   Catalog changes reload facets and reject pre-refresh responses; watch-only
   changes retain the cached genre/year options.
   Native provider operations remain paged. Explicit non-native options prepare
@@ -116,7 +118,9 @@ fallback when the user's server has no attached trailer.
   externally enriched display ratings. Shares read existing catalog metadata
   without initiating per-item network enrichment or media probing.
   Share facets use the same representative movie/series metadata and local
-  precedence as browse cards; filtered movies retain their native sort inputs.
+  precedence as browse cards; filtered titles retain their native sort inputs,
+  including exact local premiere dates. Shares do not offer critic/content-rating
+  sorts without corresponding catalog metadata.
   Your Rating is offered only where the provider exposes a personal rating;
   Silo Rotten Tomatoes sorts require its authenticated ratings capability.
   Browse retains its paged grid,

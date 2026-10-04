@@ -4,6 +4,61 @@ import MetadataKit
 @testable import ProviderShare
 
 final class CatalogBrowseHydrationTests: XCTestCase {
+    func testFilteredReleaseDateOrderMatchesNativeMovieAndSeriesOrder() throws {
+        for library in [CatalogLibrary.movies, .tv, .anime] {
+            let connection = openConnection()
+            for (title, date) in [("Alpha", "2024-01-01"), ("Zulu", "2024-12-01")] {
+                let itemID: String
+                if library == .movies {
+                    seedMovie(connection, relPath: "\(title).mkv", basename: "\(title).mkv",
+                              title: title, year: 2024, movieKey: title)
+                    itemID = ShareCatalogID.file("\(title).mkv")
+                } else {
+                    seedEpisode(connection, relPath: "\(title)/S01E01.mkv", seriesKey: title,
+                                seriesTitle: title, season: 1, episode: 1, library: library)
+                    itemID = ShareCatalogID.series(title)
+                }
+                insertMetadataValue(connection, itemID: itemID, field: "premiereDate",
+                                    source: "localNFO", valueJSON: "\"\(date)\"")
+            }
+            let queries = makeQueries(connection)
+            for direction in [SortDirection.ascending, .descending] {
+                let sort = SortDescriptor(field: .releaseDate, direction: direction)
+                let native = library == .movies
+                    ? queries.movies(offset: 0, limit: 20, sort: sort)
+                    : queries.series(in: library, offset: 0, limit: 20, sort: sort)
+                XCTAssertEqual(native.map(\.title), direction == .ascending ? ["Alpha", "Zulu"] : ["Zulu", "Alpha"])
+                let filtered = native.map { LibraryQueryRecord($0) }
+                    .filter { $0.matches(.init(filter: .unwatched)) }
+                    .sorted { $0.isOrdered(before: $1, by: sort) }
+                XCTAssertEqual(filtered.map(\.title), native.map(\.title))
+                for summary in native {
+                    let date = try XCTUnwrap(summary.releaseDate)
+                    let detail = try XCTUnwrap(queries.item(id: summary.id))
+                    XCTAssertEqual(detail.releaseDate, date)
+                    XCTAssertEqual(detail.metadataProvenance[.premiereDate]?.source, .localNFO)
+                }
+            }
+        }
+    }
+
+    func testLocalPremiereDateUsesUTCAndInvalidValuesPreserveTheBase() {
+        let base = MediaItem(id: "movie", title: "Movie", kind: .movie,
+                             releaseDate: Date(timeIntervalSince1970: 1_609_459_200))
+        let projected = ShareCatalogReadProjection.applyLocalMetadata(base, [
+            .premiereDate: .init(source: .localNFO, valueJSON: #""2024-02-29""#)
+        ])
+        XCTAssertEqual(projected.releaseDate, Date(timeIntervalSince1970: 1_709_164_800))
+        XCTAssertEqual(projected.metadataProvenance[.premiereDate]?.source, .localNFO)
+        for value in [#""not-a-date""#, #""""#, "null", "2024"] {
+            let invalid = ShareCatalogReadProjection.applyLocalMetadata(base, [
+                .premiereDate: .init(source: .localNFO, valueJSON: value)
+            ])
+            XCTAssertEqual(invalid.releaseDate, base.releaseDate)
+            XCTAssertNil(invalid.metadataProvenance[.premiereDate])
+        }
+    }
+
     func testSeparateEpisodeFilesRetainTheirLogicalCoordinatesDuringHydration() throws {
         let connection = openConnection()
         for resolution in ["1080p", "2160p"] {
