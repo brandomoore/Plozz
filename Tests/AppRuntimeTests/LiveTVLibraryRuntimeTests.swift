@@ -8,6 +8,40 @@ import XCTest
 
 final class LiveTVLibraryRuntimeTests: XCTestCase {
     @MainActor
+    func testServerChoicesNeverResolveCredentialsOrProvidersWhileRendering() throws {
+        let suite = "LiveTVServerChoicesTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let profiles = ProfilesModel(store: ProfileStore(defaults: defaults))
+        let store = AccountStore(secureStore: InMemorySecureStore())
+        for kind in [ProviderKind.plex, .jellyfin, .emby, .silo] {
+            let server = MediaServer(
+                id: kind.rawValue, name: kind.rawValue,
+                baseURL: try XCTUnwrap(URL(string: "https://example.test")), provider: kind
+            )
+            try store.add(Account(
+                id: kind.rawValue, server: server, userID: "user",
+                userName: "User", deviceID: store.deviceID()
+            ), token: "fixture-token")
+        }
+        store.setActiveAccountIDs(["plex", "jellyfin", "emby", "silo"])
+        let accounts = AccountsProvidersModel(
+            accountStore: store, registry: ProviderRegistry(), profilesModel: profiles
+        )
+        accounts.reloadAccounts()
+        accounts.tokenResolver = { _ in
+            XCTFail("Rendering setup choices must not read a credential")
+            return nil
+        }
+        for _ in 0..<20 {
+            XCTAssertEqual(Set(accounts.liveTVServerChoices.map(\.id)), ["plex", "jellyfin", "emby"])
+        }
+        profiles.setActiveAccountIDs([], for: profiles.activeProfileID)
+        accounts.reloadAccounts()
+        XCTAssertTrue(accounts.liveTVServerChoices.isEmpty)
+    }
+
+    @MainActor
     func testAuthorizationDigestReuseStillTracksLiveCredentialsProfileAndAccountSelection() throws {
         let suite = "LiveTVAuthorizationCacheTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

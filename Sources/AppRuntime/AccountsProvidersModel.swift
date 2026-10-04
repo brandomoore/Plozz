@@ -95,10 +95,11 @@ public final class AccountsProvidersModel {
     public var deviceID: String { accountStore.deviceID() }
 
     public var liveTVServerChoices: [LiveTVServerChoice] {
-        resolvedActiveAccounts.compactMap { resolved in
-            guard resolved.provider is any ServerLiveTVProviding,
-                  let kind = Self.liveTVKind(resolved.account.server.provider) else { return nil }
-            let account = resolved.account
+        // Listing connected servers must not resolve credentials during a render.
+        // The resolver verifies access when the user checks or imports a server.
+        accounts.compactMap { account in
+            guard activeAccountIDs.contains(account.id),
+                  let kind = Self.liveTVKind(account.server.provider) else { return nil }
             let name = account.server.name.isEmpty
                 ? (account.server.baseURL.host ?? kind.rawValue)
                 : account.server.name

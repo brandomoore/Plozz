@@ -418,6 +418,7 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
 @Observable
 public final class ProfilesModel {
     public private(set) var profiles: [Profile]
+    private var accountSelections: [String: [String]] = [:]
 
     /// Which profile owns the un-namespaced settings keys, or `nil` when that
     /// profile has been deleted and nobody does.
@@ -492,6 +493,7 @@ public final class ProfilesModel {
             self.rootNamespaceOwnerID = nil
         }
         self.legacyLocalParentalPIN = store.parentalPIN()
+        refreshAccountSelections()
         // Intentionally does *not* persist a defaulted selection: leaving it
         // unstored is what lets a fresh Apple TV system user get the picker.
         migrateLocalParentalPINIfNeeded()
@@ -709,7 +711,7 @@ public final class ProfilesModel {
         profiles.sort { $0.createdAt < $1.createdAt }
         store.saveProfiles(profiles)
         if !activeAccountIDs.isEmpty {
-            store.setActiveAccountIDs(activeAccountIDs, forProfile: profile.id)
+            setActiveAccountIDs(activeAccountIDs, for: profile.id)
         }
         return profile
     }
@@ -770,6 +772,7 @@ public final class ProfilesModel {
         profiles = order.compactMap { byID[$0] }
         profiles.sort { $0.createdAt < $1.createdAt }
         store.saveProfiles(profiles)
+        refreshAccountSelections()
     }
 
     /// Apply profiles arriving from ongoing CloudKit sync. Unlike `importProfiles`
@@ -797,6 +800,7 @@ public final class ProfilesModel {
         profiles = order.compactMap { byID[$0] }
         profiles.sort { $0.createdAt < $1.createdAt }
         store.saveProfiles(profiles)
+        refreshAccountSelections()
     }
 
     /// V3 exact apply: merge incoming cosmetic profile DTOs (upserts) and apply
@@ -831,6 +835,7 @@ public final class ProfilesModel {
         next.sort { $0.createdAt < $1.createdAt }
         profiles = next
         store.saveProfiles(profiles)
+        refreshAccountSelections()
         if !profiles.contains(where: { $0.id == activeProfileID }) {
             activeProfileID = fallbackProfile(leaving: outgoingActive)?.id
                 ?? ProfileStore.defaultProfileID
@@ -889,6 +894,7 @@ public final class ProfilesModel {
         store.resetForDebugging()
         let migrated = store.migrateLegacyIfNeeded(defaultName: "Me", defaultActiveAccountIDs: [])
         profiles = migrated
+        refreshAccountSelections()
         let remembered = store.activeProfileID()
         hasRememberedSelection = remembered != nil
         activeProfileID = remembered ?? migrated.first?.id ?? ProfileStore.defaultProfileID
@@ -923,6 +929,7 @@ public final class ProfilesModel {
         guard profiles.count > 1, profiles.contains(where: { $0.id == id }) else { return }
         let outgoing = profiles.first { $0.id == id }
         profiles.removeAll { $0.id == id }
+        accountSelections[id] = nil
         store.saveProfiles(profiles)
         // Deleting the owner abandons the bare keys rather than bequeathing
         // them: every surviving profile keeps reading its own `base.<id>`.
@@ -940,7 +947,7 @@ public final class ProfilesModel {
 
     /// The account subset for a profile, or `fallback` when it never set one.
     public func activeAccountIDs(for profileID: String, fallback: [String]) -> [String] {
-        store.activeAccountIDs(forProfile: profileID) ?? fallback
+        accountSelections[profileID] ?? fallback
     }
 
     /// The profile's *explicit* stored selection, or `nil` when it never chose
@@ -950,17 +957,29 @@ public final class ProfilesModel {
     /// toggle on Settings → Your Servers & Libraries depends on to be able to
     /// turn a server (and the last remaining server) off.
     public func storedActiveAccountIDs(for profileID: String) -> [String]? {
-        store.activeAccountIDs(forProfile: profileID)
+        accountSelections[profileID]
     }
 
     public func setActiveAccountIDs(_ ids: [String], for profileID: String) {
         store.setActiveAccountIDs(ids, forProfile: profileID)
+        accountSelections[profileID] = store.activeAccountIDs(forProfile: profileID)
     }
 
     /// Clear a profile's explicit account selection (a synced membership deletion →
     /// revert to "watches all servers").
     public func clearActiveAccountIDs(for profileID: String) {
         store.clearActiveAccountIDs(forProfile: profileID)
+        accountSelections[profileID] = store.activeAccountIDs(forProfile: profileID)
+    }
+
+    /// Rendering and authorization identities use model state, never synchronous
+    /// household Keychain reads. Membership writes read back the durable value.
+    private func refreshAccountSelections() {
+        var selections: [String: [String]] = [:]
+        for profile in profiles {
+            selections[profile.id] = store.activeAccountIDs(forProfile: profile.id)
+        }
+        accountSelections = selections
     }
 
 }

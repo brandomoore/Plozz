@@ -121,7 +121,7 @@ public struct LiveTVSourcesView: View {
     public var body: some View {
         LiveTVSourceAccessGate(model: model) {
             let content = LiveTVSourcesContent(
-                model: model, imports: catalog?.isCurrent == false ? nil : imports, refresh: refresh,
+                model: model, imports: catalog?.isPresentationCurrent == false ? nil : imports, refresh: refresh,
                 serverChoices: serverChoices, serverProviderResolver: serverProviderResolver,
                 connectServer: connectServer, sourceFilterID: sourceFilterID,
                 browseSource: browseSource, didConfigurePlaylist: didConfigurePlaylist,
@@ -216,7 +216,9 @@ public struct LiveTVSourcesView: View {
             if let issue = catalog.issue {
                 SettingsSectionGroup {
                     Text(issue.message)
-                    Button("Retry", action: catalog.requestRefresh)
+                    Button(action: catalog.requestRefresh) {
+                        LiveTVSetupActionLabel(title: "Retry", symbol: "arrow.clockwise")
+                    }
                         .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                 }
             } else if catalog.isLoading {
@@ -255,22 +257,29 @@ private struct LiveTVSourcesContent: View {
                 } icon: {
                     Image(systemName: "exclamationmark.triangle")
                 }
-                Button("Retry") { model.reload() }
+                Button { model.reload() } label: {
+                    LiveTVSetupActionLabel(title: "Retry", symbol: "arrow.clockwise")
+                }
                     .buttonStyle(SettingsFocusButtonStyle(size: .contained))
             }
         } else if !model.hasLoaded {
             ProgressView("Loading sources")
         } else {
+            setupActions
             if browseSource != nil || createChannel != nil || scanChannels != nil {
                 SettingsSectionGroup {
                     if let createChannel {
-                        Button("Plozz channels", systemImage: "sparkles.tv", action: createChannel)
+                        Button(action: createChannel) {
+                            LiveTVSetupActionLabel(title: "Plozz channels", symbol: "sparkles.tv")
+                        }
                             .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                             .accessibilityHint("Manage your automatic lineup and optional custom channels.")
                             .accessibilityIdentifier("live-tv-manage-library-channels")
                     }
                     if let scanChannels {
-                        Button("Check channel availability", systemImage: "checkmark.circle", action: scanChannels)
+                        Button(action: scanChannels) {
+                            LiveTVSetupActionLabel(title: "Check channel availability", symbol: "checkmark.circle")
+                        }
                             .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                     }
                     if browseSource != nil {
@@ -416,44 +425,6 @@ private struct LiveTVSourcesContent: View {
                     .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                 }
             }
-            SettingsSectionGroup {
-                NavigationLink {
-                    LiveTVPlaylistEditor { input in
-                        let previousIDs = Set(model.configuration.playlists.map(\.id))
-                        try model.savePlaylist(input: input)
-                        didConfigurePlaylist()
-                        if let added = model.configuration.playlists.first(where: { !previousIDs.contains($0.id) }) {
-                            didImportPlaylist(added.id)
-                        }
-                    }
-                } label: {
-                    SettingsRowLabel(icon: "plus", title: "Add IPTV playlist")
-                }
-                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
-                #if os(iOS)
-                if let imports, imports.supportsDurableCatalog {
-                    NavigationLink {
-                        LiveTVImportedPlaylistEditor(
-                            sources: model, imports: imports, didConfigurePlaylist: didConfigurePlaylist,
-                            didImportPlaylist: didImportPlaylist
-                        )
-                    } label: {
-                        SettingsRowLabel(icon: "doc.badge.plus", title: "Import M3U file")
-                    }
-                    .buttonStyle(SettingsFocusButtonStyle(size: .contained))
-                }
-                #endif
-                NavigationLink {
-                    LiveTVServerSetupView(
-                        sources: model, choices: serverChoices,
-                        resolver: serverProviderResolver, connectServer: connectServer
-                    )
-                } label: {
-                    SettingsRowLabel(icon: "server.rack", title: "Use a media server")
-                }
-                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
-            }
-
             if let imports {
                 LiveTVGuideOverview(imports: imports)
                 if let failure = imports.cacheFailure {
@@ -464,14 +435,66 @@ private struct LiveTVSourcesContent: View {
             }
             if let refresh {
                 SettingsSectionGroup {
-                    Button("Refresh sources", systemImage: "arrow.clockwise", action: refresh)
-                        .buttonStyle(SettingsFocusButtonStyle(size: .contained))
-                        .disabled(imports?.isLoading == true)
+                    Button(action: refresh) {
+                        LiveTVSetupActionLabel(title: "Refresh sources", symbol: "arrow.clockwise")
+                    }
+                    .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                    .disabled(imports?.isLoading == true)
                     if imports?.isLoading == true {
                         ProgressView("Refreshing sources")
                     }
                 }
             }
+        }
+    }
+
+    private var setupActions: some View {
+        SettingsSectionGroup("Add a source") {
+            NavigationLink {
+                LiveTVPlaylistEditor { input in
+                    let previousIDs = Set(model.configuration.playlists.map(\.id))
+                    try model.savePlaylist(input: input)
+                    didConfigurePlaylist()
+                    if let added = model.configuration.playlists.first(where: { !previousIDs.contains($0.id) }) {
+                        didImportPlaylist(added.id)
+                    }
+                }
+            } label: {
+                LiveTVSetupActionLabel(
+                    title: "Add IPTV playlist", symbol: "list.bullet.rectangle",
+                    detail: "Use an M3U or M3U8 playlist URL."
+                )
+            }
+            .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+            .accessibilityIdentifier("live-tv-add-playlist")
+            #if os(iOS)
+            if let imports, imports.supportsDurableCatalog {
+                NavigationLink {
+                    LiveTVImportedPlaylistEditor(
+                        sources: model, imports: imports, didConfigurePlaylist: didConfigurePlaylist,
+                        didImportPlaylist: didImportPlaylist
+                    )
+                } label: {
+                    LiveTVSetupActionLabel(
+                        title: "Import M3U file", symbol: "doc.badge.plus",
+                        detail: "Choose a saved playlist from Files."
+                    )
+                }
+                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+            }
+            #endif
+            NavigationLink {
+                LiveTVServerSetupView(
+                    sources: model, choices: serverChoices,
+                    resolver: serverProviderResolver, connectServer: connectServer
+                )
+            } label: {
+                LiveTVSetupActionLabel(
+                    title: "Use a media server", symbol: "server.rack",
+                    detail: "Use Live TV from Plex, Jellyfin or Emby."
+                )
+            }
+            .buttonStyle(SettingsFocusButtonStyle(size: .contained))
         }
     }
 

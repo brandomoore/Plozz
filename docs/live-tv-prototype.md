@@ -108,6 +108,24 @@ are available there; playlist/guide editing and server renaming open their
 specific editors directly. Hidden-channel restoration also lives in its detail
 pane. Setup and source pages reuse Plozz's shared settings groups, row labels,
 switches, focus/card styles and page heading.
+Source choices appear before saved sources, with descriptions of playlist URLs,
+local files (iPhone/iPad), and connected media servers. Playlist fields keep their
+labels visible while editing and show example URLs instead of repeating labels
+as URL placeholders. Primary setup actions use full-width Settings rows with
+at least 64-point height on Apple TV and 44-point height on iPhone/iPad; removing
+a guide is a labeled action beside its URL on Apple TV and a full-width action
+below it on iPhone/iPad, rather than a small icon. Both playlist editors
+limit guide fields to 32 and retain explicit guide priority. Adding a URL still
+checks and saves in one action; canceling or failing validation writes nothing.
+
+Rendering source choices does not resolve server credentials. Profile account
+selections are observable model snapshots, read back from durable storage after
+membership writes and refreshed when profiles are imported or reset. An unset
+selection remains distinct from an explicitly empty selection. Catalog display
+state checks the current in-memory profile/account admission without reopening
+the secure source store. This display state is not an operation permit: catalog
+publication, scans, imports and mutations retain their fresh durable-source and
+parental-authorization checks.
 Earlier prototype builds did not store Favorites or Recents on disk, so there
 is no prior in-memory history to migrate on the first updated launch.
 

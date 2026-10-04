@@ -33,7 +33,9 @@ struct LiveTVServerSetupView: View {
                         description: Text("Connect a server and enable it for this profile.")
                     )
                     if let connectServer {
-                        Button("Connect a server", systemImage: "plus", action: connectServer)
+                        Button(action: connectServer) {
+                            LiveTVSetupActionLabel(title: "Connect a server", symbol: "plus")
+                        }
                             .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                     } else {
                         Text("Connect a server in Settings.")
@@ -98,11 +100,14 @@ struct LiveTVServerSetupView: View {
                         }
                     }) {
                         if probe.isChecking {
-                            Text("Cancel check")
+                            LiveTVSetupActionLabel(title: "Cancel check", symbol: "xmark")
                         } else if probe.canAdd {
-                            Text(probe.availability?.status == .unsupportedPlaybackMode ? "Add guide only" : "Add channels")
+                            LiveTVSetupActionLabel(
+                                title: probe.availability?.status == .unsupportedPlaybackMode ? "Add guide only" : "Add channels",
+                                symbol: "plus"
+                            )
                         } else {
-                            Text("Check again")
+                            LiveTVSetupActionLabel(title: "Check again", symbol: "arrow.clockwise")
                         }
                     }
                     .buttonStyle(SettingsFocusButtonStyle(size: .contained))
@@ -111,7 +116,9 @@ struct LiveTVServerSetupView: View {
 
             if !choices.isEmpty, let connectServer {
                 SettingsSectionGroup {
-                    Button("Connect another server", systemImage: "plus", action: connectServer)
+                    Button(action: connectServer) {
+                        LiveTVSetupActionLabel(title: "Connect another server", symbol: "plus")
+                    }
                         .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                 }
             }

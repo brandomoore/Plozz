@@ -256,7 +256,7 @@ private struct LiveTVShellSourcesContent: View {
                 scanCoordinator: runtime.scanBinding.coordinator,
                 didImportPlaylist: { scanOfferSourceID = $0 }
             )
-            if let scanOfferSourceID, runtime.isCurrent {
+            if let scanOfferSourceID, runtime.isPresentationCurrent {
                 LiveTVScanImportOffer(
                     coordinator: runtime.scanBinding.coordinator, sourceID: scanOfferSourceID,
                     skip: { self.scanOfferSourceID = nil }
@@ -264,7 +264,7 @@ private struct LiveTVShellSourcesContent: View {
             }
         }
         .navigationDestination(isPresented: $managesChannels) {
-            if runtime.isCurrent {
+            if runtime.isPresentationCurrent {
                 LibraryChannelManagementView(
                     service: library.service, history: library.history, prepareLibraries: library.prepareForEditing,
                     automaticChannels: library.automaticChannelsPresentation)

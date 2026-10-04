@@ -2,6 +2,63 @@ import XCTest
 
 final class LiveTVSourceNavigationSmokeTests: XCTestCase {
     @MainActor
+    func testPlaylistControlsHaveGenerousBoundsAndGuidesCanBeAddedAndRemoved() {
+        let app = launchFixture(arguments: ["--typed-settings"])
+        defer { app.terminate() }
+        guard select(app.buttons["fixture-live-tv-settings"], in: app) else { return }
+        let addPlaylist = app.buttons["live-tv-add-playlist"]
+        XCTAssertTrue(addPlaylist.waitForExistence(timeout: 5))
+        capture("iptv-setup-source-options", in: app)
+        XCUIRemote.shared.press(.right)
+        guard select(addPlaylist, in: app) else { return }
+        let playlist = app.textFields["live-tv-playlist-url"]
+        XCTAssertTrue(playlist.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(playlist.frame.height, 64)
+        XCTAssertTrue(app.staticTexts["Playlist or live HLS URL"].exists)
+        XCTAssertEqual(app.textFields.matching(identifier: "XMLTV guide URL (optional)").count, 1)
+        let addGuide = app.buttons["live-tv-add-guide"]
+        guard focus(addGuide, in: app) else { return }
+        XCTAssertGreaterThanOrEqual(addGuide.frame.height, 64)
+        XCTAssertGreaterThan(addGuide.frame.width, 500)
+        XCUIRemote.shared.press(.select)
+        XCTAssertEqual(app.textFields.matching(identifier: "XMLTV guide URL (optional)").count, 2)
+        let remove = app.buttons.matching(identifier: "live-tv-remove-guide").firstMatch
+        guard focus(remove, in: app) else { return }
+        XCTAssertGreaterThanOrEqual(remove.frame.height, 64)
+        XCTAssertGreaterThanOrEqual(remove.frame.width, 300)
+        XCUIRemote.shared.press(.select)
+        XCTAssertEqual(app.textFields.matching(identifier: "XMLTV guide URL (optional)").count, 1)
+        let save = app.buttons["live-tv-playlist-action"]
+        guard select(save, in: app) else { return }
+        XCTAssertTrue(app.staticTexts[
+            "Enter a complete HTTP or HTTPS playlist URL, without a username or password before the hostname."
+        ].waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(save.frame.height, 64)
+        capture("iptv-setup-validation", in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(addPlaylist.waitForExistence(timeout: 5))
+        assertNoSourcesOrNetwork(in: app)
+    }
+
+    @MainActor
+    func testTypedSettingsEntryCanOpenPlaylistEditorAndReturnThroughBothPages() {
+        let app = launchFixture(arguments: ["--typed-settings"])
+        defer { app.terminate() }
+        guard select(app.buttons["fixture-live-tv-settings"], in: app) else { return }
+        let addPlaylist = app.buttons["Add IPTV playlist"]
+        XCTAssertTrue(addPlaylist.waitForExistence(timeout: 5))
+        XCUIRemote.shared.press(.right)
+        guard select(addPlaylist, in: app) else { return }
+        XCTAssertTrue(app.textFields["live-tv-playlist-url"].waitForExistence(timeout: 5), app.debugDescription)
+        capture("settings-iptv-editor", in: app)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(addPlaylist.waitForExistence(timeout: 5), app.debugDescription)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(app.buttons["fixture-live-tv-settings"].waitForExistence(timeout: 5), app.debugDescription)
+        assertNoSourcesOrNetwork(in: app)
+    }
+
+    @MainActor
     func testEmptySetupOpensPlaylistFormAndBackWithoutLoadingSources() {
         let app = launchFixture()
         defer { app.terminate() }
@@ -338,7 +395,11 @@ final class LiveTVSourceNavigationSmokeTests: XCTestCase {
             }
             let focused = app.descendants(matching: .any).allElementsBoundByIndex.first(where: \.hasFocus)
             let target = button.frame
-            if let focused, abs(target.midY - focused.frame.midY) < 40 {
+            if let focused, target.minX > focused.frame.maxX {
+                XCUIRemote.shared.press(.right)
+            } else if let focused, target.maxX < focused.frame.minX {
+                XCUIRemote.shared.press(.left)
+            } else if let focused, abs(target.midY - focused.frame.midY) < 40 {
                 XCUIRemote.shared.press(target.midX < focused.frame.midX ? .left : .right)
             } else {
                 XCUIRemote.shared.press(target.midY < (focused?.frame.midY ?? 0) ? .up : .down)

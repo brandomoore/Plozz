@@ -34,6 +34,11 @@ public final class LiveTVSourcesCatalog {
     public private(set) var isLoading = false
     public private(set) var issue: Issue?
     public var isCurrent: Bool { admission.isCurrent }
+    /// Display-only state. Operations still revalidate `isCurrent` against the
+    /// durable source configuration before publishing, scanning or mutating.
+    public var isPresentationCurrent: Bool {
+        admission.snapshot != nil && admission.presentationIsAuthorized()
+    }
     public var profileID: String { admission.profileID }
 
     @ObservationIgnored private let admission: LiveTVSourcesCatalogAdmission
@@ -51,10 +56,14 @@ public final class LiveTVSourcesCatalog {
         loader: any LiveTVSourceLoading,
         preferencesStore: any LiveTVPreferencesStoring,
         authority: @escaping @MainActor () throws -> LiveTVSourcesCatalogAuthority?,
+        presentationIsAuthorized: @escaping @MainActor () -> Bool = { true },
         serverProviderResolver: @escaping LiveTVServerProviderResolver = { _ in nil },
         clock: @escaping @MainActor () -> Date = Date.init
     ) {
-        let admission = LiveTVSourcesCatalogAdmission(profileID: profileID, authority: authority)
+        let admission = LiveTVSourcesCatalogAdmission(
+            profileID: profileID, authority: authority,
+            presentationIsAuthorized: presentationIsAuthorized
+        )
         self.admission = admission
         self.clock = clock
         catalog = LiveTVPrototypeModel(now: clock(), channels: [], preferencesStore: preferencesStore)
@@ -175,12 +184,18 @@ public final class LiveTVSourcesCatalog {
 private final class LiveTVSourcesCatalogAdmission {
     let profileID: String
     let authority: @MainActor () throws -> LiveTVSourcesCatalogAuthority?
+    let presentationIsAuthorized: @MainActor () -> Bool
     var snapshot: LiveTVSourcesCatalogAuthority?
     var isClearing = false
 
-    init(profileID: String, authority: @escaping @MainActor () throws -> LiveTVSourcesCatalogAuthority?) {
+    init(
+        profileID: String,
+        authority: @escaping @MainActor () throws -> LiveTVSourcesCatalogAuthority?,
+        presentationIsAuthorized: @escaping @MainActor () -> Bool
+    ) {
         self.profileID = profileID
         self.authority = authority
+        self.presentationIsAuthorized = presentationIsAuthorized
     }
 
     var isCurrent: Bool {

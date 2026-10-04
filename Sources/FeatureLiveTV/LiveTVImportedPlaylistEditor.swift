@@ -39,17 +39,22 @@ struct LiveTVImportedPlaylistEditor: View {
     var body: some View {
         LiveTVSettingsPage(title: "Imported playlist") {
             SettingsSectionGroup("Playlist") {
-                TextField("Name (optional)", text: $name)
+                LiveTVSetupField(title: "Name (optional)", text: $name)
                 if original == nil {
                     #if os(iOS)
-                    Button(fileURL == nil ? "Choose M3U file" : "Choose another file") { choosingFile = true }
-                        .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                    Button { choosingFile = true } label: {
+                        LiveTVSetupActionLabel(
+                            title: fileURL == nil ? "Choose M3U file" : "Choose another file",
+                            symbol: "doc"
+                        )
+                    }
+                    .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                     #endif
                     if fileURL != nil { Label("Playlist selected", systemImage: "doc") }
-                    TextField("Base URL for relative addresses (optional)", text: $baseAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .privacySensitive()
+                    LiveTVSetupField(
+                        title: "Base URL for relative addresses (optional)", text: $baseAddress, isAddress: true,
+                        example: "https://example.com/"
+                    )
                 }
                 Text("The imported copy is encrypted on this device. It is not uploaded or kept in the guide cache.")
                     .font(.caption)
@@ -57,30 +62,28 @@ struct LiveTVImportedPlaylistEditor: View {
             .disabled(saving)
             SettingsSectionGroup("Program guide") {
                 ForEach($guides) { $guide in
-                    HStack {
-                        TextField("XMLTV guide URL (optional)", text: $guide.address)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .privacySensitive()
-                        Button("Remove guide", systemImage: "minus.circle") {
-                            guides.removeAll { $0.id == guide.id }
-                        }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                    LiveTVGuideAddressEditor(address: $guide.address) {
+                        guides.removeAll { $0.id == guide.id }
                     }
                 }
-                Button("Add another guide", systemImage: "plus") { guides.append(.init()) }
-                    .buttonStyle(SettingsFocusButtonStyle(size: .contained))
-                    .disabled(guides.count >= 32)
+                Button { guides.append(.init()) } label: {
+                    LiveTVSetupActionLabel(title: "Add another guide", symbol: "plus")
+                }
+                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                .disabled(guides.count >= 32)
             } footer: {
                 Text("List preferred guides first. Relative addresses require the provider's HTTP or HTTPS base URL.")
             }
             .disabled(saving)
             SettingsSectionGroup {
                 if saving { ProgressView("Importing playlist") }
-                Button(original == nil ? "Import playlist" : "Save source") { saveRequest = UUID() }
-                    .buttonStyle(SettingsFocusButtonStyle(size: .contained))
-                    .disabled(saving || (original == nil && fileURL == nil))
+                Button { saveRequest = UUID() } label: {
+                    LiveTVSetupActionLabel(
+                        title: original == nil ? "Import playlist" : "Save source", symbol: "checkmark"
+                    )
+                }
+                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                .disabled(saving || (original == nil && fileURL == nil))
                 if let issue { Text(issue) }
             }
         }

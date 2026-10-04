@@ -27,22 +27,21 @@ struct LiveTVPlaylistEditor: View {
         @Bindable var model = model
         LiveTVSettingsPage(title: "IPTV source") {
             SettingsSectionGroup("Playlist") {
-                LiveTVAddressField(title: "Playlist or live HLS URL", text: $model.playlistAddress)
-                    .accessibilityIdentifier("live-tv-playlist-url")
-                TextField("Name (optional)", text: $model.name)
+                LiveTVSetupField(
+                    title: "Playlist or live HLS URL", text: $model.playlistAddress, isAddress: true,
+                    identifier: "live-tv-playlist-url", example: "https://example.com/channels.m3u"
+                )
+                LiveTVSetupField(title: "Name (optional)", text: $model.name)
+            } footer: {
+                Text("Add channels with an M3U, M3U8 or live HLS URL.")
             }
             .disabled(model.isChecking)
 
             SettingsSectionGroup("Program guide") {
                 ForEach($model.guideAddresses) { $guide in
-                    HStack(spacing: 20) {
-                        LiveTVAddressField(title: "XMLTV guide URL (optional)", text: $guide.address)
-                        Button("Remove guide", systemImage: "minus.circle") {
-                            let id = guide.id
-                            model.guideAddresses.removeAll { $0.id == id }
-                        }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                    LiveTVGuideAddressEditor(address: $guide.address) {
+                        let id = guide.id
+                        model.guideAddresses.removeAll { $0.id == id }
                     }
                     .contextMenu {
                         Button("Move guide earlier") { model.moveGuide(guide.id, by: -1) }
@@ -51,10 +50,14 @@ struct LiveTVPlaylistEditor: View {
                             .disabled(model.guideAddresses.last?.id == guide.id)
                     }
                 }
-                Button("Add another guide", systemImage: "plus") {
+                Button {
                     model.guideAddresses.append(.init())
+                } label: {
+                    LiveTVSetupActionLabel(title: "Add another guide", symbol: "plus")
                 }
                 .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                .disabled(model.guideAddresses.count >= 32)
+                .accessibilityIdentifier("live-tv-add-guide")
             } footer: {
                 Text("Optional XMLTV or .xml.gz. List preferred guides first.")
             }
@@ -85,13 +88,13 @@ struct LiveTVPlaylistEditor: View {
                     }
                 } label: {
                     if model.isChecking {
-                        Label("Cancel check", systemImage: "xmark")
+                        LiveTVSetupActionLabel(title: "Cancel check", symbol: "xmark")
                     } else if model.currentReview != nil {
-                        Label("Save source", systemImage: "checkmark")
+                        LiveTVSetupActionLabel(title: "Save source", symbol: "checkmark")
                     } else if isEditing {
-                        Label("Save changes", systemImage: "checkmark")
+                        LiveTVSetupActionLabel(title: "Save changes", symbol: "checkmark")
                     } else {
-                        Label("Add source", systemImage: "plus")
+                        LiveTVSetupActionLabel(title: "Add source", symbol: "plus")
                     }
                 }
                 .buttonStyle(SettingsFocusButtonStyle(size: .contained))
@@ -118,21 +121,6 @@ struct LiveTVPlaylistEditor: View {
             }
         }
         .onDisappear { model.cancelCheck() }
-    }
-}
-
-private struct LiveTVAddressField: View {
-    let title: LocalizedStringResource
-    @Binding var text: String
-
-    var body: some View {
-        TextField(text: $text) { Text(title) }
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .privacySensitive()
-            #if os(iOS)
-            .keyboardType(.URL)
-            #endif
     }
 }
 

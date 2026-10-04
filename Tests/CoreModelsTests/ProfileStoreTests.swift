@@ -109,14 +109,67 @@ final class ProfileStoreTests: XCTestCase {
 /// In-memory `SecureStoring` double for exercising the shared-store path.
 private final class InMemorySecureStoringDouble: SecureStoring, @unchecked Sendable {
     private var storage: [String: String] = [:]
-    func setString(_ value: String, for key: String) throws { storage[key] = value }
-    func string(for key: String) -> String? { storage[key] }
-    func readString(for key: String) throws -> String? { storage[key] }
+    private(set) var reads = 0
+    var failWrites = false
+    func setString(_ value: String, for key: String) throws {
+        if failWrites { throw CocoaError(.fileWriteUnknown) }
+        storage[key] = value
+    }
+    func string(for key: String) -> String? {
+        reads += 1
+        return storage[key]
+    }
+    func readString(for key: String) throws -> String? { string(for: key) }
     func removeValue(for key: String) throws { storage[key] = nil }
 }
 
 @MainActor
 final class ProfilesModelTests: XCTestCase {
+    func testAccountSelectionAndApprovalRenderingDoNotReadTheSecureStore() {
+        let secure = InMemorySecureStoringDouble()
+        let model = ProfilesModel(
+            store: ProfileStore(defaults: makeDefaults(), secureStore: secure),
+            defaultActiveAccountIDs: ["account"]
+        )
+        let reads = secure.reads
+        for _ in 0..<20 {
+            XCTAssertEqual(model.activeAccountIDs(for: model.activeProfileID, fallback: []), ["account"])
+            XCTAssertEqual(model.storedActiveAccountIDs(for: model.activeProfileID), ["account"])
+            _ = LiveTVSourceApprovalContext(profiles: model)
+        }
+        XCTAssertEqual(secure.reads, reads)
+
+        model.setActiveAccountIDs([], for: model.activeProfileID)
+        XCTAssertEqual(model.storedActiveAccountIDs(for: model.activeProfileID), [])
+        model.clearActiveAccountIDs(for: model.activeProfileID)
+        XCTAssertNil(model.storedActiveAccountIDs(for: model.activeProfileID))
+        XCTAssertEqual(model.activeAccountIDs(for: model.activeProfileID, fallback: ["fallback"]), ["fallback"])
+    }
+
+    func testFailedMembershipWritesKeepTheDurableSelectionInMemory() {
+        let secure = InMemorySecureStoringDouble()
+        let model = ProfilesModel(
+            store: ProfileStore(defaults: makeDefaults(), secureStore: secure),
+            defaultActiveAccountIDs: ["account"]
+        )
+        secure.failWrites = true
+        model.setActiveAccountIDs(["unsaved"], for: model.activeProfileID)
+        XCTAssertEqual(model.storedActiveAccountIDs(for: model.activeProfileID), ["account"])
+    }
+
+    func testNewAndImportedProfileSelectionsSurviveModelSnapshots() {
+        let store = ProfileStore(defaults: makeDefaults())
+        let model = ProfilesModel(store: store)
+        let added = model.add(name: "Added", activeAccountIDs: ["added-account"])
+        XCTAssertEqual(model.storedActiveAccountIDs(for: added.id), ["added-account"])
+        let imported = Profile(name: "Imported")
+        store.setActiveAccountIDs([], forProfile: imported.id)
+        model.importProfiles([imported])
+        XCTAssertEqual(model.storedActiveAccountIDs(for: imported.id), [])
+        model.remove(imported.id)
+        XCTAssertNil(model.storedActiveAccountIDs(for: imported.id))
+    }
+
     private func makeDefaults() -> UserDefaults {
         let suite = "ProfilesModelTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

@@ -62,6 +62,10 @@ does not regenerate the shipping app project or install the app on an Apple TV.
   return, inspect the no-server state, and navigate a
   typed Sources destination into its child editor and back. They assert zero
   configured sources, writes, and HTTP(S) requests, and no free-channel offers.
+  A typed Settings entry also pushes the actual Live TV split page before opening
+  the playlist editor and returning through both pages. Form coverage measures
+  native field/action bounds, adds and removes guides with the remote, and checks
+  that invalid input stays on the form without persistence or network requests.
 - Setup-card coverage checks matching dimensions, all three remote actions,
   stacked narrow/accessibility layouts, and right-to-left Light appearance.
   Screenshot attachments preserve each layout for visual review.
