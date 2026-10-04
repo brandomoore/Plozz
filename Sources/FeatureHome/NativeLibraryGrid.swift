@@ -11,9 +11,70 @@ import UIKit
 final class NativeLibraryScrollTarget {
     weak var controller: NativeLibraryGridController?
     weak var focusOwner: NativeLibraryFocusHostController?
+    weak var header: NativeLibraryHeaderController?
+    private(set) var headerOffset: CGFloat = 0
 
     func scroll(to index: Int, focusesItem: Bool = false) {
         controller?.scroll(to: index, focusesItem: focusesItem)
+    }
+
+    func moveHeader(with offset: CGFloat) {
+        headerOffset = max(0, offset)
+        header?.scrollOffset = headerOffset
+    }
+}
+
+// The controls stay mounted through query replacements, but move with the native scroll viewport.
+struct NativeLibraryScrollingHeader<Content: View>: UIViewControllerRepresentable {
+    let scrollTarget: NativeLibraryScrollTarget
+    let content: Content
+
+    func makeUIViewController(context: Context) -> NativeLibraryHeaderController {
+        let controller = NativeLibraryHeaderController()
+        scrollTarget.header = controller
+        updateUIViewController(controller, context: context)
+        return controller
+    }
+
+    func updateUIViewController(_ controller: NativeLibraryHeaderController, context: Context) {
+        controller.host.rootView = AnyView(content.environment(\.self, context.environment))
+        controller.scrollOffset = scrollTarget.headerOffset
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize, uiViewController: NativeLibraryHeaderController, context: Context
+    ) -> CGSize? {
+        uiViewController.host.sizeThatFits(in: CGSize(
+            width: proposal.width ?? HomeHeroLayout.screenWidth,
+            height: proposal.height ?? .greatestFiniteMagnitude
+        ))
+    }
+}
+
+final class NativeLibraryHeaderController: UIViewController {
+    let host = UIHostingController(rootView: AnyView(EmptyView()))
+    var scrollOffset: CGFloat = 0 {
+        didSet { if isViewLoaded { positionHeader() } }
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        host.safeAreaRegions = []
+        host.view.backgroundColor = .clear
+        addChild(host)
+        view.addSubview(host.view)
+        host.didMove(toParent: self)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        host.view.bounds = view.bounds
+        positionHeader()
+    }
+
+    private func positionHeader() {
+        host.view.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY - scrollOffset)
     }
 }
 
@@ -87,6 +148,7 @@ struct NativeLibraryGrid<Header: View>: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: NativeLibraryGridController, context: Context) {
         controller.focusOwner = scrollTarget.focusOwner
+        controller.scrollTarget = scrollTarget
         controller.update(
             model: viewModel, total: total, generation: generation, spoilerSettings: spoilerSettings,
             environment: context.environment, leadingInset: leadingInset, trailingInset: trailingInset,
@@ -103,6 +165,7 @@ struct NativeLibraryGrid<Header: View>: UIViewControllerRepresentable {
 
 final class NativeLibraryGridController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate {
     weak var focusOwner: NativeLibraryFocusHostController?
+    weak var scrollTarget: NativeLibraryScrollTarget?
     private let layout = UICollectionViewFlowLayout()
     private lazy var collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
     private let headerHost = UIHostingController(rootView: AnyView(EmptyView()))
@@ -258,6 +321,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        scrollTarget?.moveHeader(with: scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
         scheduleViewportReport()
     }
 

@@ -161,18 +161,23 @@ public struct LibraryBrowseView: View {
         // dedicated destination with no navigation chrome pinned at the top.
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .top, spacing: 0) {
-            navigationHeader
-                .padding(.top, PlozzTheme.Spacing.large)
-                .padding(.bottom, PlozzTheme.Spacing.large)
-                #if os(tvOS)
-                .modifier(
-                    ShowcaseNavigationVisibilityModifier(
-                        visibility: showcaseNavigation,
-                        isRecommended: viewModel.contentMode == .recommended,
-                        rowIDs: viewModel.recommendationState.value?.map(\.id) ?? []
-                    )
+            #if os(tvOS)
+            NativeLibraryScrollingHeader(
+                scrollTarget: nativeScrollTarget,
+                content: navigationHeader
+                    .padding(.vertical, PlozzTheme.Spacing.large)
+            )
+            .modifier(
+                ShowcaseNavigationVisibilityModifier(
+                    visibility: showcaseNavigation,
+                    isRecommended: viewModel.contentMode == .recommended,
+                    rowIDs: viewModel.recommendationState.value?.map(\.id) ?? []
                 )
-                #endif
+            )
+            #else
+            navigationHeader
+                .padding(.vertical, PlozzTheme.Spacing.large)
+            #endif
         }
         .safeAreaInset(edge: .bottom) {
             if viewModel.contentMode == .recommended, let error = viewModel.recommendationError,
@@ -205,6 +210,9 @@ public struct LibraryBrowseView: View {
             railFocusedLetter = nil
             railHasRevealed = false
             artworkPrefetch = ArtworkPrefetchTracker()
+            #if os(tvOS)
+            nativeScrollTarget.moveHeader(with: 0)
+            #endif
         }
         .onAppear {
             MainThreadStallProbe.context = "library"
@@ -370,6 +378,7 @@ public struct LibraryBrowseView: View {
                 nativeScrollTarget.scroll(to: destination.index, focusesItem: destination.focusesItem)
             }
         }
+        .onDisappear { nativeScrollTarget.moveHeader(with: 0) }
     }
     #endif
 
@@ -435,6 +444,14 @@ public struct LibraryBrowseView: View {
             }
             // Never clip a focused card's lift, shadow or border.
             .scrollClipDisabled()
+            #if os(tvOS)
+            .onScrollGeometryChange(for: CGFloat.self) {
+                $0.contentOffset.y + $0.contentInsets.top
+            } action: { _, offset in
+                nativeScrollTarget.moveHeader(with: offset)
+            }
+            .onDisappear { nativeScrollTarget.moveHeader(with: 0) }
+            #endif
             // Rail + its "you are here" highlight live in a dedicated layer so
             // that tracking `topVisibleIndex` (which ticks on every cell that
             // scrolls in or out) re-renders only this small ~26-letter rail —

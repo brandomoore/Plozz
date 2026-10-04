@@ -11,6 +11,58 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testLibraryControlsScrollWithBothGridStylesAndRemainFocusableOnReturn() async throws {
+        for style: CardFocusStyle in [.system, .highlight] {
+            let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, supportsFilters: true)
+            let name = "LibraryScrollingHeader.\(UUID())"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+            defer { defaults.removePersistentDomain(forName: name) }
+            let model = LibraryBrowseViewModel(
+                provider: provider, containerID: "library", containerKind: .movie,
+                defaults: defaults, initialContentMode: .titles
+            )
+            await model.loadFirstPage()
+            try await withLibrary(model: model, focusStyle: style) { root, window in
+                let scroll = try XCTUnwrap(self.find(UIScrollView.self, in: root))
+                let controls = self.focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                    guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                          frame.midY < window.bounds.height * 0.2 else { return nil }
+                    return (item, frame)
+                }
+                XCTAssertEqual(controls.count, model.availableContentModes.count + 2)
+                let origin = scroll.contentOffset.y
+                scroll.setContentOffset(CGPoint(x: 0, y: origin + 320), animated: true)
+                for _ in 0..<25 {
+                    try await Task.sleep(for: .milliseconds(20))
+                    let displacement = scroll.contentOffset.y - origin
+                    for (item, before) in controls {
+                        let frame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: item, relativeTo: window))
+                        XCTAssertEqual(frame.minY, before.minY - displacement, accuracy: 2,
+                                       "\(style): the controls must travel with the posters, including intermediate frames.")
+                    }
+                }
+                XCTAssertEqual(scroll.contentOffset.y, origin + 320, accuracy: 1)
+                for (item, _) in controls {
+                    let frame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: item, relativeTo: window))
+                    XCTAssertLessThan(frame.maxY, 0, "The controls must leave the screen instead of covering posters.")
+                }
+                scroll.setContentOffset(CGPoint(x: 0, y: origin), animated: true)
+                try await Task.sleep(for: .milliseconds(500))
+                let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
+                for (item, before) in controls {
+                    let frame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: item, relativeTo: window))
+                    XCTAssertEqual(frame.minY, before.minY, accuracy: 1)
+                    controller.target = item
+                    system.requestFocusUpdate(to: controller)
+                    system.updateFocusIfNeeded()
+                    controller.target = nil
+                    XCTAssertTrue(system.focusedItem === item, "Every restored tab and menu must accept native focus.")
+                }
+            }
+        }
+    }
+
     func testRemovingEarlierHubKeepsFocusedHubMounted() async throws {
         let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, recommendationHub: true)
         await provider.setSecondaryRecommendationHub(true)
