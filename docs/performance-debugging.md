@@ -1088,6 +1088,20 @@ next agent doesn't re-chase a ghost.
 
 ### Home backdrop composition and comparison controls
 
+For a Home/Showcase background-color mismatch, enable the existing
+`PLZHEROART=1` trace for a bounded reproduction and filter `plzheroart.log` for
+`palette`. `hero` events identify the image actually fronted (including preview
+upgrades), `sample` events identify the image used for color extraction, `ambient`
+events distinguish cached/applied palettes from stock fallback, and `mesh`
+events record the actual input and theme-adjusted output RGB components.
+Correlate item/reference fingerprints, the ambient cache key, and timestamps;
+compare full-resolution pixel fingerprints rather than preview/full pairs.
+Image fingerprints use a tiny off-main sample, and references are hashed without
+exposing authenticated URLs. No diagnostic changes the artwork or colors.
+Record the settled screen and input sequence before copying
+`Library/Caches/plzheroart.log` from the app container. End the reproduction with
+`PLZHEROART=0` on the next launch to clear its persistent tracing latch.
+
 tvOS uses cached shading by default where it preserves the original treatment.
 iOS retains analytic shading by default. These launch overrides do not change saved settings:
 

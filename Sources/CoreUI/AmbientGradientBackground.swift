@@ -24,6 +24,14 @@ public struct AmbientGradientBackground: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+            .onChange(of: colors, initial: true) { _, colors in
+                #if canImport(UIKit)
+                HeroArtDiagnostics.emit(
+                    "palette mesh theme=\(palette) source=\(tint?.isEmpty == false ? "artwork" : "stock") "
+                    + "input=\(ArtworkPaletteDiagnostics.colors(tint)) output=\(ArtworkPaletteDiagnostics.colors(colors))"
+                )
+                #endif
+            }
     }
 
     private static let points: [SIMD2<Float>] = [
@@ -72,7 +80,7 @@ public struct AmbientGradientBackground: View {
     }
 }
 
-struct AmbientArtworkKey: Hashable {
+struct AmbientArtworkKey: Hashable, Sendable {
     let id: String
     let references: [ArtworkReference]
 }
@@ -94,17 +102,27 @@ final class AmbientBackdropModel {
         generation &+= 1
         let ticket = generation
         self.owner = owner
-        guard let key else { colors = nil; return }
-        if let cached = cache[key] { colors = cached; return }
+        trace("request", key: key, ticket: ticket)
+        guard let key else { colors = nil; trace("stock-no-source", key: nil, ticket: ticket); return }
+        if let cached = cache[key] {
+            colors = cached
+            trace("cache-hit", key: key, ticket: ticket)
+            return
+        }
         do { try await Task.sleep(for: delay) } catch { return }
         guard !Task.isCancelled, generation == ticket else { return }
         let result = await sample()
         guard !Task.isCancelled, generation == ticket else { return }
-        guard let resolved = result, !resolved.isEmpty else { colors = nil; return }
+        guard let resolved = result, !resolved.isEmpty else {
+            colors = nil
+            trace("stock-sample-failed", key: key, ticket: ticket)
+            return
+        }
         if cache[key] == nil { order.append(key) }
         cache[key] = resolved
         while order.count > 24 { cache.removeValue(forKey: order.removeFirst()) }
         colors = resolved
+        trace("applied", key: key, ticket: ticket)
     }
 
     func release(owner: UUID) {
@@ -112,33 +130,50 @@ final class AmbientBackdropModel {
         generation &+= 1
         self.owner = nil
         colors = nil
+        trace("released", key: nil, ticket: generation)
+    }
+
+    private func trace(_ event: String, key: AmbientArtworkKey?, ticket: Int) {
+        #if canImport(UIKit)
+        HeroArtDiagnostics.emit(
+            "palette ambient event=\(event) owner=\(owner?.uuidString ?? "none") generation=\(ticket) "
+            + "item=\(HandoffDiagnostics.correlationID(key?.id)) key=\(ArtworkPaletteDiagnostics.keyID(key)) "
+            + "colors=\(ArtworkPaletteDiagnostics.colors(colors))"
+        )
+        #endif
     }
 }
 
 private enum AmbientPaletteSampler {
     #if canImport(UIKit)
     private actor Worker {
-        func extract(_ image: UIImage) -> [Color] {
+        func extract(_ image: UIImage, reference: ArtworkReference, key: AmbientArtworkKey?, source: String) -> [Color] {
             guard !Task.isCancelled else { return [] }
-            return ArtworkColorExtractor.palette(from: image, maxColors: 4)
+            let colors = ArtworkColorExtractor.palette(from: image, maxColors: 4)
+            HeroArtDiagnostics.emit(
+                "palette sample item=\(HandoffDiagnostics.correlationID(key?.id)) key=\(ArtworkPaletteDiagnostics.keyID(key)) "
+                + "source=\(source) reference=\(ArtworkPaletteDiagnostics.referenceID(reference)) "
+                + "\(ArtworkPaletteDiagnostics.imageSummary(image)) colors=\(ArtworkPaletteDiagnostics.colors(colors))"
+            )
+            return colors
         }
     }
     private static let worker = Worker()
     #endif
 
-    static func sample(references: [ArtworkReference], fallback: (@Sendable () async -> URL?)?) async -> [Color]? {
+    static func sample(key: AmbientArtworkKey?, references: [ArtworkReference], fallback: (@Sendable () async -> URL?)?) async -> [Color]? {
         #if canImport(UIKit)
         for reference in references {
             guard !Task.isCancelled else { return nil }
             if let image = await ArtworkImageCache.shared.image(for: reference, variant: .heroBackdrop, background: true) {
-                return await worker.extract(image)
+                return await worker.extract(image, reference: reference, key: key, source: "candidate")
             }
         }
         guard !Task.isCancelled, let url = await fallback?(),
               let image = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop, background: true) else {
             return nil
         }
-        return await worker.extract(image)
+        return await worker.extract(image, reference: .remote(url), key: key, source: "fallback")
         #else
         return nil
         #endif
@@ -227,9 +262,9 @@ private struct AmbientBackdropSource: ViewModifier {
         content
             .task(id: request) {
                 guard let model else { return }
-                let references = references, fallback = fallback
-                await model.update(owner: owner, key: request.artwork) {
-                    await AmbientPaletteSampler.sample(references: references, fallback: fallback)
+                let references = references, fallback = fallback, key = request.artwork
+                await model.update(owner: owner, key: key) {
+                    await AmbientPaletteSampler.sample(key: key, references: references, fallback: fallback)
                 }
             }
             .onDisappear { model?.release(owner: owner) }

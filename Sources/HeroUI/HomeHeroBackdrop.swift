@@ -726,6 +726,7 @@ private struct WipeImageView: UIViewRepresentable {
                 displayedID = id
                 displayedReference = reference
                 displayedQuality = quality
+                ArtworkPaletteDiagnostics.displayed(image, reference: reference, id: id, event: "initial-\(quality)")
                 return
             }
             // Same target: replace only when the URL changes at an equal tier, or
@@ -739,12 +740,14 @@ private struct WipeImageView: UIViewRepresentable {
                 guard quality != displayedQuality else { return }
                 container.frontImage = image
                 displayedQuality = quality
+                ArtworkPaletteDiagnostics.displayed(image, reference: reference, id: id, event: "upgrade-\(quality)")
                 return
             }
             startWipe(to: image, reference: reference, id: id, forward: forward)
             displayedID = id
             displayedReference = reference
             displayedQuality = quality
+            ArtworkPaletteDiagnostics.displayed(image, reference: reference, id: id, event: "transition-\(quality)")
         }
 
         /// Couldn't resolve any art for the slide. Clear stale art rather than
@@ -755,6 +758,7 @@ private struct WipeImageView: UIViewRepresentable {
             displayedID = id
             displayedReference = nil
             displayedQuality = nil
+            HeroArtDiagnostics.emit("palette hero event=no-art item=\(HandoffDiagnostics.correlationID(id))")
         }
 
         /// Upgrade the *currently displayed* slide's art in place (no wipe) if a
@@ -775,6 +779,9 @@ private struct WipeImageView: UIViewRepresentable {
                 container.setInitialImage(image)
             }
             displayedQuality = .full
+            if let displayedID {
+                ArtworkPaletteDiagnostics.displayed(image, reference: displayedReference, id: displayedID, event: "cached-upgrade-full")
+            }
         }
 
         private func startWipe(to image: UIImage, reference: ArtworkReference, id: String, forward: Bool) {
