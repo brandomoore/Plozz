@@ -30,7 +30,7 @@ public enum ArtworkPaletteDiagnostics {
     static func keyID(_ key: AmbientArtworkKey?) -> String {
         guard let key else { return "none" }
         return HandoffDiagnostics.correlationID(
-            key.id + "|" + key.references.map(\.privacySafeIdentity).joined(separator: "|")
+            key.id + "|" + key.reference.privacySafeIdentity + "|" + key.variant.rawValue
         )
     }
 

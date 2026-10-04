@@ -338,6 +338,7 @@ public struct HeroBackdropLayer<Video: View>: View {
             content: ArtworkFillImage.init,
             placeholder: { ambientPlaceholder }
         )
+        .reportingHeroArtwork(id: pinIdentity)
         #if os(tvOS)
         .environment(\.artworkResolutionState, artworkResolution)
         .onChange(of: artworkResolution.image, initial: true) { _, image in

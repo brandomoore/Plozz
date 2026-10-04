@@ -136,19 +136,25 @@ public enum ArtworkImageVariant: String, Sendable, CaseIterable {
               let widthIndex = queryItems.firstIndex(where: { $0.name == "width" }),
               let widthValue = queryItems[widthIndex].value,
               let currentWidth = Int(widthValue),
-              currentWidth > maxPixelSize
+              currentWidth > 0
         else {
             return nil
         }
 
-        if let heightIndex = queryItems.firstIndex(where: { $0.name == "height" }),
-           let heightValue = queryItems[heightIndex].value,
-           let currentHeight = Int(heightValue),
-           currentHeight > 0 {
-            let ratio = Double(currentHeight) / Double(currentWidth)
-            queryItems[heightIndex].value = String(max(1, Int((Double(maxPixelSize) * ratio).rounded())))
+        func set(_ name: String, _ value: Int) {
+            if let index = queryItems.firstIndex(where: { $0.name == name }) {
+                queryItems[index].value = String(value)
+            } else {
+                queryItems.append(URLQueryItem(name: name, value: String(value)))
+            }
         }
-        queryItems[widthIndex].value = String(maxPixelSize)
+        let currentHeight = queryItems.first(where: { $0.name == "height" })?.value.flatMap(Int.init)
+        set("width", min(currentWidth, maxPixelSize))
+        set("height", min(max(1, currentHeight ?? maxPixelSize), maxPixelSize))
+        // Plex minSize=1 fills the box, expanding a landscape image far beyond
+        // a portrait-shaped width/height request. Fit inside BOTH decode bounds.
+        set("minSize", 0)
+        set("upscale", 0)
         components.percentEncodedQueryItems = queryItems
         return components.url
     }

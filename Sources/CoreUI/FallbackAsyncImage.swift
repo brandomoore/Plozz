@@ -118,6 +118,26 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
     }
 
     #if canImport(UIKit)
+    /// Reports the bitmap actually painted, including cached seeds and upgrades.
+    public func reportingHeroArtwork(id: String?) -> some View {
+        FilteredArtworkImage(
+            references: references,
+            maxAspectRatio: maxAspectRatio,
+            variant: variant,
+            previewVariant: previewVariant,
+            asyncFallbackURL: asyncFallbackURL,
+            preferredArtworkWait: preferredArtworkWait,
+            prefersOnlineArtwork: prefersOnlineArtwork,
+            providerPolicyIdentity: providerPolicyIdentity,
+            onResolveReference: onResolveReference,
+            pinIdentity: pinIdentity,
+            sharedResolutionIdentity: sharedResolutionIdentity,
+            reportedHeroID: id,
+            content: .image(content),
+            placeholder: placeholder
+        )
+    }
+
     /// Supplies the resolver's initial cached bitmap directly to native artwork,
     /// retaining one content identity while an uncached image arrives.
     func resolvedBitmap<ResolvedContent: View>(
@@ -409,6 +429,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
     /// the previous show's art showing under the new one's title.
     let pinIdentity: String?
     let sharedResolutionIdentity: String?
+    let reportedHeroID: String?
     let content: ResolvedArtworkContent<Content>
     let placeholder: () -> Placeholder
 
@@ -431,6 +452,15 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
     /// across track changes and must be refreshed when the artwork url changes.
     @State private var loadedKey: String?
     @State private var displayedReference: ArtworkReference?
+    @Environment(\.heroArtworkDisplayReporter) private var heroArtworkReporter
+
+    private struct ReportIdentity: Equatable {
+        let image: ObjectIdentifier?
+        let reference: ArtworkReference?
+        let preview: Bool
+        let itemID: String?
+        let reporter: HeroArtworkDisplayReporter.Identity?
+    }
 
     init(
         references: [ArtworkReference],
@@ -444,6 +474,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         onResolveReference: ((ArtworkReference?) -> Void)? = nil,
         pinIdentity: String? = nil,
         sharedResolutionIdentity: String? = nil,
+        reportedHeroID: String? = nil,
         content: ResolvedArtworkContent<Content>,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
@@ -458,6 +489,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         self.onResolveReference = onResolveReference
         self.pinIdentity = pinIdentity
         self.sharedResolutionIdentity = sharedResolutionIdentity
+        self.reportedHeroID = reportedHeroID
         self.content = content
         self.placeholder = placeholder
         // Seed synchronously from the decoded-image cache so an already-warmed card
@@ -568,6 +600,24 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             artworkResolution?.isResolved = value
         }
         #endif
+        .onChange(of: ReportIdentity(
+            image: image.map(ObjectIdentifier.init), reference: displayedReference,
+            preview: isPreviewQuality, itemID: reportedHeroID, reporter: heroArtworkReporter?.identity
+        ), initial: true) { _, _ in
+            guard let reportedHeroID else { return }
+            let artwork = image.flatMap { image in
+                displayedReference.map {
+                    FirstPaintArtwork(image: image, reference: $0, variant: isPreviewQuality ? previewVariant ?? variant : variant)
+                }
+            }
+            heroArtworkReporter?.publish(artwork, itemID: reportedHeroID)
+            if let artwork {
+                ArtworkPaletteDiagnostics.displayed(
+                    artwork.image, reference: artwork.reference, id: reportedHeroID,
+                    event: "swiftui-\(artwork.variant)"
+                )
+            }
+        }
         .task(id: taskKey) {
             await resolve()
         }
@@ -708,6 +758,8 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             image = loaded
             resolved = true
             isPreviewQuality = true
+            pinnedIdentity = pinIdentity
+            displayedReference = first
         }
         // Attempt the network passes more than once. A `nil` from the cache means
         // only "no image came back" — it does NOT distinguish "this title has no

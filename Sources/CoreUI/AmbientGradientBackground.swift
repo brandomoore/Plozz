@@ -82,7 +82,8 @@ public struct AmbientGradientBackground: View {
 
 struct AmbientArtworkKey: Hashable, Sendable {
     let id: String
-    let references: [ArtworkReference]
+    let reference: ArtworkReference
+    var variant: ArtworkImageVariant = .heroBackdrop
 }
 
 @MainActor @Observable
@@ -144,7 +145,7 @@ final class AmbientBackdropModel {
     }
 }
 
-private enum AmbientPaletteSampler {
+enum AmbientPaletteSampler {
     #if canImport(UIKit)
     private actor Worker {
         func extract(_ image: UIImage, reference: ArtworkReference, key: AmbientArtworkKey?, source: String) -> [Color] {
@@ -161,41 +162,24 @@ private enum AmbientPaletteSampler {
     private static let worker = Worker()
     #endif
 
-    static func sample(key: AmbientArtworkKey?, references: [ArtworkReference], fallback: (@Sendable () async -> URL?)?) async -> [Color]? {
-        #if canImport(UIKit)
-        for reference in references {
-            guard !Task.isCancelled else { return nil }
-            if let image = await ArtworkImageCache.shared.image(for: reference, variant: .heroBackdrop, background: true) {
-                return await worker.extract(image, reference: reference, key: key, source: "candidate")
-            }
-        }
-        guard !Task.isCancelled, let url = await fallback?(),
-              let image = await ArtworkImageCache.shared.image(for: url, variant: .heroBackdrop, background: true) else {
-            return nil
-        }
-        return await worker.extract(image, reference: .remote(url), key: key, source: "fallback")
-        #else
-        return nil
-        #endif
+    #if canImport(UIKit)
+    static func sample(_ displayed: DisplayedHeroArtwork) async -> [Color]? {
+        guard !Task.isCancelled else { return nil }
+        return await worker.extract(
+            displayed.artwork.image, reference: displayed.artwork.reference,
+            key: displayed.key, source: "displayed"
+        )
     }
+    #endif
 }
 
 private struct GradientBackgroundsKey: EnvironmentKey {
     static let defaultValue = ThemeSettingsStore.defaultGradientEnabled
 }
-private struct AmbientBackdropKey: EnvironmentKey {
-    static let defaultValue: AmbientBackdropModel? = nil
-}
 public extension EnvironmentValues {
     var gradientBackgroundsEnabled: Bool {
         get { self[GradientBackgroundsKey.self] }
         set { self[GradientBackgroundsKey.self] = newValue }
-    }
-}
-private extension EnvironmentValues {
-    var ambientBackdrop: AmbientBackdropModel? {
-        get { self[AmbientBackdropKey.self] }
-        set { self[AmbientBackdropKey.self] = newValue }
     }
 }
 
@@ -205,25 +189,33 @@ public extension View {
         modifier(HomeGradientHost(scope: scope, isVisible: isVisible))
     }
 
-    func ambientBackdropSource(
-        id: String?, references: [ArtworkReference], isActive: Bool,
-        fallbackURL: (@Sendable () async -> URL?)? = nil
-    ) -> some View {
-        modifier(AmbientBackdropSource(id: id, references: references, isActive: isActive, fallback: fallbackURL))
-    }
 }
 
 private struct HomeGradientHost: ViewModifier {
     let scope: ObjectIdentifier
     let isVisible: Bool
     @State private var model = AmbientBackdropModel()
-    @Environment(\.gradientBackgroundsEnabled) private var enabled
+    #if canImport(UIKit)
+    @State private var artwork = HeroArtworkDisplayState()
+    #endif
 
     func body(content: Content) -> some View {
         content
-            .background { HomeGradientPaint(model: model, isVisible: isVisible) }
-            .environment(\.ambientBackdrop, enabled && isVisible ? model : nil)
-            .onChange(of: scope) { _, _ in model = AmbientBackdropModel() }
+            .background {
+                HomeGradientPaint(model: model, isVisible: isVisible)
+                    #if canImport(UIKit)
+                    .environment(\.heroArtworkDisplayState, artwork)
+                    #endif
+            }
+            #if canImport(UIKit)
+            .environment(\.heroArtworkDisplayState, artwork)
+            #endif
+            .onChange(of: scope) { _, _ in
+                model = AmbientBackdropModel()
+                #if canImport(UIKit)
+                artwork = HeroArtworkDisplayState()
+                #endif
+            }
     }
 }
 
@@ -232,42 +224,29 @@ private struct HomeGradientPaint: View {
     let isVisible: Bool
     @Environment(\.themePalette) private var palette
     @Environment(\.gradientBackgroundsEnabled) private var enabled
+    #if canImport(UIKit)
+    @Environment(\.heroArtworkDisplayState) private var artwork
+    @State private var owner = UUID()
+    private struct Request: Hashable {
+        let model: ObjectIdentifier
+        let key: AmbientArtworkKey?
+    }
+    #endif
 
     var body: some View {
         if enabled {
             AmbientGradientBackground(palette: palette, tint: isVisible ? model.colors : nil)
-        }
-    }
-}
-
-private struct AmbientBackdropSource: ViewModifier {
-    let id: String?
-    let references: [ArtworkReference]
-    let isActive: Bool
-    let fallback: (@Sendable () async -> URL?)?
-    @Environment(\.ambientBackdrop) private var model
-    @Environment(\.gradientBackgroundsEnabled) private var enabled
-    @State private var owner = UUID()
-
-    private struct Request: Hashable {
-        let model: ObjectIdentifier?
-        let artwork: AmbientArtworkKey?
-    }
-    private var request: Request {
-        Request(model: model.map(ObjectIdentifier.init),
-                artwork: enabled && isActive ? id.map { AmbientArtworkKey(id: $0, references: references) } : nil)
-    }
-
-    func body(content: Content) -> some View {
-        content
-            .task(id: request) {
-                guard let model else { return }
-                let references = references, fallback = fallback, key = request.artwork
-                await model.update(owner: owner, key: key) {
-                    await AmbientPaletteSampler.sample(key: key, references: references, fallback: fallback)
+                #if canImport(UIKit)
+                .task(id: Request(model: ObjectIdentifier(model), key: isVisible ? artwork?.displayed?.key : nil)) {
+                    let displayed = isVisible ? artwork?.displayed : nil
+                    await model.update(owner: owner, key: displayed?.key) {
+                        guard let displayed else { return nil }
+                        return await AmbientPaletteSampler.sample(displayed)
+                    }
                 }
-            }
-            .onDisappear { model?.release(owner: owner) }
+                .onDisappear { model.release(owner: owner) }
+                #endif
+        }
     }
 }
 #endif

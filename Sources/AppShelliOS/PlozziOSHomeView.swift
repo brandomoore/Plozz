@@ -1433,11 +1433,8 @@ private struct PlozziOSHomeHeroCarousel: View {
             }
         }
         .frame(height: heroHeight)
-        .ambientBackdropSource(
-            id: currentItem?.stablePresentationID,
-            references: currentItem.map {
-                HeroPresentation(item: $0, artworkStyle: style, surface: .home).artworkReferences
-            } ?? [],
+        .heroArtworkSource(
+            id: currentItem?.id,
             isActive: isFrontmost
         )
         .overlay(alignment: .topLeading) {

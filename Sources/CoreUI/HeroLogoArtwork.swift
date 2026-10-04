@@ -152,6 +152,7 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
     private let references: [ArtworkReference]
     private let asyncFallbackURL: HeroLogoFallback?
     private let backgroundSample: (@Sendable () async -> HeroBackgroundSample?)?
+    private let displayedArtworkID: String?
     private let maxWidth: CGFloat
     private let maxHeight: CGFloat
     private let constrainsToBounds: Bool
@@ -166,6 +167,7 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
         primaryURL: URL?,
         asyncFallbackURL: HeroLogoFallback? = nil,
         backgroundSample: (@Sendable () async -> HeroBackgroundSample?)? = nil,
+        displayedArtworkID: String? = nil,
         maxWidth: CGFloat = 620,
         maxHeight: CGFloat = 200,
         constrainsToBounds: Bool = false,
@@ -179,6 +181,7 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
         self.references = primaryURL.map { [.remote($0)] } ?? []
         self.asyncFallbackURL = asyncFallbackURL
         self.backgroundSample = backgroundSample
+        self.displayedArtworkID = displayedArtworkID
         self.maxWidth = maxWidth
         self.maxHeight = maxHeight
         self.constrainsToBounds = constrainsToBounds
@@ -197,6 +200,7 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
         references: [ArtworkReference],
         asyncFallbackURL: HeroLogoFallback? = nil,
         backgroundSample: (@Sendable () async -> HeroBackgroundSample?)? = nil,
+        displayedArtworkID: String? = nil,
         maxWidth: CGFloat = 620,
         maxHeight: CGFloat = 200,
         constrainsToBounds: Bool = false,
@@ -210,6 +214,7 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
         self.references = references
         self.asyncFallbackURL = asyncFallbackURL
         self.backgroundSample = backgroundSample
+        self.displayedArtworkID = displayedArtworkID
         self.maxWidth = maxWidth
         self.maxHeight = maxHeight
         self.constrainsToBounds = constrainsToBounds
@@ -228,6 +233,7 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
             asyncFallbackURL: asyncFallbackURL,
             prefersOnlineArtwork: MetadataProviderSettingsStore().load().preferOnlineArtwork,
             backgroundSample: backgroundSample,
+            displayedArtworkID: displayedArtworkID,
             maxWidth: maxWidth,
             maxHeight: maxHeight,
             constrainsToBounds: constrainsToBounds,
@@ -300,6 +306,7 @@ private struct LoadedLogo<TextFallback: View>: View {
     let asyncFallbackURL: HeroLogoFallback?
     let prefersOnlineArtwork: Bool
     let backgroundSample: (@Sendable () async -> HeroBackgroundSample?)?
+    let displayedArtworkID: String?
     let maxWidth: CGFloat
     let maxHeight: CGFloat
     let constrainsToBounds: Bool
@@ -312,6 +319,7 @@ private struct LoadedLogo<TextFallback: View>: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.heroArtworkDisplayState) private var displayedArtwork
 
     @State private var image: ProcessedLogo?
     /// The `taskKey` the current `image` was resolved for, so a re-resolve for the
@@ -323,7 +331,11 @@ private struct LoadedLogo<TextFallback: View>: View {
         // resolved once paints on the FIRST frame of a rebuild. Without it every
         // rebuild drew the styled title for at least one frame, because the
         // pipeline is an actor and even a cache hit costs a suspension.
-        let shown = (resolvedKey == taskKey ? image : nil) ?? HeroLogoMemo.value(for: taskKey)
+        let cached = (resolvedKey == taskKey ? image : nil) ?? HeroLogoMemo.value(for: taskKey)
+        let shown = cached.map { processed in
+            guard let displayedArtworkID else { return processed }
+            return HeroLogoAnalysis.refine(processed, backgroundSample: displayedArtwork?.sample(for: displayedArtworkID))
+        }
         Group {
             if let processed = shown {
                 logo(processed)
@@ -463,7 +475,7 @@ private struct LoadedLogo<TextFallback: View>: View {
         // would be one image pass per card while scrolling) keeps the conservative
         // always-on halo, because for that caller "unmeasured" is permanent rather
         // than momentary.
-        let awaitsSample = backgroundSample != nil
+        let awaitsSample = displayedArtworkID == nil && backgroundSample != nil
         adopt(HeroLogoAnalysis.analyze(
             prepared,
             backgroundSample: nil,
@@ -496,6 +508,15 @@ private struct LoadedLogo<TextFallback: View>: View {
 /// wordmark never flipped colour in light mode and low-contrast logos got no
 /// halo, unlike the detail hero.
 enum HeroLogoAnalysis {
+    static func refine(_ logo: ProcessedLogo, backgroundSample: HeroBackgroundSample?) -> ProcessedLogo {
+        analyze(
+            PreparedLogo(image: logo.image, luminance: logo.luminance,
+                         red: logo.red, green: logo.green, blue: logo.blue,
+                         coverage: logo.coverage, brightInk: logo.brightInk, backgroundPlate: logo.backgroundPlate),
+            backgroundSample: backgroundSample
+        )
+    }
+
     /// Logo/background luminance gap (0…1) below which the logo no longer
     /// separates by brightness alone. Tuned for a "clean" lean.
     static let haloLuminanceThreshold = 0.26
@@ -592,6 +613,20 @@ public struct HeroUIKitLogo: @unchecked Sendable {
     /// ink-corrected fit the SwiftUI one uses and a show's wordmark carries the
     /// same weight on both screens — see ``HeroLogoFit/inkScale(coverage:)``.
     public let coverage: Double
+    var measuredTone: ResolvedLogoTone?
+
+    public func matchingBackground(_ sample: HeroBackgroundSample?) -> HeroUIKitLogo {
+        guard let tone = measuredTone else { return self }
+        let processed = HeroLogoAnalysis.analyze(
+            PreparedLogo(image: image, luminance: tone.luminance, red: tone.red, green: tone.green,
+                         blue: tone.blue, coverage: tone.coverage, brightInk: tone.brightInk,
+                         backgroundPlate: tone.backgroundPlate),
+            backgroundSample: sample
+        )
+        return HeroUIKitLogo(image: image, isMonochrome: processed.isMonochrome,
+                             needsHalo: processed.needsHalo, isDark: processed.isDark,
+                             coverage: coverage, measuredTone: tone)
+    }
 }
 
 /// Loads and analyses a hero logo through the exact same shared pipeline the
@@ -616,7 +651,8 @@ public enum HeroUIKitLogoRenderer {
             isMonochrome: processed.isMonochrome,
             needsHalo: processed.needsHalo,
             isDark: processed.isDark,
-            coverage: processed.coverage
+            coverage: processed.coverage,
+            measuredTone: processed.tone
         )
     }
 
@@ -1446,6 +1482,14 @@ private struct LogoStats {
 /// left-of-centre band where the logo sits. Returns `nil` when no candidate URL
 /// yields a decodable image (the caller then keeps the halo on, to be safe).
 public enum HeroBackgroundSampler {
+    /// Uses an already-displayed bitmap; never requests another image or resolution.
+    public static func sample(
+        artwork: FirstPaintArtwork,
+        region: CGRect = CGRect(x: 0.0, y: 0.28, width: 0.5, height: 0.40)
+    ) async -> HeroBackgroundSample? {
+        await Cache.shared.sample(artwork.reference, region: region, variant: artwork.variant, image: artwork.image)
+    }
+
     /// Mean colour + luminance of `region` (normalized, origin top-left) across
     /// the first decodable URL in `urls`. `region` defaults to the left-of-centre
     /// vertical mid-band, which is where the hero's leading-aligned logo renders.
@@ -1496,9 +1540,11 @@ public enum HeroBackgroundSampler {
         func sample(
             _ reference: ArtworkReference,
             region: CGRect,
-            variant: ArtworkImageVariant
+            variant: ArtworkImageVariant,
+            image: UIImage? = nil
         ) async -> HeroBackgroundSample? {
-            let key = "\(reference.privacySafeIdentity)|\(region.minX),\(region.minY),\(region.width),\(region.height)|\(variant.rawValue)"
+            let source = image.map { "displayed:\(ObjectIdentifier($0))" } ?? "requested"
+            let key = "\(source)|\(reference.privacySafeIdentity)|\(region.minX),\(region.minY),\(region.width),\(region.height)|\(variant.rawValue)"
             if let hit = entries[key] {
                 promote(key)
                 return hit
@@ -1507,7 +1553,8 @@ public enum HeroBackgroundSampler {
                 return await running.value
             }
             let task = Task.detached(priority: .utility) {
-                await HeroBackgroundSampler.sampleOne(reference, region: region, variant: variant)
+                if let image { return HeroBackgroundSampler.sampleImage(image, region: region) }
+                return await HeroBackgroundSampler.sampleOne(reference, region: region, variant: variant)
             }
             inFlight[key] = task
             let result = await task.value
@@ -1539,8 +1586,12 @@ public enum HeroBackgroundSampler {
         region: CGRect,
         variant: ArtworkImageVariant
     ) async -> HeroBackgroundSample? {
-        guard let image = await ArtworkImageCache.shared.image(for: reference, variant: variant),
-              let cg = image.cgImage,
+        guard let image = await ArtworkImageCache.shared.image(for: reference, variant: variant) else { return nil }
+        return sampleImage(image, region: region)
+    }
+
+    private static func sampleImage(_ image: UIImage, region: CGRect) -> HeroBackgroundSample? {
+        guard let cg = image.cgImage,
               cg.width > 0,
               cg.height > 0 else {
             return nil

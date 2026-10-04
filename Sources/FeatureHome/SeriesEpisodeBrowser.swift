@@ -445,7 +445,7 @@ private struct SeriesRecededLogo: View {
         HeroLogoArtwork(
             references: series.artworkReferences(for: .logo),
             asyncFallbackURL: logoFallback,
-            backgroundSample: backgroundSample,
+            displayedArtworkID: "detail:\(series.id)",
             maxWidth: 620,
             maxHeight: SeriesEpisodeBrowserLayout.recededLogoHeight,
             constrainsToBounds: true,
@@ -483,24 +483,5 @@ private struct SeriesRecededLogo: View {
         }
     }
 
-    private var backgroundSample: (@Sendable () async -> HeroBackgroundSample?)? {
-        #if canImport(UIKit)
-        let urls = [series.heroBackdropURL, series.backdropURL].compactMap { $0 }
-        let source = series
-        return {
-            if let sample = await HeroBackgroundSampler.sample(urls: urls) { return sample }
-            if let resolved = await ArtworkRouter.shared.artworkURL(.hero, for: source),
-               let sample = await HeroBackgroundSampler.sample(urls: [resolved]) {
-                return sample
-            }
-            if let poster = source.posterURL {
-                return await HeroBackgroundSampler.sample(urls: [poster])
-            }
-            return nil
-        }
-        #else
-        return nil
-        #endif
-    }
 }
 #endif

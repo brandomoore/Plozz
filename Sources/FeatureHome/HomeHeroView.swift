@@ -274,6 +274,7 @@ struct HomeHeroView: View {
     private static let resumeAfterIdle: Double = 2.5
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.heroArtworkDisplayState) private var displayedArtwork
     /// Read so the imperative UIKit foreground's plain-`String` title can be
     /// resolved with the in-app language override rather than the device's
     /// system locale. `HomeHeroView`'s body re-evaluates whenever this
@@ -882,11 +883,9 @@ struct HomeHeroView: View {
                 alignsArtworkToLeadingEdge: navigationStyle == .rail,
                 scrimOpacity: isFrontmost ? 1 : 0
             )
-            .ambientBackdropSource(
-                id: item.stablePresentationID,
-                references: primaryBackdropReferences(for: item),
-                isActive: isFrontmost,
-                fallbackURL: backdropFallback(for: item)
+            .heroArtworkSource(
+                id: item.id,
+                isActive: isFrontmost
             )
         } else {
             Color.clear.frame(width: w, height: height)
@@ -1032,7 +1031,7 @@ struct HomeHeroView: View {
                 HeroLogoArtwork(
                     references: item.artworkReferences(for: .logo),
                     asyncFallbackURL: logoFallback(for: item),
-                    backgroundSample: backgroundSample(for: item),
+                    displayedArtworkID: item.id,
                     // The logo is sized from a shared hero box, not from this
                     // hero's own button row — the pill set changes per slide, and
                     // the detail page's column is wider again. See
@@ -1186,7 +1185,7 @@ struct HomeHeroView: View {
                 neighbours: foregroundNeighbours(for: item),
                 logoFallbacks: foregroundLogoFallbacks(for: item),
                 logoReferences: foregroundLogoReferences(for: item),
-                backgroundSamplers: foregroundBackgroundSamplers(for: item),
+                backgroundSample: displayedArtwork?.sample(for: item.id),
                 metadataVisible: metadataVisible,
                 width: HomeHeroLayout.screenWidth,
                 height: HomeHeroLayout.screenHeight - Self.contentBottomInset
@@ -1395,29 +1394,6 @@ struct HomeHeroView: View {
         var result: [String: [ArtworkReference]] = [:]
         for target in targets where result[target.id] == nil {
             result[target.id] = target.artworkReferences(for: .logo)
-        }
-        return result
-    }
-
-    /// Backdrop colour samplers for the current slide plus its prepared neighbours,
-    /// keyed by itemID. Mirrors the SwiftUI hero's `backgroundSample(for:)` so the
-    /// imperative UIKit hero decides a logo's legibility halo from the same backdrop
-    /// sample. Bounded to the same window the coordinator prepares.
-    private func foregroundBackgroundSamplers(
-        for item: MediaItem
-    ) -> [String: @Sendable () async -> HeroBackgroundSample?] {
-        var targets: [MediaItem] = [item]
-        if items.count > 1 {
-            let current = items.firstIndex(where: { $0.id == item.id }) ?? index
-            let previous = (current - 1 + items.count) % items.count
-            let next = (current + 1) % items.count
-            for i in [previous, next] where items.indices.contains(i) { targets.append(items[i]) }
-        }
-        var result: [String: @Sendable () async -> HeroBackgroundSample?] = [:]
-        for target in targets where result[target.id] == nil {
-            if let sampler = backgroundSample(for: target) {
-                result[target.id] = sampler
-            }
         }
         return result
     }

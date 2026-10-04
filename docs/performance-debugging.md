@@ -1088,6 +1088,19 @@ next agent doesn't re-chase a ghost.
 
 ### Home backdrop composition and comparison controls
 
+Home's ambient tint and hero-logo contrast consume the bitmap adopted by the
+visible renderer, not another pass through the candidate artwork URLs. This
+includes first-paint online choices, library fallbacks, preview/full upgrades,
+and cached returns. Detail pages own separate display state; incoming carousel
+slides, reflections, and inactive/outgoing owners cannot replace the current
+sample. Derived colors remain bounded/cached, and palette extraction stays
+off-main with the existing navigation coalescing. Disabling gradients does not
+disable the shared logo-contrast sample.
+
+Plex photo requests fit inside both variant dimensions (`minSize=0`,
+`upscale=0`). Clamping width alone with a portrait-shaped minimum-size request
+can otherwise transfer a 5333x3000 landscape response for a 2000px hero.
+
 For a Home/Showcase background-color mismatch, enable the existing
 `PLZHEROART=1` trace for a bounded reproduction and filter `plzheroart.log` for
 `palette`. `hero` events identify the image actually fronted (including preview

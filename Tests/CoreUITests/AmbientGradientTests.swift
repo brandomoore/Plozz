@@ -16,8 +16,8 @@ final class AmbientGradientTests: XCTestCase {
         XCTAssertFalse(fingerprint.contains("secret"))
         XCTAssertFalse(fingerprint.contains("private"))
         XCTAssertNotEqual(
-            ArtworkPaletteDiagnostics.keyID(AmbientArtworkKey(id: "title", references: [first])),
-            ArtworkPaletteDiagnostics.keyID(AmbientArtworkKey(id: "title", references: [second]))
+            ArtworkPaletteDiagnostics.keyID(AmbientArtworkKey(id: "title", reference: first)),
+            ArtworkPaletteDiagnostics.keyID(AmbientArtworkKey(id: "title", reference: second))
         )
     }
 
@@ -132,7 +132,7 @@ final class AmbientGradientTests: XCTestCase {
         }
         let cachedCount = await counter.count
         XCTAssertEqual(cachedCount, 1)
-        let changedArtwork = AmbientArtworkKey(id: "79", references: [.remote(URL(string: "https://other.example/art")!)])
+        let changedArtwork = AmbientArtworkKey(id: "79", reference: .remote(URL(string: "https://other.example/art")!))
         await model.update(owner: owner, key: changedArtwork, delay: .zero) {
             await counter.sample(.blue)
         }
@@ -198,7 +198,7 @@ final class AmbientGradientTests: XCTestCase {
     }
 
     private func key(_ id: String) -> AmbientArtworkKey {
-        AmbientArtworkKey(id: id, references: [.remote(URL(string: "https://art.example/\(id)")!)])
+        AmbientArtworkKey(id: id, reference: .remote(URL(string: "https://art.example/\(id)")!))
     }
 }
 

@@ -86,6 +86,10 @@ final class PlexAbsoluteArtworkURLTests: XCTestCase {
         XCTAssertTrue(url.absoluteString.contains("/photo/:/transcode"))
         XCTAssertTrue(url.absoluteString.contains("width=500"))
         XCTAssertEqual(url.host, "plex.host")
+        let query = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertEqual(query.first { $0.name == "height" }?.value, "750")
+        XCTAssertEqual(query.first { $0.name == "minSize" }?.value, "0")
+        XCTAssertEqual(query.first { $0.name == "upscale" }?.value, "0")
     }
 
     func testProviderRehydratesArtworkFromItemIDWithoutMetadataRequest() throws {

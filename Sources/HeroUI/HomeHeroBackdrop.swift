@@ -464,6 +464,7 @@ public enum HeroBackdropArtworkPolicy {
 /// which owns the entire Core Animation transition. Because SwiftUI never animates
 /// the image layers, it can never decompose the wipe into wrong-order pieces.
 private struct WipeImageView: UIViewRepresentable {
+    @Environment(\.heroArtworkDisplayReporter) private var artworkReporter
     let references: [ArtworkReference]
     let asyncFallbackURL: (@Sendable () async -> URL?)?
     let prefersOnlineArtwork: Bool
@@ -510,6 +511,7 @@ private struct WipeImageView: UIViewRepresentable {
         )
         context.coordinator.container = view
         context.coordinator.configure(width: width, height: height)
+        context.coordinator.setArtworkReporter(artworkReporter)
         context.coordinator.update(
             references: references,
             slideID: slideID,
@@ -525,6 +527,7 @@ private struct WipeImageView: UIViewRepresentable {
     func updateUIView(_ uiView: HeroWipeContainerView, context: Context) {
         context.coordinator.container = uiView
         context.coordinator.configure(width: width, height: height)
+        context.coordinator.setArtworkReporter(artworkReporter)
         context.coordinator.update(
             references: references,
             slideID: slideID,
@@ -570,6 +573,8 @@ private struct WipeImageView: UIViewRepresentable {
         /// cancels the previous task so skipped cold slides release their cache
         /// waiter, download, and decode instead of competing with the latest press.
         private var loadTask: Task<Void, Never>?
+        private var artworkReporter: HeroArtworkDisplayReporter?
+        private var reportTask: Task<Void, Never>?
         private enum ArtworkQuality: Int {
             case preview
             case full
@@ -594,6 +599,30 @@ private struct WipeImageView: UIViewRepresentable {
             loadToken += 1
             loadTask?.cancel()
             loadTask = nil
+            reportTask?.cancel()
+            reportTask = nil
+            artworkReporter = nil
+        }
+
+        func setArtworkReporter(_ reporter: HeroArtworkDisplayReporter?) {
+            guard artworkReporter?.identity != reporter?.identity else { return }
+            artworkReporter = reporter
+            reportDisplayedArtwork()
+        }
+
+        private func reportDisplayedArtwork() {
+            reportTask?.cancel()
+            reportTask = Task { @MainActor [weak self] in
+                guard !Task.isCancelled, let self, let id = self.displayedID else { return }
+                let artwork = self.container?.frontImage.flatMap { image in
+                    self.displayedReference.map {
+                        FirstPaintArtwork(image: image, reference: $0,
+                                          variant: self.displayedQuality == .full ? .heroBackdrop : .heroPreview)
+                    }
+                }
+                self.artworkReporter?.publish(artwork, itemID: id)
+                self.reportTask = nil
+            }
         }
 
         func update(
@@ -726,6 +755,7 @@ private struct WipeImageView: UIViewRepresentable {
                 displayedID = id
                 displayedReference = reference
                 displayedQuality = quality
+                reportDisplayedArtwork()
                 ArtworkPaletteDiagnostics.displayed(image, reference: reference, id: id, event: "initial-\(quality)")
                 return
             }
@@ -740,6 +770,7 @@ private struct WipeImageView: UIViewRepresentable {
                 guard quality != displayedQuality else { return }
                 container.frontImage = image
                 displayedQuality = quality
+                reportDisplayedArtwork()
                 ArtworkPaletteDiagnostics.displayed(image, reference: reference, id: id, event: "upgrade-\(quality)")
                 return
             }
@@ -747,6 +778,7 @@ private struct WipeImageView: UIViewRepresentable {
             displayedID = id
             displayedReference = reference
             displayedQuality = quality
+            reportDisplayedArtwork()
             ArtworkPaletteDiagnostics.displayed(image, reference: reference, id: id, event: "transition-\(quality)")
         }
 
@@ -758,6 +790,7 @@ private struct WipeImageView: UIViewRepresentable {
             displayedID = id
             displayedReference = nil
             displayedQuality = nil
+            reportDisplayedArtwork()
             HeroArtDiagnostics.emit("palette hero event=no-art item=\(HandoffDiagnostics.correlationID(id))")
         }
 
@@ -779,6 +812,7 @@ private struct WipeImageView: UIViewRepresentable {
                 container.setInitialImage(image)
             }
             displayedQuality = .full
+            reportDisplayedArtwork()
             if let displayedID {
                 ArtworkPaletteDiagnostics.displayed(image, reference: displayedReference, id: displayedID, event: "cached-upgrade-full")
             }
