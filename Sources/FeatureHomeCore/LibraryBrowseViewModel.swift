@@ -1039,13 +1039,17 @@ public final class LibraryBrowseViewModel {
         }
         switch hubResult {
         case .success(let hubs):
-            sections += hubs.enumerated().compactMap { index, section -> LibrarySection? in
+            var occurrences: [String: Int] = [:]
+            sections += hubs.compactMap { section -> LibrarySection? in
                 guard !section.items.isEmpty else { return nil }
+                let key = "\(section.id.utf8.count):\(section.id)\(section.title)"
+                let occurrence = occurrences[key, default: 0]
+                occurrences[key] = occurrence + 1
                 return LibrarySection(
-                    id: "hub:\(index):\(section.id)", title: section.title, style: section.style,
+                    id: "hub:\(key):\(occurrence)", title: section.title, style: section.style,
                     items: section.items.map {
-                    let item = $0.libraryID == nil ? $0.taggingLibrary(libraryID) : $0
-                    return accountID.map { item.taggingSource($0) } ?? item
+                        let item = $0.libraryID == nil ? $0.taggingLibrary(libraryID) : $0
+                        return accountID.map { item.taggingSource($0) } ?? item
                     }
                 )
             }

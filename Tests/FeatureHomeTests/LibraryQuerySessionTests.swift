@@ -6,6 +6,51 @@ import XCTest
 
 @MainActor
 final class LibraryQuerySessionTests: XCTestCase {
+    func testMaterializesIdentityIndexMergedTitleWithoutAddingUnscopedSources() async throws {
+        let a = MediaItem(id: "a", title: "Dune", kind: .movie, productionYear: 2021,
+                          providerIDs: ["Tmdb": "438631"], librarySortValues: .init(hasAtmos: true))
+        let b = MediaItem(id: "b", title: "Dune", kind: .movie, productionYear: 2021,
+                          librarySortValues: .init(hasAtmos: true))
+        let first = QueryInventoryProvider(items: [a])
+        let second = QueryInventoryProvider(items: [b])
+        let refs = [MediaSourceRef(accountID: "a", itemID: "a", kind: .movie),
+                    MediaSourceRef(accountID: "b", itemID: "b", kind: .movie),
+                    MediaSourceRef(accountID: "foreign", itemID: "outside", kind: .movie)]
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "a", containerID: "first", provider: first, kind: .movie),
+            .init(accountID: "b", containerID: "second", provider: second, kind: .movie)
+        ], identitySources: { _ in refs })
+        let records = provider.libraryQueryMergeInventory([
+            LibraryQueryRecord(a.taggingSource("a")), LibraryQueryRecord(b.taggingSource("b"))
+        ])
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records.first?.reference.sources.count, 2)
+        let session = LibraryQuerySession(provider: provider, containerID: "all", kind: .movie)
+        let page = try await session.page(.init(filters: .init(filter: .atmos)), progress: { _, _ in })
+        XCTAssertEqual(page.items.count, 1)
+        XCTAssertEqual(page.items.first?.sources.count, 2)
+        XCTAssertEqual(Set(try XCTUnwrap(page.items.first).allSourceAccountIDs), ["a", "b"])
+    }
+
+    func testDuplicatesIncludesSameAccountCopies() async throws {
+        let a = MediaItem(id: "a", title: "Dune", kind: .movie, productionYear: 2021,
+                          providerIDs: ["Tmdb": "438631"])
+        let b = MediaItem(id: "b", title: "Dune", kind: .movie, productionYear: 2021,
+                          providerIDs: ["Tmdb": "438631"])
+        let source = QueryInventoryProvider(items: [a, b])
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "account", containerID: "library", provider: source, kind: .movie)
+        ])
+        let records = provider.libraryQueryMergeInventory([
+            LibraryQueryRecord(a.taggingSource("account")), LibraryQueryRecord(b.taggingSource("account"))
+        ])
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records.first?.reference.sources.count, 2)
+        let session = LibraryQuerySession(provider: provider, containerID: "all", kind: .movie)
+        let page = try await session.page(.init(filters: .init(filter: .duplicates)), progress: { _, _ in })
+        XCTAssertEqual(page.items.count, 1)
+    }
+
     func testEmptySuccessfulFacetsAreCachedUntilExplicitRetry() async {
         let source = QueryInventoryProvider(items: [], facets: .init())
         let model = LibraryBrowseViewModel(provider: source, containerID: "lib", containerKind: .movie,

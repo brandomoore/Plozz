@@ -115,6 +115,22 @@ final class AggregatedLibraryProviderTests: XCTestCase {
         XCTAssertFalse(markedUnwatched.completed, "Newer explicit history wins over another server's older completion")
     }
 
+    func testHubIdentifiersDistinguishLibrariesOnTheSameAccount() async throws {
+        let source = FakeMediaProvider(allItems: [])
+        source.recommendationHubs = [
+            LibrarySection(id: "native", title: "Recommended", items: [
+                movie("movie", title: "Movie", year: 2024, tmdb: "1")
+            ])
+        ]
+        let provider = AggregatedLibraryProvider(sources: [
+            .init(accountID: "account", containerID: "first", provider: source),
+            .init(accountID: "account", containerID: "second", provider: source)
+        ])
+        let hubs = try await provider.libraryHubs(libraryID: "merged", kind: .movie, limit: 10)
+        XCTAssertEqual(hubs.count, 2)
+        XCTAssertEqual(Set(hubs.map(\.id)).count, 2)
+    }
+
     func testRecommendationsRetainHealthyAccountAndSourceIdentity() async throws {
         let offline = FakeMediaProvider(allItems: [])
         offline.continueWatchingError = .serverUnreachable
@@ -137,7 +153,7 @@ final class AggregatedLibraryProviderTests: XCTestCase {
         XCTAssertEqual(watching.map(\.id), ["playing"])
         XCTAssertEqual(watching.first?.sourceAccountID, "healthy")
         let hubs = try await provider.libraryHubs(libraryID: "merged", kind: .movie, limit: 10)
-        XCTAssertEqual(hubs.map(\.id), ["healthy:native"])
+        XCTAssertEqual(hubs.map(\.id), ["healthy\u{1F}lib-healthy:native"])
         XCTAssertEqual(hubs.first?.items.first?.libraryID, "lib-healthy")
         XCTAssertEqual(hubs.first?.items.first?.sourceAccountID, "healthy")
 

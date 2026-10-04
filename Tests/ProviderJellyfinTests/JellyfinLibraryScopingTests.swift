@@ -40,7 +40,7 @@ final class JellyfinLibraryScopingTests: XCTestCase {
             )
             let provider = JellyfinProvider(session: session, http: stub)
             let sections = try await provider.libraryHubs(libraryID: "LIB1", kind: .movie, limit: 10)
-            XCTAssertEqual(sections.map(\.id), ["because-1", "recommendation-1"])
+            XCTAssertEqual(sections.map(\.id), ["because-1", "HasLikedDirector:"])
             XCTAssertEqual(sections.map(\.title), ["Because you watched A Favorite", "More from directors you like"])
             XCTAssertEqual(sections.map { $0.items.map(\.id) }, [["m1"], ["m2"]])
 
@@ -49,6 +49,14 @@ final class JellyfinLibraryScopingTests: XCTestCase {
             XCTAssertEqual(query.first(where: { $0.name == "userId" })?.value, "u1")
             XCTAssertEqual(query.first(where: { $0.name == "itemLimit" })?.value, "10")
             XCTAssertEqual(query.first(where: { $0.name == "categoryLimit" })?.value, "5")
+            let refreshedStub = StubHTTPClient()
+            refreshedStub.stub(pathSuffix: "/Movies/Recommendations", json: """
+            [{"Items":[{"Id":"m2","Name":"Another Movie","Type":"Movie"}],
+              "RecommendationType":"HasLikedDirector"}]
+            """)
+            let refreshed = try await JellyfinProvider(session: session, http: refreshedStub)
+                .libraryHubs(libraryID: "LIB1", kind: .movie, limit: 10)
+            XCTAssertEqual(refreshed.first?.id, sections.last?.id)
             let seriesHubs = try await provider.libraryHubs(libraryID: "LIB1", kind: .series, limit: 10)
             XCTAssertTrue(seriesHubs.isEmpty)
         }

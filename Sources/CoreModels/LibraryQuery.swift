@@ -268,7 +268,8 @@ public struct LibraryQueryRecord: Sendable {
             }
         }
         matched = item.librarySortValues?.matched ?? item.providerIDs.contains { !$0.value.isEmpty }
-        duplicates = Set(item.versions.map(\.id)).count > 1 || item.allSourceAccountIDs.count > 1
+        duplicates = Set(item.versions.map(\.id)).count > 1
+            || Set(item.sources.map(\.id)).count > 1 || item.allSourceAccountIDs.count > 1
         formats = item.librarySortValues?.hasAtmos == true ? 8 : 0
         guard includeFormats else { return }
         for metadata in item.versions.compactMap(\.sourceMetadata)
@@ -309,7 +310,7 @@ public struct LibraryQueryRecord: Sendable {
     public mutating func includeAlternativeFacts(_ other: Self) {
         formats |= other.formats
         duplicates =
-            duplicates || other.duplicates || reference.accountID != other.reference.accountID
+            duplicates || other.duplicates || identityKey != other.identityKey
         matched = matched || other.matched
         if values == nil { values = LibrarySortValues() }
         if values?.audienceRating == nil { values?.audienceRating = other.values?.audienceRating }

@@ -4,6 +4,92 @@ import MetadataKit
 @testable import ProviderShare
 
 final class CatalogBrowseHydrationTests: XCTestCase {
+    func testMovieInventoryPreservesNativeSortInputs() throws {
+        let connection = openConnection()
+        seedMovie(connection, relPath: "Zebra.mkv", basename: "Zebra.mkv",
+                  title: "Zebra", year: 2024, movieKey: "zebra")
+        seedMovie(connection, relPath: "Apple.mkv", basename: "Apple.mkv",
+                  title: "Apple", year: 2024, movieKey: "apple")
+        insertMetadataValue(connection, itemID: ShareCatalogID.file("Zebra.mkv"),
+                            field: "sortTitle", source: "localNFO", valueJSON: #""A First""#)
+        XCTAssertTrue(connection.exec("UPDATE assets SET first_seen_at=2 WHERE rel_path='Zebra.mkv';"))
+        let native = makeQueries(connection).movies(offset: 0, limit: 20)
+        XCTAssertEqual(native.map(\.title), ["Zebra", "Apple"])
+        let filtered = native.map { LibraryQueryRecord($0) }
+            .filter { $0.matches(.init(filter: .unwatched)) }
+        XCTAssertEqual(filtered.sorted { $0.isOrdered(before: $1, by: .default) }.map(\.title), native.map(\.title))
+        XCTAssertEqual(filtered.sorted {
+            $0.isOrdered(before: $1, by: .init(field: .dateAdded, direction: .descending))
+        }.map(\.title), ["Zebra", "Apple"])
+        XCTAssertEqual(native.first?.librarySortValues?.dateAdded, Date(timeIntervalSince1970: 2))
+        XCTAssertEqual(native.first?.librarySortValues?.sortName, "A First")
+    }
+
+    func testFacetsUseRepresentativeMovieMetadataWithoutRequiringEnrichment() throws {
+        let connection = openConnection()
+        for path in ["Feature.mkv", "ZFeature.mkv"] {
+            seedMovie(connection, relPath: path, basename: path,
+                      title: "Feature", year: 2024, movieKey: "feature")
+        }
+        let itemID = ShareCatalogID.file("Feature.mkv")
+        insertMetadataValue(connection, itemID: itemID, field: "productionYear",
+                            source: "filename", valueJSON: "2020")
+        insertMetadataValue(connection, itemID: itemID, field: "genres",
+                            source: "filename", valueJSON: #"["Comedy"]"#)
+        insertMetadataValue(connection, itemID: itemID, field: "productionYear",
+                            source: "localNFO", valueJSON: "2021")
+        insertMetadataValue(connection, itemID: itemID, field: "genres",
+                            source: "localNFO", valueJSON: #"["Drama"]"#)
+        insertMetadataValue(connection, itemID: ShareCatalogID.file("ZFeature.mkv"), field: "genres",
+                            source: "localNFO", valueJSON: #"["Thriller"]"#)
+        let queries = makeQueries(connection)
+        let item = try XCTUnwrap(queries.movies(offset: 0, limit: 20).first)
+        XCTAssertEqual(item.productionYear, 2021)
+        XCTAssertEqual(item.genres, ["Drama"])
+        XCTAssertEqual(queries.libraryQueryFacets(in: .movies), .init(genres: item.genres, years: [2021]))
+    }
+
+    func testSeriesFacetsUseSeriesMetadataRatherThanEpisodeMetadata() throws {
+        let connection = openConnection()
+        for library in [CatalogLibrary.tv, .anime] {
+            let key = "show-\(library.rawValue)"
+            let path = "\(library.rawValue)/S01E01.mkv"
+            seedEpisode(connection, relPath: path, seriesKey: key,
+                        seriesTitle: "Show", season: 1, episode: 1, library: library)
+            insertMetadataValue(connection, itemID: ShareCatalogID.series(key), field: "productionYear",
+                                source: "localNFO", valueJSON: "2010")
+            insertMetadataValue(connection, itemID: ShareCatalogID.series(key), field: "genres",
+                                source: "localNFO", valueJSON: #"["Drama"]"#)
+            insertMetadataValue(connection, itemID: ShareCatalogID.file(path), field: "genres",
+                                source: "localNFO", valueJSON: #"["Comedy"]"#)
+            let queries = makeQueries(connection)
+            let item = try XCTUnwrap(queries.series(in: library, offset: 0, limit: 20).first)
+            XCTAssertEqual(item.productionYear, 2010)
+            XCTAssertEqual(item.genres, ["Drama"])
+            XCTAssertEqual(queries.libraryQueryFacets(in: library), .init(genres: item.genres, years: [2010]))
+        }
+    }
+
+    func testFacetsMatchFilenameAndEmptyNFOFallbacks() throws {
+        let connection = openConnection()
+        seedMovie(connection, relPath: "Feature.mkv", basename: "Feature.mkv",
+                  title: "Feature", year: 2024, movieKey: "feature")
+        let itemID = ShareCatalogID.file("Feature.mkv")
+        insertEnrichment(connection, itemID: itemID, title: "Feature",
+                         posterURL: try XCTUnwrap(URL(string: "https://example.invalid/poster.jpg")))
+        insertMetadataValue(connection, itemID: itemID, field: "productionYear",
+                            source: "filename", valueJSON: "2020")
+        insertMetadataValue(connection, itemID: itemID, field: "genres",
+                            source: "filename", valueJSON: #"["Comedy"]"#)
+        let queries = makeQueries(connection)
+        XCTAssertEqual(queries.libraryQueryFacets(in: .movies), .init(genres: ["Comedy"], years: [2020]))
+        insertMetadataValue(connection, itemID: itemID, field: "genres",
+                            source: "localNFO", valueJSON: "[]")
+        let item = try XCTUnwrap(queries.movies(offset: 0, limit: 20).first)
+        XCTAssertEqual(item.genres, ["Drama"])
+        XCTAssertEqual(queries.libraryQueryFacets(in: .movies), .init(genres: item.genres, years: [2020]))
+    }
+
     func testLibraryEpisodeInventoryPreservesEpisodeCoordinatesAndLibrary() throws {
         let connection = openConnection()
         for library in [CatalogLibrary.tv, .anime] {

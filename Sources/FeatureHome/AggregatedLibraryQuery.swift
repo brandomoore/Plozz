@@ -164,8 +164,6 @@ extension AggregatedLibraryProvider {
             }
             items.append(item.taggingSource(ref.accountID))
         }
-        let merged = MediaItemMerger.merge(items, serverInfo: { inventoryServerInfo[$0] })
-        guard merged.count == 1, let item = merged.first else { throw AppError.conflict }
-        return item
+        return MediaItemMerger.mergeGroup(items, serverInfo: { inventoryServerInfo[$0] })
     }
 }

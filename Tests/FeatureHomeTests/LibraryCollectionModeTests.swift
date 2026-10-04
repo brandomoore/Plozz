@@ -85,6 +85,22 @@ final class LibraryCollectionModeTests: XCTestCase {
         XCTAssertEqual(firstRequest?.page.sort.field, .dateAdded)
     }
 
+    func testRepeatedHubIdentifiersRemainStableWhenAnEarlierHubDisappears() async throws {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        let earlier = LibrarySection(id: "shared", title: "Earlier", items: [item])
+        let remaining = LibrarySection(id: "shared", title: "Remaining", items: [item])
+        let provider = LibraryModeProvider(nativeSections: [earlier, remaining, remaining])
+        let model = model(provider)
+        await model.loadRecommendationsIfNeeded()
+        let sections = try XCTUnwrap(model.recommendationState.value)
+        let original = sections.filter { $0.title == "Remaining" }.map(\.id)
+        XCTAssertEqual(original.count, 2)
+        XCTAssertEqual(Set(sections.map(\.id)).count, sections.count)
+        await provider.setNativeSections([remaining, remaining])
+        await model.loadRecommendations()
+        XCTAssertEqual(model.recommendationState.value?.filter { $0.title == "Remaining" }.map(\.id), original)
+    }
+
     func testRecommendationFailurePreservesOtherRowsAndCanRetry() async {
         let provider = LibraryModeProvider(failHubs: true)
         let model = model(provider)
@@ -536,7 +552,7 @@ private actor LibraryModeProvider: MediaProvider, CapabilityReporting {
     private let collectionCount: Int
     private let supportsPlaylists: Bool
     private var watchingItems: [MediaItem]
-    private let nativeSections: [LibrarySection]
+    private var nativeSections: [LibrarySection]
     private var failHubs: Bool
     private var holds: Set<Key> = []
     private var held: [Key: CheckedContinuation<Void, Never>] = [:]
@@ -597,6 +613,7 @@ private actor LibraryModeProvider: MediaProvider, CapabilityReporting {
     func clearFailures() { failures = [] }
     func setFailHubs(_ value: Bool) { failHubs = value }
     func setWatchingItems(_ items: [MediaItem]) { watchingItems = items }
+    func setNativeSections(_ sections: [LibrarySection]) { nativeSections = sections }
 
     func collections(in libraryID: String, page: PageRequest) async throws -> MediaPage {
         try await response(.collections, containerID: libraryID, kind: .collection, page: page)

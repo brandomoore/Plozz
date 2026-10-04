@@ -85,7 +85,7 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
         let recommendations = try await client.movieRecommendations(
             userID: session.userID, parentID: libraryID, limit: limit
         )
-        return recommendations.enumerated().compactMap { index, recommendation in
+        return recommendations.compactMap { recommendation in
             let items = (recommendation.Items ?? []).map(map(item:))
             guard !items.isEmpty else { return nil }
             let subject = recommendation.BaselineItemName?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -103,7 +103,8 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
                 title = String(localized: "Suggested movies")
             }
             return LibrarySection(
-                id: recommendation.CategoryId ?? "recommendation-\(index)", title: title,
+                id: recommendation.CategoryId
+                    ?? "\(recommendation.RecommendationType):\(subject ?? "")", title: title,
                 items: Array(items.prefix(limit))
             )
         }

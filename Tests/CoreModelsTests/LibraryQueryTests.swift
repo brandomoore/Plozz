@@ -3,6 +3,17 @@ import Foundation
 import XCTest
 
 final class LibraryQueryTests: XCTestCase {
+    func testDuplicatesCountsDistinctItemsRatherThanRepeatedReferences() {
+        let first = MediaSourceRef(accountID: "account", itemID: "first", kind: .movie)
+        let second = MediaSourceRef(accountID: "account", itemID: "second", kind: .movie)
+        let duplicate = LibraryQueryRecord(MediaItem(
+            id: "first", title: "Movie", kind: .movie, sourceAccountID: "account", sources: [first, second]))
+        let repeated = LibraryQueryRecord(MediaItem(
+            id: "first", title: "Movie", kind: .movie, sourceAccountID: "account", sources: [first, first]))
+        XCTAssertTrue(duplicate.matches(.init(filter: .duplicates)))
+        XCTAssertFalse(repeated.matches(.init(filter: .duplicates)))
+    }
+
     func testFilterSummaryNamesSelectedOptionsInsteadOfCountingThem() {
         let locale = Locale(identifier: "en")
         XCTAssertEqual(LibraryFilters.all.summary(in: locale), "")

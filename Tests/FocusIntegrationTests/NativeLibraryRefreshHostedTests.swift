@@ -11,6 +11,52 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testRemovingEarlierHubKeepsFocusedHubMounted() async throws {
+        let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, recommendationHub: true)
+        await provider.setSecondaryRecommendationHub(true)
+        let name = "LibraryRecommendationHub.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie, defaults: defaults)
+        await model.loadRecommendationsIfNeeded()
+        try await withLibrary(model: model) { _, window in
+            let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let controller = try XCTUnwrap(window.rootViewController as? LibraryFocusFixtureController)
+            let first = try XCTUnwrap(self.focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                      frame.midY > window.bounds.height * 0.3, frame.width > 100 else { return nil }
+                return (item, frame)
+            }.min { $0.1.midY < $1.1.midY })
+            controller.target = first.0
+            focus.requestFocusUpdate(to: controller)
+            focus.updateFocusIfNeeded()
+            controller.target = nil
+            try await Task.sleep(for: .milliseconds(200))
+            let next = try XCTUnwrap(self.focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                      frame.width > 100, frame.midY > first.1.midY + 100 else { return nil }
+                return (item, frame)
+            }.min { $0.1.midY < $1.1.midY })
+            controller.target = next.0
+            focus.requestFocusUpdate(to: controller)
+            focus.updateFocusIfNeeded()
+            XCTAssertTrue(focus.focusedItem === next.0)
+            controller.target = nil
+            try await Task.sleep(for: .milliseconds(300))
+            let before = try XCTUnwrap(focus.focusedItem)
+            let rowID = try XCTUnwrap(model.recommendationState.value?.first { $0.title == "Secondary" }?.id)
+            for hasHub in [false, true] {
+                await provider.setRecommendationHub(hasHub)
+                await model.loadRecommendations()
+                try await Task.sleep(for: .milliseconds(500))
+                window.layoutIfNeeded()
+                XCTAssertEqual(model.recommendationState.value?.first { $0.title == "Secondary" }?.id, rowID)
+                XCTAssertTrue(focus.focusedItem === before)
+            }
+        }
+    }
+
     func testRecommendedRowChangesReconcileHeaderWithoutMovingFocus() async throws {
         let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, recommendationHub: true)
         let name = "LibraryRecommendationRows.\(UUID())"
@@ -1096,6 +1142,7 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
     nonisolated let session: UserSession
     nonisolated let capabilities: ProviderCapability
     private var recommendationHub: Bool
+    private var secondaryRecommendationHub = false
     nonisolated let supportsFilters: Bool
     init(kind: ProviderKind = .mediaShare, supportsModes: Bool = false, recommendationHub: Bool = false,
          supportsFilters: Bool = false) {
@@ -1151,6 +1198,7 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
     }
     func setFailure(_ value: Bool) { fails = value }
     func setRecommendationHub(_ value: Bool) { recommendationHub = value }
+    func setSecondaryRecommendationHub(_ value: Bool) { secondaryRecommendationHub = value }
     func setPageCap(_ value: Int) { pageCap = value }
     func holdNextPage(at start: Int) { heldStart = start }
     func releasePage() {
@@ -1180,11 +1228,16 @@ private actor RefreshLibraryProvider: MediaLibraryQueryProviding, CapabilityRepo
     }
     func libraries() async throws -> [MediaLibrary] { [] }
     func libraryHubs(libraryID: String, kind: MediaItemKind, limit: Int) async throws -> [LibrarySection] {
-        guard recommendationHub else { return [] }
-        return [LibrarySection(
+        var result: [LibrarySection] = []
+        if recommendationHub { result.append(LibrarySection(
             id: "featured", title: "Featured",
             items: (0..<4).map { MediaItem(id: "Featured-\($0)", title: "Featured \($0)", kind: .movie) }
-        )]
+        )) }
+        if secondaryRecommendationHub { result.append(LibrarySection(
+            id: "secondary", title: "Secondary",
+            items: (0..<4).map { MediaItem(id: "Secondary-\($0)", title: "Secondary \($0)", kind: .movie) }
+        )) }
+        return result
     }
     func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
     func latest(limit: Int) async throws -> [MediaItem] { [] }

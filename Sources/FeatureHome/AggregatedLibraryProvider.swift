@@ -486,7 +486,7 @@ public final class AggregatedLibraryProvider: MediaLibraryQueryProviding, Capabi
                         )
                         return (index, .success(sections.map { section in
                             LibrarySection(
-                                id: "\(source.accountID):\(section.id)",
+                                id: "\(source.sourceKey):\(section.id)",
                                 title: "\(section.title) · \(source.provider.session.server.name)",
                                 style: section.style,
                                 items: section.items.map {

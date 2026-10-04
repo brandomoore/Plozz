@@ -219,11 +219,7 @@ struct CatalogReadQueries {
                 title: self.columnText(stmt, 1) ?? "",
                 kind: .movie,
                 productionYear: self.columnOptInt(stmt, 2),
-                libraryID: ShareCatalogID.moviesLibrary,
-                librarySortValues: LibrarySortValues(
-                    sortName: self.columnText(stmt, 13),
-                    dateAdded: sqlite3_column_type(stmt, 14) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(stmt, 14))
-                )
+                libraryID: ShareCatalogID.moviesLibrary
             )
             out.append((sqlite3_column_int64(stmt, 3), self.columnDouble(stmt, 4), item))
         }
@@ -397,7 +393,12 @@ struct CatalogReadQueries {
                 title: self.columnText(stmt, 1) ?? "",
                 kind: .movie,
                 productionYear: self.columnOptInt(stmt, 2),
-                libraryID: ShareCatalogID.moviesLibrary
+                libraryID: ShareCatalogID.moviesLibrary,
+                librarySortValues: LibrarySortValues(
+                    sortName: self.columnText(stmt, 13),
+                    dateAdded: sqlite3_column_type(stmt, 14) == SQLITE_NULL
+                        ? nil : Date(timeIntervalSince1970: sqlite3_column_double(stmt, 14))
+                )
             )
             rows.append((
                 item,
@@ -548,18 +549,51 @@ struct CatalogReadQueries {
     func libraryQueryFacets(in library: CatalogLibrary) -> LibraryQueryFacets {
         var genres = Set<String>()
         var years = Set<Int>()
+        let includesLocal = normalizedMetadataReady && hasAnyLocalMetadata()
+        let localColumns: [(MetadataField, Int32, Int32)] = [(.productionYear, 2, 3), (.genres, 4, 5)]
         query("""
-        SELECT DISTINCT a.year, COALESCE(m.value_json, e.genres_json)
-        FROM assets a
-        LEFT JOIN enrichment e ON e.item_id = CASE WHEN a.kind='episode'
-            THEN 'series:' || a.series_key ELSE 'f:' || a.rel_path END
-        LEFT JOIN metadata_values m ON m.item_id=e.item_id AND m.field='genres' AND m.source='localNFO'
-        WHERE a.library=?;
-        """, bind: { self.bindText($0, 1, library.rawValue) }) { stmt in
-            if let year = self.columnOptInt(stmt, 0) { years.insert(year) }
-            if let json = self.columnText(stmt, 1), let values = CatalogJSON.decode([String].self, json) {
-                genres.formUnion(values)
+        WITH catalog_items AS (
+          SELECT 'f:' || MIN(rel_path) AS item_id, MAX(year) AS year
+          FROM assets WHERE library=? AND library='movies' AND kind='movie'
+          GROUP BY COALESCE(movie_group_key, movie_key, rel_path)
+          UNION ALL
+          SELECT 'series:' || series_key, MAX(year)
+          FROM assets WHERE library=? AND library!='movies' AND kind='episode' AND series_key IS NOT NULL
+          GROUP BY series_key
+        )
+        SELECT DISTINCT c.year, e.genres_json, yn.value_json, yf.value_json, gn.value_json, gf.value_json
+        FROM catalog_items c
+        LEFT JOIN enrichment e ON e.item_id=c.item_id
+        LEFT JOIN metadata_values yn
+          ON yn.item_id=c.item_id AND yn.field='productionYear' AND yn.source='localNFO'
+        LEFT JOIN metadata_values yf
+          ON yf.item_id=c.item_id AND yf.field='productionYear' AND yf.source='filename'
+        LEFT JOIN metadata_values gn
+          ON gn.item_id=c.item_id AND gn.field='genres' AND gn.source='localNFO'
+        LEFT JOIN metadata_values gf
+          ON gf.item_id=c.item_id AND gf.field='genres' AND gf.source='filename';
+        """, bind: {
+            self.bindText($0, 1, library.rawValue)
+            self.bindText($0, 2, library.rawValue)
+        }) { stmt in
+            var item = MediaItem(
+                id: "", title: "", kind: library == .movies ? .movie : .series,
+                productionYear: self.columnOptInt(stmt, 0),
+                genres: CatalogJSON.decode([String].self, self.columnText(stmt, 1)) ?? []
+            )
+            if includesLocal {
+                var fields: [MetadataField: ShareCatalogReadProjection.LocalFieldRow] = [:]
+                for (field, nfoColumn, filenameColumn) in localColumns {
+                    if let json = self.columnText(stmt, nfoColumn) {
+                        fields[field] = .init(source: .localNFO, valueJSON: json)
+                    } else if let json = self.columnText(stmt, filenameColumn) {
+                        fields[field] = .init(source: .filename, valueJSON: json)
+                    }
+                }
+                item = ShareCatalogReadProjection.applyLocalMetadata(item, fields)
             }
+            if let year = item.productionYear { years.insert(year) }
+            genres.formUnion(item.genres)
         }
         return LibraryQueryFacets(genres: Array(genres), years: Array(years))
     }
