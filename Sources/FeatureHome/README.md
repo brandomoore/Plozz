@@ -89,6 +89,8 @@ fallback when the user's server has no attached trailer.
   `/Items/Filters`, whose response contains genre names and years. Empty successful
   responses are cached, cancellation is not a load error, and actual failures
   retain a retry action separate from the selected quick filter.
+  Catalog changes reload facets and reject pre-refresh responses; watch-only
+  changes retain the cached genre/year options.
   Native provider operations remain paged. Explicit non-native options prepare
   a cancellable utility-priority inventory of compact IDs/query facts, not a
   full-card Home cache. Ordinary Home, Browse, and facet menus never inventory.
@@ -106,7 +108,10 @@ fallback when the user's server has no attached trailer.
   through Try Again, rather than only retrying failed paging requests.
   Series format/history queries roll up logical episodes, not alternate files.
   Merged query cards retain their verified inventory membership when loading
-  full details. Duplicates includes distinct copies within one account.
+  full details. Duplicates includes distinct copies within one account and
+  separate files for the same episode, but excludes out-of-scope index hints.
+  Filtered alphabet offsets follow actual sorted positions, including non-Latin
+  titles, rather than assuming the catch-all bucket comes first.
   Missing sort values stay last; original provider ratings remain distinct from
   externally enriched display ratings. Shares read existing catalog metadata
   without initiating per-item network enrichment or media probing.

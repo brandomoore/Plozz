@@ -127,6 +127,7 @@ extension AggregatedLibraryProvider {
                     accountID: source.accountID, libraryID: source.itemID, mode: item.kind.rawValue
                 )] != nil
             }
+            record.duplicates = record.reference.sources.count > 1
             var historicalSources: [MediaSourceRef] = []
             for source in record.reference.sources {
                 if let original = bySource[LibraryBrowsePreferencesStore.address(

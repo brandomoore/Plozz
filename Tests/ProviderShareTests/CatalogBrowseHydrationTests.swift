@@ -4,6 +4,25 @@ import MetadataKit
 @testable import ProviderShare
 
 final class CatalogBrowseHydrationTests: XCTestCase {
+    func testSeparateEpisodeFilesRetainTheirLogicalCoordinatesDuringHydration() throws {
+        let connection = openConnection()
+        for resolution in ["1080p", "2160p"] {
+            seedEpisode(connection, relPath: "Show/S01E01.\(resolution).mkv", seriesKey: "show",
+                        seriesTitle: "Show", season: 1, episode: 1)
+        }
+        let queries = makeQueries(connection)
+        let inventory = queries.libraryQueryEpisodes(in: .tv, offset: 0, limit: 20)
+        XCTAssertEqual(inventory.items.count, 2)
+        for summary in inventory.items {
+            let detail = try XCTUnwrap(queries.item(id: summary.id))
+            XCTAssertEqual(detail.seriesID, ShareCatalogID.series("show"))
+            XCTAssertEqual(detail.seasonNumber, 1)
+            XCTAssertEqual(detail.episodeNumber, 1)
+            XCTAssertLessThanOrEqual(detail.versions.count, 1)
+            XCTAssertFalse(LibraryQueryRecord(detail).duplicates)
+        }
+    }
+
     func testMovieInventoryPreservesNativeSortInputs() throws {
         let connection = openConnection()
         seedMovie(connection, relPath: "Zebra.mkv", basename: "Zebra.mkv",

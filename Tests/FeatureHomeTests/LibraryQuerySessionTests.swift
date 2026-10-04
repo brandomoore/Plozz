@@ -6,6 +6,123 @@ import XCTest
 
 @MainActor
 final class LibraryQuerySessionTests: XCTestCase {
+    func testDuplicatesIgnoreOutOfScopeSourcesButRetainActualVersions() async throws {
+        for otherAccount in ["active", "excluded"] {
+            for versions: [MediaVersion] in [[], [.init(id: "1080p"), .init(id: "2160p")]] {
+                let item = MediaItem(id: "movie", title: "Movie", kind: .movie,
+                                     providerIDs: ["Tmdb": "1"], versions: versions)
+                let source = QueryInventoryProvider(items: [item])
+                let provider = AggregatedLibraryProvider(
+                    sources: [.init(accountID: "active", containerID: "library", provider: source, kind: .movie)],
+                    identitySources: { _ in [
+                        MediaSourceRef(accountID: "active", itemID: "movie", kind: .movie),
+                        MediaSourceRef(accountID: otherAccount, itemID: "other-copy", kind: .movie)
+                    ] }
+                )
+                let records = provider.libraryQueryMergeInventory([LibraryQueryRecord(item.taggingSource("active"))])
+                XCTAssertEqual(records.count, 1)
+                XCTAssertEqual(records.first?.reference.sources.count, 1)
+                let session = LibraryQuerySession(provider: provider, containerID: "library", kind: .movie)
+                let page = try await session.page(.init(filters: .init(filter: .duplicates)), progress: { _, _ in })
+                XCTAssertEqual(page.items.count, versions.count > 1 ? 1 : 0)
+            }
+        }
+    }
+
+    func testDuplicatesIncludeSeparateFilesOnlyForTheSameLogicalEpisode() async throws {
+        for secondSeason in [1, 2] {
+            let series = MediaItem(id: "s", title: "Series", kind: .series)
+            let episodes = [
+                MediaItem(id: "f:Show/S01E01.1080p.mkv", title: "Episode", kind: .episode,
+                          seasonNumber: 1, episodeNumber: 1, seriesID: "s"),
+                MediaItem(id: "f:Show/S0\(secondSeason)E01.2160p.mkv", title: "Episode", kind: .episode,
+                          seasonNumber: secondSeason, episodeNumber: 1, seriesID: "s")
+            ]
+            let source = QueryInventoryProvider(items: [series], episodes: episodes)
+            let session = LibraryQuerySession(provider: source, containerID: "tv", kind: .series)
+            let page = try await session.page(.init(filters: .init(filter: .duplicates)), progress: { _, _ in })
+            let episodeRequests = await source.episodeRequests
+            XCTAssertEqual(episodeRequests, 1)
+            XCTAssertEqual(page.items.map(\.id), secondSeason == 1 ? ["s"] : [])
+        }
+    }
+
+    func testCatalogRefreshReloadsCachedFacetsAndSurfacesFailures() async throws {
+        let source = QueryInventoryProvider(items: queryItems(2), facets: .init())
+        let model = LibraryBrowseViewModel(
+            provider: source, containerID: "facet-refresh", containerKind: .movie, initialContentMode: .titles)
+        await model.loadFirstPageIfNeeded()
+        await model.loadQueryFacetsIfNeeded()
+        XCTAssertEqual(model.queryFacets, .init())
+        await source.setFacets(.init(genres: ["Drama"], years: [2024]))
+        await model.refreshAfterCatalogChange()
+        XCTAssertEqual(model.queryFacets, .init(genres: ["Drama"], years: [2024]))
+        await source.setFacetError(.serverUnreachable)
+        await model.refreshAfterCatalogChange()
+        XCTAssertEqual(model.facetsError, .serverUnreachable)
+        XCTAssertEqual(model.queryFacets.genres, ["Drama"])
+        await source.setFacetError(nil)
+        await model.loadQueryFacetsIfNeeded(retry: true)
+        XCTAssertNil(model.facetsError)
+    }
+
+    func testWatchRefreshKeepsCachedFacets() async {
+        let source = QueryInventoryProvider(items: queryItems(2))
+        let model = LibraryBrowseViewModel(
+            provider: source, containerID: "facet-watch-refresh", containerKind: .movie, initialContentMode: .titles)
+        await model.loadFirstPageIfNeeded()
+        await model.loadQueryFacetsIfNeeded()
+        await source.setFacetError(.serverUnreachable)
+        await model.refreshAfterCatalogChange(preservingFileFacts: true)
+        await model.loadQueryFacetsIfNeeded()
+        let requests = await source.facetRequests
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(model.queryFacets, .init(genres: ["Drama"], years: [2024]))
+        XCTAssertNil(model.facetsError)
+    }
+
+    func testPreRefreshFacetResponsesCannotOverwriteNewerOptionsOrErrors() async {
+        for oldError: AppError? in [nil, .serverUnreachable] {
+            let source = QueryInventoryProvider(items: queryItems(2), facets: .init())
+            let model = LibraryBrowseViewModel(
+                provider: source, containerID: "facet-race", containerKind: .movie, initialContentMode: .titles)
+            await model.loadFirstPageIfNeeded()
+            await source.setFacetError(oldError)
+            await source.holdNextFacetRequest()
+            let pending = Task { await model.loadQueryFacetsIfNeeded() }
+            await source.waitForHeldFacetRequest()
+            await source.setFacetError(nil)
+            await source.setFacets(.init(genres: ["Drama"], years: [2024]))
+            await model.refreshAfterCatalogChange()
+            XCTAssertEqual(model.queryFacets, .init(genres: ["Drama"], years: [2024]))
+            await source.releaseFacetRequest()
+            await pending.value
+            XCTAssertEqual(model.queryFacets, .init(genres: ["Drama"], years: [2024]))
+            XCTAssertNil(model.facetsError)
+            XCTAssertFalse(model.facetsLoading)
+        }
+    }
+
+    func testFilteredAlphabetOffsetsMatchActualOrderingInBothDirections() async throws {
+        let source = QueryInventoryProvider(items: ["Alpha", "Bravo", "中文", "2 Fast", "Éclair", "Zulu"].map {
+            MediaItem(id: $0, title: $0, kind: .movie)
+        })
+        let session = LibraryQuerySession(provider: source, containerID: "lib", kind: .movie)
+        for direction: SortDirection in [.ascending, .descending] {
+            let request = PageRequest(sort: .init(field: .name, direction: direction), filters: .init(filter: .unwatched))
+            let page = try await session.page(request, progress: { _, _ in })
+            let entries = try await session.letterIndex(page: request)
+            XCTAssertEqual(entries.count, 5)
+            XCTAssertEqual(entries.compactMap(\.startIndex), entries.compactMap(\.startIndex).sorted())
+            for entry in entries {
+                let actual = try XCTUnwrap(page.items.firstIndex { MediaItemSortOrder.alphabetBucket(for: $0) == entry.letter })
+                XCTAssertEqual(entry.startIndex, actual)
+                let resolved = try await session.letterPosition(entry.letter, page: request)
+                XCTAssertEqual(resolved, actual)
+            }
+        }
+    }
+
     func testMaterializesIdentityIndexMergedTitleWithoutAddingUnscopedSources() async throws {
         let a = MediaItem(id: "a", title: "Dune", kind: .movie, productionYear: 2021,
                           providerIDs: ["Tmdb": "438631"], librarySortValues: .init(hasAtmos: true))
@@ -354,9 +471,12 @@ private actor QueryInventoryProvider: MediaLibraryQueryProviding {
     private let episodes: [MediaItem]
     private let broken: Broken?
     private let delay: UInt64
-    private let facets: LibraryQueryFacets
+    private var facets: LibraryQueryFacets
     private let supportsFacets: Bool
     private var facetError: AppError?
+    private var holdsNextFacetRequest = false
+    private var heldFacetRequest: CheckedContinuation<Void, Never>?
+    private var heldFacetObserver: CheckedContinuation<Void, Never>?
     private(set) var facetRequests = 0
     private(set) var inventoryRequests = 0
     private(set) var technicalRequests = 0
@@ -385,10 +505,30 @@ private actor QueryInventoryProvider: MediaLibraryQueryProviding {
     }
     func libraryQueryFacets(in containerID: String, kind: MediaItemKind) async throws -> LibraryQueryFacets {
         facetRequests += 1
-        if let facetError { throw facetError }
-        return facets
+        let snapshot = facets
+        let error = facetError
+        if holdsNextFacetRequest {
+            holdsNextFacetRequest = false
+            await withCheckedContinuation {
+                heldFacetRequest = $0
+                heldFacetObserver?.resume()
+                heldFacetObserver = nil
+            }
+        }
+        if let error { throw error }
+        return snapshot
     }
     func setFacetError(_ value: AppError?) { facetError = value }
+    func setFacets(_ value: LibraryQueryFacets) { facets = value }
+    func holdNextFacetRequest() { holdsNextFacetRequest = true }
+    func waitForHeldFacetRequest() async {
+        guard heldFacetRequest == nil else { return }
+        await withCheckedContinuation { heldFacetObserver = $0 }
+    }
+    func releaseFacetRequest() {
+        heldFacetRequest?.resume()
+        heldFacetRequest = nil
+    }
     func libraryQueryInventory(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         inventoryRequests += 1
         inventoryOnMain = inventoryOnMain || Thread.isMainThread

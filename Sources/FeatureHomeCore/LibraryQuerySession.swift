@@ -104,15 +104,12 @@ actor LibraryQuerySession {
 
     func letterIndex(page: PageRequest) async throws -> [LibraryLetterIndexEntry] {
         if orderedQuery == LibraryBrowsePreferences(sort: page.sort, filters: page.filters) {
-            var counts: [String: Int] = [:]
-            for record in ordered {
-                counts[LibraryLetterIndex.bucket(forPrefix: record.sortName), default: 0] += 1
+            var seen = Set<String>()
+            return ordered.enumerated().compactMap { index, record in
+                let letter = LibraryLetterIndex.bucket(forPrefix: record.sortName)
+                guard seen.insert(letter).inserted else { return nil }
+                return LibraryLetterIndexEntry(letter: letter, startIndex: index)
             }
-            let ascending = LibraryLetterIndex.railLetters.compactMap { letter in
-                counts[letter].map { (letter: letter, count: $0) }
-            }
-            return LibraryLetterIndex.entries(
-                bucketCountsAscending: ascending, direction: page.sort.direction)
         }
         if let source = provider as? any MediaLibraryQueryProviding {
             return try await source.libraryQueryLetterIndex(in: containerID, kind: kind, page: page)
@@ -347,6 +344,7 @@ actor LibraryQuerySession {
                                 "\(episode.seasonNumber ?? 1):\($0)"
                             } ?? episode.reference.id
                         let old = episodeStates[parent]?[logical]
+                        if old != nil { records[index].duplicates = true }
                         episodeStates[parent, default: [:]][logical] = EpisodeState(
                             played: (old?.played ?? false) || episode.completed,
                             inProgress: (old?.inProgress ?? false) || episode.inProgress,
