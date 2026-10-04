@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+#if canImport(OSLog)
+import OSLog
+#endif
 
 /// Persists the household's `Profile`s, the active profile selection, and each
 /// profile's chosen subset of the shared account pool.
@@ -31,6 +34,8 @@ public protocol ProfilePersisting: Sendable {
     /// The account-id subset this profile uses, or `nil` if it never set one
     /// (callers then fall back to the household default).
     func activeAccountIDs(forProfile profileID: String) -> [String]?
+    /// Only a confirmed absent selection returns nil; storage/decoding failures throw.
+    func readActiveAccountIDs(forProfile profileID: String) throws -> [String]?
     /// Records the account-id subset for a profile.
     func setActiveAccountIDs(_ ids: [String], forProfile profileID: String)
     /// Remove a profile's explicit account selection (revert to "never chose" = all).
@@ -96,6 +101,9 @@ extension ProfilePersisting {
     public func clearActiveAccountIDs(forProfile profileID: String) {}
     public func rootNamespaceOwnerID() -> String? { nil }
     public func setRootNamespaceOwnerID(_ id: String?) {}
+    public func readActiveAccountIDs(forProfile profileID: String) throws -> [String]? {
+        activeAccountIDs(forProfile: profileID)
+    }
 }
 
 public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
@@ -195,6 +203,18 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
             return nil
         }
         return ids
+    }
+
+    public func readActiveAccountIDs(forProfile profileID: String) throws -> [String]? {
+        lock.lock(); defer { lock.unlock() }
+        let data: Data?
+        if let secureStore {
+            data = try secureStore.readString(for: accountsKey(profileID)).map { Data($0.utf8) }
+        } else {
+            data = defaults.data(forKey: accountsKey(profileID))
+        }
+        guard let data else { return nil }
+        return try JSONDecoder().decode([String].self, from: data)
     }
 
     public func setActiveAccountIDs(_ ids: [String], forProfile profileID: String) {
@@ -419,6 +439,19 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
 public final class ProfilesModel {
     public private(set) var profiles: [Profile]
     private var accountSelections: [String: [String]] = [:]
+    public private(set) var unconfirmedAccountSelectionProfileIDs: Set<String> = []
+
+    public enum AccountSelectionError: Error, Equatable, LocalizedError {
+        case unavailable
+
+        public var errorDescription: String? {
+            String(localized: "Profile server selections couldn't be read. Try again before transferring setup.")
+        }
+    }
+
+    #if canImport(OSLog)
+    private static let logger = Logger(subsystem: "com.plozz.app", category: "profiles")
+    #endif
 
     /// Which profile owns the un-namespaced settings keys, or `nil` when that
     /// profile has been deleted and nobody does.
@@ -930,6 +963,7 @@ public final class ProfilesModel {
         let outgoing = profiles.first { $0.id == id }
         profiles.removeAll { $0.id == id }
         accountSelections[id] = nil
+        unconfirmedAccountSelectionProfileIDs.remove(id)
         store.saveProfiles(profiles)
         // Deleting the owner abandons the bare keys rather than bequeathing
         // them: every surviving profile keeps reading its own `base.<id>`.
@@ -947,7 +981,7 @@ public final class ProfilesModel {
 
     /// The account subset for a profile, or `fallback` when it never set one.
     public func activeAccountIDs(for profileID: String, fallback: [String]) -> [String] {
-        accountSelections[profileID] ?? fallback
+        storedActiveAccountIDs(for: profileID) ?? fallback
     }
 
     /// The profile's *explicit* stored selection, or `nil` when it never chose
@@ -956,30 +990,68 @@ public final class ProfilesModel {
     /// "chose to watch nothing" (`[]`) — the distinction the per-server master
     /// toggle on Settings → Your Servers & Libraries depends on to be able to
     /// turn a server (and the last remaining server) off.
+    /// Unreadable selections deny all accounts until a non-rendering retry succeeds;
+    /// use `confirmedAccountMemberships()` for transfer instead of serializing that denial.
     public func storedActiveAccountIDs(for profileID: String) -> [String]? {
-        accountSelections[profileID]
+        unconfirmedAccountSelectionProfileIDs.contains(profileID) ? [] : accountSelections[profileID]
     }
 
     public func setActiveAccountIDs(_ ids: [String], for profileID: String) {
         store.setActiveAccountIDs(ids, forProfile: profileID)
-        accountSelections[profileID] = store.activeAccountIDs(forProfile: profileID)
+        refreshAccountSelection(for: profileID)
     }
 
     /// Clear a profile's explicit account selection (a synced membership deletion →
     /// revert to "watches all servers").
     public func clearActiveAccountIDs(for profileID: String) {
         store.clearActiveAccountIDs(forProfile: profileID)
-        accountSelections[profileID] = store.activeAccountIDs(forProfile: profileID)
+        refreshAccountSelection(for: profileID)
+    }
+
+    public func confirmedAccountMemberships() throws -> [String: [String]] {
+        guard unconfirmedAccountSelectionProfileIDs.isEmpty else {
+            throw AccountSelectionError.unavailable
+        }
+        let known = Set(profiles.map(\.id))
+        return accountSelections.filter { known.contains($0.key) }
+    }
+
+    /// A storage failure is not a membership edit or deletion on other devices.
+    public func captureAccountMembership(for profileID: String, fallback: Data?) -> Data? {
+        guard profiles.contains(where: { $0.id == profileID }) else { return nil }
+        if unconfirmedAccountSelectionProfileIDs.contains(profileID) { return fallback }
+        return accountSelections[profileID].flatMap { CanonicalJSON.encode($0.sorted()) }
+    }
+
+    /// Called by account reload/foreground recovery, never by a rendering accessor.
+    @discardableResult
+    public func retryUnconfirmedAccountSelections() -> Bool {
+        let pending = unconfirmedAccountSelectionProfileIDs
+        for id in pending.sorted() { refreshAccountSelection(for: id) }
+        return pending != unconfirmedAccountSelectionProfileIDs
     }
 
     /// Rendering and authorization identities use model state, never synchronous
     /// household Keychain reads. Membership writes read back the durable value.
     private func refreshAccountSelections() {
-        var selections: [String: [String]] = [:]
-        for profile in profiles {
-            selections[profile.id] = store.activeAccountIDs(forProfile: profile.id)
+        let known = Set(profiles.map(\.id))
+        accountSelections = accountSelections.filter { known.contains($0.key) }
+        unconfirmedAccountSelectionProfileIDs.formIntersection(known)
+        for profile in profiles { refreshAccountSelection(for: profile.id) }
+    }
+
+    private func refreshAccountSelection(for profileID: String) {
+        do {
+            accountSelections[profileID] = try store.readActiveAccountIDs(forProfile: profileID)
+            unconfirmedAccountSelectionProfileIDs.remove(profileID)
+        } catch {
+            let newlyUnavailable = unconfirmedAccountSelectionProfileIDs.insert(profileID).inserted
+            #if canImport(OSLog)
+            if newlyUnavailable {
+                Self.logger.error("Profile account selection unavailable; access is suspended until a successful retry")
+            }
+            #endif
         }
-        accountSelections = selections
     }
 
 }

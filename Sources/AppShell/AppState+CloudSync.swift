@@ -368,10 +368,8 @@ extension AppState {
             if let data = CanonicalJSON.encode(ProfileSyncDTO(profile: p)) {
                 out[SyncRecordKey(kind: .profile, id: p.id).recordName] = data
             }
-            if let ids = profilesModel.storedActiveAccountIDs(for: p.id),
-               let data = CanonicalJSON.encode(ids.sorted()) {
-                out[SyncRecordKey(kind: .membership, id: p.id).recordName] = data
-            }
+            let membershipKey = SyncRecordKey(kind: .membership, id: p.id).recordName
+            out[membershipKey] = profilesModel.captureAccountMembership(for: p.id, fallback: fallback[membershipKey])
             let ns = p.settingsNamespace(isDefault: profilesModel.isDefault(p))
             for (baseKey, blob) in ProfileSettingsTransfer.capture(namespace: ns) {
                 out[SyncRecordKey(kind: .setting, id: p.id, subkey: baseKey).recordName] = blob

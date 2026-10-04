@@ -126,8 +126,13 @@ labels rather than repeating the section's action in a subtitle.
 Rendering source choices does not resolve server credentials. Profile account
 selections are observable model snapshots, read back from durable storage after
 membership writes and refreshed when profiles are imported or reset. An unset
-selection remains distinct from an explicitly empty selection. Catalog display
-state checks the current in-memory profile/account admission without reopening
+selection remains distinct from an explicitly empty selection.
+An unreadable membership suspends account access rather than inheriting the
+household account set. Account reload and foreground recovery retry only
+unconfirmed selections; rendering never retries Keychain. Cloud capture retains
+the previous membership record during that failure, and setup transfer waits
+for confirmed selections instead of exporting a temporary access denial.
+Catalog display state checks the current in-memory profile/account admission without reopening
 the secure source store. This display state is not an operation permit: catalog
 publication, scans, imports and mutations retain their fresh durable-source and
 parental-authorization checks.

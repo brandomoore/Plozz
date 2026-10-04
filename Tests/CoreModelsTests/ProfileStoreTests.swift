@@ -69,6 +69,19 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertNil(store.activeAccountIDs(forProfile: "unknown"))
     }
 
+    func testThrowingMembershipReadDistinguishesAbsenceEmptyAndCorruption() throws {
+        let secure = InMemorySecureStoringDouble()
+        let store = ProfileStore(defaults: makeDefaults(), secureStore: secure)
+        XCTAssertNil(try store.readActiveAccountIDs(forProfile: "p"))
+        store.setActiveAccountIDs([], forProfile: "p")
+        XCTAssertEqual(try store.readActiveAccountIDs(forProfile: "p"), [])
+        secure.unreadableMembershipIDs = ["p"]
+        XCTAssertThrowsError(try store.readActiveAccountIDs(forProfile: "p"))
+        secure.unreadableMembershipIDs = []
+        try secure.setString("not JSON", for: "com.plozz.profile.activeAccounts.p")
+        XCTAssertThrowsError(try store.readActiveAccountIDs(forProfile: "p"))
+    }
+
     // MARK: Shared (user-independent Keychain) backing
 
     func testProfilesPersistInSecureStoreNotDefaults() {
@@ -111,6 +124,8 @@ private final class InMemorySecureStoringDouble: SecureStoring, @unchecked Senda
     private var storage: [String: String] = [:]
     private(set) var reads = 0
     var failWrites = false
+    var unreadableMembershipIDs: Set<String> = []
+    var membershipReadsToFail = 0
     func setString(_ value: String, for key: String) throws {
         if failWrites { throw CocoaError(.fileWriteUnknown) }
         storage[key] = value
@@ -119,12 +134,118 @@ private final class InMemorySecureStoringDouble: SecureStoring, @unchecked Senda
         reads += 1
         return storage[key]
     }
-    func readString(for key: String) throws -> String? { string(for: key) }
+    func readString(for key: String) throws -> String? {
+        let value = string(for: key)
+        let prefix = "com.plozz.profile.activeAccounts."
+        if key.hasPrefix(prefix) {
+            if membershipReadsToFail > 0 {
+                membershipReadsToFail -= 1
+                throw CocoaError(.fileReadUnknown)
+            }
+            if unreadableMembershipIDs.contains(String(key.dropFirst(prefix.count))) {
+                throw CocoaError(.fileReadUnknown)
+            }
+        }
+        return value
+    }
     func removeValue(for key: String) throws { storage[key] = nil }
 }
 
 @MainActor
 final class ProfilesModelTests: XCTestCase {
+    func testReadbackFailureDeniesFallbackWithoutRenderingReadsAndRecovers() throws {
+        let secure = InMemorySecureStoringDouble()
+        let store = ProfileStore(defaults: makeDefaults(), secureStore: secure)
+        let model = ProfilesModel(store: store, defaultActiveAccountIDs: ["account"])
+        let id = model.activeProfileID
+        secure.membershipReadsToFail = 1
+        model.setActiveAccountIDs([], for: id)
+        XCTAssertEqual(try store.readActiveAccountIDs(forProfile: id), [])
+        XCTAssertEqual(model.unconfirmedAccountSelectionProfileIDs, [id])
+        let reads = secure.reads
+        for _ in 0..<20 {
+            XCTAssertEqual(model.activeAccountIDs(for: id, fallback: ["household"]), [])
+            XCTAssertEqual(model.storedActiveAccountIDs(for: id), [])
+            _ = LiveTVSourceApprovalContext(profiles: model)
+        }
+        XCTAssertEqual(secure.reads, reads)
+        XCTAssertThrowsError(try model.confirmedAccountMemberships())
+        XCTAssertTrue(model.retryUnconfirmedAccountSelections())
+        XCTAssertTrue(model.unconfirmedAccountSelectionProfileIDs.isEmpty)
+        XCTAssertEqual(try model.confirmedAccountMemberships(), [id: []])
+        let recoveredReads = secure.reads
+        XCTAssertFalse(model.retryUnconfirmedAccountSelections())
+        XCTAssertEqual(secure.reads, recoveredReads)
+    }
+
+    func testInitialReadFailureDoesNotBecomeInheritedMembership() throws {
+        let secure = InMemorySecureStoringDouble()
+        let store = ProfileStore(defaults: makeDefaults(), secureStore: secure)
+        store.migrateLegacyIfNeeded(defaultName: "Profile", defaultActiveAccountIDs: ["selected"])
+        secure.unreadableMembershipIDs = [ProfileStore.defaultProfileID]
+        let model = ProfilesModel(store: store)
+        let id = model.activeProfileID
+        XCTAssertEqual(model.activeAccountIDs(for: id, fallback: ["household"]), [])
+        XCTAssertFalse(model.retryUnconfirmedAccountSelections())
+        secure.unreadableMembershipIDs = []
+        XCTAssertTrue(model.retryUnconfirmedAccountSelections())
+        XCTAssertEqual(model.storedActiveAccountIDs(for: id), ["selected"])
+        XCTAssertEqual(try model.confirmedAccountMemberships(), [id: ["selected"]])
+    }
+
+    func testBulkRefreshFailurePreservesCloudBytesAndOtherProfiles() throws {
+        let secure = InMemorySecureStoringDouble()
+        let store = ProfileStore(defaults: makeDefaults(), secureStore: secure)
+        let model = ProfilesModel(store: store, defaultActiveAccountIDs: ["first"])
+        let id = model.activeProfileID
+        let other = model.add(name: "Other", activeAccountIDs: ["second"])
+        let fallback = Data("[ \"first\" ]".utf8)
+        secure.unreadableMembershipIDs = [id]
+        model.importProfiles([model.activeProfile])
+        XCTAssertEqual(model.unconfirmedAccountSelectionProfileIDs, [id])
+        XCTAssertEqual(model.activeAccountIDs(for: id, fallback: ["household"]), [])
+        XCTAssertEqual(model.storedActiveAccountIDs(for: other.id), ["second"])
+        XCTAssertEqual(model.captureAccountMembership(for: id, fallback: fallback), fallback)
+        XCTAssertNil(model.captureAccountMembership(for: id, fallback: nil))
+        XCTAssertEqual(
+            model.captureAccountMembership(for: other.id, fallback: fallback),
+            CanonicalJSON.encode(["second"])
+        )
+        XCTAssertThrowsError(try model.confirmedAccountMemberships())
+        secure.unreadableMembershipIDs = []
+        XCTAssertTrue(model.retryUnconfirmedAccountSelections())
+        XCTAssertEqual(model.captureAccountMembership(for: id, fallback: fallback), CanonicalJSON.encode(["first"]))
+        model.clearActiveAccountIDs(for: id)
+        XCTAssertNil(model.captureAccountMembership(for: id, fallback: fallback))
+    }
+
+    func testClearReadbackFailureWaitsForConfirmedAbsenceBeforeInheriting() {
+        let secure = InMemorySecureStoringDouble()
+        let store = ProfileStore(defaults: makeDefaults(), secureStore: secure)
+        let model = ProfilesModel(store: store, defaultActiveAccountIDs: ["selected"])
+        let id = model.activeProfileID
+        secure.membershipReadsToFail = 1
+        model.clearActiveAccountIDs(for: id)
+        XCTAssertEqual(model.activeAccountIDs(for: id, fallback: ["household"]), [])
+        XCTAssertTrue(model.retryUnconfirmedAccountSelections())
+        XCTAssertNil(model.storedActiveAccountIDs(for: id))
+        XCTAssertEqual(model.activeAccountIDs(for: id, fallback: ["household"]), ["household"])
+    }
+
+    func testRemovingUnreadableProfileDropsItsPendingRecovery() throws {
+        let secure = InMemorySecureStoringDouble()
+        let model = ProfilesModel(store: ProfileStore(defaults: makeDefaults(), secureStore: secure))
+        let other = model.add(name: "Other")
+        secure.unreadableMembershipIDs = [other.id]
+        model.setActiveAccountIDs(["account"], for: other.id)
+        XCTAssertEqual(model.unconfirmedAccountSelectionProfileIDs, [other.id])
+        model.remove(other.id)
+        XCTAssertTrue(model.unconfirmedAccountSelectionProfileIDs.isEmpty)
+        XCTAssertFalse(model.retryUnconfirmedAccountSelections())
+        XCTAssertNil(model.captureAccountMembership(for: other.id, fallback: Data("[]".utf8)))
+        XCTAssertTrue(try model.confirmedAccountMemberships().isEmpty)
+    }
+
     func testAccountSelectionAndApprovalRenderingDoNotReadTheSecureStore() {
         let secure = InMemorySecureStoringDouble()
         let model = ProfilesModel(

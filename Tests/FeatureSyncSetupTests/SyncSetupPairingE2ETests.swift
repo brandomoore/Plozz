@@ -14,6 +14,39 @@ struct StaticGuest: PairingLinkConnecting {
 }
 @MainActor
 final class SyncSetupPairingE2ETests: XCTestCase {
+    func testUnreadableConfigurationPreservesPresenceAndStopsSetupTransfer() async throws {
+        let suite = "UnreadableSetupConfigTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var flag = SyncSetupFeatureFlag(defaults: defaults)
+        flag.isEnabled = true
+        let beacon = InMemoryPresenceBeaconStore()
+        let previous = SyncPresenceBeacon(
+            setupExists: true, deviceName: "Existing device", serverCount: 2, profileCount: 2
+        )
+        beacon.write(previous)
+        var secretsRequested = false
+        let sender = SyncSetupService(
+            flag: flag, beaconStore: beacon, rendezvousStore: InMemoryPairingRendezvousStore(),
+            deviceID: { "device" }, deviceName: { "Device" }, isConfigured: { true },
+            configProvider: { throw ProfilesModel.AccountSelectionError.unavailable },
+            secretsProvider: {
+                secretsRequested = true
+                return SyncSecretsBundle()
+            }
+        )
+        sender.publishPresence()
+        XCTAssertEqual(beacon.read(), previous)
+        let (_, link) = await InMemoryPairingLink.makePair()
+        do {
+            try await sender.sendSetup(over: link, expectedPublicKey: nil)
+            XCTFail("Unknown membership must not be transferred as a profile edit")
+        } catch {
+            XCTAssertEqual(error as? ProfilesModel.AccountSelectionError, .unavailable)
+        }
+        XCTAssertFalse(secretsRequested)
+    }
+
 
     private func account(_ id: String) -> Account {
         let s = MediaServer(id: "s", name: "Home", baseURL: URL(string: "https://h.example.com")!, provider: .jellyfin)

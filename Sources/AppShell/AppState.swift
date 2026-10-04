@@ -1025,7 +1025,8 @@ public final class AppState {
             },
             isConfigured: { !syncAccounts.accounts.isEmpty },
             configProvider: {
-                .init(
+                let memberships = try syncProfiles.confirmedAccountMemberships()
+                return .init(
                     accounts: syncAccounts.accounts,
                     profiles: syncProfiles.profiles,
                     profileSettings: syncProfiles.profiles.map { p in
@@ -1038,11 +1039,7 @@ public final class AppState {
                     },
                     // Carry each profile's EXPLICIT server-membership choice (absent
                     // when a profile never chose — preserves the tri-state).
-                    profileMemberships: Dictionary(
-                        uniqueKeysWithValues: syncProfiles.profiles.compactMap { p in
-                            syncProfiles.storedActiveAccountIDs(for: p.id).map { (p.id, $0) }
-                        }
-                    )
+                    profileMemberships: memberships
                 )
             },
             secretsProvider: {
