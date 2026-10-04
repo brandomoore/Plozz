@@ -28,7 +28,7 @@ struct NavigationRailShell<Content: View>: View {
     let content: Content
     /// The destination the supplied content actually depicts, which may lag selection.
     let contentDestination: NavigationRailDestination
-    var preventsAccidentalExit: Bool = false
+    var onRequireHome: () -> Void = {}
 
     /// Scopes appearance-time default focus so the CONTENT is focused first. Without
     /// it the rail — a stack of focusable rows sitting at the leading edge — can win
@@ -36,6 +36,7 @@ struct NavigationRailShell<Content: View>: View {
     /// or the viewer switches destination.
     @Namespace private var focusScopeID
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var pinnedSidebarInteraction = PlozzPinnedSidebarInteraction()
     /// Whether focus is inside the rail, reported up from it.
     @State private var railExpanded = false
@@ -176,8 +177,7 @@ struct NavigationRailShell<Content: View>: View {
                         onFocusRequestFailed: { token in
                             guard focusRequestToken == token else { return }
                             isOpeningNavigation = false
-                        },
-                        preventsAccidentalExit: preventsAccidentalExit
+                        }
                     )
                     // Keep the focus-request observer mounted while Search hides
                     // the collapsed rail, but exclude invisible rows from focus.
@@ -211,6 +211,7 @@ struct NavigationRailShell<Content: View>: View {
         }
         .background { NavigationChromeTransitionAnchor(chrome: chrome) }
         .focusScope(focusScopeID)
+        .onExitCommand(perform: backAction)
         .animation(reduceMotion || chrome.transitionSuppressesFocus ? nil : .easeInOut(duration: 0.26), value: hidden)
         .animation(reduceMotion || chrome.transitionSuppressesFocus ? nil : NavigationRailMetrics.expandAnimation, value: railExpanded)
         .onChange(of: selection, initial: true) { previous, destination in
@@ -256,6 +257,9 @@ struct NavigationRailShell<Content: View>: View {
         .onChange(of: pinnedSidebarInteraction.openRequest) { _, _ in
             requestNavigationFocus()
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active, railExpanded { returnFocusToPage() }
+        }
         .onDisappear {
             destinationFocus.cancel()
             contentFocusRequest = nil
@@ -275,7 +279,12 @@ struct NavigationRailShell<Content: View>: View {
         guard destinationFocus.complete(request) else { return }
         guard selection == request.destination,
               !chrome.transitionSuppressesFocus, !chrome.isChromeHidden else { return }
-        contentFocusRequest = request.generation
+        switch request.focusTarget {
+        case .content:
+            contentFocusRequest = request.generation
+        case .navigation:
+            focusRequestToken &+= 1
+        }
     }
 
     private func contentFocusCompleted(_ request: UInt64, didFocus: Bool) {
@@ -298,6 +307,31 @@ struct NavigationRailShell<Content: View>: View {
         hasEnteredSearchContent = false
         isOpeningNavigation = true
         focusRequestToken &+= 1
+    }
+
+    private var isBackHandoffInProgress: Bool {
+        chrome.transitionSuppressesFocus || isOpeningNavigation
+            || destinationFocus.isWaiting || contentFocusRequest != nil
+    }
+
+    private var backAction: (() -> Void)? {
+        guard !chrome.isChromeHidden else { return nil }
+        // Remove the command entirely at the final step so tvOS owns exiting.
+        if selection == .home, railExpanded, !isBackHandoffInProgress {
+            return nil
+        }
+        return handleBack
+    }
+
+    private func handleBack() {
+        guard !isBackHandoffInProgress else { return }
+        if railExpanded {
+            onRequireHome()
+            destinationFocus.begin(.home, focusTarget: .navigation)
+            selection = .home
+        } else {
+            requestNavigationFocus()
+        }
     }
 }
 

@@ -1,6 +1,9 @@
 import Foundation
 import Observation
 import CoreModels
+#if canImport(OSLog)
+import OSLog
+#endif
 
 // MARK: - SyncSetupService (app-facing facade)
 //
@@ -43,13 +46,16 @@ public final class SyncSetupService {
     private let rendezvousStore: PairingRendezvousStoring
     private let coordinator = SyncSetupCoordinator()
 
-    private let configProvider: @MainActor () -> LocalConfig
+    private let configProvider: @MainActor () throws -> LocalConfig
     private let secretsProvider: @MainActor () -> SyncSecretsBundle
     private let deviceID: @MainActor () -> String
     private let deviceName: @MainActor () -> String
     private let isConfigured: @MainActor () -> Bool
 
     public private(set) var isEnabled: Bool
+    #if canImport(OSLog)
+    private static let logger = Logger(subsystem: "com.plozz.app", category: "sync")
+    #endif
 
     public init(
         flag: SyncSetupFeatureFlag = SyncSetupFeatureFlag(),
@@ -58,7 +64,7 @@ public final class SyncSetupService {
         deviceID: @escaping @MainActor () -> String,
         deviceName: @escaping @MainActor () -> String,
         isConfigured: @escaping @MainActor () -> Bool,
-        configProvider: @escaping @MainActor () -> LocalConfig,
+        configProvider: @escaping @MainActor () throws -> LocalConfig,
         secretsProvider: @escaping @MainActor () -> SyncSecretsBundle = { SyncSecretsBundle() }
     ) {
         self.flag = flag
@@ -105,7 +111,15 @@ public final class SyncSetupService {
     /// device on the same Apple ID can offer "bring your setup here".
     public func publishPresence() {
         guard isEnabled else { return }
-        let cfg = configProvider()
+        let cfg: LocalConfig
+        do {
+            cfg = try configProvider()
+        } catch {
+            #if canImport(OSLog)
+            Self.logger.error("Setup presence update deferred because local configuration is unavailable")
+            #endif
+            return
+        }
         guard !cfg.accounts.isEmpty || !cfg.profiles.isEmpty else { beaconStore.clear(); return }
         beaconStore.write(SyncPresenceBeacon(
             setupExists: true,
@@ -314,7 +328,7 @@ public final class SyncSetupService {
         restrictToAccountIDs: Set<String>? = nil,
         confirmSAS: @escaping @Sendable (String) async -> Bool = { _ in true }
     ) async throws {
-        let cfg = configProvider()
+        let cfg = try configProvider()
         // A per-server request (restrictToAccountIDs set) transfers ONLY the chosen
         // account(s) and no profiles/settings — the receiver just wants that one
         // server. A whole-device request (nil) sends everything, as before.

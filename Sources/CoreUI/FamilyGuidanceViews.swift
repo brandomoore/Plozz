@@ -761,12 +761,11 @@ struct FamilyGuidanceIcon: View {
     @Environment(\.themePalette) private var palette
 
     var body: some View {
-        Image("CommonSenseMedia", bundle: .module)
+        Image(palette.isLight ? "CommonSenseMediaOnLight" : "CommonSenseMedia", bundle: .module)
             .renderingMode(.original)
             .resizable()
             .scaledToFit()
             .frame(width: size, height: size)
-            .background(palette.isLight ? ThemePalette.dark.settingsBackground : .clear, in: Circle())
             .accessibilityHidden(true)
     }
 }

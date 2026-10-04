@@ -7,9 +7,15 @@ import UIKit
 @MainActor
 @Observable
 final class NavigationDestinationFocusHandoff {
+    enum FocusTarget: Equatable {
+        case content
+        case navigation
+    }
+
     struct Request: Equatable {
         let destination: NavigationRailDestination
         let generation: UInt64
+        let focusTarget: FocusTarget
     }
 
     private(set) var request: Request?
@@ -17,10 +23,10 @@ final class NavigationDestinationFocusHandoff {
 
     var isWaiting: Bool { request != nil }
 
-    func begin(_ destination: NavigationRailDestination) {
-        guard request?.destination != destination else { return }
+    func begin(_ destination: NavigationRailDestination, focusTarget: FocusTarget = .content) {
+        guard request?.destination != destination || request?.focusTarget != focusTarget else { return }
         generation &+= 1
-        request = Request(destination: destination, generation: generation)
+        request = Request(destination: destination, generation: generation, focusTarget: focusTarget)
     }
 
     func complete(_ presented: Request) -> Bool {

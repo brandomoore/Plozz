@@ -5,6 +5,58 @@ import XCTest
 
 @MainActor
 final class LiveTVConfiguredImportTests: XCTestCase {
+    func testExcessDeclaredGuidesKeepChannelsAndBoundAutomaticGuideRequests() async throws {
+        let playlist = source()
+        let guides = (0..<101).map { URL(string: "https://example.test/guide/\($0).xml")! }
+        let now = Date()
+        let selected = Array(guides.prefix(32))
+        let loader = ConfiguredImportLoader(
+            playlists: [playlist.playlistURL: declaringGuides(guides)],
+            guides: Dictionary(uniqueKeysWithValues: selected.map { ($0, xml(title: "Schedule", now: now)) })
+        )
+        let imports = LiveTVPrototypeImportModel(configuration: .init(playlists: [playlist]), loader: loader)
+        let model = LiveTVPrototypeModel(now: now, channels: [])
+        await imports.reload(into: model)
+        XCTAssertEqual(model.channels.count, 1)
+        XCTAssertEqual(imports.playlistPhase, .loaded)
+        XCTAssertNil(imports.playlistFailure)
+        XCTAssertNil(imports.playlistSources.first?.failure)
+        XCTAssertEqual(imports.guideSources.map(\.source.url), selected)
+        XCTAssertEqual(imports.guideDiscoveryFailures[playlist.id], .guideSourceLimitReached)
+        let calls = await loader.calls
+        XCTAssertEqual(calls.guides, selected)
+    }
+
+    func testConfiguredGuidesKeepPriorityWithinTheDiscoveryBudget() async throws {
+        let preferred = (0..<31).map { URL(string: "https://example.test/preferred/\($0).xml")! }
+        let declared = (0..<101).map { URL(string: "https://example.test/guide/\($0).xml")! }
+        let playlist = source(guides: preferred)
+        let loader = ConfiguredImportLoader(playlists: [playlist.playlistURL: declaringGuides(declared)])
+        let imports = LiveTVPrototypeImportModel(configuration: .init(playlists: [playlist]), loader: loader)
+        let model = LiveTVPrototypeModel(channels: [])
+        await imports.reload(into: model)
+        XCTAssertEqual(model.channels.count, 1)
+        XCTAssertEqual(imports.guideSources.map(\.source.url), preferred + [declared[0]])
+        XCTAssertEqual(imports.guideDiscoveryFailures[playlist.id], .guideSourceLimitReached)
+        let calls = await loader.calls
+        XCTAssertEqual(calls.guides, preferred + [declared[0]])
+    }
+
+    func testDisabledDiscoveryAcceptsManyDeclaredGuidesWithoutRequestingThem() async throws {
+        var playlist = source()
+        playlist.discoversPlaylistGuides = false
+        let guides = (0..<101).map { URL(string: "https://example.test/guide/\($0).xml")! }
+        let loader = ConfiguredImportLoader(playlists: [playlist.playlistURL: declaringGuides(guides)])
+        let imports = LiveTVPrototypeImportModel(configuration: .init(playlists: [playlist]), loader: loader)
+        let model = LiveTVPrototypeModel(channels: [])
+        await imports.reload(into: model)
+        XCTAssertEqual(model.channels.count, 1)
+        XCTAssertTrue(imports.guideSources.isEmpty)
+        XCTAssertNil(imports.guideDiscoveryFailures[playlist.id])
+        let calls = await loader.calls
+        XCTAssertTrue(calls.guides.isEmpty)
+    }
+
     func testOnlySafeDeclaredGuidesAreDiscoveredAfterChannelsPublish() async throws {
         let playlist = source()
         let safe = URL(string: "https://example.test/discovered.xml")!
@@ -529,6 +581,12 @@ final class LiveTVConfiguredImportTests: XCTestCase {
         #EXTINF:-1 tvg-id="Same.us" tvg-name="Same channel",Same channel
         https://example.test/live.m3u8
         """
+    }
+
+    private func declaringGuides(_ guides: [URL]) -> String {
+        m3u.replacingOccurrences(
+            of: "#EXTM3U", with: "#EXTM3U x-tvg-url=\"\(guides.map(\.absoluteString).joined(separator: ","))\""
+        )
     }
 
     private func xml(title: String, now: Date) -> String {

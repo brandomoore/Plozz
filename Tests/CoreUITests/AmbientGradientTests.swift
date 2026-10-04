@@ -6,6 +6,41 @@ import XCTest
 
 @MainActor
 final class AmbientGradientTests: XCTestCase {
+    func testPaletteTraceFingerprintsDistinguishArtworkWithoutRevealingURLs() throws {
+        let first = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://private.example/art/one?token=secret")))
+        let second = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://private.example/art/two?token=secret")))
+        let fingerprint = ArtworkPaletteDiagnostics.referenceID(first)
+        XCTAssertEqual(fingerprint.count, 16)
+        XCTAssertEqual(fingerprint, ArtworkPaletteDiagnostics.referenceID(first))
+        XCTAssertNotEqual(fingerprint, ArtworkPaletteDiagnostics.referenceID(second))
+        XCTAssertFalse(fingerprint.contains("secret"))
+        XCTAssertFalse(fingerprint.contains("private"))
+        XCTAssertNotEqual(
+            ArtworkPaletteDiagnostics.keyID(AmbientArtworkKey(id: "title", reference: first)),
+            ArtworkPaletteDiagnostics.keyID(AmbientArtworkKey(id: "title", reference: second))
+        )
+    }
+
+    func testPaletteTraceDescribesPixelsAndActualColorComponents() {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 48, height: 48))
+        let red = renderer.image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 48, height: 48))
+        }
+        let green = renderer.image { context in
+            UIColor.green.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 48, height: 48))
+        }
+        XCTAssertEqual(ArtworkPaletteDiagnostics.imageSummary(red), ArtworkPaletteDiagnostics.imageSummary(red))
+        XCTAssertNotEqual(ArtworkPaletteDiagnostics.imageSummary(red), ArtworkPaletteDiagnostics.imageSummary(green))
+        XCTAssertTrue(ArtworkPaletteDiagnostics.imageSummary(red).contains("pixels="))
+        XCTAssertFalse(ArtworkPaletteDiagnostics.imageSummary(red).contains("unavailable"))
+        let colors = [Color(red: 1, green: 0, blue: 0), Color(red: 0, green: 1, blue: 0)]
+        XCTAssertEqual(ArtworkPaletteDiagnostics.colors(colors), "[(1.0000,0.0000,0.0000,1.0000),(0.0000,1.0000,0.0000,1.0000)]")
+        XCTAssertEqual(ArtworkPaletteDiagnostics.colors(nil), "none")
+        XCTAssertEqual(ArtworkPaletteDiagnostics.colors([]), "[]")
+    }
+
     func testAllThemesHaveLegibleGradientStopsAndBlackStaysDarker() {
         for scheme in [ColorScheme.light, .dark] {
             for theme in AppTheme.allCases {
@@ -97,7 +132,7 @@ final class AmbientGradientTests: XCTestCase {
         }
         let cachedCount = await counter.count
         XCTAssertEqual(cachedCount, 1)
-        let changedArtwork = AmbientArtworkKey(id: "79", references: [.remote(URL(string: "https://other.example/art")!)])
+        let changedArtwork = AmbientArtworkKey(id: "79", reference: .remote(URL(string: "https://other.example/art")!))
         await model.update(owner: owner, key: changedArtwork, delay: .zero) {
             await counter.sample(.blue)
         }
@@ -163,7 +198,7 @@ final class AmbientGradientTests: XCTestCase {
     }
 
     private func key(_ id: String) -> AmbientArtworkKey {
-        AmbientArtworkKey(id: id, references: [.remote(URL(string: "https://art.example/\(id)")!)])
+        AmbientArtworkKey(id: id, reference: .remote(URL(string: "https://art.example/\(id)")!))
     }
 }
 

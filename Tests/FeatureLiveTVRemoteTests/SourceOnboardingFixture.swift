@@ -8,7 +8,7 @@ import SwiftUI
 @testable import FeatureLiveTV
 
 struct SourceOnboardingFixture: View {
-    private enum Destination: Hashable { case sources }
+    private enum Destination: Hashable { case sources, settings }
     @State private var path: [Destination] = []
     @State private var profiles = ProfilesModel(store: SourceSmokeProfiles())
     @State private var sources = SourceSmokeStore()
@@ -16,21 +16,21 @@ struct SourceOnboardingFixture: View {
     @State private var automaticLoadIssue: LibraryChannelError?
     private let usesTypedNavigation = ProcessInfo.processInfo.arguments.contains("--typed-sources")
     private let usesSettings = ProcessInfo.processInfo.arguments.contains("--source-settings")
+    private let usesTypedSettings = ProcessInfo.processInfo.arguments.contains("--typed-settings")
     private let usesAutomaticChannels = ProcessInfo.processInfo.arguments.contains("--automatic-channels")
 
     var body: some View {
         NavigationStack(path: $path) {
             if ProcessInfo.processInfo.arguments.contains("--setup-cards") {
                 SetupCardsFixture()
-            } else if usesSettings {
-                LiveTVSettingsView(
-                    store: SourceSmokeViewSettings(),
-                    preferencesStore: SourceSmokePreferences()
-                ) {
-                    AnyView(SourceSmokeSourcesPane(
-                        sources: sources, presentation: .settingsPane,
-                        automatic: usesAutomaticChannels ? automatic : nil))
+            } else if usesSettings && !usesTypedSettings {
+                settings
+            } else if usesTypedSettings {
+                List {
+                    NavigationLink("Live TV", value: Destination.settings)
+                        .accessibilityIdentifier("fixture-live-tv-settings")
                 }
+                .navigationDestination(for: Destination.self) { _ in settings }
             } else if usesTypedNavigation {
                 List {
                     NavigationLink("Sources", value: Destination.sources)
@@ -56,8 +56,11 @@ struct SourceOnboardingFixture: View {
                         .accessibilityIdentifier("fixture-unexpected-playback")
                 }
             }
+
         }
         .environment(profiles)
+        .environment(\.themePalette, ProcessInfo.processInfo.arguments.contains("--light") ? .light : .dark)
+        .environment(\.colorScheme, ProcessInfo.processInfo.arguments.contains("--light") ? .light : .dark)
         .task {
             guard usesAutomaticChannels else { return }
             do { try await automatic.service.load() }
@@ -83,6 +86,17 @@ struct SourceOnboardingFixture: View {
                     .accessibilityIdentifier("fixture-source-metrics")
                     .allowsHitTesting(false)
             }
+        }
+    }
+
+    private var settings: some View {
+        LiveTVSettingsView(
+            store: SourceSmokeViewSettings(),
+            preferencesStore: SourceSmokePreferences()
+        ) {
+            AnyView(SourceSmokeSourcesPane(
+                sources: sources, presentation: .settingsPane,
+                automatic: usesAutomaticChannels ? automatic : nil))
         }
     }
 }

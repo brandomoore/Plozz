@@ -1003,11 +1003,9 @@ private struct FocusHeroBackdropLayer: View {
                 scrimStyle: .browse
             )
             .allowsHitTesting(false)
-            .ambientBackdropSource(
+            .heroArtworkSource(
                 id: subject.id,
-                references: references(for: subject),
-                isActive: isFrontmost,
-                fallbackURL: subject.item.flatMap(HomeHeroArtwork.backdropFallback(for:))
+                isActive: isFrontmost
             )
         }
     }
@@ -1106,7 +1104,6 @@ private struct FocusHeroColumn: View {
 
     private func itemColumn(_ item: MediaItem) -> some View {
         let hideText = spoilerSettings.shouldHideText(for: item)
-        let references = HomeHeroArtwork.backdropReferences(for: item)
         // Details show once, complete: a row's own record is sparser than what
         // replaces it, so showing it first would change the text under the viewer.
         let detailed = enrich == nil || metadata.hasDetails(for: item)
@@ -1114,7 +1111,7 @@ private struct FocusHeroColumn: View {
             HeroLogoArtwork(
                 references: item.artworkReferences(for: .logo),
                 asyncFallbackURL: HomeHeroArtwork.logoFallback(for: item),
-                backgroundSample: HomeHeroArtwork.backgroundSample(for: item, references: references),
+                displayedArtworkID: model.details?.id,
                 maxWidth: FocusHeroLayout.logoBox.width,
                 maxHeight: FocusHeroLayout.logoBox.height,
                 constrainsToBounds: true,

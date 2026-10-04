@@ -813,7 +813,7 @@ struct DetailHeroView: View, Equatable {
                 HeroLogoArtwork(
                     references: backdrop.artworkReferences(for: .logo),
                     asyncFallbackURL: tmdbLogoFallback,
-                    backgroundSample: heroBackgroundSample,
+                    displayedArtworkID: "detail:\(backdrop.id)",
                     // Cap the WIDTH as well as the height, matching the Home hero.
                     // With only a height cap a wide, short wordmark fits against an
                     // unbounded width and then floats inside the full 200pt frame,
@@ -1044,6 +1044,7 @@ struct DetailHeroView: View, Equatable {
             // opposite the text instead.
             if !presentsEpisodeStill {
                 heroBackdrop()
+                    .heroArtworkSource(id: "detail:\(backdrop.id)")
                     // Re-key on the backdrop identity so a server switch (the only
                     // thing that changes the backdrop — episode focus deliberately
                     // keeps the show-level backdrop) cross-fades the old artwork out
@@ -1819,27 +1820,6 @@ struct DetailHeroView: View, Equatable {
         }
     }
 
-    /// Effective colour of the hero artwork behind the logo, used to decide
-    /// whether the logo needs a legibility halo. Mirrors the backdrop resolution
-    /// order (`heroBackdropURL`/`backdropURL` → TMDb hero → poster placeholder) so
-    /// it measures the same image the user actually sees. Keyless/on-device; nil
-    /// when no image can be sampled, in which case the halo stays on to be safe.
-    private var heroBackgroundSample: (@Sendable () async -> HeroBackgroundSample?)? {
-        #if canImport(UIKit)
-        let urls = [backdrop.heroBackdropURL, backdrop.backdropURL].compactMap { $0 }
-        let source = backdrop
-        return {
-            if let sample = await HeroBackgroundSampler.sample(urls: urls) { return sample }
-            if let tmdb = await ArtworkRouter.shared.artworkURL(.hero, for: source),
-               let sample = await HeroBackgroundSampler.sample(urls: [tmdb]) { return sample }
-            if let poster = source.posterURL,
-               let sample = await HeroBackgroundSampler.sample(urls: [poster]) { return sample }
-            return nil
-        }
-        #else
-        return nil
-        #endif
-    }
 }
 
 /// The checkmark glyph used by the watched toggle. `progress` (0...1) is the

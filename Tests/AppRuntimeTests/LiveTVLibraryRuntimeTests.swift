@@ -6,7 +6,129 @@ import FeatureLiveTVCore
 import XCTest
 @testable import AppRuntime
 
+private final class RuntimeMembershipSecureStore: SecureStoring, @unchecked Sendable {
+    private let storage = InMemorySecureStore()
+    var failMembershipReads = false
+
+    func setString(_ value: String, for key: String) throws { try storage.setString(value, for: key) }
+    func string(for key: String) -> String? { storage.string(for: key) }
+    func readString(for key: String) throws -> String? {
+        if failMembershipReads, key.hasPrefix("com.plozz.profile.activeAccounts.") {
+            throw CocoaError(.fileReadUnknown)
+        }
+        return try storage.readString(for: key)
+    }
+    func removeValue(for key: String) throws { try storage.removeValue(for: key) }
+}
+
 final class LiveTVLibraryRuntimeTests: XCTestCase {
+    @MainActor
+    func testMembershipReadbackFailureCannotReactivateHouseholdAccounts() throws {
+        let suite = "MembershipReadbackTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let secure = RuntimeMembershipSecureStore()
+        let profileStore = ProfileStore(defaults: defaults, secureStore: secure)
+        let profiles = ProfilesModel(store: profileStore, defaultActiveAccountIDs: ["plex"])
+        let accounts = try membershipAccounts(profiles: profiles)
+        accounts.reloadAccounts()
+        XCTAssertEqual(accounts.activeAccountIDs, ["plex"])
+
+        secure.failMembershipReads = true
+        profiles.setActiveAccountIDs([], for: profiles.activeProfileID)
+        for _ in 0..<3 { accounts.reloadAccounts() }
+        XCTAssertTrue(accounts.activeAccountIDs.isEmpty)
+        XCTAssertNil(accounts.primaryActiveAccount)
+        XCTAssertTrue(accounts.homeAccounts.isEmpty)
+        XCTAssertTrue(accounts.liveTVServerChoices.isEmpty)
+        XCTAssertFalse(accounts.watchesNothingByChoice, "An unreadable selection is not confirmed user intent")
+
+        secure.failMembershipReads = false
+        XCTAssertEqual(try profileStore.readActiveAccountIDs(forProfile: profiles.activeProfileID), [])
+        XCTAssertTrue(accounts.retryUnconfirmedCredentials())
+        XCTAssertTrue(accounts.activeAccountIDs.isEmpty)
+        XCTAssertTrue(accounts.watchesNothingByChoice)
+        XCTAssertFalse(accounts.retryUnconfirmedCredentials())
+    }
+
+    @MainActor
+    func testForegroundRecoveryRestoresOnlyTheStoredProfileSubset() throws {
+        let suite = "MembershipForegroundTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let secure = RuntimeMembershipSecureStore()
+        let profileStore = ProfileStore(defaults: defaults, secureStore: secure)
+        profileStore.migrateLegacyIfNeeded(defaultName: "Profile", defaultActiveAccountIDs: ["plex"])
+        secure.failMembershipReads = true
+        let profiles = ProfilesModel(store: profileStore)
+        let accounts = try membershipAccounts(profiles: profiles)
+        accounts.reloadAccounts()
+        XCTAssertTrue(accounts.activeAccountIDs.isEmpty)
+        XCTAssertNil(accounts.primaryActiveAccount)
+        XCTAssertTrue(accounts.resolvedActiveAccounts.isEmpty)
+        XCTAssertTrue(accounts.homeAccounts.isEmpty)
+        XCTAssertFalse(accounts.retryUnconfirmedCredentials())
+
+        secure.failMembershipReads = false
+        XCTAssertTrue(accounts.retryUnconfirmedCredentials())
+        XCTAssertEqual(accounts.activeAccountIDs, ["plex"])
+        XCTAssertEqual(accounts.primaryActiveAccount?.id, "plex")
+        XCTAssertEqual(accounts.liveTVServerChoices.map(\.id), ["plex"])
+        XCTAssertFalse(accounts.watchesNothingByChoice)
+    }
+
+    @MainActor
+    private func membershipAccounts(profiles: ProfilesModel) throws -> AccountsProvidersModel {
+        let store = AccountStore(secureStore: InMemorySecureStore())
+        for kind in [ProviderKind.plex, .jellyfin] {
+            let server = MediaServer(
+                id: kind.rawValue, name: kind.rawValue,
+                baseURL: try XCTUnwrap(URL(string: "https://example.test")), provider: kind
+            )
+            try store.add(Account(
+                id: kind.rawValue, server: server, userID: "user",
+                userName: "User", deviceID: store.deviceID()
+            ), token: "fixture-token")
+        }
+        store.setActiveAccountIDs(["plex", "jellyfin"])
+        return AccountsProvidersModel(accountStore: store, registry: ProviderRegistry(), profilesModel: profiles)
+    }
+
+    @MainActor
+    func testServerChoicesNeverResolveCredentialsOrProvidersWhileRendering() throws {
+        let suite = "LiveTVServerChoicesTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let profiles = ProfilesModel(store: ProfileStore(defaults: defaults))
+        let store = AccountStore(secureStore: InMemorySecureStore())
+        for kind in [ProviderKind.plex, .jellyfin, .emby, .silo] {
+            let server = MediaServer(
+                id: kind.rawValue, name: kind.rawValue,
+                baseURL: try XCTUnwrap(URL(string: "https://example.test")), provider: kind
+            )
+            try store.add(Account(
+                id: kind.rawValue, server: server, userID: "user",
+                userName: "User", deviceID: store.deviceID()
+            ), token: "fixture-token")
+        }
+
+        store.setActiveAccountIDs(["plex", "jellyfin", "emby", "silo"])
+        let accounts = AccountsProvidersModel(
+            accountStore: store, registry: ProviderRegistry(), profilesModel: profiles
+        )
+        accounts.reloadAccounts()
+        accounts.tokenResolver = { _ in
+            XCTFail("Rendering setup choices must not read a credential")
+            return nil
+        }
+        for _ in 0..<20 {
+            XCTAssertEqual(Set(accounts.liveTVServerChoices.map(\.id)), ["plex", "jellyfin", "emby"])
+        }
+        profiles.setActiveAccountIDs([], for: profiles.activeProfileID)
+        accounts.reloadAccounts()
+        XCTAssertTrue(accounts.liveTVServerChoices.isEmpty)
+    }
+
     @MainActor
     func testAuthorizationDigestReuseStillTracksLiveCredentialsProfileAndAccountSelection() throws {
         let suite = "LiveTVAuthorizationCacheTests.\(UUID().uuidString)"

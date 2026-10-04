@@ -150,7 +150,6 @@ struct NavigationRailView: View {
     /// Search keeps full menu geometry while its shared surface morphs to a capsule.
     var usesPageButtonSurface: Bool = false
     var onFocusRequestFailed: (Int) -> Void = { _ in }
-    var preventsAccidentalExit: Bool = false
 
     @Environment(\.themePalette) private var palette
     @Environment(\.colorScheme) private var colorScheme
@@ -233,6 +232,10 @@ struct NavigationRailView: View {
         guard isFocusEnabled, isEnabled else { return false }
         // Handing focus back to the page: nothing in the rail may hold it.
         if isReleasingFocus { return false }
+        // Retarget an open menu without letting an unrelated row win the handoff.
+        if let pendingFocusTarget {
+            return target == pendingFocusTarget || target == focusedTarget
+        }
         if hasFocus { return true }
         return target == .destination(selection)
     }
@@ -270,10 +273,6 @@ struct NavigationRailView: View {
         // through every remaining rail row.
         .focusSection()
         .focusScope(railFocusScope)
-        .tvNavigationExitProtection(
-            isEnabled: preventsAccidentalExit,
-            navigationHasFocus: hasFocus
-        )
         .accessibilityLabel(Text(Self.accessibilityTitle))
         .onChange(of: isExpanded, initial: true) { _, expanded in
             withAnimation(isFocusEnabled ? NavigationRailMetrics.expandAnimation : nil) {
@@ -733,15 +732,6 @@ private struct NavigationRailItemStyle: ButtonStyle {
             .padding(.trailing, NavigationRailMetrics.rowHorizontalPadding)
             .padding(.vertical, NavigationRailMetrics.rowInnerPadding)
             .foregroundStyle(foreground)
-            // The rail sits over artwork, so an unfocused glyph carries its own
-            // contrast while collapsed. The open menu panel supplies that contrast.
-            .shadow(
-                color: .black.opacity(
-                    isFocused ? 0 : 0.85 * Double(1 - expansionProgress)
-                ),
-                radius: 5,
-                y: 1
-            )
             .background(
                 Capsule(style: .continuous)
                     .fill(fill)

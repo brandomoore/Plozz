@@ -296,10 +296,6 @@ extension HomeHeroView {
         HomeHeroArtwork.logoFallback(for: item)
     }
 
-    func backgroundSample(for item: MediaItem) -> (@Sendable () async -> HeroBackgroundSample?)? {
-        HomeHeroArtwork.backgroundSample(for: item, references: primaryBackdropReferences(for: item))
-    }
-
     struct HeroPreviewWarmTarget: Sendable {
         let itemID: String
         let candidates: [ArtworkReference]

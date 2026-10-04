@@ -63,18 +63,5 @@ enum HomeHeroArtwork {
         return HeroLogoFallback(for: item) { await ArtworkRouter.shared.artworkURL(.logo, for: item) }
     }
 
-    static func backgroundSample(
-        for item: MediaItem,
-        references: [ArtworkReference]
-    ) -> (@Sendable () async -> HeroBackgroundSample?)? {
-        return {
-            if let sample = await HeroBackgroundSampler.sample(references: references) { return sample }
-            if let tmdb = await ArtworkRouter.shared.artworkURL(.hero, for: item),
-               let sample = await HeroBackgroundSampler.sample(urls: [tmdb]) { return sample }
-            if let poster = item.posterURL,
-               let sample = await HeroBackgroundSampler.sample(urls: [poster]) { return sample }
-            return nil
-        }
-    }
 }
 #endif

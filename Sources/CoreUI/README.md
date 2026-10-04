@@ -47,7 +47,9 @@ cache that every feature module reuses. tvOS-only — guarded behind
   the player (`FeaturePlayback`'s in-player Style screen), not via a shared
   Settings card.
 - **Cast & metadata cards** — `CastRowView` and friends, used by Home /
-  detail.
+  detail. Common Sense marks keep a transparent background in every theme;
+  the palette selects dark checkmark ink in Light and white ink in dark themes,
+  preserving the green ring and the existing optical size.
 - **Detail information focus** — the tvOS About/Ratings/Information band uses
   native focus with at most 2% growth and 6pt of expansion per edge, leaving
   clearance in its 18pt gutters. Focused read-only cards and card buttons draw

@@ -297,6 +297,15 @@ is ignored when reading older settings without resetting the remaining choices.
 Showcase's optional titles under cards remain in Customize Home > Home Layout;
 they do not control title visibility elsewhere in the app.
 
+With pinned navigation, the carousel extends its leading fade to the top edge,
+blending into the unchanged bottom shading through a variant of the existing
+cached scrim, not an extra compositing pass. Detail pages have no pinned rail:
+all navigation styles keep the softer top-left corner there. Detail shading
+fades in as the artwork cover hands off, just before the logo and metadata,
+without adding a mask or changing the artwork's position. Native Home navigation
+retains the original shading; Showcase already fades its artwork into the
+background along the full leading edge.
+
 Native poster layout slots use artwork size on both axes, rounding fractional
 heights up so SwiftUI cannot round artwork down into its caption. TVUIKit's focus
 margins settle after realization and draw outside that slot; feeding their
@@ -309,8 +318,13 @@ effects remain live, and changes to overlay content invalidate the cached image.
 
 Libraries uses the same unclipped horizontal viewport as media rows. Native
 navigation lets focused artwork and scrolling cards draw through the page gutter
-to the screen edge; pinned navigation keeps its shared sidebar feather as the
-clipping boundary, never a second hard clip at the row's content inset.
+to the screen edge. Pinned navigation's shared feather retains 10% artwork
+opacity beneath the icons through the physical leading edge, rising smoothly to
+full opacity near the first card across a 48pt feather. The faint floor explicitly
+overhangs the row because Showcase's nested native hosts suppress safe-area
+propagation; relying on `ignoresSafeArea` alone clips it before the icons.
+Extending that floor does not move or widen the feather, add a second mask, or
+change scrolling, parking, or focus identity.
 
 Discover hydrates and displays its saved candidates with the same featured-only
 configuration used by Showcase's live curation. Without eligible cached content,

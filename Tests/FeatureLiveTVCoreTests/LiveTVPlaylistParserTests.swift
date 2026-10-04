@@ -3,6 +3,20 @@ import XCTest
 @testable import FeatureLiveTVCore
 
 final class LiveTVPlaylistParserTests: XCTestCase {
+    func testManyOptionalGuideDeclarationsDoNotRejectValidChannels() throws {
+        let guides = (0..<101).map { "https://example.test/guide/\($0).xml" }
+        let input = """
+        #EXTM3U x-tvg-url="\(guides.joined(separator: ","))" url-tvg="\(guides[0])"
+        #EXTINF:-1,Station
+        https://example.test/live.m3u8
+        """
+        let parsed = try LiveTVPlaylistParser().parse(input)
+        XCTAssertEqual(parsed.channels.map(\.name), ["Station"])
+        XCTAssertEqual(parsed.entryCount, 1)
+        XCTAssertEqual(parsed.skippedEntryCount, 0)
+        XCTAssertEqual(parsed.declaredGuideURLs.map(\.absoluteString), guides)
+    }
+
     func testDiscoversBothHeaderConventionsAndPreservesCountryAndLanguages() throws {
         let input = """
         #EXTM3U url-tvg="../guide.xml.gz, https://other.test/extra.xml" x-tvg-url="../guide.xml.gz"

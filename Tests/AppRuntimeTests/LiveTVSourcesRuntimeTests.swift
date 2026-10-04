@@ -7,6 +7,25 @@ import XCTest
 
 @MainActor
 final class LiveTVSourcesRuntimeTests: XCTestCase {
+    func testPresentationStateDoesNotReadSourcesButOperationsStillRevalidateThem() async throws {
+        let fixture = try SourcesRuntimeFixture()
+        defer { fixture.removeOwnedFiles() }
+        let runtime = fixture.runtime()
+        await runtime.restore()
+        let reads = fixture.secure.reads
+        for _ in 0..<20 { XCTAssertTrue(runtime.isPresentationCurrent) }
+        XCTAssertEqual(fixture.secure.reads, reads)
+
+        fixture.accountIdentity = "new-account-generation"
+        XCTAssertFalse(runtime.isPresentationCurrent)
+        XCTAssertEqual(fixture.secure.reads, reads)
+        fixture.accountIdentity = "account-generation"
+        try fixture.store.save(.empty)
+        XCTAssertFalse(runtime.isCurrent, "Operations must reject the obsolete durable configuration")
+        runtime.invalidate()
+        XCTAssertFalse(runtime.isPresentationCurrent)
+    }
+
     func testLoaderIsSharedOnlyForTheExactProfileAndNamespace() {
         let profileID = UUID().uuidString
         let root = LiveTVCatalogStorage.loader(profileID: profileID, namespace: nil)
@@ -338,6 +357,8 @@ private final class SourcesRuntimeSecureStore: SecureStoring, @unchecked Sendabl
     private let lock = NSLock()
     private var values: [String: String] = [:]
     private var readFailure = false
+    private var readCount = 0
+    var reads: Int { lock.withLock { readCount } }
     var failReads: Bool {
         get { lock.withLock { readFailure } }
         set { lock.withLock { readFailure = newValue } }
@@ -345,6 +366,7 @@ private final class SourcesRuntimeSecureStore: SecureStoring, @unchecked Sendabl
 
     func readString(for key: String) throws -> String? {
         try lock.withLock {
+            readCount += 1
             if readFailure { throw LiveTVSourcesStoreError.loadFailed }
             return values[key]
         }

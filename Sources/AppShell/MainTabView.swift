@@ -517,7 +517,7 @@ struct MainTabView: View {
     /// A title the in-player Cast card asked for, waiting to be pushed once the
     /// player has closed. Same hand-off as `pendingPersonRoute`.
     @State private var pendingTitleRoute: MediaItem?
-    @State private var retainsTitleHomeEntry = false
+    @State private var retainsExplicitHomeEntry = false
     /// Settings navigation identity owned above all three navigation shells.
     /// MainTabView passes the reference but never reads its path, so Settings
     /// pushes do not invalidate this large shell body.
@@ -638,15 +638,15 @@ struct MainTabView: View {
     }
 
     private func releaseExplicitLiveTVEntry(ifLeavingFor destination: NavigationRailDestination) {
-        if destination != .home { retainsTitleHomeEntry = false }
+        if destination != .home { retainsExplicitHomeEntry = false }
         if destination != .liveTV { retainsExplicitLiveTVEntry = false }
     }
 
     private func includingExplicitLiveTVEntry(
         _ destinations: [NavigationRailDestination]
     ) -> [NavigationRailDestination] {
-        let destinations = Self.includingTitleHome(
-            destinations, isRequested: retainsTitleHomeEntry
+        let destinations = Self.includingExplicitHome(
+            destinations, isRequested: retainsExplicitHomeEntry
         )
         return AppAdmissionNavigation.destinations(
             destinations,
@@ -774,12 +774,12 @@ struct MainTabView: View {
     }
 
     private func openTitleFromLiveTV(_ item: MediaItem) {
-        retainsTitleHomeEntry = true
+        retainsExplicitHomeEntry = true
         pendingTitleRoute = item
         requireHomeDestination()
     }
 
-    static func includingTitleHome(
+    static func includingExplicitHome(
         _ destinations: [NavigationRailDestination], isRequested: Bool
     ) -> [NavigationRailDestination] {
         guard isRequested, !destinations.contains(.home) else { return destinations }
@@ -1403,7 +1403,7 @@ struct MainTabView: View {
             chrome: navigationChrome,
             content: railContent,
             contentDestination: activeLibraryNavigationDestination,
-            preventsAccidentalExit: navigationStyleModel.preventsAccidentalExit
+            onRequireHome: { retainsExplicitHomeEntry = true }
         )
         .environment(navigationChrome)
     }

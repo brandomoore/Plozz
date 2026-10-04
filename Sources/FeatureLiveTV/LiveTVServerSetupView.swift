@@ -33,7 +33,9 @@ struct LiveTVServerSetupView: View {
                         description: Text("Connect a server and enable it for this profile.")
                     )
                     if let connectServer {
-                        Button("Connect a server", systemImage: "plus", action: connectServer)
+                        Button(action: connectServer) {
+                            LiveTVSetupActionLabel(title: "Connect a server", symbol: "plus")
+                        }
                             .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                     } else {
                         Text("Connect a server in Settings.")
@@ -97,21 +99,27 @@ struct LiveTVServerSetupView: View {
                             probe.beginCheck(choice)
                         }
                     }) {
-                        if probe.isChecking {
-                            Text("Cancel check")
-                        } else if probe.canAdd {
-                            Text(probe.availability?.status == .unsupportedPlaybackMode ? "Add guide only" : "Add channels")
-                        } else {
-                            Text("Check again")
+                        Group {
+                            if probe.isChecking {
+                                Text("Cancel check")
+                            } else if probe.canAdd {
+                                Text(probe.availability?.status == .unsupportedPlaybackMode
+                                     ? LocalizedStringResource("Add guide only") : LocalizedStringResource("Add channels"))
+                            } else {
+                                Text("Check again")
+                            }
                         }
+                        .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                    .plozzActionButton(role: probe.isChecking ? .secondary : .primary)
                 }
             }
 
             if !choices.isEmpty, let connectServer {
                 SettingsSectionGroup {
-                    Button("Connect another server", systemImage: "plus", action: connectServer)
+                    Button(action: connectServer) {
+                        LiveTVSetupActionLabel(title: "Connect another server", symbol: "plus")
+                    }
                         .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                 }
             }

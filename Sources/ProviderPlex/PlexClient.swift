@@ -1875,8 +1875,8 @@ public struct PlexClient: Sendable {
         components.percentEncodedQueryItems = [
             URLQueryItem(name: "width", value: String(width)),
             URLQueryItem(name: "height", value: String(height)),
-            URLQueryItem(name: "minSize", value: "1"),
-            URLQueryItem(name: "upscale", value: "1"),
+            URLQueryItem(name: "minSize", value: "0"),
+            URLQueryItem(name: "upscale", value: "0"),
             URLQueryItem(name: "url", value: encodedInner),
             URLQueryItem(name: "X-Plex-Token", value: token)
         ]

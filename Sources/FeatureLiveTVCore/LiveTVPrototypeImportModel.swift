@@ -1229,7 +1229,7 @@ public final class LiveTVPrototypeImportModel {
             guard !source.guideURLs.contains(where: { LiveTVPlaylistSource.guideURLsShareIdentity($0, url) }) else { continue }
             guard !guideSources.contains(where: { $0.playlistSourceID == source.id && $0.source.url == url }) else { continue }
             guard guideSources.filter({ $0.playlistSourceID == source.id }).count < 32 else {
-                guideDiscoveryFailures[source.id] = .guideTooLarge
+                guideDiscoveryFailures[source.id] = .guideSourceLimitReached
                 continue
             }
             guard LiveTVSourceOriginPolicy.permits(url, from: playlist.originURL ?? source.playlistURL) else {

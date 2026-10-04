@@ -108,6 +108,34 @@ are available there; playlist/guide editing and server renaming open their
 specific editors directly. Hidden-channel restoration also lives in its detail
 pane. Setup and source pages reuse Plozz's shared settings groups, row labels,
 switches, focus/card styles and page heading.
+Source choices appear before saved sources, with descriptions of playlist URLs,
+local files (iPhone/iPad), and connected media servers. Playlist fields keep their
+labels visible while editing and show example URLs instead of repeating labels
+as URL placeholders. Primary setup actions use full-width Settings rows with
+at least 64-point height on Apple TV and 44-point height on iPhone/iPad; removing
+a guide is a labeled action beside its URL on Apple TV and a full-width action
+below it on iPhone/iPad, rather than a small icon. Both playlist editors
+limit guide fields to 32 and retain explicit guide priority. Adding a URL still
+checks and saves in one action; canceling or failing validation writes nothing.
+Add/save/import and server-check actions use the app's filled primary pill,
+with the palette's inverse text color, so the next step stays visible even
+without focus. Canceling a check uses the secondary treatment.
+The Add a source section uses concise playlist-URL, local-file and supported-server
+labels rather than repeating the section's action in a subtitle.
+
+Rendering source choices does not resolve server credentials. Profile account
+selections are observable model snapshots, read back from durable storage after
+membership writes and refreshed when profiles are imported or reset. An unset
+selection remains distinct from an explicitly empty selection.
+An unreadable membership suspends account access rather than inheriting the
+household account set. Account reload and foreground recovery retry only
+unconfirmed selections; rendering never retries Keychain. Cloud capture retains
+the previous membership record during that failure, and setup transfer waits
+for confirmed selections instead of exporting a temporary access denial.
+Catalog display state checks the current in-memory profile/account admission without reopening
+the secure source store. This display state is not an operation permit: catalog
+publication, scans, imports and mutations retain their fresh durable-source and
+parental-authorization checks.
 Earlier prototype builds did not store Favorites or Recents on disk, so there
 is no prior in-memory history to migrate on the first updated launch.
 
@@ -676,6 +704,13 @@ with imported channel identities, not synthetic layout scenarios. Unknown or
 ambiguous matches receive no schedule. Guide failure does not remove a working
 playlist; failed refreshes preserve the last successfully imported data that
 still belongs to current channels.
+Playlist-declared guide URLs are optional metadata: exceeding the automatic
+guide-source budget does not reject playable channels. Header/attribute size
+guards still bound parsing. Each playlist retains at most 32 configured and
+discovered guide sources, with explicit guide URLs taking priority and an
+informational notice when additional declarations cannot be added. Discovered
+guides still require the allowed origin; excess declarations do not authorize
+extra requests.
 
 Matching first uses exact native Pluto IDs from recognized stream URLs, then
 explicit guide IDs, verified aliases and unique display names. Provider guides

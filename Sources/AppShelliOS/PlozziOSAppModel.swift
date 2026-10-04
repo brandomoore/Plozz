@@ -702,7 +702,8 @@ final class PlozziOSAppModel {
             },
             isConfigured: { !accountsProviders.accounts.isEmpty },
             configProvider: {
-                .init(
+                let memberships = try profiles.confirmedAccountMemberships()
+                return .init(
                     accounts: accountsProviders.accounts,
                     profiles: profiles.profiles,
                     profileSettings: profiles.profiles.map { p in
@@ -716,11 +717,7 @@ final class PlozziOSAppModel {
                     // Carry each profile's EXPLICIT server-membership choice (only
                     // profiles that chose one; a profile that never chose is absent,
                     // preserving the unset/empty/subset tri-state on the receiver).
-                    profileMemberships: Dictionary(
-                        uniqueKeysWithValues: profiles.profiles.compactMap { p in
-                            profiles.storedActiveAccountIDs(for: p.id).map { (p.id, $0) }
-                        }
-                    )
+                    profileMemberships: memberships
                 )
             },
             secretsProvider: { [accountsProviders, accountStore] in

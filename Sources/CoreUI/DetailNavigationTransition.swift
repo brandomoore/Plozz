@@ -637,6 +637,9 @@ public final class TVDetailEntranceSession {
     public private(set) var stage = DetailEntranceStage.artwork
     public private(set) var isClosing = false
     public private(set) var blocksNavigation = true
+    public var isBackdropShadingVisible: Bool {
+        foregroundSequenceStarted || stage == .complete
+    }
     /// Retained only for the return transition, never as the detail backdrop.
     private(set) var returnArtwork: DetailTransitionSurface?
     @ObservationIgnored private var returnBackground: DetailTransitionSurface?
@@ -673,7 +676,7 @@ public final class TVDetailEntranceSession {
     @ObservationIgnored private var backdropResolvedAt: CFTimeInterval?
     @ObservationIgnored private var artworkLandedAt: CFTimeInterval?
     @ObservationIgnored private var pageAppearedAt: CFTimeInterval?
-    @ObservationIgnored private var foregroundSequenceStarted = false
+    private var foregroundSequenceStarted = false
     @ObservationIgnored private var revealsEpisodesLast = false
     @ObservationIgnored private weak var navigationChrome: NavigationChromeModel?
     @ObservationIgnored private let chromeToken = UUID()

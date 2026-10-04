@@ -94,11 +94,17 @@ public final class AccountsProvidersModel {
     /// This device's stable client identifier.
     public var deviceID: String { accountStore.deviceID() }
 
+    private var accountSelectionIsUnavailable: Bool {
+        profilesModel.unconfirmedAccountSelectionProfileIDs.contains(profilesModel.activeProfileID)
+    }
+
     public var liveTVServerChoices: [LiveTVServerChoice] {
-        resolvedActiveAccounts.compactMap { resolved in
-            guard resolved.provider is any ServerLiveTVProviding,
-                  let kind = Self.liveTVKind(resolved.account.server.provider) else { return nil }
-            let account = resolved.account
+        // Listing connected servers must not resolve credentials during a render.
+        // The resolver verifies access when the user checks or imports a server.
+        guard !accountSelectionIsUnavailable else { return [] }
+        return accounts.compactMap { account in
+            guard activeAccountIDs.contains(account.id),
+                  let kind = Self.liveTVKind(account.server.provider) else { return nil }
             let name = account.server.name.isEmpty
                 ? (account.server.baseURL.host ?? kind.rawValue)
                 : account.server.name
@@ -118,6 +124,7 @@ public final class AccountsProvidersModel {
         let expectedProfile = profilesModel.activeProfileID
         return { [weak self] accountID in
             guard let self, self.profilesModel.activeProfileID == expectedProfile,
+                  !self.accountSelectionIsUnavailable,
                   self.activeAccountIDs.contains(accountID),
                   let account = self.accounts.first(where: { $0.id == accountID }),
                   let kind = Self.liveTVKind(account.server.provider),
@@ -168,7 +175,7 @@ public final class AccountsProvidersModel {
         // A profile that chose to watch nothing has no primary account. Without
         // this the `?? accounts.first` below answered with the household's first
         // server, so Settings showed every server off while Home played from one.
-        if watchesNothingByChoice { return nil }
+        if watchesNothingByChoice || accountSelectionIsUnavailable { return nil }
         return accounts.first { activeAccountIDs.contains($0.id) } ?? accounts.first
     }
 
@@ -177,7 +184,8 @@ public final class AccountsProvidersModel {
     /// merged by the view model). Tokens are resolved on demand and never
     /// stored on the value.
     public var resolvedActiveAccounts: [ResolvedAccount] {
-        accounts.compactMap { account in
+        guard !accountSelectionIsUnavailable else { return [] }
+        return accounts.compactMap { account in
             guard activeAccountIDs.contains(account.id),
                   let token = tokenResolver(account.id),
                   let provider = resolveProvider(
@@ -283,6 +291,7 @@ public final class AccountsProvidersModel {
     /// `onActiveAccountsChanged` so the media-share runtime can update its
     /// preferred-account keys.
     public func reloadAccounts() {
+        profilesModel.retryUnconfirmedAccountSelections()
         liveTVAuthorizationCache = [:]
         registry.invalidateCache()
         onAccountsInvalidated()
@@ -314,6 +323,7 @@ public final class AccountsProvidersModel {
         // Only an explicit, still-honoured empty selection counts as a choice:
         // the stale-fallback branch above has already re-expanded the other case.
         watchesNothingByChoice = resolved.isEmpty
+            && !accountSelectionIsUnavailable
             && (profilesModel.storedActiveAccountIDs(for: profilesModel.activeProfileID)?.isEmpty ?? false)
         onActiveAccountsChanged(resolved, accounts)
     }
@@ -338,7 +348,9 @@ public final class AccountsProvidersModel {
     /// rebuilding accounts or providers during an interactive navigation path.
     @discardableResult
     public func retryUnconfirmedCredentials() -> Bool {
-        guard accountStore.retryUnconfirmedCredentials() else { return false }
+        let membershipsRecovered = profilesModel.retryUnconfirmedAccountSelections()
+        let credentialsRecovered = accountStore.retryUnconfirmedCredentials()
+        guard membershipsRecovered || credentialsRecovered else { return false }
         reloadAccounts()
         return true
     }

@@ -1088,6 +1088,36 @@ next agent doesn't re-chase a ghost.
 
 ### Home backdrop composition and comparison controls
 
+Home's ambient tint and hero-logo contrast consume the bitmap adopted by the
+visible renderer, not another pass through the candidate artwork URLs. This
+includes first-paint online choices, library fallbacks, preview/full upgrades,
+and cached returns. Detail pages own separate display state; incoming carousel
+slides, reflections, and inactive/outgoing owners cannot replace the current
+sample. Deferred reports coalesce per owner and item, so a late report from the
+previous item cannot discard the current item's pending image. Reports may
+precede source activation; releasing an owner cancels all of its pending items.
+Derived colors remain bounded/cached, and palette extraction stays
+off-main with the existing navigation coalescing. Disabling gradients does not
+disable the shared logo-contrast sample.
+
+Plex photo requests fit inside both variant dimensions (`minSize=0`,
+`upscale=0`). Clamping width alone with a portrait-shaped minimum-size request
+can otherwise transfer a 5333x3000 landscape response for a 2000px hero.
+
+For a Home/Showcase background-color mismatch, enable the existing
+`PLZHEROART=1` trace for a bounded reproduction and filter `plzheroart.log` for
+`palette`. `hero` events identify the image actually fronted (including preview
+upgrades), `sample` events identify the image used for color extraction, `ambient`
+events distinguish cached/applied palettes from stock fallback, and `mesh`
+events record the actual input and theme-adjusted output RGB components.
+Correlate item/reference fingerprints, the ambient cache key, and timestamps;
+compare full-resolution pixel fingerprints rather than preview/full pairs.
+Image fingerprints use a tiny off-main sample, and references are hashed without
+exposing authenticated URLs. No diagnostic changes the artwork or colors.
+Record the settled screen and input sequence before copying
+`Library/Caches/plzheroart.log` from the app container. End the reproduction with
+`PLZHEROART=0` on the next launch to clear its persistent tracing latch.
+
 tvOS uses cached shading by default where it preserves the original treatment.
 iOS retains analytic shading by default. These launch overrides do not change saved settings:
 
@@ -1111,6 +1141,24 @@ match Home's current leading/bottom treatment. Regenerate with
 `python3 tools/generate_home_scrim.py` whenever those parameters change, and
 verify with `python3 tools/generate_home_scrim.py --check` plus
 `python3 tools/test_generate_home_scrim.py`.
+
+Pinned Home navigation selects a second baked texture with the same wash, leading
+strength/width, and bottom curve, extending the leading fade to the full height.
+It replaces the standard texture rather than adding an overlay, blur, shadow,
+or runtime rasterization. Home reads `plozzPinnedSidebarActive`, not the changing
+content inset. Detail pages have no sidebar and use the original softer upper-left
+corner for every navigation style. The analytic comparison and RTL/custom-tone
+fallback use the same respective treatment. Native Home navigation and mobile keep the
+original texture/parameters. The lower field (from 62% height) and the artwork
+beyond the leading fade (42% width) are unchanged. Compact rail glyphs no longer
+carry individual shadows; the expanded menu keeps its existing glass backing.
+
+During a cinematic detail entrance, scrim opacity begins its existing 0.45-second
+reveal when the artwork cover hands off, before the logo's 0.10-second pause ends.
+It stays anchored inside the existing bottom dissolve; it does not use the
+foreground's translation or add another mask. Late artwork/video readiness still
+gates the sequence. Disabled transitions, Reduce Motion, and missing artwork
+show the completed shading without a separate entrance delay.
 
 An opaque color-fade experiment did not replace the original alpha mask: it
 introduced a visible seam and differed during intermediate animation frames.

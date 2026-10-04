@@ -680,6 +680,8 @@ private struct PlozziOSHeroStage<Foreground: View>: View {
             await updateTrailerPlayback()
         }
         .onDisappear(perform: releaseTrailerSurface)
+        .heroArtworkSource(id: presentation.itemID, isActive: isActive)
+        .heroArtworkScope()
     }
 
     private func updateTrailerPlayback() async {
@@ -815,6 +817,7 @@ private struct PlozziOSExtendedHeroArtwork<Picture: View>: View {
                 sizedPicture(geometry)
                 if geometry.reflectionHeight > 0 {
                     mirror(geometry, width: width)
+                        .environment(\.heroArtworkDisplayReporter, nil)
                         .offset(y: geometry.pictureHeight - Self.seamOverlap)
                 }
             }
@@ -1007,6 +1010,7 @@ private struct PlozziOSHeroBackdrop: View {
         ) {
             palette.backgroundBase
         }
+        .reportingHeroArtwork(id: presentation.itemID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
     }
@@ -1475,6 +1479,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
         ) {
             palette.backgroundBase
         }
+        .reportingHeroArtwork(id: presentation.itemID)
         .frame(width: width, height: height)
         .clipped()
     }
@@ -1578,6 +1583,7 @@ private struct PlozziOSMirrorVideoLayer: UIViewRepresentable {
 
 private struct PlozziOSStableHomeHeroMetadata: View {
     let presentation: HeroPresentation
+    let displayedArtworkID: String
     let style: HeroArtworkStyle
     let hidesRatings: Bool
     let ratingPreferences: DetailPageSettings
@@ -1587,6 +1593,7 @@ private struct PlozziOSStableHomeHeroMetadata: View {
 
     init(
         presentation: HeroPresentation,
+        displayedArtworkID: String,
         style: HeroArtworkStyle,
         hidesRatings: Bool,
         ratingPreferences: DetailPageSettings,
@@ -1594,6 +1601,7 @@ private struct PlozziOSStableHomeHeroMetadata: View {
         logoFallback: HeroLogoFallback?
     ) {
         self.presentation = presentation
+        self.displayedArtworkID = displayedArtworkID
         self.style = style
         self.hidesRatings = hidesRatings
         self.ratingPreferences = ratingPreferences
@@ -1609,6 +1617,7 @@ private struct PlozziOSStableHomeHeroMetadata: View {
             presentation: presentation,
             style: style,
             mode: .home,
+            displayedArtworkID: displayedArtworkID,
             hidesRatings: hidesRatings,
             scheduleLine: scheduleLine,
             logoFallback: logoFallback,
@@ -1642,6 +1651,7 @@ struct PlozziOSHomeHeroForeground: View {
         ) {
             PlozziOSStableHomeHeroMetadata(
                 presentation: presentation,
+                displayedArtworkID: detailItem.id,
                 style: style,
                 hidesRatings: !appModel.settings.hero.settings.shouldShowRatings(
                     for: item,
@@ -1951,6 +1961,7 @@ private struct PlozziOSDetailHeroForeground: View {
                 presentation: presentation,
                 style: style,
                 mode: .detail,
+                displayedArtworkID: fallbackPresentation.itemID,
                 fallbackPresentation: fallbackPresentation,
                 technicalBadgesOverride: playableItem?.technicalBadges,
                 hidesRatings: appModel.settings.spoilers.settings
@@ -2432,6 +2443,7 @@ private struct PlozziOSHeroMetadata: View {
     let presentation: HeroPresentation
     let style: HeroArtworkStyle
     let mode: Mode
+    var displayedArtworkID: String? = nil
     var fallbackPresentation: HeroPresentation? = nil
     var technicalBadgesOverride: [MediaBadge]? = nil
     var hidesRatings = false
@@ -2473,16 +2485,6 @@ private struct PlozziOSHeroMetadata: View {
         default:
             return HeroLogoFallback(for: item) { await ArtworkRouter.shared.artworkURL(.logo, for: item) }
         }
-    }
-
-    /// The artwork this hero is drawing, sampled so the logo's halo is decided by
-    /// measured contrast rather than assumed. `nil` when there is no backdrop to
-    /// read, which correctly leaves the halo on — an unmeasured logo cannot be
-    /// proven safe.
-    private var heroBackgroundSample: (@Sendable () async -> HeroBackgroundSample?)? {
-        let references = presentation.artworkReferences
-        guard !references.isEmpty else { return nil }
-        return { await HeroBackgroundSampler.sample(references: references) }
     }
 
     var body: some View {
@@ -2535,13 +2537,7 @@ private struct PlozziOSHeroMetadata: View {
                     HeroLogoArtwork(
                         references: presentation.logoReferences,
                         asyncFallbackURL: logoFallback,
-                        // Without this the analysis cannot prove a logo is safe and so
-                        // keeps its halo on for EVERY title — which is why iOS drew a
-                        // shadow behind logos that plainly did not need one while tvOS,
-                        // which has always sampled, did not. Memoised per reference by
-                        // `HeroBackgroundSampler`, so a carousel pays for each slide
-                        // once.
-                        backgroundSample: heroBackgroundSample,
+                        displayedArtworkID: displayedArtworkID ?? presentation.itemID,
                         maxWidth: logoBox.width,
                         maxHeight: logoBox.height,
                         alignment: style == .compactPortrait ? .center : .leading

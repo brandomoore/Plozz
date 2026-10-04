@@ -195,6 +195,7 @@ public struct HomeHeroBackdrop: View {
     }
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     private var isLight: Bool { colorScheme == .light }
 
     /// Height fraction at which the bottom melt BEGINS. Theme-aware: light mode
@@ -283,13 +284,8 @@ public struct HomeHeroBackdrop: View {
         #endif
     }
 
-    /// Legibility scrim: a seamless edge vignette (same darkening on every side)
-    /// plus a faint all-over wash, replacing the old left-only horizontal wash so
-    /// the darkening blends evenly across the whole hero instead of pooling on the
-    /// left — especially over bright art. `edgePeak` matches the old left strength
-    /// (0.55) so the content side is never lightened. Lives under the dissolve
-    /// mask so it fades away with the image at the bottom and never tints the
-    /// revealed background. Static across slides, so it never animates.
+    /// Static across slides and under the dissolve, so shading never tints the
+    /// revealed background or moves with individual artwork wipes.
     @ViewBuilder
     private var scrim: some View {
         switch scrimStyle {
@@ -313,20 +309,14 @@ public struct HomeHeroBackdrop: View {
 
     @ViewBuilder
     private var carouselScrim: some View {
-        // TEST: top and trailing dropped, matching the detail page. The hero's
-        // logo, metadata and buttons all sit along the LEFT and the image melts
-        // into the rows at the BOTTOM, so those are the only edges doing
-        // legibility work — the other two just cost contrast on the artwork.
         let shading = HeroLegibilityScrim(
             tone: scrimTone,
             edgePeak: 0.55,
             edges: [.leading, .bottom],
-            // Keep the top-left clean: nothing is drawn over it, so darkening it
-            // only flattens the artwork. The wash arrives where the content is.
-            sideDarkeningStart: 0.34
+            sideDarkeningStart: pinnedSidebarActive ? 0 : 0.34
         )
         if HomeBackdropCompositing.usesCachedScrim {
-            HeroLegibilityTexture(tone: scrimTone)
+            HeroLegibilityTexture(tone: scrimTone, extendsLeadingFade: pinnedSidebarActive)
         } else {
             shading
         }
@@ -474,6 +464,7 @@ public enum HeroBackdropArtworkPolicy {
 /// which owns the entire Core Animation transition. Because SwiftUI never animates
 /// the image layers, it can never decompose the wipe into wrong-order pieces.
 private struct WipeImageView: UIViewRepresentable {
+    @Environment(\.heroArtworkDisplayReporter) private var artworkReporter
     let references: [ArtworkReference]
     let asyncFallbackURL: (@Sendable () async -> URL?)?
     let prefersOnlineArtwork: Bool
@@ -520,6 +511,7 @@ private struct WipeImageView: UIViewRepresentable {
         )
         context.coordinator.container = view
         context.coordinator.configure(width: width, height: height)
+        context.coordinator.setArtworkReporter(artworkReporter)
         context.coordinator.update(
             references: references,
             slideID: slideID,
@@ -535,6 +527,7 @@ private struct WipeImageView: UIViewRepresentable {
     func updateUIView(_ uiView: HeroWipeContainerView, context: Context) {
         context.coordinator.container = uiView
         context.coordinator.configure(width: width, height: height)
+        context.coordinator.setArtworkReporter(artworkReporter)
         context.coordinator.update(
             references: references,
             slideID: slideID,
@@ -580,6 +573,8 @@ private struct WipeImageView: UIViewRepresentable {
         /// cancels the previous task so skipped cold slides release their cache
         /// waiter, download, and decode instead of competing with the latest press.
         private var loadTask: Task<Void, Never>?
+        private var artworkReporter: HeroArtworkDisplayReporter?
+        private var reportTask: Task<Void, Never>?
         private enum ArtworkQuality: Int {
             case preview
             case full
@@ -604,6 +599,30 @@ private struct WipeImageView: UIViewRepresentable {
             loadToken += 1
             loadTask?.cancel()
             loadTask = nil
+            reportTask?.cancel()
+            reportTask = nil
+            artworkReporter = nil
+        }
+
+        func setArtworkReporter(_ reporter: HeroArtworkDisplayReporter?) {
+            guard artworkReporter?.identity != reporter?.identity else { return }
+            artworkReporter = reporter
+            reportDisplayedArtwork()
+        }
+
+        private func reportDisplayedArtwork() {
+            reportTask?.cancel()
+            reportTask = Task { @MainActor [weak self] in
+                guard !Task.isCancelled, let self, let id = self.displayedID else { return }
+                let artwork = self.container?.frontImage.flatMap { image in
+                    self.displayedReference.map {
+                        FirstPaintArtwork(image: image, reference: $0,
+                                          variant: self.displayedQuality == .full ? .heroBackdrop : .heroPreview)
+                    }
+                }
+                self.artworkReporter?.publish(artwork, itemID: id)
+                self.reportTask = nil
+            }
         }
 
         func update(
@@ -736,6 +755,8 @@ private struct WipeImageView: UIViewRepresentable {
                 displayedID = id
                 displayedReference = reference
                 displayedQuality = quality
+                reportDisplayedArtwork()
+                ArtworkPaletteDiagnostics.displayed(image, reference: reference, id: id, event: "initial-\(quality)")
                 return
             }
             // Same target: replace only when the URL changes at an equal tier, or
@@ -749,12 +770,16 @@ private struct WipeImageView: UIViewRepresentable {
                 guard quality != displayedQuality else { return }
                 container.frontImage = image
                 displayedQuality = quality
+                reportDisplayedArtwork()
+                ArtworkPaletteDiagnostics.displayed(image, reference: reference, id: id, event: "upgrade-\(quality)")
                 return
             }
             startWipe(to: image, reference: reference, id: id, forward: forward)
             displayedID = id
             displayedReference = reference
             displayedQuality = quality
+            reportDisplayedArtwork()
+            ArtworkPaletteDiagnostics.displayed(image, reference: reference, id: id, event: "transition-\(quality)")
         }
 
         /// Couldn't resolve any art for the slide. Clear stale art rather than
@@ -765,6 +790,8 @@ private struct WipeImageView: UIViewRepresentable {
             displayedID = id
             displayedReference = nil
             displayedQuality = nil
+            reportDisplayedArtwork()
+            HeroArtDiagnostics.emit("palette hero event=no-art item=\(HandoffDiagnostics.correlationID(id))")
         }
 
         /// Upgrade the *currently displayed* slide's art in place (no wipe) if a
@@ -785,6 +812,10 @@ private struct WipeImageView: UIViewRepresentable {
                 container.setInitialImage(image)
             }
             displayedQuality = .full
+            reportDisplayedArtwork()
+            if let displayedID {
+                ArtworkPaletteDiagnostics.displayed(image, reference: displayedReference, id: displayedID, event: "cached-upgrade-full")
+            }
         }
 
         private func startWipe(to image: UIImage, reference: ArtworkReference, id: String, forward: Bool) {

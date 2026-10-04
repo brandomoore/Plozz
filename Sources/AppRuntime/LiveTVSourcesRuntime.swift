@@ -15,6 +15,7 @@ public final class LiveTVSourcesRuntime {
     @ObservationIgnored private let admission: LiveTVSourcesRuntimeAdmission
 
     public var authorityID: String? { admission.currentIdentity }
+    public var isPresentationCurrent: Bool { catalog.isPresentationCurrent }
     public var isCurrent: Bool {
         _ = admissionRevision
         return catalog.isCurrent
@@ -41,6 +42,7 @@ public final class LiveTVSourcesRuntime {
         let catalog = LiveTVSourcesCatalog(
             profileID: profileID, cache: cache, loader: loader,
             preferencesStore: preferencesStore, authority: admission.authority,
+            presentationIsAuthorized: { admission.isCurrent },
             serverProviderResolver: { accountID in
                 guard admission.isCurrent else { return nil }
                 return serverProviderResolver(accountID)

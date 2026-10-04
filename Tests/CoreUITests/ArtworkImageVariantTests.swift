@@ -87,9 +87,49 @@ final class ArtworkImageVariantTests: XCTestCase {
         )
 
         XCTAssertEqual(query["width"]!, "768")
-        XCTAssertEqual(query["height"]!, "1152")
+        XCTAssertEqual(query["height"]!, "768")
+        XCTAssertEqual(query["minSize"]!, "0")
+        XCTAssertEqual(query["upscale"]!, "0")
         XCTAssertEqual(query["url"]!, "/library/metadata/1/art/2?X-Plex-Token=SECRET")
         XCTAssertEqual(query["X-Plex-Token"]!, "SECRET")
+        XCTAssertEqual(
+            components?.percentEncodedQueryItems?.first(where: { $0.name == "url" })?.value,
+            URLComponents(url: source, resolvingAgainstBaseURL: false)?.percentEncodedQueryItems?
+                .first(where: { $0.name == "url" })?.value
+        )
+    }
+
+    func testEveryPlexVariantBoundsBothAxesWithoutUpscalingOrChangingAspectRatio() throws {
+        for variant in ArtworkImageVariant.allCases {
+            guard let cap = variant.maxPixelSize else { continue }
+            for bounds in [(3840, 5760), (500, 750), (300, 4000)] {
+                let source = try XCTUnwrap(URL(string:
+                    "https://plex.example/photo/:/transcode?width=\(bounds.0)&height=\(bounds.1)&minSize=1&upscale=1"
+                ))
+                let query = try XCTUnwrap(URLComponents(url: variant.requestURL(for: source), resolvingAgainstBaseURL: false)?.queryItems)
+                let width = try XCTUnwrap(query.first { $0.name == "width" }?.value.flatMap(Double.init))
+                let height = try XCTUnwrap(query.first { $0.name == "height" }?.value.flatMap(Double.init))
+                XCTAssertEqual(width, Double(min(bounds.0, cap)))
+                XCTAssertEqual(height, Double(min(bounds.1, cap)))
+                XCTAssertEqual(query.first { $0.name == "minSize" }?.value, "0")
+                XCTAssertEqual(query.first { $0.name == "upscale" }?.value, "0")
+                // Plex's fit-without-upscale contract, for landscape, portrait and small originals.
+                for original in [(5333.0, 3000.0), (3000.0, 4500.0), (120.0, 80.0)] {
+                    let scale = min(1, width / original.0, height / original.1)
+                    XCTAssertLessThanOrEqual(max(original.0 * scale, original.1 * scale).rounded(), Double(cap))
+                    XCTAssertLessThanOrEqual(scale, 1)
+                    XCTAssertEqual((original.0 * scale) / (original.1 * scale), original.0 / original.1, accuracy: 0.0001)
+                }
+            }
+        }
+    }
+
+    func testPlexWidthOnlyGetsHeightBoundAndOriginalRemainsUntouched() throws {
+        let source = try XCTUnwrap(URL(string: "https://plex.example/photo/:/transcode?width=400&url=%2Fposter"))
+        let query = try XCTUnwrap(URLComponents(url: ArtworkImageVariant.heroPreview.requestURL(for: source), resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertEqual(query.first { $0.name == "width" }?.value, "400")
+        XCTAssertEqual(query.first { $0.name == "height" }?.value, "768")
+        XCTAssertEqual(ArtworkImageVariant.original.requestURL(for: source), source)
     }
 
     func testHeroPreviewUsesNearestTMDbBucket() {

@@ -38,15 +38,18 @@ private final class NavigationDestinationHandoffFixtureModel {
     var presented = NavigationRailDestination.home
     var prematureFocusCount = 0
     var laterCardFocusCount = 0
+    var contentFocusCount = 0
     private let holdsPages = ProcessInfo.processInfo.arguments.contains("--manual-navigation-handoff")
 
     func select(_ destination: NavigationRailDestination) {
         prematureFocusCount = 0
         laterCardFocusCount = 0
+        contentFocusCount = 0
         requested = destination
     }
 
     func focused(_ destination: NavigationRailDestination) {
+        contentFocusCount += 1
         if destination != requested { prematureFocusCount += 1 }
     }
 
@@ -105,6 +108,8 @@ private struct NavigationHandoffFixturePage: View {
                 .accessibilityIdentifier("handoff-premature-focus")
             Text("\(model.laterCardFocusCount)")
                 .accessibilityIdentifier("handoff-later-card-focus")
+            Text("\(model.contentFocusCount)")
+                .accessibilityIdentifier("handoff-content-focus")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.black)

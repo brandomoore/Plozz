@@ -145,11 +145,9 @@ public struct PinnedSidebarLeadingFade<Content: View>: View {
             content
                 .safeAreaPadding(.leading, inset)
                 .modifier(RowSlotParking(pitch: cardPitch))
-                // The first card parks right at the gutter's inner edge, and
-                // focus grows it back across that edge. The feather keeps its
-                // full width but sits that much further left, so a focused first
-                // card and its shadow stay whole while cards scrolling out still
-                // dissolve smoothly before they pass under the sidebar.
+                // Leave room for the first card's focus lift while fading cards
+                // under the sidebar. Only the feather's trailing edge extends
+                // into that clearance.
                 .mask {
                     Group {
                         if inset > 0 {
@@ -217,21 +215,21 @@ private struct RowSlotTargets: ScrollTargetBehavior {
     }
 }
 
-/// The pinned sidebar's feather: clear under the sidebar's icons, rising to
-/// solid just before a focused first card's lift, so cards scrolling out
-/// dissolve before they reach the icons.
+/// Retains a 10% glimpse under the icons, rising to solid near the first card.
+/// The same mask carries the floor through the overscan gutter.
 private struct PinnedSidebarFeather: View {
     /// Where the first card's slot opens.
     let start: CGFloat
 
     /// How far a focused first card's lift reaches back from its slot.
     static let lift: CGFloat = 18
-    /// The feather's width, ending clear just past the sidebar's icons.
-    static let width: CGFloat = 34
+    /// The feather's base width, ending faint just past the sidebar's icons.
+    static let width: CGFloat = 30
+    static let trailingExtension: CGFloat = 18
 
     var body: some View {
-        let solid = max(0, start - Self.lift)
-        let clear = max(0, solid - Self.width)
+        let clear = max(0, start - Self.lift - Self.width)
+        let solid = max(0, start - Self.lift) + Self.trailingExtension
         HStack(spacing: 0) {
             Color.clear.frame(width: clear)
             LinearGradient(
@@ -244,6 +242,13 @@ private struct PinnedSidebarFeather: View {
             )
             .frame(width: solid - clear)
             Color.black
+        }
+        .background {
+            Color.black.opacity(0.1)
+                // Native Showcase hosts suppress safe-area propagation. Match
+                // their viewport's overflow without shifting the feather.
+                .padding(.leading, -160)
+                .ignoresSafeArea(.container, edges: .leading)
         }
         .environment(\.layoutDirection, .leftToRight)
     }

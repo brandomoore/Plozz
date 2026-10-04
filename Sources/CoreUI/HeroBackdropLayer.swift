@@ -230,6 +230,7 @@ public extension View {
 public struct HeroBackdropLayer<Video: View>: View {
     #if os(tvOS)
     @Environment(\.detailEntranceSession) private var detailEntrance
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var artworkResolution = ArtworkResolutionState()
     #endif
     /// Ordered candidate backdrop URLs (first that loads and is wide enough wins).
@@ -337,6 +338,7 @@ public struct HeroBackdropLayer<Video: View>: View {
             content: ArtworkFillImage.init,
             placeholder: { ambientPlaceholder }
         )
+        .reportingHeroArtwork(id: pinIdentity)
         #if os(tvOS)
         .environment(\.artworkResolutionState, artworkResolution)
         .onChange(of: artworkResolution.image, initial: true) { _, image in
@@ -366,13 +368,29 @@ public struct HeroBackdropLayer<Video: View>: View {
         .modifier(OverscanBreakout(enabled: ignoresOverscan))
     }
 
-    /// Legibility scrim: a seamless edge vignette (same darkening on every side)
-    /// plus a faint all-over wash, so the title/logo/overview read clearly against
-    /// the artwork while the darkening blends evenly across the whole hero instead
-    /// of pooling on one side — matching the Home hero. Lives *under* the dissolve
-    /// mask so it fades away with the image and never tints the revealed background.
-    @ViewBuilder
+    /// Details have no rail: retain the softer upper corner for every navigation
+    /// style, and reveal the shading before the foreground without moving it.
     private var scrim: some View {
+        scrimContent
+            #if os(tvOS)
+            .opacity(isScrimVisible ? 1 : 0)
+            .animation(
+                reduceMotion ? nil : detailEntrance.map {
+                    DetailEntranceMotion.reveal(duration: $0.timing.reveal)
+                },
+                value: isScrimVisible
+            )
+            #endif
+    }
+
+    #if os(tvOS)
+    private var isScrimVisible: Bool {
+        reduceMotion || (detailEntrance?.isBackdropShadingVisible ?? true)
+    }
+    #endif
+
+    @ViewBuilder
+    private var scrimContent: some View {
         if usesCachedScrim {
             HeroLegibilityTexture(tone: scrimTone)
         } else {
@@ -390,16 +408,10 @@ public struct HeroBackdropLayer<Video: View>: View {
     }
 
     private var analyticScrim: some View {
-        // TEST: top and trailing dropped. Detail-page content runs along the
-        // LEFT and fades out at the BOTTOM, so those two edges are the only ones
-        // doing legibility work; darkening the other two only costs contrast on
-        // the part of the artwork the viewer is actually looking at.
         HeroLegibilityScrim(
             tone: scrimTone,
             edgePeak: 0.55,
             edges: [.leading, .bottom],
-            // Keep the top-left clean: nothing is drawn over it, so darkening it
-            // only flattens the artwork. The wash arrives where the content is.
             sideDarkeningStart: 0.34
         )
     }

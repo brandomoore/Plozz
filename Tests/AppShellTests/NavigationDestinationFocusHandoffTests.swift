@@ -10,7 +10,10 @@ final class NavigationDestinationFocusHandoffTests: XCTestCase {
         XCTAssertFalse(handoff.isWaiting)
         handoff.begin(.settings)
         let request = try XCTUnwrap(handoff.request)
-        XCTAssertFalse(handoff.complete(.init(destination: .home, generation: request.generation)))
+        XCTAssertEqual(request.focusTarget, .content)
+        XCTAssertFalse(handoff.complete(.init(
+            destination: .home, generation: request.generation, focusTarget: .content
+        )))
         XCTAssertTrue(handoff.isWaiting)
         XCTAssertTrue(handoff.complete(request))
         XCTAssertFalse(handoff.isWaiting)
@@ -47,6 +50,30 @@ final class NavigationDestinationFocusHandoffTests: XCTestCase {
         let original = handoff.request
         handoff.begin(.settings)
         XCTAssertEqual(handoff.request, original)
+    }
+
+    func testHomeBackRetainsItsNavigationFocusTargetUntilPresentation() throws {
+        let handoff = NavigationDestinationFocusHandoff()
+        handoff.begin(.home, focusTarget: .navigation)
+        let request = try XCTUnwrap(handoff.request)
+        XCTAssertEqual(request.focusTarget, .navigation)
+        handoff.begin(.home, focusTarget: .navigation)
+        XCTAssertEqual(handoff.request, request)
+        XCTAssertTrue(handoff.complete(request))
+        XCTAssertFalse(handoff.isWaiting)
+    }
+
+    func testSelectingPendingHomeReplacesNavigationFocusWithContentFocus() throws {
+        let handoff = NavigationDestinationFocusHandoff()
+        handoff.begin(.home, focusTarget: .navigation)
+        let menuRequest = try XCTUnwrap(handoff.request)
+        handoff.begin(.home)
+        let contentRequest = try XCTUnwrap(handoff.request)
+        XCTAssertEqual(contentRequest.focusTarget, .content)
+        XCTAssertNotEqual(contentRequest.generation, menuRequest.generation)
+        XCTAssertFalse(handoff.complete(menuRequest))
+        XCTAssertEqual(handoff.request, contentRequest)
+        XCTAssertTrue(handoff.complete(contentRequest))
     }
 }
 #endif
