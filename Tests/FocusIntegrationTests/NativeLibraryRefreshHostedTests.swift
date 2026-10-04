@@ -46,6 +46,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(200))
             window.layoutIfNeeded()
             XCTAssertTrue(focus.focusedItem === filter.0, "Selecting a filter must retain the actual header control.")
+            _ = self.capture(window, name: "named-active-library-filter")
         }
     }
 

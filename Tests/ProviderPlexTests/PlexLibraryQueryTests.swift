@@ -4,6 +4,21 @@ import XCTest
 @testable import ProviderPlex
 
 final class PlexLibraryQueryTests: XCTestCase {
+    func testGenreAndYearFacetsRemainNativeAndLibraryScoped() async throws {
+        let http = StubHTTPClient()
+        http.stub(pathSuffix: "/library/sections/1/genre",
+                  json: #"{"MediaContainer":{"Directory":[{"key":"42","title":"Drama"}]}}"#)
+        http.stub(pathSuffix: "/library/sections/1/year",
+                  json: #"{"MediaContainer":{"Directory":[{"key":"2024","title":"2024"},{"key":"2023","title":"2023"}]}}"#)
+        let facets = try await provider(http).libraryQueryFacets(in: "1", kind: .movie)
+        XCTAssertEqual(facets.genres, ["Drama"])
+        XCTAssertEqual(facets.years, [2024, 2023])
+        XCTAssertEqual(Set(http.sentPaths), ["/library/sections/1/genre", "/library/sections/1/year"])
+        for suffix in ["/genre", "/year"] {
+            XCTAssertTrue(try XCTUnwrap(http.queryItems(forPathSuffix: suffix)).contains(.init(name: "type", value: "1")))
+        }
+    }
+
     private func provider(_ http: StubHTTPClient) -> PlexProvider {
         PlexProvider(session: UserSession(
             server: MediaServer(id: "plex", name: "Plex", baseURL: URL(string: "https://plex.test")!, provider: .plex),

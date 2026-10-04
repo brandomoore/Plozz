@@ -3,6 +3,22 @@ import Foundation
 import XCTest
 
 final class LibraryQueryTests: XCTestCase {
+    func testFilterSummaryNamesSelectedOptionsInsteadOfCountingThem() {
+        let locale = Locale(identifier: "en")
+        XCTAssertEqual(LibraryFilters.all.summary(in: locale), "")
+        for filter in LibraryFilter.allCases where filter != .all {
+            var name = filter.displayName
+            name.locale = locale
+            XCTAssertEqual(LibraryFilters(filter: filter).summary(in: locale), String(localized: name))
+        }
+        XCTAssertEqual(LibraryFilters(filter: .dolbyVision).summary(in: locale), "Dolby Vision")
+        XCTAssertEqual(LibraryFilters(genre: "Science Fiction").summary(in: locale), "Science Fiction")
+        XCTAssertEqual(LibraryFilters(year: 2024).summary(in: locale), "2024")
+        XCTAssertEqual(LibraryFilters(genre: "Drama", year: 2024).summary(in: locale), "Drama · 2024")
+        XCTAssertEqual(LibraryFilters(filter: .unwatched, genre: "Drama", year: 2024).summary(in: locale),
+                       "Unwatched · Drama · 2024")
+    }
+
     func testQuickFilterIntersectsGenreAndYear() {
         let item = MediaItem(id: "a", title: "A", kind: .movie, productionYear: 2024,
                              genres: ["Drama"], runtime: 100, resumePosition: 25,

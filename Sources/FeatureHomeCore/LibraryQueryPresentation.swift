@@ -9,6 +9,7 @@ final class LibraryQueryPresentation {
     var facets = LibraryQueryFacets()
     var facetsLoading = false
     var facetsError: AppError?
+    @ObservationIgnored var hasLoadedFacets = false
     var progress: Double?
     var message: LocalizedStringResource?
     var capabilitiesRevision = 0

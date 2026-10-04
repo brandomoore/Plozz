@@ -6,6 +6,66 @@ import XCTest
 
 @MainActor
 final class LibraryQuerySessionTests: XCTestCase {
+    func testEmptySuccessfulFacetsAreCachedUntilExplicitRetry() async {
+        let source = QueryInventoryProvider(items: [], facets: .init())
+        let model = LibraryBrowseViewModel(provider: source, containerID: "lib", containerKind: .movie,
+                                           initialContentMode: .titles)
+        await model.loadQueryFacetsIfNeeded()
+        await model.loadQueryFacetsIfNeeded()
+        let requests = await source.facetRequests
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(model.queryFacets, .init())
+        XCTAssertNil(model.facetsError)
+        XCTAssertFalse(model.facetsLoading)
+        await model.loadQueryFacetsIfNeeded(retry: true)
+        let retried = await source.facetRequests
+        XCTAssertEqual(retried, 2)
+    }
+
+    func testFacetRetryClearsARealFailureWithoutChangingTheSelectedFilter() async throws {
+        let name = "LibraryFacetRetry.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let source = QueryInventoryProvider(items: queryItems(3))
+        await source.setFacetError(.decoding)
+        let model = LibraryBrowseViewModel(provider: source, containerID: "lib", containerKind: .movie,
+                                           defaults: defaults, initialContentMode: .titles)
+        await model.setFilters(.init(filter: .unwatched))
+        await model.loadQueryFacetsIfNeeded()
+        XCTAssertEqual(model.facetsError, .decoding)
+        XCTAssertEqual(model.filters.filter, .unwatched)
+        await source.setFacetError(nil)
+        await model.loadQueryFacetsIfNeeded(retry: true)
+        XCTAssertNil(model.facetsError)
+        XCTAssertEqual(model.queryFacets, .init(genres: ["Drama"], years: [2024]))
+        XCTAssertEqual(model.filters.filter, .unwatched)
+    }
+
+    func testCancelledFacetRequestDoesNotDisplayARetryErrorAndCanLoadAgain() async {
+        let source = QueryInventoryProvider(items: [])
+        await source.setFacetError(.cancelled)
+        let model = LibraryBrowseViewModel(provider: source, containerID: "lib", containerKind: .movie,
+                                           initialContentMode: .titles)
+        await model.loadQueryFacetsIfNeeded()
+        XCTAssertNil(model.facetsError)
+        XCTAssertFalse(model.facetsLoading)
+        await source.setFacetError(nil)
+        await model.loadQueryFacetsIfNeeded()
+        XCTAssertEqual(model.queryFacets.genres, ["Drama"])
+        let requests = await source.facetRequests
+        XCTAssertEqual(requests, 2)
+    }
+
+    func testQuickFiltersWithoutGenreOrYearCapabilitiesDoNotRequestFacets() async {
+        let source = QueryInventoryProvider(items: [], supportsFacets: false)
+        let model = LibraryBrowseViewModel(provider: source, containerID: "lib", containerKind: .movie,
+                                           initialContentMode: .titles)
+        await model.loadQueryFacetsIfNeeded()
+        let requests = await source.facetRequests
+        XCTAssertEqual(requests, 0)
+        XCTAssertNil(model.facetsError)
+    }
+
     func testNormalBrowseAndFacetsNeverInventory() async throws {
         let source = QueryInventoryProvider(items: queryItems(300))
         let session = LibraryQuerySession(provider: source, containerID: "lib", kind: .movie)
@@ -229,6 +289,10 @@ private actor QueryInventoryProvider: MediaLibraryQueryProviding {
     private let episodes: [MediaItem]
     private let broken: Broken?
     private let delay: UInt64
+    private let facets: LibraryQueryFacets
+    private let supportsFacets: Bool
+    private var facetError: AppError?
+    private(set) var facetRequests = 0
     private(set) var inventoryRequests = 0
     private(set) var technicalRequests = 0
     private(set) var episodeRequests = 0
@@ -236,23 +300,30 @@ private actor QueryInventoryProvider: MediaLibraryQueryProviding {
     private var materializing = 0
     private(set) var maximumMaterialization = 0
 
-    init(items: [MediaItem], episodes: [MediaItem] = [], broken: Broken? = nil, delay: UInt64 = 0) {
+    init(items: [MediaItem], episodes: [MediaItem] = [], broken: Broken? = nil, delay: UInt64 = 0,
+         facets: LibraryQueryFacets = .init(genres: ["Drama"], years: [2024]), supportsFacets: Bool = true) {
         allItems = items
         self.episodes = episodes
         self.broken = broken
         self.delay = delay
+        self.facets = facets
+        self.supportsFacets = supportsFacets
     }
 
     nonisolated func supportedSortFields(in containerID: String, kind: MediaItemKind) -> [SortField] { SortField.allCases }
     nonisolated func libraryQueryCapabilities(in containerID: String, kind: MediaItemKind) -> LibraryQueryCapabilities {
-        .init(filters: LibraryFilter.allCases, nativeSortFields: [.name], supportsGenres: true, supportsYears: true)
+        .init(filters: LibraryFilter.allCases, nativeSortFields: [.name],
+              supportsGenres: supportsFacets, supportsYears: supportsFacets)
     }
     nonisolated func libraryQueryInventorySortKey(_ field: SortField) -> SortField {
         [.plays, .lastPlayed].contains(field) ? field : .name
     }
     func libraryQueryFacets(in containerID: String, kind: MediaItemKind) async throws -> LibraryQueryFacets {
-        .init(genres: ["Drama"], years: [2024])
+        facetRequests += 1
+        if let facetError { throw facetError }
+        return facets
     }
+    func setFacetError(_ value: AppError?) { facetError = value }
     func libraryQueryInventory(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         inventoryRequests += 1
         inventoryOnMain = inventoryOnMain || Thread.isMainThread

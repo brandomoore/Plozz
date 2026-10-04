@@ -4,6 +4,37 @@ import XCTest
 @testable import ProviderJellyfin
 
 final class JellyfinLibraryQueryTests: XCTestCase {
+    func testGenreAndYearFacetsUseTheMatchingScopedEndpointForJellyfinAndEmby() async throws {
+        for kind: ProviderKind in [.jellyfin, .emby] {
+            for (itemKind, serverType): (MediaItemKind, String) in [(.movie, "Movie"), (.series, "Series")] {
+                let http = StubHTTPClient()
+                http.stub(pathSuffix: "/Items/Filters2",
+                          json: #"{"Genres":[{"Name":"Drama","Id":"genre-id"}],"Tags":[]}"#)
+                http.stub(pathSuffix: "/Items/Filters",
+                          json: #"{"Genres":["Drama","Action","Drama"],"Years":[2023,2024,2023]}"#)
+                let facets = try await provider(http, kind: kind).libraryQueryFacets(in: "library", kind: itemKind)
+                XCTAssertEqual(facets.genres, ["Action", "Drama"])
+                XCTAssertEqual(facets.years, [2024, 2023])
+                XCTAssertEqual(http.sentPaths, ["/Items/Filters"])
+                let query = try XCTUnwrap(http.queryItems(forPathSuffix: "/Items/Filters"))
+                XCTAssertTrue(query.contains(.init(name: "UserId", value: "user")))
+                XCTAssertTrue(query.contains(.init(name: "ParentId", value: "library")))
+                XCTAssertTrue(query.contains(.init(name: "IncludeItemTypes", value: serverType)))
+            }
+        }
+    }
+
+    func testFacetFailureIsNotDisguisedAsAnEmptySuccessfulMenu() async {
+        let http = StubHTTPClient()
+        http.error = .serverUnreachable
+        do {
+            _ = try await provider(http).libraryQueryFacets(in: "library", kind: .movie)
+            XCTFail("A failed facet request must remain retryable.")
+        } catch {
+            XCTAssertEqual(error as? AppError, .serverUnreachable)
+        }
+    }
+
     private func provider(_ http: StubHTTPClient, kind: ProviderKind = .jellyfin) -> JellyfinProvider {
         JellyfinProvider(session: UserSession(
             server: MediaServer(id: "server", name: "Server", baseURL: URL(string: "https://jellyfin.test")!, provider: kind),

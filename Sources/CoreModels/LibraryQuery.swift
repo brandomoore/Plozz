@@ -48,6 +48,18 @@ public struct LibraryFilters: Codable, Hashable, Sendable {
     public var activeCount: Int {
         (filter == .all ? 0 : 1) + (genre == nil ? 0 : 1) + (year == nil ? 0 : 1)
     }
+
+    public func summary(in locale: Locale) -> String {
+        var values: [String] = []
+        if filter != .all {
+            var name = filter.displayName
+            name.locale = locale
+            values.append(String(localized: name)) // l10n:content — resolves the existing quick-filter label for presentation
+        }
+        if let genre { values.append(genre) }
+        if let year { values.append(String(year)) }
+        return values.joined(separator: " · ")
+    }
 }
 
 public struct LibraryQueryFacets: Equatable, Sendable {

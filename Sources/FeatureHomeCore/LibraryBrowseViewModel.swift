@@ -875,16 +875,21 @@ public final class LibraryBrowseViewModel {
     }
 
     public func loadQueryFacetsIfNeeded(retry: Bool = false) async {
-        guard !facetsLoading, (queryFacets.genres.isEmpty && queryFacets.years.isEmpty) || retry,
+        guard !facetsLoading, !queryPresentation.hasLoadedFacets || retry,
+              queryCapabilities.supportsGenres || queryCapabilities.supportsYears,
               showsFilterMenu, let source = provider as? any MediaLibraryQueryProviding else { return }
         facetsLoading = true
         facetsError = nil
         defer { facetsLoading = false }
         do {
-            queryFacets = try await source.libraryQueryFacets(in: containerID, kind: containerKind)
+            let facets = try await source.libraryQueryFacets(in: containerID, kind: containerKind)
+            try Task.checkCancellation()
+            queryFacets = facets
+            queryPresentation.hasLoadedFacets = true
         } catch is CancellationError {
             return
         } catch {
+            guard !Task.isCancelled, (error as? AppError) != .cancelled else { return }
             PlozzLog.app.error("Library facets failed: \(String(describing: error))")
             facetsError = (error as? AppError) ?? .unknown("")
         }

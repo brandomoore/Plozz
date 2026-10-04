@@ -10,6 +10,7 @@ public struct LibraryFilterMenu: View {
     let onChange: (LibraryFilters) -> Void
     let onLoadFacets: () async -> Void
     let onRetry: () -> Void
+    @Environment(\.locale) private var locale
 
     public init(
         filters: LibraryFilters, capabilities: LibraryQueryCapabilities, facets: LibraryQueryFacets,
@@ -49,13 +50,13 @@ public struct LibraryFilterMenu: View {
                 }
             }
             if isLoading { Text("Loading filters…") }
-            if hasError { Button("Couldn't load filters. Try Again", action: onRetry) }
+            if hasError { Button("Couldn't load filter options. Try Again", action: onRetry) }
             if !filters.isEmpty { Button("Clear Filters") { onChange(.all) } }
         } label: {
             if filters.isEmpty {
                 Label("Filter", systemImage: "line.3.horizontal.decrease")
             } else {
-                Label("Filter: \(filters.activeCount)", systemImage: "line.3.horizontal.decrease")
+                Label("Filter: \(filters.summary(in: locale))", systemImage: "line.3.horizontal.decrease")
             }
         }
         .accessibilityIdentifier("library-filter-menu")

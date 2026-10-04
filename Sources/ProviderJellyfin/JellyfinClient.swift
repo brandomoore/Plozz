@@ -744,6 +744,7 @@ public struct JellyfinClient: Sendable {
     }
 
     func libraryFacets(userID: String, parentID: String, includeItemTypes: [String]) async throws -> LibraryQueryFacets {
+        // Filters2 returns genre objects and omits years; Filters supplies both named facets.
         struct Response: Decodable {
             let Genres: [String]?
             let Years: [Int]?
@@ -751,7 +752,7 @@ public struct JellyfinClient: Sendable {
         let response = try await http.decode(
             Response.self,
             from: Endpoint(
-                path: "/Items/Filters2",
+                path: "/Items/Filters",
                 queryItems: [
                     .init(name: "UserId", value: userID), .init(name: "ParentId", value: parentID),
                     .init(name: "IncludeItemTypes", value: includeItemTypes.joined(separator: ","))
