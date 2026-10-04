@@ -58,6 +58,8 @@ fallback when the user's server has no attached trailer.
   on that same top navigation line alongside Filter and file browsing.
   Filter and Sort form a compact pair. Alphabet navigation stays on the
   scrolling rail; there is no separate Jump to letter button.
+  Without mode tabs, the library/share display name occupies the left of the
+  same header, with controls on the right; it does not add a focus target.
   A persistent tvOS focus owner encloses the header and grid, preserving
   the selected tab's focus identity as content changes. The content slot stays full-height
   during loading, keeping the header in place and query progress vertically

@@ -160,22 +160,17 @@ public struct LibraryBrowseView: View {
         // dedicated destination with no navigation chrome pinned at the top.
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .top, spacing: 0) {
-            if viewModel.availableContentModes.count > 1
-                || viewModel.browseScope != .library
-                || !viewModel.availableSortFields.isEmpty
-                || viewModel.fileBrowserLibrary != nil {
-                navigationHeader
-                    .padding(.top, PlozzTheme.Spacing.large)
-                    .padding(.bottom, PlozzTheme.Spacing.large)
-                    #if os(tvOS)
-                    .modifier(
-                        ShowcaseNavigationVisibilityModifier(
-                            visibility: showcaseNavigation,
-                            isRecommended: viewModel.contentMode == .recommended
-                        )
+            navigationHeader
+                .padding(.top, PlozzTheme.Spacing.large)
+                .padding(.bottom, PlozzTheme.Spacing.large)
+                #if os(tvOS)
+                .modifier(
+                    ShowcaseNavigationVisibilityModifier(
+                        visibility: showcaseNavigation,
+                        isRecommended: viewModel.contentMode == .recommended
                     )
-                    #endif
-            }
+                )
+                #endif
         }
         .safeAreaInset(edge: .bottom) {
             if viewModel.contentMode == .recommended, let error = viewModel.recommendationError,
@@ -493,8 +488,10 @@ public struct LibraryBrowseView: View {
             if viewModel.availableContentModes.count > 1 {
                 LibraryContentModeControl(viewModel: viewModel)
                     .layoutPriority(1)
-            } else if viewModel.browseScope != .library {
-                title.font(.largeTitle.bold())
+            } else {
+                title
+                    .font(.largeTitle.bold())
+                    .layoutPriority(1)
             }
             Spacer(minLength: PlozzTheme.Spacing.large)
             if viewModel.contentMode != .recommended {

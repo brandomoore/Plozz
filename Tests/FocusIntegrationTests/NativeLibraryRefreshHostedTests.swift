@@ -6,10 +6,49 @@ import CoreModels
 import FeatureHomeCore
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testShareNameFillsHeaderOnlyWhenModeTabsAreAbsent() async throws {
+        for hasTabs in [false, true] {
+            let provider = RefreshLibraryProvider(
+                kind: hasTabs ? .jellyfin : .mediaShare, supportsModes: hasTabs, supportsFilters: true
+            )
+            let name = "ShareHeader.\(UUID())"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+            defer { defaults.removePersistentDomain(forName: name) }
+            let model = LibraryBrowseViewModel(
+                provider: provider, containerID: "library", containerKind: .movie,
+                defaults: defaults, initialContentMode: .titles
+            )
+            await model.loadFirstPage()
+            try await withLibrary(model: model, title: Text(verbatim: "Family Media")) { _, window in
+                let image = self.capture(window, name: hasTabs ? "library-mode-header" : "share-name-header")
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                request.regionOfInterest = CGRect(x: 0, y: 0.8, width: 1, height: 0.2)
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                XCTAssertEqual(text.contains("Family Media"), !hasTabs, text)
+                let controls = self.focusItems(in: window).compactMap { item -> CGRect? in
+                    guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window),
+                          frame.midY < window.bounds.height * 0.2 else { return nil }
+                    return frame
+                }.sorted { $0.minX < $1.minX }
+                XCTAssertEqual(controls.count, hasTabs ? model.availableContentModes.count + 2 : 2,
+                               "The share name must not become a focusable control.")
+                XCTAssertLessThanOrEqual(try XCTUnwrap(controls.last).maxX, window.bounds.width)
+                if !hasTabs {
+                    XCTAssertGreaterThan(try XCTUnwrap(controls.first).minX, window.bounds.width / 2,
+                                         "Filter and Sort must remain on the right of the share name.")
+                }
+            }
+        }
+    }
+
     func testLongCombinedFilterFitsHeaderWithoutReplacingFocusedControl() async throws {
         let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, supportsFilters: true)
         let name = "LibraryAdaptiveFilter.\(UUID())"
@@ -838,6 +877,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
 
     private func withLibrary(
         model: LibraryBrowseViewModel,
+        title: Text = Text("Library"),
         focusStyle: CardFocusStyle = .system,
         palette: ThemePalette = .dark,
         presenter: TransientStatusPresenter = TransientStatusPresenter(announcement: { _ in }),
@@ -851,7 +891,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         let host = UIHostingController(
             rootView:
-                LibraryBrowseView(viewModel: model, title: Text("Library"), onSelect: onSelect)
+                LibraryBrowseView(viewModel: model, title: title, onSelect: onSelect)
                 .environment(\.plozzCardFocusStyle, focusStyle)
                 .environment(\.plozzCardStyle, .borderless)
                 .environment(\.themePalette, palette)
