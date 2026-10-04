@@ -2,6 +2,98 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/048",
+      "version": "2026.10.4",
+      "marketingVersion": "2026.9.25",
+      "build": 48,
+      "releasedAt": "2026-10-04",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Recommended library page - Continue Watching, Recently Added, and server recommendations where available.",
+            "Combine genre and year with filters for watched status, HDR formats, Atmos, duplicates, and unmatched titles.",
+            "More library sorts, including year, audience and critic ratings, progress, play count, and last watched. Available options depend on the source."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Filter and sort choices are remembered separately for each library and profile.",
+            "Library controls group Filter and Sort, replacing the separate A-Z jump menu.",
+            {
+              "text": "Library headers show share names and compact filter summaries.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "More compact library navigation on smaller screens.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Clearer Live TV source choices and labeled fields, with better remote-focus targets.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Clearer Live TV source choices and labeled fields, with URL-aware text entry.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "With pinned navigation, Back opens navigation, returns Home, then lets tvOS exit the app.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Returning to Plozz collapses the pinned sidebar so you can keep browsing.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Refined Showcase spacing, detail artwork transitions, and shading around pinned navigation.",
+              "platforms": ["tvOS"]
+            },
+            "Reduced processing overhead for animated, dense, and live subtitles.",
+            "Reduced processing and memory overhead in playback and Live TV source screens."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Saved profile server selections being lost, shared incompletely, or replaced by unselected servers during temporary storage failures.",
+            "Live TV playlists failing to import when they declare more than 32 guides.",
+            {
+              "text": "Showcase skipping its first row while loading or missing title logos after slow lookups.",
+              "platforms": ["tvOS"]
+            },
+            "Home gradients and hero-logo contrast not matching the displayed backdrop.",
+            "Plex unnecessarily upscaling artwork beyond its requested size.",
+            "Incorrect date and rating ordering in combined libraries.",
+            "Missing network-share release dates from local NFO metadata.",
+            "ASS/SSA subtitles lingering without valid timing and excessive subtitle memory growth.",
+            "Audio becoming silent after seeking during software-decoded playback.",
+            "Incorrect full-range colors and lost 10-bit precision during software decoding.",
+            "HTTP startup and recovery stalls, including servers that ignore byte-range requests and lost opening video packets.",
+            "Cancelled requests holding up the next video.",
+            "Playback startup or cleanup breaking when backgrounding or closing Picture in Picture.",
+            "Stale player state or callbacks when switching titles or recovering from a media-services reset.",
+            {
+              "text": "Display-matching waits stalling the main thread or repeating unnecessarily.",
+              "platforms": ["tvOS"]
+            },
+            "Live recovery losing playlist updates, jumping backward, or reusing outdated stream data.",
+            "Live playback repeatedly retrying audio tracks that cannot be decoded.",
+            "Incorrect segment timing or video framing after seeking.",
+            "Sequential streams losing their final audio samples.",
+            "Crashes or excessive memory use from malformed media timestamps, HLS responses, playlists, or disc metadata.",
+            "A stalled relayed request blocking other stream requests.",
+            "Stream credentials being forwarded to unrelated hosts during HLS playback.",
+            "Live subtitle updates stalling on incorrect playlist durations or unresponsive requests.",
+            {
+              "text": "Home freezes from repeatedly rebuilding native-sidebar navigation.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/047",
       "version": "2026.10.3",
       "marketingVersion": "2026.9.25",
