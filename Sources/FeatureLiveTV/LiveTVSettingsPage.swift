@@ -4,17 +4,9 @@ import SwiftUI
 struct LiveTVSetupActionLabel: View {
     let title: LocalizedStringResource
     let symbol: String
-    var detail: LocalizedStringResource? = nil
 
     var body: some View {
-        SettingsRowLabel(icon: symbol, title: title, secondary: {
-            if let detail {
-                Text(detail)
-                    .font(.caption)
-                    .settingsRowSecondary()
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        })
+        SettingsRowLabel(icon: symbol, title: title)
         #if os(tvOS)
         .padding(.vertical, 4)
         #endif
@@ -22,7 +14,6 @@ struct LiveTVSetupActionLabel: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(title))
-        .accessibilityHint(Text(detail ?? ""))
     }
 
     private var minimumHeight: CGFloat {

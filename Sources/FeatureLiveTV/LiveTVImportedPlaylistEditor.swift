@@ -78,11 +78,10 @@ struct LiveTVImportedPlaylistEditor: View {
             SettingsSectionGroup {
                 if saving { ProgressView("Importing playlist") }
                 Button { saveRequest = UUID() } label: {
-                    LiveTVSetupActionLabel(
-                        title: original == nil ? "Import playlist" : "Save source", symbol: "checkmark"
-                    )
+                    Text(original == nil ? LocalizedStringResource("Import playlist") : LocalizedStringResource("Save source"))
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                .plozzActionButton()
                 .disabled(saving || (original == nil && fileURL == nil))
                 if let issue { Text(issue) }
             }

@@ -117,6 +117,11 @@ a guide is a labeled action beside its URL on Apple TV and a full-width action
 below it on iPhone/iPad, rather than a small icon. Both playlist editors
 limit guide fields to 32 and retain explicit guide priority. Adding a URL still
 checks and saves in one action; canceling or failing validation writes nothing.
+Add/save/import and server-check actions use the app's filled primary pill,
+with the palette's inverse text color, so the next step stays visible even
+without focus. Canceling a check uses the secondary treatment.
+The Add a source section uses concise playlist-URL, local-file and supported-server
+labels rather than repeating the section's action in a subtitle.
 
 Rendering source choices does not resolve server credentials. Profile account
 selections are observable model snapshots, read back from durable storage after

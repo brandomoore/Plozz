@@ -99,18 +99,19 @@ struct LiveTVServerSetupView: View {
                             probe.beginCheck(choice)
                         }
                     }) {
-                        if probe.isChecking {
-                            LiveTVSetupActionLabel(title: "Cancel check", symbol: "xmark")
-                        } else if probe.canAdd {
-                            LiveTVSetupActionLabel(
-                                title: probe.availability?.status == .unsupportedPlaybackMode ? "Add guide only" : "Add channels",
-                                symbol: "plus"
-                            )
-                        } else {
-                            LiveTVSetupActionLabel(title: "Check again", symbol: "arrow.clockwise")
+                        Group {
+                            if probe.isChecking {
+                                Text("Cancel check")
+                            } else if probe.canAdd {
+                                Text(probe.availability?.status == .unsupportedPlaybackMode
+                                     ? LocalizedStringResource("Add guide only") : LocalizedStringResource("Add channels"))
+                            } else {
+                                Text("Check again")
+                            }
                         }
+                        .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                    .plozzActionButton(role: probe.isChecking ? .secondary : .primary)
                 }
             }
 

@@ -59,6 +59,8 @@ struct SourceOnboardingFixture: View {
 
         }
         .environment(profiles)
+        .environment(\.themePalette, ProcessInfo.processInfo.arguments.contains("--light") ? .light : .dark)
+        .environment(\.colorScheme, ProcessInfo.processInfo.arguments.contains("--light") ? .light : .dark)
         .task {
             guard usesAutomaticChannels else { return }
             do { try await automatic.service.load() }

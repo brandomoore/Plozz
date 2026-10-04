@@ -1,6 +1,31 @@
+import UIKit
 import XCTest
 
 final class LiveTVSourceNavigationSmokeTests: XCTestCase {
+    @MainActor
+    func testPrimarySourceActionStaysFilledWithoutFocusInBothThemes() throws {
+        for light in [false, true] {
+            let app = launchFixture(arguments: ["--typed-settings"] + (light ? ["--light"] : []))
+            defer { app.terminate() }
+            guard select(app.buttons["fixture-live-tv-settings"], in: app) else { return }
+            guard select(app.buttons["live-tv-add-playlist"], in: app) else { return }
+            let action = app.buttons["live-tv-playlist-action"]
+            guard focus(action, in: app),
+                  focus(app.buttons["live-tv-add-guide"], in: app) else { return }
+            XCTAssertFalse(action.hasFocus)
+            let point = CGPoint(
+                x: action.frame.minX + action.frame.width * 0.15, y: action.frame.midY
+            )
+            let fill = try screenshotPixel(at: point, in: app)
+            for component in fill {
+                if light { XCTAssertLessThan(component, 0.2, "Light theme needs an unfocused dark primary fill") }
+                else { XCTAssertGreaterThan(component, 0.85, "Dark theme needs an unfocused bright primary fill") }
+            }
+            capture(light ? "iptv-primary-action-light-unfocused" : "iptv-primary-action-dark-unfocused", in: app)
+            assertNoSourcesOrNetwork(in: app)
+        }
+    }
+
     @MainActor
     func testPlaylistControlsHaveGenerousBoundsAndGuidesCanBeAddedAndRemoved() {
         let app = launchFixture(arguments: ["--typed-settings"])
@@ -8,6 +33,13 @@ final class LiveTVSourceNavigationSmokeTests: XCTestCase {
         guard select(app.buttons["fixture-live-tv-settings"], in: app) else { return }
         let addPlaylist = app.buttons["live-tv-add-playlist"]
         XCTAssertTrue(addPlaylist.waitForExistence(timeout: 5))
+        XCTAssertEqual(addPlaylist.label, "IPTV playlist (M3U or M3U8 URL)")
+        let server = app.buttons["live-tv-add-server"]
+        XCTAssertEqual(server.label, "Media server (Plex, Jellyfin, Emby)")
+        for row in [addPlaylist, server] {
+            XCTAssertEqual(row.staticTexts.count, 1)
+            XCTAssertLessThan(row.staticTexts.firstMatch.frame.height, 55)
+        }
         capture("iptv-setup-source-options", in: app)
         XCUIRemote.shared.press(.right)
         guard select(addPlaylist, in: app) else { return }
@@ -45,7 +77,7 @@ final class LiveTVSourceNavigationSmokeTests: XCTestCase {
         let app = launchFixture(arguments: ["--typed-settings"])
         defer { app.terminate() }
         guard select(app.buttons["fixture-live-tv-settings"], in: app) else { return }
-        let addPlaylist = app.buttons["Add IPTV playlist"]
+        let addPlaylist = app.buttons["live-tv-add-playlist"]
         XCTAssertTrue(addPlaylist.waitForExistence(timeout: 5))
         XCUIRemote.shared.press(.right)
         guard select(addPlaylist, in: app) else { return }
@@ -95,7 +127,7 @@ final class LiveTVSourceNavigationSmokeTests: XCTestCase {
     func testSettingsSourcesPaneOpensEditorWithoutAnIntermediateManagementPage() {
         let app = launchFixture(arguments: ["--source-settings"])
         defer { app.terminate() }
-        let addPlaylist = app.buttons["Add IPTV playlist"]
+        let addPlaylist = app.buttons["live-tv-add-playlist"]
         XCTAssertTrue(addPlaylist.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Manage sources"].exists)
         XCTAssertFalse(app.staticTexts["No guide? No problem."].exists)
@@ -134,7 +166,7 @@ final class LiveTVSourceNavigationSmokeTests: XCTestCase {
         defer { app.terminate() }
 
         guard select(app.buttons["fixture-sources"], in: app) else { return }
-        let addPlaylist = app.buttons["Add IPTV playlist"]
+        let addPlaylist = app.buttons["live-tv-add-playlist"]
         XCTAssertTrue(addPlaylist.waitForExistence(timeout: 5))
         assertNoPublicChannelOffer(in: app)
         guard select(addPlaylist, in: app) else { return }
@@ -347,6 +379,27 @@ final class LiveTVSourceNavigationSmokeTests: XCTestCase {
         hierarchy.name = "\(name)-hierarchy"
         hierarchy.lifetime = .keepAlways
         add(hierarchy)
+    }
+
+    @MainActor
+    private func screenshotPixel(at point: CGPoint, in app: XCUIApplication) throws -> [Double] {
+        let image = try XCTUnwrap(app.screenshot().image.cgImage)
+        let frame = app.windows.firstMatch.frame
+        XCTAssertTrue(frame.contains(point))
+        let x = ((point.x - frame.minX) * CGFloat(image.width) / frame.width).rounded(.down)
+        let y = ((point.y - frame.minY) * CGFloat(image.height) / frame.height).rounded(.down)
+        var rgba = [UInt8](repeating: 0, count: 4)
+        try rgba.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            ))
+            context.interpolationQuality = .none
+            context.translateBy(x: -x, y: -(CGFloat(image.height) - 1 - y))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        return rgba.prefix(3).map { Double($0) / 255 }
     }
 
     @MainActor

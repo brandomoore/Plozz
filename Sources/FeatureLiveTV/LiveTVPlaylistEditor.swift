@@ -87,17 +87,20 @@ struct LiveTVPlaylistEditor: View {
                         checkRequest = UUID()
                     }
                 } label: {
-                    if model.isChecking {
-                        LiveTVSetupActionLabel(title: "Cancel check", symbol: "xmark")
-                    } else if model.currentReview != nil {
-                        LiveTVSetupActionLabel(title: "Save source", symbol: "checkmark")
-                    } else if isEditing {
-                        LiveTVSetupActionLabel(title: "Save changes", symbol: "checkmark")
-                    } else {
-                        LiveTVSetupActionLabel(title: "Add source", symbol: "plus")
+                    Group {
+                        if model.isChecking {
+                            Text("Cancel check")
+                        } else if model.currentReview != nil {
+                            Text("Save source")
+                        } else if isEditing {
+                            Text("Save changes")
+                        } else {
+                            Text("Add source")
+                        }
                     }
+                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                .plozzActionButton(role: model.isChecking ? .secondary : .primary)
                 .accessibilityIdentifier("live-tv-playlist-action")
                 if let issue = model.issue {
                     Label {

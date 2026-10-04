@@ -461,8 +461,7 @@ private struct LiveTVSourcesContent: View {
                 }
             } label: {
                 LiveTVSetupActionLabel(
-                    title: "Add IPTV playlist", symbol: "list.bullet.rectangle",
-                    detail: "Use an M3U or M3U8 playlist URL."
+                    title: "IPTV playlist (M3U or M3U8 URL)", symbol: "list.bullet.rectangle"
                 )
             }
             .buttonStyle(SettingsFocusButtonStyle(size: .contained))
@@ -476,11 +475,11 @@ private struct LiveTVSourcesContent: View {
                     )
                 } label: {
                     LiveTVSetupActionLabel(
-                        title: "Import M3U file", symbol: "doc.badge.plus",
-                        detail: "Choose a saved playlist from Files."
+                        title: "Playlist file (M3U)", symbol: "doc.badge.plus"
                     )
                 }
                 .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                .accessibilityHint("Choose a saved playlist from Files.")
             }
             #endif
             NavigationLink {
@@ -490,11 +489,11 @@ private struct LiveTVSourcesContent: View {
                 )
             } label: {
                 LiveTVSetupActionLabel(
-                    title: "Use a media server", symbol: "server.rack",
-                    detail: "Use Live TV from Plex, Jellyfin or Emby."
+                    title: "Media server (Plex, Jellyfin, Emby)", symbol: "server.rack"
                 )
             }
             .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+            .accessibilityIdentifier("live-tv-add-server")
         }
     }
 

@@ -66,6 +66,8 @@ does not regenerate the shipping app project or install the app on an Apple TV.
   the playlist editor and returning through both pages. Form coverage measures
   native field/action bounds, adds and removes guides with the remote, and checks
   that invalid input stays on the form without persistence or network requests.
+  Screenshot-pixel checks verify that the unfocused primary source action stays
+  filled in both Dark and Light appearances.
 - Setup-card coverage checks matching dimensions, all three remote actions,
   stacked narrow/accessibility layouts, and right-to-left Light appearance.
   Screenshot attachments preserve each layout for visual review.
