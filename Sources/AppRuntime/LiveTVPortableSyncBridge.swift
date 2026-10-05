@@ -5,9 +5,8 @@ import FeatureLiveTVCore
 import Foundation
 import Observation
 
-/// One shared composition adapter for both shells. No new CKSyncEngine, credential
-/// transport or automatic opt-in. Register its capture/apply methods on the
-/// `.liveTVStateV1` channel of the existing CloudConfigSyncService.
+/// Shared composition for both shells. Portable state and encrypted source
+/// transfer are separate channels on the existing CloudKit engine.
 @MainActor
 @Observable
 public final class LiveTVPortableSyncBridge {
@@ -23,6 +22,10 @@ public final class LiveTVPortableSyncBridge {
     @ObservationIgnored private let profiles: ProfilesModel
     @ObservationIgnored private let directory: URL
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let followsMainSync: Bool
+    @ObservationIgnored public lazy var sourceSync = LiveTVSourceSyncBridge(
+        profiles: profiles, defaults: defaults, store: sourceStore, cache: LiveTVCatalogStorage.cache
+    )
     @ObservationIgnored private let sourceStore: @MainActor (String) -> any LiveTVSourcesStoring
     @ObservationIgnored private let definitions: (@MainActor (String) -> any LibraryChannelDefinitionStoring)?
     @ObservationIgnored private let snapshots: (any LibraryChannelSnapshotStoring)?
@@ -43,6 +46,7 @@ public final class LiveTVPortableSyncBridge {
 
     public init(
         profiles: ProfilesModel, directory: URL, defaults: UserDefaults = .standard,
+        followsMainSync: Bool = false,
         sourceStore: (@MainActor (String) -> any LiveTVSourcesStoring)? = nil,
         definitions: (@MainActor (String) -> any LibraryChannelDefinitionStoring)? = nil,
         snapshots: (any LibraryChannelSnapshotStoring)? = nil,
@@ -53,6 +57,7 @@ public final class LiveTVPortableSyncBridge {
         self.profiles = profiles
         self.directory = directory
         self.defaults = defaults
+        self.followsMainSync = followsMainSync
         self.sourceStore = sourceStore ?? { profileID in
             LiveTVSourceStorage.approvalAwareStore(
                 profileID: profileID,
@@ -268,6 +273,7 @@ public final class LiveTVPortableSyncBridge {
     /// Wire to the existing profile removal lifecycle, not to a transient missing
     /// profile roster during cloud hydration.
     public func removeProfile(_ profileID: String) throws {
+        if followsMainSync { try sourceSync.removeProfile(profileID) }
         var removed = try removedProfiles()
         removed.insert(profileID)
         try FileManager.default.createDirectory(at: metadataDirectory, withIntermediateDirectories: true)
@@ -282,6 +288,7 @@ public final class LiveTVPortableSyncBridge {
 
     public func accountDidChange() {
         LiveTVPortableSyncPreferenceStore.accountDidChange(defaults: defaults)
+        if followsMainSync { sourceSync.accountDidChange() }
         Task { await libraryPreparation.discardExport() }
         statuses = [:]
         diagnosticFailures = [:]
@@ -552,6 +559,7 @@ public final class LiveTVPortableSyncBridge {
 
     private func mayApply(_ profileID: String, epoch: String) -> Bool {
         !Task.isCancelled
+            && (!followsMainSync || SyncSetupFeatureFlag(defaults: defaults).isEnabled)
             && epoch == LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults)
             && profiles.profiles.contains { $0.id == profileID }
             && adapter(profileID).isEnabled
@@ -569,9 +577,22 @@ public final class LiveTVPortableSyncBridge {
     }
 
     private func currentAuthority() -> [String: ProfileAuthority] {
+        refreshParticipation()
         var result: [String: ProfileAuthority] = [:]
         for profile in profiles.profiles { result[profile.id] = authority(profile.id) }
         return result
+    }
+
+    public func refreshParticipation() {
+        guard followsMainSync else { return }
+        let enabled = SyncSetupFeatureFlag(defaults: defaults).isEnabled
+        for profile in profiles.profiles {
+            let preference = LiveTVPortableSyncPreferenceStore(
+                defaults: defaults, profileID: profile.id,
+                namespace: profile.id == profiles.rootNamespaceOwnerID ? nil : profile.id
+            )
+            if preference.isEnabled != enabled { preference.isEnabled = enabled }
+        }
     }
 
     private func adapter(_ profileID: String) -> LiveTVPortableSyncAdapter {
@@ -579,7 +600,7 @@ public final class LiveTVPortableSyncBridge {
         let adapter = LiveTVPortableSyncAdapter(
             directory: directory, profileID: profileID, defaults: defaults,
             namespace: profileID == profiles.rootNamespaceOwnerID ? nil : profileID,
-            requiresPreparedJournal: true
+            requiresPreparedJournal: true, includesPlaylistSources: !followsMainSync
         )
         if operationInProgress { operationAdapters[profileID] = adapter }
         return adapter
@@ -615,6 +636,13 @@ public final class LiveTVPortableSyncBridge {
     }
 
     public func statusSummary(profileID: String) -> LocalizedStringResource {
+        if followsMainSync {
+            switch sourceSync.statuses[profileID] {
+            case .unavailable: return "Some Live TV sources could not be synced."
+            case .pendingFiles(let count): return "Waiting for \(count) imported playlists to finish syncing."
+            default: break
+            }
+        }
         guard let status = statuses[profileID] else { return "Waiting to sync Live TV." }
         switch status {
         case .localOnly: return "Live TV settings stay on this device."

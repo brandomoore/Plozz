@@ -42,6 +42,13 @@ final class CloudSyncPersistenceStateTests: XCTestCase {
         })
     }
 
+    func testAccountEpochChangeCommitsEvenWhenLedgerIsStillEmpty() {
+        let state = CloudSyncPersistenceState()
+        XCTAssertTrue(state.writeIfChanged(ledger: SyncLedger(), engineRevision: nil, authority: "first") {})
+        XCTAssertTrue(state.writeIfChanged(ledger: SyncLedger(), engineRevision: nil, authority: "second") {})
+        XCTAssertFalse(state.writeIfChanged(ledger: SyncLedger(), engineRevision: nil, authority: "second") {})
+    }
+
     func testFailedWriteRemainsEligibleForRetry() {
         enum Expected: Error { case write }
         let state = CloudSyncPersistenceState()

@@ -57,6 +57,14 @@ Numeric SDK memory measurements and its low-memory flag survive redaction;
 device names, installation IDs and arbitrary contexts do not.
 The `PLZLTVSYNC` local log uses the same non-secret vocabulary.
 
+Playlist import limit warnings contain only a closed limit category and numeric
+observed/maximum counts. Header size, received bytes, parser input, header-line
+size and entry count are distinguishable without uploading an address, channel
+name, credential, error description or playlist content. Reporting is gated by
+crash-reporting consent and limited to one warning per category per reporter
+lifecycle. These measurements diagnose an unavailable input; a screenshot of the
+generic import error alone cannot establish which limit was reached.
+
 Missing breadcrumbs in a shared issue or formatted summary are not proof that
 the original event contained none. Check the event and its debug images: an app
 image with `debug_status: missing` specifically means Sentry lacks its matching

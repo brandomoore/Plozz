@@ -30,6 +30,7 @@ public struct CloudSyncSchemaDescriptor: Sendable, Equatable {
     public let fieldEditedAt: String
     public let legacyZoneNames: [String]
     public let kindDerivation: KindDerivation
+    public let maximumPayloadBytes: Int?
 
     public init(
         recordType: String,
@@ -39,7 +40,8 @@ public struct CloudSyncSchemaDescriptor: Sendable, Equatable {
         fieldValue: String = "value",
         fieldEditedAt: String = "editedAt",
         legacyZoneNames: [String] = [],
-        kindDerivation: KindDerivation = .prefixBeforeFirstColon
+        kindDerivation: KindDerivation = .prefixBeforeFirstColon,
+        maximumPayloadBytes: Int? = nil
     ) {
         self.recordType = recordType
         self.encryptsValue = encryptsValue
@@ -49,6 +51,7 @@ public struct CloudSyncSchemaDescriptor: Sendable, Equatable {
         self.fieldEditedAt = fieldEditedAt
         self.legacyZoneNames = legacyZoneNames
         self.kindDerivation = kindDerivation
+        self.maximumPayloadBytes = maximumPayloadBytes
     }
 
     public static let configV3 = CloudSyncSchemaDescriptor(

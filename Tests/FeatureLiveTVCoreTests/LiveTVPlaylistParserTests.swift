@@ -1,8 +1,60 @@
 import Foundation
+import CoreModels
 import XCTest
 @testable import FeatureLiveTVCore
 
 final class LiveTVPlaylistParserTests: XCTestCase {
+    func testIncrementalParsingPreservesSplitUnicodeHeadersAndRelativeAddresses() throws {
+        let input = "\u{FEFF}#EXTM3U x-tvg-url=\"../guide.xml\"\r\n"
+            + "#EXTINF:-1 tvg-id=\"station\",Caf\u{E9}\u{2028}"
+            + "#EXTVLCOPT:http-user-agent=Fixture\r"
+            + "../live.m3u8|Referer=https://example.test/watch"
+        let parser = LiveTVPlaylistParser(baseURL: URL(string: "https://example.test/lists/source.m3u"))
+        var stream = parser.makeStream()
+        for byte in input.utf8 { try stream.append(byte) }
+        let result = try stream.finish()
+        XCTAssertEqual(result.channels.count, 1)
+        XCTAssertEqual(result.channels.first?.name, "Caf\u{E9}")
+        XCTAssertEqual(result.channels.first?.streamURL?.absoluteString, "https://example.test/live.m3u8")
+        XCTAssertEqual(result.channels.first?.httpHeaders, [
+            "User-Agent": "Fixture", "Referer": "https://example.test/watch"
+        ])
+        XCTAssertEqual(result.declaredGuideURLs.map(\.absoluteString), ["https://example.test/guide.xml"])
+    }
+
+    func testIncrementalBufferDoesNotGrowWithOversizedLines() throws {
+        var stream = LiveTVPlaylistParser().makeStream()
+        try stream.append(Data("#EXTM3U\n#EXTINF:-1,".utf8))
+        for _ in 0..<100 {
+            try stream.append(Data(repeating: 65, count: 4_096))
+            XCTAssertLessThanOrEqual(stream.bufferedByteCount, LiveTVPlaylistParser.maximumLineBytes + 3)
+        }
+        try stream.append(Data("\nhttps://example.test/skipped\n#EXTINF:-1,Valid\nhttps://example.test/live".utf8))
+        let imported = try stream.finish()
+        XCTAssertEqual(imported.entryCount, 2)
+        XCTAssertEqual(imported.skippedEntryCount, 1)
+        XCTAssertEqual(imported.channels.map(\.name), ["Valid"])
+    }
+
+    func testIncrementalParserRetainsLatinOneCompatibility() throws {
+        var data = Data("#EXTM3U\n#EXTINF:-1,Caf".utf8)
+        data.append(0xE9)
+        data.append(Data("\nhttps://example.test/live\n".utf8))
+        XCTAssertEqual(try LiveTVPlaylistParser().parse(data).channels.first?.name, "Caf\u{E9}")
+    }
+
+    func testIncrementalParserRecognizesEveryASCIINewlineWithoutCombiningLines() throws {
+        for separator in ["\n", "\r", "\r\n", "\u{B}", "\u{C}"] {
+            var lines = ["#EXTM3U"]
+            for index in 0..<2_000 {
+                lines += ["#EXTINF:-1,Channel \(index)", "https://example.test/live/\(index)"]
+            }
+            let input = lines.joined(separator: separator)
+            XCTAssertGreaterThan(input.utf8.count, LiveTVPlaylistParser.maximumLineBytes)
+            XCTAssertEqual(try LiveTVPlaylistParser().parse(input).channels.count, 2_000)
+        }
+    }
+
     func testManyOptionalGuideDeclarationsDoNotRejectValidChannels() throws {
         let guides = (0..<101).map { "https://example.test/guide/\($0).xml" }
         let input = """
@@ -236,6 +288,7 @@ final class LiveTVPlaylistParserTests: XCTestCase {
     }
 
     func testRejectsNonM3UAndOversizedInput() {
+        let diagnostics = PlaylistLimitRecorder()
         XCTAssertThrowsError(try LiveTVPlaylistParser().parse("not a playlist")) {
             XCTAssertEqual($0 as? LiveTVSourceImportError, .invalidPlaylist)
         }
@@ -246,9 +299,13 @@ final class LiveTVPlaylistParserTests: XCTestCase {
         XCTAssertThrowsError(try LiveTVPlaylistParser().parse(data)) {
             XCTAssertEqual($0 as? LiveTVSourceImportError, .responseTooLarge)
         }
+        XCTAssertEqual(diagnostics.values, [.init(
+            limit: .inputBytes, observed: Int64(data.count), maximum: Int64(LiveTVPlaylistParser.maximumBytes)
+        )])
     }
 
     func testRejectsEntryOverflow() {
+        let diagnostics = PlaylistLimitRecorder()
         var input = "#EXTM3U\n"
         for index in 0...LiveTVPlaylistParser.maximumEntries {
             input += "#EXTINF:-1,Channel \(index)\nhttps://example.com/\(index).m3u8\n"
@@ -256,5 +313,44 @@ final class LiveTVPlaylistParserTests: XCTestCase {
         XCTAssertThrowsError(try LiveTVPlaylistParser().parse(input)) {
             XCTAssertEqual($0 as? LiveTVSourceImportError, .responseTooLarge)
         }
+        XCTAssertEqual(diagnostics.values, [.init(
+            limit: .entries, observed: Int64(LiveTVPlaylistParser.maximumEntries) + 1,
+            maximum: Int64(LiveTVPlaylistParser.maximumEntries)
+        )])
+    }
+
+    func testHeaderAndDecodedSizeFailuresHaveDistinctNumericDiagnostics() {
+        let diagnostics = PlaylistLimitRecorder()
+        let header = "#EXTM3U " + String(repeating: "x", count: LiveTVPlaylistParser.maximumLineBytes)
+        XCTAssertThrowsError(try LiveTVPlaylistParser().parse(header))
+        let text = String(repeating: "é", count: LiveTVPlaylistParser.maximumBytes / 2 + 1)
+        XCTAssertThrowsError(try LiveTVPlaylistParser().parse(text))
+        XCTAssertEqual(diagnostics.values, [
+            .init(limit: .headerLineBytes, observed: Int64(header.utf8.count),
+                  maximum: Int64(LiveTVPlaylistParser.maximumLineBytes)),
+            .init(limit: .decodedBytes, observed: Int64(text.utf8.count),
+                  maximum: Int64(LiveTVPlaylistParser.maximumBytes))
+        ])
+    }
+}
+
+final class PlaylistLimitRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [LiveTVPlaylistLimitDiagnostic] = []
+    private var observer: NSObjectProtocol?
+
+    init() {
+        observer = NotificationCenter.default.addObserver(
+            forName: LiveTVPlaylistLimitDiagnostic.notification, object: nil, queue: nil
+        ) { [weak self] notification in
+            guard let self, let diagnostic = notification.object as? LiveTVPlaylistLimitDiagnostic else { return }
+            self.lock.withLock { self.recorded.append(diagnostic) }
+        }
+    }
+
+    var values: [LiveTVPlaylistLimitDiagnostic] { lock.withLock { recorded } }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
     }
 }

@@ -34,6 +34,21 @@ enum CrashRedaction {
             }
             if !safe.isEmpty { context[category] = safe }
         }
+        if event.tags?["report.kind"] == "playlist-import-limit",
+           let limit = event.tags?["import.limit"],
+           LiveTVPlaylistLimitDiagnostic.Limit(rawValue: limit) != nil {
+            var counts: [String: Any] = [:]
+            for key in ["observed", "maximum"] {
+                if let value = event.context?["playlist_import"]?[key] as? NSNumber,
+                   CFGetTypeID(value) != CFBooleanGetTypeID(),
+                   value.doubleValue.isFinite, value.doubleValue > 0,
+                   value.doubleValue.rounded(.down) == value.doubleValue,
+                   value.doubleValue <= Double(Int64.max) {
+                    counts[key] = value
+                }
+            }
+            if !counts.isEmpty { context["playlist_import"] = counts }
+        }
         event.context = context.isEmpty ? nil : context
         event.extra = nil
 

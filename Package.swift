@@ -461,7 +461,7 @@ let package = Package(
         ),
         .target(
             name: "FeatureLiveTVCore",
-            dependencies: ["CoreModels"]
+            dependencies: ["CoreModels", "CoreNetworking"]
         ),
         .target(
             name: "FeatureLiveTV",
@@ -497,7 +497,7 @@ let package = Package(
         // Apple ID's devices. NEVER carries tokens/passwords (that's pairing).
         .target(
             name: "FeatureSyncCloud",
-            dependencies: ["CoreModels", "CoreNetworking"]
+            dependencies: ["CoreModels", "CoreNetworking", "CoreSecureStore"]
         ),
 
         // MARK: Music (browse + audio playback engine)

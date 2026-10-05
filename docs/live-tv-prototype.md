@@ -7,7 +7,7 @@ channels and scheduled library channels, using Plozz's existing AetherEngine
 It lives
 inside Plozz's actual navigation instead of replacing the application root.
 Release builds include the same navigation, standalone onboarding, source
-management, guide/search, Multiview, playback and opt-in portable sync. Existing
+management, guide/search, Multiview, playback and profile-scoped iCloud sync. Existing
 profile authorization, parental approval, account, source and persistence gates
 remain in force.
 
@@ -295,6 +295,15 @@ is no prior in-memory history to migrate on the first updated launch.
   The address can describe an M3U channel list or a direct HLS stream. A direct
   master or media manifest imports one channel, not one channel per segment.
   Channel-list entries can also point to HLS streams.
+  Playlist downloads parse incrementally, with bounded line buffering rather
+  than a retained raw response, full decoded string and split-line array.
+  Imports accept up to 100,000 entries and 128 MiB, with a 64 KiB line bound.
+  An exact 100,000-entry network fixture exceeds the previous 20 MiB ceiling
+  without truncation. Parsed response caching has a separate 64 MiB budget;
+  guide bodies retain their existing limits and cannot reuse playlist validators.
+  Imported files use authenticated, chunked encrypted archives and incremental
+  parsing; legacy encrypted files remain readable. Failed replacements retain
+  the original, and incomplete or tampered archives cannot publish a catalog.
   Source details retain playlist/skipped-entry counts, guide matches, loaded
   listings and per-feed failures; the guide overview shows loaded coverage.
   Settings restores authorized cached channels and guide statistics without
@@ -811,12 +820,45 @@ Generated completion never writes resume position or sends a legacy
 playback-stop event. Pending completions retain runtime consent and account
 authorization checks; restoring an outbox cannot recreate an expired grant.
 
-Optional portable Live TV state covers channel preferences, matching hints and
-generated definitions/snapshots, not source URLs, imported playlist bytes,
-credentials, parental approvals, history grants or channel health. Incomplete
-snapshot transfers remain pending. Identity changes are deferred while
+Live TV follows the main iCloud Sync switch for each profile. The existing
+portable channel covers channel preferences, matching hints and generated
+definitions/snapshots. A separate encrypted source channel carries playlist
+and guide addresses, stable guide identities, source options and imported files.
+Both use the same existing CloudKit engine. Source records reuse deployed
+encrypted fields in an isolated zone; old clients cannot erase them.
+Parental approvals, history grants and channel health remain device-local.
+Server sign-in credentials retain their existing authorization flow.
+
+Imported files use immutable, bounded chunks and a manifest containing their
+byte count and checksum. A source is installed only after the complete file
+verifies, regardless of delivery order. Imported identities cannot replace
+different existing file content. Source deletions use explicit tombstones.
+Canonical source observations and remote-ownership receipts are committed with
+the source configuration in Keychain, preserving unreported local edits.
+Captured edits remain pending until a durable ledger receipt acknowledges that
+exact intent. A failed write or restart cannot let an older cloud fallback
+overwrite them; a recorded server-wins conflict can still converge normally.
+Account/profile/root-namespace and snapshot-order fences reject stale work;
+an account change quarantines sources received from the previous account.
+Parental grants are invalidated through the existing approval-aware store.
+
+Encrypted CloudKit channels also seal their local ledgers with a device-only
+Keychain key. A small atomic index references separately encrypted entry files,
+so acknowledgements do not rewrite all imported playlist bytes. Legacy plaintext
+credential ledgers migrate only after validation; unreadable keys or ciphertext
+never restore an empty ledger. These reconstructable files are excluded from
+backup, and missing encrypted ledgers force a complete cloud fetch. Source
+ledger indexes also bind the account epoch, so an old file left by a failed
+account-switch write cannot be replayed as the new account's sources. Channel
+state commits before engine cursors advance; failed persistence stops delivery
+and retries from the last durable state. Source transfer retains a 256 MiB
+aggregate record budget rather than silently dropping
+files when an account exceeds the device's supported working set.
+
+Incomplete transfers remain pending. Identity changes are deferred while
 playback holds their identities, while authorization revocation takes effect
-immediately. Each device still configures and authorizes its own sources.
+immediately. New clients leave legacy plaintext playlist descriptors unchanged,
+but only the encrypted channel owns playlist configuration.
 
 The mobile Settings root supplies its active profile model to both compact and
 split navigation, including the shared Live TV sync controls and pending-source

@@ -7,6 +7,7 @@ public struct LiveTVPortableChangeSnapshot: Equatable {
     private let preferences: [String: LiveTVPreferences]
     private let consent: [String: Bool]
     private let epoch: String
+    private let cloudEnabled: Bool
 
     @MainActor
     public init(profiles: ProfilesModel, defaults: UserDefaults = .standard) {
@@ -28,5 +29,6 @@ public struct LiveTVPortableChangeSnapshot: Equatable {
         self.preferences = preferences
         self.consent = consent
         epoch = LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults)
+        cloudEnabled = SyncSetupFeatureFlag(defaults: defaults).isEnabled
     }
 }

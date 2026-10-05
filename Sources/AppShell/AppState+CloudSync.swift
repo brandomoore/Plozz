@@ -141,6 +141,10 @@ extension AppState {
             bridge: appState.liveTVPortableSync,
             stateFileURL: syncDir.appendingPathComponent("cloud-live-tv-state-v1.json")
         ))
+        channels.append(Self.makeLiveTVSourceSyncChannel(
+            bridge: appState.liveTVPortableSync?.sourceSync,
+            stateFileURL: syncDir.appendingPathComponent("cloud-live-tv-sources-v1.sealed")
+        ))
         appState.observeLiveTVPortableSync()
         return CloudConfigSyncService(.init(
             containerIdentifier: cloudContainerIdentifier,

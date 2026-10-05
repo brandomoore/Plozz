@@ -242,6 +242,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
     private let preferences: LiveTVPreferencesStore
     private let namespace: String?
     private let requiresPreparedJournal: Bool
+    private let includesPlaylistSources: Bool
     private let coordinator: JournalCoordinator
     private var preparedJournal: PreparedJournal?
     private var preparationID = UUID()
@@ -252,12 +253,12 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
 
     public convenience init(
         directory: URL, profileID: String, defaults: UserDefaults = .standard,
-        requiresPreparedJournal: Bool = false
+        requiresPreparedJournal: Bool = false, includesPlaylistSources: Bool = true
     ) {
         self.init(
             directory: directory, profileID: profileID, defaults: defaults,
             namespace: profileID == ProfileStore.defaultProfileID ? nil : profileID,
-            requiresPreparedJournal: requiresPreparedJournal
+            requiresPreparedJournal: requiresPreparedJournal, includesPlaylistSources: includesPlaylistSources
         )
     }
 
@@ -266,12 +267,13 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
     /// The bounded, read-only pendingPlaylistDescriptor Save guard is an exception.
     public init(
         directory: URL, profileID: String, defaults: UserDefaults = .standard, namespace: String?,
-        requiresPreparedJournal: Bool = false
+        requiresPreparedJournal: Bool = false, includesPlaylistSources: Bool = true
     ) {
         self.profileID = profileID
         self.defaults = defaults
         self.namespace = namespace
         self.requiresPreparedJournal = requiresPreparedJournal
+        self.includesPlaylistSources = includesPlaylistSources
         let epoch = LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults)
         accountEpoch = epoch
         let journalDirectory = directory
@@ -492,7 +494,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         observed.favoriteOrder = localPreferences.favoriteOrder
 
         let sourceIDs = Set(configuration.playlists.map(\.id) + configuration.servers.map(\.id))
-        for source in configuration.playlists {
+        for source in configuration.playlists where includesPlaylistSources {
             try put(.init(source: .init(
                 kind: source.importedPlaylistID == nil ? .playlist : .importedPlaylist,
                 name: source.name, isEnabled: source.isEnabled,
@@ -513,6 +515,10 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         }
         for removed in observed.sourceIDs.subtracting(sourceIDs) {
             let removedKey = key(.source, removed)
+            if !includesPlaylistSources {
+                guard let bytes = records[removedKey.recordName],
+                      try decodedRecord(bytes, key: removedKey).source?.kind == .server else { continue }
+            }
             if let bytes = records[removedKey.recordName],
                let accountID = try decodedRecord(bytes, key: removedKey).source?.accountID {
                 try suppression.setSuppressed(true, accountID: accountID)
@@ -924,6 +930,9 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
     private func applySource(
         _ record: LiveTVPortableRecord, id: String, configuration: inout LiveTVSourcesConfiguration
     ) {
+        if !includesPlaylistSources,
+           record.source?.kind != .server,
+           !configuration.servers.contains(where: { $0.id == id }) { return }
         if record.isDeleted {
             configuration.playlists.removeAll { $0.id == id }
             configuration.servers.removeAll { $0.id == id }
@@ -967,10 +976,10 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             guard recordKey.kind == .source
                 || (recordKey.kind == .library && pendingLibraryIDs.contains(recordKey.entityID)) else { continue }
             let record = try decodedRecord(bytes, key: recordKey)
-            if let source = record.source, source.kind == .playlist, !localPlaylists.contains(recordKey.entityID) {
+            if includesPlaylistSources, let source = record.source, source.kind == .playlist, !localPlaylists.contains(recordKey.entityID) {
                 report.pendingPlaylists[recordKey.entityID] = source
             }
-            if let source = record.source, source.kind == .importedPlaylist,
+            if includesPlaylistSources, let source = record.source, source.kind == .importedPlaylist,
                !localPlaylists.contains(recordKey.entityID) {
                 report.localFileSources[recordKey.entityID] = source
             }

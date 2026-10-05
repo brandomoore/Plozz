@@ -56,7 +56,7 @@ struct LiveTVImportedPlaylistEditor: View {
                         example: "https://example.com/"
                     )
                 }
-                Text("The imported copy is encrypted on this device. It is not uploaded or kept in the guide cache.")
+                Text("The imported copy is encrypted on this device and syncs to the same profile through encrypted iCloud storage when iCloud Sync is on.")
                     .font(.caption)
             }
             .disabled(saving)

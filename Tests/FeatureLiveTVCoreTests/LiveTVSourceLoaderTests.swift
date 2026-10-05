@@ -1,9 +1,61 @@
 #if DEBUG
 import Foundation
+import CoreModels
 import XCTest
 @testable import FeatureLiveTVCore
 
 final class LiveTVSourceLoaderTests: XCTestCase {
+    func testOneHundredThousandEntriesLargerThanTwentyMiBAreNotTruncated() async throws {
+        let url = fixtureURL()
+        var body = Data("#EXTM3U\n".utf8)
+        let metadata = String(repeating: "x", count: 256)
+        for index in 0..<100_000 {
+            body.append(Data(("""
+            #EXTINF:-1 tvg-id="channel-\(index)" group-title="News",Channel \(index)
+            https://example.test/live/\(index).m3u8?fixture=\(metadata)
+
+            """).utf8))
+        }
+        XCTAssertGreaterThan(body.count, 20 * 1_024 * 1_024)
+        XCTAssertLessThan(body.count, LiveTVPlaylistParser.maximumBytes)
+        LoaderProtocol.state.register(url, [.init(
+            status: 200, headers: ["Content-Length": String(body.count)], body: body
+        )])
+        defer { LoaderProtocol.state.remove(url) }
+        let imported = try await loader().loadPlaylist(from: url)
+        XCTAssertEqual(imported.entryCount, 100_000)
+        XCTAssertEqual(imported.channels.count, 100_000)
+        XCTAssertEqual(imported.skippedEntryCount, 0)
+        XCTAssertEqual(imported.channels.first?.name, "Channel 0")
+        XCTAssertEqual(imported.channels.last?.name, "Channel 99999")
+        XCTAssertEqual(Set(imported.channels.map(\.id)).count, 100_000)
+    }
+
+    func testAdvertisedAndReceivedSizeFailuresReportDifferentLimits() async throws {
+        for advertisesSize in [true, false] {
+            let url = fixtureURL()
+            let count = LiveTVPlaylistParser.maximumBytes + 1
+            let diagnostics = PlaylistLimitRecorder()
+            LoaderProtocol.state.register(url, [.init(
+                status: 200,
+                headers: advertisesSize ? ["Content-Length": String(count)] : [:],
+                body: advertisesSize ? playlist : Data(repeating: 65, count: count)
+            )])
+            defer { LoaderProtocol.state.remove(url) }
+            do {
+                _ = try await loader().loadPlaylist(from: url)
+                XCTFail("The bounded import must reject oversized responses.")
+            } catch {
+                XCTAssertEqual(error as? LiveTVSourceImportError, .responseTooLarge)
+            }
+            XCTAssertEqual(diagnostics.values, [.init(
+                limit: advertisesSize ? .responseHeaderBytes : .responseBodyBytes,
+                observed: Int64(count), maximum: Int64(LiveTVPlaylistParser.maximumBytes)
+            )])
+            XCTAssertEqual(LoaderProtocol.state.requests(url).count, 1)
+        }
+    }
+
     func testNotModifiedResponseCanRevokeStorageAndRefreshFreshness() async throws {
         let noStore = fixtureURL()
         let fresh = fixtureURL()

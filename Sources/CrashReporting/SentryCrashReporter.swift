@@ -18,7 +18,8 @@ import Sentry
 @MainActor
 public final class SentryCrashReporter: CrashReporter {
     private let dsn: String
-    private var diagnosticObserver: NSObjectProtocol?
+    private var diagnosticObservers: [NSObjectProtocol] = []
+    private let playlistDiagnosticGate = PlaylistDiagnosticGate()
     public private(set) var isActive = false
 
     public init(dsn: String) {
@@ -64,12 +65,22 @@ public final class SentryCrashReporter: CrashReporter {
         }
 
         applyScope(context)
-        diagnosticObserver = NotificationCenter.default.addObserver(
+        diagnosticObservers.append(NotificationCenter.default.addObserver(
             forName: LiveTVSyncDiagnostic.notification, object: nil, queue: nil
         ) { notification in
             guard let diagnostic = notification.object as? LiveTVSyncDiagnostic else { return }
             Self.record(diagnostic)
-        }
+        })
+        let gate = playlistDiagnosticGate
+        diagnosticObservers.append(NotificationCenter.default.addObserver(
+            forName: LiveTVPlaylistLimitDiagnostic.notification, object: nil, queue: nil
+        ) { notification in
+            guard SentrySDK.isEnabled,
+                  let diagnostic = notification.object as? LiveTVPlaylistLimitDiagnostic,
+                  diagnostic.maximum > 0, diagnostic.observed > diagnostic.maximum,
+                  gate.accept(diagnostic.limit) else { return }
+            SentrySDK.capture(event: Self.playlistLimitEvent(diagnostic))
+        })
 
         isActive = true
     }
@@ -92,10 +103,9 @@ public final class SentryCrashReporter: CrashReporter {
 
     public func stop() {
         guard isActive else { return }
-        if let diagnosticObserver {
-            NotificationCenter.default.removeObserver(diagnosticObserver)
-            self.diagnosticObserver = nil
-        }
+        for observer in diagnosticObservers { NotificationCenter.default.removeObserver(observer) }
+        diagnosticObservers.removeAll()
+        playlistDiagnosticGate.reset()
         SentrySDK.close()
         isActive = false
     }
@@ -132,6 +142,20 @@ public final class SentryCrashReporter: CrashReporter {
         SentrySDK.capture(event: event)
     }
 
+    nonisolated static func playlistLimitEvent(_ diagnostic: LiveTVPlaylistLimitDiagnostic) -> Event {
+        let event = Event(level: .warning)
+        event.message = SentryMessage(formatted: "Live TV playlist import reached a safety limit")
+        event.fingerprint = ["live_tv_playlist_limit", diagnostic.limit.rawValue]
+        event.tags = [
+            "report.kind": "playlist-import-limit",
+            "import.limit": diagnostic.limit.rawValue
+        ]
+        event.context = [
+            "playlist_import": ["observed": diagnostic.observed, "maximum": diagnostic.maximum]
+        ]
+        return event
+    }
+
     private func applyScope(_ context: CrashReportContext) {
         SentrySDK.configureScope { scope in
             scope.setTag(value: context.version, key: "app.version")
@@ -143,6 +167,19 @@ public final class SentryCrashReporter: CrashReporter {
                 : context.providers.joined(separator: "+")
             scope.setTag(value: providers, key: "providers")
         }
+    }
+}
+
+final class PlaylistDiagnosticGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reported: Set<LiveTVPlaylistLimitDiagnostic.Limit> = []
+
+    func accept(_ limit: LiveTVPlaylistLimitDiagnostic.Limit) -> Bool {
+        lock.withLock { reported.insert(limit).inserted }
+    }
+
+    func reset() {
+        lock.withLock { reported.removeAll() }
     }
 }
 #endif

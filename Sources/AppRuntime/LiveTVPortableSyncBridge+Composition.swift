@@ -28,8 +28,8 @@ extension LiveTVPortableSyncBridge {
                 profileID: profileID, namespace: namespace
             )
         }
-        return LiveTVPortableSyncBridge(
-            profiles: profiles, directory: directory, sourceStore: sources,
+        let bridge = LiveTVPortableSyncBridge(
+            profiles: profiles, directory: directory, followsMainSync: true, sourceStore: sources,
             definitions: { profileID in
                 LiveTVLibraryStorage.definitions(
                     profileID: profileID,
@@ -60,5 +60,7 @@ extension LiveTVPortableSyncBridge {
                 return true
             }
         )
+        bridge.refreshParticipation()
+        return bridge
     }
 }

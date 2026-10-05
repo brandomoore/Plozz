@@ -100,6 +100,10 @@ extension PlozziOSAppModel {
             bridge: model.liveTVPortableSync,
             stateFileURL: syncDir.appendingPathComponent("cloud-live-tv-state-v1.json")
         ))
+        channels.append(Self.makeLiveTVSourceSyncChannel(
+            bridge: model.liveTVPortableSync?.sourceSync,
+            stateFileURL: syncDir.appendingPathComponent("cloud-live-tv-sources-v1.sealed")
+        ))
         model.observeLiveTVPortableSync()
         return CloudConfigSyncService(.init(
             containerIdentifier: cloudContainerIdentifier,

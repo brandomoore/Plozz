@@ -5,6 +5,46 @@ import XCTest
 @testable import CrashReporting
 
 final class CrashRedactionTests: XCTestCase {
+    func testPlaylistLimitEventContainsOnlyTypedLimitAndCounts() throws {
+        let diagnostic = LiveTVPlaylistLimitDiagnostic(
+            limit: .responseBodyBytes, observed: 20_971_521, maximum: 20_971_520
+        )
+        let event = SentryCrashReporter.playlistLimitEvent(diagnostic)
+        event.context?["playlist_import"]?["url"] = "https://private.test/secret"
+        event.context?["playlist_import"]?["name"] = "Private playlist"
+        event.extra = ["contents": "Private channel titles"]
+        let clean = try XCTUnwrap(CrashRedaction.scrub(event))
+        XCTAssertEqual(clean.fingerprint, ["live_tv_playlist_limit", "responseBodyBytes"])
+        XCTAssertEqual(clean.tags, [
+            "report.kind": "playlist-import-limit", "import.limit": "responseBodyBytes"
+        ])
+        let counts = try XCTUnwrap(clean.context?["playlist_import"])
+        XCTAssertEqual(Set(counts.keys), ["observed", "maximum"])
+        XCTAssertEqual((counts["observed"] as? NSNumber)?.int64Value, 20_971_521)
+        XCTAssertNil(clean.extra)
+        XCTAssertNil(clean.user)
+        XCTAssertNil(clean.request)
+    }
+
+    func testPlaylistLimitContextRejectsUnknownLimitsAndNonnumericValues() throws {
+        let event = SentryCrashReporter.playlistLimitEvent(.init(limit: .entries, observed: 100_001, maximum: 100_000))
+        event.context?["playlist_import"]?["observed"] = "https://private.test/secret"
+        event.context?["playlist_import"]?["maximum"] = true
+        XCTAssertNil(CrashRedaction.scrub(event)?.context)
+        event.context = ["playlist_import": ["observed": 100_001, "maximum": 100_000]]
+        event.tags?["import.limit"] = "unknown"
+        XCTAssertNil(CrashRedaction.scrub(event)?.context)
+    }
+
+    func testPlaylistLimitReportsAreBoundedUntilReportingRestarts() {
+        let gate = PlaylistDiagnosticGate()
+        XCTAssertTrue(gate.accept(.entries))
+        XCTAssertFalse(gate.accept(.entries))
+        XCTAssertTrue(gate.accept(.inputBytes))
+        gate.reset()
+        XCTAssertTrue(gate.accept(.entries))
+    }
+
     func testMemoryEvidenceSurvivesWithoutDeviceIdentityOrPrivateContexts() throws {
         let event = Event(level: .fatal)
         event.context = [

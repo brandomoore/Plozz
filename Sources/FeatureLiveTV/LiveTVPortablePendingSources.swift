@@ -70,7 +70,7 @@ public struct LiveTVPortablePendingSources: View {
                             }
                         }
                         if !visiblePending.isEmpty {
-                            Text("Playlist addresses stay on each device. Enter the address here to use this source.")
+                            Text("This source was shared without its address by an older version of Plozz. Update that device to sync the address, or enter it here.")
                                 .settingsRowSecondary()
                         }
                         ForEach(visibleFiles.keys.sorted(), id: \.self) { sourceID in
