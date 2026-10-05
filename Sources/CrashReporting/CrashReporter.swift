@@ -1,7 +1,8 @@
 import Foundation
 
 /// Non-secret context attached to every crash report as tags. This is the
-/// only app data we deliberately send, along with a fixed screen category.
+/// context data we deliberately send, alongside fixed screen categories and
+/// the separate closed-vocabulary Live TV sync diagnostics.
 /// It must never contain PII, auth tokens, server URLs/hostnames, media titles,
 /// or profile names — just the coarse facts needed to triage a crash.
 public struct CrashReportContext: Sendable {

@@ -530,10 +530,12 @@ let package = Package(
         // Help & Diagnostics) AND the build shipped with a `PLOZZ_SENTRY_DSN`.
         // The Sentry config here is privacy-hardened: crash + hang captures only,
         // all automatic UI/network telemetry disabled, and a hard scrub of PII in
-        // `beforeSend`/`beforeBreadcrumb`. Depends only on Sentry + Foundation.
+        // `beforeSend`/`beforeBreadcrumb`. Only typed, non-secret app diagnostics
+        // cross the CoreModels boundary.
         .target(
             name: "CrashReporting",
             dependencies: [
+                "CoreModels",
                 .product(name: "Sentry-Static", package: "sentry-apple-binaries"),
             ]
         ),

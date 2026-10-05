@@ -44,6 +44,37 @@ early (the decision tree in §4 routes you):
 
 ---
 
+## Sentry diagnostics and matching symbols
+
+Crash-reporting consent gates all uploads. Automatic UI/network breadcrumbs and
+performance tracing remain disabled. Reports retain a bounded history of fixed
+screen categories and typed Live TV sync stages; failures include only an
+allowlisted reason and, for known system errors, a numeric code. No source/profile
+identity, playlist URL, media title, error description or user-info dictionary is
+included. Repeated sync failures are reported once per profile/operation/stage
+until recovery. Expected schedule deferrals and cancellation are not failures.
+Numeric SDK memory measurements and its low-memory flag survive redaction;
+device names, installation IDs and arbitrary contexts do not.
+The `PLZLTVSYNC` local log uses the same non-secret vocabulary.
+
+Missing breadcrumbs in a shared issue or formatted summary are not proof that
+the original event contained none. Check the event and its debug images: an app
+image with `debug_status: missing` specifically means Sentry lacks its matching
+symbols. An unknown framework source location alone does not establish that.
+
+Before distribution, configure `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` and
+`SENTRY_PROJECT` in the private Plozz env file (or CI environment), and install
+`sentry-cli`. The `beta` and `release` lanes validate both IPAs, then upload each
+archive's UUID-matched app/extension dSYMs and wait for Sentry processing before
+uploading either platform to Apple. Source bundles are explicitly excluded.
+Local builds/archives do not need Sentry upload credentials.
+
+For an existing retained archive, use
+`python3 tools/upload-sentry-symbols.py /path/to/Plozz-tvOS.xcarchive`.
+The UUID must match the event's exact binary; rebuilding the same Git commit does
+not recreate its symbols. Missing historical breadcrumbs cannot be recovered by
+uploading symbols. Symbolication improves attribution, not proof of a hang's cause.
+
 ## 0. The Apple TV is the only honest signal
 
 - The Simulator does **not** reproduce these problems. CPU, memory pressure, the

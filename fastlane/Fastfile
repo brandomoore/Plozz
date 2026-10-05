@@ -197,6 +197,17 @@ def require_crash_reporting_dsn
     return
   end
 
+  def require_sentry_symbols
+    sh("cd .. && python3 tools/upload-sentry-symbols.py --check")
+  end
+
+  def upload_sentry_symbols
+    RELEASE_TARGETS.each do |target|
+      archive = File.join(REPO_ROOT, target[:archive_path])
+      sh("cd .. && python3 tools/upload-sentry-symbols.py #{archive.shellescape}")
+    end
+  end
+
   config_path = File.join(
     ENV["XDG_CONFIG_HOME"] || File.join(Dir.home, ".config"), "plozz", "env"
   )
@@ -577,6 +588,7 @@ end
 desc "Build and upload tvOS plus iOS/iPadOS to TestFlight"
 lane :beta do
   AppleBuildLease.with_shared("plozz/fastlane/beta") do
+  require_sentry_symbols
   api_key = asc_api_key
   # Bake the channel into the binary rather than leaving the app to infer it from
   # an App Store receipt — on tvOS that receipt can be absent, which would make a
@@ -604,6 +616,7 @@ lane :beta do
   jobs = release_artifact_jobs(entry, notes_by_target)
   # Check BOTH exported binaries before starting either irreversible upload.
   PlozzTestflightPipeline.validate_jobs!(jobs)
+  upload_sentry_symbols
   begin
     outcomes = PlozzTestflightPipeline.upload_all(
       jobs: jobs,
@@ -630,6 +643,7 @@ end
 desc "Build and upload tvOS plus iOS/iPadOS to the App Store"
 lane :release do
   AppleBuildLease.with_shared("plozz/fastlane/release") do
+  require_sentry_symbols
   api_key = asc_api_key
   ENV["PLOZZ_RELEASE_CHANNEL"] = "production"
   entry = release_notes_entry
@@ -647,6 +661,7 @@ lane :release do
   end
   build
   PlozzTestflightPipeline.validate_jobs!(release_artifact_jobs(entry, notes_by_target))
+  upload_sentry_symbols
   # Keep every platform's App Store version record in step with the binaries
   # being uploaded. This is independent of the Plozz display release.
   sync_app_store_versions(marketing_version)
