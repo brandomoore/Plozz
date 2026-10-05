@@ -13,7 +13,7 @@ import XCTest
 
 @MainActor
 final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
-    func testPosterAndContinueWatchingRenderMatchingEightPointCorners() async throws {
+    func testPosterAndContinueWatchingRenderMatchingTwelvePointCorners() async throws {
         let artwork = try await posterArtwork()
         let item = MediaItem(
             id: "matching-corners", title: "Movie Title", kind: .movie,
@@ -35,10 +35,10 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                         PosterCardView(item: item, style: .landscape, showsResumeChip: true, action: {})
                             .frame(width: base.continueWatchingWidth)
                             .environment(\.plozzMetrics, base)
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .fill(Color(red: 0.8, green: 0.12, blue: 0.48))
                             .frame(width: 100, height: 64)
-                            .plozzMediaEdge(cornerRadius: 8)
+                            .plozzMediaEdge(cornerRadius: 12)
                     }
                     .padding(32)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -70,7 +70,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                 for profile in profiles.prefix(2) {
                     for (actual, reference) in zip(profile, profiles[2]) {
                         XCTAssertEqual(Double(actual), Double(reference), accuracy: 1,
-                                       "The visible artwork must use 8pt, not the framed card's outer radius.")
+                                       "The visible artwork must use 12pt, not the framed card's outer radius.")
                     }
                 }
             }
@@ -108,9 +108,15 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     )
                     try await settle(window)
                     let image = snapshot(window, name: "library-caption-\(Int(width))-\(style)-\(typeSize)")
-                    let observations = try text(image)
-                    let title = try textFrame("Movies", observations: observations, size: image.size)
-                    let server = try textFrame("Media Server", observations: observations, size: image.size)
+                    // Keep small captions at native resolution even in wide tablet screenshots.
+                    let crop = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(
+                        x: 0, y: 0, width: min(width, 360) * image.scale, height: image.size.height * image.scale
+                    )))
+                    let captionImage = UIImage(cgImage: crop, scale: image.scale, orientation: .up)
+                    let observations = try text(captionImage)
+                    let title = try textFrame("Movies", observations: observations, size: captionImage.size)
+                    // Long server names may truncate; their leading edge must still align.
+                    let server = try textFrame("Media", observations: observations, size: captionImage.size)
                     XCTAssertEqual(title.minX, server.minX, accuracy: 3,
                                    "The server name must align with the library name, not the provider icon.")
                     XCTAssertGreaterThan(server.minY, title.maxY)

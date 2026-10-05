@@ -29,12 +29,12 @@ final class PlozzMetricsTests: XCTestCase {
             let base = PlozzMetrics.touch(density: density)
             for factor in [CGFloat(0.5), 0.8, 1, 1.4, 2] {
                 let metrics = base.scalingPosters(by: factor)
-                XCTAssertEqual(metrics.posterArtworkCornerRadius, 8)
-                XCTAssertEqual(metrics.landscapeArtworkCornerRadius, 8)
-                XCTAssertEqual(metrics.borderlessPosterCornerRadius, 8)
-                XCTAssertEqual(metrics.borderlessLandscapeCornerRadius, 8)
-                XCTAssertEqual(metrics.posterCardCornerRadius, 8 + metrics.cardInset)
-                XCTAssertEqual(metrics.landscapeCardCornerRadius, 8 + metrics.cardInset)
+                XCTAssertEqual(metrics.posterArtworkCornerRadius, 12)
+                XCTAssertEqual(metrics.landscapeArtworkCornerRadius, 12)
+                XCTAssertEqual(metrics.borderlessPosterCornerRadius, 12)
+                XCTAssertEqual(metrics.borderlessLandscapeCornerRadius, 12)
+                XCTAssertEqual(metrics.posterCardCornerRadius, 12 + metrics.cardInset)
+                XCTAssertEqual(metrics.landscapeCardCornerRadius, 12 + metrics.cardInset)
             }
         }
     }

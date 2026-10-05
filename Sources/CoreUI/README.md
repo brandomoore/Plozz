@@ -55,7 +55,7 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   It respects Reduce Motion when revealing a new selection and re-reveals after
   viewport, text-size, or option changes. Callers supply localized or verbatim
   labels and page keylines; native app tabs and tvOS focus controls are separate.
-- **Mobile media corners** — posters and Continue Watching share an 8pt artwork
+- **Mobile media corners** — posters and Continue Watching share a 12pt artwork
   radius at every display size and responsive width. Borderless cards use that
   radius directly; glass frames add their inset to remain concentric. Loaded
   artwork, missing-art placeholders, and skeletons agree. TV rounding is unchanged.

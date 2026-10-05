@@ -184,7 +184,7 @@ public enum PlozzTheme {
         /// Inner media corner radius for a landscape (medium) card. Matches Twozz.
         public static let mediumMediaCornerRadius: CGFloat = 18
         /// Shared artwork rounding for posters and Continue Watching on touch.
-        public static let touchMediaCornerRadius: CGFloat = 8
+        public static let touchMediaCornerRadius: CGFloat = 12
         /// Uniform inset between a media card's glass surface and its artwork —
         /// shared by **every** poster *and* landscape card so the glass border
         /// reads the same thickness across the whole UI. Density-scaled in
