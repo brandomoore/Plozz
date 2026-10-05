@@ -48,7 +48,7 @@ public struct SettingsPageSurface: ViewModifier {
             .scrollContentBackground(.hidden)
             .contentMargins(.vertical, 24, for: .scrollContent)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 24)
+            .safeAreaPadding(.horizontal, 24)
             .background { SettingsPageBackground() }
             .toolbarBackground(.hidden, for: .navigationBar)
     }
