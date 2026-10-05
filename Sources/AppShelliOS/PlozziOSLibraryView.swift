@@ -540,50 +540,17 @@ struct PlozziOSLibraryGridView: View {
 private struct PlozziOSLibraryContentModeControl: View {
     let viewModel: LibraryBrowseViewModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var viewportWidth: CGFloat = 0
-
-    private var labelWidthLimit: CGFloat? {
-        guard dynamicTypeSize.isAccessibilitySize, viewportWidth > 0 else { return nil }
-        return max(44, viewportWidth - PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass) * 2 - 40)
-    }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                HStack(spacing: 4) {
-                    ForEach(viewModel.availableContentModes, id: \.self) { mode in
-                        Button {
-                            Task { await viewModel.setContentMode(mode) }
-                        } label: {
-                            Text(mode.displayName)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.5)
-                                .frame(maxWidth: labelWidthLimit)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(minHeight: 24)
-                        }
-                        .buttonStyle(PlozzSeasonTabStyle(isSelected: viewModel.contentMode == mode))
-                        .accessibilityAddTraits(viewModel.contentMode == mode ? .isSelected : [])
-                        .accessibilityIdentifier("library-mode-\(mode.rawValue)")
-                        .id(mode)
-                    }
-                }
-            }
-            .contentMargins(
-                .horizontal, PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
-                for: .scrollContent
-            )
-            .contentMargins(.vertical, 4, for: .scrollContent)
-            .scrollIndicators(.hidden)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
-            .onChange(of: viewModel.contentMode, initial: true) { _, mode in
-                proxy.scrollTo(mode)
-            }
-            .onChange(of: viewportWidth) { _, _ in proxy.scrollTo(viewModel.contentMode) }
-            .onChange(of: dynamicTypeSize) { _, _ in proxy.scrollTo(viewModel.contentMode) }
+        PlozzContentTabs(
+            options: viewModel.availableContentModes, id: \.self,
+            selection: viewModel.contentMode,
+            horizontalInset: PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+            title: { Text($0.displayName) },
+            tabIdentifier: { "library-mode-\($0.rawValue)" }
+        ) { mode in
+            Task { await viewModel.setContentMode(mode) }
         }
-        .accessibilityElement(children: .contain)
         .accessibilityLabel("Show")
         .accessibilityIdentifier("library-content-mode")
     }

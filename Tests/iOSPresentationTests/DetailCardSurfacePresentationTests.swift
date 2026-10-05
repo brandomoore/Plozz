@@ -1,12 +1,89 @@
 #if os(iOS)
 import CoreModels
 @testable import CoreUI
+import FeatureHomeCore
 import SwiftUI
 import UIKit
 import XCTest
+@testable import AppShelliOS
 
 @MainActor
 final class DetailCardSurfacePresentationTests: XCTestCase {
+    func testCompactDetailMetadataDoesNotCoverThePageGradient() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        host.safeAreaRegions = []
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let trailer = HeroTrailerController()
+        let settings = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
+            HeroBackgroundSettings(homeTrailerEnabled: false, detailMode: .off)
+        ))
+        let item = MediaItem(id: "gradient-fixture", title: "Fixture", kind: .series)
+        for width in [CGFloat(390), 507] {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 844)
+            for palette in [ThemePalette.dark, .pureBlack, .light] {
+                for gradientEnabled in [false, true] {
+                    for reduceTransparency in [false, true] {
+                        let background = LinearGradient(colors: [.blue, .purple], startPoint: .top, endPoint: .bottom)
+                        let stage = PlozziOSHeroStage(
+                            item: item,
+                            presentation: HeroPresentation(item: item, artworkStyle: .compactPortrait, surface: .detail),
+                            style: .compactPortrait, surfaceRole: .detail, isActive: false,
+                            showsBackdrop: false, trailerController: trailer,
+                            backgroundSettings: settings, trailerResolver: { _ in nil }
+                        ) {
+                            Color.white.frame(width: 40, height: 120)
+                        }
+                        host.rootView = AnyView(
+                            ScrollView {
+                                stage
+                                Color.clear.frame(height: 1000)
+                            }
+                            .background(background)
+                            .environment(\.themePalette, palette)
+                            .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                            .environment(\.gradientBackgroundsEnabled, gradientEnabled)
+                            .environment(\.plozzReduceTransparency, reduceTransparency)
+                        )
+                        window.layoutIfNeeded()
+                        try await Task.sleep(for: .milliseconds(150))
+                        let actual = snapshot(window)
+                        let attachment = XCTAttachment(image: actual)
+                        attachment.name = "detail-band-\(width)-\(palette)-\(gradientEnabled)-\(reduceTransparency)"
+                        attachment.lifetime = .keepAlways
+                        add(attachment)
+                        let revealsGradient = gradientEnabled && !reduceTransparency
+                        host.rootView = AnyView(
+                            Group {
+                                if revealsGradient { background }
+                                else { palette.backgroundBase }
+                            }
+                            .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                        )
+                        window.layoutIfNeeded()
+                        try await Task.sleep(for: .milliseconds(100))
+                        let reference = snapshot(window)
+                        for y in [CGFloat(40), 120, 200] {
+                            let point = CGPoint(x: 8, y: y)
+                            for (rendered, expected) in zip(try pixel(actual, at: point), try pixel(reference, at: point)) {
+                                XCTAssertLessThanOrEqual(abs(rendered - expected), 2,
+                                                         "The metadata/action band must reveal the same page gradient, without a flat rectangle.")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testReadOnlyAndButtonCardsRevealTheirBackdropOnPhoneAndTablet() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)

@@ -1,7 +1,7 @@
 # CoreUI
 
 Shared, **focusable** UI primitives, the app theme, and the artwork image
-cache that every feature module reuses. tvOS-only — guarded behind
+cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 `#if canImport(SwiftUI)` so the package still compiles on Linux for tests.
 
 ## Responsibility
@@ -30,6 +30,9 @@ cache that every feature module reuses. tvOS-only — guarded behind
   hairline edge. Gradient Off or Reduce Transparency restores the original solid
   surface and border; unrelated raised cards and dialogs remain unchanged.
   The detail information band retains its darker 40%-opaque surface.
+  Compact mobile detail metadata and actions reveal the page gradient instead
+  of covering it with a solid rectangle; Gradient Off and Reduce Transparency
+  retain the original opaque base. The artwork's existing readability fade stays.
   Native tvOS cards display their local portion of a shared page-mesh texture,
   with the information band and wash precomposed because TVUIKit replaces fill
   alpha. The texture is created only when a card needs it, its longest edge is
@@ -44,6 +47,14 @@ cache that every feature module reuses. tvOS-only — guarded behind
   Native card focus observation is separate from explicit focus requests.
   Caption, overlay and transition-anchor readers update without rebuilding
   the poster's artwork loader or context menu.
+- **Mobile content tabs** — `PlozzContentTabs` owns the touch-sized horizontal
+  navigation shared by library modes and series seasons. Selected tabs use the
+  existing glass capsule style; inactive tabs are secondary text without a
+  capsule. Typography, spacing, 44pt minimum targets, selected accessibility
+  traits, long-label fitting, and selected-tab reveal live in one component.
+  It respects Reduce Motion when revealing a new selection and re-reveals after
+  viewport, text-size, or option changes. Callers supply localized or verbatim
+  labels and page keylines; native app tabs and tvOS focus controls are separate.
 - **Media-row focus** — a dedicated modifier owns the row's `FocusState`
   and supplies its binding to tracked cards. Focus callbacks and prefetch
   bookkeeping must not invalidate the row that constructs all card inputs.

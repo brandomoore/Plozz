@@ -3,6 +3,7 @@ import CoreModels
 import CoreNetworking
 import CoreUI
 import FeatureHomeCore
+import Observation
 import SwiftUI
 import UIKit
 import Vision
@@ -141,6 +142,104 @@ final class LibraryPresentationTests: XCTestCase {
         }
     }
 
+    func testLibraryAndSeriesUseTheSameNativeTabPresentation() async throws {
+        let appModel = PlozziOSAppModel()
+        let provider = LibraryPresentationProvider(artwork: nil)
+        let modes = [LibraryContentMode.recommended, .titles, .collections, .playlists]
+        // Identical labels let us compare actual pixels, not just similar styles.
+        let seasons = modes.enumerated().map { index, mode in
+            MediaItem(id: mode.rawValue, title: String(localized: mode.displayName),
+                      kind: .season, seasonNumber: index + 1)
+        }
+        for sizeClass in [UserInterfaceSizeClass.compact, .regular] {
+            let size = sizeClass == .compact ? CGSize(width: 390, height: 844) : CGSize(width: 768, height: 1024)
+            for light in [false, true] {
+                for selection in [LibraryContentMode.recommended, .playlists] {
+                    var libraryPixels = Data()
+                    var libraryHeight: CGFloat = 0
+                    try await withLibrary(provider: provider, appModel: appModel, size: size,
+                                          sizeClass: sizeClass, light: light) { window, model in
+                        await model.setContentMode(selection)
+                        try await self.settle(window)
+                        let tabs = try XCTUnwrap(self.scrollViews(in: window).dropFirst().first)
+                        let frame = tabs.convert(tabs.bounds, to: window)
+                        let text = try self.capture(window, name: "shared-library-\(sizeClass)-\(light)-\(selection)")
+                        try self.assertSelectedTab(selection, observations: text, window: window)
+                        libraryPixels = try self.imagePixels(in: frame)
+                        libraryHeight = frame.height
+                    }
+                    let model = ItemDetailViewModel(provider: provider, itemID: "series")
+                    let browser = PlozziOSInlineSeriesBrowser(
+                        viewModel: model, seasons: seasons, looseEpisodes: [],
+                        initialSeasonID: selection.rawValue, initialEpisode: nil,
+                        onPlayTargetChange: { _ in }, onHeroShowsSeriesChange: { _ in }, onPlay: { _, _ in }
+                    )
+                    try await withPresentation(
+                        ScrollView { browser.padding(.top, 8) }.navigationTitle("Cinema")
+                            .navigationBarTitleDisplayMode(.inline),
+                        appModel: appModel, size: size, sizeClass: sizeClass, light: light
+                    ) { window in
+                        let tabs = try XCTUnwrap(self.scrollViews(in: window).dropFirst().first)
+                        let frame = tabs.convert(tabs.bounds, to: window)
+                        let text = try self.capture(window, name: "shared-seasons-\(sizeClass)-\(light)-\(selection)")
+                        try self.assertSelectedTab(selection, observations: text, window: window)
+                        XCTAssertEqual(frame.height, libraryHeight, accuracy: 0.5)
+                        XCTAssertGreaterThanOrEqual(frame.height, 44)
+                        XCTAssertEqual(try self.imagePixels(in: frame), libraryPixels,
+                                       "Library and season tabs must render identically with the same labels and selection.")
+                    }
+                }
+            }
+        }
+    }
+
+    func testSharedTabsRevealSelectionAfterOptionsTextSizeAndViewportChanges() async throws {
+        let appModel = PlozziOSAppModel()
+        for reduceTransparency in [false, true] {
+            let state = ContentTabsFixtureState()
+            let fixture = ContentTabsFixture(state: state)
+                .environment(\.plozzReduceTransparency, reduceTransparency)
+            try await withPresentation(fixture, appModel: appModel, size: CGSize(width: 390, height: 844),
+                                       sizeClass: .compact) { window in
+                for selection in [19, 0, 10] {
+                    state.selection = selection
+                    try await self.settle(window)
+                    try self.assertFixtureSelection(state, window: window, name: "selection-\(selection)-\(reduceTransparency)")
+                }
+                state.options = Array((0..<20).reversed())
+                try await self.settle(window)
+                try self.assertFixtureSelection(state, window: window, name: "reordered-\(reduceTransparency)")
+                state.textSize = .accessibility5
+                try await self.settle(window)
+                try self.assertFixtureSelection(state, window: window, name: "large-text-\(reduceTransparency)")
+                state.width = 320
+                try await self.settle(window)
+                try self.assertFixtureSelection(state, window: window, name: "narrow-\(reduceTransparency)")
+            }
+        }
+    }
+
+    private func assertFixtureSelection(_ state: ContentTabsFixtureState, window: UIWindow, name: String) throws {
+        let text = try capture(window, name: "shared-tabs-\(name)", scale: 2)
+        let expected = "Season \(state.selection + 1)"
+        // Vision can combine adjacent tabs into one observation; measure only
+        // the selected label's complete word range, not its neighbouring text.
+        let matches = try text.compactMap { observation -> VNRectangleObservation? in
+            guard let candidate = observation.topCandidates(1).first,
+                  let range = candidate.string.range(of: "\\b\(expected)\\b", options: .regularExpression)
+            else { return nil }
+            return try candidate.boundingBox(for: range)
+        }
+        let selected = try XCTUnwrap(matches.first, expected)
+        let scroll = try XCTUnwrap(scrollViews(in: window).first)
+        let frame = scroll.convert(scroll.bounds, to: window)
+        XCTAssertGreaterThanOrEqual(frame.height, 52)
+        XCTAssertGreaterThanOrEqual(selected.boundingBox.minX * window.bounds.width, frame.minX)
+        XCTAssertLessThanOrEqual(selected.boundingBox.maxX * window.bounds.width, frame.maxX)
+        XCTAssertGreaterThanOrEqual((1 - selected.boundingBox.maxY) * window.bounds.height, frame.minY)
+        XCTAssertLessThanOrEqual((1 - selected.boundingBox.minY) * window.bounds.height, frame.maxY)
+    }
+
     private func navigationBar(in view: UIView) -> UINavigationBar? {
         (view as? UINavigationBar) ?? view.subviews.lazy.compactMap { self.navigationBar(in: $0) }.first
     }
@@ -148,7 +247,11 @@ final class LibraryPresentationTests: XCTestCase {
     private func headerPixels(y: CGFloat) throws -> Data {
         let image = try XCTUnwrap(capturedImage)
         let rect = CGRect(x: 0, y: y - 2, width: CGFloat(image.width), height: 4).integral
-        let crop = try XCTUnwrap(image.cropping(to: rect))
+        return try imagePixels(in: rect)
+    }
+
+    private func imagePixels(in rect: CGRect) throws -> Data {
+        let crop = try XCTUnwrap(capturedImage?.cropping(to: rect.integral))
         var bytes = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
         try bytes.withUnsafeMutableBytes {
             let context = try XCTUnwrap(CGContext(
@@ -313,24 +416,44 @@ final class LibraryPresentationTests: XCTestCase {
             defaults: defaults, sourceAccountID: "fixture", browseScope: scope
         )
         if preload { await model.loadFirstPageIfNeeded() }
+        defer { model.cancelPendingQuery() }
+        try await withPresentation(
+            PlozziOSLibraryGridView(
+                viewModel: model, title: "Cinema", provider: provider, settings: appModel.settings
+            ),
+            appModel: appModel, size: size, sizeClass: sizeClass, dynamicTypeSize: dynamicTypeSize,
+            light: light, cardStyle: cardStyle, pushed: pushed
+        ) { window in
+            try await exercise(window, model)
+        }
+    }
+
+    private func withPresentation<Content: View>(
+        _ content: Content,
+        appModel: PlozziOSAppModel,
+        size: CGSize,
+        sizeClass: UserInterfaceSizeClass,
+        dynamicTypeSize: DynamicTypeSize = .large,
+        light: Bool = false,
+        cardStyle: CardStyle = .borderless,
+        pushed: Bool = false,
+        exercise: (UIWindow) async throws -> Void
+    ) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(origin: .zero, size: size)
         window.overrideUserInterfaceStyle = light ? .light : .dark
-        let content = PlozziOSLibraryGridView(
-            viewModel: model, title: "Cinema", provider: provider, settings: appModel.settings
-        )
-        .background(light ? ThemePalette.light.backgroundBase : ThemePalette.dark.backgroundBase)
+        let page = content.background(light ? ThemePalette.light.backgroundBase : ThemePalette.dark.backgroundBase)
         window.rootViewController = UIHostingController(rootView:
             NavigationStack(path: .constant(pushed ? [true] : [])) {
                 if pushed {
                     Color.clear
                         .navigationTitle("Home")
                         .toolbarBackground(.hidden, for: .navigationBar)
-                        .navigationDestination(for: Bool.self) { _ in content }
+                        .navigationDestination(for: Bool.self) { _ in page }
                 } else {
-                    content
+                    page
                 }
             }
             .environment(appModel)
@@ -347,10 +470,9 @@ final class LibraryPresentationTests: XCTestCase {
             window.isHidden = true
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
-            model.cancelPendingQuery()
         }
         try await settle(window)
-        try await exercise(window, model)
+        try await exercise(window)
     }
 
     private func settle(_ window: UIWindow) async throws {
@@ -359,9 +481,9 @@ final class LibraryPresentationTests: XCTestCase {
         window.layoutIfNeeded()
     }
 
-    private func capture(_ window: UIWindow, name: String) throws -> [VNRecognizedTextObservation] {
+    private func capture(_ window: UIWindow, name: String, scale: CGFloat = 1) throws -> [VNRecognizedTextObservation] {
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
+        format.scale = scale
         let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
             XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
         }
@@ -406,6 +528,31 @@ final class LibraryPresentationTests: XCTestCase {
             _ = try XCTUnwrap(decoded)
         }
         return url
+    }
+}
+
+@Observable
+private final class ContentTabsFixtureState {
+    var options = Array(0..<20)
+    var selection = 19
+    var textSize = DynamicTypeSize.large
+    var width: CGFloat = 390
+}
+
+private struct ContentTabsFixture: View {
+    let state: ContentTabsFixtureState
+
+    var body: some View {
+        PlozzContentTabs(
+            options: state.options, id: \.self, selection: state.selection,
+            horizontalInset: 22,
+            title: { Text(verbatim: "Season \($0 + 1)") },
+            tabIdentifier: { "fixture-season-\($0)" },
+            onSelect: { state.selection = $0 }
+        )
+        .environment(\.dynamicTypeSize, state.textSize)
+        .frame(width: state.width)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
 

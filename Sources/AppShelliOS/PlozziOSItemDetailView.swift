@@ -1608,7 +1608,7 @@ private struct PlozziOSDownloadAction: View {
     }
 }
 
-private struct PlozziOSInlineSeriesBrowser: View {
+struct PlozziOSInlineSeriesBrowser: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedSeasonID: String?
     @State private var railTargetID: String?
@@ -1659,49 +1659,17 @@ private struct PlozziOSInlineSeriesBrowser: View {
         if !seasons.isEmpty || !looseEpisodes.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
                 if !seasons.isEmpty {
-                    HStack(spacing: 10) {
-                        ScrollViewReader { proxy in
-                            ScrollView(.horizontal) {
-                                LazyHStack(spacing: 10) {
-                                    ForEach(seasons) { season in
-                                        PlozziOSSeasonButton(
-                                            title: season.title,
-                                            isSelected:
-                                                season.id == selectedSeasonID
-                                        ) {
-                                            hasInteractedWithEpisodeBrowser = true
-                                            selectedSeasonID = season.id
-                                        }
-                                        .id(season.id)
-                                    }
-                                }
-                            }
-                            .contentMargins(
-                                .leading,
-                                pageInset,
-                                for: .scrollContent
-                            )
-                            .contentMargins(
-                                .trailing,
-                                4,
-                                for: .scrollContent
-                            )
-                            .scrollIndicators(.hidden)
-                            .onChange(
-                                of: selectedSeasonID,
-                                initial: true
-                            ) { _, selectedSeasonID in
-                                guard let selectedSeasonID else { return }
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    proxy.scrollTo(
-                                        selectedSeasonID,
-                                        anchor: .center
-                                    )
-                                }
-                            }
-                        }
+                    PlozzContentTabs(
+                        options: seasons, id: \.id, selection: selectedSeasonID,
+                        horizontalInset: pageInset,
+                        title: { Text(verbatim: $0.title) },
+                        tabIdentifier: { "season-\($0.id)" }
+                    ) { season in
+                        hasInteractedWithEpisodeBrowser = true
+                        selectedSeasonID = season.id
                     }
-                    .padding(.trailing, pageInset)
+                    .accessibilityLabel("Season")
+                    .accessibilityIdentifier("series-season-tabs")
                 }
 
                 PlozziOSInlineEpisodeRail(
@@ -3357,45 +3325,6 @@ private struct PlozziOSSeasonDownloadPrompt: Identifiable {
             return nil
         }
         return capacity.formatted(.byteCount(style: .file))
-    }
-}
-
-private struct PlozziOSSeasonButton: View {
-    @Environment(\.themePalette) private var palette
-
-    /// Season name from the server — content, so rendered verbatim.
-    let title: String   // l10n:content — season name from the server
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(
-                    isSelected
-                        ? palette.backgroundBase
-                        : palette.primaryText
-                )
-                .padding(.horizontal, 18)
-                .padding(.vertical, 10)
-                .background(
-                    isSelected
-                        ? palette.primaryText
-                        : palette.cardSurface.opacity(0.92),
-                    in: Capsule()
-                )
-                .overlay {
-                    if !isSelected {
-                        Capsule()
-                            .strokeBorder(
-                                palette.primaryText.opacity(0.2),
-                                lineWidth: 1
-                            )
-                    }
-                }
-        }
-        .buttonStyle(.plain)
     }
 }
 

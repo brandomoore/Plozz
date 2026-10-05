@@ -52,6 +52,8 @@ fallback when the user's server has no attached trailer.
   its mode tabs only while the first row is active; mobile uses touch-sized rows.
   iPhone and iPad keep Recommended, Browse, Collections, and Playlists in a
   horizontally scrolling tab strip, limited to the provider's capabilities.
+  Library modes and series seasons both use CoreUI's `PlozzContentTabs`, with
+  the same selected glass pill, inactive text, touch sizing, and reveal behavior.
   Tabs retain their identity through loading, empty, and failure states and
   reveal the selected mode without compressing every label into a segmented
   control. At accessibility sizes, an individual tab still fits the viewport.

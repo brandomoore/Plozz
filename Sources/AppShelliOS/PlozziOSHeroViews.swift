@@ -508,10 +508,12 @@ struct PlozziOSDetailHeroSection: View {
     }
 }
 
-private struct PlozziOSHeroStage<Foreground: View>: View {
+struct PlozziOSHeroStage<Foreground: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.plozziOSHeroContainerHeight) private var containerHeight
     @Environment(\.themePalette) private var palette
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @State private var artworkAppearanceID = UUID().uuidString
 
     let item: MediaItem
@@ -647,7 +649,7 @@ private struct PlozziOSHeroStage<Foreground: View>: View {
                         )
                         .padding(.bottom, 8)
                         .frame(maxWidth: .infinity)
-                        .background(palette.backgroundBase)
+                        .background(gradientEnabled && !reduceTransparency ? Color.clear : palette.backgroundBase)
                 }
             } else {
                 ZStack {
