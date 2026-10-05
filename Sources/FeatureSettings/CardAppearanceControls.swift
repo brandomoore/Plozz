@@ -154,6 +154,7 @@ public struct CardCaptionCustomizationView: View {
             SettingsSectionGroup {
                 ForEach(CardCaptionView.allCases, id: \.rawValue) { view in
                     Picker(view.displayName, selection: selection(for: view)) { options }
+                        .accessibilityIdentifier("card-label-view-\(view.rawValue)")
                 }
             } footer: {
                 Text("Choices apply across all libraries. Titles inside collections and playlists use Browse.")

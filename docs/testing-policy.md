@@ -279,6 +279,24 @@ use synthetic received data, not pairing services or stored household credential
 Package-only UIKit snapshots cannot replace this gate:
 without an application scene, `drawHierarchy` returns an empty image.
 
+The `PlozziOSInteractionTests` scheme adds real native touch coverage for Settings
+on both an owned iPhone simulator and an owned iPad simulator. It launches the
+same presentation host with an explicit settings-fixture argument, exercising
+production views rather than copies. The fixture disables cloud sync in its own
+sandbox before creating the app model; it does not need shipping entitlements
+or stored accounts. Normal presentation-test launches still use the blank host.
+The UI-test target depends on that host, not additional package products.
+
+`SettingsInteractionTests` checks navigation from compact and split Settings,
+Cards and Display Size, independent theme and playback menus, caption previews
+and per-view overrides, and neighboring Home, subtitle, spoiler, Circadian Mode,
+and Live TV controls. These tests must synthesize taps: direct accessibility
+activation and screenshots alone miss a native List cell intercepting a
+neighbor's tap. Keep the shared lease, private package workspace, serial
+execution, and retained `xcresult` used by the presentation suite; select
+`-scheme PlozziOSInteractionTests -only-testing:PlozziOSInteractionTests/SettingsInteractionTests`
+with the explicit owned iOS simulator destination.
+
 `tools/run-focus-tests.sh` runs the `PlozzFocusTests` scheme in a minimal,
 separate `PlozzFocusHost` app. It uses the same package code but supplies a real
 foreground window scene, which package logic tests cannot provide. The suite

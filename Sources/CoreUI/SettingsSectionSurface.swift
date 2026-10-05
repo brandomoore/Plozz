@@ -97,6 +97,9 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
             .toggleStyle(SettingsSwitchToggleStyle(flushLeading: false))
             #else
             .toggleStyle(SettingsTouchSwitchToggleStyle())
+            // A group is one List cell. Automatic pickers can claim the whole
+            // cell's primary action, stealing taps from sibling controls.
+            .pickerStyle(.menu)
             #endif
             .settingsGroupSurface(cornerRadius: 18)
 

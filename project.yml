@@ -507,6 +507,20 @@ targets:
       - package: Plozz
         product: AppShelliOS
 
+  PlozziOSInteractionTests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests/iOSInteractionTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.InteractionTests
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: PlozziOSPresentationHost
+    dependencies:
+      - target: PlozziOSPresentationHost
+
   PlozzHomeRemoteTests:
     type: bundle.ui-testing
     platform: tvOS
@@ -542,6 +556,16 @@ targets:
         product: AppShell
 
 schemes:
+  PlozziOSInteractionTests:
+    build:
+      targets:
+        PlozziOSPresentationHost: all
+        PlozziOSInteractionTests: [test]
+    test:
+      config: Debug
+      targets:
+        - PlozziOSInteractionTests
+
   PlozziOSPresentationTests:
     build:
       targets:

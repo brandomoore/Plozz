@@ -60,6 +60,11 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   bookkeeping must not invalidate the row that constructs all card inputs.
   Entry-gate state remains observable for episode rows; ordinary Home rows
   retain native column-aligned entry and cover/return behavior.
+- **Grouped settings interactions** — `SettingsSectionGroup` uses explicit
+  menu pickers on iOS. A visual group occupies one native List cell; automatic
+  pickers can promote their menu to that whole cell and intercept neighboring
+  navigation links or controls. Keep picker activation local without replacing
+  the shared group surface, separators, or tvOS control styles.
 - **Async artwork** — `FallbackAsyncImage` and `ArtworkImageCache`: an
   on-disk + in-memory image cache shared with `MetadataKit`'s URL cache,
   with an `asyncFallbackURL` slot so server art is always tried first and
