@@ -7,11 +7,11 @@ import UIKit
 
 /// Renders a QR code for an arbitrary string using CoreImage. tvOS has no
 /// browser, so a scannable code is how Plozz hands a URL off to a phone (used
-/// by both the About panel's repo link and the Report a Problem flow).
+/// by both the About community links and the Report a Problem flow).
 ///
 /// The generated image is nearest-neighbour scaled so the code stays crisp at
 /// display size. `correctionLevel` trades error-resilience for density: use
-/// "H" for short URLs (About repo link) and "M" for longer pre-filled URLs
+/// "H" for short URLs (About community links) and "M" for longer pre-filled URLs
 /// (the GitHub issue link) so the code stays scannable on a TV at ~10 feet.
 struct SettingsQRCode: View {
     let string: String
@@ -26,7 +26,7 @@ struct SettingsQRCode: View {
                     .resizable()
                     .interpolation(.none)
                     .scaledToFit()
-                    .padding(12)
+                    .padding(16)
                     .background(.white, in: RoundedRectangle(cornerRadius: PlozzTheme.Metrics.Radius.control, style: .continuous))
                     .overlay {
                         if let centerMark {

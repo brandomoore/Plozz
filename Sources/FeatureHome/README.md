@@ -80,6 +80,9 @@ fallback when the user's server has no attached trailer.
   Navigation eligibility follows the current row order when a refresh removes
   or inserts a row, without requiring focus to move. Hub identities are scoped
   by their source and content, not by their position among other rows.
+  The scrolling header forwards public styling and enabled state to its hosted
+  SwiftUI content, not another hosting tree's private accessibility state.
+  Returning to the first row re-enables the same controls after Showcase hides them.
   Filter joins the same header line. Quick filters intersect genre and year;
   its label names the selected options while they fit, falling back to their
   count only when the available header space is too narrow. Tabs and Sort retain

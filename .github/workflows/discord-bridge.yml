@@ -1,0 +1,110 @@
+name: Discord issue bridge
+
+on:
+  push:
+    paths:
+      - .github/workflows/discord-bridge.yml
+      - tools/discord-bridge.py
+      - tools/run-bounded.py
+      - tools/tests/test_discord_bridge.py
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Preflight checks connections; dry-run previews; sync mirrors; publish-guides posts bot-owned templates.
+        type: choice
+        options: [preflight, dry-run, sync, publish-guides]
+        default: preflight
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: discord-issue-bridge
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode != 'sync' && inputs.mode != 'publish-guides')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Regression tests
+        run: python3 -m unittest discover -s tools/tests -p 'test_discord_bridge.py'
+      - name: Install pinned Copilot CLI
+        run: npm install --global --ignore-scripts @github/copilot@1.0.91
+      - name: Read-only connection and model check
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 tools/discord-bridge.py --mode preflight
+      - name: Preview eligible reports
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run'
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          DISCORD_PUBLIC_SINCE: ${{ vars.DISCORD_PUBLIC_SINCE }}
+        run: python3 tools/discord-bridge.py --mode dry-run
+
+  publish-guides:
+    if: >-
+      github.repository == 'brandomoore/Plozz' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.mode == 'publish-guides'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Regression tests
+        run: python3 -m unittest discover -s tools/tests -p 'test_discord_bridge.py'
+      - name: Publish bot-owned posting templates
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: python3 tools/discord-bridge.py --mode publish-guides
+
+  sync:
+    if: >-
+      github.repository == 'brandomoore/Plozz' &&
+      github.ref == 'refs/heads/main' &&
+      vars.DISCORD_BRIDGE_ENABLED == 'true' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && inputs.mode == 'sync'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install pinned Copilot CLI
+        run: npm install --global --ignore-scripts @github/copilot@1.0.91
+      - name: Synchronize public support forums
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          DISCORD_BRIDGE_ENABLED: ${{ vars.DISCORD_BRIDGE_ENABLED }}
+          DISCORD_PUBLIC_SINCE: ${{ vars.DISCORD_PUBLIC_SINCE }}
+        run: python3 tools/discord-bridge.py --mode sync

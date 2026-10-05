@@ -23,7 +23,7 @@ struct PlozziOSDiagnosticsSettingsView: View {
             appVersion: version.displayVersion,
             appBuild: version.build,
             providers: providers.isEmpty ? "None" : providers,
-            repoURL: "https://github.com/thatcube/Plozz",
+            repoURL: AppLinks.repository.absoluteString,
             recentLogTail: PlozzLog.recentLogText(limit: 8),
             marketingVersion: version.marketingVersion
         )

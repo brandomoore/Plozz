@@ -777,6 +777,7 @@ public struct SettingsView: View {
                 version: appVersion,
                 build: appBuild,
                 repoURL: repoURL,
+                showsReleaseNotes: ReleaseNotesModel.shared.isAvailable,
                 // Withheld inside a Kids Profile. Seven selects here unlock
                 // Developer Mode, whose "Reset to First Run" wipes the profile
                 // list AND the household Parental PIN — a no-PIN way out of the

@@ -712,7 +712,52 @@ private struct PlozziOSSettingsSplitView: View {
     }
 }
 
-private struct PlozziOSAboutSettingsView: View {
+struct PlozziOSCommunitySettingsSection: View {
+    @State var showsQRCodes = false
+
+    var body: some View {
+        SettingsSectionGroup("Community") {
+            communityLink(
+                Text(verbatim: "Discord"), brand: .discord, caption: "Join the community",
+                url: AppLinks.discord
+            )
+            communityLink(
+                Text(verbatim: "GitHub"), brand: .github, caption: "Source code and issues",
+                url: AppLinks.repository
+            )
+            DisclosureGroup("QR Codes", isExpanded: $showsQRCodes) {
+                SettingsCommunityLinks()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+        }
+    }
+
+    private func communityLink(
+        _ title: Text, brand: SettingsCommunityLogo.Brand, caption: LocalizedStringKey, url: URL
+    ) -> some View {
+        Link(destination: url) {
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    SettingsCommunityLogo(brand: brand, height: 32)
+                    Text(caption)
+                        .font(.subheadline)
+                        .plozzForeground(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "arrow.up.forward")
+                    .font(.subheadline.weight(.semibold))
+                    .plozzForeground(.secondary)
+            }
+            .padding(.vertical, 4)
+        }
+        .accessibilityLabel(title)
+        .accessibilityHint(Text(caption))
+    }
+}
+
+struct PlozziOSAboutSettingsView: View {
     let hasAccounts: Bool
     /// Whether the Developer Mode unlock gesture is withheld — see
     /// `handleVersionTap`.
@@ -745,6 +790,8 @@ private struct PlozziOSAboutSettingsView: View {
                     }
                 }
             }
+
+            PlozziOSCommunitySettingsSection()
 
             if hasAccounts {
                 SettingsSectionGroup {
@@ -1124,6 +1171,8 @@ private struct PlozziOSSettingsCompactMenu: View {
                     Text(everyoneScopeFooter)
                 }
                 }
+
+                PlozziOSCommunitySettingsSection()
 
                 SettingsSectionGroup("Support") {
                 NavigationLink {
