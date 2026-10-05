@@ -96,6 +96,38 @@ Remove or set `DISCORD_BRIDGE_ENABLED` to `false` to stop scheduled writes.
 Do not advance the notice timestamp after linking posts: that would exclude
 existing sources and make vote totals incomplete.
 
+### Forum tags and posting templates
+
+Both forums use optional device tags (`Apple TV`, `iPhone`, `iPad`) and media-source
+tags (`Plex`, `Jellyfin`, `Emby`, `Silo`, `Network shares`, `IPTV`). Members can select
+the relevant device and source without a mandatory-tag barrier. These describe
+the report, not its status; the bridge's issue link shows GitHub's open/closed
+state. Tags do not change matching, assign priority, or automatically become
+GitHub labels.
+
+Forum guidelines should keep the public notice above and briefly ask people to
+search first, post one bug/idea at a time, use relevant tags, and keep private data
+out of text, screenshots, and diagnostics. Each forum has a pinned "Start here"
+post with a copyable template. Bug reports ask for version/build, device/OS,
+source, expected/actual behavior, and reproduction steps. Feature requests ask
+for the goal, benefit, current workaround, and example behavior.
+
+The canonical pinned copy is `POSTING_GUIDES` in `tools/discord-bridge.py`. To
+publish or refresh it, explicitly run **Discord issue bridge -> Run workflow ->
+publish-guides** on the intended revision. This manual-only job uses only the
+Discord secret: it does not invoke Copilot, receive a GitHub write token, or
+change the live bridge's activation. The bot needs Send Messages in the two
+forums to create their starter posts, in addition to its normal thread-reply
+permissions. Pin each returned post using a moderator account; do not grant the
+bot Administrator, Manage Channels, or Manage Threads just for this setup.
+
+Guides are bot-authored, so the existing bridge excludes the entire guide thread,
+including replies, without relying on user-editable tags or titles. Publishing
+again verifies or updates the same bot-owned starter instead of making another
+post. A conflicting human-owned title or multiple matching guides stops the
+operation. Ambiguous creation failures are not retried immediately; a later run
+rediscovers a successfully created guide.
+
 ## Operational limits and recovery
 
 Mappings live in the bot-authored GitHub report bodies/comments and Discord

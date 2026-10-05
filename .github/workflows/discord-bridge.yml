@@ -12,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Preflight never writes; dry-run plans eligible posts; sync requires activation.
+        description: Preflight checks connections; dry-run previews; sync mirrors; publish-guides posts bot-owned templates.
         type: choice
-        options: [preflight, dry-run, sync]
+        options: [preflight, dry-run, sync, publish-guides]
         default: preflight
         required: true
 
@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   check:
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode != 'sync')
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode != 'sync' && inputs.mode != 'publish-guides')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -58,6 +58,26 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           DISCORD_PUBLIC_SINCE: ${{ vars.DISCORD_PUBLIC_SINCE }}
         run: python3 tools/discord-bridge.py --mode dry-run
+
+  publish-guides:
+    if: >-
+      github.repository == 'brandomoore/Plozz' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.mode == 'publish-guides'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Regression tests
+        run: python3 -m unittest discover -s tools/tests -p 'test_discord_bridge.py'
+      - name: Publish bot-owned posting templates
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: python3 tools/discord-bridge.py --mode publish-guides
 
   sync:
     if: >-

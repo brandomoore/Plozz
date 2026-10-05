@@ -31,6 +31,58 @@ MODEL = "gpt-6-astra"
 EFFORT = "high"
 THUMBS_UP = "\U0001f44d"
 PUBLIC_NOTICE = "Posts and replies automatically sync to GitHub"
+POSTING_GUIDES = {
+    "bug": (
+        "Start here: How to report a bug",
+        """Found something broken? Search this forum first. If someone has reported the same problem, add your details there and use the thumbs-up reaction instead of opening another post.
+
+**Create a New Post for each separate bug.** Use a specific title, such as "Apple TV: subtitles disappear after seeking". Add your device and media-source tags if relevant.
+
+**Copy this template into your new post:**
+```text
+Plozz version and build:
+Device and OS version:
+Media source (Plex, Jellyfin, Emby, Silo, network share, IPTV):
+
+What happened:
+What I expected:
+Steps to reproduce:
+1.
+2.
+3.
+
+How often it happens:
+Screenshots or sanitized diagnostics (optional):
+```
+Version/build are in Settings, under Support or About depending on your layout. If playback is involved, include the file/stream format and playback engine if known. Don't worry if you don't know every detail.
+
+**Posts and replies automatically sync to GitHub.** Treat everything here as public. Never include passwords, access tokens, private server URLs, or unredacted logs; review screenshots too.
+
+This pinned guide is not a bug report. Please create a new post rather than replying here.""",
+    ),
+    "enhancement": (
+        "Start here: How to request a feature",
+        """Have an idea for Plozz? Search this forum first. If someone has requested the same thing, use the thumbs-up reaction and add your use case to their post.
+
+**Create a New Post for each separate idea.** Use a specific title, such as "Live TV: hide several channels at once". Add your device and media-source tags if relevant.
+
+**Copy this template into your new post:**
+```text
+What I'd like to do:
+Why it would help:
+How I handle it today (if applicable):
+
+Suggested behavior or example:
+Affected devices/media sources (or all):
+Screenshots or mockups (optional):
+```
+Describe the problem or goal first; you don't need to design the entire solution. Votes help show interest, but aren't a promise that a feature will be built.
+
+**Posts and replies automatically sync to GitHub.** Treat everything here as public. Never include passwords, access tokens, private server URLs, or unredacted logs; review screenshots too.
+
+This pinned guide is not a feature request. Please create a new post rather than replying here.""",
+    ),
+}
 HEADER = "<!-- plozz-discord "
 START = "<!-- plozz-discord-content:start -->"
 END = "<!-- plozz-discord-content:end -->"
@@ -356,6 +408,42 @@ def thread_messages(discord, thread_id):
     raise BridgeError("Discord message pagination exceeded the run budget.")
 
 
+def publish_guides(discord, channels):
+    require_public_notices(channels)
+    threads = discover_threads(discord, datetime(1970, 1, 1, tzinfo=timezone.utc))
+    plans = []
+    for forum, kind in FORUMS.items():
+        title, content = POSTING_GUIDES[kind]
+        matches = [t for t in threads if t["parent_id"] == forum and t["name"] == title]
+        if len(matches) > 1:
+            raise BridgeError(f"Forum {forum} has multiple posting guides; refusing an ambiguous update.")
+        starter = None
+        existing = matches[0] if matches else None
+        if existing:
+            starter = discord.call("GET", f"/channels/{existing['id']}/messages/{existing['id']}")
+            author = starter.get("author", {})
+            if author.get("id") != BOT or author.get("bot") is not True:
+                raise BridgeError(f"Forum {forum}'s guide is not owned by this bot; refusing to replace it.")
+        plans.append((forum, title, content, existing, starter))
+
+    for forum, title, content, existing, starter in plans:
+        if existing is None:
+            existing = discord.call("POST", f"/channels/{forum}/threads", {
+                "name": title,
+                "message": {"content": content, "allowed_mentions": {"parse": []}},
+            })
+        elif starter.get("content") != content:
+            discord.call("PATCH", f"/channels/{existing['id']}/messages/{existing['id']}", {
+                "content": content, "allowed_mentions": {"parse": []},
+            })
+        identifier = snowflake(existing["id"])
+        actual = discord.call("GET", f"/channels/{identifier}/messages/{identifier}")
+        if actual.get("author", {}).get("id") != BOT or actual.get("author", {}).get("bot") is not True or actual.get("content") != content:
+            raise BridgeError(f"Forum {forum}'s published guide did not pass verification.")
+        print(f"Posting guide verified: {message_link(identifier, identifier)}")
+    print("Pin each guide in its forum using a moderator account. Bot-created guides are excluded from issue mirroring.")
+
+
 def voters(discord, thread, starter, channel):
     default = channel.get("default_reaction_emoji") or {"emoji_name": THUMBS_UP}
     users = set()
@@ -609,8 +697,14 @@ def sync(discord, github, matcher, channels, since, dry_run=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("preflight", "dry-run", "sync"), default="preflight")
+    parser.add_argument("--mode", choices=("preflight", "dry-run", "sync", "publish-guides"), default="preflight")
     args = parser.parse_args()
+    if args.mode == "publish-guides":
+        if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch" or os.environ.get("GITHUB_REPOSITORY") != REPO:
+            raise BridgeError("Posting guides require an explicit workflow dispatch in this repository.")
+        discord = API("Discord", os.environ.get("DISCORD_BOT_TOKEN"), write=True)
+        publish_guides(discord, inspect_discord(discord))
+        return
     if args.mode == "sync":
         if os.environ.get("DISCORD_BRIDGE_ENABLED") != "true":
             raise BridgeError("Live mirroring is not enabled.")
