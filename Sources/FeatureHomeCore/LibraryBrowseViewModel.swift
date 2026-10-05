@@ -17,12 +17,25 @@ public enum LibraryContentMode: String, CaseIterable, Sendable {
         case .playlists: "Playlists"
         }
     }
+
+    public var cardCaptionView: CardCaptionView {
+        switch self {
+        case .recommended: .recommended
+        case .titles: .browse
+        case .collections: .collections
+        case .playlists: .playlists
+        }
+    }
 }
 
 public enum LibraryBrowseScope: String, Hashable, Sendable {
     case library
     case collectionMembers
     case playlistMembers
+
+    public func cardCaptionView(for mode: LibraryContentMode) -> CardCaptionView {
+        self == .library ? mode.cardCaptionView : .browse
+    }
 }
 
 /// Drives a *sparse* library grid: it loads the first page to learn the

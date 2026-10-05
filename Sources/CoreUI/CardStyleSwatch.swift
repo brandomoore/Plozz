@@ -39,6 +39,7 @@ private enum CardStylePreviewColors {
 /// caller gives it and stays proportionate at the compact and full sizes.
 private struct CardStyleMini: View {
     let style: CardStyle
+    let showsCaptions: Bool
 
     var body: some View {
         GeometryReader { geo in
@@ -123,6 +124,7 @@ private struct CardStyleMini: View {
                 Capsule().fill(CardStylePreviewColors.titleSecondary)
                     .frame(width: tileW * 0.44, height: barH)
             }
+            .opacity(showsCaptions ? 1 : 0)
         }
         .frame(width: tileW)
     }
@@ -152,14 +154,16 @@ private struct CardStyleMini: View {
 public struct CardStyleSwatch: View {
     private let style: CardStyle
     private let cornerRadius: CGFloat
+    private let showsCaptions: Bool
 
-    public init(style: CardStyle, cornerRadius: CGFloat = 16) {
+    public init(style: CardStyle, cornerRadius: CGFloat = 16, showsCaptions: Bool = true) {
         self.style = style
         self.cornerRadius = cornerRadius
+        self.showsCaptions = showsCaptions
     }
 
     public var body: some View {
-        CardStyleMini(style: style)
+        CardStyleMini(style: style, showsCaptions: showsCaptions)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)

@@ -62,8 +62,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// a layout choice, not a hero option: Showcase has no hero section at all.
     public var style: HeroStyle
 
-    /// Title lines beneath mobile Home posters and tvOS Showcase cards.
-    /// Off by default; artwork identifies mobile posters and Showcase names the focused title.
+    /// Legacy migration input. CardCaptionSettings now owns visual card labels.
     public var showsCardCaptions: Bool
 
     /// Whether the Showcase layout adds a row of discovery picks — what the

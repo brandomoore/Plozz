@@ -56,16 +56,24 @@ public final class CardStyleSettingsModel {
         didSet { focusStore.save(focusStyle) }
     }
 
+    public var captions: CardCaptionSettings {
+        didSet { captionStore.save(captions) }
+    }
+
     private let store: CardStyleSettingsStoring
     private let focusStore: CardFocusStyleSettingsStoring
+    private let captionStore: CardCaptionSettingsStoring
 
     public init(
         store: CardStyleSettingsStoring = CardStyleSettingsStore(),
-        focusStore: CardFocusStyleSettingsStoring = CardFocusStyleSettingsStore()
+        focusStore: CardFocusStyleSettingsStoring = CardFocusStyleSettingsStore(),
+        captionStore: CardCaptionSettingsStoring = CardCaptionSettingsStore()
     ) {
         self.store = store
         self.focusStore = focusStore
+        self.captionStore = captionStore
         self.style = store.load()
         self.focusStyle = focusStore.load()
+        self.captions = captionStore.load()
     }
 }

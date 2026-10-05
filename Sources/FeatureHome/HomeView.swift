@@ -727,6 +727,7 @@ public struct HomeView: View {
                 await refreshFeaturedStatusLoop()
             }
         }
+        .environment(\.plozzCardCaptionView, .home)
         .task(id: heroRuntime.freshnessRefresh.activityID(
             isActive: heroIsFrontmost && scenePhase == .active && (curationSettings?.isActive ?? false)
         )) {

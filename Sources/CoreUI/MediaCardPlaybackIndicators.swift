@@ -134,7 +134,7 @@ public struct MediaCardPlaybackIndicators: View {
     /// 280pt person-page one alike. `watchedBadgeSize` is the check badge's
     /// diameter on this card, which is already density-scaled.
     private var libraryMarkSize: CGFloat {
-        metrics.watchedBadgeSize
+        max(metrics.watchedBadgeSize, PlozzTheme.Metrics.watchedBadgeMinSize)
     }
 
     @ViewBuilder

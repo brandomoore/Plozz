@@ -1,16 +1,40 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import CoreModels
 
 private struct PlozzCardCaptionsHiddenKey: EnvironmentKey {
-    static let defaultValue = false
+    static let defaultValue: Bool? = nil
+}
+
+private struct PlozzCardCaptionSettingsKey: EnvironmentKey {
+    static let defaultValue = CardCaptionSettings.default
+}
+
+private struct PlozzCardCaptionViewKey: EnvironmentKey {
+    static let defaultValue = CardCaptionView.browse
 }
 
 public extension EnvironmentValues {
-    /// Whether media cards drop the title lines under their artwork. Set by a
-    /// surface that already names the focused title elsewhere, such as the Home
-    /// hero that follows focus. A resume chip then carries the episode instead.
+    var plozzCardCaptionSettings: CardCaptionSettings {
+        get { self[PlozzCardCaptionSettingsKey.self] }
+        set { self[PlozzCardCaptionSettingsKey.self] = newValue }
+    }
+
+    var plozzCardCaptionView: CardCaptionView {
+        get { self[PlozzCardCaptionViewKey.self] }
+        set {
+            self[PlozzCardCaptionViewKey.self] = newValue
+            self[PlozzCardCaptionsHiddenKey.self] = nil
+        }
+    }
+
+    /// Explicit values are reserved for non-media navigation tiles and fixtures.
+    /// Media surfaces resolve their shared default and per-view exception here.
     var plozzCardCaptionsHidden: Bool {
-        get { self[PlozzCardCaptionsHiddenKey.self] }
+        get {
+            self[PlozzCardCaptionsHiddenKey.self]
+                ?? !plozzCardCaptionSettings.showsLabels(in: plozzCardCaptionView)
+        }
         set { self[PlozzCardCaptionsHiddenKey.self] = newValue }
     }
 

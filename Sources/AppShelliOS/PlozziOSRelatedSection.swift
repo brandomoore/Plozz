@@ -55,6 +55,7 @@ struct PlozziOSRelatedSection: View {
                 }
                 .scrollClipDisabled()
             }
+            .environment(\.plozzCardCaptionView, .related)
         }
     }
 

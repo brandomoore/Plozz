@@ -1799,21 +1799,14 @@ private struct PlozziOSAppearanceSettingsView: View {
                 }
             }
 
-            SettingsSectionGroup("Library cards") {
-                Picker("Card style", selection: $cardStyle.style) {
-                    ForEach(CardStyle.allCases) { style in
-                        Text(style.displayName).tag(style)
-                    }
+            SettingsSectionGroup("Cards") {
+                NavigationLink("Cards") {
+                    CardAppearanceControls(cards: cardStyle, watchIndicator: watchIndicator)
                 }
                 Picker("Display size", selection: $density.density) {
                     ForEach(UIDensity.allCases) { density in
                         Label(density.displayName, systemImage: density.symbolName)
                             .tag(density)
-                    }
-                }
-                Picker("Watch indicator", selection: $watchIndicator.indicator) {
-                    ForEach(WatchStatusIndicator.allCases) { indicator in
-                        Text(indicator.displayName).tag(indicator)
                     }
                 }
             }
@@ -1849,13 +1842,6 @@ private struct PlozziOSHomeSettingsView: View {
     var body: some View {
         List {
             SettingsSectionGroup("Rows") {
-                Toggle(isOn: $hero.settings.showsCardCaptions) {
-                    Text(LocalizedStringResource(
-                        "homeLayout.showCardTitles",
-                        defaultValue: "Show titles under cards",
-                        comment: "Show each Home poster's title beneath its artwork."
-                    ))
-                }
                 ForEach(HomeGlobalRow.allCases, id: \.rawValue) { row in
                     Toggle(
                         row.title,

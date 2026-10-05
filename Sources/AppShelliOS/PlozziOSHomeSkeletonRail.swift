@@ -24,7 +24,7 @@ struct PlozziOSHomeSkeletonRail: View {
     /// Enough cards to fill the widest supported screen; the rail clips the rest.
     var cardCount: Int = 8
     /// Matches the row's caption preference so replacing placeholders preserves height.
-    var showsCaption: Bool = HeroSettings.default.showsCardCaptions
+    var showsCaption: Bool = CardCaptionSettings.default.showsLabels
     /// Matches Continue Watching's narrower, deeper series-artwork card shape.
     var showsSeriesArtwork: Bool = false
 
@@ -87,7 +87,7 @@ struct PlozziOSHomeSkeletonScreen: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     let heroActive: Bool
-    var showsPosterCaptions: Bool = HeroSettings.default.showsCardCaptions
+    var showsPosterCaptions: Bool = CardCaptionSettings.default.showsLabels
 
     var body: some View {
         PlozziOSHomeScrollView(heroActive: heroActive) {
@@ -97,7 +97,7 @@ struct PlozziOSHomeSkeletonScreen: View {
                     : .landscape
             )
         } rows: {
-            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .landscape, showsCaption: true)
+            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .landscape, showsCaption: showsPosterCaptions)
             PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster, showsCaption: showsPosterCaptions)
             PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster, showsCaption: showsPosterCaptions)
         }

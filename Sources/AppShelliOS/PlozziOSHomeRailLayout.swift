@@ -64,7 +64,7 @@ struct PlozziOSHomeRailLayout<Content: View>: View {
         let gap = PlozziOSHomeLayout.cardSpacing + (cardStyle == .framed ? 2 * metrics.cardInset : 0)
         // Phones get three complete pictures plus a 28% preview. Wider windows
         // add columns instead of stretching phone posters to tablet size.
-        let count = max(3, floor((width - inset + gap) / 164))
+        let count = max(width < 375 ? 2 : 3, floor((width - inset + gap) / 164))
         let standardWidth = (width - inset - count * gap) / (count + 0.28)
         let artworkWidth = max(44, standardWidth * CGFloat(metrics.density.scale))
         return metrics.scalingPosters(by: artworkWidth / metrics.posterWidth)

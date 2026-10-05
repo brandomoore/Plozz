@@ -201,7 +201,7 @@ struct PlozziOSHomeView: View {
                 // content swaps in without the page reflowing.
                 PlozziOSHomeSkeletonScreen(
                     heroActive: appModel.settings.hero.settings.isActive,
-                    showsPosterCaptions: appModel.settings.hero.settings.showsCardCaptions
+                    showsPosterCaptions: appModel.settings.cardStyle.captions.showsLabels(in: .home)
                 )
             case .empty:
                 ContentUnavailableView {
@@ -237,6 +237,7 @@ struct PlozziOSHomeView: View {
         .plozziOSTracksHeroContainerHeight()
         .artworkGradientBackground(scope: ObjectIdentifier(viewModel), isVisible: homeIsFrontmost && homeHasAppeared)
         .onAppear { homeHasAppeared = true }
+        .environment(\.plozzCardCaptionView, .home)
         .onDisappear { homeHasAppeared = false }
         .onChange(of: ObjectIdentifier(viewModel)) { _, _ in
             resetHeroScope()
@@ -559,7 +560,7 @@ struct PlozziOSHomeView: View {
                         } else if row.isLoading {
                             PlozziOSHomeSkeletonRail(
                                 title: Text(verbatim: section.title), style: .poster,
-                                showsCaption: settings.showsCardCaptions
+                                showsCaption: appModel.settings.cardStyle.captions.showsLabels(in: .home)
                             )
                         } else {
                             PlozziOSHomeMediaRail(
@@ -2244,7 +2245,7 @@ private struct PlozziOSFeaturedRow: View {
             )
             .plozziOSHomeRailClearance()
         }
-        .environment(\.plozzCardCaptionsHidden, !appModel.settings.hero.settings.showsCardCaptions)
+        .environment(\.plozzCardCaptionView, .home)
     }
 }
 
@@ -2290,10 +2291,8 @@ private struct PlozziOSHomeRowView: View {
                     title: Text(row.title),
                     style: row.kind == .libraries || row.style == .landscape ? .landscape : .poster,
                     cardCount: row.loadingPlaceholderCount > 0 ? row.loadingPlaceholderCount : 8,
-                    showsCaption: row.kind == .libraries || row.style == .landscape
-                        ? !(row.kind == .continueWatching
-                            && appModel.settings.homeVisibility.continueWatchingShowsSeriesArtwork)
-                        : appModel.settings.hero.settings.showsCardCaptions,
+                    showsCaption: row.kind == .libraries
+                        || appModel.settings.cardStyle.captions.showsLabels(in: .home),
                     showsSeriesArtwork: row.kind == .continueWatching
                         && appModel.settings.homeVisibility.continueWatchingShowsSeriesArtwork
                 )
@@ -2490,8 +2489,8 @@ struct PlozziOSHomeMediaRail: View {
         .onDisappear {
             artworkPrefetchTasks.cancelAll()
         }
-        .environment(\.plozzCardCaptionsHidden,
-                     style == .poster && !appModel.settings.hero.settings.showsCardCaptions)
+        .environment(\.plozzCardCaptionView, .home)
+        .environment(\.plozzCardCaptionSettings, appModel.settings.cardStyle.captions)
     }
 
     private func provider(for item: MediaItem) -> (any MediaProvider)? {
@@ -2678,7 +2677,7 @@ private struct PlozziOSHomeMediaCard: View {
                     )
                     .environment(\.plozzMetrics, .touch(
                         density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize))
-                    .environment(\.plozzCardCaptionsHidden, false)
+                    .environment(\.plozzCardCaptionView, .related)
                 } label: {
                     card
                 }

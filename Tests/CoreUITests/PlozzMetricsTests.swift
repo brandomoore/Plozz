@@ -1,9 +1,43 @@
 #if canImport(SwiftUI)
 import XCTest
+import SwiftUI
 import CoreModels
 @testable import CoreUI
 
 final class PlozzMetricsTests: XCTestCase {
+    func testTouchCardsUseProportionateBadgesCornersAndCaptionSpacing() {
+        let touch = PlozzMetrics.touch(density: .standard)
+        let tv = PlozzMetrics.standard
+        XCTAssertEqual(touch.watchedBadgeSize, 21)
+        XCTAssertEqual(touch.folderNavigationBadgeSize, 36)
+        XCTAssertEqual(tv.watchedBadgeSize, PlozzTheme.Metrics.watchedBadgeSize)
+        XCTAssertEqual(tv.posterArtworkCornerRadius, PlozzTheme.Metrics.posterArtCornerRadius)
+        for density in UIDensity.allCases {
+            let metrics = PlozzMetrics.touch(density: density)
+            XCTAssertGreaterThanOrEqual(metrics.watchedBadgeSize, 20)
+            XCTAssertEqual(metrics.posterCaptionTopSpacing, 4)
+            for focus in CardFocusStyle.allCases {
+                XCTAssertEqual(metrics.focusCaptionPush(for: focus), 0)
+            }
+            let small = metrics.scalingPosters(by: 0.6)
+            XCTAssertLessThanOrEqual(small.posterArtworkCornerRadius, metrics.posterArtworkCornerRadius)
+            XCTAssertEqual(small.posterCardCornerRadius, small.posterArtworkCornerRadius + small.cardInset)
+        }
+    }
+
+    func testCaptionEnvironmentResolvesDefaultOverridesAndDestinationScopes() {
+        var environment = EnvironmentValues()
+        environment.plozzCardCaptionSettings = CardCaptionSettings(
+            showsLabels: false, overrides: [.browse: true, .home: false, .extras: true]
+        )
+        for view in CardCaptionView.allCases {
+            environment.plozzCardCaptionView = view
+            XCTAssertEqual(environment.plozzCardCaptionsHidden, view != .browse && view != .extras)
+        }
+        environment.plozzCardCaptionsHidden = true
+        environment.plozzCardCaptionView = .browse
+        XCTAssertFalse(environment.plozzCardCaptionsHidden, "A destination must not inherit its source's forced visibility.")
+    }
     func testStandardMatchesPlozzThemeConstants() {
         let m = PlozzMetrics(density: .standard)
         XCTAssertEqual(m.scale, 1.0)

@@ -9,13 +9,12 @@ import Foundation
 /// (`PosterCardView`), so this stays Foundation-only and the Settings screen can
 /// edit it without importing SwiftUI.
 public enum CardStyle: String, CaseIterable, Identifiable, Codable, Sendable {
-    /// The default: artwork nested inside a liquid-glass card surface, with a
-    /// uniform inset border and the caption sitting on the glass.
-    case framed
     /// No card background at all — just the artwork and its sub-text. The image
     /// fills the whole slot (so it reads larger), is rounded at the card's outer
     /// radius, and gains the same focus glass halo the artist/cast tiles use.
     case borderless
+    /// Artwork nested inside a liquid-glass card surface.
+    case framed
 
     public var id: String { rawValue }
 

@@ -40,6 +40,7 @@ public enum ProfileSettingsTransfer {
         ThemeSettingsStore.gradientStorageKey,
         "transparencyPreference",
         "com.plozz.cardStyle",
+        CardCaptionSettingsStore.storageKey,
         "com.plozz.watchStatusIndicator",
         "com.plozz.nightShift",
         "com.plozz.playbackSettings",

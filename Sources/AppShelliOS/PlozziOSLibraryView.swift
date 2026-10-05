@@ -241,6 +241,7 @@ struct PlozziOSLibraryGridView: View {
             }
         }
         .navigationTitle(title)
+        .environment(\.plozzCardCaptionView, viewModel.browseScope.cardCaptionView(for: viewModel.contentMode))
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $selectedRecommendedItem) { item in
             PlozziOSItemDetailView(

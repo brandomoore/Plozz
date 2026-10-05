@@ -12,14 +12,23 @@ fallback when the user's server has no attached trailer.
   active account set (`[ResolvedAccount]`) so Home is a merged view
   across multiple servers / profiles. Uses the `MediaProvider`
   abstraction; never imports a specific provider module.
-- **Mobile Home posters** — portrait rails fit three full posters and a 28%
-  preview at standard density on phone-sized windows. Wider windows add columns;
+- **Mobile Home posters** — portrait rails fit two full posters below 375pt,
+  three on larger phones, and a 28% preview at standard density. Wider windows add columns;
   per-profile display-size choices scale the result. Loaded cards and placeholders
   share `PlozziOSHomeRailLayout`, and their artwork starts on the heading keyline
-  after subtracting each card style's internal inset. Poster captions default off
-  through the existing profile-scoped `HeroSettings.showsCardCaptions`, exposed in
-  mobile Home settings; explicit saved choices are retained. Continue Watching
-  geometry, library grids, detail pages, and tvOS layout are unchanged.
+  after subtracting each card style's internal inset. Smaller mobile artwork uses
+  proportionate corners and a 20pt minimum watched badge, without shrinking folder
+  navigation badges. Continue Watching geometry and library grid columns are unchanged.
+- **Card labels** — Appearance > Cards owns a profile-scoped shared choice
+  (No labels by default), with Default / Labels / No labels exceptions by experience.
+  Home, Recommended, Browse, Collections, Playlists, Search, Watchlist, related titles,
+  episodes, extras, and filmography resolve the same policy on iOS and tvOS.
+  Collection and playlist contents follow Browse across every library. Library
+  navigation, cast names, essential list text, accessibility labels, and on-artwork
+  playback information stay intact. Existing Home choices migrate once from
+  `HeroSettings`; the card settings transfer with the profile. Native grids and
+  loading placeholders remove the same caption space as loaded cards. Touch captions
+  have a 4pt gap without TV focus travel; TV captions retain their focus clearance.
 - **Mobile Home rhythm** — every loaded, placeholder, library, and failed row uses
   `PlozziOSHomeSection`: native Dynamic Type `title3` semibold headings, a 12pt
   heading-to-artwork layout gap, and 32pt between sections. Home's media surfaces
@@ -210,8 +219,9 @@ Native library, poster, and landscape captions share the same density-aware
 artwork-to-caption gap, including loading placeholders. Native focus overflow
 stays outside the artwork layout slot. Poster caption travel reserves at least
 24 points for TVUIKit's enlargement, including compact densities, without
-reflowing the row or changing animation timing. This poster-specific clearance
-does not change playback-panel, grid, or circular-tile caption travel.
+reflowing the row or changing animation timing. Native library grids use the
+same resting gap and focus travel; playback-panel and circular-tile captions
+retain their own geometry.
 Transparent server covers retain their alpha but use the same rounded native
 poster treatment as opaque covers, rather than alpha-shaped cutout focus.
 This changes the native image-view treatment, not the cached artwork bitmap.

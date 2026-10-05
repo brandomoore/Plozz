@@ -159,6 +159,7 @@ public struct LibraryBrowseView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Browse is a full-screen sub-page: hide the top tab bar so it reads as a
         // dedicated destination with no navigation chrome pinned at the top.
+        .environment(\.plozzCardCaptionView, viewModel.browseScope.cardCaptionView(for: viewModel.contentMode))
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .top, spacing: 0) {
             #if os(tvOS)

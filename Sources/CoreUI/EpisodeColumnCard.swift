@@ -43,6 +43,7 @@ public struct EpisodeColumnCard: View, Equatable {
     @Environment(\.plozzWatchStatusIndicator) private var watchStatusIndicator
     @Environment(\.plozzCardFocusStyle) private var focusStyle
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
 
     private let metrics = PlozzMetrics.standard
 
@@ -64,38 +65,9 @@ public struct EpisodeColumnCard: View, Equatable {
         let _ = plozzTraceBodyChanges { Self._printChanges() }
         VStack(alignment: .leading, spacing: 0) {
             episodeArtwork
-
-            VStack(alignment: .leading, spacing: 0) {
-                presentation.titleLine
-                    .font(.system(size: metrics.cardTitleFontSize, weight: .semibold))
-                    .foregroundStyle(presentation.isUpcoming ? .secondary : .primary)
-                    .lineLimit(1)
-                    .padding(.top, metrics.landscapeCaptionTopSpacing + metrics.focusCaptionPush)
-
-                SpoilerSafeOverviewText(
-                    overview: presentation.overviewTreatment == .blurred
-                        ? item.overview
-                        : presentation.visibleOverview,
-                    hidesSpoilers: presentation.overviewTreatment == .blurred
-                        || presentation.overviewTreatment == .placeholder,
-                    mode: spoilerSettings.mode,
-                    lineCount: 3,
-                    fontSize: 20,
-                    maxWidth: Self.artworkSize.width
-                )
-                .opacity(synopsisVisible ? 1 : 0)
-                .animation(
-                    reduceMotion ? nil : .easeOut(duration: 0.12),
-                    value: synopsisVisible
-                )
-                .offset(y: reduceMotion || synopsisAtRest ? 0 : -metrics.focusCaptionPush)
-                .animation(
-                    reduceMotion ? nil : .smooth(duration: 0.28),
-                    value: synopsisAtRest
-                )
-                .padding(.top, 10)
+            if !captionsHidden {
+                episodeCaption
             }
-            .offset(y: reduceMotion || focusStyle.usesSystemEffect || isFocused ? 0 : -metrics.focusCaptionPush)
         }
         .frame(width: Self.artworkSize.width, alignment: .leading)
         .padding(.trailing, Self.trailingSpacing)
@@ -110,7 +82,7 @@ public struct EpisodeColumnCard: View, Equatable {
         .task(id: synopsisTaskID) {
             synopsisVisible = false
             synopsisAtRest = false
-            guard isFocused else { return }
+            guard isFocused, !captionsHidden else { return }
             if reduceMotion {
                 synopsisVisible = true
                 synopsisAtRest = true
@@ -127,13 +99,48 @@ public struct EpisodeColumnCard: View, Equatable {
         .accessibilityLabel(presentation.accessibilityLabel)
     }
 
+    private var episodeCaption: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            presentation.titleLine
+                .font(.system(size: metrics.cardTitleFontSize, weight: .semibold))
+                .foregroundStyle(presentation.isUpcoming ? .secondary : .primary)
+                .lineLimit(1)
+                .padding(.top, metrics.landscapeCaptionTopSpacing + metrics.focusCaptionPush)
+
+            SpoilerSafeOverviewText(
+                overview: presentation.overviewTreatment == .blurred
+                    ? item.overview
+                    : presentation.visibleOverview,
+                hidesSpoilers: presentation.overviewTreatment == .blurred
+                    || presentation.overviewTreatment == .placeholder,
+                mode: spoilerSettings.mode,
+                lineCount: 3,
+                fontSize: 20,
+                maxWidth: Self.artworkSize.width
+            )
+            .opacity(synopsisVisible ? 1 : 0)
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.12),
+                value: synopsisVisible
+            )
+            .offset(y: reduceMotion || synopsisAtRest ? 0 : -metrics.focusCaptionPush)
+            .animation(
+                reduceMotion ? nil : .smooth(duration: 0.28),
+                value: synopsisAtRest
+            )
+            .padding(.top, 10)
+        }
+        .offset(y: reduceMotion || focusStyle.usesSystemEffect || isFocused ? 0 : -metrics.focusCaptionPush)
+    }
+
     private var synopsisTaskID: SynopsisTaskID {
-        SynopsisTaskID(isFocused: isFocused, reduceMotion: reduceMotion)
+        SynopsisTaskID(isFocused: isFocused, reduceMotion: reduceMotion, captionsHidden: captionsHidden)
     }
 
     private struct SynopsisTaskID: Hashable {
         let isFocused: Bool
         let reduceMotion: Bool
+        let captionsHidden: Bool
     }
 
     @ViewBuilder

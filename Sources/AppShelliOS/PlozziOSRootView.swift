@@ -249,6 +249,7 @@ public struct PlozziOSRootView: View {
             )
         )
         .mediaItemActionHandler(appModel.mediaItemActionHandler)
+        .environment(\.plozzCardCaptionSettings, appModel.settings.cardStyle.captions)
         .environment(
             \.plozzCardStyle,
             appModel.settings.cardStyle.style
@@ -1495,6 +1496,7 @@ private struct PlozziOSWatchlistLandingView: View {
             watchlistIntentRevision &+= 1
         }
         .navigationTitle("Watchlist")
+        .environment(\.plozzCardCaptionView, .watchlist)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

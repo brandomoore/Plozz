@@ -3,6 +3,7 @@ import CoreModels
 import CoreText
 import CoreUI
 import FeatureLiveTVCore
+import FeatureSettings
 import SwiftUI
 import UIKit
 import Vision
@@ -12,6 +13,117 @@ import XCTest
 
 @MainActor
 final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
+    func testCardSettingsAndPerViewPageAcrossPhoneAndTabletWidths() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.settings.cardStyle.captions
+        defer { app.settings.cardStyle.captions = original }
+        app.settings.cardStyle.captions = .default
+        try await withWindow { window, host in
+            let configurations: [(CGFloat, DynamicTypeSize)] = [
+                (320, .large), (390, .large), (768, .large), (1024, .large),
+                (320, .accessibility3)
+            ]
+            for (width, typeSize) in configurations {
+                for page in [false, true] {
+                    window.frame.size = CGSize(width: width, height: typeSize.isAccessibilitySize ? 2200 : 1100)
+                    host.rootView = AnyView(
+                        NavigationStack {
+                            Group {
+                                if page {
+                                    CardCaptionCustomizationView(cards: app.settings.cardStyle)
+                                } else {
+                                    CardAppearanceControls(
+                                        cards: app.settings.cardStyle,
+                                        watchIndicator: app.settings.watchIndicator
+                                    )
+                                }
+                            }
+                        }
+                        .environment(\.themePalette, .dark)
+                        .environment(\.colorScheme, .dark)
+                        .environment(\.dynamicTypeSize, typeSize)
+                        .environment(\.plozzMetrics, .touch(density: .standard))
+                    )
+                    try await settle(window)
+                    let observations = try text(snapshot(
+                        window, name: "card-settings-\(Int(width))-\(page)-\(typeSize)"
+                    ))
+                    let copy = observations.map(\.candidate.string).joined(separator: " ")
+                    if page {
+                        XCTAssertTrue(copy.contains("Browse"))
+                    } else {
+                        // Native labels may wrap at compact widths; both words
+                        // must remain complete rather than truncated.
+                        XCTAssertTrue(copy.contains("Customize") && copy.contains("by view"), copy)
+                    }
+                    XCTAssertTrue(copy.contains("No labels"))
+                    if !page {
+                        XCTAssertTrue(copy.contains("Posters"))
+                        XCTAssertTrue(copy.uppercased().contains("WATCHED") && copy.uppercased().contains("INDICATOR"))
+                    }
+                }
+            }
+        }
+    }
+
+    func testWatchedPostersAndSharedLabelsAcrossScreenSizes() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.settings.cardStyle.captions
+        defer { app.settings.cardStyle.captions = original }
+        let artwork = try await posterArtwork()
+        let items = (0..<12).map {
+            MediaItem(id: "watched-\($0)", title: "Movie Title", kind: .movie, isPlayed: true, posterURL: artwork)
+        }
+        try await withWindow { window, host in
+            for width in [CGFloat(320), 375, 390, 440, 768, 1024] {
+                for labels in [false, true] {
+                    app.settings.cardStyle.captions = CardCaptionSettings(showsLabels: labels)
+                    window.frame.size = CGSize(width: width, height: 850)
+                    host.rootView = AnyView(
+                        ScrollView {
+                            PlozziOSHomeMediaRail(
+                                title: Text("Recently added"), items: items, style: .poster, appModel: app
+                            )
+                        }
+                        .environment(app)
+                        .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
+                        .environment(\.plozzCardStyle, .borderless)
+                        .environment(\.plozzWatchStatusIndicator, .watched)
+                        .environment(\.plozzMetrics, .touch(density: .standard))
+                        .environment(\.themePalette, .dark)
+                    )
+                    try await settle(window)
+                    let image = snapshot(window, name: "watched-labels-\(Int(width))-\(labels)")
+                    let observations = try text(image)
+                    XCTAssertEqual(
+                        observations.contains { $0.candidate.string.contains("Movie Title") }, labels
+                    )
+                    let cg = try XCTUnwrap(image.cgImage)
+                    let pixels = try rgbaPixels(image)
+                    var blueMinX = cg.width
+                    var blueMaxX = -1
+                    // Isolate the first card's top-right blue check badge.
+                    let metrics = PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
+                        in: width, inset: width < 600 ? 22 : 36,
+                        metrics: .touch(density: .standard), cardStyle: .borderless
+                    )
+                    let endX = Int(((width < 600 ? 22 : 36) + metrics.posterWidth) * image.scale)
+                    for y in 0..<min(cg.height, Int(130 * image.scale)) {
+                        for x in 0..<min(endX, cg.width) {
+                            let index = (y * cg.width + x) * 4
+                            if pixels[index + 2] > 160 && pixels[index + 1] > 60
+                                && Int(pixels[index + 2]) > Int(pixels[index]) + 80 {
+                                blueMinX = min(blueMinX, x)
+                                blueMaxX = max(blueMaxX, x)
+                            }
+                        }
+                    }
+                    XCTAssertEqual(CGFloat(blueMaxX - blueMinX + 1) / image.scale, 21, accuracy: 2)
+                }
+            }
+        }
+    }
+
     func testHomeCaptionDefaultPreservesExplicitProfileChoices() throws {
         let suite = "MobileHomeCaptions.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -28,17 +140,17 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         XCTAssertFalse(try JSONDecoder().decode(HeroSettings.self, from: Data("{}".utf8)).showsCardCaptions)
     }
 
-    func testHomePostersShowThreeAndAPeekAcrossPhoneWidthsAndGrowColumnCountOnTablets() async throws {
+    func testHomePostersShowTwoBelow375ThenThreeAndAPeekAndGrowOnTablets() async throws {
         let app = PlozziOSAppModel()
-        let original = app.settings.hero.settings
-        defer { app.settings.hero.settings = original }
-        app.settings.hero.settings.showsCardCaptions = false
+        let original = app.settings.cardStyle.captions
+        defer { app.settings.cardStyle.captions = original }
+        app.settings.cardStyle.captions = .default
         let artwork = try await posterArtwork()
         let items = (0..<12).map { MediaItem(id: "poster-\($0)", title: "Title \($0)", kind: .movie, posterURL: artwork) }
         for style in [CardStyle.borderless, .framed] {
             try await withWindow { window, host in
                 // Reuse the same hierarchy while resizing, including iPad split widths.
-                for width in [CGFloat(320), 375, 390, 402, 440, 507, 768, 1024, 1366] {
+                for width in [CGFloat(320), 374, 375, 390, 402, 440, 507, 768, 1024, 1366] {
                     window.frame.size = CGSize(width: width, height: 1024)
                     let sizeClass: UserInterfaceSizeClass = width < 600 ? .compact : .regular
                     host.rootView = AnyView(
@@ -65,8 +177,9 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     let runs = try posterRuns(image, at: y)
                     let full = Array(runs.dropLast())
                     let peek = try XCTUnwrap(runs.last)
-                    XCTAssertGreaterThanOrEqual(full.count, width < 600 ? 3 : 4)
-                    if width < 600 { XCTAssertEqual(full.count, 3) }
+                    let expected = width < 375 ? 2 : 3
+                    XCTAssertGreaterThanOrEqual(full.count, width < 600 ? expected : 4)
+                    if width < 600 { XCTAssertEqual(full.count, expected) }
                     let first = try XCTUnwrap(full.first)
                     XCTAssertEqual(CGFloat(first.lowerBound), PlozziOSPageLayout.horizontalInset(for: sizeClass), accuracy: 2,
                                    "The first poster artwork must share the heading's leading keyline.")
@@ -82,15 +195,15 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
 
     func testHomeCaptionPreferenceAndSkeletonMatchWithoutChangingLandscapeSizes() async throws {
         let app = PlozziOSAppModel()
-        let original = app.settings.hero.settings
-        defer { app.settings.hero.settings = original }
+        let original = app.settings.cardStyle.captions
+        defer { app.settings.cardStyle.captions = original }
         let artwork = try await posterArtwork()
         let items = (0..<8).map { MediaItem(id: "caption-\($0)", title: "Title", kind: .movie, posterURL: artwork) }
         for style in [CardStyle.borderless, .framed] {
             try await withWindow { window, host in
                 window.frame.size = CGSize(width: 390, height: 844)
                 for captions in [false, true, false] {
-                    app.settings.hero.settings.showsCardCaptions = captions
+                    app.settings.cardStyle.captions = CardCaptionSettings(showsLabels: captions)
                     host.rootView = AnyView(
                         ScrollView {
                             VStack {
@@ -131,9 +244,9 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
 
     func testHomeHeadingTypographyAndArtworkSpacingFollowTheSameRhythm() async throws {
         let app = PlozziOSAppModel()
-        let original = app.settings.hero.settings
-        defer { app.settings.hero.settings = original }
-        app.settings.hero.settings.showsCardCaptions = false
+        let original = app.settings.cardStyle.captions
+        defer { app.settings.cardStyle.captions = original }
+        app.settings.cardStyle.captions = .default
         let artwork = try await posterArtwork()
         let items = (0..<8).map { MediaItem(id: "rhythm-\($0)", title: "Title", kind: .movie, posterURL: artwork) }
         let sizes: [(DynamicTypeSize, UIContentSizeCategory)] = [(.large, .large), (.accessibility2, .accessibilityLarge)]

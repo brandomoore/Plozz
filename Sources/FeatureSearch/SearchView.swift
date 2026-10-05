@@ -28,6 +28,7 @@ public struct SearchView: View {
 
     public var body: some View {
         content
+            .environment(\.plozzCardCaptionView, .search)
             .searchable(text: $viewModel.query, prompt: "Search movies, shows, and episodes")
             .task(id: viewModel.query) { await viewModel.search() }
             .onChange(of: focusedResultID, initial: true) { _, resultID in

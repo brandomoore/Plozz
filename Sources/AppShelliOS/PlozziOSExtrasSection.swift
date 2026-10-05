@@ -16,6 +16,7 @@ struct PlozziOSExtrasSection: View {
 
     var body: some View {
         content
+            .environment(\.plozzCardCaptionView, .extras)
             .task(id: state.diagnosticName) {
                 showsLoadingPlaceholders = false
                 guard state.isLoading else { return }

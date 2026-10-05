@@ -25,6 +25,7 @@ public struct PlozzMetrics: Equatable, Sendable {
     public let density: UIDensity
     /// The multiplier applied to every size/gap below (1.0 == standard).
     public let scale: CGFloat
+    private let geometryScale: CGFloat
 
     // MARK: Card artwork sizes (scaled)
 
@@ -85,10 +86,12 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// setting yet never shrinks below a clearly-visible minimum on tiny cards.
     public let unwatchedFlagSize: CGFloat
 
-    /// Diameter of the "watched" check badge, density-scaled and floored at
-    /// `PlozzTheme.Metrics.watchedBadgeMinSize` so it grows with the display-size
-    /// setting (like the unwatched flag) yet never shrinks below a legible minimum.
+    /// Density-scaled watched check: a 20pt minimum on touch, 36pt on TV.
     public let watchedBadgeSize: CGFloat
+    public var folderNavigationBadgeSize: CGFloat {
+        max((PlozzTheme.Metrics.watchedBadgeSize * scale * geometryScale).rounded(),
+            PlozzTheme.Metrics.watchedBadgeMinSize)
+    }
 
     // MARK: Media spacing (scaled)
 
@@ -201,6 +204,7 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// own offset must both come from here, or the card's footprint changes with
     /// focus and the whole row shifts.
     public func focusCaptionPush(for focusStyle: CardFocusStyle) -> CGFloat {
+        guard geometryScale == 1 else { return 0 }
         guard focusStyle == .highlight else { return focusCaptionPush }
         return (focusCaptionPush * PlozzTheme.Metrics.highlightCaptionPushRatio).rounded()
     }
@@ -246,12 +250,14 @@ public struct PlozzMetrics: Equatable, Sendable {
 
     // MARK: Concentric card corner radii (derived)
 
-    /// Outer (glass) corner radius for a poster ("Browse") card: its fixed inner
-    /// artwork radius plus the shared `cardInset`. Deriving it this way keeps the
-    /// glass border a true constant-width ring concentric with the artwork —
-    /// `outer = inner + inset` — at every density.
+    /// Mobile corners follow the actual artwork width, including responsive rails.
+    public var posterArtworkCornerRadius: CGFloat {
+        geometryScale < 1 ? min(10, max(6, posterWidth * 0.075)) : PlozzTheme.Metrics.posterArtCornerRadius
+    }
+
+    /// Keep the glass frame concentric with the artwork at every card size.
     public var posterCardCornerRadius: CGFloat {
-        PlozzTheme.Metrics.posterArtCornerRadius + cardInset
+        posterArtworkCornerRadius + cardInset
     }
 
     /// Outer (glass) corner radius for a landscape / music media card, derived
@@ -277,18 +283,14 @@ public struct PlozzMetrics: Equatable, Sendable {
         max(landscapeCardCornerRadius * PlozzTheme.Metrics.captionCornerClearanceFactor - cardInset, 0)
     }
 
-    /// Gap between a poster card's artwork and its caption: the shared base
-    /// (`cardCaptionSpacing`) plus a fraction (`captionTopClearanceFactor`) of the
-    /// card's side/bottom `captionInset`, so the top breathing room scales up with
-    /// the side clearance but only ~half as much (the top edge isn't a corner the
-    /// text crowds).
+    /// Resting artwork-to-caption gap; focus travel is reserved separately on TV.
     public var posterCaptionTopSpacing: CGFloat {
-        PlozzTheme.Metrics.cardCaptionSpacing + posterCaptionInset * PlozzTheme.Metrics.captionTopClearanceFactor
+        geometryScale < 1 ? 4 : PlozzTheme.Metrics.cardCaptionSpacing
     }
 
     /// Landscape / music card counterpart of `posterCaptionTopSpacing`.
     public var landscapeCaptionTopSpacing: CGFloat {
-        PlozzTheme.Metrics.cardCaptionSpacing + landscapeCaptionInset * PlozzTheme.Metrics.captionTopClearanceFactor
+        geometryScale < 1 ? 4 : PlozzTheme.Metrics.cardCaptionSpacing
     }
 
     /// Shared resting clearance for native media and library captions. Native
@@ -324,6 +326,7 @@ public struct PlozzMetrics: Equatable, Sendable {
         let s = densityScale * geometryScale
         self.density = density
         self.scale = densityScale
+        self.geometryScale = geometryScale
 
         #if canImport(UIKit)
         // Resolve typography against the size we were HANDED rather than whatever
@@ -395,7 +398,7 @@ public struct PlozzMetrics: Equatable, Sendable {
         )
         self.watchedBadgeSize = max(
             step(PlozzTheme.Metrics.watchedBadgeSize),
-            PlozzTheme.Metrics.watchedBadgeMinSize
+            geometryScale < 1 ? 20 : PlozzTheme.Metrics.watchedBadgeMinSize
         )
 
         self.cardSpacing = step(PlozzTheme.Metrics.cardSpacing)

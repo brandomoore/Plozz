@@ -360,9 +360,9 @@ public struct PosterCardView: View {
                 }
                 .overlay { resumeChip }
                 .overlay { pendingRemovalOverlay }
-                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius, style: .continuous))
+                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: metrics.posterArtworkCornerRadius, style: .continuous))
                 .plozzMediaEdge(
-                    cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius,
+                    cornerRadius: metrics.posterArtworkCornerRadius,
                     isEnabled: MediaArtworkPlaceholder.Symbol(for: item) == .playback
                 )
                 #if os(tvOS)
@@ -376,7 +376,7 @@ public struct PosterCardView: View {
             }
         }
         .plozzFramedMediaCard(
-            innerCornerRadius: PlozzTheme.Metrics.posterArtCornerRadius,
+            innerCornerRadius: metrics.posterArtworkCornerRadius,
             isFocused: surfaceFocused
         )
         .plozzCardRasterize(reduceTransparency: reduceTransparency)
@@ -845,7 +845,7 @@ public struct PosterCardView: View {
     private var transitionArtworkCornerRadius: CGFloat {
         if cardStyle == .borderless { return borderlessCornerRadius }
         return style == .poster
-            ? PlozzTheme.Metrics.posterArtCornerRadius
+            ? metrics.posterArtworkCornerRadius
             : PlozzTheme.Metrics.mediumMediaCornerRadius
     }
 
@@ -894,7 +894,7 @@ public struct PosterCardView: View {
         } else {
             realArtwork
                 .overlay(alignment: .topTrailing) {
-                    FolderNavigationBadge(size: metrics.watchedBadgeSize)
+                    FolderNavigationBadge(size: metrics.folderNavigationBadgeSize)
                         .padding(folderBadgeInset)
                 }
         }
@@ -1123,7 +1123,7 @@ public struct PosterCardView: View {
     /// the caption colour so it flips on focus and respects reduced-transparency.
     private var neutralPlaceholder: some View {
         let radius = cardStyle == .framed
-            ? (style == .poster ? PlozzTheme.Metrics.posterArtCornerRadius : PlozzTheme.Metrics.mediumMediaCornerRadius)
+            ? (style == .poster ? metrics.posterArtworkCornerRadius : PlozzTheme.Metrics.mediumMediaCornerRadius)
             : borderlessCornerRadius
         return MediaArtworkPlaceholder(tint: subtitleColor, symbol: .init(for: item), cornerRadius: radius)
     }
