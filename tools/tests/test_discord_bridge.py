@@ -599,6 +599,8 @@ class PostingGuideTests(unittest.TestCase):
             self.assertIn("```text\n", content)
             self.assertEqual(content.count("```"), 2)
             self.assertIn("access tokens", content)
+            self.assertIn("vote reaction", content)
+            self.assertNotIn("thumbs-up", content)
             self.assertNotIn("@", content)
 
     def test_publication_and_replay_create_exactly_one_bot_guide_per_forum(self):

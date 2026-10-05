@@ -34,7 +34,7 @@ PUBLIC_NOTICE = "Posts and replies automatically sync to GitHub"
 POSTING_GUIDES = {
     "bug": (
         "Start here: How to report a bug",
-        """Found something broken? Search this forum first. If someone has reported the same problem, add your details there and use the thumbs-up reaction instead of opening another post.
+        """Found something broken? Search this forum first. If someone has reported the same problem, add your details there and use the post's vote reaction instead of opening another post.
 
 **Create a New Post for each separate bug.** Use a specific title, such as "Apple TV: subtitles disappear after seeking". Add your device and media-source tags if relevant.
 
@@ -62,7 +62,7 @@ This pinned guide is not a bug report. Please create a new post rather than repl
     ),
     "enhancement": (
         "Start here: How to request a feature",
-        """Have an idea for Plozz? Search this forum first. If someone has requested the same thing, use the thumbs-up reaction and add your use case to their post.
+        """Have an idea for Plozz? Search this forum first. If someone has requested the same thing, use the post's vote reaction and add your use case to their post.
 
 **Create a New Post for each separate idea.** Use a specific title, such as "Live TV: hide several channels at once". Add your device and media-source tags if relevant.
 
