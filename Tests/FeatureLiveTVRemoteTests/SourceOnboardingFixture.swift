@@ -1,4 +1,5 @@
 import CoreModels
+import CoreSecureStore
 import CoreUI
 import Foundation
 import FeatureLiveTVCore
@@ -106,12 +107,32 @@ private struct SourceSmokeSourcesPane: View {
     let presentation: LiveTVSourcesView.Presentation
     let automatic: AutomaticChannelsFixtureModel?
     @State private var managesChannels = false
+    @State private var catalog: SourceSmokeCatalog?
+
+    init(
+        sources: SourceSmokeStore, presentation: LiveTVSourcesView.Presentation,
+        automatic: AutomaticChannelsFixtureModel?
+    ) {
+        self.sources = sources
+        self.presentation = presentation
+        self.automatic = automatic
+        _catalog = State(initialValue: ProcessInfo.processInfo.arguments.contains("--catalog-sources")
+            ? SourceSmokeCatalog(configuration: try! sources.load()) : nil)
+    }
 
     var body: some View {
-        LiveTVSourcesView(
-            store: sources, presentation: presentation,
-            createChannel: automatic == nil ? nil : { managesChannels = true }
-        )
+        Group {
+            #if os(iOS)
+            if presentation == .settingsPane {
+                SettingsPageScroll { sourceContent }
+                    .navigationTitle("Sources")
+            } else {
+                sourceContent
+            }
+            #else
+            sourceContent
+            #endif
+        }
         .navigationDestination(isPresented: $managesChannels) {
             if let automatic {
                 LibraryChannelManagementView(
@@ -120,6 +141,37 @@ private struct SourceSmokeSourcesPane: View {
             }
         }
     }
+
+    private var sourceContent: some View {
+        LiveTVSourcesView(
+            store: sources, imports: catalog?.imports, presentation: presentation,
+            createChannel: automatic == nil ? nil : { managesChannels = true },
+            scanCoordinator: catalog?.scans
+        )
+    }
+}
+
+@MainActor
+private final class SourceSmokeCatalog {
+    let imports: LiveTVPrototypeImportModel
+    let scans = LiveTVChannelScanCoordinator(store: SourceSmokeHealthStore())
+
+    init(configuration: LiveTVSourcesConfiguration) {
+        let cache = LiveTVIndexedCache(
+            url: FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).sqlite"),
+            namespace: "source-smoke", authorizationScope: "fixture", secureStore: InMemorySecureStore())
+        imports = LiveTVPrototypeImportModel(configuration: configuration, cache: cache)
+        try! scans.bind(profileID: "source-smoke", sources: configuration.playlists.map {
+            try LiveTVChannelScanSource(id: $0.id, generation: "fixture", targets: [])
+        })
+    }
+}
+
+private final class SourceSmokeHealthStore: LiveTVChannelHealthStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var records: [LiveTVChannelHealthRecord] = []
+    func load() throws -> [LiveTVChannelHealthRecord] { lock.withLock { records } }
+    func save(_ records: [LiveTVChannelHealthRecord]) throws { lock.withLock { self.records = records } }
 }
 
 @MainActor

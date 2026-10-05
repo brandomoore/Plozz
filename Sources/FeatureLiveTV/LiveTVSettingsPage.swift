@@ -115,7 +115,7 @@ struct LiveTVSettingsPage<Content: View>: View {
         .scrollClipDisabled()
         .background { SettingsPageBackground() }
         #else
-        SettingsPageList {
+        SettingsPageScroll {
             content()
         }
         .navigationTitle(Text(title))

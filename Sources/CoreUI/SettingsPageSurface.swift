@@ -19,6 +19,26 @@ public struct SettingsPageList<Content: View>: View {
     }
 }
 
+/// Composite panels can contain several NavigationLinks. Hosting a whole panel
+/// in one List cell lets native row activation push all of its destinations.
+public struct SettingsPageScroll<Content: View>: View {
+    private let content: Content
+
+    public init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    public var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .settingsPageSurface()
+    }
+}
+
 public struct SettingsPageSurface: ViewModifier {
     public init() {}
 

@@ -11,6 +11,33 @@ settings:
     GENERATE_INFOPLIST_FILE: YES
     CODE_SIGNING_ALLOWED: NO
 targets:
+  LiveTVMobileSourcesFixture:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - MobileSourceFixtureApp.swift
+      - SourceOnboardingFixture.swift
+    dependencies:
+      - package: Plozz
+        product: AppShelliOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.MobileSourcesTestHost
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+  MobileSourceNavigationTests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - MobileSourceNavigationTests.swift
+    dependencies:
+      - target: LiveTVMobileSourcesFixture
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.MobileSourceNavigationTests
   LiveTVSearchFixture:
     type: application
     platform: tvOS
@@ -72,6 +99,13 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.SearchRemoteTests
 schemes:
+  LiveTVMobileSourcesFixture:
+    build:
+      targets:
+        LiveTVMobileSourcesFixture: all
+    test:
+      targets:
+        - MobileSourceNavigationTests
   LiveTVSearchFixture:
     build:
       targets:

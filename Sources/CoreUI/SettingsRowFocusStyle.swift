@@ -230,6 +230,7 @@ public struct SettingsFocusRow<Content: View>: View {
                         y: isFocused ? 6 : 0
                     )
             )
+            .contentShape(Rectangle())
             // Primary foreground inverts on focus so untouched titles flip.
             // Explicit `.foregroundStyle(...)` on individual leaves (chips,
             // checkmarks) still wins.
