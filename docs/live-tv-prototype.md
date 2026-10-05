@@ -778,6 +778,14 @@ prepared. Moving into the controls keeps the last selected audio. Select opens
 the focused picture full-screen; Back restores all retained players without
 retuning. On touch devices, tapping a picture selects its audio and expands it;
 Show all restores the layout. Tapping again reveals hidden controls.
+iPhone/iPad controls use the original container safe area even though the video
+canvas extends beneath system chrome. A compact Close control and separate Watch
+action stay at the top; a touch-sized bottom dock exposes Add, Layout, and Audio,
+with Favorite and channel management in More. At large text sizes or narrow
+windows the dock scrolls rather than truncating labels. Setup's pictures reserve
+the measured header and dock heights so landscape and large-text controls cannot
+cover them. TV focus controls and the retained players' full-screen geometry are
+unchanged.
 Watching hides controls after four seconds of inactivity. Editing, native menus,
 channel selection, preparation failures and VoiceOver keep them available.
 Native menu focus notifications do not write back into the pinned controls'

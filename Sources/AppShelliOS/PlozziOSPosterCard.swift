@@ -60,6 +60,10 @@ enum PlozziOSMediaRailLayout {
     /// This matches the season episode rail, whose spacing is the visual baseline.
     static let visibleSpacing: CGFloat = 14
 
+    static func artworkAlignedInset(_ pageInset: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle) -> CGFloat {
+        pageInset - (cardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin)
+    }
+
     /// Borderless cards reserve side margins inside their layout slots for focus
     /// clearance. Subtract those margins so artwork still lands exactly
     /// `visibleSpacing` apart instead of silently adding both margins to the gap.

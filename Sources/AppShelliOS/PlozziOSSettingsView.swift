@@ -1849,6 +1849,13 @@ private struct PlozziOSHomeSettingsView: View {
     var body: some View {
         List {
             SettingsSectionGroup("Rows") {
+                Toggle(isOn: $hero.settings.showsCardCaptions) {
+                    Text(LocalizedStringResource(
+                        "homeLayout.showCardTitles",
+                        defaultValue: "Show titles under cards",
+                        comment: "Show each Home poster's title beneath its artwork."
+                    ))
+                }
                 ForEach(HomeGlobalRow.allCases, id: \.rawValue) { row in
                     Toggle(
                         row.title,

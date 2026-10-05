@@ -569,7 +569,6 @@ private struct PlozziOSLibraryRecommendationRow: View {
 
     var body: some View {
         let inset = PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
-        let artworkInset = cardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin
         let style: PosterCardView.Style = section.style == .poster ? .poster : .landscape
         VStack(alignment: .leading, spacing: 12) {
             section.displayName
@@ -595,7 +594,9 @@ private struct PlozziOSLibraryRecommendationRow: View {
                     }
                 }
             }
-            .contentMargins(.horizontal, inset - artworkInset, for: .scrollContent)
+            .contentMargins(.horizontal,
+                            PlozziOSMediaRailLayout.artworkAlignedInset(inset, metrics: metrics, cardStyle: cardStyle),
+                            for: .scrollContent)
             .contentMargins(.vertical, 10, for: .scrollContent)
             .scrollIndicators(.hidden)
         }

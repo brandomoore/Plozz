@@ -12,6 +12,14 @@ fallback when the user's server has no attached trailer.
   active account set (`[ResolvedAccount]`) so Home is a merged view
   across multiple servers / profiles. Uses the `MediaProvider`
   abstraction; never imports a specific provider module.
+- **Mobile Home posters** — portrait rails fit three full posters and a 28%
+  preview at standard density on phone-sized windows. Wider windows add columns;
+  per-profile display-size choices scale the result. Loaded cards and placeholders
+  share `PlozziOSHomeRailLayout`, and their artwork starts on the heading keyline
+  after subtracting each card style's internal inset. Poster captions default off
+  through the existing profile-scoped `HeroSettings.showsCardCaptions`, exposed in
+  mobile Home settings; explicit saved choices are retained. Continue Watching
+  geometry, library grids, detail pages, and tvOS layout are unchanged.
 - **Item detail** — `ItemDetailView` + `ItemDetailViewModel` and
   `DetailHeroView` / `DetailExtrasView` render the cinematic full-bleed
   backdrop, logo, overview, ratings, cast, and Play/Resume button. Works
@@ -62,8 +70,8 @@ fallback when the user's server has no attached trailer.
   and scan banners share the mobile page keyline (22pt compact, 36pt regular).
   Mode changes reset to the padded page's true top, keeping both the tabs and
   native navigation-bar scroll-edge appearance consistent across all four modes.
-  Recommendation rails remain horizontally lazy and use the same card sizing,
-  spacing, and appearance as mobile Home, not the TV rail's layout.
+  Recommendation rails remain horizontally lazy and share touch card appearance,
+  visible spacing, and artwork keylines with mobile Home, not the TV rail's layout.
   Library Continue Watching uses Home's profile-selected series artwork and
   resume progress treatment, including profile spoiler protection on mobile.
   Merged libraries validate Continue Watching against every account-qualified

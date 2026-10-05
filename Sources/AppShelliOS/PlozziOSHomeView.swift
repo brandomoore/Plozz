@@ -200,7 +200,8 @@ struct PlozziOSHomeView: View {
                 // placeholders occupy the same geometry the real rows will, so
                 // content swaps in without the page reflowing.
                 PlozziOSHomeSkeletonScreen(
-                    heroActive: appModel.settings.hero.settings.isActive
+                    heroActive: appModel.settings.hero.settings.isActive,
+                    showsPosterCaptions: appModel.settings.hero.settings.showsCardCaptions
                 )
             case .empty:
                 ContentUnavailableView {
@@ -557,7 +558,8 @@ struct PlozziOSHomeView: View {
                             )
                         } else if row.isLoading {
                             PlozziOSHomeSkeletonRail(
-                                title: Text(verbatim: section.title), style: .poster
+                                title: Text(verbatim: section.title), style: .poster,
+                                showsCaption: settings.showsCardCaptions
                             )
                         } else {
                             PlozziOSHomeMediaRail(
@@ -2199,12 +2201,15 @@ private struct PlozziOSHeroTimerID: Equatable {
 
 private struct PlozziOSFeaturedRow: View {
     @Environment(\.plozzCardStyle) private var cardStyle
-    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let items: [MediaItem]
     let appModel: PlozziOSAppModel
 
     var body: some View {
+        PlozziOSHomeRailLayout { rail(metrics: $0) }
+    }
+
+    private func rail(metrics: PlozzMetrics) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Trending")
                 .font(.title2.bold())
@@ -2238,12 +2243,15 @@ private struct PlozziOSFeaturedRow: View {
             }
             .contentMargins(
                 .horizontal,
-                PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                PlozziOSMediaRailLayout.artworkAlignedInset(
+                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                    metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
             .contentMargins(.vertical, 10, for: .scrollContent)
             .scrollIndicators(.hidden)
         }
+        .environment(\.plozzCardCaptionsHidden, !appModel.settings.hero.settings.showsCardCaptions)
     }
 }
 
@@ -2301,8 +2309,10 @@ private struct PlozziOSHomeRowView: View {
                     title: Text(row.title),
                     style: row.kind == .libraries || row.style == .landscape ? .landscape : .poster,
                     cardCount: row.loadingPlaceholderCount > 0 ? row.loadingPlaceholderCount : 8,
-                    showsCaption: !(row.kind == .continueWatching
-                        && appModel.settings.homeVisibility.continueWatchingShowsSeriesArtwork),
+                    showsCaption: row.kind == .libraries || row.style == .landscape
+                        ? !(row.kind == .continueWatching
+                            && appModel.settings.homeVisibility.continueWatchingShowsSeriesArtwork)
+                        : appModel.settings.hero.settings.showsCardCaptions,
                     showsSeriesArtwork: row.kind == .continueWatching
                         && appModel.settings.homeVisibility.continueWatchingShowsSeriesArtwork
                 )
@@ -2387,9 +2397,8 @@ private struct PlozziOSHomeRowView: View {
 
 }
 
-private struct PlozziOSHomeMediaRail: View {
+struct PlozziOSHomeMediaRail: View {
     @Environment(\.plozzCardStyle) private var cardStyle
-    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     let title: Text
@@ -2417,6 +2426,10 @@ private struct PlozziOSHomeMediaRail: View {
     @State private var artworkPrefetchTasks = PlozziOSArtworkPrefetchTasks()
 
     var body: some View {
+        PlozziOSHomeRailLayout { rail(metrics: $0) }
+    }
+
+    private func rail(metrics: PlozzMetrics) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             title
                 .font(.title2.bold())
@@ -2480,7 +2493,9 @@ private struct PlozziOSHomeMediaRail: View {
             }
             .contentMargins(
                 .horizontal,
-                PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                PlozziOSMediaRailLayout.artworkAlignedInset(
+                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                    metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
             .contentMargins(.vertical, 10, for: .scrollContent)
@@ -2502,6 +2517,8 @@ private struct PlozziOSHomeMediaRail: View {
         .onDisappear {
             artworkPrefetchTasks.cancelAll()
         }
+        .environment(\.plozzCardCaptionsHidden,
+                     style == .poster && !appModel.settings.hero.settings.showsCardCaptions)
     }
 
     private func provider(for item: MediaItem) -> (any MediaProvider)? {
@@ -2651,6 +2668,7 @@ private final class PlozziOSArtworkPrefetchTasks {
 
 private struct PlozziOSHomeMediaCard: View {
     @Environment(PlozziOSAppModel.self) private var appModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let item: MediaItem
     let isLandscape: Bool
     var interaction: PlozziOSRailInteraction = .openDetail
@@ -2685,6 +2703,9 @@ private struct PlozziOSHomeMediaCard: View {
                         item: detailItem,
                         seerService: appModel.seerService
                     )
+                    .environment(\.plozzMetrics, .touch(
+                        density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize))
+                    .environment(\.plozzCardCaptionsHidden, false)
                 } label: {
                     card
                 }

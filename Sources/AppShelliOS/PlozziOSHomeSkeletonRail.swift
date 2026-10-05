@@ -17,20 +17,22 @@ import SwiftUI
 /// That 1:1 match is the point: when real items arrive, nothing reflows or jumps.
 struct PlozziOSHomeSkeletonRail: View {
     @Environment(\.plozzCardStyle) private var cardStyle
-    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     let title: Text
     let style: PosterCardView.Style
     /// Enough cards to fill the widest supported screen; the rail clips the rest.
     var cardCount: Int = 8
-    /// Matches the caption-less Continue Watching card, so the placeholder is the
-    /// same height as the card replacing it.
-    var showsCaption: Bool = true
+    /// Matches the row's caption preference so replacing placeholders preserves height.
+    var showsCaption: Bool = HeroSettings.default.showsCardCaptions
     /// Matches Continue Watching's narrower, deeper series-artwork card shape.
     var showsSeriesArtwork: Bool = false
 
     var body: some View {
+        PlozziOSHomeRailLayout { rail(metrics: $0) }
+    }
+
+    private func rail(metrics: PlozzMetrics) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             title
                 .font(.title2.bold())
@@ -68,7 +70,9 @@ struct PlozziOSHomeSkeletonRail: View {
             }
             .contentMargins(
                 .horizontal,
-                PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                PlozziOSMediaRailLayout.artworkAlignedInset(
+                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                    metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
             .contentMargins(.vertical, 10, for: .scrollContent)
@@ -90,6 +94,7 @@ struct PlozziOSHomeSkeletonScreen: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     let heroActive: Bool
+    var showsPosterCaptions: Bool = HeroSettings.default.showsCardCaptions
 
     var body: some View {
         PlozziOSHomeScrollView(heroActive: heroActive) {
@@ -99,9 +104,9 @@ struct PlozziOSHomeSkeletonScreen: View {
                     : .landscape
             )
         } rows: {
-            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .landscape)
-            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster)
-            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster)
+            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .landscape, showsCaption: true)
+            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster, showsCaption: showsPosterCaptions)
+            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster, showsCaption: showsPosterCaptions)
         }
         .scrollDisabled(true)
         .accessibilityLabel("Loading Home")
