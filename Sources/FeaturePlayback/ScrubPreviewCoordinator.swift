@@ -5,12 +5,16 @@ import CoreNetworking
 import Foundation
 import Observation
 
-/// Shared presentation coordinator for Jellyfin/Emby trickplay tiles and Plex
-/// BIF previews. Platform-specific controls only provide the scrub position.
+/// Shared presentation coordinator for Jellyfin/Emby trickplay tiles, Plex BIF
+/// previews, and on-device stills for servers with neither. Platform-specific
+/// controls only provide the scrub position.
 @MainActor
 @Observable
 public final class ScrubPreviewCoordinator {
     public private(set) var image: CGImage?
+    /// `false` once the source has proven it can never yield previews, so hosts
+    /// can drop the preview frame instead of showing an endless spinner.
+    public private(set) var isAvailable = true
 
     @ObservationIgnored
     private let loader: any ScrubThumbnailProviding
@@ -22,20 +26,33 @@ public final class ScrubPreviewCoordinator {
     public init?(
         source: ScrubPreviewSource?,
         authenticatedHTTPResolver:
-            (any AuthenticatedHTTPResourceResolving)? = nil
+            (any AuthenticatedHTTPResourceResolving)? = nil,
+        generatedStills: (any ScrubStillExtracting)? = nil
     ) {
-        guard let source, source.isUsable else { return nil }
         switch source {
-        case .tiled(let manifest):
+        case .tiled(let manifest) where manifest.isUsable:
             loader = TrickplayThumbnailLoader(
                 manifest: manifest,
                 authenticatedHTTPResolver: authenticatedHTTPResolver
             )
         case .plexBIF(let resource):
-            loader = PlexBIFThumbnailLoader(
+            let bif = PlexBIFThumbnailLoader(
                 resource: resource,
                 authenticatedHTTPResolver: authenticatedHTTPResolver
             )
+            if let generatedStills {
+                loader = FallbackScrubThumbnailLoader(
+                    primary: bif,
+                    fallback: GeneratedScrubThumbnailLoader(extractor: generatedStills)
+                )
+            } else {
+                loader = bif
+            }
+        default:
+            // Server-generated previews always win; on-device stills are only
+            // the fallback for a server that has none.
+            guard let generatedStills else { return nil }
+            loader = GeneratedScrubThumbnailLoader(extractor: generatedStills)
         }
     }
 
@@ -56,6 +73,7 @@ public final class ScrubPreviewCoordinator {
         thumbnailTask = Task { [weak self] in
             guard let self else { return }
             let requestedImage = await loader.thumbnail(forSeconds: seconds)
+            isAvailable = !loader.isPermanentlyUnavailable
             guard !Task.isCancelled else { return }
             setImage(requestedImage)
         }

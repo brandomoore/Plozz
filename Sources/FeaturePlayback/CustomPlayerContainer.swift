@@ -66,6 +66,7 @@ struct CustomPlayerContainer: UIViewControllerRepresentable {
     let scrubPreview: ScrubPreviewSource?
     let authenticatedHTTPResolver:
         (any AuthenticatedHTTPResourceResolving)?
+    let makeGeneratedScrubStills: (@MainActor () -> (any ScrubStillExtracting)?)?
     let showsSharedControls: Bool
     let themePalette: ThemePaletteBox
 
@@ -76,6 +77,7 @@ struct CustomPlayerContainer: UIViewControllerRepresentable {
         actions: PlayerActions,
         scrubPreview: ScrubPreviewSource?,
         authenticatedHTTPResolver: (any AuthenticatedHTTPResourceResolving)?,
+        makeGeneratedScrubStills: (@MainActor () -> (any ScrubStillExtracting)?)? = nil,
         showsSharedControls: Bool = true,
         themePalette: ThemePaletteBox
     ) {
@@ -85,6 +87,7 @@ struct CustomPlayerContainer: UIViewControllerRepresentable {
         self.actions = actions
         self.scrubPreview = scrubPreview
         self.authenticatedHTTPResolver = authenticatedHTTPResolver
+        self.makeGeneratedScrubStills = makeGeneratedScrubStills
         self.showsSharedControls = showsSharedControls
         self.themePalette = themePalette
     }
@@ -94,7 +97,8 @@ struct CustomPlayerContainer: UIViewControllerRepresentable {
         if showsSharedControls {
             controller.configureScrubPreview(
                 scrubPreview,
-                authenticatedHTTPResolver: authenticatedHTTPResolver
+                authenticatedHTTPResolver: authenticatedHTTPResolver,
+                generatedStills: makeGeneratedScrubStills?()
             )
         }
         controller.attachVideoSurface()
@@ -337,21 +341,21 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     func configureScrubPreview(
         _ source: ScrubPreviewSource?,
         authenticatedHTTPResolver:
-            (any AuthenticatedHTTPResourceResolving)?
+            (any AuthenticatedHTTPResourceResolving)?,
+        generatedStills: (any ScrubStillExtracting)? = nil
     ) {
         scrubPreviewCoordinator?.clear()
         scrubPreviewCoordinator = nil
         model.previewImage = nil
 
-        guard let source else {
-            PlozzLog.playback.debug("Scrub preview unavailable: provider did not supply a source")
-            return
-        }
         guard let coordinator = ScrubPreviewCoordinator(
             source: source,
-            authenticatedHTTPResolver: authenticatedHTTPResolver
+            authenticatedHTTPResolver: authenticatedHTTPResolver,
+            generatedStills: generatedStills
         ) else {
-            PlozzLog.playback.debug("Scrub preview unavailable: source exists but is not usable")
+            PlozzLog.playback.debug(
+                "Scrub preview unavailable: no usable server previews and no on-device fallback"
+            )
             return
         }
         coordinator.onImageChange = { [weak self] image in
@@ -359,12 +363,14 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         }
         scrubPreviewCoordinator = coordinator
         switch source {
-        case .tiled(let manifest):
+        case .tiled(let manifest) where manifest.isUsable:
             PlozzLog.playback.debug(
                 "Configured Jellyfin tiled scrub preview (\(manifest.tileResources.count) tiles, intervalMs=\(manifest.intervalMs))"
             )
         case .plexBIF:
             PlozzLog.playback.debug("Configured Plex BIF scrub preview")
+        default:
+            break
         }
         prefetchThumbnailsSoon()
     }

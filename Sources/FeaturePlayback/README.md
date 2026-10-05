@@ -31,7 +31,10 @@ and the diagnostics overlay.
 - **Trickplay scrubbing** — `ScrubGeometry`, `ScrubThumbnailProviding`,
   `TrickplayThumbnailLoader`, `PlexBIFThumbnailLoader`: focus-driven
   scrub bar with per-provider thumbnail loaders (Jellyfin "trickplay"
-  PNG/JPG tiles + Plex BIF).
+  PNG/JPG tiles + Plex BIF). When the server has neither,
+  `GeneratedScrubThumbnailLoader` decodes keyframe stills on the device from
+  the original file through `ScrubStillExtracting`, which Plozzigen supplies
+  via `EngineFactory.makeScrubStillExtractor`.
 - **Diagnostics** — `PlaybackDiagnosticsSampler` +
   `PlaybackDiagnosticsOverlay`: opt-in HUD with engine, codec, bitrate,
   dropped frames, etc.

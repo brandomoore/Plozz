@@ -22,9 +22,15 @@ protocol ScrubThumbnailProviding: AnyObject {
     /// Optionally begins fetching/parsing the backing data ahead of the first
     /// scrub, so previews are ready when the viewer starts dragging. Idempotent.
     func prefetch()
+
+    /// Whether this source has proven it can never yield previews (e.g. the
+    /// server advertised a BIF that returns 404), so a fallback can take over.
+    /// Transient failures stay `false` and are retried.
+    var isPermanentlyUnavailable: Bool { get }
 }
 
 extension ScrubThumbnailProviding {
     func prefetch() {}
+    var isPermanentlyUnavailable: Bool { false }
 }
 #endif

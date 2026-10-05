@@ -373,6 +373,20 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         }
     }
 
+    // MARK: - Scrub stills
+
+    /// Still extractor over a host-chosen URL, coupled to this engine's session so
+    /// thumbnail decodes yield while the playback pipeline is starved.
+    func makeScrubFrameExtractor(url: URL) -> FrameExtractor {
+        engine.makeFrameExtractor(url: url)
+    }
+
+    /// Still extractor over an independent clone of the loaded source's reader
+    /// (network shares), or `nil` before load or when the reader can't clone.
+    func makeLoadedSourceFrameExtractor() -> FrameExtractor? {
+        engine.makeFrameExtractor()
+    }
+
     // MARK: - VideoEngine Lifecycle
 
     public func load(request: PlaybackRequest, startPosition: TimeInterval) async {

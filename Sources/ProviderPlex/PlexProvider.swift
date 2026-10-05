@@ -1096,6 +1096,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
             sourceFileName: PlaybackRequest.sourceFileName(from: part.file)
                 ?? PlaybackRequest.sourceFileName(from: part.key)
         )
+        request.scrubStillSource = originalFileSource
         if let streaming {
             request.streamingOptions = streaming
             request.streamingSessionID = resolved.isTranscoding ? transcodeSessionID : nil
