@@ -1,5 +1,6 @@
 #if os(iOS)
 import CoreModels
+import CoreText
 import CoreUI
 import FeatureLiveTVCore
 import SwiftUI
@@ -56,12 +57,12 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     // Lazy cards publish their cached artwork asynchronously after layout.
                     let deadline = Date().addingTimeInterval(4)
                     while Date() < deadline {
-                        let runs = try posterRuns(snapshot(window), y: y)
+                        let runs = try posterRuns(snapshot(window), at: y)
                         if runs.last?.upperBound == Int(width) { break }
                         try await Task.sleep(for: .milliseconds(100))
                     }
                     let image = snapshot(window, name: "home-\(Int(width))-\(style)")
-                    let runs = try posterRuns(image, y: y)
+                    let runs = try posterRuns(image, at: y)
                     let full = Array(runs.dropLast())
                     let peek = try XCTUnwrap(runs.last)
                     XCTAssertGreaterThanOrEqual(full.count, width < 600 ? 3 : 4)
@@ -126,6 +127,80 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         let large = PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
             in: 390, inset: 22, metrics: .touch(density: .extraLarge), cardStyle: .borderless)
         XCTAssertLessThan(small.posterWidth, large.posterWidth, "The profile's display-size choice remains effective.")
+    }
+
+    func testHomeHeadingTypographyAndArtworkSpacingFollowTheSameRhythm() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.settings.hero.settings
+        defer { app.settings.hero.settings = original }
+        app.settings.hero.settings.showsCardCaptions = false
+        let artwork = try await posterArtwork()
+        let items = (0..<8).map { MediaItem(id: "rhythm-\($0)", title: "Title", kind: .movie, posterURL: artwork) }
+        let sizes: [(DynamicTypeSize, UIContentSizeCategory)] = [(.large, .large), (.accessibility2, .accessibilityLarge)]
+        for cardStyle in [CardStyle.borderless, .framed] {
+            try await withWindow { window, host in
+                for width in [CGFloat(390), 768] {
+                    for (dynamicSize, category) in sizes {
+                        window.frame.size = CGSize(width: width, height: 1400)
+                        let sizeClass: UserInterfaceSizeClass = width < 600 ? .compact : .regular
+                        let metrics = PlozzMetrics.touch(density: .standard, dynamicTypeSize: dynamicSize)
+                        host.rootView = AnyView(
+                            PlozziOSHomeScrollView(heroActive: false) { EmptyView() } rows: {
+                                PlozziOSHomeMediaRail(title: Text("Featured"), items: items, style: .poster, appModel: app)
+                                PlozziOSHomeMediaRail(title: Text("Popular"), items: items, style: .poster, appModel: app)
+                                PlozziOSHomeSkeletonRail(title: Text("Loading"), style: .poster)
+                            }
+                            .environment(app)
+                            .environment(\.horizontalSizeClass, sizeClass)
+                            .environment(\.dynamicTypeSize, dynamicSize)
+                            .environment(\.plozzCardStyle, cardStyle)
+                            .environment(\.plozzMetrics, metrics)
+                            .environment(\.themePalette, .dark)
+                        )
+                        try await settle(window)
+                        let inset = PlozziOSPageLayout.horizontalInset(for: sizeClass)
+                        let sampleX = inset + 40
+                        let deadline = Date().addingTimeInterval(4)
+                        while Date() < deadline {
+                            if try posterRuns(snapshot(window), axis: .vertical, at: sampleX).count == 2 { break }
+                            try await Task.sleep(for: .milliseconds(100))
+                        }
+                        let image = snapshot(window, name: "home-rhythm-\(Int(width))-\(cardStyle)-\(dynamicSize)")
+                        let artworkRows = try posterRuns(image, axis: .vertical, at: sampleX)
+                        XCTAssertEqual(artworkRows.count, 2)
+                        let first = try XCTUnwrap(artworkRows.first)
+                        let second = try XCTUnwrap(artworkRows.last)
+                        let featured = try brightTextBounds(image, from: 0, to: CGFloat(first.lowerBound))
+                        let popular = try brightTextBounds(image, from: CGFloat(first.upperBound), to: CGFloat(second.lowerBound))
+                        let loading = try brightTextBounds(image, from: CGFloat(second.upperBound), to: image.size.height)
+                        let descriptor = UIFontDescriptor.preferredFontDescriptor(
+                            withTextStyle: .title3,
+                            compatibleWith: UITraitCollection(preferredContentSizeCategory: category))
+                            .addingAttributes([.traits: [UIFontDescriptor.TraitKey.weight: UIFont.Weight.semibold.rawValue]])
+                        let font = UIFont(descriptor: descriptor, size: 0)
+                        for (title, frame) in [("Featured", featured), ("Popular", popular), ("Loading", loading)] {
+                            let line = CTLineCreateWithAttributedString(
+                                NSAttributedString(string: title, attributes: [.font: font]) as CFAttributedString)
+                            let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+                            XCTAssertEqual(frame.width, ink.width, accuracy: 1.5,
+                                           "Loaded and placeholder headings use the native 20pt semibold type scale.")
+                            XCTAssertEqual(frame.height, ink.height, accuracy: 1.5)
+                            XCTAssertEqual(frame.minX, inset + ink.minX, accuracy: 1.5)
+                        }
+                        XCTAssertEqual(CGFloat(first.lowerBound) - featured.maxY,
+                                       12 + font.lineHeight - font.ascender, accuracy: 3,
+                                       "Scroll shadow clearance must not inflate the heading-to-artwork gap.")
+                        XCTAssertEqual(popular.minY - CGFloat(first.upperBound),
+                                       32 + font.ascender - font.capHeight, accuracy: 3,
+                                       "Section spacing is measured from visible artwork, not hidden scroll padding.")
+                        let cards = try posterRuns(image, at: CGFloat(first.lowerBound + first.count / 2))
+                        XCTAssertGreaterThanOrEqual(cards.count, 3)
+                        XCTAssertEqual(CGFloat(cards[1].lowerBound - cards[0].upperBound),
+                                       12 + (cardStyle == .framed ? 2 * metrics.cardInset : 0), accuracy: 1)
+                    }
+                }
+            }
+        }
     }
 
     func testMultiviewActionsStayInsideSafeAreasOnPhonesTabletsAndLargeText() async throws {
@@ -316,7 +391,42 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                       width: box.width * size.width, height: box.height * size.height)
     }
 
-    private func posterRuns(_ image: UIImage, y: CGFloat) throws -> [Range<Int>] {
+    private func posterRuns(_ image: UIImage, axis: Axis = .horizontal, at coordinate: CGFloat) throws -> [Range<Int>] {
+        let cg = try XCTUnwrap(image.cgImage)
+        let bytes = try rgbaPixels(image)
+        var runs: [Range<Int>] = []
+        var start: Int?
+        let length = Int(axis == .horizontal ? image.size.width : image.size.height)
+        for position in 0..<length {
+            let x = axis == .horizontal ? CGFloat(position) : coordinate
+            let y = axis == .horizontal ? coordinate : CGFloat(position)
+            let offset = (Int(y * image.scale) * cg.width + Int(x * image.scale)) * 4
+            let artwork = bytes[offset] > 150 && bytes[offset + 1] < 70 && bytes[offset + 2] > 70
+            if artwork && start == nil { start = position }
+            if !artwork, let begin = start { runs.append(begin..<position); start = nil }
+        }
+        if let start { runs.append(start..<length) }
+        return runs.filter { $0.count > 3 }
+    }
+
+    private func brightTextBounds(_ image: UIImage, from top: CGFloat, to bottom: CGFloat) throws -> CGRect {
+        let cg = try XCTUnwrap(image.cgImage)
+        let bytes = try rgbaPixels(image)
+        var left = cg.width, right = 0, upper = cg.height, lower = 0
+        for y in Int(top * image.scale)..<min(cg.height, Int(bottom * image.scale)) {
+            for x in 0..<cg.width {
+                let index = (y * cg.width + x) * 4
+                guard bytes[index] > 220, bytes[index + 1] > 220, bytes[index + 2] > 220 else { continue }
+                left = min(left, x); right = max(right, x)
+                upper = min(upper, y); lower = max(lower, y)
+            }
+        }
+        XCTAssertGreaterThan(right, left, "A heading must actually render in its section.")
+        return CGRect(x: CGFloat(left) / image.scale, y: CGFloat(upper) / image.scale,
+                      width: CGFloat(right - left + 1) / image.scale, height: CGFloat(lower - upper + 1) / image.scale)
+    }
+
+    private func rgbaPixels(_ image: UIImage) throws -> [UInt8] {
         let cg = try XCTUnwrap(image.cgImage)
         var bytes = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
         try bytes.withUnsafeMutableBytes {
@@ -326,16 +436,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
             ))
             context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
         }
-        var runs: [Range<Int>] = []
-        var start: Int?
-        for x in 0..<Int(image.size.width) {
-            let offset = (Int(y * image.scale) * cg.width + Int(CGFloat(x) * image.scale)) * 4
-            let artwork = bytes[offset] > 150 && bytes[offset + 1] < 70 && bytes[offset + 2] > 70
-            if artwork && start == nil { start = x }
-            if !artwork, let begin = start { runs.append(begin..<x); start = nil }
-        }
-        if let start { runs.append(start..<Int(image.size.width)) }
-        return runs.filter { $0.count > 3 }
+        return bytes
     }
 
     private func posterArtwork() async throws -> URL {

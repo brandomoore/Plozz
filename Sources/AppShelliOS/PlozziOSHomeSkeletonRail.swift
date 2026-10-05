@@ -33,14 +33,7 @@ struct PlozziOSHomeSkeletonRail: View {
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            title
-                .font(.title2.bold())
-                .padding(
-                    .horizontal,
-                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
-                )
-
+        PlozziOSHomeSection(title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0) {
             ScrollView(.horizontal) {
                 // Deliberately NOT lazy: the placeholders are cheap, and a lazy
                 // stack would only materialise the ones already on screen — the
@@ -49,7 +42,8 @@ struct PlozziOSHomeSkeletonRail: View {
                     alignment: .top,
                     spacing: PlozziOSMediaRailLayout.stackSpacing(
                         metrics: metrics,
-                        cardStyle: cardStyle
+                        cardStyle: cardStyle,
+                        visibleSpacing: PlozziOSHomeLayout.cardSpacing
                     )
                 ) {
                     ForEach(0..<cardCount, id: \.self) { _ in
@@ -75,8 +69,7 @@ struct PlozziOSHomeSkeletonRail: View {
                     metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
-            .contentMargins(.vertical, 10, for: .scrollContent)
-            .scrollIndicators(.hidden)
+            .plozziOSHomeRailClearance()
             // The placeholders are not content the viewer can act on.
             .scrollDisabled(true)
             .accessibilityHidden(true)

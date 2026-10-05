@@ -20,6 +20,12 @@ fallback when the user's server has no attached trailer.
   through the existing profile-scoped `HeroSettings.showsCardCaptions`, exposed in
   mobile Home settings; explicit saved choices are retained. Continue Watching
   geometry, library grids, detail pages, and tvOS layout are unchanged.
+- **Mobile Home rhythm** — every loaded, placeholder, library, and failed row uses
+  `PlozziOSHomeSection`: native Dynamic Type `title3` semibold headings, a 12pt
+  heading-to-artwork layout gap, and 32pt between sections. Home's media surfaces
+  sit 12pt apart; framed cards retain their interior artwork insets. Scroll shadow
+  clearance does not add invisible vertical padding, and framed artwork shares
+  the same vertical keylines as borderless posters.
 - **Item detail** — `ItemDetailView` + `ItemDetailViewModel` and
   `DetailHeroView` / `DetailExtrasView` render the cinematic full-bleed
   backdrop, logo, overview, ratings, cast, and Play/Resume button. Works
@@ -70,8 +76,8 @@ fallback when the user's server has no attached trailer.
   and scan banners share the mobile page keyline (22pt compact, 36pt regular).
   Mode changes reset to the padded page's true top, keeping both the tabs and
   native navigation-bar scroll-edge appearance consistent across all four modes.
-  Recommendation rails remain horizontally lazy and share touch card appearance,
-  visible spacing, and artwork keylines with mobile Home, not the TV rail's layout.
+  Recommendation rails remain horizontally lazy and share touch card appearance
+  and artwork keylines with mobile Home, retaining their roomier 14pt surface gap.
   Library Continue Watching uses Home's profile-selected series artwork and
   resume progress treatment, including profile spoiler protection on mobile.
   Merged libraries validate Continue Watching against every account-qualified

@@ -52,7 +52,7 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
                     style: sizeClass == .compact ? .compactPortrait : .landscape,
                     surfaceRole: .home, dynamicTypeSize: .large, containerHeight: window.bounds.height
                 )
-                XCTAssertEqual(scroll.contentSize.height - rowsHeight, heroHeight + 30, accuracy: 1)
+                XCTAssertEqual(scroll.contentSize.height - rowsHeight, heroHeight + 32, accuracy: 1)
 
                 model.settings.sources = []
                 try await self.settle(window)
@@ -75,7 +75,7 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
         let heroFrame = hero.convert(hero.bounds, to: window)
         let rowFrame = row.convert(row.bounds, to: window)
         XCTAssertEqual(heroFrame.minY, 0, accuracy: 1, "Enabled heroes remain full bleed.")
-        XCTAssertEqual(rowFrame.minY, heroFrame.maxY + 30, accuracy: 1)
+        XCTAssertEqual(rowFrame.minY, heroFrame.maxY + 32, accuracy: 1)
     }
 
     private func find(_ identifier: String, in view: UIView) -> UIView? {

@@ -74,7 +74,7 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
     var body: some View {
         ScrollView {
             // Rows own their horizontal laziness; keep the vertical layout eager.
-            VStack(alignment: .leading, spacing: 30) {
+            VStack(alignment: .leading, spacing: PlozziOSHomeLayout.rowSpacing) {
                 if heroActive {
                     hero
                 }
@@ -2210,20 +2210,14 @@ private struct PlozziOSFeaturedRow: View {
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Trending")
-                .font(.title2.bold())
-                .padding(
-                    .horizontal,
-                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
-                )
-
+        PlozziOSHomeSection(title: Text("Trending"), artworkInset: cardStyle == .framed ? metrics.cardInset : 0) {
             ScrollView(.horizontal) {
                 LazyHStack(
                     alignment: .top,
                     spacing: PlozziOSMediaRailLayout.stackSpacing(
                         metrics: metrics,
-                        cardStyle: cardStyle
+                        cardStyle: cardStyle,
+                        visibleSpacing: PlozziOSHomeLayout.cardSpacing
                     )
                 ) {
                     ForEach(items, id: \.stablePresentationID) { item in
@@ -2248,24 +2242,19 @@ private struct PlozziOSFeaturedRow: View {
                     metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
-            .contentMargins(.vertical, 10, for: .scrollContent)
-            .scrollIndicators(.hidden)
+            .plozziOSHomeRailClearance()
         }
         .environment(\.plozzCardCaptionsHidden, !appModel.settings.hero.settings.showsCardCaptions)
     }
 }
 
 private struct PlozziOSHomeRowFailure: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let title: Text
     let error: AppError
     let viewModel: HomeViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            title
-                .font(.title2.bold())
-                .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass))
+        PlozziOSHomeSection(title: title) {
             ContentStateView<Bool, EmptyView>(
                 state: .failed(error),
                 onRetry: { Task { await viewModel.load(showLoadingState: false) } }
@@ -2289,15 +2278,7 @@ private struct PlozziOSHomeRowView: View {
             if let failure = row.failure, row.items.isEmpty, row.libraries.isEmpty {
                 PlozziOSHomeRowFailure(title: Text(row.title), error: failure, viewModel: viewModel)
             } else if row.kind == .libraries, row.loadingPlaceholderCount == 0 {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(row.title)
-                        .font(.title2.bold())
-                        .padding(
-                            .horizontal,
-                            PlozziOSPageLayout.horizontalInset(
-                                for: horizontalSizeClass
-                            )
-                        )
+                PlozziOSHomeSection(title: Text(row.title)) {
                     libraryRow
                 }
             } else if row.items.isEmpty {
@@ -2357,7 +2338,7 @@ private struct PlozziOSHomeRowView: View {
 
     private var libraryRow: some View {
         ScrollView(.horizontal) {
-            LazyHStack(spacing: PlozziOSMediaRailLayout.visibleSpacing) {
+            LazyHStack(spacing: PlozziOSHomeLayout.cardSpacing) {
                 ForEach(row.libraries) { library in
                     // Still gated on the account having a live provider; the route
                     // resolves it again at push time so this row holds no reference.
@@ -2391,8 +2372,7 @@ private struct PlozziOSHomeRowView: View {
             PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
             for: .scrollContent
         )
-            .contentMargins(.vertical, 10, for: .scrollContent)
-        .scrollIndicators(.hidden)
+        .plozziOSHomeRailClearance()
     }
 
 }
@@ -2430,20 +2410,14 @@ struct PlozziOSHomeMediaRail: View {
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            title
-                .font(.title2.bold())
-                .padding(
-                    .horizontal,
-                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
-                )
-
+        PlozziOSHomeSection(title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0) {
             ScrollView(.horizontal) {
                 LazyHStack(
                     alignment: .top,
                     spacing: PlozziOSMediaRailLayout.stackSpacing(
                         metrics: metrics,
-                        cardStyle: cardStyle
+                        cardStyle: cardStyle,
+                        visibleSpacing: PlozziOSHomeLayout.cardSpacing
                     )
                 ) {
                     ForEach(MediaRowView.presentationElements(
@@ -2498,8 +2472,7 @@ struct PlozziOSHomeMediaRail: View {
                     metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
-            .contentMargins(.vertical, 10, for: .scrollContent)
-            .scrollIndicators(.hidden)
+            .plozziOSHomeRailClearance()
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.x
             } action: { oldOffset, newOffset in
