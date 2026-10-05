@@ -58,6 +58,7 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
     private let sharedResolutionIdentity: String?
     private let content: (Image) -> Content
     private let placeholder: () -> Placeholder
+    private var showsPlaceholderWhileLoading = false
 
     public init(
         references: [ArtworkReference],
@@ -102,6 +103,7 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
             onResolveReference: onResolveReference,
             pinIdentity: pinIdentity,
             sharedResolutionIdentity: sharedResolutionIdentity,
+            showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
             content: .image(content),
             placeholder: placeholder
         )
@@ -111,10 +113,19 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
                 if case let .remote(url) = $0 { return url }
                 return nil
             },
+            showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
             content: content,
             placeholder: placeholder
         )
         #endif
+    }
+
+    /// Keeps identifying placeholders visible while artwork resolves, without
+    /// changing resolver identity or the behavior of other artwork surfaces.
+    public func showingPlaceholderWhileLoading(_ isVisible: Bool) -> Self {
+        var copy = self
+        copy.showsPlaceholderWhileLoading = isVisible
+        return copy
     }
 
     #if canImport(UIKit)
@@ -133,6 +144,7 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
             pinIdentity: pinIdentity,
             sharedResolutionIdentity: sharedResolutionIdentity,
             reportedHeroID: id,
+            showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
             content: .image(content),
             placeholder: placeholder
         )
@@ -155,6 +167,7 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
             onResolveReference: onResolveReference,
             pinIdentity: pinIdentity,
             sharedResolutionIdentity: sharedResolutionIdentity,
+            showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
             content: .bitmap(content),
             placeholder: { EmptyView() }
         )
@@ -240,6 +253,7 @@ extension FallbackAsyncImage where Content == ArtworkFillImage {
 /// aspect guard is required (e.g. landscape/backdrop art).
 private struct SequentialAsyncImage<Content: View, Placeholder: View>: View {
     let urls: [URL]
+    let showsPlaceholderWhileLoading: Bool
     let content: (Image) -> Content
     let placeholder: () -> Placeholder
 
@@ -253,7 +267,11 @@ private struct SequentialAsyncImage<Content: View, Placeholder: View>: View {
                 case let .success(image):
                     content(image)
                 case .empty:
-                    palette.fill
+                    if showsPlaceholderWhileLoading {
+                        placeholder()
+                    } else {
+                        palette.fill
+                    }
                 case .failure:
                     Color.clear.onAppear(perform: advance)
                 @unknown default:
@@ -430,6 +448,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
     let pinIdentity: String?
     let sharedResolutionIdentity: String?
     let reportedHeroID: String?
+    let showsPlaceholderWhileLoading: Bool
     let content: ResolvedArtworkContent<Content>
     let placeholder: () -> Placeholder
 
@@ -475,6 +494,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         pinIdentity: String? = nil,
         sharedResolutionIdentity: String? = nil,
         reportedHeroID: String? = nil,
+        showsPlaceholderWhileLoading: Bool = false,
         content: ResolvedArtworkContent<Content>,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
@@ -490,6 +510,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         self.pinIdentity = pinIdentity
         self.sharedResolutionIdentity = sharedResolutionIdentity
         self.reportedHeroID = reportedHeroID
+        self.showsPlaceholderWhileLoading = showsPlaceholderWhileLoading
         self.content = content
         self.placeholder = placeholder
         // Seed synchronously from the decoded-image cache so an already-warmed card
@@ -583,7 +604,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
             case .image(let render):
                 if let image {
                     render(Image(uiImage: image))
-                } else if resolved {
+                } else if resolved || showsPlaceholderWhileLoading {
                     placeholder()
                 } else {
                     palette.fill

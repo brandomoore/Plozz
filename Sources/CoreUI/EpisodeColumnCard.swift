@@ -157,10 +157,8 @@ public struct EpisodeColumnCard: View, Equatable {
     }
 
     private var customEpisodeArtwork: some View {
-        artwork
+        realArtwork
             .frame(width: Self.artworkSize.width, height: Self.artworkSize.height)
-            .saturation(presentation.isUpcoming ? 0 : 1)
-            .opacity(presentation.isUpcoming ? 0.05 : 1)
             .background { if presentation.isUpcoming { palette.cardSurface } }
             .overlay { episodeOverlays }
             .plozzCardArtworkClip(RoundedRectangle(cornerRadius: metrics.landscapeCardCornerRadius, style: .continuous))
@@ -178,12 +176,22 @@ public struct EpisodeColumnCard: View, Equatable {
     private var episodeOverlays: some View {
         ZStack {
             if presentation.isUpcoming, let air = item.upcomingReleaseText {
-                Label(air, systemImage: "clock")
-                    .font(.system(size: 21, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
+                VStack(spacing: 8) {
+                    if captionsHidden {
+                        presentation.titleLine
+                            .font(.system(size: metrics.cardTitleFontSize, weight: .semibold))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                            .foregroundStyle(.white)
+                    }
+                    Label(air, systemImage: "clock")
+                        .font(.system(size: 21, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                .padding(.horizontal, 12)
             }
             if presentation.artworkTreatment != .blurred {
                 ResumeChipOverlay(item: item).plozzChromeFocused(isFocused)
@@ -202,7 +210,11 @@ public struct EpisodeColumnCard: View, Equatable {
             image: nativeArtwork.image, treatment: treatment,
             aspectRatio: Self.artworkSize.width / Self.artworkSize.height,
             fallbackWidth: Self.artworkSize.width, title: nil, subtitle: nil,
-            overlay: episodeOverlays, focus: $isFocused, action: action
+            overlay: ZStack {
+                if captionsHidden && nativeArtwork.image == nil { neutralPlaceholder }
+                episodeOverlays
+            },
+            focus: $isFocused, action: action
         )
         .focused($isFocused.focusState)
         .frame(width: Self.artworkSize.width, height: Self.artworkSize.height)
@@ -219,32 +231,31 @@ public struct EpisodeColumnCard: View, Equatable {
     }
     #endif
 
-    @ViewBuilder
-    private var artwork: some View {
-        switch presentation.artworkTreatment {
-        case .visible:
-            realArtwork
-        case .blurred:
-            realArtwork.blur(radius: 28)
-        case .placeholder:
-            realArtwork
-        }
-    }
-
     private var realArtwork: some View {
         let source = EpisodeArtworkSource(item: item, spoilerSettings: spoilerSettings)
         return FallbackAsyncImage(
             references: source.references,
             variant: .landscapeCard,
             asyncFallbackURL: source.fallbackURL,
-            pinIdentity: source.pinIdentity
-        ) {
-            neutralPlaceholder
-        }
+            pinIdentity: source.pinIdentity,
+            content: { image in
+                ArtworkFillImage(image)
+                    .blur(radius: presentation.artworkTreatment == .blurred ? 28 : 0)
+                    .saturation(presentation.isUpcoming ? 0 : 1)
+                    .opacity(presentation.isUpcoming ? 0.05 : 1)
+            },
+            placeholder: { neutralPlaceholder }
+        )
+        .showingPlaceholderWhileLoading(captionsHidden)
     }
 
     private var neutralPlaceholder: some View {
-        MediaArtworkPlaceholder(symbol: .init(for: item), cornerRadius: metrics.landscapeCardCornerRadius)
+        MediaArtworkPlaceholder(
+            symbol: .init(for: item), cornerRadius: metrics.landscapeCardCornerRadius,
+            title: captionsHidden && !(presentation.isUpcoming && item.upcomingReleaseText != nil)
+                ? presentation.titleLine : nil
+        )
+        .opacity(presentation.isUpcoming && !captionsHidden ? 0.05 : 1)
     }
 
     @ViewBuilder

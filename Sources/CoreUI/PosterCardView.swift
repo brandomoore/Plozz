@@ -318,7 +318,13 @@ public struct PosterCardView: View {
 
     private func nativePosterIndicators(hasArtwork: Bool) -> some View {
         ZStack {
-            if !hasArtwork { neutralPlaceholder }
+            if !hasArtwork {
+                if PosterCardPresentation.usesFolderArtwork(for: item.kind) {
+                    folderPlaceholderArtwork
+                } else {
+                    neutralPlaceholder
+                }
+            }
             if showsSeriesArtwork && !suppressesSeriesLogo { seriesLogo }
             MediaCardPlaybackIndicators(
                 item: item,
@@ -777,6 +783,10 @@ public struct PosterCardView: View {
     /// captions outright when it names the title elsewhere.
     private var showsCaption: Bool { !showsSeriesArtwork && !captionsHidden }
 
+    private var placeholderTitle: Text? {
+        captionsHidden && !showsSeriesArtwork ? primaryText : nil
+    }
+
     /// Whether the resume chip names the episode, because no caption will.
     private var chipCarriesEpisode: Bool { showsSeriesArtwork || captionsHidden }
 
@@ -867,7 +877,7 @@ public struct PosterCardView: View {
         } else if hideThumbnail {
             switch spoilerSettings.mode {
             case .blur:
-                realArtwork.blur(radius: 28)
+                realArtwork
             case .placeholder:
                 placeholderArtwork
             }
@@ -890,10 +900,6 @@ public struct PosterCardView: View {
             folderPlaceholderArtwork
         } else {
             realArtwork
-                .overlay(alignment: .topTrailing) {
-                    FolderNavigationBadge(size: metrics.folderNavigationBadgeSize)
-                        .padding(folderBadgeInset)
-                }
         }
     }
 
@@ -902,7 +908,8 @@ public struct PosterCardView: View {
             foreground: titleColor,
             background: titleColor.opacity(0.08),
             isFocused: isFocused,
-            iconSize: PosterCardPresentation.folderIconSize(for: style)
+            iconSize: PosterCardPresentation.folderIconSize(for: style),
+            title: placeholderTitle
         )
     }
 
@@ -922,10 +929,26 @@ public struct PosterCardView: View {
             // is title-specific, so its task/memo identity has to be too.
             // Otherwise every posterless card shares one empty-reference key and
             // inherits whichever fallback image resolved first.
-            pinIdentity: artworkPolicy.pinIdentity(for: item)
-        ) {
-            neutralPlaceholder
-        }
+            pinIdentity: artworkPolicy.pinIdentity(for: item),
+            content: { image in
+                ArtworkFillImage(image)
+                    .blur(radius: hideThumbnail && spoilerSettings.mode == .blur ? 28 : 0)
+                    .overlay(alignment: .topTrailing) {
+                        if PosterCardPresentation.usesFolderArtwork(for: item.kind) {
+                            FolderNavigationBadge(size: metrics.folderNavigationBadgeSize)
+                                .padding(folderBadgeInset)
+                        }
+                    }
+            },
+            placeholder: {
+                if PosterCardPresentation.usesFolderArtwork(for: item.kind) {
+                    folderPlaceholderArtwork
+                } else {
+                    neutralPlaceholder
+                }
+            }
+        )
+        .showingPlaceholderWhileLoading(placeholderTitle != nil)
     }
 
     private var artworkVariant: ArtworkImageVariant {
@@ -1089,6 +1112,7 @@ public struct PosterCardView: View {
         ) {
             neutralPlaceholder
         }
+        .showingPlaceholderWhileLoading(placeholderTitle != nil)
     }
 
     /// Server-supplied series art, ordered for this card's shape: a poster card
@@ -1122,7 +1146,10 @@ public struct PosterCardView: View {
         let radius = cardStyle == .framed
             ? (style == .poster ? metrics.posterArtworkCornerRadius : metrics.landscapeArtworkCornerRadius)
             : borderlessCornerRadius
-        return MediaArtworkPlaceholder(tint: subtitleColor, symbol: .init(for: item), cornerRadius: radius)
+        return MediaArtworkPlaceholder(
+            tint: subtitleColor, symbol: .init(for: item), cornerRadius: radius,
+            title: placeholderTitle, titleColor: titleColor
+        )
     }
 
     // MARK: Series-identified artwork (Continue Watching)
@@ -1505,26 +1532,30 @@ enum PosterCardPresentation {
     }
 }
 
-/// Dedicated folder artwork: a generic symbol only. The item's real title stays
-/// in the normal caption below the card, so it is never duplicated in the poster.
+/// Folder names stay in the caption when enabled, otherwise inside the placeholder.
 struct FolderPlaceholderArtwork: View {
     let foreground: Color
     let background: Color
     let isFocused: Bool
     let iconSize: CGFloat
+    let title: Text?
 
     var body: some View {
         ZStack {
             background
-            Image(systemName: "folder.fill")
-                .symbolRenderingMode(.hierarchical)
-                .font(.system(size: iconSize, weight: .medium))
-                .foregroundStyle(
-                    foreground.opacity(
-                        PosterCardPresentation.folderIconOpacity(isFocused: isFocused)
+            ArtworkPlaceholderContent(
+                title: title, foreground: foreground,
+                symbol: Image(systemName: "folder.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.system(size: iconSize, weight: .medium))
+                    .foregroundStyle(
+                        foreground.opacity(
+                            PosterCardPresentation.folderIconOpacity(isFocused: isFocused)
+                        )
                     )
-                )
+            )
         }
+        .accessibilityHidden(true)
     }
 }
 

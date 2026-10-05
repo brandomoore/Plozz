@@ -9,11 +9,9 @@ import CoreModels
 /// a glyph *and* repeated the title, while the iOS episode rows drew a bare
 /// filled rectangle with no glyph at all.
 ///
-/// Deliberately text-free. Every surface that uses this already prints the
-/// item's title as a caption directly beneath the artwork, and that caption is
-/// the better copy — it truncates to the card's width, follows Dynamic Type, and
-/// carries the subtitle line. Repeating the title inside the artwork said the
-/// same thing twice, a few points apart.
+/// Normally text-free when a caption names the item. Surfaces that hide their
+/// captions supply a spoiler-safe title so missing artwork remains identifiable
+/// without changing the card's footprint.
 ///
 /// Marked decorative so VoiceOver reads the card's real label instead of
 /// announcing an image.
@@ -32,6 +30,8 @@ public struct MediaArtworkPlaceholder: View {
     private let glyphSize: CGFloat
     private let symbol: Symbol
     private let cornerRadius: CGFloat
+    private let title: Text?
+    private let titleColor: Color
 
     /// - Parameters:
     ///   - tint: colour the wash and glyph derive from. Defaults to `.secondary`
@@ -42,16 +42,21 @@ public struct MediaArtworkPlaceholder: View {
     ///   - symbol: use `.media` when no playable content is represented. It
     ///     draws an empty dashed box, without a fill or center glyph.
     ///   - cornerRadius: matches the enclosing artwork's clipping radius.
+    ///   - title: identifying text only when no visible caption names the item.
     public init(
         tint: Color = .secondary,
         glyphSize: CGFloat = 40,
         symbol: Symbol = .playback,
-        cornerRadius: CGFloat = 6
+        cornerRadius: CGFloat = 6,
+        title: Text? = nil,
+        titleColor: Color = .primary
     ) {
         self.tint = tint
         self.glyphSize = glyphSize
         self.symbol = symbol
         self.cornerRadius = cornerRadius
+        self.title = title
+        self.titleColor = titleColor
     }
 
     public var body: some View {
@@ -64,12 +69,50 @@ public struct MediaArtworkPlaceholder: View {
                     )
             } else {
                 tint.opacity(0.08)
-                Image(systemName: symbol.rawValue)
-                    .font(.system(size: glyphSize))
-                    .foregroundStyle(tint)
             }
+            ArtworkPlaceholderContent(
+                title: title, foreground: titleColor,
+                symbol: Group {
+                    if symbol != .media {
+                        Image(systemName: symbol.rawValue)
+                            .font(.system(size: glyphSize))
+                            .foregroundStyle(tint)
+                    }
+                }
+            )
         }
         .accessibilityHidden(true)
+    }
+}
+
+struct ArtworkPlaceholderContent<Symbol: View>: View {
+    let title: Text?
+    let foreground: Color
+    let symbol: Symbol
+    @Environment(\.plozzMetrics) private var metrics
+
+    var body: some View {
+        if let title {
+            ViewThatFits(in: .vertical) {
+                VStack(spacing: 8) {
+                    symbol
+                    label(title)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                label(title)
+            }
+            .padding(12)
+        } else {
+            symbol
+        }
+    }
+
+    private func label(_ title: Text) -> some View {
+        title
+            .font(.system(size: metrics.cardTitleFontSize, weight: .semibold))
+            .foregroundStyle(foreground)
+            .multilineTextAlignment(.center)
+            .lineLimit(3)
     }
 }
 #endif

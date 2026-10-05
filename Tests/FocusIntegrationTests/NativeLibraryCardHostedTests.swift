@@ -10,6 +10,61 @@ import XCTest
 
 @MainActor
 final class NativeLibraryCardHostedTests: XCTestCase {
+    func testArtlessNativeLibraryCellsPaintNamesOnlyWhenCaptionsAreHidden() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let controller = UIViewController()
+        controller.view.backgroundColor = .black
+        let cell = NativeTVLibraryCell(frame: .zero)
+        controller.view.addSubview(cell)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer {
+            cell.prepareForReuse()
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        var environment = EnvironmentValues()
+        environment.themePalette = .dark
+        environment.colorScheme = .dark
+        environment.plozzCardStyle = .borderless
+        environment.isEnabled = false
+        for kind in [MediaItemKind.folder, .movie] {
+            for hidden in [true, false] {
+                environment.plozzCardCaptionsHidden = hidden
+                cell.frame = CGRect(
+                    x: 400, y: 200, width: 220,
+                    height: NativeTVLibraryCell.height(for: 220, environment: environment)
+                )
+                var pictures: [[UInt8]] = []
+                for title in ["Family", "Travel"] {
+                    cell.configure(
+                        item: MediaItem(id: title, title: title, kind: kind),
+                        spoilerSettings: .default, environment: environment
+                    )
+                    window.layoutIfNeeded()
+                    try await Task.sleep(for: .milliseconds(150))
+                    let image = snapshot(window)
+                    let rect = cell.contentView.convert(cell.contentView.bounds, to: window)
+                    let crop = try XCTUnwrap(image.cgImage?.cropping(to: rect))
+                    pictures.append(try rgba(crop))
+                    XCTAssertEqual(cell.accessibilityLabel, title)
+                    let attachment = XCTAttachment(image: UIImage(cgImage: crop))
+                    attachment.name = "native-artless-\(kind)-\(hidden)-\(title)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+                XCTAssertEqual(pictures[0] != pictures[1], hidden,
+                               "Only caption-free placeholders should paint each item's name inside the artwork.")
+            }
+            cell.prepareForReuse()
+        }
+    }
+
     func testGeneratedLibraryArtworkReachesNativePosterWithoutReplacingFocus() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

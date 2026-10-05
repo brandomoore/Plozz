@@ -3643,9 +3643,13 @@ private struct PlozziOSInlineEpisodeEntry: View {
             // on every platform; this was a bare filled rectangle with no glyph.
             MediaArtworkPlaceholder(
                 glyphSize: 32, symbol: .init(for: episode),
-                cornerRadius: metrics.landscapeArtworkCornerRadius
+                cornerRadius: metrics.landscapeArtworkCornerRadius,
+                title: captionSettings.showsLabels(in: .episodes) ? nil : EpisodeColumnPresentation(
+                    item: episode, spoilerSettings: appModel.settings.spoilers.settings
+                ).titleLine
             )
         }
+        .showingPlaceholderWhileLoading(!captionSettings.showsLabels(in: .episodes))
         .frame(width: cardWidth, height: cardWidth * 9 / 16)
         .overlay {
             // The shared wash — this card's own gradient is where it came from.

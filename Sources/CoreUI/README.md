@@ -76,6 +76,10 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   on-disk + in-memory image cache shared with `MetadataKit`'s URL cache,
   with an `asyncFallbackURL` slot so server art is always tried first and
   the `MetadataKit` fallback only runs when needed.
+  When card captions are hidden, folder and missing-art placeholders carry the
+  existing spoiler-safe title inside the artwork slot. Loaded art remains
+  label-free, visible captions are not duplicated, and loading/failure never
+  changes card height. Spoiler blur applies to images, not fallback names.
 - **Content state** — `ContentStateView` renders the `LoadState`
   loading / loaded / empty / failed states identically across features.
 - **Subtitle appearance** — editing the live subtitle look now happens in

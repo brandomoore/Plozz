@@ -13,6 +13,130 @@ import XCTest
 
 @MainActor
 final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
+    func testEpisodePlaceholderNamesStayReadableUnderSpoilerAndUpcomingTreatments() async throws {
+        try await withWindow { window, host in
+            for mode in [SpoilerSettings.Mode.blur, .placeholder] {
+                for upcoming in [false, true] {
+                    var episode = MediaItem(
+                        id: "episode-placeholder", title: "Secret Ending", kind: .episode, episodeNumber: 5
+                    )
+                    if upcoming { episode.scheduledAirDate = Date().addingTimeInterval(86_400) }
+                    window.frame.size = CGSize(width: 768, height: 600)
+                    host.rootView = AnyView(
+                        EpisodeColumnCard(
+                            item: episode, spoilerSettings: SpoilerSettings(isEnabled: true, mode: mode),
+                            action: {}
+                        )
+                        .padding(22)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .background(Color.black)
+                        .environment(\.themePalette, .dark)
+                        .environment(\.plozzMetrics, .standard)
+                        .environment(\.plozzCardCaptionsHidden, true)
+                    )
+                    try await settle(window)
+                    let image = snapshot(window, name: "episode-placeholder-\(mode)-\(upcoming)")
+                    let observations = try text(image)
+                    _ = try textFrame("Episode 5", observations: observations, size: image.size)
+                    XCTAssertFalse(observations.contains { $0.candidate.string.contains("Secret") })
+                }
+            }
+        }
+    }
+
+    func testRejectedArtworkAndSpoilerPlaceholdersKeepSafeNames() async throws {
+        let rejected = try await posterArtwork(size: CGSize(width: 450, height: 100))
+        let folder = MediaItem(id: "rejected-folder", title: "Family", kind: .folder, posterURL: rejected)
+        let movie = MediaItem(id: "rejected-movie", title: "Films", kind: .movie, posterURL: rejected)
+        let episode = MediaItem(id: "hidden-episode", title: "Secret Ending", kind: .episode, episodeNumber: 5)
+        try await withWindow { window, host in
+            for mode in [SpoilerSettings.Mode.blur, .placeholder] {
+                window.frame.size = CGSize(width: 390, height: 850)
+                host.rootView = AnyView(
+                    VStack(spacing: 20) {
+                        HStack(spacing: 10) {
+                            ForEach([folder, movie]) { item in
+                                PosterCardView(item: item, enablesAsyncArtworkFallback: false, action: {})
+                                    .frame(width: 140)
+                            }
+                        }
+                        PosterCardView(
+                            item: episode, style: .landscape,
+                            spoilerSettings: SpoilerSettings(isEnabled: true, mode: mode),
+                            enablesAsyncArtworkFallback: false, action: {}
+                        )
+                        .frame(width: 280)
+                    }
+                    .padding(22)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .background(Color.black)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.plozzCardStyle, .borderless)
+                    .environment(\.plozzCardCaptionsHidden, true)
+                    .environment(\.plozzMetrics, .touch(density: .standard))
+                )
+                try await settle(window)
+                let image = snapshot(window, name: "rejected-and-spoiler-placeholders-\(mode)")
+                let observations = try text(image)
+                for name in ["Family", "Films", "Episode 5"] {
+                    _ = try textFrame(name, observations: observations, size: image.size)
+                }
+                XCTAssertFalse(observations.contains { $0.candidate.string.contains("Secret") })
+            }
+        }
+    }
+
+    func testArtlessCardsKeepNamesWhenLabelsAreHidden() async throws {
+        let artwork = try await posterArtwork()
+        let items = [
+            MediaItem(id: "folder", title: "Family", kind: .folder),
+            MediaItem(id: "movie", title: "Films", kind: .movie),
+            MediaItem(id: "artwork", title: "Cover", kind: .movie, posterURL: artwork)
+        ]
+        try await withWindow { window, host in
+            for width in [CGFloat(320), 390, 768, 1024] {
+                for style in [CardStyle.borderless, .framed] {
+                    for hidden in [true, false] {
+                        let cardWidth = min(160, (width - 64) / 3)
+                        window.frame.size = CGSize(width: width, height: 600)
+                        host.rootView = AnyView(
+                            HStack(alignment: .top, spacing: 10) {
+                                ForEach(items) { item in
+                                    PosterCardView(item: item, enablesAsyncArtworkFallback: false, action: {})
+                                        .frame(width: cardWidth)
+                                }
+                            }
+                            .padding(22)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .background(Color.black)
+                            .environment(\.themePalette, .dark)
+                            .environment(\.plozzCardStyle, style)
+                            .environment(\.plozzCardCaptionsHidden, hidden)
+                            .environment(\.plozzMetrics, .touch(density: .standard))
+                        )
+                        try await settle(window)
+                        let image = snapshot(window, name: "placeholder-names-\(Int(width))-\(style)-\(hidden)")
+                        let observations = try text(image)
+                        let artCenter = 22 + 2 * (cardWidth + 10) + cardWidth / 2
+                        let art = try XCTUnwrap(posterRuns(image, axis: .vertical, at: artCenter).first)
+                        for name in ["Family", "Films"] {
+                            let label = try textFrame(name, observations: observations, size: image.size)
+                            if hidden {
+                                XCTAssertGreaterThan(label.minY, CGFloat(art.lowerBound))
+                                XCTAssertLessThan(label.maxY, CGFloat(art.upperBound),
+                                                  "Fallback names belong inside the unchanged artwork slot.")
+                            } else {
+                                XCTAssertGreaterThan(label.minY, CGFloat(art.upperBound),
+                                                     "Visible captions must not be repeated inside placeholders.")
+                            }
+                        }
+                        XCTAssertEqual(observations.contains { $0.candidate.string.contains("Cover") }, !hidden)
+                    }
+                }
+            }
+        }
+    }
+
     func testPosterAndContinueWatchingRenderMatchingTwelvePointCorners() async throws {
         let artwork = try await posterArtwork()
         let item = MediaItem(
@@ -684,11 +808,11 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         return bytes
     }
 
-    private func posterArtwork() async throws -> URL {
+    private func posterArtwork(size: CGSize = CGSize(width: 300, height: 450)) async throws -> URL {
         let url = try XCTUnwrap(URL(string: "https://example.invalid/mobile-poster-\(UUID()).png"))
-        let image = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 450)).image { context in
+        let image = UIGraphicsImageRenderer(size: size).image { context in
             UIColor(red: 0.8, green: 0.12, blue: 0.48, alpha: 1).setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 300, height: 450))
+            context.fill(CGRect(origin: .zero, size: size))
         }
         let data = try XCTUnwrap(image.pngData())
         let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)

@@ -31,6 +31,23 @@ import UIKit
 #if canImport(UIKit)
 @MainActor
 final class MediaFolderCardLayoutTests: XCTestCase {
+    func testFallbackNamesDoNotExpandCardsWithHiddenCaptions() {
+        for style in [CardStyle.framed, .borderless] {
+            for width in [CGFloat(86), 126, 220] {
+                let short = MediaItem(id: "short", title: "Films", kind: .movie)
+                let long = MediaItem(
+                    id: "folder", title: "A very long folder name that wraps across several lines", kind: .folder
+                )
+                XCTAssertEqual(
+                    height(MediaFolderCardLabel(item: long), width: width, style: style, captionsHidden: true),
+                    height(PosterCardView(item: short, enablesAsyncArtworkFallback: false, action: {}),
+                           width: width, style: style, captionsHidden: true),
+                    accuracy: 0.5
+                )
+            }
+        }
+    }
+
     func testMixedFolderAndMediaCardsKeepIdenticalHeights() {
         for style in [CardStyle.framed, .borderless] {
             for width in [CGFloat(126), 220] {
@@ -54,9 +71,12 @@ final class MediaFolderCardLayoutTests: XCTestCase {
         }
     }
 
-    private func height<Content: View>(_ content: Content, width: CGFloat, style: CardStyle) -> CGFloat {
+    private func height<Content: View>(
+        _ content: Content, width: CGFloat, style: CardStyle, captionsHidden: Bool = false
+    ) -> CGFloat {
         let view = content
             .environment(\.plozzCardStyle, style)
+            .environment(\.plozzCardCaptionsHidden, captionsHidden)
             .frame(width: width, alignment: .topLeading)
         return UIHostingController(rootView: view)
             .sizeThatFits(in: CGSize(width: width, height: 1_000))

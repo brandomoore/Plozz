@@ -257,7 +257,10 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             NativeLibraryArtworkOverlay(
                 symbol: item.map { .init(for: $0) } ?? .playback,
                 hasArtwork: artwork != nil, isFolder: item?.kind == .folder,
-                isFocused: isFocused, indicators: indicators
+                isFocused: isFocused, indicators: indicators,
+                title: environment.plozzCardCaptionsHidden ? item.map {
+                    Text(verbatim: $0.posterCaptionTitle(spoilerSettings: spoilerSettings).resolve(locale: environment.locale))
+                } : nil
             )
             .environment(\.self, environment)
             .plozzChromeFocused(isFocused)
@@ -292,6 +295,7 @@ private struct NativeLibraryArtworkOverlay: View {
     let isFolder: Bool
     let isFocused: Bool
     let indicators: MediaCardPlaybackIndicators?
+    let title: Text?
     @Environment(\.plozzMetrics) private var metrics
 
     var body: some View {
@@ -299,12 +303,14 @@ private struct NativeLibraryArtworkOverlay: View {
             if isFolder && !hasArtwork {
                 FolderPlaceholderArtwork(
                     foreground: .primary, background: Color.primary.opacity(0.08),
-                    isFocused: isFocused, iconSize: PosterCardPresentation.folderIconSize(for: .poster)
+                    isFocused: isFocused, iconSize: PosterCardPresentation.folderIconSize(for: .poster),
+                    title: title
                 )
             } else if !hasArtwork {
                 MediaArtworkPlaceholder(
                     tint: .secondary, symbol: symbol,
-                    cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius
+                    cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius,
+                    title: title
                 )
             }
             indicators
