@@ -148,6 +148,8 @@ public struct CardCaptionCustomizationView: View {
                 Text(resolvedDefault)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
             SettingsSectionGroup {
                 ForEach(CardCaptionView.allCases, id: \.rawValue) { view in

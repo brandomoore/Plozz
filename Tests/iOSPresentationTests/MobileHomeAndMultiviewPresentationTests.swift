@@ -45,12 +45,27 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                         .environment(\.plozzMetrics, .touch(density: .standard))
                     )
                     try await settle(window)
-                    let observations = try text(snapshot(
+                    let image = snapshot(
                         window, name: "card-settings-\(Int(width))-\(page)-\(typeSize)"
-                    ))
+                    )
+                    let observations = try text(image)
                     let copy = observations.map(\.candidate.string).joined(separator: " ")
                     if page {
                         XCTAssertTrue(copy.contains("Browse"))
+                        if typeSize.isAccessibilitySize {
+                            let label = try textFrame("Default", observations: observations, size: image.size)
+                            let cg = try XCTUnwrap(image.cgImage)
+                            let pixels = try rgbaPixels(image)
+                            let y = Int(label.midY * image.scale)
+                            let outside = (y * cg.width + Int(2 * image.scale)) * 4
+                            let inside = (y * cg.width + Int((label.minX - 4) * image.scale)) * 4
+                            for channel in 0..<3 {
+                                XCTAssertEqual(
+                                    Double(pixels[inside + channel]), Double(pixels[outside + channel]), accuracy: 12,
+                                    "The summary must retain the page surface, not an opaque native List row."
+                                )
+                            }
+                        }
                     } else {
                         // Native labels may wrap at compact widths; both words
                         // must remain complete rather than truncated.
