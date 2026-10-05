@@ -37,7 +37,6 @@ private struct OverviewCardHeightKey: PreferenceKey {
 
 public struct DetailInformationSections: View {
     static let bandFillOpacity = 0.4
-    static let cardFillOpacity = 0.2
 
     private let item: MediaItem
     private let horizontalInset: CGFloat
@@ -94,7 +93,7 @@ public struct DetailInformationSections: View {
         if hasContent {
             sectionBody
                 .environment(\.plozzNativeInformationFocus, true)
-                .environment(\.plozzCardSurfaceOpacity, gradientEnabled && !reduceTransparency ? Self.cardFillOpacity : 1)
+                .environment(\.plozzGradientCardSurface, gradientEnabled && !reduceTransparency)
                 .padding(.horizontal, horizontalInset)
                 .padding(.top, bandTopPadding)
                 .padding(.bottom, bandBottomPadding)

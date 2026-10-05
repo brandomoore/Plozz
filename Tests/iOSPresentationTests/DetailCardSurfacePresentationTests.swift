@@ -23,7 +23,7 @@ final class DetailCardSurfacePresentationTests: XCTestCase {
         for size in [CGSize(width: 390, height: 844), CGSize(width: 1024, height: 768)] {
             window.frame = CGRect(origin: .zero, size: size)
             for palette in [ThemePalette.dark, .pureBlack, .light] {
-                for opacity in [0.2, 1.0] {
+                for gradientSurface in [true, false] {
                     for button in [false, true] {
                         let label = Color.white.frame(width: 40, height: 40)
                             .frame(width: 240, height: 120)
@@ -38,15 +38,18 @@ final class DetailCardSurfacePresentationTests: XCTestCase {
                             }
                             .environment(\.themePalette, palette)
                             .environment(\.colorScheme, palette.isLight ? .light : .dark)
-                            .environment(\.plozzCardSurfaceOpacity, opacity)
-                            .environment(\.plozzReduceTransparency, opacity == 1)
+                            .environment(\.plozzGradientCardSurface, gradientSurface)
+                            .environment(\.plozzReduceTransparency, !gradientSurface)
                         )
                         window.layoutIfNeeded()
                         try await Task.sleep(for: .milliseconds(150))
                         let actual = snapshot(window)
                         XCTAssertEqual(try pixel(actual, at: CGPoint(x: size.width / 2, y: size.height / 2)),
                                        [255, 255, 255], "Surface opacity must not fade card content.")
-                        host.rootView = AnyView(palette.raised.fill.opacity(opacity).background(.blue)
+                        let fill = gradientSurface
+                            ? (palette.isLight ? Color.black : .white).opacity(0.05)
+                            : palette.raised.fill
+                        host.rootView = AnyView(fill.background(.blue)
                             .environment(\.colorScheme, palette.isLight ? .light : .dark))
                         window.layoutIfNeeded()
                         try await Task.sleep(for: .milliseconds(100))
@@ -54,7 +57,7 @@ final class DetailCardSurfacePresentationTests: XCTestCase {
                         for (rendered, reference) in zip(try pixel(actual, at: point),
                                                          try pixel(snapshot(window), at: point)) {
                             XCTAssertLessThanOrEqual(abs(rendered - reference), 2,
-                                                     "\(size), \(palette), opacity=\(opacity), button=\(button)")
+                                                     "\(size), \(palette), gradient=\(gradientSurface), button=\(button)")
                         }
                     }
                 }

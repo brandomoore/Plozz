@@ -64,10 +64,12 @@ final class DialogSurfaceTests: XCTestCase {
                             .environment(\.gradientBackgroundsEnabled, gradient)
                             .environment(\.plozzReduceTransparency, reduced)
                     )
-                    let opacity = gradient && !reduced ? 0.2 : 1.0
+                    let translucent = gradient && !reduced
+                    let opacity = translucent ? 0.05 : 1.0
                     let actual = pixel(pixels, x: 60, y: 60)
                     for channel in 0..<3 {
-                        let expected = (fill[channel] * opacity + [0.7, 0.3, 0.1][channel] * (1 - opacity)) * 255
+                        let tone = translucent ? (palette.isLight ? 0.0 : 1.0) : fill[channel]
+                        let expected = (tone * opacity + [0.7, 0.3, 0.1][channel] * (1 - opacity)) * 255
                         XCTAssertEqual(Double(actual[channel]), expected, accuracy: 4,
                                        "Only gradient-backed Settings fills should blend; existing shadows remain.")
                     }

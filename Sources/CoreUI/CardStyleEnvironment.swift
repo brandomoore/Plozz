@@ -11,14 +11,18 @@ private struct PlozzCardStyleKey: EnvironmentKey {
     static let defaultValue: CardStyle = .default
 }
 
-private struct PlozzCardSurfaceOpacityKey: EnvironmentKey {
-    static let defaultValue: Double = 1
+private struct PlozzGradientCardSurfaceKey: EnvironmentKey {
+    static let defaultValue = false
 }
 
 extension EnvironmentValues {
-    var plozzCardSurfaceOpacity: Double {
-        get { self[PlozzCardSurfaceOpacityKey.self] }
-        set { self[PlozzCardSurfaceOpacityKey.self] = newValue }
+    var plozzGradientCardSurface: Bool {
+        get { self[PlozzGradientCardSurfaceKey.self] }
+        set { self[PlozzGradientCardSurfaceKey.self] = newValue }
+    }
+
+    var plozzRestingCardSurface: SurfaceStyle {
+        plozzGradientCardSurface ? themePalette.gradientSurface : themePalette.raised
     }
 }
 

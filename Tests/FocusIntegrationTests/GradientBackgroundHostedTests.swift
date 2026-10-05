@@ -41,6 +41,11 @@ final class GradientBackgroundHostedTests: XCTestCase {
         await ambient.update(owner: UUID(), key: AmbientArtworkKey(
             id: item.id, reference: .remote(referenceURL)
         ), delay: .zero) { [.red] }
+        let previewColors: [Color] = [.blue, .cyan, .indigo, .purple]
+        let previewAmbient = AmbientBackdropModel()
+        await previewAmbient.update(owner: UUID(), key: AmbientArtworkKey(
+            id: "\(item.id)-blue", reference: .remote(referenceURL)
+        ), delay: .zero) { previewColors }
 
         for theme in [AppTheme.pureBlack, .dark, .light] {
             let palette = ThemePalette.palette(for: theme, systemColorScheme: .dark)
@@ -103,7 +108,7 @@ final class GradientBackgroundHostedTests: XCTestCase {
                         (enabled && !reduceTransparency
                             ? AmbientGradientBackground.meshColors(tint: [.red], palette: palette)[4]
                                 .mix(with: palette.informationSurface, by: 0.4)
-                                .mix(with: palette.raised.fill, by: 0.2)
+                                .mix(with: palette.isLight ? .black : .white, by: 0.05)
                             : palette.raised.fill)
                             .environment(\.colorScheme, palette.isLight ? .light : .dark)
                     )
@@ -120,32 +125,48 @@ final class GradientBackgroundHostedTests: XCTestCase {
                     }
                 }
             }
-            host.rootView = AnyView(
-                ScrollView {
-                    VStack(spacing: 0) {
-                        Color.clear.frame(height: 180)
-                        DetailInformationSections(item: item, horizontalInset: 60)
+            for tinted in [false, true] {
+                host.rootView = AnyView(
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            Color.clear.frame(height: 180)
+                            DetailInformationSections(item: item, horizontalInset: 60)
+                        }
+                    }
+                    .background { AmbientGradientBackground(palette: palette, tint: tinted ? previewColors : nil) }
+                    .environment(\.themePalette, palette)
+                    .environment(\.plozzCardFocusStyle, .system)
+                    .environment(\.plozzNativeFocusSurface, true)
+                    .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                    .environment(\.gradientBackgroundsEnabled, true)
+                    .environment(\.plozzReduceTransparency, false)
+                    .environment(\.ambientBackdropModel, tinted ? previewAmbient : nil)
+                    .transaction { $0.disablesAnimations = true }
+                )
+                window.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(200))
+                let preview = try capture(window)
+                let above = try pixel(preview, at: CGPoint(x: 20, y: 178))
+                let below = try pixel(preview, at: CGPoint(x: 20, y: 182))
+                XCTAssertGreaterThan(zip(above, below).map { abs($0 - $1) }.reduce(0, +), 6)
+                if tinted {
+                    let points = nativeCards(in: window).filter { !$0.isFocused }.map {
+                        $0.contentView.convert(
+                            CGPoint(x: $0.contentView.bounds.maxX - 12, y: $0.contentView.bounds.midY),
+                            to: window
+                        )
+                    }.filter { window.bounds.insetBy(dx: 1, dy: 1).contains($0) }
+                    XCTAssertGreaterThanOrEqual(points.count, 4)
+                    for point in points {
+                        let color = try pixel(preview, at: point)
+                        XCTAssertGreaterThan(color[2] - color[0], 4, "Native cards must retain the blue artwork tint.")
                     }
                 }
-                .background { AppBackground(palette: palette) }
-                .environment(\.themePalette, palette)
-                .environment(\.plozzCardFocusStyle, .system)
-                .environment(\.plozzNativeFocusSurface, true)
-                .environment(\.colorScheme, palette.isLight ? .light : .dark)
-                .environment(\.gradientBackgroundsEnabled, true)
-                .environment(\.plozzReduceTransparency, false)
-                .transaction { $0.disablesAnimations = true }
-            )
-            window.layoutIfNeeded()
-            try await Task.sleep(for: .milliseconds(200))
-            let preview = try capture(window)
-            let above = try pixel(preview, at: CGPoint(x: 20, y: 178))
-            let below = try pixel(preview, at: CGPoint(x: 20, y: 182))
-            XCTAssertGreaterThan(zip(above, below).map { abs($0 - $1) }.reduce(0, +), 6)
-            let attachment = XCTAttachment(image: preview)
-            attachment.name = "detail-information-page-\(theme.rawValue)"
-            attachment.lifetime = .keepAlways
-            add(attachment)
+                let attachment = XCTAttachment(image: preview)
+                attachment.name = "detail-information-page-\(theme.rawValue)-\(tinted ? "blue" : "stock")"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
         }
     }
 
@@ -304,7 +325,7 @@ private struct GradientHomeFixture: View {
                     .plozzFocusableCard(cornerRadius: 20)
                     .frame(width: 260, height: 120)
                     .environment(\.plozzCardFocusStyle, .system)
-                    .environment(\.plozzCardSurfaceOpacity, state.enabled ? 0.2 : 1)
+                    .environment(\.plozzGradientCardSurface, state.enabled)
             }
             .overlay(alignment: .topLeading) {
                 FallbackAsyncImage(references: [.remote(url)], variant: .heroBackdrop, pinIdentity: "artwork") {

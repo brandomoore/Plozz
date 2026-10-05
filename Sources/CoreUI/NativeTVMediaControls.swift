@@ -129,7 +129,7 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
         view.accessibilityLabel = accessibilityLabel
         view.accessibilityValue = accessibilityValue
         view.accessibilityTraits.insert(.button)
-        if context.environment.plozzCardSurfaceOpacity == 1 {
+        if !context.environment.plozzGradientCardSurface {
             let background = UIColor(context.environment.themePalette.raised.fill)
             if view.cardBackgroundColor != background { view.cardBackgroundColor = background }
         }
@@ -264,15 +264,15 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
 private struct NativeCardBackground: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.ambientBackdropModel) private var ambient
-    @Environment(\.plozzCardSurfaceOpacity) private var surfaceOpacity
+    @Environment(\.plozzGradientCardSurface) private var gradientSurface
     let apply: (UIColor) -> Void
 
     private var color: Color {
-        guard surfaceOpacity < 1 else { return palette.raised.fill }
+        guard gradientSurface else { return palette.raised.fill }
         // TVCardView replaces fill alpha; precompose the tint without fading its text or focus effects.
         return AmbientGradientBackground.meshColors(tint: ambient?.colors, palette: palette)[4]
             .mix(with: palette.informationSurface, by: DetailInformationSections.bandFillOpacity)
-            .mix(with: palette.raised.fill, by: surfaceOpacity)
+            .mix(with: palette.gradientSurfaceTint, by: ThemePalette.gradientSurfaceFillOpacity)
     }
 
     var body: some View {

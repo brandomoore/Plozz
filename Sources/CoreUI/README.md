@@ -24,13 +24,12 @@ cache that every feature module reuses. tvOS-only — guarded behind
   colour array; no full-screen clock, blur, or per-frame page invalidation runs.
   Reduce Motion disables the palette crossfade. Dark uses a softer wash and Black
   retains more visible colour while staying darker; Light's palette is unchanged.
-  Settings groups blend their existing surface colour at 20% opacity over an
-  enabled gradient, keeping their shadow and opaque content. Dark and Black use
-  a shared 5%-white edge. Gradient Off or Reduce Transparency restores the
-  original solid surface and border. Light, other raised cards, and overlays
-  keep their existing border treatment.
-  The detail information band uses a 40%-opaque surface, with 20%-opaque card
-  fills so artwork colour carries through About, ratings, and information cards.
+  Settings panels and detail information cards share a 5%-white wash in Dark and
+  Black, or a 5%-black wash in Light, so they remain distinct without replacing
+  the gradient's colour. SwiftUI surfaces keep their shadow and a matching
+  hairline edge. Gradient Off or Reduce Transparency restores the original solid
+  surface and border; unrelated raised cards and dialogs remain unchanged.
+  The detail information band retains its darker 40%-opaque surface.
   Native tvOS cards precompose that fill against the page mesh's centre colour:
   TVUIKit replaces background alpha during focus. Only their background leaf
   observes palette changes; text and the surrounding page do not rebuild.

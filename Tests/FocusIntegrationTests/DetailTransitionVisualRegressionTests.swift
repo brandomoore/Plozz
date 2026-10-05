@@ -13,8 +13,8 @@ import XCTest
 final class DetailTransitionVisualRegressionTests: XCTestCase {
     func testProductionMovieAndSeriesTintTheirInformationBackgroundFromArtwork() async throws {
         let scene = try await activeScene()
-        let artwork = try await seedArtwork(color: .red)
         for kind in [MediaItemKind.movie, .series] {
+            let artwork = try await seedArtwork(color: kind == .movie ? .red : .blue)
             var provider = TransitionShowProvider(artwork: artwork)
             var item = provider.show
             item.kind = kind
@@ -64,7 +64,8 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
                 attachment.lifetime = .keepAlways
                 add(attachment)
                 if enabled {
-                    XCTAssertGreaterThan(Int(bytes[0]) - Int(bytes[2]), 8,
+                    let tintDifference = Int(bytes[0]) - Int(bytes[2])
+                    XCTAssertGreaterThan(kind == .movie ? tintDifference : -tintDifference, 8,
                                          "\(kind) must tint the information-band gutter, not just its hero image: \(bytes)")
                 } else {
                     var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0

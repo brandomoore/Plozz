@@ -233,6 +233,18 @@ public struct ThemePalette: Equatable, Sendable {
 // MARK: - Concrete palettes
 
 public extension ThemePalette {
+    static let gradientSurfaceFillOpacity = 0.05
+
+    var gradientSurfaceTint: Color { isLight ? .black : .white }
+
+    var gradientSurface: SurfaceStyle {
+        SurfaceStyle(
+            fill: gradientSurfaceTint.opacity(Self.gradientSurfaceFillOpacity),
+            border: gradientSurfaceTint.opacity(Self.gradientSurfaceFillOpacity),
+            shadow: raised.shadow
+        )
+    }
+
     /// Plozz's accent — deliberately MONOCHROME, resolved per theme (see
     /// ``ThemePalette/accent``).
     ///
