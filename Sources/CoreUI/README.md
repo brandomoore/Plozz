@@ -30,9 +30,13 @@ cache that every feature module reuses. tvOS-only — guarded behind
   hairline edge. Gradient Off or Reduce Transparency restores the original solid
   surface and border; unrelated raised cards and dialogs remain unchanged.
   The detail information band retains its darker 40%-opaque surface.
-  Native tvOS cards precompose that fill against the page mesh's centre colour:
-  TVUIKit replaces background alpha during focus. Only their background leaf
-  observes palette changes; text and the surrounding page do not rebuild.
+  Native tvOS cards display their local portion of a shared page-mesh texture,
+  with the information band and wash precomposed because TVUIKit replaces fill
+  alpha. The texture is created only when a card needs it, its longest edge is
+  capped at 480 pixels, and it is rebuilt only for palette or viewport size
+  changes. Scrolling updates each background's sampling rectangle, not its
+  texture or foreground content. Native focus,
+  clipping and text remain TVUIKit-owned.
   Text stays opaque and native focus geometry is unchanged. Gradient Off or
   Reduce Transparency restores both the solid band and solid card fills.
 - **Focusable building blocks** — focus-aware buttons, cards, tab bars,

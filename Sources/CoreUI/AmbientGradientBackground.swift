@@ -11,6 +11,9 @@ public struct AmbientGradientBackground: View {
     let palette: ThemePalette
     var tint: [Color]?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(tvOS)
+    @Environment(\.ambientBackdropModel) private var ambient
+    #endif
 
     public init(palette: ThemePalette, tint: [Color]? = nil) {
         self.palette = palette
@@ -19,7 +22,18 @@ public struct AmbientGradientBackground: View {
 
     public var body: some View {
         let colors = Self.meshColors(tint: tint, palette: palette)
-        MeshGradient(width: 3, height: 3, points: Self.points, colors: colors, smoothsColors: true)
+        Self.mesh(colors: colors)
+            #if os(tvOS)
+            .background {
+                if let ambient {
+                    NativeGradientViewport(
+                        surface: ambient.cardSurface,
+                        style: .init(colors: colors, palette: palette),
+                        reduceMotion: reduceMotion
+                    )
+                }
+            }
+            #endif
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.8), value: colors)
             .ignoresSafeArea()
             .allowsHitTesting(false)
@@ -32,6 +46,10 @@ public struct AmbientGradientBackground: View {
                 )
                 #endif
             }
+    }
+
+    static func mesh(colors: [Color]) -> MeshGradient {
+        MeshGradient(width: 3, height: 3, points: points, colors: colors, smoothsColors: true)
     }
 
     private static let points: [SIMD2<Float>] = [
@@ -89,6 +107,9 @@ struct AmbientArtworkKey: Hashable, Sendable {
 @MainActor @Observable
 final class AmbientBackdropModel {
     private(set) var colors: [Color]?
+    #if os(tvOS)
+    @ObservationIgnored let cardSurface = NativeGradientCardSurface()
+    #endif
     @ObservationIgnored private var owner: UUID?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var cache: [AmbientArtworkKey: [Color]] = [:]
@@ -213,13 +234,13 @@ private struct ArtworkGradientHost: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .environment(\.ambientBackdropModel, model)
             .background {
                 ArtworkGradientPaint(model: model, isVisible: isVisible)
                     #if canImport(UIKit)
                     .environment(\.heroArtworkDisplayState, artwork)
                     #endif
             }
+            .environment(\.ambientBackdropModel, model)
             #if canImport(UIKit)
             .environment(\.heroArtworkDisplayState, artwork)
             #endif

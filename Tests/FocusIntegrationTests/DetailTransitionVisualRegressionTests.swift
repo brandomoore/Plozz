@@ -12,6 +12,9 @@ import XCTest
 @MainActor
 final class DetailTransitionVisualRegressionTests: XCTestCase {
     func testProductionMovieAndSeriesTintTheirInformationBackgroundFromArtwork() async throws {
+        func backgrounds(in view: UIView) -> [NativeGradientCardFill.View] {
+            (view as? NativeGradientCardFill.View).map { [$0] } ?? view.subviews.flatMap { backgrounds(in: $0) }
+        }
         let scene = try await activeScene()
         for kind in [MediaItemKind.movie, .series] {
             let artwork = try await seedArtwork(color: kind == .movie ? .red : .blue)
@@ -64,6 +67,12 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
                 attachment.lifetime = .keepAlways
                 add(attachment)
                 if enabled {
+                    let fills = backgrounds(in: window).filter {
+                        $0.convert($0.bounds, to: window).intersects(window.bounds) && !$0.bounds.isEmpty
+                    }
+                    XCTAssertFalse(fills.isEmpty)
+                    XCTAssertTrue(fills.allSatisfy { !$0.isHidden && $0.layer.contents != nil },
+                                  "Production detail cards must paint the shared gradient, not the flat fallback.")
                     let tintDifference = Int(bytes[0]) - Int(bytes[2])
                     XCTAssertGreaterThan(kind == .movie ? tintDifference : -tintDifference, 8,
                                          "\(kind) must tint the information-band gutter, not just its hero image: \(bytes)")

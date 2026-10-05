@@ -269,14 +269,14 @@ private struct NativeCardBackground: View {
 
     private var color: Color {
         guard gradientSurface else { return palette.raised.fill }
-        // TVCardView replaces fill alpha; precompose the tint without fading its text or focus effects.
+        // TVUIKit's flat fill remains a fallback until the page-aligned surface is ready.
         return AmbientGradientBackground.meshColors(tint: ambient?.colors, palette: palette)[4]
             .mix(with: palette.informationSurface, by: DetailInformationSections.bandFillOpacity)
             .mix(with: palette.gradientSurfaceTint, by: ThemePalette.gradientSurfaceFillOpacity)
     }
 
     var body: some View {
-        Color.clear
+        NativeGradientCardFill(surface: gradientSurface ? ambient?.cardSurface : nil)
             .onChange(of: color, initial: true) { _, color in apply(UIColor(color)) }
     }
 }
