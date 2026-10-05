@@ -186,6 +186,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     /// itself is declared.
     @Environment(\.mediaItemNavigator) private var itemNavigator
     @State private var viewModel: ItemDetailViewModel
+    @State private var isPageVisible = false
     @State private var playbackRequest: PlozziOSPlaybackRequest?
     @State private var downloadRecord: DownloadedMediaRecord?
     @State private var downloadError: String?
@@ -344,7 +345,10 @@ private struct PlozziOSCanonicalItemDetailView: View {
 
             }
         }
+        .artworkGradientBackground(scope: ObjectIdentifier(viewModel), isVisible: isPageVisible)
         .background(palette.backgroundBase.ignoresSafeArea())
+        .onAppear { isPageVisible = true }
+        .onDisappear { isPageVisible = false }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {

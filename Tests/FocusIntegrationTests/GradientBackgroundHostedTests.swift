@@ -1,13 +1,14 @@
 import CoreModels
 import Observation
 import SwiftUI
+import TVUIKit
 import UIKit
 import XCTest
 @testable import CoreUI
 
 @MainActor
 final class GradientBackgroundHostedTests: XCTestCase {
-    func testDetailInformationBandBlendsAtSixtyPercentWithoutIgnoringTransparencyPreferences() async throws {
+    func testDetailInformationBandAndCardsRevealTintWithoutIgnoringTransparencyPreferences() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
               ContinuousClock.now < deadline {
@@ -35,12 +36,17 @@ final class GradientBackgroundHostedTests: XCTestCase {
             .init(source: .tmdb, value: 6.2, scale: .outOfTen)
         ]
         let backdrop = LinearGradient(colors: [.red, .blue], startPoint: .top, endPoint: .bottom)
+        let ambient = AmbientBackdropModel()
+        let referenceURL = try XCTUnwrap(URL(string: "https://gradient.example.test/detail-card.png"))
+        await ambient.update(owner: UUID(), key: AmbientArtworkKey(
+            id: item.id, reference: .remote(referenceURL)
+        ), delay: .zero) { [.red] }
 
         for theme in [AppTheme.pureBlack, .dark, .light] {
             let palette = ThemePalette.palette(for: theme, systemColorScheme: .dark)
             for enabled in [false, true] {
                 for reduceTransparency in [false, true] {
-                    let opacity = enabled && !reduceTransparency ? 0.6 : 1.0
+                    let opacity = enabled && !reduceTransparency ? 0.4 : 1.0
                     host.rootView = AnyView(
                         ScrollView {
                             DetailInformationSections(item: item, horizontalInset: 60)
@@ -52,11 +58,19 @@ final class GradientBackgroundHostedTests: XCTestCase {
                         .environment(\.colorScheme, palette.isLight ? .light : .dark)
                         .environment(\.gradientBackgroundsEnabled, enabled)
                         .environment(\.plozzReduceTransparency, reduceTransparency)
+                        .environment(\.ambientBackdropModel, ambient)
                         .transaction { $0.disablesAnimations = true }
                     )
                     window.layoutIfNeeded()
                     try await Task.sleep(for: .milliseconds(200))
                     let image = try capture(window)
+                    let cardPoints = nativeCards(in: window).filter { !$0.isFocused }.map {
+                        $0.contentView.convert(
+                            CGPoint(x: $0.contentView.bounds.maxX - 12, y: $0.contentView.bounds.midY),
+                            to: window
+                        )
+                    }.filter { window.bounds.insetBy(dx: 1, dy: 1).contains($0) }
+                    XCTAssertGreaterThanOrEqual(cardPoints.count, 4)
                     let top = try pixel(image, at: CGPoint(x: 20, y: 20))
                     let bottom = try pixel(image, at: CGPoint(x: 20, y: 500))
                     host.rootView = AnyView(
@@ -84,6 +98,25 @@ final class GradientBackgroundHostedTests: XCTestCase {
                         add(attachment)
                     } else {
                         XCTAssertLessThanOrEqual(variation, 2)
+                    }
+                    host.rootView = AnyView(
+                        (enabled && !reduceTransparency
+                            ? AmbientGradientBackground.meshColors(tint: [.red], palette: palette)[4]
+                                .mix(with: palette.informationSurface, by: 0.4)
+                                .mix(with: palette.raised.fill, by: 0.2)
+                            : palette.raised.fill)
+                            .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                    )
+                    window.layoutIfNeeded()
+                    try await Task.sleep(for: .milliseconds(100))
+                    let cardReference = try capture(window)
+                    for point in cardPoints {
+                        let actual = try pixel(image, at: point)
+                        let expected = try pixel(cardReference, at: point)
+                        for channel in 0..<3 {
+                            XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 2,
+                                                     "Card at \(point): \(theme), gradient=\(enabled), reduceTransparency=\(reduceTransparency)")
+                        }
                     }
                 }
             }
@@ -155,6 +188,11 @@ final class GradientBackgroundHostedTests: XCTestCase {
         let tinted = try capture(window)
         let red = try pixel(tinted, at: CGPoint(x: 600, y: 400))
         XCTAssertGreaterThan(red[0], red[2] + 10)
+        let card = try XCTUnwrap(nativeCards(in: window).first)
+        let tintedCard = try XCTUnwrap(card.cardBackgroundColor)
+        var cardRed: CGFloat = 0, cardGreen: CGFloat = 0, cardBlue: CGFloat = 0, cardAlpha: CGFloat = 0
+        XCTAssertTrue(tintedCard.getRed(&cardRed, green: &cardGreen, blue: &cardBlue, alpha: &cardAlpha))
+        XCTAssertGreaterThan(cardRed - cardBlue, 0.025)
         XCTAssertEqual(counter.evaluations, initialEvaluations, "Palette publication must invalidate only the background.")
         state.enabled = false
         try await Task.sleep(for: .milliseconds(200))
@@ -162,17 +200,23 @@ final class GradientBackgroundHostedTests: XCTestCase {
         let a = try pixel(flat, at: CGPoint(x: 600, y: 80))
         let b = try pixel(flat, at: CGPoint(x: 600, y: 470))
         XCTAssertEqual(a, b)
+        XCTAssertEqual(card.cardBackgroundColor, UIColor(ThemePalette.dark.raised.fill))
         state.enabled = true
         state.visible = false
         try await Task.sleep(for: .seconds(1))
         let inactive = try pixel(capture(window), at: CGPoint(x: 600, y: 400))
         XCTAssertLessThan(abs(inactive[0] - inactive[2]), 15, "Hidden Home must drop its artwork tint.")
+        XCTAssertNotEqual(card.cardBackgroundColor, tintedCard)
     }
 
     private func capture(_ window: UIWindow) throws -> UIImage {
         UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
         }
+    }
+
+    private func nativeCards(in view: UIView) -> [TVCardView] {
+        (view as? TVCardView).map { [$0] } ?? view.subviews.flatMap { nativeCards(in: $0) }
     }
 
     func testAllThemeGradientsAndDisabledFlatBackgroundsRender() async throws {
@@ -255,6 +299,13 @@ private struct GradientHomeFixture: View {
     let url: URL
     var body: some View {
         GradientFixtureContent(counter: counter)
+            .overlay(alignment: .bottomLeading) {
+                GradientFixtureCard(counter: counter)
+                    .plozzFocusableCard(cornerRadius: 20)
+                    .frame(width: 260, height: 120)
+                    .environment(\.plozzCardFocusStyle, .system)
+                    .environment(\.plozzCardSurfaceOpacity, state.enabled ? 0.2 : 1)
+            }
             .overlay(alignment: .topLeading) {
                 FallbackAsyncImage(references: [.remote(url)], variant: .heroBackdrop, pinIdentity: "artwork") {
                     Color.clear
@@ -263,7 +314,7 @@ private struct GradientHomeFixture: View {
                 .frame(width: 48, height: 48)
             }
             .heroArtworkSource(id: "artwork", isActive: state.visible)
-            .homeGradientBackground(scope: ObjectIdentifier(state), isVisible: state.visible)
+            .artworkGradientBackground(scope: ObjectIdentifier(state), isVisible: state.visible)
             .background { AppBackground(palette: .dark) }
             .environment(\.themePalette, .dark)
             .environment(\.gradientBackgroundsEnabled, state.enabled)
@@ -274,5 +325,13 @@ private struct GradientFixtureContent: View {
     var body: some View {
         let _ = { counter.evaluations += 1 }()
         Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct GradientFixtureCard: View {
+    let counter: GradientBodyCounter
+    var body: some View {
+        let _ = { counter.evaluations += 1 }()
+        Text("Information").frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

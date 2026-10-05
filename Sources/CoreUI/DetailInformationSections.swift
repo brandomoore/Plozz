@@ -36,6 +36,9 @@ private struct OverviewCardHeightKey: PreferenceKey {
 }
 
 public struct DetailInformationSections: View {
+    static let bandFillOpacity = 0.4
+    static let cardFillOpacity = 0.2
+
     private let item: MediaItem
     private let horizontalInset: CGFloat
     private let selectedSource: MediaSourceRef?
@@ -91,13 +94,14 @@ public struct DetailInformationSections: View {
         if hasContent {
             sectionBody
                 .environment(\.plozzNativeInformationFocus, true)
+                .environment(\.plozzCardSurfaceOpacity, gradientEnabled && !reduceTransparency ? Self.cardFillOpacity : 1)
                 .padding(.horizontal, horizontalInset)
                 .padding(.top, bandTopPadding)
                 .padding(.bottom, bandBottomPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background {
                     palette.informationSurface
-                        .opacity(gradientEnabled && !reduceTransparency ? 0.6 : 1)
+                        .opacity(gradientEnabled && !reduceTransparency ? Self.bandFillOpacity : 1)
                         // Paint past scroll-view insets without changing the content layout.
                         .padding(.horizontal, -Self.backgroundBleed)
                         .padding(.bottom, -Self.backgroundBleed)

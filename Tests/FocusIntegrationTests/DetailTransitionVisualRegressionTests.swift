@@ -11,6 +11,72 @@ import XCTest
 
 @MainActor
 final class DetailTransitionVisualRegressionTests: XCTestCase {
+    func testProductionMovieAndSeriesTintTheirInformationBackgroundFromArtwork() async throws {
+        let scene = try await activeScene()
+        let artwork = try await seedArtwork(color: .red)
+        for kind in [MediaItemKind.movie, .series] {
+            var provider = TransitionShowProvider(artwork: artwork)
+            var item = provider.show
+            item.kind = kind
+            item.genres = ["Drama"]
+            item.productionYear = 2020
+            provider.detailItem = item
+            let model = TransitionShowModel(provider: provider)
+            let host = TransitionShowController(rootView: TransitionShowRoot(model: model))
+            let previous = scene.windows.first(where: \.isKeyWindow)
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+            window.backgroundColor = UIColor(ThemePalette.dark.backgroundBase)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer {
+                model.trailer.stop()
+                window.isHidden = true
+                window.rootViewController = nil
+                previous?.makeKeyAndVisible()
+            }
+            model.path.append(1)
+            try await waitUntil { model.detail.state.value?.childrenLoaded == true }
+            try await Task.sleep(for: .seconds(2))
+            try await focusLowestDetailControl(in: window, host: host)
+            for phase in ["initial", "disabled", "reenabled", "uncovered"] {
+                if phase == "uncovered" {
+                    model.stackDepth.pageAppeared(model.coveredPageID)
+                    try await Task.sleep(for: .milliseconds(300))
+                    model.stackDepth.pageDismissed(model.coveredPageID)
+                }
+                let enabled = phase != "disabled"
+                model.gradientEnabled = enabled
+                try await Task.sleep(for: .seconds(1))
+                let image = DetailTransitionSnapshot.image(of: window)
+                let sample = try XCTUnwrap(image.cgImage?.cropping(to:
+                    CGRect(x: 1900, y: 1000, width: 1, height: 1)))
+                var bytes = [UInt8](repeating: 0, count: 4)
+                try bytes.withUnsafeMutableBytes {
+                    let context = try XCTUnwrap(CGContext(
+                        data: $0.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                    ))
+                    context.draw(sample, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "production-detail-gradient-\(kind)-\(phase)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                if enabled {
+                    XCTAssertGreaterThan(Int(bytes[0]) - Int(bytes[2]), 8,
+                                         "\(kind) must tint the information-band gutter, not just its hero image: \(bytes)")
+                } else {
+                    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+                    XCTAssertTrue(UIColor(ThemePalette.dark.informationSurface).getRed(&r, green: &g, blue: &b, alpha: &a))
+                    for (actual, expected) in zip(bytes, [r, g, b, a]) {
+                        XCTAssertLessThanOrEqual(abs(Int(actual) - Int((expected * 255).rounded())), 2)
+                    }
+                }
+            }
+        }
+    }
+
     func testProductionDetailStopsTrailerAfterReturningToNonHeroRoot() async throws {
         try await withTrailerFixture { model, video in
             model.path.append(1)
@@ -950,6 +1016,28 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         return view.subviews.lazy.compactMap { self.verticalScroll(in: $0) }.first
     }
 
+    private func focusLowestDetailControl(in window: UIWindow, host: TransitionShowController) async throws {
+        let scroll = try XCTUnwrap(verticalScroll(in: window))
+        try await waitUntil { scroll.isScrollEnabled }
+        let bottom = max(-scroll.adjustedContentInset.top,
+                         scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        scroll.setContentOffset(CGPoint(x: 0, y: bottom), animated: false)
+        try await Task.sleep(for: .milliseconds(300))
+        let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        let target = try XCTUnwrap(focusTargets(in: scroll).compactMap { $0 as? UIView }.filter {
+            window.bounds.intersects($0.convert($0.bounds, to: window))
+        }.max {
+            $0.convert($0.bounds, to: window).minY < $1.convert($1.bounds, to: window).minY
+        })
+        host.target = target
+        system.requestFocusUpdate(to: host)
+        system.updateFocusIfNeeded()
+        try await waitUntil {
+            system.focusedItem.map(ObjectIdentifier.init) == ObjectIdentifier(target)
+                && host.settledFocusItemID == ObjectIdentifier(target)
+        }
+    }
+
     private func seedArtwork(
         color: UIColor = .blue, size: CGSize = CGSize(width: 320, height: 180), padding: CGFloat = 0
     ) async throws -> URL {
@@ -1115,6 +1203,7 @@ private final class TransitionShowModel {
     let coveredPageID = UUID()
     let homeRecede = HomeHeroRecedeModel()
     var showsHomeHero = true
+    var gradientEnabled = true
     @ObservationIgnored var resolveTrailer: HeroTrailerResolving = { _ in nil }
     let background = HeroBackgroundSettingsModel(store: InMemoryHeroBackgroundSettingsStore(
         HeroBackgroundSettings(homeTrailerEnabled: false, detailMode: .off)
@@ -1196,6 +1285,8 @@ private struct TransitionShowRoot: View {
             }
         }
         .tabViewStyle(.tabBarOnly)
+        .environment(\.themePalette, .dark)
+        .environment(\.gradientBackgroundsEnabled, model.gradientEnabled)
     }
 }
 
@@ -1226,6 +1317,7 @@ private struct TransitionShowProvider: MediaProvider {
     let artwork: URL
     var logo: URL?
     var episodeCount = 1
+    var detailItem: MediaItem?
     var kind: ProviderKind { .jellyfin }
     var session: UserSession {
         UserSession(server: MediaServer(id: "transition-fixture", name: "Fixture",
@@ -1233,6 +1325,7 @@ private struct TransitionShowProvider: MediaProvider {
                     userID: "fixture", userName: "Fixture", deviceID: "fixture", accessToken: "")
     }
     var show: MediaItem {
+        if let detailItem { return detailItem }
         var item = MediaItem(id: "show", title: "Transition Show", kind: .series)
         item.sourceAccountID = "transition-fixture"
         item.posterURL = artwork
@@ -1267,6 +1360,7 @@ private struct TransitionShowProvider: MediaProvider {
     func latest(limit: Int) async throws -> [MediaItem] { [] }
     func item(id: String) async throws -> MediaItem { id == "show" ? show : episode }
     func children(of itemID: String) async throws -> [MediaItem] {
+        if show.kind == .movie { return [] }
         try await Task.sleep(for: .milliseconds(100))
         if itemID == "show" { return [season] }
         return (0..<episodeCount).map { index in

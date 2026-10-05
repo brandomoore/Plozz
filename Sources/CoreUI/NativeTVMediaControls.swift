@@ -104,7 +104,7 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
         let view = Card()
         view.defaultAccessibilityElement = view.isAccessibilityElement
         view.cardBackgroundColor = UIColor(context.environment.themePalette.raised.fill)
-        let host = configuration(in: context).makeContentView()
+        let host = configuration(in: context, card: view).makeContentView()
         view.hostedContent = host
         view.contentView.addSubview(host)
         host.translatesAutoresizingMaskIntoConstraints = false
@@ -129,9 +129,11 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
         view.accessibilityLabel = accessibilityLabel
         view.accessibilityValue = accessibilityValue
         view.accessibilityTraits.insert(.button)
-        let background = UIColor(context.environment.themePalette.raised.fill)
-        if view.cardBackgroundColor != background { view.cardBackgroundColor = background }
-        view.hostedContent?.configuration = configuration(in: context)
+        if context.environment.plozzCardSurfaceOpacity == 1 {
+            let background = UIColor(context.environment.themePalette.raised.fill)
+            if view.cardBackgroundColor != background { view.cardBackgroundColor = background }
+        }
+        view.hostedContent?.configuration = configuration(in: context, card: view)
         view.isEnabled = isEnabled && context.environment.isEnabled
         if view.usesInformationFocus != context.environment.plozzNativeInformationFocus {
             view.usesInformationFocus = context.environment.plozzNativeInformationFocus
@@ -167,9 +169,14 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
         return CGSize(width: width ?? size.width, height: size.height)
     }
 
-    private func configuration(in context: Context) -> any UIContentConfiguration {
+    private func configuration(in context: Context, card: Card) -> any UIContentConfiguration {
         UIHostingConfiguration {
             content
+                .background {
+                    NativeCardBackground { [weak card] color in
+                        if card?.cardBackgroundColor != color { card?.cardBackgroundColor = color }
+                    }
+                }
                 .environment(\.plozzNativeArtworkSurface, false)
                 .environment(\.plozzNativeFocusSurface, true)
                 .environment(\.self, context.environment)
@@ -251,6 +258,26 @@ struct NativeTVCard<Content: View>: UIViewRepresentable {
             super.didUpdateFocus(in: context, with: coordinator)
             onFocus?(isFocused)
         }
+    }
+}
+
+private struct NativeCardBackground: View {
+    @Environment(\.themePalette) private var palette
+    @Environment(\.ambientBackdropModel) private var ambient
+    @Environment(\.plozzCardSurfaceOpacity) private var surfaceOpacity
+    let apply: (UIColor) -> Void
+
+    private var color: Color {
+        guard surfaceOpacity < 1 else { return palette.raised.fill }
+        // TVCardView replaces fill alpha; precompose the tint without fading its text or focus effects.
+        return AmbientGradientBackground.meshColors(tint: ambient?.colors, palette: palette)[4]
+            .mix(with: palette.informationSurface, by: DetailInformationSections.bandFillOpacity)
+            .mix(with: palette.raised.fill, by: surfaceOpacity)
+    }
+
+    var body: some View {
+        Color.clear
+            .onChange(of: color, initial: true) { _, color in apply(UIColor(color)) }
     }
 }
 

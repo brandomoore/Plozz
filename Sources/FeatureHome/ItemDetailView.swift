@@ -256,7 +256,9 @@ public struct ItemDetailView: View {
                 container(detail)
             }
         }
-        .heroArtworkScope()
+        .artworkGradientBackground(
+            scope: ObjectIdentifier(viewModel), isVisible: isPageVisible && !hasChildOnTop
+        )
         // Detail is a full-screen sub-page: hide the top tab bar.
         .toolbar(.hidden, for: .tabBar)
         .cinematicDetailPage(isEnabled:

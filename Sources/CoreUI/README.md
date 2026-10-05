@@ -14,12 +14,14 @@ cache that every feature module reuses. tvOS-only — guarded behind
   The static mesh layout is adapted from tresby's
   [Ambient proposal (#75)](https://github.com/brandomoore/Plozz/pull/75), with
   separate light, dark, and near-black treatments rather than another theme.
-  Home owns its tint/cache locally: classic hero, Showcase, and mobile sources
-  publish only while frontmost. Palette extraction reuses cached artwork, runs
+  Home and movie/show detail pages own their tint/cache locally on both platforms.
+  They use the artwork actually displayed by their own hero; covered pages cannot
+  replace another page's colours. Home sources publish only while frontmost.
+  Palette extraction reuses cached artwork, runs
   off the main actor, waits 180ms for navigation to settle, and retains at most
   24 artwork-identity-keyed palettes. Replaced/cancelled sources cannot publish
   stale colours or clear another source. Only the background leaf observes the
-  colour array; no full-screen clock, blur, or per-frame Home invalidation runs.
+  colour array; no full-screen clock, blur, or per-frame page invalidation runs.
   Reduce Motion disables the palette crossfade. Dark uses a softer wash and Black
   retains more visible colour while staying darker; Light's palette is unchanged.
   Settings groups blend their existing surface colour at 20% opacity over an
@@ -27,9 +29,13 @@ cache that every feature module reuses. tvOS-only — guarded behind
   a shared 5%-white edge. Gradient Off or Reduce Transparency restores the
   original solid surface and border. Light, other raised cards, and overlays
   keep their existing border treatment.
-  The detail information band keeps its subdued surface at 60% opacity over
-  enabled gradients; its cards and text remain opaque. Gradient Off or Reduce
-  Transparency restores the solid band.
+  The detail information band uses a 40%-opaque surface, with 20%-opaque card
+  fills so artwork colour carries through About, ratings, and information cards.
+  Native tvOS cards precompose that fill against the page mesh's centre colour:
+  TVUIKit replaces background alpha during focus. Only their background leaf
+  observes palette changes; text and the surrounding page do not rebuild.
+  Text stays opaque and native focus geometry is unchanged. Gradient Off or
+  Reduce Transparency restores both the solid band and solid card fills.
 - **Focusable building blocks** — focus-aware buttons, cards, tab bars,
   parallax containers, brand QR code rendering, code-font numerals.
   Native card focus observation is separate from explicit focus requests.

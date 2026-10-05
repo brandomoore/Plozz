@@ -234,7 +234,7 @@ struct PlozziOSHomeView: View {
         // `HeroStageMetrics`. Published here so the loading skeleton reserves the
         // same height the real hero will take, rather than reflowing when it lands.
         .plozziOSTracksHeroContainerHeight()
-        .homeGradientBackground(scope: ObjectIdentifier(viewModel), isVisible: homeIsFrontmost && homeHasAppeared)
+        .artworkGradientBackground(scope: ObjectIdentifier(viewModel), isVisible: homeIsFrontmost && homeHasAppeared)
         .onAppear { homeHasAppeared = true }
         .onDisappear { homeHasAppeared = false }
         .onChange(of: ObjectIdentifier(viewModel)) { _, _ in

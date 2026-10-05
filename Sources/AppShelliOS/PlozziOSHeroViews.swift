@@ -248,6 +248,7 @@ struct PlozziOSHomeHeroSlide: View {
         ) {
             EmptyView()
         }
+        .heroArtworkScope()
     }
 }
 
@@ -681,7 +682,6 @@ private struct PlozziOSHeroStage<Foreground: View>: View {
         }
         .onDisappear(perform: releaseTrailerSurface)
         .heroArtworkSource(id: presentation.itemID, isActive: isActive)
-        .heroArtworkScope()
     }
 
     private func updateTrailerPlayback() async {

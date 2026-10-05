@@ -438,6 +438,7 @@ final class NativeInformationCardHostedTests: XCTestCase {
             ScrollView {
                 DetailInformationSections(item: item, horizontalInset: 80)
             }
+            .environment(\.gradientBackgroundsEnabled, false)
             .environment(\.plozzCardFocusStyle, .system)
             .environment(\.themePalette, .dark)
             .environment(\.colorScheme, .dark)

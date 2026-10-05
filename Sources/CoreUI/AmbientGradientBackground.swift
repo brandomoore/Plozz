@@ -176,6 +176,18 @@ enum AmbientPaletteSampler {
 private struct GradientBackgroundsKey: EnvironmentKey {
     static let defaultValue = ThemeSettingsStore.defaultGradientEnabled
 }
+
+private struct AmbientBackdropModelKey: EnvironmentKey {
+    static let defaultValue: AmbientBackdropModel? = nil
+}
+
+extension EnvironmentValues {
+    var ambientBackdropModel: AmbientBackdropModel? {
+        get { self[AmbientBackdropModelKey.self] }
+        set { self[AmbientBackdropModelKey.self] = newValue }
+    }
+}
+
 public extension EnvironmentValues {
     var gradientBackgroundsEnabled: Bool {
         get { self[GradientBackgroundsKey.self] }
@@ -184,14 +196,14 @@ public extension EnvironmentValues {
 }
 
 public extension View {
-    /// Scope the tint and its cache to one Home view-model identity, never the app root.
-    func homeGradientBackground(scope: ObjectIdentifier, isVisible: Bool) -> some View {
-        modifier(HomeGradientHost(scope: scope, isVisible: isVisible))
+    /// Scope the tint and its cache to one page identity, never the app root.
+    func artworkGradientBackground(scope: ObjectIdentifier, isVisible: Bool) -> some View {
+        modifier(ArtworkGradientHost(scope: scope, isVisible: isVisible))
     }
 
 }
 
-private struct HomeGradientHost: ViewModifier {
+private struct ArtworkGradientHost: ViewModifier {
     let scope: ObjectIdentifier
     let isVisible: Bool
     @State private var model = AmbientBackdropModel()
@@ -201,8 +213,9 @@ private struct HomeGradientHost: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .environment(\.ambientBackdropModel, model)
             .background {
-                HomeGradientPaint(model: model, isVisible: isVisible)
+                ArtworkGradientPaint(model: model, isVisible: isVisible)
                     #if canImport(UIKit)
                     .environment(\.heroArtworkDisplayState, artwork)
                     #endif
@@ -219,7 +232,7 @@ private struct HomeGradientHost: ViewModifier {
     }
 }
 
-private struct HomeGradientPaint: View {
+private struct ArtworkGradientPaint: View {
     let model: AmbientBackdropModel
     let isVisible: Bool
     @Environment(\.themePalette) private var palette

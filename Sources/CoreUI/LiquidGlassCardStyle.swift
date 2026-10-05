@@ -17,6 +17,7 @@ public struct PlozzGlassCardModifier: ViewModifier {
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzNativeFocusSurface) private var nativeSurface
+    @Environment(\.plozzCardSurfaceOpacity) private var surfaceOpacity
 
     public init(cornerRadius: CGFloat, isFocused: Bool, glassAtRest: Bool = true) {
         self.cornerRadius = cornerRadius
@@ -93,7 +94,7 @@ public struct PlozzGlassCardModifier: ViewModifier {
                     if isFocused {
                         glassUnderlay()
                     } else if glassAtRest {
-                        shape.fill(palette.raised.fill)
+                        shape.fill(palette.raised.fill.opacity(surfaceOpacity))
                     }
                 }
                 .overlay {
@@ -281,6 +282,7 @@ public struct PlozzFocusableCardModifier: ViewModifier {
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.plozzCardFocusStyle) private var focusStyle
+    @Environment(\.plozzCardSurfaceOpacity) private var surfaceOpacity
 
     public init(
         cornerRadius: CGFloat,
@@ -350,7 +352,7 @@ public struct PlozzFocusableCardModifier: ViewModifier {
             // stays black with a hairline, Light is white with a soft shadow.
             let style = palette.raised
             shape
-                .fill(style.fill)
+                .fill(style.fill.opacity(surfaceOpacity))
                 .overlay {
                     if let border = style.border {
                         shape.strokeBorder(border, lineWidth: style.borderWidth)

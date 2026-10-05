@@ -11,6 +11,17 @@ private struct PlozzCardStyleKey: EnvironmentKey {
     static let defaultValue: CardStyle = .default
 }
 
+private struct PlozzCardSurfaceOpacityKey: EnvironmentKey {
+    static let defaultValue: Double = 1
+}
+
+extension EnvironmentValues {
+    var plozzCardSurfaceOpacity: Double {
+        get { self[PlozzCardSurfaceOpacityKey.self] }
+        set { self[PlozzCardSurfaceOpacityKey.self] = newValue }
+    }
+}
+
 public extension EnvironmentValues {
     /// The live, per-profile media card presentation (framed glass card vs
     /// borderless artwork-only). Set once at the app root; read by `PosterCardView`.
