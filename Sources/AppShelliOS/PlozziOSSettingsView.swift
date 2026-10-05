@@ -746,6 +746,36 @@ private struct PlozziOSAboutSettingsView: View {
                 }
             }
 
+            SettingsSectionGroup("Community") {
+                Link(destination: AppLinks.discord) {
+                    Label {
+                        Text(verbatim: "Discord")
+                    } icon: {
+                        Image("DiscordMark")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 24, height: 24)
+                    }
+                }
+                Link(destination: AppLinks.repository) {
+                    Label {
+                        Text(verbatim: "GitHub")
+                    } icon: {
+                        Image("GitHubMark")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 24, height: 24)
+                    }
+                }
+                DisclosureGroup("QR Codes") {
+                    SettingsCommunityLinks()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+            }
+
             if hasAccounts {
                 SettingsSectionGroup {
                     Button(

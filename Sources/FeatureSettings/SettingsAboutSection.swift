@@ -7,19 +7,20 @@ import UIKit
 #endif
 
 /// Footer panel for Settings showing app identity, release notes, open-source
-/// info, and a QR code linking to the GitHub repo. Its two explicit rows provide
+/// info, and QR codes for Discord and GitHub. Its two explicit rows provide
 /// focus targets, so the surrounding informational card does not need focus.
 struct SettingsAboutSection: View {
     let version: String
     let build: String
     let repoURL: String
+    let showsReleaseNotes: Bool
     /// Invoked on each remote-select of the panel — drives the hidden Developer
     /// Mode unlock (seven selects). `nil` leaves the panel inert.
     var onActivate: (() -> Void)? = nil
 
     var body: some View {
-        SettingsPanel {
-            HStack(alignment: .top, spacing: 36) {
+        VStack(spacing: 24) {
+            SettingsPanel {
                 VStack(alignment: .leading, spacing: 16) {
                     Image("PlozzLogo")
                         .resizable()
@@ -36,7 +37,7 @@ struct SettingsAboutSection: View {
                         versionRow
                     }
 
-                    if ReleaseNotesModel.shared.isAvailable {
+                    if showsReleaseNotes {
                         NavigationLink(value: SettingsRoute.releaseNotes) {
                             SettingsRowLabel(
                                 icon: "doc.text",
@@ -57,19 +58,8 @@ struct SettingsAboutSection: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-                VStack(spacing: 12) {
-                    SettingsQRCode(string: repoURL)
-                        .frame(width: 180, height: 180)
-
-                    Text("Scan to view the\nGitHub repo")
-                        .font(.caption)
-                        .multilineTextAlignment(.center)
-                        .plozzForeground(.secondary)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Scan to view the Plozz GitHub repository")
             }
+            SettingsCommunityLinks(repoURL: repoURL)
         }
     }
 

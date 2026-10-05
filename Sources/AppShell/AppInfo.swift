@@ -21,5 +21,5 @@ public enum AppInfo {
 
     /// Public source repository, encoded into the Settings "About" QR code so a
     /// phone can open it (tvOS has no browser).
-    public static let repoURLString = "https://github.com/thatcube/Plozz"
+    public static let repoURLString = AppLinks.repository.absoluteString
 }

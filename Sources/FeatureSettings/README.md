@@ -22,7 +22,17 @@ and the single place caption customization lives.
   Home-customization preferences. Subtitle *behaviour* (mode, language,
   auto-download) lives here; the subtitle *look* is now adjusted in the
   player while watching.
-- `SettingsAboutSection` — credits / attributions / version.
+- `SettingsAboutSection` — app identity / version / release notes.
+- `SettingsCommunityLinks` — separate Discord-first and GitHub cards shared by
+  both About screens. Apple TV shows them below the app identity; iPhone and
+  iPad offer logo-labeled direct links plus expandable QR cards. Brand marks stay
+  outside the codes' white scan margins. Narrow layouts stack without shrinking
+  the codes. Public destinations are centralized in `CoreModels.AppLinks`.
+  The Discord mark comes from [Simple Icons](https://simpleicons.org/) (CC0).
+  Its original path is in `docs/assets/discord-mark.svg`; the asset catalog uses
+  a vector PDF because Xcode's SVG renderer distorts this path's compact arcs.
+  Regenerate it with
+  `python3 -c "import cairosvg; cairosvg.svg2pdf(url='docs/assets/discord-mark.svg', write_to='App/Resources/Assets.xcassets/DiscordMark.imageset/discord_mark.pdf')"`.
 
 ## Invariants
 

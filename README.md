@@ -20,6 +20,10 @@
 </p>
 
 <p align="center">
+  <a href="https://discord.gg/YkXnmB8rcF"><img src="https://img.shields.io/badge/Join_the_community-5865F2?style=for-the-badge&amp;logo=discord&amp;logoColor=white" alt="Join the Plozz community on Discord" /></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/brandomoore/Plozz/releases"><img src="https://img.shields.io/github/v/release/brandomoore/Plozz?include_prereleases&sort=date&display_name=release&label=TestFlight%20beta&color=orange&logo=apple" alt="Latest TestFlight beta" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License: GPL-3.0" /></a>
   <a href="https://www.apple.com/apple-tv-4k/"><img src="https://img.shields.io/badge/Platform-tvOS%20%C2%B7%20iOS%20%C2%B7%20iPadOS-black.svg?logo=apple" alt="Platform: tvOS, iOS, iPadOS" /></a>
