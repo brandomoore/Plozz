@@ -552,6 +552,7 @@ extension PlozziOSAppModel {
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             guard !Task.isCancelled else { return }
             await config?.publishLocalChanges()
+            guard !Task.isCancelled else { return }
             // A local sign-in/out changed the account set → refresh the credentials
             // shared via iCloud Keychain so the user's other devices track it.
             await MainActor.run { self?.publishPortableCredentials() }
@@ -562,6 +563,10 @@ extension PlozziOSAppModel {
     /// disabling stops publishing but never deletes the shared cloud config.
     func setSyncSetupEnabled(_ on: Bool) {
         syncSetup.setEnabled(on)
+        if !on {
+            cloudPublishTask?.cancel()
+            portableCredentialPublisher.cancelPendingPublication()
+        }
         let config = cloudSync
         guard let config else { return }
         if on {
@@ -861,6 +866,7 @@ extension PlozziOSAppModel {
         let config = cloudSync
         Task { @MainActor in
             await config?.deleteAllServerData()
+            setSyncSetupEnabled(false)
             resetLiveTVPortableSync()
             for profileID in profiles.profiles.map(\.id) {
                 do {
@@ -872,9 +878,13 @@ extension PlozziOSAppModel {
                     )
                 }
             }
-            removeAllPortableCredentials()        // step 2
+            do {
+                try await removeAllPortableCredentials()  // step 2
+            } catch {
+                accountError = error.localizedDescription
+                return
+            }
             resetToFirstRunForDebugging()         // step 3
-            setSyncSetupEnabled(false)            // step 4
         }
     }
 }

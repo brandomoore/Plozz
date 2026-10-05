@@ -5,6 +5,151 @@ import XCTest
 final class LiveTVPortableSyncTests: XCTestCase {
     private let profileID = "profile"
 
+    @MainActor
+    func testJournalCommitKeepsMainActorResponsiveAndDoesNotExposeUncommittedRecords() async throws {
+        let entered = expectation(description: "Background journal write")
+        let release = DispatchSemaphore(value: 0)
+        let fixture = try makeFixture(requiresPreparedJournal: true, writeFile: { data, url in
+            XCTAssertFalse(Thread.isMainThread)
+            if url.pathExtension == "record" {
+                entered.fulfill()
+                XCTAssertEqual(release.wait(timeout: .now() + 5), .success)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        defer { release.signal() }
+        try fixture.preferences.save(.init(favoriteIDs: ["channel"]))
+        try await fixture.adapter.prepareForOperation()
+        var returned = false
+        let capture = Task { @MainActor in
+            let records = try await fixture.adapter.committingJournal {
+                XCTAssertTrue(Thread.isMainThread, "Authority and local-store application stay on main")
+                return try fixture.adapter.capture(sourceStore: fixture.sources, fallback: [:])
+            }
+            returned = true
+            return records
+        }
+        await fulfillment(of: [entered], timeout: 3)
+        XCTAssertFalse(returned, "Cloud capture must await the durable journal")
+        XCTAssertThrowsError(try fixture.adapter.preparedJournalRevision()) {
+            XCTAssertEqual($0 as? LiveTVPortableSyncAdapter.PreparationError, .journalChanged)
+        }
+        release.signal()
+        let records = try await capture.value
+        XCTAssertTrue(returned)
+        let restarted = LiveTVPortableSyncAdapter(
+            directory: fixture.root, profileID: profileID, defaults: fixture.defaults
+        )
+        XCTAssertEqual(try restarted.capture(sourceStore: fixture.sources, fallback: records), records)
+    }
+
+    @MainActor
+    func testFailedBackgroundCommitDoesNotReturnCaptureAndCanRetry() async throws {
+        let gate = PortableJournalWriteGate()
+        gate.shouldFail = true
+        let fixture = try makeFixture(requiresPreparedJournal: true, writeFile: { data, url in
+            XCTAssertFalse(Thread.isMainThread)
+            if gate.shouldFail { throw CocoaError(.fileWriteNoPermission) }
+            try data.write(to: url, options: .atomic)
+        })
+        try fixture.preferences.save(.init(favoriteIDs: ["channel"]))
+        try await fixture.adapter.prepareForOperation()
+        do {
+            _ = try await fixture.adapter.committingJournal {
+                try fixture.adapter.capture(sourceStore: fixture.sources, fallback: [:])
+            }
+            XCTFail("A failed commit must not look like a successful cloud capture")
+        } catch {
+            XCTAssertEqual((error as NSError).code, CocoaError.fileWriteNoPermission.rawValue)
+        }
+        gate.shouldFail = false
+        try await fixture.adapter.prepareForOperation()
+        let retried = try await fixture.adapter.committingJournal {
+            try fixture.adapter.capture(sourceStore: fixture.sources, fallback: [:])
+        }
+        XCTAssertNotNil(retried[recordKey(.channel, "channel").recordName])
+    }
+
+    @MainActor
+    func testUnchangedCaptureDoesNotRewriteJournalOrObservationReceipts() async throws {
+        let gate = PortableJournalWriteGate()
+        let fixture = try makeFixture(requiresPreparedJournal: true, writeFile: { data, url in
+            gate.recordWrite()
+            try data.write(to: url, options: .atomic)
+        })
+        try fixture.preferences.save(.init(favoriteIDs: ["channel"]))
+        try await fixture.adapter.prepareForOperation()
+        let initial = try await fixture.adapter.committingJournal {
+            try fixture.adapter.capture(sourceStore: fixture.sources, fallback: [:])
+        }
+        let initialCount = gate.writes
+        XCTAssertGreaterThan(initialCount, 0)
+        try await fixture.adapter.prepareForOperation(records: initial.mapValues(Optional.some))
+        let repeated = try await fixture.adapter.committingJournal {
+            try fixture.adapter.capture(sourceStore: fixture.sources, fallback: initial)
+        }
+        XCTAssertEqual(repeated, initial)
+        XCTAssertEqual(gate.writes, initialCount)
+    }
+
+    @MainActor
+    func testCancellationDuringJournalCommitReleasesFenceAndPreservesLocalEditForRetry() async throws {
+        let entered = expectation(description: "Journal write blocked")
+        let release = DispatchSemaphore(value: 0)
+        let gate = PortableJournalWriteGate()
+        let fixture = try makeFixture(requiresPreparedJournal: true, writeFile: { data, url in
+            if url.pathExtension == "record", gate.writes == 0 {
+                gate.recordWrite()
+                entered.fulfill()
+                XCTAssertEqual(release.wait(timeout: .now() + 5), .success)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        defer { release.signal() }
+        try fixture.preferences.save(.init(favoriteIDs: ["channel"]))
+        try await fixture.adapter.prepareForOperation()
+        let capture = Task { @MainActor in
+            try await fixture.adapter.committingJournal {
+                try fixture.adapter.capture(sourceStore: fixture.sources, fallback: [:])
+            }
+        }
+        await fulfillment(of: [entered], timeout: 3)
+        try fixture.preferences.save(.init(favoriteIDs: ["channel", "new-local-edit"]))
+        capture.cancel()
+        release.signal()
+        do {
+            _ = try await capture.value
+            XCTFail("Cancelled capture must not publish")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        try await fixture.adapter.prepareForOperation()
+        let retried = try await fixture.adapter.committingJournal {
+            try fixture.adapter.capture(sourceStore: fixture.sources, fallback: [:])
+        }
+        XCTAssertNotNil(retried[recordKey(.channel, "new-local-edit").recordName])
+        XCTAssertEqual(try fixture.preferences.load().favoriteIDs, ["channel", "new-local-edit"])
+    }
+
+    @MainActor
+    func testJournalObservationReceiptIsWrittenAfterAllRecords() async throws {
+        let gate = PortableJournalWriteGate()
+        let fixture = try makeFixture(requiresPreparedJournal: true, writeFile: { data, url in
+            if url.lastPathComponent == "observed-local.json" {
+                XCTAssertEqual(gate.writes, 2, "Receipt cannot get ahead of either record")
+            } else {
+                gate.recordWrite()
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        try fixture.preferences.save(.init(favoriteIDs: ["first", "second"]))
+        try await fixture.adapter.prepareForOperation()
+        _ = try await fixture.adapter.committingJournal {
+            try fixture.adapter.capture(sourceStore: fixture.sources, fallback: [:])
+        }
+        XCTAssertEqual(gate.writes, 2)
+    }
+
     func testConsentCannotBeBorrowedWhenRootNamespaceOwnerChanges() throws {
         let fixture = try makeFixture()
         let original = LiveTVPortableSyncPreferenceStore(
@@ -1458,7 +1603,12 @@ final class LiveTVPortableSyncTests: XCTestCase {
         .init(profileID: profileID, kind: kind, entityID: id)
     }
 
-    private func makeFixture(enabled: Bool = true, requiresPreparedJournal: Bool = false) throws -> Fixture {
+    private func makeFixture(
+        enabled: Bool = true, requiresPreparedJournal: Bool = false,
+        writeFile: @escaping @Sendable (Data, URL) throws -> Void = {
+            try $0.write(to: $1, options: .atomic)
+        }
+    ) throws -> Fixture {
         let suite = "LiveTVPortableSyncTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         let root = URL(fileURLWithPath: #filePath)
@@ -1473,12 +1623,24 @@ final class LiveTVPortableSyncTests: XCTestCase {
             root: root,
             defaults: defaults,
             adapter: .init(
-                directory: root, profileID: profileID, defaults: defaults,
-                requiresPreparedJournal: requiresPreparedJournal
+                directory: root, profileID: profileID, defaults: defaults, namespace: profileID,
+                requiresPreparedJournal: requiresPreparedJournal, writeFile: writeFile
             ),
             sources: PortableTestSources(),
             preferences: .init(defaults: defaults, namespace: profileID)
         )
+    }
+
+    private final class PortableJournalWriteGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var failure = false
+        private var count = 0
+        var shouldFail: Bool {
+            get { lock.withLock { failure } }
+            set { lock.withLock { failure = newValue } }
+        }
+        var writes: Int { lock.withLock { count } }
+        func recordWrite() { lock.withLock { count += 1 } }
     }
 
     private struct Fixture {

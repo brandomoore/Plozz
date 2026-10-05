@@ -83,6 +83,20 @@ The UUID must match the event's exact binary; rebuilding the same Git commit doe
 not recreate its symbols. Missing historical breadcrumbs cannot be recovered by
 uploading symbols. Symbolication improves attribution, not proof of a hang's cause.
 
+Portable iCloud Keychain publication runs on a dedicated serial utility queue,
+including local credential reads and encoding. Unchanged values are not rewritten.
+Sign-out and purge use the same queue, invalidate older publications, and hide
+pending removals from auto-connect. Turning sync off cancels queued publication;
+an already executing Security call cannot be interrupted.
+
+Live TV portable journal commits keep consent checks and authoritative local-store
+changes on the main actor, then await atomic file writes on a worker. The journal
+revision is fenced until completion, and observation receipts are written after
+their records. Cloud capture and acknowledgements cannot report success before
+that commit. Failures invalidate preparation and preserve the caller's fallback;
+unchanged observations do not trigger another disk flush. Do not fix `fsync`
+hangs by removing atomic writes or returning before persistence finishes.
+
 ## 0. The Apple TV is the only honest signal
 
 - The Simulator does **not** reproduce these problems. CPU, memory pressure, the
