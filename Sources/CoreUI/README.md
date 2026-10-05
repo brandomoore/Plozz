@@ -27,6 +27,9 @@ cache that every feature module reuses. tvOS-only — guarded behind
   a shared 5%-white edge. Gradient Off or Reduce Transparency restores the
   original solid surface and border. Light, other raised cards, and overlays
   keep their existing border treatment.
+  The detail information band keeps its subdued surface at 60% opacity over
+  enabled gradients; its cards and text remain opaque. Gradient Off or Reduce
+  Transparency restores the solid band.
 - **Focusable building blocks** — focus-aware buttons, cards, tab bars,
   parallax containers, brand QR code rendering, code-font numerals.
   Native card focus observation is separate from explicit focus requests.

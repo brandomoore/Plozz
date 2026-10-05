@@ -66,6 +66,8 @@ public struct DetailInformationSections: View {
     @State private var bodyLineHeight: CGFloat = 0
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzCardFocusStyle) private var cardFocusStyle
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
 
     public init(
         item: MediaItem,
@@ -93,21 +95,10 @@ public struct DetailInformationSections: View {
                 .padding(.top, bandTopPadding)
                 .padding(.bottom, bandBottomPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // A subtle full-bleed tint marks the lower "info" band as its own
-                // zone. Deliberately quiet, and distinct from the cards inside it
-                // (which sit on their own surface).
-                //
-                // "Full-bleed" has to be painted, not declared: this sits inside a
-                // ScrollView, which has already consumed the container's safe area
-                // and turned it into content insets, so `ignoresSafeArea` here has
-                // nothing left to ignore. tvOS's overscan margin kept the tint off
-                // the left and right edges, and on both platforms the strip below
-                // the last content (home indicator / tab bar / bottom overscan)
-                // stayed page-coloured. Negative padding on the *background* layer
-                // reaches past all of it without touching the layout — a background
-                // never affects the size of what it sits behind.
                 .background {
                     palette.informationSurface
+                        .opacity(gradientEnabled && !reduceTransparency ? 0.6 : 1)
+                        // Paint past scroll-view insets without changing the content layout.
                         .padding(.horizontal, -Self.backgroundBleed)
                         .padding(.bottom, -Self.backgroundBleed)
                 }
