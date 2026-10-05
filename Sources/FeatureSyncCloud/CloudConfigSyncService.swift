@@ -627,8 +627,11 @@ public actor CloudConfigSyncService {
     /// channel resets ALL of them — every channel's zone gets a complete re-fetch in
     /// lockstep, and each runs its own `beginFullResync`/`endFullResync` lifecycle
     /// against that shared re-fetch.
-    public func redownloadFromCloud() async {
-        guard isActive, config.isEnabled(), await accountIsAvailable() else { setStatus(.signedOut); return }
+    @discardableResult
+    public func redownloadFromCloud() async -> CloudSyncReloadResult {
+        guard isActive, config.isEnabled() else { return .unavailable }
+        guard await accountIsAvailable() else { setStatus(.signedOut); return .unavailable }
+        guard !isFullResyncing else { return .interrupted }
         restorePersistedStateIfNeeded()
         setStatus(.syncing)
         PlozzLog.sync.info("CloudSync: redownload — full resync (keep local, reset token)")
@@ -638,13 +641,17 @@ public actor CloudConfigSyncService {
         isFullResyncing = true
         for channel in channels { channel.ledger.beginFullResync() }
         rebuildEngine(resetState: true)   // nil token ⇒ COMPLETE re-fetch; fences old events
-        guard let engine else { isFullResyncing = false; setStatus(.error, error: "engine unavailable"); return }
+        guard let engine else {
+            abortFullResync()
+            setStatus(.error, error: "engine unavailable")
+            return .failed
+        }
         do {
             engine.state.add(pendingDatabaseChanges: channels.map { .saveZone(CKRecordZone(zoneID: $0.schema.zoneID)) })
             try await fetchChangesDetached(engine)
             guard isActive, engine === self.engine else {
                 abortFullResync()
-                return
+                return .interrupted
             }
             markServerStateConfirmed()
             var confirmedDeletedByZone: [String: Set<SyncRecordID>] = [:]
@@ -661,7 +668,7 @@ public actor CloudConfigSyncService {
                     let verdict = await verifyDeletionCandidates(candidates, schema: channel.schema)
                     guard isActive, engine === self.engine else {
                         abortFullResync()
-                        return
+                        return .interrupted
                     }
                     confirmedDeleted = verdict.confirmedDeleted
                     if !verdict.stillPresent.isEmpty {
@@ -693,7 +700,7 @@ public actor CloudConfigSyncService {
                 let applyRecords = channel.applyRecords
                 await outsideDelegateContext { await applyRecords(finalized) }
             }
-            guard isActive, engine === self.engine else { return }
+            guard isActive, engine === self.engine else { return .interrupted }
             // Requeue anything still dirty / pending-delete without re-stamping.
             var pending: [CKSyncEngine.PendingRecordZoneChange] = []
             for channel in channels {
@@ -704,9 +711,11 @@ public actor CloudConfigSyncService {
             // Replay one publish for any genuine local edits made during the resync
             // (they were deferred by the isFullResyncing gate).
             await publishLocalChanges()
+            guard isActive, engine === self.engine else { return .interrupted }
             let total = channels.reduce(0) { $0 + $1.ledger.count }
             setStatus(.idle, syncedNow: true)
             PlozzLog.sync.info("CloudSync: redownload complete — \(total) record(s)")
+            return .completed
         } catch {
             // A FAILED / incomplete fetch must NOT be finalized as a full snapshot
             // (that would delete records the fetch simply didn't reach). Abort the
@@ -717,6 +726,7 @@ public actor CloudConfigSyncService {
             persist()
             setDiagnostic("redownload: \(Self.describe(error))")
             setStatus(.error, error: (error as NSError).localizedDescription)
+            return .failed
         }
     }
 

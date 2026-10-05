@@ -645,6 +645,7 @@ extension PlozziOSAppModel {
     /// Reset a corrupted/divergent sync: wipe the iCloud zone and re-seed from this
     /// device. Local config is untouched.
     func resetCloudSync() {
+        guard !cloudSyncStatus.isReloading else { return }
         let config = cloudSync
         Task {
             await config?.resetAndReseed()
@@ -655,8 +656,11 @@ extension PlozziOSAppModel {
     /// whole zone fresh. Non-destructive to the shared cloud data.
     func redownloadCloudSync() {
         let config = cloudSync
-        Task {
-            await config?.redownloadFromCloud()
+        Task { [cloudSyncStatus] in
+            await cloudSyncStatus.reload {
+                guard let config else { return .unavailable }
+                return await config.redownloadFromCloud()
+            }
         }
     }
 

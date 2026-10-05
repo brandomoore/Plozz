@@ -282,6 +282,7 @@ extension AppState {
     /// THIS device. Other devices re-converge from the clean slate. Local config is
     /// untouched.
     public func resetCloudSync() {
+        guard !cloudSyncStatus.isReloading else { return }
         let config = cloudSync
         Task {
             await config?.resetAndReseed()
@@ -292,8 +293,11 @@ extension AppState {
     /// re-download the whole zone fresh. Non-destructive to the shared cloud data.
     public func redownloadCloudSync() {
         let config = cloudSync
-        Task {
-            await config?.redownloadFromCloud()
+        Task { [cloudSyncStatus] in
+            await cloudSyncStatus.reload {
+                guard let config else { return .unavailable }
+                return await config.redownloadFromCloud()
+            }
         }
     }
 

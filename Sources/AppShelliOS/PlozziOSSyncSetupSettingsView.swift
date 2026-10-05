@@ -296,7 +296,9 @@ struct PlozziOSSyncSetupSettingsView: View {
                 summary: appModel.cloudSyncStatus.summary,
                 isSyncing: appModel.cloudSyncStatus.phase == .syncing,
                 itemCount: appModel.cloudSyncStatus.syncedRecordCount,
-                accountTag: appModel.cloudSyncStatus.accountTag
+                accountTag: appModel.cloudSyncStatus.accountTag,
+                isReloading: appModel.cloudSyncStatus.isReloading,
+                reloadSummary: appModel.cloudSyncStatus.reloadSummary
             )
         }
     }
@@ -329,11 +331,24 @@ private struct PlozziOSSyncTroubleshootingView: View {
                 } label: {
                     Label("Reload From iCloud", systemImage: "arrow.down.circle")
                 }
+                .disabled(appModel.cloudSyncStatus.isReloading)
+                .accessibilityIdentifier("cloud-sync-reload")
                 Button(role: .destructive) {
                     showResetConfirm = true
                 } label: {
                     Label("Reset Sync", systemImage: "arrow.counterclockwise.icloud")
                 }
+                .disabled(appModel.cloudSyncStatus.isReloading)
+                SyncReloadStatusLine(provider: SyncStatusProvider {
+                    SyncStatusPresentation(
+                        summary: appModel.cloudSyncStatus.summary,
+                        isSyncing: appModel.cloudSyncStatus.phase == .syncing,
+                        isReloading: appModel.cloudSyncStatus.isReloading,
+                        reloadSummary: appModel.cloudSyncStatus.reloadSummary
+                    )
+                })
+                .font(.footnote)
+                .plozzForeground(.secondary)
             } footer: {
                 Text("Try Reload first. Reset only if changes are still missing.")
             }

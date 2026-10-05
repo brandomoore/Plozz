@@ -814,6 +814,18 @@ snapshot transfers remain pending. Identity changes are deferred while
 playback holds their identities, while authorization revocation takes effect
 immediately. Each device still configures and authorizes its own sources.
 
+The mobile Settings root supplies its active profile model to both compact and
+split navigation, including the shared Live TV sync controls and pending-source
+list. Availability still comes from the bridge registered for that exact model;
+the UI does not substitute a different profile or infer CloudKit availability.
+
+Sync troubleshooting shows a dedicated Reload From iCloud progress indicator
+and retains its completed, unavailable, interrupted or failed outcome on both
+platforms. Intermediate automatic fetch/send updates cannot dismiss that
+indicator or overwrite its result. Reload and Reset are disabled during a
+reload, and repeated reload requests cannot rebuild the sync engine concurrently.
+Full reloads retain the existing per-channel ledger and verified-deletion rules.
+
 Portable library schedule validation, snapshot assembly/encoding and merge
 planning run on a serial worker actor using immutable inputs. Prepared exports
 are reused during capture instead of rebuilding schedules on the main actor.

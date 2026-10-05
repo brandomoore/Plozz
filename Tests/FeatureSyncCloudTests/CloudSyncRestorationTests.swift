@@ -70,4 +70,14 @@ final class CloudSyncRestorationTests: XCTestCase {
         XCTAssertFalse(restored)
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
     }
+
+    func testReloadOfAnInactiveServiceReportsUnavailableWithoutTouchingStorage() async {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let service = CloudConfigSyncService(configuration(folder.appendingPathComponent("primary.json")))
+        let result = await service.redownloadFromCloud()
+        XCTAssertEqual(result, .unavailable)
+        let restored = await service.hasRestoredLocalState
+        XCTAssertFalse(restored)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+    }
 }
