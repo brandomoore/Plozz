@@ -38,6 +38,7 @@ final class GeneratedScrubThumbnailLoader: ScrubThumbnailProviding {
     private var decoded: [Int: CGImage] = [:]
     private var decodeOrder: [Int] = []
     private let maxDecodedFrames = 90
+    private var pending: (cell: Int, id: UUID, task: Task<CGImage?, Never>)?
 
     init(extractor: any ScrubStillExtracting) {
         self.extractor = extractor
@@ -46,12 +47,24 @@ final class GeneratedScrubThumbnailLoader: ScrubThumbnailProviding {
     func thumbnail(forSeconds seconds: TimeInterval) async -> CGImage? {
         let cell = Self.cell(forSeconds: seconds)
         if let cached = decoded[cell] { return cached }
-        guard let image = await extractor.thumbnail(
-            atSeconds: Double(cell) * Self.gridSeconds,
-            maxWidth: Self.maxWidth
-        ) else {
-            return nil
+        if let pending, pending.cell == cell {
+            return await pending.task.value
         }
+        pending?.task.cancel()
+        let id = UUID()
+        let task = Task { [extractor] in
+            guard !Task.isCancelled else { return nil as CGImage? }
+            let image = await extractor.thumbnail(
+                atSeconds: Double(cell) * Self.gridSeconds,
+                maxWidth: Self.maxWidth
+            )
+            return Task.isCancelled ? nil : image
+        }
+        pending = (cell, id, task)
+        let image = await task.value
+        guard pending?.id == id else { return nil }
+        pending = nil
+        guard let image else { return nil }
         store(image, at: cell)
         return image
     }

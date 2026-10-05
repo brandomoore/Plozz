@@ -44,6 +44,7 @@ final class OfflineRequestRewriteTests: XCTestCase {
             isTranscoding: true)
         request.playbackSource = .networkFile(try networkFileLocator())
         request.originalFileSource = .networkFile(try networkFileLocator())
+        request.scrubStillSource = request.originalFileSource
         request.externalAudioURL = URL(string: "https://example.test/audio.m4a")!
 
         let rewritten = PlayerViewModel.applyingOfflineRewrite(to: request, localURL: localURL())
@@ -54,6 +55,7 @@ final class OfflineRequestRewriteTests: XCTestCase {
         XCTAssertEqual(rewritten.streamURL, localURL())
         XCTAssertNil(rewritten.playbackSource)
         XCTAssertNil(rewritten.originalFileSource)
+        XCTAssertNil(rewritten.scrubStillSource)
         XCTAssertNil(rewritten.externalAudioURL)
         XCTAssertNil(rewritten.localRemuxSource)
         XCTAssertFalse(rewritten.isManifestStream)

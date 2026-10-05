@@ -9,6 +9,34 @@ import UIKit
 
 @MainActor
 final class StreamingPlaybackTests: XCTestCase {
+    func testGeneratedStillsUseOriginalQualityButNeverReducedQuality() async throws {
+        let source = PlaybackSource.publicURL(try SecretFreeURLSource(
+            url: URL(string: "https://fixture.test/original.mp4")!
+        ))
+        for quality in [StreamingQuality.original, .hd720] {
+            let provider = QualityPlaybackProvider()
+            await provider.setScrubStillSource(source)
+            let engine = QualityEngine()
+            var sources: [PlaybackSource] = []
+            let model = PlayerViewModel(
+                provider: provider, itemID: "movie", mediaSourceID: "version",
+                streamingOptions: .init(quality: quality, forceTranscoding: true),
+                engineFactory: .init(
+                    makeNative: { _ in engine },
+                    makeScrubStillExtractor: { source, _ in
+                        sources.append(source)
+                        return QualityScrubStillExtractor()
+                    }
+                )
+            )
+            await model.load()
+            XCTAssertTrue(model.isTranscoding)
+            XCTAssertEqual(model.makeScrubPreviewCoordinator() != nil, quality == .original)
+            XCTAssertEqual(sources, quality == .original ? [source] : [])
+            await model.stop()
+        }
+    }
+
     func testBurnedSubtitleOffAndTrackSwitchRebuildLegacyAndBoundedRenditions() async {
         for options: StreamingPlaybackOptions? in [nil, .init(quality: .hd720)] {
             for selection in [PlayerTrackOption.offID, 7] {
@@ -765,6 +793,7 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
     private var sourceRange: String?
     private var plexSubtitleRenditions = false
     private var burnedSubtitle = false
+    private var scrubStillSource: PlaybackSource?
     private var gate: QualityDecisionGate?
     init(gate: QualityDecisionGate? = nil) { self.gate = gate }
     func installGate(_ gate: QualityDecisionGate) { self.gate = gate }
@@ -774,6 +803,7 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
     func setSourceRange(_ range: String) { sourceRange = range }
     func setPlexSubtitleRenditions() { plexSubtitleRenditions = true }
     func setBurnedSubtitle() { burnedSubtitle = true }
+    func setScrubStillSource(_ source: PlaybackSource) { scrubStillSource = source }
     func playbackInfo(for itemID: String) async throws -> PlaybackRequest {
         ordinaryCalls += 1
         return baseRequest()
@@ -813,6 +843,7 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
                         sourceMetadata: sourceRange.map { .init(video: .init(videoRangeType: $0)) },
                         sourceProvider: plexSubtitleRenditions ? .plex : nil)
         if burnedSubtitle { request.burnedInSubtitleTrackID = 6 }
+        request.scrubStillSource = scrubStillSource
         return request
     }
     func libraries() async throws -> [MediaLibrary] { [] }
@@ -828,6 +859,11 @@ private actor QualityPlaybackProvider: StreamingQualityProviding {
         playbackReports.append(.init(progress: progress, event: event))
     }
     nonisolated func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
+@MainActor
+private final class QualityScrubStillExtractor: ScrubStillExtracting {
+    func thumbnail(atSeconds seconds: TimeInterval, maxWidth: Int) async -> CGImage? { nil }
 }
 
 @MainActor

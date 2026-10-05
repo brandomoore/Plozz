@@ -396,6 +396,50 @@ final class TransportIOReaderTests: XCTestCase {
         XCTAssertEqual(source.closeCount, 1)
     }
 
+    func testPlaybackEndDrainsWhileStillExtractorAndClonedReadersRemainAlive() async throws {
+        let source = FakeTransportByteSource(payload)
+        let primary = TransportIOReader(source: source)
+        let clone = try XCTUnwrap(primary.makeIndependentReader())
+        let descendant = try XCTUnwrap(clone.makeIndependentReader())
+        let extractor = FrameExtractor(reader: clone)
+
+        primary.closeAllReaders()
+        primary.closeAllReaders()
+        let drained = expectation(description: "source drained before preview host disappears")
+        let drain = Task {
+            await primary.waitForFinalShutdown()
+            drained.fulfill()
+        }
+        await fulfillment(of: [drained], timeout: 2)
+        XCTAssertEqual(source.closeCount, 1)
+        XCTAssertNil(primary.makeIndependentReader())
+        XCTAssertNil(clone.makeIndependentReader())
+        XCTAssertLessThan(read(descendant, count: 1).result, 0)
+        await extractor.shutdown()
+        await drain.value
+    }
+
+    func testPlaybackEndUnblocksPreviewReadWithoutClosingAnotherSession() async throws {
+        let source = BlockingTransportByteSource()
+        let primary = TransportIOReader(source: source)
+        let clone = try XCTUnwrap(primary.makeIndependentReader())
+        let otherSource = FakeTransportByteSource(payload)
+        let other = TransportIOReader(source: otherSource)
+        let readTask = Task.detached { read(clone, count: 1).result }
+        await source.waitUntilReadStarts()
+
+        primary.closeAllReaders()
+        let result = await readTask.value
+        XCTAssertEqual(result, -1)
+        XCTAssertEqual(read(other, count: 1).data, Data([0]))
+        XCTAssertEqual(otherSource.closeCount, 0)
+        source.finishRead()
+        await primary.waitForFinalShutdown()
+        XCTAssertEqual(source.closeCount, 1)
+        other.closeAllReaders()
+        await other.waitForFinalShutdown()
+    }
+
     func testCancelUnblocksReadWhileUnderlyingOperationDrains() async {
         let source = BlockingTransportByteSource()
         let reader = TransportIOReader(source: source)

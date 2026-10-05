@@ -34,7 +34,13 @@ and the diagnostics overlay.
   PNG/JPG tiles + Plex BIF). When the server has neither,
   `GeneratedScrubThumbnailLoader` decodes keyframe stills on the device from
   the original file through `ScrubStillExtracting`, which Plozzigen supplies
-  via `EngineFactory.makeScrubStillExtractor`.
+  via `EngineFactory.makeScrubStillExtractor`. Pending requests in the same
+  two-second cell share one decode. Playback teardown invalidates stills and
+  closes every network-reader clone before awaiting transport drainage, even
+  while the outgoing preview view remains mounted. Original-quality Plex,
+  Jellyfin, and Emby transcodes retain a preview-only original source; reduced
+  streaming quality and offline playback never use it. Missing BIFs (404/410)
+  fall back permanently, while timeout/rate-limit responses remain retryable.
 - **Diagnostics** — `PlaybackDiagnosticsSampler` +
   `PlaybackDiagnosticsOverlay`: opt-in HUD with engine, codec, bitrate,
   dropped frames, etc.

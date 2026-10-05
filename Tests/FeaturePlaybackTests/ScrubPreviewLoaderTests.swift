@@ -106,6 +106,26 @@ final class ScrubPreviewLoaderTests: XCTestCase {
         XCTAssertEqual(URLSessionStubProtocol.requestCount(for: bifURL), 2)
     }
 
+    func testPlexBIFLoaderRetriesTransientClientErrors() async throws {
+        for status in [408, 429] {
+            let url = URL(string: "https://example.test/indexes/retry-\(status)")!
+            URLSessionStubProtocol.setResponses([
+                .init(statusCode: status, data: Data()),
+                .init(statusCode: 200, data: try makeBIFData(frames: [makeJPEGData(color: .green)]))
+            ], for: url)
+            let loader = PlexBIFThumbnailLoader(
+                resource: .publicURL(try SecretFreeURLSource(url: url)),
+                session: makeSession()
+            )
+            let first = await loader.thumbnail(forSeconds: 0)
+            XCTAssertNil(first)
+            XCTAssertFalse(loader.isPermanentlyUnavailable)
+            let retry = await loader.thumbnail(forSeconds: 0)
+            XCTAssertNotNil(retry)
+            XCTAssertEqual(URLSessionStubProtocol.requestCount(for: url), 2)
+        }
+    }
+
     func testTrickplayLoaderResolvesAuthenticatedResourceAtFetch() async throws {
         let resolvedURL = URL(string: "https://media.test/trickplay/0.jpg?api_key=current")!
         URLSessionStubProtocol.setResponses(
@@ -249,6 +269,41 @@ final class ScrubPreviewLoaderTests: XCTestCase {
         let retried = await loader.thumbnail(forSeconds: 10)
         XCTAssertNotNil(retried)
         XCTAssertEqual(extractor.requestedSeconds, [10, 10])
+    }
+
+    func testCoordinatorCoalescesPendingSamplesInTheSameCell() async throws {
+        let started = expectation(description: "first decode started")
+        let delivered = expectation(description: "latest update delivered")
+        let extractor = SuspendedScrubStillExtractor { started.fulfill() }
+        let coordinator = try XCTUnwrap(ScrubPreviewCoordinator(source: nil, generatedStills: extractor))
+        coordinator.onImageChange = { image in
+            if image != nil { delivered.fulfill() }
+        }
+        coordinator.update(for: 5.3)
+        await fulfillment(of: [started], timeout: 2)
+        coordinator.update(for: 5.5)
+        await Task.yield()
+        coordinator.update(for: 5.9)
+        await Task.yield()
+        extractor.finish(with: makeSolidCGImage(color: .red))
+        await fulfillment(of: [delivered], timeout: 2)
+        XCTAssertEqual(extractor.requestedSeconds, [4])
+        coordinator.onImageChange = nil
+        XCTAssertTrue(coordinator.update(for: 5.1))
+    }
+
+    func testGeneratedLoaderBoundsCacheAndDoesNotPrefetch() async {
+        let extractor = FakeScrubStillExtractor(image: makeSolidCGImage(color: .red))
+        let loader = GeneratedScrubThumbnailLoader(extractor: extractor)
+        loader.prefetch()
+        XCTAssertTrue(extractor.requestedSeconds.isEmpty)
+        for cell in 0...90 {
+            _ = await loader.thumbnail(forSeconds: Double(cell * 2))
+        }
+        XCTAssertNil(loader.cachedThumbnail(forSeconds: 0))
+        XCTAssertNotNil(loader.cachedThumbnail(forSeconds: 2))
+        XCTAssertNotNil(loader.cachedThumbnail(forSeconds: 180))
+        XCTAssertEqual(extractor.requestedSeconds.count, 91)
     }
 
     func testCoordinatorNeedsServerPreviewsOrGeneratedStills() {
@@ -434,6 +489,32 @@ private final class FakeScrubStillExtractor: ScrubStillExtracting {
             return nil
         }
         return image
+    }
+}
+
+@MainActor
+private final class SuspendedScrubStillExtractor: ScrubStillExtracting {
+    private let onStart: () -> Void
+    private var waiters: [CheckedContinuation<CGImage?, Never>] = []
+    private var finishedImage: CGImage?
+    private(set) var requestedSeconds: [TimeInterval] = []
+
+    init(onStart: @escaping () -> Void) { self.onStart = onStart }
+
+    func thumbnail(atSeconds seconds: TimeInterval, maxWidth: Int) async -> CGImage? {
+        requestedSeconds.append(seconds)
+        if let finishedImage { return finishedImage }
+        return await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+            if requestedSeconds.count == 1 { onStart() }
+        }
+    }
+
+    func finish(with image: CGImage) {
+        finishedImage = image
+        let current = waiters
+        waiters.removeAll()
+        current.forEach { $0.resume(returning: image) }
     }
 }
 

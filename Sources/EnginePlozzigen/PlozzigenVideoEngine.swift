@@ -309,6 +309,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     /// release it asynchronously and racing the fresh open. `nil` for URL-backed
     /// loads.
     private var activeResolvedSource: MediaTransportResolvedSource?
+    private var activeTransportReader: TransportIOReader?
+    private let scrubStillExtractors = NSHashTable<PlozzigenScrubStillExtractor>.weakObjects()
     #if canImport(UIKit)
     private let videoView: UIView
     #endif
@@ -375,6 +377,15 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     // MARK: - Scrub stills
 
+    func registerScrubStillExtractor(_ extractor: PlozzigenScrubStillExtractor) {
+        scrubStillExtractors.add(extractor)
+    }
+
+    private func invalidateScrubStills() {
+        for extractor in scrubStillExtractors.allObjects { extractor.invalidate() }
+        scrubStillExtractors.removeAllObjects()
+    }
+
     /// Still extractor over a host-chosen URL, coupled to this engine's session so
     /// thumbnail decodes yield while the playback pipeline is starved.
     func makeScrubFrameExtractor(url: URL) -> FrameExtractor {
@@ -391,6 +402,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     public func load(request: PlaybackRequest, startPosition: TimeInterval) async {
         guard let outputGeneration = await beginOutputLoad() else { return }
+        invalidateScrubStills()
+        activeTransportReader?.closeAllReaders()
+        activeTransportReader = nil
         clearASS()
         let outputPolicy = liveOutputPolicy
         defer { finishOutputLoad(outputGeneration, policy: outputPolicy) }
@@ -444,8 +458,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 let resolvedSource = try await networkFileResolver.resolve(locator)
                 activeResolvedSource = resolvedSource
                 stage = "engine.load"
+                let reader = TransportIOReader(resolvedSource: resolvedSource)
+                activeTransportReader = reader
                 let source = MediaSource.custom(
-                    TransportIOReader(resolvedSource: resolvedSource),
+                    reader,
                     formatHint: Self.networkFileFormatHint(for: locator)
                 )
                 try await engine.load(
@@ -923,6 +939,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func stopEngine(resetDisplayCriteria: Bool) {
+        invalidateScrubStills()
+        activeTransportReader?.closeAllReaders()
+        activeTransportReader = nil
         clearASS()
         nativeSubtitleOutput?.detach()
         nativeSubtitleOutput = nil

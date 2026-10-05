@@ -25,6 +25,7 @@ public final class PlozzigenScrubStillExtractor: ScrubStillExtracting {
     private let authenticatedHTTPResolver: (any AuthenticatedHTTPResourceResolving)?
     private var extractor: FrameExtractor?
     private var openTask: Task<FrameExtractor?, Never>?
+    private var isInvalidated = false
 
     public init(
         source: PlaybackSource,
@@ -37,8 +38,27 @@ public final class PlozzigenScrubStillExtractor: ScrubStillExtracting {
     }
 
     public func thumbnail(atSeconds seconds: TimeInterval, maxWidth: Int) async -> CGImage? {
+        guard !isInvalidated else { return nil }
         guard let extractor = await openExtractor() else { return nil }
-        return await extractor.thumbnail(at: seconds, maxWidth: maxWidth)
+        let image = await extractor.thumbnail(at: seconds, maxWidth: maxWidth)
+        return isInvalidated ? nil : image
+    }
+
+    deinit {
+        openTask?.cancel()
+        if let extractor {
+            Task { await extractor.shutdown() }
+        }
+    }
+
+    func invalidate() {
+        isInvalidated = true
+        openTask?.cancel()
+        openTask = nil
+        if let extractor {
+            self.extractor = nil
+            Task { await extractor.shutdown() }
+        }
     }
 
     /// Opens the extractor once, coalescing concurrent first requests. A failed
@@ -51,12 +71,17 @@ public final class PlozzigenScrubStillExtractor: ScrubStillExtracting {
         openTask = task
         let opened = await task.value
         openTask = nil
+        guard !isInvalidated else {
+            await opened?.shutdown()
+            return nil
+        }
         extractor = opened
         return opened
     }
 
     private func makeExtractor() async -> FrameExtractor? {
         let plozzigen = activeEngine() as? PlozzigenVideoEngine
+        plozzigen?.registerScrubStillExtractor(self)
         let url: URL
         switch source {
         case .networkFile:
@@ -64,15 +89,17 @@ public final class PlozzigenScrubStillExtractor: ScrubStillExtracting {
         case .publicURL(let publicSource):
             url = publicSource.url
         case .authenticatedHTTP(let locator):
-            guard let authenticatedHTTPResolver,
-                  let resolved = try? await authenticatedHTTPResolver.resolve(locator)
-            else {
+            guard let authenticatedHTTPResolver else { return nil }
+            do {
+                url = try await authenticatedHTTPResolver.resolve(locator)
+            } catch {
+                PlozzLog.playback.debug("Scrub still source resolution failed.")
                 return nil
             }
-            url = resolved
         case .dlnaResource:
             return nil
         }
+        guard !isInvalidated, !Task.isCancelled else { return nil }
         if let plozzigen {
             return plozzigen.makeScrubFrameExtractor(url: url)
         }

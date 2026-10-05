@@ -31,7 +31,7 @@ final class PlexBIFThumbnailLoader: ScrubThumbnailProviding {
     private var blob: Data?
     private var index: BIFIndex?
     private var loadTask: Task<Bool, Never>?
-    /// Set when the server answers with a client error or an unparseable blob.
+    /// Set when the server confirms a missing resource or an unparseable blob.
     /// Plex keeps advertising `indexes` after its preview files are deleted, so
     /// a 404 here is permanent; retrying it on every scrub sample is pointless.
     private(set) var isPermanentlyUnavailable = false
@@ -140,7 +140,7 @@ final class PlexBIFThumbnailLoader: ScrubThumbnailProviding {
                     PlozzLog.playback.debug(
                         "Plex BIF request failed status=\(http.statusCode) url=\(PlozzLog.redact(url: url))"
                     )
-                    if (400...499).contains(http.statusCode) {
+                    if http.statusCode == 404 || http.statusCode == 410 {
                         self.isPermanentlyUnavailable = true
                     }
                     return false

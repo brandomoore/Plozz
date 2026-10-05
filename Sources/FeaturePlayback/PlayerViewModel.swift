@@ -1353,6 +1353,7 @@ public final class PlayerViewModel {
         rewritten.streamURL = localURL
         rewritten.playbackSource = nil
         rewritten.originalFileSource = nil
+        rewritten.scrubStillSource = nil
         rewritten.externalAudioURL = nil
         rewritten.localRemuxSource = nil
         rewritten.streamingOptions = nil
