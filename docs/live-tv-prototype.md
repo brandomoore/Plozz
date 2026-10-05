@@ -108,6 +108,9 @@ are available there; playlist/guide editing and server renaming open their
 specific editors directly. Hidden-channel restoration also lives in its detail
 pane. Setup and source pages reuse Plozz's shared settings groups, row labels,
 switches, focus/card styles and page heading.
+The embedded iPhone/iPad Sources pane clears its enclosing native List row's
+background, separator, and extra insets, so the shared settings gradient and
+group keylines continue through the whole page rather than an opaque inner panel.
 Source choices appear before saved sources, with descriptions of playlist URLs,
 local files (iPhone/iPad), and connected media servers. Playlist fields keep their
 labels visible while editing and show example URLs instead of repeating labels

@@ -145,6 +145,11 @@ public struct LiveTVSourcesView: View {
         .toggleStyle(SettingsSwitchToggleStyle(flushLeading: false))
         #elseif os(iOS)
         .toggleStyle(SettingsTouchSwitchToggleStyle())
+        // The embedded pane is one List row; its child groups cannot clear
+        // that row's system background or its extra insets.
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets())
+        .listRowSeparator(.hidden)
         #endif
         .task(id: catalogReloadRevision) {
             model.reload()
