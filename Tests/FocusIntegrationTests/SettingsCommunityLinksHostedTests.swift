@@ -8,6 +8,24 @@ import XCTest
 
 @MainActor
 final class SettingsCommunityLinksHostedTests: XCTestCase {
+    func testUpdateDialogShowsScannableFocusableDiscordCardInBothThemes() async throws {
+        let suite = "ReleaseNotesCommunity.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ReleaseNotesStore(defaults: defaults)
+        let catalog = try ReleaseNotesCatalog.load()
+        for scheme in [ColorScheme.light, .dark] {
+            store.saveLastSeenReleaseID("release/048")
+            let model = ReleaseNotesModel(catalog: catalog, currentReleaseID: "release/049", store: store)
+            model.prepareForStartup()
+            _ = try await renderCodes(
+                ReleaseNotesStartupView(model: model),
+                scheme: scheme, name: "update-discord-\(scheme)",
+                expectedURLs: [AppLinks.discord.absoluteString], requiresDiscordFocus: true
+            )
+        }
+    }
+
     func testDiscordMarkDoesNotDistortOneSideOfTheSilhouette() throws {
         let mark = try XCTUnwrap(UIImage(named: "DiscordMark"))
         let size = 128
@@ -96,7 +114,9 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
     private func renderCodes(
         _ content: some View,
         scheme: ColorScheme,
-        name: String
+        name: String,
+        expectedURLs: Set<String> = [AppLinks.discord.absoluteString, AppLinks.repository.absoluteString],
+        requiresDiscordFocus: Bool = false
     ) async throws -> [CIQRCodeFeature] {
         let deadline = Date().addingTimeInterval(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -110,13 +130,14 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         let palette = scheme == .dark ? ThemePalette.dark : .light
         window.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
-        window.rootViewController = UIHostingController(rootView:
+        let host = CommunityFocusHost(rootView:
             content
                 .environment(\.themePalette, palette)
                 .environment(\.colorScheme, scheme)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(palette.settingsBackground)
         )
+        window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
             window.isHidden = true
@@ -124,6 +145,29 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         window.layoutIfNeeded()
+        if requiresDiscordFocus {
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let deadline = ContinuousClock.now + .seconds(3)
+            while system.focusedItem == nil, ContinuousClock.now < deadline {
+                system.requestFocusUpdate(to: host)
+                system.updateFocusIfNeeded()
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let items = focusItems(in: window)
+            let detail = items.map { "\(type(of: $0)): \($0.frame)" }.joined(separator: "\n")
+            let card = try XCTUnwrap(items.first {
+                $0.frame.height >= 180 && $0.frame.width > 500
+            }, detail)
+            let initialFocus = try XCTUnwrap(system.focusedItem)
+            XCTAssertLessThan(initialFocus.frame.width, 200, "Done retains initial focus, not the card.\n\(detail)")
+            host.target = card
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            XCTAssertTrue(system.focusedItem === card, "The QR card must be reachable by native focus.")
+            host.target = nil
+            try await Task.sleep(for: .milliseconds(300))
+            window.layoutIfNeeded()
+        }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
@@ -140,15 +184,28 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
         ))
         let bitmap = try XCTUnwrap(image.cgImage)
         let codes = detector.features(in: CIImage(cgImage: bitmap)).compactMap { $0 as? CIQRCodeFeature }
-        XCTAssertEqual(Set(codes.compactMap(\.messageString)), [
-            "https://discord.gg/YkXnmB8rcF",
-            "https://github.com/brandomoore/Plozz"
-        ])
-        let pair = try XCTUnwrap(codes.count == 2 ? codes : nil, "Both codes must decode.")
+        XCTAssertEqual(Set(codes.compactMap(\.messageString)), expectedURLs)
+        let decoded = try XCTUnwrap(codes.count == expectedURLs.count ? codes : nil, "Every expected code must decode.")
         for code in codes {
             XCTAssertGreaterThan(code.bounds.width, 115, "Keep the 180-point scan card.")
         }
-        return pair.sorted { ($0.messageString ?? "") < ($1.messageString ?? "") }
+        return decoded.sorted { ($0.messageString ?? "") < ($1.messageString ?? "") }
+    }
+
+    private func focusItems(in window: UIWindow) -> [any UIFocusItem] {
+        var containers: [any UIFocusItemContainer] = [window]
+        var seen = Set<ObjectIdentifier>()
+        var result: [any UIFocusItem] = []
+        while let container = containers.popLast() {
+            guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
+            let frame = container.coordinateSpace.convert(window.bounds, from: window)
+            for item in container.focusItems(in: frame) {
+                if let children = item.focusItemContainer { containers.append(children) }
+                if let view = item as? UIView { containers.append(view) }
+                if item.canBecomeFocused, !(item is UIScrollView) { result.append(item) }
+            }
+        }
+        return result
     }
 
     private func rgba(_ image: CGImage) throws -> [UInt8] {
@@ -162,6 +219,15 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
             ))
             context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         }
+
         return pixels
+    }
+}
+
+private final class CommunityFocusHost<Content: View>: UIHostingController<Content> {
+    weak var target: (any UIFocusEnvironment)?
+
+    override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+        target.map { [$0] } ?? super.preferredFocusEnvironments
     }
 }

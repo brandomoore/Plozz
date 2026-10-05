@@ -86,6 +86,10 @@ public struct ReleaseNotesSection: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public enum ReleaseNotesFeaturedContent: String, Codable, Sendable {
+    case discord
+}
+
 public struct ReleaseNotesRelease: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let version: String
@@ -93,6 +97,7 @@ public struct ReleaseNotesRelease: Codable, Equatable, Identifiable, Sendable {
     public let build: Int
     public let releasedAt: String
     public let sections: [ReleaseNotesSection]
+    public let featuredContent: ReleaseNotesFeaturedContent?
 
     public init(
         id: String,
@@ -100,7 +105,8 @@ public struct ReleaseNotesRelease: Codable, Equatable, Identifiable, Sendable {
         build: Int,
         releasedAt: String,
         sections: [ReleaseNotesSection],
-        marketingVersion: String? = nil
+        marketingVersion: String? = nil,
+        featuredContent: ReleaseNotesFeaturedContent? = nil
     ) {
         self.id = id
         self.version = version
@@ -108,6 +114,7 @@ public struct ReleaseNotesRelease: Codable, Equatable, Identifiable, Sendable {
         self.releasedAt = releasedAt
         self.sections = sections
         self.marketingVersion = marketingVersion
+        self.featuredContent = featuredContent
     }
 
     public var appleVersion: String { marketingVersion ?? version }
@@ -462,6 +469,12 @@ public final class ReleaseNotesModel {
 
     public var hasPendingStartupNotes: Bool {
         !pendingReleases.isEmpty
+    }
+
+    public var pendingFeaturedContent: ReleaseNotesFeaturedContent? {
+        guard let current = currentRelease,
+              pendingReleases.contains(where: { $0.id == current.id }) else { return nil }
+        return current.featuredContent
     }
 
     private let currentReleaseID: String?

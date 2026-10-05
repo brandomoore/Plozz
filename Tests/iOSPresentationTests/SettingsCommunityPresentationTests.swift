@@ -2,6 +2,7 @@
 import CoreImage
 import CoreModels
 import CoreUI
+import FeatureSettings
 import SwiftUI
 import UIKit
 import Vision
@@ -11,6 +12,38 @@ import XCTest
 @MainActor
 final class SettingsCommunityPresentationTests: XCTestCase {
     private var capturedImages: [CGImage] = []
+
+    func testUpdateDialogShowsDiscordJoinButtonWithoutQRCodeOnPhoneAndPad() async throws {
+        let suite = "ReleaseNotesCommunity.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ReleaseNotesStore(defaults: defaults)
+        let catalog = try ReleaseNotesCatalog.load()
+        let detector = try XCTUnwrap(CIDetector(
+            ofType: CIDetectorTypeQRCode, context: CIContext(options: [.useSoftwareRenderer: true]),
+            options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]
+        ))
+        for light in [false, true] {
+            for size in [CGSize(width: 320, height: 568), CGSize(width: 390, height: 844), CGSize(width: 768, height: 1024)] {
+                store.saveLastSeenReleaseID("release/048")
+                let model = ReleaseNotesModel(
+                    catalog: catalog, currentReleaseID: "release/049", store: store, platform: .iOS
+                )
+                model.prepareForStartup()
+                let text = try await renderedText(
+                    ReleaseNotesStartupView(model: model), size: size, light: light,
+                    name: "update-discord-\(Int(size.width))-\(light)", initialOnly: true
+                )
+                XCTAssertTrue(text.contains("Join the new Discord community"), text)
+                XCTAssertTrue(text.contains("Join Discord"), text)
+                let image = try XCTUnwrap(capturedImages.last)
+                let urls = detector.features(in: CIImage(cgImage: image))
+                    .compactMap { ($0 as? CIQRCodeFeature)?.messageString }
+                XCTAssertTrue(urls.isEmpty, "The mobile invite must be a direct button, not a QR code.")
+                try assertJoinButtonFill(in: image, light: light)
+            }
+        }
+    }
 
     func testExpandedCommunityCodesRemainScannableOnNarrowPhone() async throws {
         let content = ScrollView {
@@ -84,6 +117,35 @@ final class SettingsCommunityPresentationTests: XCTestCase {
         }
     }
 
+    private func assertJoinButtonFill(in image: CGImage, light: Bool) throws {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        let label = try XCTUnwrap(request.results?.first {
+            $0.topCandidates(1).first?.string == "Join Discord"
+        })
+        let point = CGPoint(
+            x: floor(label.boundingBox.minX * CGFloat(image.width)) - 8,
+            y: floor((1 - label.boundingBox.midY) * CGFloat(image.height))
+        )
+        let pixel = try XCTUnwrap(image.cropping(to: CGRect(origin: point, size: CGSize(width: 1, height: 1))))
+        var rgba = [UInt8](repeating: 0, count: 4)
+        try rgba.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        XCTAssertLessThanOrEqual(Int(rgba[0...2].max()!) - Int(rgba[0...2].min()!), 2, "Use Plozz's monochrome CTA, not system blue.")
+        if light {
+            XCTAssertLessThan(rgba[0], 52)
+        } else {
+            XCTAssertGreaterThan(rgba[0], 230)
+        }
+    }
+
     private func assertCommunity(in text: String, file: StaticString = #filePath, line: UInt = #line) {
         for label in ["Discord", "GitHub", "QR Codes"] {
             XCTAssertTrue(text.contains(label), "Missing \(label): \(text)", file: file, line: line)
@@ -91,7 +153,7 @@ final class SettingsCommunityPresentationTests: XCTestCase {
     }
 
     private func renderedText(
-        _ content: some View, size: CGSize, light: Bool, name: String
+        _ content: some View, size: CGSize, light: Bool, name: String, initialOnly: Bool = false
     ) async throws -> String {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -119,6 +181,10 @@ final class SettingsCommunityPresentationTests: XCTestCase {
         window.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(200))
         let scroll = try XCTUnwrap(scrollViews(in: window).first)
+        if initialOnly {
+            XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+            return try recognizedText(in: window, name: name)
+        }
         for _ in 0..<5 {
             scroll.setContentOffset(CGPoint(
                 x: 0,

@@ -59,6 +59,16 @@ python3 tools/release-notes.py render --release-id release/045 --platform iOS \
   --empty-text "No changes for this platform in this build."
 ```
 
+A release can opt into an in-app update-dialog card with
+`"featuredContent": "discord"`. It reuses the Settings community artwork, with a
+scannable QR card on TV and a join button without a QR code on mobile. The card appears
+above the notes only when that exact release is the current unseen update; it
+does not recur on later releases, even when the user skipped the featured build.
+Dismissal and the startup preference retain their existing behavior. Historical
+notes and TestFlight text remain text-only. Omit the field for ordinary releases;
+future card types need an explicit typed model case and renderer, not arbitrary
+catalog markup or URLs.
+
 ## Build and distribute
 
 Use the documented local signing/API configuration; never commit credentials.

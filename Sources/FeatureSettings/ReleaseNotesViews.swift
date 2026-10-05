@@ -77,6 +77,7 @@ public struct ReleaseNotesStartupView: View {
 
                 FadingScrollView(maxHeight: 600) {
                     VStack(alignment: .leading, spacing: 32) {
+                        featuredContent
                         ReleaseNotesVersionList(groups: model.pendingVersionGroups)
 
                         Button("Don’t Show Again", role: .destructive) {
@@ -115,6 +116,7 @@ public struct ReleaseNotesStartupView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 32) {
+                    featuredContent
                     ReleaseNotesVersionList(groups: model.pendingVersionGroups)
 
                     Button("Don’t Show Again", role: .destructive) {
@@ -144,6 +146,40 @@ public struct ReleaseNotesStartupView: View {
             Text("You can still view every release in Settings.")
         }
         #endif
+    }
+
+    @ViewBuilder
+    private var featuredContent: some View {
+        switch model.pendingFeaturedContent {
+        case .discord:
+            #if os(tvOS)
+            SettingsCommunityCard.discord(caption: "Join the new Discord community")
+                .focusable()
+                .focusEffectDisabled()
+                .accessibilityIdentifier("ReleaseNotes.DiscordCard")
+            #else
+            SettingsPanel {
+                VStack(alignment: .leading, spacing: 16) {
+                    SettingsCommunityLogo(brand: .discord, height: 32)
+                    Text("Join the new Discord community")
+                        .font(.subheadline)
+                        .plozzForeground(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Link(destination: AppLinks.discord) {
+                        Text("Join Discord")
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                    }
+                    .plozzActionButton()
+                    .accessibilityIdentifier("ReleaseNotes.DiscordButton")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .accessibilityIdentifier("ReleaseNotes.DiscordCard")
+            #endif
+        case nil:
+            EmptyView()
+        }
     }
 }
 

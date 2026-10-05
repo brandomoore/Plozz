@@ -2,6 +2,45 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/049",
+      "version": "2026.10.5",
+      "marketingVersion": "2026.9.25",
+      "build": 49,
+      "releasedAt": "2026-10-05",
+      "featuredContent": "discord",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            {
+              "text": "Discord and GitHub community cards in Settings.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Discord and GitHub links in Settings, with optional QR codes.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Artwork-colored gradients extend through movie and show details, including their information cards.",
+            "Subtler Settings panels let more of the background gradient show through."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            {
+              "text": "Library mode controls becoming unfocusable after returning to the first Showcase row.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/048",
       "version": "2026.10.4",
       "marketingVersion": "2026.9.25",

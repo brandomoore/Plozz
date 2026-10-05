@@ -428,9 +428,13 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             XCTAssertLessThanOrEqual(bounds.maxY, 273, "The compact logo must remain above Seasons.")
 
             let seasonSnapshot = renderedKeylineSnapshot(in: window)
-            let seasonEdge = try leadingPixel(
+            let seasonAligned = XCTAttachment(image: seasonSnapshot)
+            seasonAligned.name = "production-season-keylines-\(scenario)"
+            seasonAligned.lifetime = .keepAlways
+            add(seasonAligned)
+            let seasonEdge = try leadingSurfacePixel(
                 in: seasonSnapshot, region: CGRect(x: 60, y: 310, width: 240, height: 10)
-            ) { r, g, b in r > 12 && r < 90 && abs(Int(r) - Int(g)) < 4 && abs(Int(r) - Int(b)) < 4 }
+            )
             let seasonAboutEdge = try leadingPixel(
                 in: seasonSnapshot, region: CGRect(x: 0, y: 975, width: 300, height: 60)
             ) { r, g, b in r > 230 && g > 230 && b > 230 }
@@ -461,10 +465,6 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
             aligned.name = "production-series-keylines-\(scenario)"
             aligned.lifetime = .keepAlways
             add(aligned)
-            let seasonAligned = XCTAttachment(image: seasonSnapshot)
-            seasonAligned.name = "production-season-keylines-\(scenario)"
-            seasonAligned.lifetime = .keepAlways
-            add(seasonAligned)
         }
     }
 
@@ -573,10 +573,59 @@ final class DetailTransitionVisualRegressionTests: XCTestCase {
         throw AppError.notFound
     }
 
-    private func leadingPixel(
-        in snapshot: UIImage, region: CGRect, matching: (UInt8, UInt8, UInt8) -> Bool
+    private func leadingSurfacePixel(
+        in snapshot: UIImage, region: CGRect,
+        file: StaticString = #filePath, line: UInt = #line
     ) throws -> CGFloat {
-        try XCTUnwrap(horizontalPixelSpans(in: snapshot, region: region, matching: matching).first).lowerBound
+        let reference = try XCTUnwrap(snapshot.cgImage?.cropping(to: CGRect(
+            x: region.minX, y: region.midY, width: 1, height: 1
+        )))
+        var background = [UInt8](repeating: 0, count: 4)
+        try background.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(reference, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        // The native pill picks up the artwork gradient. Its painted edge is
+        // lighter than the adjacent backdrop, but no longer necessarily gray.
+        return try leadingPixel(in: snapshot, region: region, file: file, line: line) { r, g, b in
+            Int(r) >= Int(background[0]) + 5
+                && Int(g) >= Int(background[1]) + 5
+                && Int(b) >= Int(background[2]) + 5
+        }
+    }
+
+    func testSurfaceKeylineSamplingRetainsMisalignmentOnNeutralAndColoredBackdrops() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        for background in [[CGFloat(0), 0, 0], [14, 14, 16], [27, 27, 66]] {
+            for offset in [CGFloat.zero, 4] {
+                let snapshot = UIGraphicsImageRenderer(size: CGSize(width: 640, height: 1080), format: format).image { context in
+                    UIColor(red: background[0] / 255, green: background[1] / 255, blue: background[2] / 255, alpha: 1).setFill()
+                    context.fill(CGRect(x: 0, y: 0, width: 640, height: 1080))
+                    UIColor(red: (background[0] + 10) / 255, green: (background[1] + 10) / 255,
+                            blue: (background[2] + 10) / 255, alpha: 1).setFill()
+                    context.fill(CGRect(x: 80 + offset, y: 300, width: 160, height: 40))
+                }
+                let edge = try leadingSurfacePixel(
+                    in: snapshot, region: CGRect(x: 60, y: 310, width: 240, height: 10)
+                )
+                XCTAssertEqual(edge, 80 + offset, accuracy: 1)
+            }
+        }
+    }
+
+    private func leadingPixel(
+        in snapshot: UIImage, region: CGRect,
+        file: StaticString = #filePath, line: UInt = #line,
+        matching: (UInt8, UInt8, UInt8) -> Bool
+    ) throws -> CGFloat {
+        try XCTUnwrap(
+            horizontalPixelSpans(in: snapshot, region: region, matching: matching).first,
+            "No matching rendered pixels in \(region).", file: file, line: line
+        ).lowerBound
     }
 
     private func episodeArtworkSpan(in snapshot: UIImage) throws -> ClosedRange<CGFloat> {

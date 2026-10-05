@@ -23,26 +23,32 @@ public struct SettingsCommunityLinks: View {
 
     @ViewBuilder
     private var codes: some View {
-        code(
-            brand: .discord,
-            caption: "Join the community",
-            url: AppLinks.discord.absoluteString,
-            accessibilityLabel: "Scan to join the Plozz Discord community"
-        )
-        code(
+        SettingsCommunityCard.discord()
+        SettingsCommunityCard(
             brand: .github,
             caption: "Source code and issues",
             url: repoURL,
             accessibilityLabel: "Scan to view the Plozz GitHub repository"
         )
     }
+}
 
-    private func code(
-        brand: SettingsCommunityLogo.Brand,
-        caption: LocalizedStringKey,
-        url: String,
-        accessibilityLabel: LocalizedStringKey
-    ) -> some View {
+struct SettingsCommunityCard: View {
+    let brand: SettingsCommunityLogo.Brand
+    let caption: LocalizedStringKey
+    let url: String
+    let accessibilityLabel: LocalizedStringKey
+
+    static func discord(caption: LocalizedStringKey = "Join the community") -> Self {
+        Self(
+            brand: .discord,
+            caption: caption,
+            url: AppLinks.discord.absoluteString,
+            accessibilityLabel: "Scan to join the Plozz Discord community"
+        )
+    }
+
+    var body: some View {
         SettingsPanel {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 24) {
