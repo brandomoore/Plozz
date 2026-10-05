@@ -49,7 +49,8 @@ final class LibraryPresentationTests: XCTestCase {
                         XCTAssertEqual(scroll.contentOffset.y, offset, accuracy: 1,
                                        "An unchanged library must not jump on return.")
                     } else {
-                        XCTAssertLessThanOrEqual(scroll.contentOffset.y, 1, "Changing mode returns to its header.")
+                        XCTAssertEqual(scroll.contentOffset.y + scroll.adjustedContentInset.top, 0, accuracy: 0.5,
+                                       "Changing mode returns to the true scroll edge.")
                     }
                 }
             }
@@ -88,6 +89,76 @@ final class LibraryPresentationTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testModeChangesKeepTabPositionAndNavigationSeparatorStable() async throws {
+        let appModel = PlozziOSAppModel()
+        for (sizeClass, light) in [
+            (UserInterfaceSizeClass.compact, false), (.compact, true),
+            (.regular, false), (.regular, true)
+        ] {
+            let size = sizeClass == .compact ? CGSize(width: 390, height: 844) : CGSize(width: 768, height: 1024)
+            try await withLibrary(
+                provider: LibraryPresentationProvider(artwork: nil), appModel: appModel,
+                size: size, sizeClass: sizeClass, light: light, preload: false, pushed: true
+            ) { window, model in
+                let scrolls = self.scrollViews(in: window)
+                let page = try XCTUnwrap(scrolls.first)
+                let tabs = try XCTUnwrap(scrolls.dropFirst().first)
+                let initialFrame = tabs.convert(tabs.bounds, to: window)
+                let initialOffset = page.contentOffset.y + page.adjustedContentInset.top
+                XCTAssertEqual(initialOffset, 0, accuracy: 0.5)
+                let bar = try XCTUnwrap(self.navigationBar(in: window))
+                let borderY = bar.convert(bar.bounds, to: window).maxY
+                _ = try self.capture(window, name: "header-\(sizeClass)-\(light)-initial")
+                let initialBorder = try self.headerPixels(y: borderY)
+                var measurements = ["initial tabs=\(initialFrame) offset=\(initialOffset)"]
+                for mode in [LibraryContentMode.titles, .collections, .playlists, .recommended, .titles] {
+                    if mode == .collections {
+                        page.setContentOffset(CGPoint(x: 0, y: 400), animated: false)
+                        try await self.settle(window)
+                    }
+                    await model.setContentMode(mode)
+                    try await self.settle(window)
+                    let currentTabs = try XCTUnwrap(self.scrollViews(in: window).dropFirst().first)
+                    let frame = currentTabs.convert(currentTabs.bounds, to: window)
+                    let offset = page.contentOffset.y + page.adjustedContentInset.top
+                    measurements.append("\(mode) tabs=\(frame) offset=\(offset)")
+                    _ = try self.capture(window, name: "header-\(sizeClass)-\(light)-\(mode.rawValue)")
+                    XCTAssertEqual(frame.minY, initialFrame.minY, accuracy: 0.5,
+                                   "The tab row must not move when query controls appear or disappear.")
+                    XCTAssertEqual(frame.height, initialFrame.height, accuracy: 0.5)
+                    XCTAssertEqual(offset, initialOffset, accuracy: 0.5)
+                    XCTAssertEqual(bar.convert(bar.bounds, to: window).maxY, borderY, accuracy: 0.5)
+                    XCTAssertEqual(try self.headerPixels(y: borderY), initialBorder,
+                                   "The title's separator must have the same appearance in every mode.")
+                }
+                let attachment = XCTAttachment(string: measurements.joined(separator: "\n"))
+                attachment.name = "Library header geometry \(sizeClass), light: \(light)"
+                attachment.lifetime = .keepAlways
+                self.add(attachment)
+            }
+        }
+    }
+
+    private func navigationBar(in view: UIView) -> UINavigationBar? {
+        (view as? UINavigationBar) ?? view.subviews.lazy.compactMap { self.navigationBar(in: $0) }.first
+    }
+
+    private func headerPixels(y: CGFloat) throws -> Data {
+        let image = try XCTUnwrap(capturedImage)
+        let rect = CGRect(x: 0, y: y - 2, width: CGFloat(image.width), height: 4).integral
+        let crop = try XCTUnwrap(image.cropping(to: rect))
+        var bytes = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+        try bytes.withUnsafeMutableBytes {
+            let context = try XCTUnwrap(CGContext(
+                data: $0.baseAddress, width: crop.width, height: crop.height,
+                bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+        }
+        return Data(bytes)
     }
 
     func testLoadingEmptyAndFailedPagesRetainModeNavigation() async throws {
@@ -231,6 +302,7 @@ final class LibraryPresentationTests: XCTestCase {
         cardStyle: CardStyle = .borderless,
         scope: LibraryBrowseScope = .library,
         preload: Bool = true,
+        pushed: Bool = false,
         exercise: (UIWindow, LibraryBrowseViewModel) async throws -> Void
     ) async throws {
         let suite = "LibraryPresentation.\(UUID())"
@@ -246,12 +318,20 @@ final class LibraryPresentationTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(origin: .zero, size: size)
         window.overrideUserInterfaceStyle = light ? .light : .dark
+        let content = PlozziOSLibraryGridView(
+            viewModel: model, title: "Cinema", provider: provider, settings: appModel.settings
+        )
+        .background(light ? ThemePalette.light.backgroundBase : ThemePalette.dark.backgroundBase)
         window.rootViewController = UIHostingController(rootView:
-            NavigationStack {
-                PlozziOSLibraryGridView(
-                    viewModel: model, title: "Cinema", provider: provider, settings: appModel.settings
-                )
-                .background(light ? ThemePalette.light.backgroundBase : ThemePalette.dark.backgroundBase)
+            NavigationStack(path: .constant(pushed ? [true] : [])) {
+                if pushed {
+                    Color.clear
+                        .navigationTitle("Home")
+                        .toolbarBackground(.hidden, for: .navigationBar)
+                        .navigationDestination(for: Bool.self) { _ in content }
+                } else {
+                    content
+                }
             }
             .environment(appModel)
             .environment(\.horizontalSizeClass, sizeClass)
@@ -298,7 +378,7 @@ final class LibraryPresentationTests: XCTestCase {
     }
 
     private func scrollViews(in view: UIView) -> [UIScrollView] {
-        (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap { scrollViews(in: $0) }
+        ((view as? UIScrollView).map { [$0] } ?? []) + view.subviews.flatMap { scrollViews(in: $0) }
     }
 
     private func seedArtwork() async throws -> URL {

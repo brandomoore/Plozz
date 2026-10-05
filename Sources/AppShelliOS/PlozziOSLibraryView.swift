@@ -217,7 +217,6 @@ struct PlozziOSLibraryGridView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     browseControls
-                        .id("library-top")
                     Group {
                         if viewModel.contentMode == .recommended {
                             recommendedContent
@@ -229,6 +228,9 @@ struct PlozziOSLibraryGridView: View {
                 }
                 .padding(.top, 8)
                 .padding(.bottom, 24)
+                // Include the top padding so changing modes returns to the true
+                // scroll edge instead of moving the header and navigation chrome.
+                .id("library-top")
             }
             .accessibilityIdentifier("library-page")
             .onChange(of: viewModel.contentMode) { _, _ in

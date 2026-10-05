@@ -58,6 +58,8 @@ fallback when the user's server has no attached trailer.
   Mobile controls scroll with the page; Filter and the current Sort occupy a
   separate line instead of competing with the tabs. Row headings, artwork, grids,
   and scan banners share the mobile page keyline (22pt compact, 36pt regular).
+  Mode changes reset to the padded page's true top, keeping both the tabs and
+  native navigation-bar scroll-edge appearance consistent across all four modes.
   Recommendation rails remain horizontally lazy and use the same card sizing,
   spacing, and appearance as mobile Home, not the TV rail's layout.
   Library Continue Watching uses Home's profile-selected series artwork and
