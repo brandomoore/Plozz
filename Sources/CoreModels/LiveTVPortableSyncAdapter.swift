@@ -111,12 +111,14 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         var pendingIdentityIDs: Set<String> = []
         var clearedIdentityHintFingerprints: [String: String]?
         var libraryReviewIDs: Set<String>?
+        var snapshotRetirementCandidates: Set<UUID>?
         var hydratedConsentRevision: String?
     }
 
     private struct Journal: Sendable {
         var records: [String: Data] = [:]
         var stored: [String: StoredRecord] = [:]
+        var storedByteCounts: [String: Int] = [:]
         var decoded: [String: LiveTVPortableRecord] = [:]
         var directoryExists = false
     }
@@ -449,6 +451,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
                   (try? decodedRecord(value, key: key)) != nil else { continue }
             records[name] = value
         }
+        let previousSnapshotIDs = try referencedSnapshotIDs(in: records)
         var observed = try readObserved()
         let configuration = try sourceConfiguration(sourceStore)
         let localPreferences = try preferences.load()
@@ -548,6 +551,27 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             }
             try cacheLocal(prepared.value, bytes: prepared.bytes, key: key)
             records[name] = prepared.bytes
+        }
+        if let libraryDefinitions {
+            // Only a known reference transition proves retirement. Unreferenced
+            // incoming parts may precede their definitions, regardless of their age.
+            let publishedSnapshotIDs = try referencedSnapshotIDs(in: records)
+            let retirementCandidates = (observed.snapshotRetirementCandidates ?? [])
+                .union(previousSnapshotIDs.subtracting(publishedSnapshotIDs))
+            let protectedSnapshotIDs = publishedSnapshotIDs.union(
+                libraryDefinitions.flatMap { $0.revisions.map(\.snapshotID) }
+            )
+            let retiredSnapshotIDs = retirementCandidates.subtracting(protectedSnapshotIDs)
+            let pendingRetirement = retirementCandidates.subtracting(retiredSnapshotIDs)
+            observed.snapshotRetirementCandidates = pendingRetirement.isEmpty ? nil : pendingRetirement
+            if !retiredSnapshotIDs.isEmpty {
+                for (name, bytes) in records {
+                    guard let key = LiveTVPortableRecordKey.parse(name), key.kind == .snapshot,
+                          let snapshot = try decodedRecord(bytes, key: key).snapshot,
+                          retiredSnapshotIDs.contains(snapshot.snapshotID) else { continue }
+                    try put(.init(isDeleted: true), key: key, into: &records)
+                }
+            }
         }
         observed.hydratedConsentRevision = consentRevision
         try write(records)
@@ -1414,20 +1438,33 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             journal.decoded[stored.name] = try LiveTVPortableRecord.decode(stored.value, key: recordKey)
             journal.records[stored.name] = stored.value
             journal.stored[stored.name] = stored
+            journal.storedByteCounts[stored.name] = data.count
         }
         return journal
+    }
+
+    private func referencedSnapshotIDs(in records: [String: Data]) throws -> Set<UUID> {
+        var ids = Set<UUID>()
+        for (name, bytes) in records {
+            guard let key = LiveTVPortableRecordKey.parse(name), key.kind == .library,
+                  let definition = try decodedRecord(bytes, key: key).library else { continue }
+            ids.formUnion(definition.revisions.map(\.snapshotID))
+        }
+        return ids
     }
 
     private func write(
         _ records: [String: Data], appliedNames: Set<String> = [], receivedFingerprints: [String: String] = [:]
     ) throws {
-        guard records.count <= Self.maximumRecords,
-              records.values.reduce(0, { $0 + $1.count }) <= Self.maximumInputBytes else {
+        guard records.count <= Self.maximumRecords else {
             throw LiveTVPortableStateError.tooLarge
         }
         var journal = try readJournal()
         let currentConsentRevision = consent.consentRevision
-        var updates: [(StoredRecord, LiveTVPortableRecord?)] = []
+        var updates: [(StoredRecord, LiveTVPortableRecord?, Data)] = []
+        var total = journal.storedByteCounts.reduce(0) {
+            $0 + (records[$1.key] == nil ? $1.value : 0)
+        }
         for (name, bytes) in records {
             let old = journal.stored[name]
             let payloadUnchanged = old?.name == name && old?.value == bytes
@@ -1439,25 +1476,39 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
                 name: name, value: bytes, appliedConsentRevision: revision, pendingRemoteFingerprint: pending
             )
             if payloadUnchanged, old?.appliedConsentRevision == revision,
-               old?.pendingRemoteFingerprint == pending { continue }
+               old?.pendingRemoteFingerprint == pending,
+               let size = journal.storedByteCounts[name] {
+                guard size <= Self.maximumJournalBytes - total else {
+                    throw LiveTVPortableStateError.tooLarge
+                }
+                total += size
+                continue
+            }
             guard let key = LiveTVPortableRecordKey.parse(name), key.profileID == profileID else {
                 throw LiveTVPortableStateError.wrongProfile
             }
             let value: LiveTVPortableRecord?
             if payloadUnchanged { value = nil }
             else { value = try decodedRecord(bytes, key: key) }
-            updates.append((stored, value))
+            let encoded = try JSONEncoder().encode(stored)
+            guard encoded.count <= LiveTVPortableRecord.maximumBytes * 2,
+                  encoded.count <= Self.maximumJournalBytes - total else {
+                throw LiveTVPortableStateError.tooLarge
+            }
+            total += encoded.count
+            updates.append((stored, value, encoded))
         }
         guard !updates.isEmpty || !journal.directoryExists else { return }
         let changesPayload = updates.contains { $0.1 != nil }
         try mutateJournal {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            for (stored, _) in updates {
+            for (stored, _, encoded) in updates {
                 let url = directory.appendingPathComponent(Self.digest(stored.name)).appendingPathExtension("record")
-                try JSONEncoder().encode(stored).write(to: url, options: .atomic)
+                try encoded.write(to: url, options: .atomic)
             }
-            for (stored, value) in updates {
+            for (stored, value, encoded) in updates {
                 journal.stored[stored.name] = stored
+                journal.storedByteCounts[stored.name] = encoded.count
                 // Receipt-only updates must not copy the shared payload dictionaries.
                 if let value {
                     journal.records[stored.name] = stored.value

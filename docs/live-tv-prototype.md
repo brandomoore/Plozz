@@ -849,6 +849,14 @@ to synchronous decoding. Pending-source lists reload asynchronously, while
 saving a source checks only its own descriptor record. Prepared journal data is
 discarded when the operation ends.
 
+The journal enforces its 128 MiB serialized-storage bound before writing; the
+separate 64 MiB input bound applies to each preparation, not accumulated state.
+Replacing or deleting a known library definition retires snapshot parts only
+when no remaining definition revision references that generation. Current,
+future, retained and pending revisions all count. Retirement uses explicit
+tombstones; old unreferenced parts are not discarded merely by age or absence of
+a definition, because a delayed transfer may deliver its definition later.
+
 Unchanged schedule exports are reused by the worker after comparing the complete
 definitions and snapshots, not snapshot IDs alone. Authorization reads still
 check current credentials and durable definitions each time; only their

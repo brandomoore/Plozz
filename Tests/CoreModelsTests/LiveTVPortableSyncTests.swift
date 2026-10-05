@@ -459,6 +459,162 @@ final class LiveTVPortableSyncTests: XCTestCase {
         XCTAssertTrue(try sender.adapter.pending(sourceStore: sender.sources).libraryReviewIDs.isEmpty)
     }
 
+    func testSnapshotRetirementPreservesSharedAndRetainedRevisions() throws {
+        let fixture = try makeFixture()
+        let old = try makeSnapshotExport()
+        let next = try makeSnapshotExport()
+        var updated = old.definition
+        updated.revisions.append(contentsOf: next.definition.revisions.map {
+            .init(snapshotID: $0.snapshotID, recipe: $0.recipe, epochSeconds: $0.epochSeconds + 86_400)
+        })
+        let shared = LibraryChannelDefinition(profileID: profileID, revisions: old.definition.revisions)
+        var records = try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [old.definition, shared],
+            snapshots: [old.snapshot], fallback: [:]
+        )
+        let oldParts = records.filter { LiveTVPortableRecordKey.parse($0.key)?.kind == .snapshot }
+        records = try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [updated, shared],
+            snapshots: [old.snapshot, next.snapshot], fallback: records
+        )
+        for (name, bytes) in oldParts { XCTAssertEqual(records[name], bytes) }
+        updated.revisions.removeFirst()
+        records = try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [updated, shared],
+            snapshots: [old.snapshot, next.snapshot], fallback: records
+        )
+        for (name, bytes) in oldParts { XCTAssertEqual(records[name], bytes) }
+        let staleFallback = records
+        records = try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [updated],
+            snapshots: [next.snapshot], fallback: records
+        )
+        for name in oldParts.keys {
+            let key = try XCTUnwrap(LiveTVPortableRecordKey.parse(name))
+            XCTAssertTrue(try LiveTVPortableRecord.decode(XCTUnwrap(records[name]), key: key).isDeleted)
+        }
+        XCTAssertEqual(try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [updated],
+            snapshots: [next.snapshot], fallback: staleFallback
+        ), records, "A stale cloud fallback cannot restore retired parts")
+        let receiver = try makeFixture()
+        let imported = try receiver.adapter.apply(records.mapValues(Optional.some), sourceStore: receiver.sources)
+        XCTAssertEqual(imported.libraryDefinitions, [updated])
+        XCTAssertEqual(imported.snapshots, [next.snapshot])
+        XCTAssertTrue(imported.incompleteSnapshotIDs.isEmpty)
+    }
+
+    func testSnapshotRetirementWaitsForLocallyHeldPendingDefinition() throws {
+        let fixture = try makeFixture()
+        let old = try makeSnapshotExport()
+        let next = try makeSnapshotExport()
+        let pending = try makeSnapshotExport()
+        let shared = LibraryChannelDefinition(profileID: profileID, revisions: old.definition.revisions)
+        var records = try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [old.definition, shared],
+            snapshots: [old.snapshot], fallback: [:]
+        )
+        let oldParts = records.filter { LiveTVPortableRecordKey.parse($0.key)?.kind == .snapshot }
+        var incoming = shared
+        incoming.revisions = pending.definition.revisions
+        let incomingKey = recordKey(.library, shared.id.uuidString)
+        _ = try fixture.adapter.apply(
+            [incomingKey.recordName: LiveTVPortableRecord(library: incoming).encoded()],
+            sourceStore: fixture.sources
+        )
+        try fixture.adapter.markLibrariesForReview([shared.id])
+        var updated = old.definition
+        updated.revisions = next.definition.revisions
+        records = try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [updated, shared],
+            snapshots: [old.snapshot, next.snapshot], fallback: records
+        )
+        for (name, bytes) in oldParts { XCTAssertEqual(records[name], bytes) }
+        XCTAssertEqual(try fixture.adapter.capture(sourceStore: fixture.sources, fallback: records), records)
+        let sender = try makeFixture()
+        let transfer = try sender.adapter.capture(
+            sourceStore: sender.sources, libraryDefinitions: [incoming],
+            snapshots: [pending.snapshot], fallback: [:]
+        )
+        let parts = transfer.filter { LiveTVPortableRecordKey.parse($0.key)?.kind == .snapshot }
+        _ = try fixture.adapter.apply(parts.mapValues(Optional.some), sourceStore: fixture.sources)
+        try fixture.adapter.acknowledgeLibraries([shared.id])
+        records = try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [updated, incoming],
+            snapshots: [next.snapshot, pending.snapshot], fallback: records
+        )
+        for name in oldParts.keys {
+            let key = try XCTUnwrap(LiveTVPortableRecordKey.parse(name))
+            XCTAssertTrue(try LiveTVPortableRecord.decode(XCTUnwrap(records[name]), key: key).isDeleted)
+        }
+    }
+
+    func testSnapshotPartsArrivingBeforeTheirDefinitionSurviveUnrelatedRetirement() throws {
+        let fixture = try makeFixture()
+        let sender = try makeFixture()
+        let incoming = try makeSnapshotExport()
+        let local = try makeSnapshotExport()
+        let transfer = try sender.adapter.capture(
+            sourceStore: sender.sources, libraryDefinitions: [incoming.definition],
+            snapshots: [incoming.snapshot], fallback: [:]
+        )
+        let parts = transfer.filter { LiveTVPortableRecordKey.parse($0.key)?.kind == .snapshot }
+        _ = try fixture.adapter.apply(parts.mapValues(Optional.some), sourceStore: fixture.sources)
+        let initial = try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [local.definition],
+            snapshots: [local.snapshot], fallback: parts
+        )
+        let retired = try fixture.adapter.capture(
+            sourceStore: fixture.sources, libraryDefinitions: [], fallback: initial
+        )
+        for (name, bytes) in parts { XCTAssertEqual(retired[name], bytes) }
+        let definitionKey = recordKey(.library, incoming.definition.id.uuidString)
+        let imported = try fixture.adapter.apply(
+            [definitionKey.recordName: XCTUnwrap(transfer[definitionKey.recordName])],
+            sourceStore: fixture.sources
+        )
+        XCTAssertEqual(imported.libraryDefinitions, [incoming.definition])
+        XCTAssertEqual(imported.snapshots, [incoming.snapshot])
+        XCTAssertTrue(imported.incompleteSnapshotIDs.isEmpty)
+    }
+
+    func testJournalUsesSerializedStorageBudgetNotPerOperationInputBudget() async throws {
+        let fixture = try makeFixture(requiresPreparedJournal: true)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with:
+            LiveTVPortableRecord(source: .init(kind: .playlist, name: "Pending source", isEnabled: true)).encoded()
+        ) as? [String: Any])
+        object["futureField"] = String(repeating: "x", count: 128 * 1_024)
+        let bytes = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        XCTAssertLessThan(bytes.count, LiveTVPortableRecord.maximumBytes)
+        var records: [String: Data] = [:]
+        for start in stride(from: 0, to: 540, by: 180) {
+            let batch = Dictionary(uniqueKeysWithValues: (start..<(start + 180)).map {
+                (recordKey(.source, "source-\($0)").recordName, bytes)
+            })
+            try await fixture.adapter.prepareForOperation(records: batch.mapValues(Optional.some))
+            _ = try fixture.adapter.apply(batch.mapValues(Optional.some), sourceStore: fixture.sources)
+            records.merge(batch, uniquingKeysWith: { _, new in new })
+        }
+        XCTAssertGreaterThan(records.values.reduce(0) { $0 + $1.count }, 64 * 1_024 * 1_024)
+        let restored = LiveTVPortableSyncAdapter(
+            directory: fixture.root, profileID: profileID, defaults: fixture.defaults,
+            requiresPreparedJournal: true
+        )
+        try await restored.prepareForOperation(records: records.mapValues(Optional.some))
+        XCTAssertEqual(try restored.capture(sourceStore: fixture.sources, fallback: records), records)
+
+        let overflow = Dictionary(uniqueKeysWithValues: (540..<810).map {
+            (recordKey(.source, "source-\($0)").recordName, bytes)
+        })
+        try await restored.prepareForOperation(records: overflow.mapValues(Optional.some))
+        XCTAssertThrowsError(try restored.apply(overflow.mapValues(Optional.some), sourceStore: fixture.sources)) {
+            XCTAssertEqual($0 as? LiveTVPortableStateError, .tooLarge)
+        }
+        try await restored.prepareForOperation()
+        XCTAssertEqual(try restored.capture(sourceStore: fixture.sources, fallback: [:]), records,
+                       "The serialized 128 MiB bound must fail before writing any new journal records")
+    }
+
     func testRemovedServerSuppressionReachesDeviceWithoutLocalSource() throws {
         let sender = try makeFixture()
         let receiver = try makeFixture()
