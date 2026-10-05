@@ -27,9 +27,47 @@ final class LiveTVGuideFocusTests: XCTestCase {
             XCTAssertTrue(probe.completed, "Unfinished handoff in \(section)")
             XCTAssertTrue(probe.hasFocus, "No native guide focus in \(section)")
             XCTAssertEqual(probe.selectedRow, probe.origin)
-            XCTAssertEqual(probe.focusedProgram?.id, "current")
+            XCTAssertEqual(probe.focusedProgram?.id, "current", "Programme focus in \(section)")
             XCTAssertFalse(probe.railActive)
         }
+    }
+
+    func testNativeFocusReturnsToProgrammeDeepInHundredThousandChannels() async throws {
+        try await requireNativeFocus()
+        let started = ContinuousClock.now
+        let probe = try GuideFocusProbe(section: .channels, channelCount: 100_000, target: 99_900)
+        let prepared = ContinuousClock.now
+        let window = makeWindow(GuideFocusHarness(probe: probe))
+        let mounted = ContinuousClock.now
+        defer { window.isHidden = true; window.rootViewController = nil }
+        await waitForCompletion(probe)
+        print("Guide native restoration: prepare=\(started.duration(to: prepared)) mount=\(prepared.duration(to: mounted)) restore=\(mounted.duration(to: .now))")
+        XCTAssertTrue(probe.completed)
+        XCTAssertTrue(probe.hasFocus)
+        XCTAssertEqual(probe.selectedRow, probe.origin)
+        XCTAssertEqual(probe.focusedProgram?.id, "current")
+        let item = try XCTUnwrap(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+        var environment: (any UIFocusEnvironment)? = item
+        var container: (any UIFocusItemContainer)?
+        var cell: UICollectionViewCell?
+        while let current = environment {
+            if container == nil { container = current.focusItemContainer }
+            if let row = current as? UICollectionViewCell { cell = row; break }
+            environment = current.parentFocusEnvironment
+        }
+        let focusedCell = try XCTUnwrap(cell)
+        let collection = try XCTUnwrap(focusedCell.superview as? UICollectionView)
+        let index = try XCTUnwrap(collection.indexPath(for: focusedCell))
+        XCTAssertEqual(probe.model.guideRowIDs[index.item], probe.origin)
+        let frame = try XCTUnwrap(container).coordinateSpace.convert(item.frame, to: focusedCell)
+        XCTAssertGreaterThan(frame.minX, PrototypeLayout.stationColumnWidth, "Return to programme content, not the logo")
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { context in
+            window.layer.render(in: context.cgContext)
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Deep guide native programme focus"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     func testUnfocusableGuideReleasesRestorationAndCanBeEnteredAgain() async throws {
@@ -372,11 +410,13 @@ private final class GuideFocusProbe {
     var liveContentDisappearances = 0
     var dismissGuide: (() -> Void)?
 
-    init(section: LiveTVGuideSection) throws {
-        origin = LiveTVGuideRowID(channelID: "24", section: section)
+    init(section: LiveTVGuideSection, channelCount: Int = 30, target: Int = 24) throws {
+        let targetID = String(target)
+        origin = LiveTVGuideRowID(channelID: targetID, section: section)
+        selectedID = targetID
         selectedRow = origin
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        model = LiveTVPrototypeModel(now: now, scenario: .noGuide, channels: (0..<30).map {
+        model = LiveTVPrototypeModel(now: now, scenario: .noGuide, channels: (0..<channelCount).map {
             LiveTVPrototypeChannel(
                 id: "\($0)", number: $0, name: "Channel \($0)", category: "News",
                 symbol: "tv", accent: 0, source: .iptv, tagline: ""
@@ -384,13 +424,13 @@ private final class GuideFocusProbe {
         })
         try model.replacePrograms([
             LiveTVPrototypeProgram(
-                id: "current", channelID: "24", title: "Current programme", subtitle: "",
+                id: "current", channelID: targetID, title: "Current programme", subtitle: "",
                 start: now.addingTimeInterval(-300), end: now.addingTimeInterval(3_600)
             )
         ])
-        model.toggleFavorite("24")
-        model.tune("24")
-        model.recordWatched("24")
+        model.toggleFavorite(targetID)
+        model.tune(targetID)
+        model.recordWatched(targetID)
     }
 }
 

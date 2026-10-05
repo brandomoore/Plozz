@@ -75,6 +75,27 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
         XCTAssertEqual(withoutGuide, regular, accuracy: 0.5)
     }
 
+    #if os(tvOS)
+    func testNativeSectionRowMetricsMatchRenderedContentAtEveryTextSize() {
+        for width: CGFloat in [320, 1_400] {
+            for typeSize in [DynamicTypeSize.large, .accessibility3, .accessibility5] {
+                let row = VStack(alignment: .leading, spacing: PrototypeLayout.sectionLabelGap) {
+                    PrototypeGuideSectionLabel(section: .channels)
+                        .padding(.top, PrototypeLayout.smallGap)
+                    GuideRowFixture(programs: [], start: start, width: width)
+                }
+                .padding(.bottom, PrototypeLayout.rowGap)
+                .dynamicTypeSize(typeSize)
+                let proposal = CGSize(width: width, height: 10_000)
+                let actual = UIHostingController(rootView: row).sizeThatFits(in: proposal)
+                let expected = UIHostingController(rootView: NativeGuideMetricsFixture(width: width)
+                    .dynamicTypeSize(typeSize)).sizeThatFits(in: proposal)
+                XCTAssertEqual(actual.height, expected.height, accuracy: 0.5, "\(width), \(typeSize)")
+            }
+        }
+    }
+    #endif
+
     func testPreviewExtendsToTheScreenEdgeInsteadOfStackingSafeAreaMargins() {
         let layout = PrototypePreviewLayout(
             size: CGSize(width: 1_740, height: 960),
@@ -774,6 +795,21 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
             .height
     }
 }
+
+#if os(tvOS)
+private struct NativeGuideMetricsFixture: View {
+    let width: CGFloat
+    @ScaledMetric(relativeTo: .subheadline) private var rowHeight = PrototypeLayout.rowHeight
+    @ScaledMetric(relativeTo: .caption) private var sectionFontSize = PrototypeLayout.sectionFontSize
+
+    var body: some View {
+        Color.clear.frame(height:
+            PrototypeLayout.rowHeight(for: width, scaledHeight: rowHeight) + PrototypeLayout.rowGap
+                + PrototypeLayout.guideSectionLabelHeight(fontSize: sectionFontSize)
+                + PrototypeLayout.smallGap + PrototypeLayout.sectionLabelGap)
+    }
+}
+#endif
 
 private struct GuideRowFixture: View {
     let programs: [LiveTVPrototypeProgram]

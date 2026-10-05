@@ -162,8 +162,11 @@ is no prior in-memory history to migrate on the first updated launch.
   The focus engine no longer traverses a full-catalog set of synthetic lazy-stack
   placeholders. Each row has its own hosting boundary, preserving the logo/programme
   focus column and keeping keyboard-collapse scrolling aimed at the actual row.
-  Stable row identities, cached row configuration and measured heights avoid
-  rebuilding unrelated rows as focus moves. Guide lookup indices are refreshed
+  Stable row identities and cached row configuration avoid rebuilding unrelated
+  rows as focus moves. The native layout computes frames only for the requested
+  viewport, using the guide's shared Dynamic Type-scaled row and section-label
+  metrics. It can jump directly into a 100,000-row catalog without a synchronous
+  full-catalog self-sizing layout pass. Guide lookup indices are refreshed
   with catalog/filter changes, not rebuilt for every scroll callback.
   The current category remains identified. Leaving Search restores the
   original guide occurrence and time position; the video stays in the same player.

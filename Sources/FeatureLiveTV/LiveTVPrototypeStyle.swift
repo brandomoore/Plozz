@@ -124,6 +124,12 @@ enum PrototypeLayout {
         usesCompactRows(width) ? scaledHeight * compactRowHeight / rowHeight : scaledHeight
     }
 
+    #if os(tvOS)
+    static func guideSectionLabelHeight(fontSize: CGFloat) -> CGFloat {
+        max(sectionLabelHeight, ceil(UIFont.systemFont(ofSize: fontSize, weight: .medium).lineHeight))
+    }
+    #endif
+
     static func timelineWidth(for width: CGFloat) -> CGFloat {
         max(1, width - stationWidth(for: width) - columnGap)
     }
