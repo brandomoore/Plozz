@@ -24,17 +24,13 @@ public struct SettingsCommunityLinks: View {
     @ViewBuilder
     private var codes: some View {
         code(
-            title: "Discord",
-            mark: "DiscordMark",
-            brandColor: Color(red: 88 / 255, green: 101 / 255, blue: 242 / 255),
+            lockup: "DiscordLockup",
             caption: "Join the community",
             url: AppLinks.discord.absoluteString,
             accessibilityLabel: "Scan to join the Plozz Discord community"
         )
         code(
-            title: "GitHub",
-            mark: "GitHubMark",
-            brandColor: .black,
+            lockup: "GitHubLockup",
             caption: "Source code and issues",
             url: repoURL,
             accessibilityLabel: "Scan to view the Plozz GitHub repository"
@@ -42,9 +38,7 @@ public struct SettingsCommunityLinks: View {
     }
 
     private func code(
-        title: String,
-        mark: String,
-        brandColor: Color,
+        lockup: String,
         caption: LocalizedStringKey,
         url: String,
         accessibilityLabel: LocalizedStringKey
@@ -52,11 +46,11 @@ public struct SettingsCommunityLinks: View {
         SettingsPanel {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 24) {
-                    identity(title: title, mark: mark, brandColor: brandColor, caption: caption)
+                    identity(lockup: lockup, caption: caption)
                     qrCode(url)
                 }
                 VStack(alignment: .leading, spacing: 24) {
-                    identity(title: title, mark: mark, brandColor: brandColor, caption: caption)
+                    identity(lockup: lockup, caption: caption)
                     qrCode(url)
                         .frame(maxWidth: .infinity)
                 }
@@ -68,22 +62,17 @@ public struct SettingsCommunityLinks: View {
     }
 
     private func identity(
-        title: String,
-        mark: String,
-        brandColor: Color,
+        lockup: String,
         caption: LocalizedStringKey
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Image(mark)
+            Image(lockup)
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 40, height: 40)
-                .foregroundStyle(.white)
-                .padding(12)
-                .background(brandColor, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            Text(verbatim: title)
-                .font(.headline)
+                .frame(maxWidth: 260, maxHeight: 40, alignment: .leading)
+                .plozzForeground(.primary)
+                .accessibilityHidden(true)
             Text(caption)
                 .font(.caption)
                 .plozzForeground(.secondary)

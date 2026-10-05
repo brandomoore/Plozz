@@ -47,8 +47,10 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
     }
 
     func testAboutCodesDecodeSideBySideInBothThemes() async throws {
-        XCTAssertNotNil(UIImage(named: "DiscordMark"))
-        XCTAssertNotNil(UIImage(named: "GitHubMark"))
+        for (asset, aspect) in [("DiscordLockup", 635.303 / 96), ("GitHubLockup", 416.0 / 95)] {
+            let image = try XCTUnwrap(UIImage(named: asset))
+            XCTAssertEqual(image.size.width / image.size.height, aspect, accuracy: 0.01)
+        }
         for scheme in [ColorScheme.light, .dark] {
             let codes = try await renderCodes(
                 SettingsAboutSection(
