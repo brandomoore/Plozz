@@ -126,7 +126,7 @@ private struct PlozziOSLibraryCard: View {
         if cardStyle == .framed {
             content
                 .plozzFramedMediaCard(
-                    innerCornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                    innerCornerRadius: metrics.landscapeArtworkCornerRadius
                 )
                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
         } else {
@@ -156,12 +156,12 @@ private struct PlozziOSLibraryCard: View {
             .aspectRatio(16 / 10, contentMode: .fit)
             .clipShape(
                 RoundedRectangle(
-                    cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+                    cornerRadius: metrics.landscapeArtworkCornerRadius,
                     style: .continuous
                 )
             )
             .plozzMediaEdge(
-                cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                cornerRadius: metrics.landscapeArtworkCornerRadius
             )
 
             library.displayName

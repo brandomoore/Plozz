@@ -446,9 +446,9 @@ public struct PosterCardView: View {
                 }
                 .overlay { resumeChip }
                 .overlay { pendingRemovalOverlay }
-                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
+                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: metrics.landscapeArtworkCornerRadius, style: .continuous))
                 .plozzMediaEdge(
-                    cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+                    cornerRadius: metrics.landscapeArtworkCornerRadius,
                     isEnabled: MediaArtworkPlaceholder.Symbol(for: item) == .playback
                 )
                 #if os(tvOS)
@@ -467,7 +467,7 @@ public struct PosterCardView: View {
             }
         }
         .plozzFramedMediaCard(
-            innerCornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+            innerCornerRadius: metrics.landscapeArtworkCornerRadius,
             isFocused: surfaceFocused
         )
         .plozzCardRasterize(reduceTransparency: reduceTransparency)
@@ -488,7 +488,7 @@ public struct PosterCardView: View {
 
     /// The "Posters" card style: no glass surface at all — just the artwork and
     /// its sub-text. The image fills the card slot (minus a small side margin that
-    /// keeps cards separated), is rounded at the framed card's *outer* radius, and
+    /// keeps cards separated), uses the platform's borderless rounding, and
     /// gains a crisp focus **outline** that hugs the artwork and scales with it on
     /// focus (plus a soft lift). The caption keeps the same horizontal clearance
     /// the framed caption uses, so text lines up with the artwork's rounded edge,
@@ -531,7 +531,7 @@ public struct PosterCardView: View {
         .plozzCardFocusTransition(isFocused: isFocused)
     }
 
-    /// The full-bleed artwork for a borderless card, clipped to the outer radius
+    /// The full-bleed artwork for a borderless card, clipped to its artwork radius
     /// with the shared focus outline + lift applied.
     private var borderlessArtwork: some View {
         Color.clear
@@ -662,13 +662,10 @@ public struct PosterCardView: View {
         }
     }
 
-    /// Outer corner radius reused for a borderless image — the framed card's outer
-    /// (glass) radius, so a borderless poster/landscape keeps the exact rounding
-    /// the framed card's surface had.
     private var borderlessCornerRadius: CGFloat {
         switch style {
-        case .poster: return metrics.posterCardCornerRadius
-        case .landscape: return metrics.landscapeCardCornerRadius
+        case .poster: return metrics.borderlessPosterCornerRadius
+        case .landscape: return metrics.borderlessLandscapeCornerRadius
         }
     }
 
@@ -846,7 +843,7 @@ public struct PosterCardView: View {
         if cardStyle == .borderless { return borderlessCornerRadius }
         return style == .poster
             ? metrics.posterArtworkCornerRadius
-            : PlozzTheme.Metrics.mediumMediaCornerRadius
+            : metrics.landscapeArtworkCornerRadius
     }
 
     private func selectCard() {
@@ -1123,7 +1120,7 @@ public struct PosterCardView: View {
     /// the caption colour so it flips on focus and respects reduced-transparency.
     private var neutralPlaceholder: some View {
         let radius = cardStyle == .framed
-            ? (style == .poster ? metrics.posterArtworkCornerRadius : PlozzTheme.Metrics.mediumMediaCornerRadius)
+            ? (style == .poster ? metrics.posterArtworkCornerRadius : metrics.landscapeArtworkCornerRadius)
             : borderlessCornerRadius
         return MediaArtworkPlaceholder(tint: subtitleColor, symbol: .init(for: item), cornerRadius: radius)
     }

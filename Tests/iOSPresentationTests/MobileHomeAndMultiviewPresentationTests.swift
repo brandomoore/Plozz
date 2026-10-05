@@ -13,6 +13,117 @@ import XCTest
 
 @MainActor
 final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
+    func testPosterAndContinueWatchingRenderMatchingEightPointCorners() async throws {
+        let artwork = try await posterArtwork()
+        let item = MediaItem(
+            id: "matching-corners", title: "Movie Title", kind: .movie,
+            runtime: 1800, posterURL: artwork, backdropURL: artwork
+        )
+        try await withWindow { window, host in
+            for width in [CGFloat(320), 390, 768, 1024] {
+                let base = PlozzMetrics.touch(density: .standard)
+                let posters = PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
+                    in: width, inset: width < 600 ? 22 : 36,
+                    metrics: base, cardStyle: .borderless
+                )
+                window.frame.size = CGSize(width: width, height: 900)
+                host.rootView = AnyView(
+                    VStack(alignment: .leading, spacing: 32) {
+                        PosterCardView(item: item, style: .poster, action: {})
+                            .frame(width: posters.posterWidth)
+                            .environment(\.plozzMetrics, posters)
+                        PosterCardView(item: item, style: .landscape, showsResumeChip: true, action: {})
+                            .frame(width: base.continueWatchingWidth)
+                            .environment(\.plozzMetrics, base)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color(red: 0.8, green: 0.12, blue: 0.48))
+                            .frame(width: 100, height: 64)
+                            .plozzMediaEdge(cornerRadius: 8)
+                    }
+                    .padding(32)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .background(Color.black)
+                    .environment(\.themePalette, .dark)
+                    .environment(\.plozzCardStyle, .borderless)
+                    .environment(\.plozzCardCaptionsHidden, true)
+                )
+                try await settle(window)
+                for _ in 0..<15 {
+                    if try posterRuns(snapshot(window), axis: .vertical, at: 64).filter({ $0.count > 40 }).count == 3 {
+                        break
+                    }
+                    try await Task.sleep(for: .milliseconds(100))
+                }
+                let image = snapshot(window, name: "matching-media-corners-\(Int(width))")
+                let artworkRows = try posterRuns(image, axis: .vertical, at: 64).filter { $0.count > 40 }
+                XCTAssertEqual(artworkRows.count, 3, "Both loaded cards and the reference must render.")
+                guard artworkRows.count == 3 else { continue }
+                var profiles: [[Int]] = []
+                for row in artworkRows {
+                    let straightEdge = try XCTUnwrap(posterRuns(image, at: CGFloat(row.lowerBound + 20)).first)
+                    let profile = try [1, 2, 4, 6].map { offset in
+                        let edge = try XCTUnwrap(posterRuns(image, at: CGFloat(row.lowerBound + offset)).first)
+                        return edge.lowerBound - straightEdge.lowerBound
+                    }
+                    profiles.append(profile)
+                }
+                for profile in profiles.prefix(2) {
+                    for (actual, reference) in zip(profile, profiles[2]) {
+                        XCTAssertEqual(Double(actual), Double(reference), accuracy: 1,
+                                       "The visible artwork must use 8pt, not the framed card's outer radius.")
+                    }
+                }
+            }
+        }
+    }
+
+    func testLibraryNameAndServerShareOneCaptionColumn() async throws {
+        let artwork = try await posterArtwork()
+        let library = AggregatedLibrary(
+            accountID: "caption-fixture", accountName: "Viewer", serverName: "Media Server",
+            providerKind: .plex,
+            library: MediaLibrary(id: "movies", title: "Movies", kind: .movie, imageURL: artwork)
+        )
+        try await withWindow { window, host in
+            let configurations: [(CGFloat, DynamicTypeSize)] = [
+                (320, .large), (390, .large), (768, .large), (1024, .large),
+                (320, .accessibility3)
+            ]
+            for (width, typeSize) in configurations {
+                for style in [CardStyle.borderless, .framed] {
+                    let metrics = PlozzMetrics.touch(density: .standard, dynamicTypeSize: typeSize)
+                    window.frame.size = CGSize(width: width, height: 600)
+                    host.rootView = AnyView(
+                        PlozziOSHomeLibraryCard(
+                            library: library, artworkSource: nil,
+                            width: typeSize.isAccessibilitySize ? width - 64 : (width < 600 ? 220 : 260)
+                        )
+                        .padding(22)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .background(Color.black)
+                        .environment(\.themePalette, .dark)
+                        .environment(\.plozzCardStyle, style)
+                        .environment(\.plozzMetrics, metrics)
+                        .environment(\.dynamicTypeSize, typeSize)
+                    )
+                    try await settle(window)
+                    let image = snapshot(window, name: "library-caption-\(Int(width))-\(style)-\(typeSize)")
+                    let observations = try text(image)
+                    let title = try textFrame("Movies", observations: observations, size: image.size)
+                    let server = try textFrame("Media Server", observations: observations, size: image.size)
+                    XCTAssertEqual(title.minX, server.minX, accuracy: 3,
+                                   "The server name must align with the library name, not the provider icon.")
+                    XCTAssertGreaterThan(server.minY, title.maxY)
+                    XCTAssertLessThan(server.minY - title.maxY, typeSize.isAccessibilitySize ? 16 : 10)
+                    let artworkBottom = try XCTUnwrap(posterRuns(image, axis: .vertical, at: 100).first).upperBound
+                    XCTAssertGreaterThan(title.minY, CGFloat(artworkBottom))
+                    XCTAssertLessThan(title.minY - CGFloat(artworkBottom), typeSize.isAccessibilitySize ? 20 : 12,
+                                      "The badge must not add an extra artwork-to-title gap.")
+                }
+            }
+        }
+    }
+
     func testCardSettingsAndPerViewPageAcrossPhoneAndTabletWidths() async throws {
         let app = PlozziOSAppModel()
         let original = app.settings.cardStyle.captions

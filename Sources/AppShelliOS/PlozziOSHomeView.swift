@@ -2732,7 +2732,7 @@ private struct PlozziOSHomeMediaCard: View {
     }
 }
 
-private struct PlozziOSHomeLibraryCard: View {
+struct PlozziOSHomeLibraryCard: View {
     @ScaledMetric(relativeTo: .headline) private var providerBadgeSize: CGFloat = 24
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.plozzMetrics) private var metrics
@@ -2746,7 +2746,7 @@ private struct PlozziOSHomeLibraryCard: View {
         if cardStyle == .framed {
             content
                 .plozzFramedMediaCard(
-                    innerCornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                    innerCornerRadius: metrics.landscapeArtworkCornerRadius
                 )
                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
         } else {
@@ -2763,29 +2763,29 @@ private struct PlozziOSHomeLibraryCard: View {
             .frame(width: width, height: width * 0.6)
             .clipShape(
                 RoundedRectangle(
-                    cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+                    cornerRadius: metrics.landscapeArtworkCornerRadius,
                     style: .continuous
                 )
             )
             .plozzMediaEdge(
-                cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                cornerRadius: metrics.landscapeArtworkCornerRadius
             )
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: PlozzTheme.Spacing.small) {
-                    ProviderBrandMark(
-                        provider: library.providerKind, size: providerBadgeSize,
-                        mediaShareTransport: library.transportKind
-                    )
-                    .accessibilityHidden(true)
+            HStack(spacing: 8) {
+                ProviderBrandMark(
+                    provider: library.providerKind, size: providerBadgeSize,
+                    mediaShareTransport: library.transportKind
+                )
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
                     Text(library.library.title)
                         .font(.headline)
                         .lineLimit(1)
+                    Text(library.serverName)
+                        .font(.caption)
+                        .plozzForeground(.secondary)
+                        .lineLimit(1)
                 }
-                Text(library.serverName)
-                    .font(.caption)
-                    .plozzForeground(.secondary)
-                    .lineLimit(1)
             }
             .padding(.horizontal, metrics.landscapeCaptionInset)
             .padding(

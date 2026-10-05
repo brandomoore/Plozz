@@ -3439,7 +3439,7 @@ private struct PlozziOSInlineEpisodeSkeleton: View {
         if cardStyle == .framed {
             content
                 .plozzFramedMediaCard(
-                    innerCornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                    innerCornerRadius: metrics.landscapeArtworkCornerRadius
                 )
         } else {
             content
@@ -3449,13 +3449,13 @@ private struct PlozziOSInlineEpisodeSkeleton: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
             RoundedRectangle(
-                cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+                cornerRadius: metrics.landscapeArtworkCornerRadius,
                 style: .continuous
             )
             .fill(palette.fill)
             .frame(width: cardWidth, height: cardWidth * 9 / 16)
             .plozzMediaEdge(
-                cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                cornerRadius: metrics.landscapeArtworkCornerRadius
             )
 
             if captionSettings.showsLabels(in: .episodes) {
@@ -3505,7 +3505,7 @@ private struct PlozziOSInlineEpisodeEntry: View {
         if cardStyle == .framed {
             content
                 .plozzFramedMediaCard(
-                    innerCornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                    innerCornerRadius: metrics.landscapeArtworkCornerRadius
                 )
                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
         } else {
@@ -3551,7 +3551,7 @@ private struct PlozziOSInlineEpisodeEntry: View {
                 )
                 .clipShape(
                     RoundedRectangle(
-                        cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+                        cornerRadius: metrics.landscapeArtworkCornerRadius,
                         style: .continuous
                     )
                 )
@@ -3643,7 +3643,7 @@ private struct PlozziOSInlineEpisodeEntry: View {
             // on every platform; this was a bare filled rectangle with no glyph.
             MediaArtworkPlaceholder(
                 glyphSize: 32, symbol: .init(for: episode),
-                cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                cornerRadius: metrics.landscapeArtworkCornerRadius
             )
         }
         .frame(width: cardWidth, height: cardWidth * 9 / 16)
@@ -3653,12 +3653,12 @@ private struct PlozziOSInlineEpisodeEntry: View {
         }
         .clipShape(
             RoundedRectangle(
-                cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+                cornerRadius: metrics.landscapeArtworkCornerRadius,
                 style: .continuous
             )
         )
         .plozzMediaEdge(
-            cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+            cornerRadius: metrics.landscapeArtworkCornerRadius,
             isEnabled: MediaArtworkPlaceholder.Symbol(for: episode) == .playback
         )
     }

@@ -163,11 +163,11 @@ public struct SkeletonCardView: View {
     // Mirrors `PosterCardView.landscapeCard`.
     private var landscapeCard: some View {
         VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
-            RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: metrics.landscapeArtworkCornerRadius, style: .continuous)
                 .fill(palette.fill)
                 .frame(width: artworkSize.width, height: artworkSize.height)
-                .clipShape(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
-                .plozzMediaEdge(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius)
+                .clipShape(RoundedRectangle(cornerRadius: metrics.landscapeArtworkCornerRadius, style: .continuous))
+                .plozzMediaEdge(cornerRadius: metrics.landscapeArtworkCornerRadius)
                 .overlay {
                     SkeletonLoadingIndicator(isVisible: showsProgress)
                 }
@@ -181,7 +181,7 @@ public struct SkeletonCardView: View {
         }
         .shimmering()
         .plozzFramedMediaCard(
-            innerCornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+            innerCornerRadius: metrics.landscapeArtworkCornerRadius,
             isFocused: surfaceFocused
         )
         .plozzCardRasterize(reduceTransparency: reduceTransparency)
@@ -314,12 +314,11 @@ public struct SkeletonCardView: View {
         }
     }
 
-    /// Outer corner radius reused for a borderless image — the framed card's outer
-    /// (glass) radius, matching `PosterCardView.borderlessCornerRadius`.
+    /// Matches the loaded card's platform-specific artwork rounding.
     private var borderlessCornerRadius: CGFloat {
         switch style {
-        case .poster: return metrics.posterCardCornerRadius
-        case .landscape: return metrics.landscapeCardCornerRadius
+        case .poster: return metrics.borderlessPosterCornerRadius
+        case .landscape: return metrics.borderlessLandscapeCornerRadius
         }
     }
 

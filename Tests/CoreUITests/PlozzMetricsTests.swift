@@ -5,7 +5,7 @@ import CoreModels
 @testable import CoreUI
 
 final class PlozzMetricsTests: XCTestCase {
-    func testTouchCardsUseProportionateBadgesCornersAndCaptionSpacing() {
+    func testTouchCardsUseProportionateBadgesAndCaptionSpacing() {
         let touch = PlozzMetrics.touch(density: .standard)
         let tv = PlozzMetrics.standard
         XCTAssertEqual(touch.watchedBadgeSize, 21)
@@ -20,8 +20,32 @@ final class PlozzMetricsTests: XCTestCase {
                 XCTAssertEqual(metrics.focusCaptionPush(for: focus), 0)
             }
             let small = metrics.scalingPosters(by: 0.6)
-            XCTAssertLessThanOrEqual(small.posterArtworkCornerRadius, metrics.posterArtworkCornerRadius)
             XCTAssertEqual(small.posterCardCornerRadius, small.posterArtworkCornerRadius + small.cardInset)
+        }
+    }
+
+    func testTouchPosterAndContinueWatchingCornersMatchAtEveryDensityAndWidth() {
+        for density in UIDensity.allCases {
+            let base = PlozzMetrics.touch(density: density)
+            for factor in [CGFloat(0.5), 0.8, 1, 1.4, 2] {
+                let metrics = base.scalingPosters(by: factor)
+                XCTAssertEqual(metrics.posterArtworkCornerRadius, 8)
+                XCTAssertEqual(metrics.landscapeArtworkCornerRadius, 8)
+                XCTAssertEqual(metrics.borderlessPosterCornerRadius, 8)
+                XCTAssertEqual(metrics.borderlessLandscapeCornerRadius, 8)
+                XCTAssertEqual(metrics.posterCardCornerRadius, 8 + metrics.cardInset)
+                XCTAssertEqual(metrics.landscapeCardCornerRadius, 8 + metrics.cardInset)
+            }
+        }
+    }
+
+    func testTelevisionArtworkAndBorderlessCornersRemainUnchanged() {
+        for density in UIDensity.allCases {
+            let metrics = PlozzMetrics(density: density)
+            XCTAssertEqual(metrics.posterArtworkCornerRadius, 16)
+            XCTAssertEqual(metrics.landscapeArtworkCornerRadius, 18)
+            XCTAssertEqual(metrics.borderlessPosterCornerRadius, 16 + metrics.cardInset)
+            XCTAssertEqual(metrics.borderlessLandscapeCornerRadius, 18 + metrics.cardInset)
         }
     }
 

@@ -250,9 +250,13 @@ public struct PlozzMetrics: Equatable, Sendable {
 
     // MARK: Concentric card corner radii (derived)
 
-    /// Mobile corners follow the actual artwork width, including responsive rails.
+    /// Touch artwork keeps the same rounding across responsive card sizes.
     public var posterArtworkCornerRadius: CGFloat {
-        geometryScale < 1 ? min(10, max(6, posterWidth * 0.075)) : PlozzTheme.Metrics.posterArtCornerRadius
+        geometryScale < 1 ? PlozzTheme.Metrics.touchMediaCornerRadius : PlozzTheme.Metrics.posterArtCornerRadius
+    }
+
+    public var landscapeArtworkCornerRadius: CGFloat {
+        geometryScale < 1 ? PlozzTheme.Metrics.touchMediaCornerRadius : PlozzTheme.Metrics.mediumMediaCornerRadius
     }
 
     /// Keep the glass frame concentric with the artwork at every card size.
@@ -263,7 +267,16 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// Outer (glass) corner radius for a landscape / music media card, derived
     /// from its inner media radius + `cardInset` for the same concentric border.
     public var landscapeCardCornerRadius: CGFloat {
-        PlozzTheme.Metrics.mediumMediaCornerRadius + cardInset
+        landscapeArtworkCornerRadius + cardInset
+    }
+
+    /// Touch posters have no glass inset; TV retains its existing outer rounding.
+    public var borderlessPosterCornerRadius: CGFloat {
+        geometryScale < 1 ? posterArtworkCornerRadius : posterCardCornerRadius
+    }
+
+    public var borderlessLandscapeCornerRadius: CGFloat {
+        geometryScale < 1 ? landscapeArtworkCornerRadius : landscapeCardCornerRadius
     }
 
     // MARK: Caption corner-clearance (derived)

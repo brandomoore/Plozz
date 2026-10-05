@@ -55,6 +55,13 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   It respects Reduce Motion when revealing a new selection and re-reveals after
   viewport, text-size, or option changes. Callers supply localized or verbatim
   labels and page keylines; native app tabs and tvOS focus controls are separate.
+- **Mobile media corners** — posters and Continue Watching share an 8pt artwork
+  radius at every display size and responsive width. Borderless cards use that
+  radius directly; glass frames add their inset to remain concentric. Loaded
+  artwork, missing-art placeholders, and skeletons agree. TV rounding is unchanged.
+  Mobile library, episode, and download artwork uses the same metric, keeping
+  its caption clearance consistent with its actual corners. Home library names
+  and server names share one leading-aligned text column beside the provider mark.
 - **Media-row focus** — a dedicated modifier owns the row's `FocusState`
   and supplies its binding to tracked cards. Focus callbacks and prefetch
   bookkeeping must not invalidate the row that constructs all card inputs.
