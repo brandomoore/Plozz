@@ -718,11 +718,11 @@ struct PlozziOSCommunitySettingsSection: View {
     var body: some View {
         SettingsSectionGroup("Community") {
             communityLink(
-                "Discord", brand: .discord, caption: "Join the community",
+                Text(verbatim: "Discord"), brand: .discord, caption: "Join the community",
                 url: AppLinks.discord
             )
             communityLink(
-                "GitHub", brand: .github, caption: "Source code and issues",
+                Text(verbatim: "GitHub"), brand: .github, caption: "Source code and issues",
                 url: AppLinks.repository
             )
             DisclosureGroup("QR Codes", isExpanded: $showsQRCodes) {
@@ -734,7 +734,7 @@ struct PlozziOSCommunitySettingsSection: View {
     }
 
     private func communityLink(
-        _ title: String, brand: SettingsCommunityLogo.Brand, caption: LocalizedStringKey, url: URL
+        _ title: Text, brand: SettingsCommunityLogo.Brand, caption: LocalizedStringKey, url: URL
     ) -> some View {
         Link(destination: url) {
             HStack(spacing: 16) {
@@ -752,7 +752,7 @@ struct PlozziOSCommunitySettingsSection: View {
             }
             .padding(.vertical, 4)
         }
-        .accessibilityLabel(Text(verbatim: title))
+        .accessibilityLabel(title)
         .accessibilityHint(Text(caption))
     }
 }
