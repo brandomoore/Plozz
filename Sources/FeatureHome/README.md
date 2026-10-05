@@ -49,7 +49,17 @@ fallback when the user's server has no attached trailer.
   show Recommended by default for server-backed video libraries, with
   library-scoped Continue Watching and Recently Added plus native Plex hubs
   or Jellyfin/Emby movie recommendation categories. TV uses Showcase, showing
-  its mode tabs only while the first row is active; mobile uses rows.
+  its mode tabs only while the first row is active; mobile uses touch-sized rows.
+  iPhone and iPad keep Recommended, Browse, Collections, and Playlists in a
+  horizontally scrolling tab strip, limited to the provider's capabilities.
+  Tabs retain their identity through loading, empty, and failure states and
+  reveal the selected mode without compressing every label into a segmented
+  control. At accessibility sizes, an individual tab still fits the viewport.
+  Mobile controls scroll with the page; Filter and the current Sort occupy a
+  separate line instead of competing with the tabs. Row headings, artwork, grids,
+  and scan banners share the mobile page keyline (22pt compact, 36pt regular).
+  Recommendation rails remain horizontally lazy and use the same card sizing,
+  spacing, and appearance as mobile Home, not the TV rail's layout.
   Library Continue Watching uses Home's profile-selected series artwork and
   resume progress treatment, including profile spoiler protection on mobile.
   Merged libraries validate Continue Watching against every account-qualified
@@ -57,7 +67,7 @@ fallback when the user's server has no attached trailer.
   watch recency before limiting the row. Watch changes
   refresh recommendations on return (or while visible), retaining the current
   rows during the request and rejecting snapshots predating another watch change.
-  Changing tabs keeps the focused mode control
+  On tvOS, changing tabs keeps the focused mode control
   mounted while replacing content below it. A stable layout container owns the
   top inset across Recommended, Browse, Collections, and Playlists (a transparent
   `Group` would attach the inset to each replaceable content branch). Sort sits
