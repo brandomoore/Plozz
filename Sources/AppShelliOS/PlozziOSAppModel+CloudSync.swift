@@ -511,6 +511,7 @@ extension PlozziOSAppModel {
 
     func startCloudSyncIfEnabled() {
         guard SyncSetupFeatureFlag().isEnabled else { return }
+        guard !Self.isRunningUnitTests else { return }
         let config = cloudSync
         guard let config else { return }
         Task {

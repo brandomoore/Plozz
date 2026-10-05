@@ -17,16 +17,7 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
             mark.draw(in: CGRect(x: 0, y: 0, width: size, height: size))
         }
         let bitmap = try XCTUnwrap(image.cgImage)
-        var pixels = [UInt8](repeating: 0, count: size * size * 4)
-        try pixels.withUnsafeMutableBytes { bytes in
-            let context = try XCTUnwrap(CGContext(
-                data: bytes.baseAddress, width: size, height: size,
-                bitsPerComponent: 8, bytesPerRow: size * 4,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ))
-            context.draw(bitmap, in: CGRect(x: 0, y: 0, width: size, height: size))
-        }
+        let pixels = try rgba(bitmap)
         var ink = 0
         var asymmetric = 0
         for y in 0..<size {
@@ -44,6 +35,27 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
         attachment.name = "discord-mark-silhouette"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    func testCommunityLogosHaveComparableVisibleAreaAtMobileAndTVSizes() throws {
+        for height in [CGFloat(32), CGFloat(40)] {
+            var areas: [SettingsCommunityLogo.Brand: Double] = [:]
+            for brand in SettingsCommunityLogo.Brand.allCases {
+                let renderer = ImageRenderer(content: SettingsCommunityLogo(brand: brand, height: height))
+                renderer.scale = 4
+                renderer.isOpaque = false
+                let image = try XCTUnwrap(renderer.cgImage)
+                let pixels = try rgba(image)
+                let area = stride(from: 3, to: pixels.count, by: 4).reduce(0.0) {
+                    $0 + Double(pixels[$1]) / 255
+                }
+                XCTAssertGreaterThan(area, 1_000)
+                areas[brand] = area
+            }
+            let discord = try XCTUnwrap(areas[.discord])
+            let github = try XCTUnwrap(areas[.github])
+            XCTAssertEqual(discord / github, 1, accuracy: 0.08, "Balance visible artwork, not bounding-box height.")
+        }
     }
 
     func testAboutCodesDecodeSideBySideInBothThemes() async throws {
@@ -137,5 +149,19 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
             XCTAssertGreaterThan(code.bounds.width, 115, "Keep the 180-point scan card.")
         }
         return pair.sorted { ($0.messageString ?? "") < ($1.messageString ?? "") }
+    }
+
+    private func rgba(_ image: CGImage) throws -> [UInt8] {
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        return pixels
     }
 }

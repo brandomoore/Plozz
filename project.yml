@@ -61,6 +61,7 @@ targets:
     sources:
       - path: App/Plozz
       - path: App/Resources/Assets.xcassets
+      - path: App/Resources/CommunityAssets.xcassets
       - path: App/Resources/Fonts
       # The single app-owned String Catalog. SwiftUI/Foundation lookups compiled
       # into the Swift package modules resolve against `Bundle.main`, so ALL UI
@@ -320,6 +321,7 @@ targets:
     deploymentTarget: "18.0"
     sources:
       - path: App/PlozziOS
+      - path: App/Resources/CommunityAssets.xcassets
       - path: App/Resources/Fonts
       # Same shared catalog as the tvOS target — see the note there.
       - path: App/Resources/Localizable.xcstrings
@@ -446,6 +448,7 @@ targets:
       - path: Tests/FocusHost
       - path: Tests/FeatureLiveTVRemoteTests/NavigationRailFixture.swift
       - path: App/Resources/Assets.xcassets
+      - path: App/Resources/CommunityAssets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.FocusHost
@@ -464,9 +467,13 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSPresentationHost
+      - path: App/PlozziOS/Assets.xcassets
+      - path: App/Resources/CommunityAssets.xcassets
+      - path: App/Resources/ReleaseNotes.json
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.PresentationHost
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES

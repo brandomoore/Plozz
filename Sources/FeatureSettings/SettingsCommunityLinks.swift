@@ -24,13 +24,13 @@ public struct SettingsCommunityLinks: View {
     @ViewBuilder
     private var codes: some View {
         code(
-            lockup: "DiscordLockup",
+            brand: .discord,
             caption: "Join the community",
             url: AppLinks.discord.absoluteString,
             accessibilityLabel: "Scan to join the Plozz Discord community"
         )
         code(
-            lockup: "GitHubLockup",
+            brand: .github,
             caption: "Source code and issues",
             url: repoURL,
             accessibilityLabel: "Scan to view the Plozz GitHub repository"
@@ -38,7 +38,7 @@ public struct SettingsCommunityLinks: View {
     }
 
     private func code(
-        lockup: String,
+        brand: SettingsCommunityLogo.Brand,
         caption: LocalizedStringKey,
         url: String,
         accessibilityLabel: LocalizedStringKey
@@ -46,11 +46,11 @@ public struct SettingsCommunityLinks: View {
         SettingsPanel {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 24) {
-                    identity(lockup: lockup, caption: caption)
+                    identity(brand: brand, caption: caption)
                     qrCode(url)
                 }
                 VStack(alignment: .leading, spacing: 24) {
-                    identity(lockup: lockup, caption: caption)
+                    identity(brand: brand, caption: caption)
                     qrCode(url)
                         .frame(maxWidth: .infinity)
                 }
@@ -62,17 +62,11 @@ public struct SettingsCommunityLinks: View {
     }
 
     private func identity(
-        lockup: String,
+        brand: SettingsCommunityLogo.Brand,
         caption: LocalizedStringKey
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Image(lockup)
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: 260, maxHeight: 40, alignment: .leading)
-                .plozzForeground(.primary)
-                .accessibilityHidden(true)
+            SettingsCommunityLogo(brand: brand, height: 40)
             Text(caption)
                 .font(.caption)
                 .plozzForeground(.secondary)

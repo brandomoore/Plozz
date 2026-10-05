@@ -24,24 +24,33 @@ and the single place caption customization lives.
   player while watching.
 - `SettingsAboutSection` — app identity / version / release notes.
 - `SettingsCommunityLinks` — separate Discord-first and GitHub cards shared by
-  both About screens. Apple TV shows them below the app identity; iPhone and
-  iPad offer logo-labeled direct links plus expandable QR cards. The cards use
+  About and mobile Settings. Apple TV shows them below the app identity.
+  Mobile uses one shared Community section with full-wordmark direct links and
+  expandable QR cards: directly above Support in compact iPhone Settings,
+  and on the About page in regular-width layouts. The cards use
   official icon-and-wordmark lockups directly on their surfaces, without colored
   icon tiles or duplicate name labels. They follow the theme's primary text color
   and stay outside the codes' white scan margins. Narrow layouts stack without
   shrinking the codes. Public destinations are centralized in `CoreModels.AppLinks`.
+  `SettingsCommunityLogo` balances both brands by visible ink area rather than
+  equal height: Discord renders at 75% of GitHub's height, with each original
+  aspect ratio preserved. A common layout height keeps caption baselines aligned
+  on TV and mobile; hosted coverage compares the rendered areas at both sizes.
   Lockup sources are from [Discord](https://discord.com/branding) and
   [GitHub](https://brand.github.com/foundations/logo); original SVGs are in
-  `docs/assets/{discord,github}-lockup.svg`. Their vector PDF exports use CairoSVG
+  `docs/assets/{discord,github}-lockup.svg`. The marks and lockups live in
+  `App/Resources/CommunityAssets.xcassets`, linked by both app targets and their
+  presentation-test hosts; platform-only catalogs must not own shared logos.
+  Their vector PDF exports use CairoSVG
   with `dpi=72` so source units map to PDF points without fractional-height
   rounding by the asset compiler:
-  `python3 -c "import cairosvg; cairosvg.svg2pdf(url='docs/assets/discord-lockup.svg', dpi=72, write_to='App/Resources/Assets.xcassets/DiscordLockup.imageset/discord_lockup.pdf')"`
+  `python3 -c "import cairosvg; cairosvg.svg2pdf(url='docs/assets/discord-lockup.svg', dpi=72, write_to='App/Resources/CommunityAssets.xcassets/DiscordLockup.imageset/discord_lockup.pdf')"`
   (substitute `github` / `GitHubLockup` for the GitHub export).
   The Discord mark comes from [Simple Icons](https://simpleicons.org/) (CC0).
   Its original path is in `docs/assets/discord-mark.svg`; the asset catalog uses
   a vector PDF because Xcode's SVG renderer distorts this path's compact arcs.
   Regenerate it with
-  `python3 -c "import cairosvg; cairosvg.svg2pdf(url='docs/assets/discord-mark.svg', write_to='App/Resources/Assets.xcassets/DiscordMark.imageset/discord_mark.pdf')"`.
+  `python3 -c "import cairosvg; cairosvg.svg2pdf(url='docs/assets/discord-mark.svg', write_to='App/Resources/CommunityAssets.xcassets/DiscordMark.imageset/discord_mark.pdf')"`.
 
 ## Invariants
 

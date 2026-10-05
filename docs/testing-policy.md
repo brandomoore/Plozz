@@ -264,7 +264,12 @@ simulator under the shared build lease, with a lane-private package workspace
 and retained result bundle. Its host and tests share only the `AppShelliOS`
 package product. `ServerSetupPresentationTests` checks rendered primary-button
 text in all themes, the native provider picker's logo bounds, and transparent
-WebDAV badge edges. The received-setup summary is exercised with 25 servers,
+WebDAV badge edges. `SettingsCommunityPresentationTests` renders the actual
+compact Settings root on phone-sized windows and the regular About page in
+both themes, checking that Discord, GitHub, and the QR disclosure remain
+reachable. The host includes the app's logos and release-note catalog so these
+checks exercise the real settings content, not an isolated QR-card fixture.
+The received-setup summary is exercised with 25 servers,
 multiple sign-ins per server, and 40 profiles on compact/large phones, landscape,
 iPad-sized windows, accessibility text sizes, and right-to-left layout. Its
 primary action stays in the bottom safe area while the full summary scrolls;
