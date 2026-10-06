@@ -137,7 +137,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                         : viewModel.controls.currentSeconds,
                     isScrubbing: isScrubbing,
                     scrubPreviewImage: scrubPreviewCoordinator?.image,
-                    showsScrubPreview: scrubPreviewCoordinator != nil,
+                    showsScrubPreview: scrubPreviewCoordinator?.isAvailable == true,
                     pictureInPictureAvailable: pictureInPicture.isAvailable,
                     onTogglePictureInPicture: {
                         pictureInPicture.toggle()

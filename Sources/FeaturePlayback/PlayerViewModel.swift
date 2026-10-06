@@ -1353,6 +1353,7 @@ public final class PlayerViewModel {
         rewritten.streamURL = localURL
         rewritten.playbackSource = nil
         rewritten.originalFileSource = nil
+        rewritten.scrubStillSource = nil
         rewritten.externalAudioURL = nil
         rewritten.localRemuxSource = nil
         rewritten.streamingOptions = nil
@@ -2282,8 +2283,28 @@ public final class PlayerViewModel {
     public func makeScrubPreviewCoordinator() -> ScrubPreviewCoordinator? {
         ScrubPreviewCoordinator(
             source: scrubPreview,
-            authenticatedHTTPResolver: authenticatedHTTPResolver
+            authenticatedHTTPResolver: authenticatedHTTPResolver,
+            generatedStills: makeGeneratedScrubStills()
         )
+    }
+
+    /// On-device scrub stills for an item whose server supplied no usable
+    /// previews (e.g. Plex with "Generate video preview thumbnails" off), decoded
+    /// from the original file the way Infuse does. The server's own previews
+    /// still win; these are also the fallback when an advertised Plex BIF turns
+    /// out to be missing. `nil` when the stream is a reduced-quality rendition
+    /// (extra ranged reads would compete with it) or the item is playing from a
+    /// local download with no remote original to read.
+    public func makeGeneratedScrubStills() -> (any ScrubStillExtracting)? {
+        guard let request,
+              request.streamingOptions.map({ $0.quality == .original }) ?? true,
+              request.streamURL?.isFileURL != true,
+              let source = request.scrubStillSource ?? request.downloadableOriginalSource,
+              let makeExtractor = engineFactory.makeScrubStillExtractor
+        else {
+            return nil
+        }
+        return makeExtractor(source) { [weak self] in self?.engine }
     }
 
     /// The active engine, exposed so the shared transport overlay can drive

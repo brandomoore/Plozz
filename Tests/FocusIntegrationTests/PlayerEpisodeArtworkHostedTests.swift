@@ -468,6 +468,25 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
         }
     }
 
+    func testProductionEpisodePanelAcquiresBrowseFocusAcrossWindowHandoffs() async throws {
+        let playing = EpisodeRowProvider.episode(season: 2, number: 7)
+        let player = PlayerViewModel(provider: EpisodeRowProvider(), itemID: playing.id, episodeItem: playing)
+        let browser = try XCTUnwrap(player.episodeBrowser)
+        await browser.loadIfNeeded()
+        for _ in 0..<3 {
+            try await withProductionPanel(player) { model, window in
+                XCTAssertEqual(model.observedFocus, .button(.episodes))
+                let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+                XCTAssertNotNil(system.focusedItem)
+                XCTAssertFalse(self.nativePosters(in: window).contains(where: \.isFocused))
+                model.target = browser.initialEntryID
+                try await self.waitUntil {
+                    (system.focusedItem as? PlayerEpisodeNativeCell)?.accessibilityLabel == playing.title
+                }
+            }
+        }
+    }
+
     func testLeadingRetryInsertionAndSelectionPreserveTheEpisodeViewport() async throws {
         let provider = EpisodeRowProvider()
         await provider.hold("season-1")
@@ -870,15 +889,29 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         let model = EpisodeArtworkFixtureModel()
         model.source = initialSource
-        window.rootViewController = UIHostingController(rootView: ProductionEpisodeFixture(
+        let host = UIHostingController(rootView: ProductionEpisodeFixture(
             player: player, model: model
         ).environment(\.layoutDirection, direction))
+        window.rootViewController = host
         window.makeKeyAndVisible()
         window.layoutIfNeeded()
         defer {
             window.isHidden = true
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
+        }
+        let focusSystem = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        // Activate native focus before reissuing the fixture's SwiftUI entry request.
+        try await waitUntil {
+            window.layoutIfNeeded()
+            focusSystem.requestFocusUpdate(to: host)
+            focusSystem.updateFocusIfNeeded()
+            return focusSystem.focusedItem != nil
+        }
+        model.focusRequestID = UUID()
+        try await waitUntil {
+            model.appliedFocusRequestID == model.focusRequestID
+                && model.observedFocus == .button(.episodes) && focusSystem.focusedItem != nil
         }
         try await body(model, window)
     }
@@ -902,6 +935,8 @@ private enum EpisodeArtworkFixtureError: Error { case focusTimeout }
 @MainActor @Observable
 private final class EpisodeArtworkFixtureModel {
     var target: PlayerEpisodeEntry.ID?
+    var focusRequestID = UUID()
+    var appliedFocusRequestID: UUID?
     var observedFocus: PlayerControls.FocusSlot?
     var panelVisible = true
     var source: PlayerSequencePanel.Source = .episodes
@@ -961,7 +996,14 @@ private struct ProductionEpisodeFixture: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.black)
         .environment(\.plozzCardFocusStyle, .system)
-        .onAppear { focus = .button(.episodes) }
+        .task(id: model.focusRequestID) {
+            let requestID = model.focusRequestID
+            focus = nil
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            focus = .button(.episodes)
+            model.appliedFocusRequestID = requestID
+        }
         .onChange(of: model.target) { _, id in
             focus = id.map(PlayerControls.FocusSlot.episodeItem) ?? .button(.episodes)
         }

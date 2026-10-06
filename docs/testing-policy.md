@@ -199,6 +199,10 @@ Runner verdict regressions use the existing host-side unittest runner:
 
 ## App-hosted focus integration
 
+Episode-panel fixtures activate native window focus before reissuing their
+SwiftUI Browse entry request. Repeated window handoffs must start on Browse and
+still allow the playing episode to receive actual native focus.
+
 `PlayerSkipMarkerHostedTests` updates one live scrub track and waits for stable
 rendered frames before comparing native fills. Liquid Glass can keep changing
 after layout; comparing its first frames must not be mistaken for a marker color

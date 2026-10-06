@@ -342,6 +342,12 @@ public struct PlaybackRequest: Hashable, Sendable {
     /// source) means the custom player simply shows no scrub preview — it never
     /// blocks playback.
     public var scrubPreview: ScrubPreviewSource?
+    /// Original file the player may decode scrub stills from when the server
+    /// has no previews. Kept separately from `originalFileSource`, which a
+    /// server transcode clears so playback never falls back to the original:
+    /// reading a few keyframes for previews is fine where replaying it is not.
+    /// Not part of the memberwise init so provider call sites stay untouched.
+    public var scrubStillSource: PlaybackSource?
     /// Whether the resolved `streamURL` is already a manifest/playlist-style stream
     /// (server HLS or a local-remux HLS facade) and therefore should be fed
     /// straight to AVPlayer rather than wrapped for subtitle injection.

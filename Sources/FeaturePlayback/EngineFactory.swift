@@ -29,16 +29,28 @@ public struct EngineFactory {
     /// the outgoing engine, without consulting catalogs or metadata APIs.
     public var probeSourceDynamicRange:
         (@Sendable (PlaybackRequest) async -> SourceDynamicRange?)?
+    /// Builds an on-device scrub-still extractor over an item's original file,
+    /// used when the server has no pre-generated previews. The closure argument
+    /// returns whichever engine is playing at extraction time, so the extractor
+    /// can share that engine's source and defer to it while playback is starved.
+    /// `nil` when no on-device decoder is linked (no generated previews).
+    public var makeScrubStillExtractor:
+        (@MainActor (PlaybackSource, @escaping @MainActor () -> (any VideoEngine)?)
+            -> (any ScrubStillExtracting)?)?
 
     public init(
         makeNative: @escaping @MainActor (SubtitleStyle) -> any VideoEngine = { NativeVideoEngine(style: $0) },
         makePlozzigen: (@MainActor () -> (any VideoEngine)?)? = nil,
         probeSourceDynamicRange:
-            (@Sendable (PlaybackRequest) async -> SourceDynamicRange?)? = nil
+            (@Sendable (PlaybackRequest) async -> SourceDynamicRange?)? = nil,
+        makeScrubStillExtractor:
+            (@MainActor (PlaybackSource, @escaping @MainActor () -> (any VideoEngine)?)
+                -> (any ScrubStillExtracting)?)? = nil
     ) {
         self.makeNative = makeNative
         self.makePlozzigen = makePlozzigen
         self.probeSourceDynamicRange = probeSourceDynamicRange
+        self.makeScrubStillExtractor = makeScrubStillExtractor
     }
 
     /// Whether the Plozzigen (on-device decode) engine is wired in. Drives the

@@ -30,6 +30,25 @@ private struct ResumeMutationApplier: WatchMutationApplying {
 }
 
 final class JellyfinStreamingQualityTests: XCTestCase {
+    func testOriginalQualityTranscodesKeepPreviewSourceWithoutPlaybackFallback() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let (provider, _) = fixture(kind: kind, rendition: true)
+            let request = try await provider.playbackInfo(
+                for: "movie", mediaSourceID: "version", forceTranscode: true,
+                streaming: .init(quality: .original, forceTranscoding: true)
+            )
+            XCTAssertTrue(request.isTranscoding)
+            XCTAssertNil(request.originalFileSource)
+            XCTAssertNil(request.localRemuxSource)
+            guard case .authenticatedHTTP(let source) = request.scrubStillSource else {
+                return XCTFail("An original-quality transcode needs a preview-only original")
+            }
+            XCTAssertEqual(source.provider, kind)
+            XCTAssertEqual(source.mediaSourceID, "version")
+            XCTAssertEqual(source.deliveryMode, .directFile)
+        }
+    }
+
     func testOrdinaryServerFallbackReportsAuthoredASSBurnIn() async throws {
         for kind in [ProviderKind.jellyfin, .emby] {
             let (provider, http) = fixture(kind: kind, rendition: true)
