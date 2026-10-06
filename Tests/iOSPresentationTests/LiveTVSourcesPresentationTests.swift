@@ -9,6 +9,51 @@ import XCTest
 
 @MainActor
 final class LiveTVSourcesPresentationTests: XCTestCase {
+    func testOnboardingDoesNotCoverTheFullPageBackgroundWithAnInsetPanel() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width in [CGFloat(390), 834] {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 1024)
+            for (theme, palette) in [("dark", ThemePalette.dark), ("black", .pureBlack), ("light", .light)] {
+                for gradient in [false, true] {
+                    window.overrideUserInterfaceStyle = palette.isLight ? .light : .dark
+                    var images: [UIImage] = []
+                    for showsWelcome in [true, false] {
+                        host.rootView = AnyView(
+                            SetupBackgroundFixture(showsWelcome: showsWelcome)
+                                .environment(\.themePalette, palette)
+                                .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                                .environment(\.gradientBackgroundsEnabled, gradient)
+                                .environment(\.locale, Locale(identifier: "en_US"))
+                        )
+                        try await settle(window)
+                        images.append(snapshot(window))
+                    }
+                    let attachment = XCTAttachment(image: images[0])
+                    attachment.name = "onboarding-surface-\(Int(width))-\(theme)-gradient-\(gradient)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                    for x in [CGFloat(8), 18, 32, width / 2, width - 32, width - 18, width - 8] {
+                        let point = CGPoint(x: x, y: 930)
+                        for (actual, reference) in zip(try pixel(images[0], at: point), try pixel(images[1], at: point)) {
+                            XCTAssertLessThanOrEqual(abs(actual - reference), 2,
+                                                    "The onboarding canvas must match the page at \(point).")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testSetupChoicesFitTabletWidthsInBothDirections() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -23,6 +68,7 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
                 window.frame = CGRect(x: 0, y: 0, width: width, height: 1024)
                 window.rootViewController = UIHostingController(rootView:
                     LiveTVSetupWelcome(addPlaylist: {}, useServer: {}, createChannel: {})
+                        .background { AppBackground(palette: .light) }
                         .environment(\.themePalette, .light)
                         .environment(\.colorScheme, .light)
                         .environment(\.dynamicTypeSize, .large)
@@ -39,6 +85,7 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
                 let request = VNRecognizeTextRequest()
                 request.recognitionLevel = .accurate
                 request.recognitionLanguages = ["en-US"]
+                request.customWords = ["IPTV", "Plozz"]
                 try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
                 let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
                     .joined(separator: " ")
@@ -178,6 +225,28 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
             context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         }
         return bytes.prefix(3).map(Int.init)
+    }
+}
+
+private struct SetupBackgroundFixture: View {
+    let showsWelcome: Bool
+    @Environment(\.themePalette) private var palette
+
+    var body: some View {
+        GeometryReader { geometry in
+            let layout = PrototypePreviewLayout(size: geometry.size, safeAreaInsets: geometry.safeAreaInsets)
+            ZStack(alignment: .topLeading) {
+                AppBackground(palette: palette)
+                PrototypePreviewScrim(layout: layout, reduceTransparency: false)
+                    .frame(width: layout.bounds.width, height: layout.bounds.height)
+                    .position(x: layout.bounds.midX, y: layout.bounds.midY)
+                if showsWelcome {
+                    PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: geometry.size.width) {
+                        LiveTVSetupWelcome(addPlaylist: {}, useServer: {}, createChannel: {})
+                    }
+                }
+            }
+        }
     }
 }
 

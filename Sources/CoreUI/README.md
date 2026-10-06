@@ -96,6 +96,8 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   title mode. Modal utility pages also use inline titles without custom fonts.
   The compact Settings drawer keeps its title leading beside a native close
   button at the top, switching to a centered inline title only after scrolling.
+  Both Settings roots use a 16pt content inset matching the native leading title;
+  subpages retain 24pt insets. Alignment never narrows the scroll viewport.
   Its first section uses a tighter 8pt content margin.
   Profile/PIN resealing observes the page, not a zero-height row that adds spacing.
 - **Subtitle appearance** — editing the live subtitle look now happens in

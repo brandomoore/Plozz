@@ -63,6 +63,10 @@ remain Debug-only; neither is a production default or a source offered to users.
 
 Source setup appears only after the initial source reload, server enrollment,
 and library-catalog restoration have established that there are no channels.
+On iPhone and iPad, onboarding reveals the same full-page background as the
+guide instead of painting an inset Settings-colored panel. Source icons use the
+theme accent; server-enrollment status sits below a divider as secondary context.
+Light, dark, black, and the gradient-background preference remain respected.
 Pending catalogs keep the page layout in place with non-focusable skeletons for
 the info artwork/text, category column, channel logos, and programme cells. They
 share the loaded guide's sizes/insets and Home's neutral fills/shimmer, including

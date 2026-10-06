@@ -96,7 +96,9 @@ struct LiveTVSetupWelcome: View {
             }
             .scrollIndicators(.hidden)
         }
+        #if os(tvOS)
         .background(palette.settingsBackground)
+        #endif
         .foregroundStyle(palette.primaryText)
         .accessibilityIdentifier("live-tv-source-welcome")
     }
@@ -104,10 +106,17 @@ struct LiveTVSetupWelcome: View {
 
 private struct LiveTVEnrollmentStatusRow: View {
     let status: LiveTVServerEnrollmentStatus
+    @Environment(\.themePalette) private var palette
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            #if os(iOS)
+            Label(status.choice.name, systemImage: "server.rack")
+                .font(.subheadline)
+                .foregroundStyle(palette.secondaryText)
+            #else
             Text(status.choice.name).font(.headline)
+            #endif
             if status.phase == .loading {
                 ProgressView("Checking Live TV access...")
             } else if let failure = status.failure {
@@ -116,6 +125,13 @@ private struct LiveTVEnrollmentStatusRow: View {
                 LiveTVServerAvailabilitySummary(availability: availability)
             }
         }
+        #if os(iOS)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 20)
+        .overlay(alignment: .top) {
+            Rectangle().fill(palette.separator).frame(height: 1)
+        }
+        #endif
     }
 }
 
@@ -126,7 +142,11 @@ private struct LiveTVSetupIntroduction: View {
         VStack(alignment: .leading, spacing: PlozzTheme.Spacing.medium) {
             Label("Live TV", systemImage: "antenna.radiowaves.left.and.right")
                 .font(.headline)
+                #if os(iOS)
+                .foregroundStyle(palette.accent)
+                #else
                 .foregroundStyle(palette.secondaryText)
+                #endif
             Text("Add your channels")
                 .font(.largeTitle.weight(.semibold))
                 .fixedSize(horizontal: false, vertical: true)
@@ -223,8 +243,9 @@ private struct LiveTVSetupChoice: View {
     private var sourceIcon: some View {
         Image(systemName: symbol)
             .font(.system(size: 22, weight: .regular))
+            .foregroundStyle(palette.accent)
             .frame(width: 44, height: 44)
-            .background(palette.fillSubtle, in: RoundedRectangle(cornerRadius: 12))
+            .background(palette.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
             .accessibilityHidden(true)
     }
 

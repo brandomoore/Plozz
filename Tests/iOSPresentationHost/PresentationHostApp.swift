@@ -1,6 +1,7 @@
 import SwiftUI
 import CoreModels
 import CoreUI
+import FeatureHomeCore
 @testable import AppShelliOS
 
 @main
@@ -9,7 +10,8 @@ struct PresentationHostApp: App {
 
     init() {
         guard ProcessInfo.processInfo.arguments.contains("--appearance-interaction-fixture")
-            || ProcessInfo.processInfo.arguments.contains("--settings-interaction-fixture") else {
+            || ProcessInfo.processInfo.arguments.contains("--settings-interaction-fixture")
+            || ProcessInfo.processInfo.arguments.contains("--navigation-interaction-fixture") else {
             interactionModel = nil
             return
         }
@@ -30,6 +32,17 @@ struct PresentationHostApp: App {
         model.settings.subtitleStyle.style = .profileDefault
         model.settings.subtitleStyle.usesSeparateLiveTVStyle = false
         model.settings.nightShift.settings = .default
+        if ProcessInfo.processInfo.arguments.contains("--navigation-interaction-fixture") {
+            let available = NavigationDestinationDefaults.iOS
+            let enabled = ProcessInfo.processInfo.arguments.contains("--settings-in-more")
+                ? available
+                : [NavigationLibraryLayout.homeKey, NavigationLibraryLayout.downloadsKey,
+                   NavigationLibraryLayout.settingsKey]
+            model.settings.navigation.applyLibrarySections(
+                .init(enabled: enabled, disabled: available.filter { !enabled.contains($0) }),
+                available: available
+            )
+        }
         interactionModel = model
     }
 
@@ -47,10 +60,26 @@ struct PresentationHostApp: App {
 private struct SettingsInteractionFixture: View {
     let appModel: PlozziOSAppModel
     @State private var language = AppLanguageSettingsModel()
+    @State private var showingSettings = false
+    @State private var showingProfiles = false
+    @State private var deferredPairingURL: URL?
+    @State private var sidebarGeometry = PlozziOSSidebarGeometryModel()
+    @State private var heroTrailers = HeroTrailerController()
 
     var body: some View {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("--settings-interaction-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--navigation-interaction-fixture") {
+                PlozziOSTabShell(
+                    appModel: appModel,
+                    onAddServer: {},
+                    showingSettings: $showingSettings,
+                    showingProfileSwitcher: $showingProfiles,
+                    deferredPairingURL: $deferredPairingURL,
+                    systemColorScheme: .dark
+                )
+                .environment(sidebarGeometry)
+                .environment(heroTrailers)
+            } else if ProcessInfo.processInfo.arguments.contains("--settings-interaction-fixture") {
                 PlozziOSSettingsView(appModel: appModel, onClose: {}, systemColorScheme: .dark)
             } else {
                 NavigationStack {

@@ -469,7 +469,7 @@ private struct PlozziOSSettingsSplitView: View {
             }
             .navigationTitle("Settings")
             .toolbar(removing: .sidebarToggle)
-            .settingsPageSurface(titleDisplayMode: .large)
+            .settingsPageSurface(titleDisplayMode: .inlineLarge, horizontalInset: 16)
         } detail: {
             NavigationStack {
                 ZStack {
@@ -482,6 +482,12 @@ private struct PlozziOSSettingsSplitView: View {
             }
             .id(selection)
             .toolbar(removing: .sidebarToggle)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close", systemImage: "xmark", action: onClose)
+                        .labelStyle(.iconOnly)
+                }
+            }
         }
         .navigationSplitViewStyle(.balanced)
         // Switching profiles re-seals: an unlock proves who is standing there
@@ -496,11 +502,6 @@ private struct PlozziOSSettingsSplitView: View {
         }
         .toolbar(removing: .sidebarToggle)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done", action: onClose)
-            }
-        }
         .alert("Sign out of all accounts?", isPresented: $confirmSignOutAll) {
             Button("Cancel", role: .cancel) {}
             Button("Sign Out", role: .destructive) {
@@ -1251,7 +1252,10 @@ private struct PlozziOSSettingsCompactMenu: View {
             }
         }
         .contentMargins(.top, 8, for: .scrollContent)
-        .settingsPageSurface(titleDisplayMode: isHeaderCollapsed ? .inline : .inlineLarge)
+        .settingsPageSurface(
+            titleDisplayMode: isHeaderCollapsed ? .inline : .inlineLarge,
+            horizontalInset: 16
+        )
         .navigationTitle("Settings")
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top > 12

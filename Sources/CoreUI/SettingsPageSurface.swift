@@ -41,9 +41,11 @@ public struct SettingsPageScroll<Content: View>: View {
 
 public struct SettingsPageSurface: ViewModifier {
     private let titleDisplayMode: ToolbarTitleDisplayMode
+    private let horizontalInset: CGFloat
 
-    public init(titleDisplayMode: ToolbarTitleDisplayMode = .inline) {
+    public init(titleDisplayMode: ToolbarTitleDisplayMode = .inline, horizontalInset: CGFloat = 24) {
         self.titleDisplayMode = titleDisplayMode
+        self.horizontalInset = horizontalInset
     }
 
     public func body(content: Content) -> some View {
@@ -52,7 +54,7 @@ public struct SettingsPageSurface: ViewModifier {
             .scrollContentBackground(.hidden)
             .contentMargins(.vertical, 24, for: .scrollContent)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .safeAreaPadding(.horizontal, 24)
+            .safeAreaPadding(.horizontal, horizontalInset)
             .background { SettingsPageBackground() }
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarTitleDisplayMode(titleDisplayMode)
@@ -60,8 +62,11 @@ public struct SettingsPageSurface: ViewModifier {
 }
 
 public extension View {
-    func settingsPageSurface(titleDisplayMode: ToolbarTitleDisplayMode = .inline) -> some View {
-        modifier(SettingsPageSurface(titleDisplayMode: titleDisplayMode))
+    func settingsPageSurface(
+        titleDisplayMode: ToolbarTitleDisplayMode = .inline, horizontalInset: CGFloat = 24
+    ) -> some View {
+        modifier(SettingsPageSurface(
+            titleDisplayMode: titleDisplayMode, horizontalInset: horizontalInset))
     }
 }
 #endif

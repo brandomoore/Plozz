@@ -729,7 +729,7 @@ private struct PlozziOSScreenshotTabRouter: View {
     }
 }
 
-private struct PlozziOSTabShell: View {
+struct PlozziOSTabShell: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(PlozziOSSidebarGeometryModel.self)
@@ -860,7 +860,7 @@ private struct PlozziOSTabShell: View {
             set: { selection in
                 switch selection {
                 case .destination(let destination):
-                    selectDestination(destination)
+                    openDestination(destination)
                 case .more:
                     if isMoreSelected {
                         moreDestination = nil
@@ -872,6 +872,14 @@ private struct PlozziOSTabShell: View {
                 }
             }
         )
+    }
+
+    private func openDestination(_ destination: PlozziOSDestination) {
+        if destination == .settings {
+            showSettings()
+        } else {
+            selectDestination(destination)
+        }
     }
 
     private func selectDestination(_ destination: PlozziOSDestination) {
@@ -1067,10 +1075,7 @@ private struct PlozziOSTabShell: View {
                     NavigationStack {
                         PlozziOSMorePage(
                             destinations: overflowDestinations,
-                            onSelect: { destination in
-                                if destination == .settings { showSettings() }
-                                else { selectDestination(destination) }
-                            },
+                            onSelect: openDestination,
                             onShowSettings: showSettings
                         )
                         .navigationDestination(item: $moreDestination) { destination in
@@ -1133,7 +1138,7 @@ private struct PlozziOSTabShell: View {
                 director: appModel.screenshotDirector,
                 onSelect: { name in
                     guard let destination = PlozziOSDestination(rawValue: name) else { return }
-                    selectDestination(destination)
+                    openDestination(destination)
                 }
             )
             #if DEBUG

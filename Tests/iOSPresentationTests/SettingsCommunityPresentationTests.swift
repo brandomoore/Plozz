@@ -51,7 +51,8 @@ final class SettingsCommunityPresentationTests: XCTestCase {
             XCTAssertEqual(bar.topItem?.title, "Settings")
             XCTAssertLessThanOrEqual(bar.bounds.height, 64, "Settings must not reserve a large-title block.")
             let expanded = try settingsTitleFrame(in: window, name: "settings-leading-\(Int(size.width))-\(textSize)")
-            XCTAssertLessThanOrEqual(expanded.minX, 32, "The resting title must follow the leading card keyline.")
+            XCTAssertEqual(expanded.minX, 16, accuracy: 3,
+                           "The resting title must follow the leading card keyline.")
             let scroll = try XCTUnwrap(scrollViews(in: window).first)
             XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
             scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentOffset.y + 300), animated: false)
@@ -62,7 +63,8 @@ final class SettingsCommunityPresentationTests: XCTestCase {
             scroll.setContentOffset(CGPoint(x: 0, y: -scroll.adjustedContentInset.top), animated: false)
             try await waitForHostedLayout(window)
             let restored = try settingsTitleFrame(in: window, name: "settings-restored-\(Int(size.width))-\(textSize)")
-            XCTAssertLessThanOrEqual(restored.minX, 32, "Returning to the top restores the leading title.")
+            XCTAssertEqual(restored.minX, 16, accuracy: 3,
+                           "Returning to the top restores the aligned leading title.")
         }
     }
 

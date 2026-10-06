@@ -54,6 +54,10 @@ and the single place caption customization lives.
 
 ## Invariants
 
+- **Mobile Settings is a presentation action.** Its tab or More entry opens
+  the drawer over the current page without selecting a replacement destination.
+  Keep the active content stack and overflow navigation intact on dismissal;
+  destination normalization still retains the Settings-only recovery screen.
 - **Profile-namespaced settings.** Per-user prefs (theme, captions,
   diagnostics, spoiler) are namespaced by the active profile id; the
   default profile uses no suffix so an upgrading install keeps existing
