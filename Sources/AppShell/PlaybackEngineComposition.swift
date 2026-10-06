@@ -77,6 +77,13 @@ enum HybridPlayback {
                 return SourceDynamicRange.classify(
                     videoRangeType: facts.videoRangeType
                 )
+            },
+            makeScrubStillExtractor: { source, activeEngine in
+                PlozzigenScrubStillExtractor(
+                    source: source,
+                    activeEngine: activeEngine,
+                    authenticatedHTTPResolver: authenticatedHTTPResolver
+                )
             }
         )
         #else

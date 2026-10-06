@@ -43,6 +43,39 @@ private final class TransportInflightRead: @unchecked Sendable {
     }
 }
 
+/// Explicit playback teardown must also close clones still held by preview hosts.
+private final class TransportReaderGroup: @unchecked Sendable {
+    private final class WeakReader {
+        weak var value: TransportIOReader?
+        init(_ value: TransportIOReader) { self.value = value }
+    }
+
+    private let lock = NSLock()
+    private var readers: [WeakReader] = []
+    private var isClosed = false
+
+    func register(_ reader: TransportIOReader) -> Bool {
+        let accepted = lock.withLock {
+            guard !isClosed else { return false }
+            readers.removeAll { $0.value == nil }
+            readers.append(WeakReader(reader))
+            return true
+        }
+        if !accepted { reader.close() }
+        return accepted
+    }
+
+    func closeAll() {
+        let current = lock.withLock {
+            isClosed = true
+            let current = readers.compactMap(\.value)
+            readers.removeAll()
+            return current
+        }
+        current.forEach { $0.close() }
+    }
+}
+
 public final class TransportIOReader: IOReader, @unchecked Sendable {
     private struct ReaderState {
         var position: Int64 = 0
@@ -66,6 +99,7 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
     private let cursor: MediaTransportSourceCursor
     private let lease: MediaTransportSourceLease
     private let resolvedSource: MediaTransportResolvedSource?
+    private let readerGroup: TransportReaderGroup
     private let readerState = OSAllocatedUnfairLock(initialState: ReaderState())
     private let inflight = OSAllocatedUnfairLock<TransportInflightRead?>(initialState: nil)
     private let avseekSize: Int32 = 65_536
@@ -90,6 +124,8 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         self.resolvedSource = nil
         self.cursor = lease.makeCursor()!
         self.readAheadWindow = max(1, readAheadWindow)
+        self.readerGroup = TransportReaderGroup()
+        _ = readerGroup.register(self)
     }
 
     public init(resolvedSource: MediaTransportResolvedSource) {
@@ -97,18 +133,22 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         self.lease = resolvedSource.sourceLease
         self.cursor = resolvedSource.sourceLease.makeCursor()!
         self.readAheadWindow = Self.defaultReadAheadWindow
+        self.readerGroup = TransportReaderGroup()
+        _ = readerGroup.register(self)
     }
 
     private init(
         cursor: MediaTransportSourceCursor,
         lease: MediaTransportSourceLease,
         resolvedSource: MediaTransportResolvedSource?,
-        readAheadWindow: Int
+        readAheadWindow: Int,
+        readerGroup: TransportReaderGroup
     ) {
         self.cursor = cursor
         self.lease = lease
         self.resolvedSource = resolvedSource
         self.readAheadWindow = readAheadWindow
+        self.readerGroup = readerGroup
     }
 
     deinit {
@@ -272,12 +312,19 @@ public final class TransportIOReader: IOReader, @unchecked Sendable {
         else {
             return nil
         }
-        return TransportIOReader(
+        let reader = TransportIOReader(
             cursor: cursor,
             lease: lease,
             resolvedSource: resolvedSource,
-            readAheadWindow: readAheadWindow
+            readAheadWindow: readAheadWindow,
+            readerGroup: readerGroup
         )
+        return readerGroup.register(reader) ? reader : nil
+    }
+
+    /// Called only when the owning playback ends, not for a demuxer reopen.
+    func closeAllReaders() {
+        readerGroup.closeAll()
     }
 
     public func close() {

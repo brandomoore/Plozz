@@ -16,6 +16,7 @@ struct ExtrasRowView: View {
 
     var body: some View {
         content
+            .environment(\.plozzCardCaptionView, .extras)
             .padding(.top, -metrics.railTopPadding)
             .padding(.bottom, -metrics.railVerticalPadding)
             .task(id: state.diagnosticName) {

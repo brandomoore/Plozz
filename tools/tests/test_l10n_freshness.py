@@ -45,6 +45,9 @@ class ExtractionFreshnessTests(unittest.TestCase):
         self.toolchain = patch.object(freshness, "toolchain_fingerprint", return_value="toolchain-A")
         self.toolchain.start()
         self.addCleanup(self.toolchain.stop)
+        ownership = patch.object(freshness, "phase_paths", return_value=(set(), set()))
+        ownership.start()
+        self.addCleanup(ownership.stop)
         self.receipt = freshness.ExtractionReceipt(self.root, self.derived, self.workspace, "arm64")
 
     def write(self, name, text):
@@ -75,7 +78,6 @@ class ExtractionFreshnessTests(unittest.TestCase):
             lambda: self.write("Package.resolved", '{"pins":[{"identity":"changed"}]}'),
             lambda: self.write("project.yml", "name: Changed"),
             lambda: self.write("Config/Secrets.local.xcconfig", "PRIVATE_KEY = different"),
-            lambda: self.write("App/Resources/Localizable.xcstrings", '{"strings":{"new":{}}}'),
             lambda: self.write("tools/new-generator.sh", "exit 1"),
         ]
         for mutate in mutations:
@@ -83,6 +85,18 @@ class ExtractionFreshnessTests(unittest.TestCase):
                 self.record()
                 mutate()
                 self.assertFalse(self.matches())
+
+    def test_catalog_and_snapshot_updates_reuse_extraction_not_validation(self):
+        self.record()
+        self.write("App/Resources/Localizable.xcstrings", '{"strings":{"new":{}}}')
+        self.write("tools/l10n-source-snapshot.json", '{"updated":"source"}')
+        self.assertTrue(self.matches())
+        # The caller still synchronizes and validates the current catalog.
+        result, build, validate, sync = self.execute(self.args(), validation=1)
+        self.assertEqual(result, 1)
+        build.assert_not_called()
+        validate.assert_called_once()
+        sync.assert_called_once()
 
     def test_same_size_and_mtime_source_edit_still_invalidates(self):
         self.record()
@@ -286,7 +300,7 @@ class ExtractionFreshnessTests(unittest.TestCase):
                       reuse_if_unchanged=True, check=True)
         return argparse.Namespace(**{**values, **overrides})
 
-    def execute(self, args, *, build=None, sync=None):
+    def execute(self, args, *, build=None, sync=None, validation=0):
         patches = [
             patch.object(SYNC, "REPO", self.root),
             patch.object(SYNC, "CATALOG", self.catalog),
@@ -299,7 +313,7 @@ class ExtractionFreshnessTests(unittest.TestCase):
                 self.derived / "Build/Intermediates.noindex/Objects-normal/arm64/Example.stringsdata"
             ]),
             patch.object(SYNC, "check_conflicts", return_value=0),
-            patch.object(SYNC, "validate_catalog", return_value=0),
+            patch.object(SYNC, "validate_catalog", return_value=validation),
             patch.object(SYNC, "sync", side_effect=sync),
         ]
         active = [p.start() for p in patches]
@@ -352,6 +366,7 @@ class ExtractionFreshnessTests(unittest.TestCase):
         self.assertFalse(self.receipt.path.exists())
 
     def prepare_hook(self):
+        self.write("tools/main-landing.py", (TOOLS / "main-landing.py").read_text())
         self.write("tools/l10n-guard.sh", '#!/bin/sh\necho guard >> "$HOOK_LOG"\n')
         (self.root / "tools/l10n-guard.sh").chmod(0o755)
         for name in ("l10n-sync.py", "l10n-export-source.py"):
@@ -364,7 +379,7 @@ raise SystemExit(7 if os.environ.get("FAIL_STEP")==Path(__file__).name else 0)
 """)
         return self.write(".githooks/pre-push", (TOOLS.parent / ".githooks/pre-push").read_text())
 
-    def test_main_hook_keeps_guards_and_uses_one_validating_extraction_check(self):
+    def test_main_hook_validates_catalog_without_rebuilding_at_publication(self):
         hook = self.prepare_hook()
         log = self.root / "hook.log"
         result = subprocess.run(["bash", str(hook)], cwd=self.root,
@@ -376,8 +391,7 @@ raise SystemExit(7 if os.environ.get("FAIL_STEP")==Path(__file__).name else 0)
         calls = [json.loads(line) for line in lines[1:]]
         sync = [call for call in calls if call[0] == "l10n-sync.py"]
         self.assertEqual(len(sync), 1)
-        self.assertIn("--check", sync[0])
-        self.assertIn("--reuse-if-unchanged", sync[0])
+        self.assertEqual(sync[0], ["l10n-sync.py", "--validate-only"])
         self.assertIn("--check-snapshot", calls[-1])
 
     def test_hook_stops_on_failed_check_and_leaves_feature_push_fast(self):

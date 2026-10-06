@@ -318,7 +318,13 @@ public struct PosterCardView: View {
 
     private func nativePosterIndicators(hasArtwork: Bool) -> some View {
         ZStack {
-            if !hasArtwork { neutralPlaceholder }
+            if !hasArtwork {
+                if PosterCardPresentation.usesFolderArtwork(for: item.kind) {
+                    folderPlaceholderArtwork
+                } else {
+                    neutralPlaceholder
+                }
+            }
             if showsSeriesArtwork && !suppressesSeriesLogo { seriesLogo }
             MediaCardPlaybackIndicators(
                 item: item,
@@ -360,9 +366,9 @@ public struct PosterCardView: View {
                 }
                 .overlay { resumeChip }
                 .overlay { pendingRemovalOverlay }
-                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius, style: .continuous))
+                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: metrics.posterArtworkCornerRadius, style: .continuous))
                 .plozzMediaEdge(
-                    cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius,
+                    cornerRadius: metrics.posterArtworkCornerRadius,
                     isEnabled: MediaArtworkPlaceholder.Symbol(for: item) == .playback
                 )
                 #if os(tvOS)
@@ -376,7 +382,7 @@ public struct PosterCardView: View {
             }
         }
         .plozzFramedMediaCard(
-            innerCornerRadius: PlozzTheme.Metrics.posterArtCornerRadius,
+            innerCornerRadius: metrics.posterArtworkCornerRadius,
             isFocused: surfaceFocused
         )
         .plozzCardRasterize(reduceTransparency: reduceTransparency)
@@ -446,9 +452,9 @@ public struct PosterCardView: View {
                 }
                 .overlay { resumeChip }
                 .overlay { pendingRemovalOverlay }
-                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
+                .plozzCardArtworkClip(RoundedRectangle(cornerRadius: metrics.landscapeArtworkCornerRadius, style: .continuous))
                 .plozzMediaEdge(
-                    cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+                    cornerRadius: metrics.landscapeArtworkCornerRadius,
                     isEnabled: MediaArtworkPlaceholder.Symbol(for: item) == .playback
                 )
                 #if os(tvOS)
@@ -467,7 +473,7 @@ public struct PosterCardView: View {
             }
         }
         .plozzFramedMediaCard(
-            innerCornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+            innerCornerRadius: metrics.landscapeArtworkCornerRadius,
             isFocused: surfaceFocused
         )
         .plozzCardRasterize(reduceTransparency: reduceTransparency)
@@ -488,7 +494,7 @@ public struct PosterCardView: View {
 
     /// The "Posters" card style: no glass surface at all — just the artwork and
     /// its sub-text. The image fills the card slot (minus a small side margin that
-    /// keeps cards separated), is rounded at the framed card's *outer* radius, and
+    /// keeps cards separated), uses the platform's borderless rounding, and
     /// gains a crisp focus **outline** that hugs the artwork and scales with it on
     /// focus (plus a soft lift). The caption keeps the same horizontal clearance
     /// the framed caption uses, so text lines up with the artwork's rounded edge,
@@ -531,7 +537,7 @@ public struct PosterCardView: View {
         .plozzCardFocusTransition(isFocused: isFocused)
     }
 
-    /// The full-bleed artwork for a borderless card, clipped to the outer radius
+    /// The full-bleed artwork for a borderless card, clipped to its artwork radius
     /// with the shared focus outline + lift applied.
     private var borderlessArtwork: some View {
         Color.clear
@@ -662,13 +668,10 @@ public struct PosterCardView: View {
         }
     }
 
-    /// Outer corner radius reused for a borderless image — the framed card's outer
-    /// (glass) radius, so a borderless poster/landscape keeps the exact rounding
-    /// the framed card's surface had.
     private var borderlessCornerRadius: CGFloat {
         switch style {
-        case .poster: return metrics.posterCardCornerRadius
-        case .landscape: return metrics.landscapeCardCornerRadius
+        case .poster: return metrics.borderlessPosterCornerRadius
+        case .landscape: return metrics.borderlessLandscapeCornerRadius
         }
     }
 
@@ -780,6 +783,10 @@ public struct PosterCardView: View {
     /// captions outright when it names the title elsewhere.
     private var showsCaption: Bool { !showsSeriesArtwork && !captionsHidden }
 
+    private var placeholderTitle: Text? {
+        captionsHidden && !showsSeriesArtwork ? primaryText : nil
+    }
+
     /// Whether the resume chip names the episode, because no caption will.
     private var chipCarriesEpisode: Bool { showsSeriesArtwork || captionsHidden }
 
@@ -845,8 +852,8 @@ public struct PosterCardView: View {
     private var transitionArtworkCornerRadius: CGFloat {
         if cardStyle == .borderless { return borderlessCornerRadius }
         return style == .poster
-            ? PlozzTheme.Metrics.posterArtCornerRadius
-            : PlozzTheme.Metrics.mediumMediaCornerRadius
+            ? metrics.posterArtworkCornerRadius
+            : metrics.landscapeArtworkCornerRadius
     }
 
     private func selectCard() {
@@ -870,7 +877,7 @@ public struct PosterCardView: View {
         } else if hideThumbnail {
             switch spoilerSettings.mode {
             case .blur:
-                realArtwork.blur(radius: 28)
+                realArtwork
             case .placeholder:
                 placeholderArtwork
             }
@@ -893,10 +900,6 @@ public struct PosterCardView: View {
             folderPlaceholderArtwork
         } else {
             realArtwork
-                .overlay(alignment: .topTrailing) {
-                    FolderNavigationBadge(size: metrics.watchedBadgeSize)
-                        .padding(folderBadgeInset)
-                }
         }
     }
 
@@ -905,7 +908,8 @@ public struct PosterCardView: View {
             foreground: titleColor,
             background: titleColor.opacity(0.08),
             isFocused: isFocused,
-            iconSize: PosterCardPresentation.folderIconSize(for: style)
+            iconSize: PosterCardPresentation.folderIconSize(for: style),
+            title: placeholderTitle
         )
     }
 
@@ -925,10 +929,26 @@ public struct PosterCardView: View {
             // is title-specific, so its task/memo identity has to be too.
             // Otherwise every posterless card shares one empty-reference key and
             // inherits whichever fallback image resolved first.
-            pinIdentity: artworkPolicy.pinIdentity(for: item)
-        ) {
-            neutralPlaceholder
-        }
+            pinIdentity: artworkPolicy.pinIdentity(for: item),
+            content: { image in
+                ArtworkFillImage(image)
+                    .blur(radius: hideThumbnail && spoilerSettings.mode == .blur ? 28 : 0)
+                    .overlay(alignment: .topTrailing) {
+                        if PosterCardPresentation.usesFolderArtwork(for: item.kind) {
+                            FolderNavigationBadge(size: metrics.folderNavigationBadgeSize)
+                                .padding(folderBadgeInset)
+                        }
+                    }
+            },
+            placeholder: {
+                if PosterCardPresentation.usesFolderArtwork(for: item.kind) {
+                    folderPlaceholderArtwork
+                } else {
+                    neutralPlaceholder
+                }
+            }
+        )
+        .showingPlaceholderWhileLoading(placeholderTitle != nil)
     }
 
     private var artworkVariant: ArtworkImageVariant {
@@ -1092,6 +1112,7 @@ public struct PosterCardView: View {
         ) {
             neutralPlaceholder
         }
+        .showingPlaceholderWhileLoading(placeholderTitle != nil)
     }
 
     /// Server-supplied series art, ordered for this card's shape: a poster card
@@ -1123,9 +1144,12 @@ public struct PosterCardView: View {
     /// the caption colour so it flips on focus and respects reduced-transparency.
     private var neutralPlaceholder: some View {
         let radius = cardStyle == .framed
-            ? (style == .poster ? PlozzTheme.Metrics.posterArtCornerRadius : PlozzTheme.Metrics.mediumMediaCornerRadius)
+            ? (style == .poster ? metrics.posterArtworkCornerRadius : metrics.landscapeArtworkCornerRadius)
             : borderlessCornerRadius
-        return MediaArtworkPlaceholder(tint: subtitleColor, symbol: .init(for: item), cornerRadius: radius)
+        return MediaArtworkPlaceholder(
+            tint: subtitleColor, symbol: .init(for: item), cornerRadius: radius,
+            title: placeholderTitle, titleColor: titleColor
+        )
     }
 
     // MARK: Series-identified artwork (Continue Watching)
@@ -1508,26 +1532,30 @@ enum PosterCardPresentation {
     }
 }
 
-/// Dedicated folder artwork: a generic symbol only. The item's real title stays
-/// in the normal caption below the card, so it is never duplicated in the poster.
+/// Folder names stay in the caption when enabled, otherwise inside the placeholder.
 struct FolderPlaceholderArtwork: View {
     let foreground: Color
     let background: Color
     let isFocused: Bool
     let iconSize: CGFloat
+    let title: Text?
 
     var body: some View {
         ZStack {
             background
-            Image(systemName: "folder.fill")
-                .symbolRenderingMode(.hierarchical)
-                .font(.system(size: iconSize, weight: .medium))
-                .foregroundStyle(
-                    foreground.opacity(
-                        PosterCardPresentation.folderIconOpacity(isFocused: isFocused)
+            ArtworkPlaceholderContent(
+                title: title, foreground: foreground,
+                symbol: Image(systemName: "folder.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.system(size: iconSize, weight: .medium))
+                    .foregroundStyle(
+                        foreground.opacity(
+                            PosterCardPresentation.folderIconOpacity(isFocused: isFocused)
+                        )
                     )
-                )
+            )
         }
+        .accessibilityHidden(true)
     }
 }
 

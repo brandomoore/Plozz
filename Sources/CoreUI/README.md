@@ -1,7 +1,7 @@
 # CoreUI
 
 Shared, **focusable** UI primitives, the app theme, and the artwork image
-cache that every feature module reuses. tvOS-only — guarded behind
+cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 `#if canImport(SwiftUI)` so the package still compiles on Linux for tests.
 
 ## Responsibility
@@ -30,6 +30,9 @@ cache that every feature module reuses. tvOS-only — guarded behind
   hairline edge. Gradient Off or Reduce Transparency restores the original solid
   surface and border; unrelated raised cards and dialogs remain unchanged.
   The detail information band retains its darker 40%-opaque surface.
+  Compact mobile detail metadata and actions reveal the page gradient instead
+  of covering it with a solid rectangle; Gradient Off and Reduce Transparency
+  retain the original opaque base. The artwork's existing readability fade stays.
   Native tvOS cards display their local portion of a shared page-mesh texture,
   with the information band and wash precomposed because TVUIKit replaces fill
   alpha. The texture is created only when a card needs it, its longest edge is
@@ -44,15 +47,39 @@ cache that every feature module reuses. tvOS-only — guarded behind
   Native card focus observation is separate from explicit focus requests.
   Caption, overlay and transition-anchor readers update without rebuilding
   the poster's artwork loader or context menu.
+- **Mobile content tabs** — `PlozzContentTabs` owns the touch-sized horizontal
+  navigation shared by library modes and series seasons. Selected tabs use the
+  existing glass capsule style; inactive tabs are secondary text without a
+  capsule. Typography, spacing, 44pt minimum targets, selected accessibility
+  traits, long-label fitting, and selected-tab reveal live in one component.
+  It respects Reduce Motion when revealing a new selection and re-reveals after
+  viewport, text-size, or option changes. Callers supply localized or verbatim
+  labels and page keylines; native app tabs and tvOS focus controls are separate.
+- **Mobile media corners** — posters and Continue Watching share a 12pt artwork
+  radius at every display size and responsive width. Borderless cards use that
+  radius directly; glass frames add their inset to remain concentric. Loaded
+  artwork, missing-art placeholders, and skeletons agree. TV rounding is unchanged.
+  Mobile library, episode, and download artwork uses the same metric, keeping
+  its caption clearance consistent with its actual corners. Home library names
+  and server names share one leading-aligned text column beside the provider mark.
 - **Media-row focus** — a dedicated modifier owns the row's `FocusState`
   and supplies its binding to tracked cards. Focus callbacks and prefetch
   bookkeeping must not invalidate the row that constructs all card inputs.
   Entry-gate state remains observable for episode rows; ordinary Home rows
   retain native column-aligned entry and cover/return behavior.
+- **Grouped settings interactions** — `SettingsSectionGroup` uses explicit
+  menu pickers on iOS. A visual group occupies one native List cell; automatic
+  pickers can promote their menu to that whole cell and intercept neighboring
+  navigation links or controls. Keep picker activation local without replacing
+  the shared group surface, separators, or tvOS control styles.
 - **Async artwork** — `FallbackAsyncImage` and `ArtworkImageCache`: an
   on-disk + in-memory image cache shared with `MetadataKit`'s URL cache,
   with an `asyncFallbackURL` slot so server art is always tried first and
   the `MetadataKit` fallback only runs when needed.
+  When card captions are hidden, folder and missing-art placeholders carry the
+  existing spoiler-safe title inside the artwork slot. Loaded art remains
+  label-free, visible captions are not duplicated, and loading/failure never
+  changes card height. Spoiler blur applies to images, not fallback names.
 - **Content state** — `ContentStateView` renders the `LoadState`
   loading / loaded / empty / failed states identically across features.
 - **Mobile settings surfaces** — `SettingsPageSurface` keeps the native scroll

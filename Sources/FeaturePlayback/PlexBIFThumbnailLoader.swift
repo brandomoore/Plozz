@@ -31,6 +31,10 @@ final class PlexBIFThumbnailLoader: ScrubThumbnailProviding {
     private var blob: Data?
     private var index: BIFIndex?
     private var loadTask: Task<Bool, Never>?
+    /// Set when the server confirms a missing resource or an unparseable blob.
+    /// Plex keeps advertising `indexes` after its preview files are deleted, so
+    /// a 404 here is permanent; retrying it on every scrub sample is pointless.
+    private(set) var isPermanentlyUnavailable = false
 
     /// Decoded-frame cache keyed by frame index, with FIFO eviction to bound
     /// memory (decoded SD frames are small, but a long movie has many).
@@ -116,6 +120,7 @@ final class PlexBIFThumbnailLoader: ScrubThumbnailProviding {
     /// later attempts after a failure.
     private func ensureLoaded() async -> Bool {
         if index != nil { return true }
+        if isPermanentlyUnavailable { return false }
         if let existing = loadTask { return await existing.value }
         let task = Task<Bool, Never> { [weak self] in
             guard let self else { return false }
@@ -135,12 +140,16 @@ final class PlexBIFThumbnailLoader: ScrubThumbnailProviding {
                     PlozzLog.playback.debug(
                         "Plex BIF request failed status=\(http.statusCode) url=\(PlozzLog.redact(url: url))"
                     )
+                    if http.statusCode == 404 || http.statusCode == 410 {
+                        self.isPermanentlyUnavailable = true
+                    }
                     return false
                 }
                 guard let parsed = BIFIndex(data: data) else {
                     PlozzLog.playback.debug(
                         "Plex BIF parse failed url=\(PlozzLog.redact(url: url)) size=\(data.count)"
                     )
+                    self.isPermanentlyUnavailable = true
                     return false
                 }
                 self.blob = data

@@ -162,25 +162,7 @@ struct AppearanceDetailView: View {
     }
 
     @ViewBuilder private var cardsControls: some View {
-        @Bindable var cardStyle = cardStyle
-        @Bindable var watchStatusIndicator = watchStatusIndicator
-        VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
-            SettingsDetailGroup(title: "Style") {
-                CompactCardStylePicker(selection: $cardStyle.style, swatchHeight: 150)
-            }
-            SettingsDetailGroup(title: "Watched Indicator") {
-                CompactWatchIndicatorPicker(selection: $watchStatusIndicator.indicator, swatchHeight: 150)
-            }
-            SettingsDetailGroup(
-                title: LocalizedStringResource(
-                    "settings.cards.focus",
-                    defaultValue: "Focus",
-                    comment: "Section header in tvOS Settings > Appearance > Cards, above the picker that chooses what a media card does when the remote's focus lands on it. Not camera focus and not a concentration/Focus mode — this is the on-screen selection highlight."
-                )
-            ) {
-                CompactCardFocusStylePicker(selection: $cardStyle.focusStyle, swatchHeight: 150)
-            }
-        }
+        CardAppearanceControls(cards: cardStyle, watchIndicator: watchStatusIndicator)
     }
 }
 

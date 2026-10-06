@@ -62,8 +62,7 @@ public struct HeroSettings: Codable, Equatable, Sendable {
     /// a layout choice, not a hero option: Showcase has no hero section at all.
     public var style: HeroStyle
 
-    /// Whether cards keep their title lines when the hero follows focus. Off by
-    /// default: the hero already names whatever is focused.
+    /// Legacy migration input. CardCaptionSettings now owns visual card labels.
     public var showsCardCaptions: Bool
 
     /// Whether the Showcase layout adds a row of discovery picks — what the

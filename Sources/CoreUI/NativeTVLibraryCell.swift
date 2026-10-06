@@ -50,10 +50,14 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         let metrics = environment.plozzMetrics
         let inset = environment.plozzCardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin
         let size = CGSize(width: max(1, width - inset * 2), height: max(1, width - inset * 2) * 1.5)
+        if environment.plozzCardCaptionsHidden {
+            return size.height + focusClearance * 2
+        }
         let title = UIFont.systemFont(ofSize: metrics.cardTitleFontSize, weight: .semibold)
         let subtitle = UIFont.systemFont(ofSize: metrics.cardSubtitleFontSize)
-        return size.height + focusClearance * 2 + ceil(title.lineHeight) + 2 + ceil(subtitle.lineHeight)
-            + metrics.focusCaptionPush(for: .system) + metrics.posterCaptionInset
+        return size.height + focusClearance + metrics.nativePosterCaptionSpacing
+            + ceil(title.lineHeight) + 2 + ceil(subtitle.lineHeight)
+            + metrics.nativePosterCaptionFocusTravel + metrics.posterCaptionInset
     }
 
     public func configure(item: MediaItem?, spoilerSettings: SpoilerSettings, environment: EnvironmentValues) {
@@ -139,7 +143,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         contentView.frame = CGRect(x: inset, y: Self.focusClearance, width: width, height: size.height)
         contentView.layoutIfNeeded()
         caption.frame = CGRect(
-            x: inset, y: contentView.frame.maxY + Self.focusClearance,
+            x: inset, y: contentView.frame.maxY + metrics.nativePosterCaptionSpacing,
             width: width, height: caption.intrinsicContentSize.height
         )
         marker.frame = contentView.frame
@@ -201,10 +205,11 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     }
 
     private func updateCaption(animated: Bool) {
+        caption.isHidden = environment.plozzCardCaptionsHidden
         let metrics = environment.plozzMetrics
         let palette = environment.themePalette
         let color = UIColor(isFocused ? palette.primaryText : palette.secondaryText)
-        let scrolls = isFocused && !environment.accessibilityReduceMotion
+        let scrolls = isFocused && !caption.isHidden && !environment.accessibilityReduceMotion
         caption.semanticContentAttribute =
             environment.layoutDirection == .rightToLeft
             ? .forceRightToLeft : .forceLeftToRight
@@ -230,7 +235,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             )
         }
         caption.setFocused(
-            isFocused, travel: metrics.focusCaptionPush(for: .system),
+            isFocused, travel: metrics.nativePosterCaptionFocusTravel,
             animated: animated && !environment.accessibilityReduceMotion)
     }
 
@@ -252,7 +257,10 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             NativeLibraryArtworkOverlay(
                 symbol: item.map { .init(for: $0) } ?? .playback,
                 hasArtwork: artwork != nil, isFolder: item?.kind == .folder,
-                isFocused: isFocused, indicators: indicators
+                isFocused: isFocused, indicators: indicators,
+                title: environment.plozzCardCaptionsHidden ? item.map {
+                    Text(verbatim: $0.posterCaptionTitle(spoilerSettings: spoilerSettings).resolve(locale: environment.locale))
+                } : nil
             )
             .environment(\.self, environment)
             .plozzChromeFocused(isFocused)
@@ -287,6 +295,7 @@ private struct NativeLibraryArtworkOverlay: View {
     let isFolder: Bool
     let isFocused: Bool
     let indicators: MediaCardPlaybackIndicators?
+    let title: Text?
     @Environment(\.plozzMetrics) private var metrics
 
     var body: some View {
@@ -294,19 +303,21 @@ private struct NativeLibraryArtworkOverlay: View {
             if isFolder && !hasArtwork {
                 FolderPlaceholderArtwork(
                     foreground: .primary, background: Color.primary.opacity(0.08),
-                    isFocused: isFocused, iconSize: PosterCardPresentation.folderIconSize(for: .poster)
+                    isFocused: isFocused, iconSize: PosterCardPresentation.folderIconSize(for: .poster),
+                    title: title
                 )
             } else if !hasArtwork {
                 MediaArtworkPlaceholder(
                     tint: .secondary, symbol: symbol,
-                    cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius
+                    cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius,
+                    title: title
                 )
             }
             indicators
         }
         .overlay(alignment: .topTrailing) {
             if isFolder && hasArtwork {
-                FolderNavigationBadge(size: metrics.watchedBadgeSize)
+                FolderNavigationBadge(size: metrics.folderNavigationBadgeSize)
                     .padding(8)
             }
         }

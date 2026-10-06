@@ -87,29 +87,75 @@ whenever a change could invalidate the map itself or is otherwise unmappable —
 `project.yml`/`Config/**`, `*.xctestplan`, or any changed code path it can't map to
 a test target. Pure docs/asset changes select nothing. Every run prints the chosen
 suites and the reason each was selected.
+This automatic fallback is conservative input to the agent's assessment, not a
+requirement to run the full app matrix for a Python-tooling or documentation edit.
+Use explicit relevant suites/checks when the actual impact is narrower.
 
 ### Main-gate execution and reuse
 
-Use a fixed gate sequence instead of constructing a new orchestration for each
-landing. Record phase start/end times, current status, commands, and retained
-result locations. Start with the localization delta plan; an empty delta does
-not need artifact assembly/import.
+Ordinary main landings use **risk-based agent judgment**, favoring the smallest
+justified validation rather than a blanket full matrix. Inspect the actual diff,
+affected behavior, and existing source-matched evidence. Already validated
+tooling/test-only changes usually need no new app tests or builds; a narrow UI
+change may need its hosted regression; shared behavioral or build-graph changes
+may justify wider coverage. Explain the choice briefly. Do not use a filename
+category alone to force a full run, and do not skip a known relevant failure.
 
-An interrupted landing may reuse a completed phase only when its complete
+Use one runner, recording the assessment, selected checks, prior evidence
+references, timings, and omitted suites. Cheap architecture, test-hygiene,
+localization-source guard, catalog validation, snapshot consistency, clean-tree,
+and fresh-main checks remain. Choose full suites or signed builds only for a
+concrete coverage gap/risk or an explicit request. Focused passing results are
+reported as focused results, never as a full-suite pass.
+
+When translatable source/copy, comments, plurals, or permission text changed,
+complete extraction and the reviewed delta pipeline in `translations.md` before
+publication. An empty delta needs no artifact assembly/import. Distribution
+still requires its existing full validation, signing, and localization safeguards.
+
+An interrupted landing may reuse a completed phase only when its consumed
 source/configuration, toolchain/SDK, package workspace, simulator runtime, and
-command recipe match. Keep the authoritative passing summary and expected-bundle
+command recipe match. `tools/lib/l10n_freshness.py` derives consumers from the
+current Swift package and XcodeGen dependency graphs. A TV-only hosted fixture
+edit reruns TV hosted tests, not package tests, iOS hosted tests, or app builds.
+Shared production changes invalidate every consumer. Unknown paths, configuration,
+and tooling are conservatively shared inputs; ordinary documentation and the
+completed localization snapshot do not invalidate compilation. Documentation
+explicitly consumed as a target resource still does.
+Run whole-tree architecture and test-hygiene guards on every invocation,
+including when package-test evidence is reused.
+
+Keep the authoritative passing summary and expected-bundle
 evidence, not just a success marker; missing or changed evidence reruns the gate.
 A failed fresh attempt invalidates an earlier success. Inputs changing between
-phases prevent the combined candidate from being declared ready. A changed
-candidate still requires the full package and hosted gates; targeted regressions
-used to diagnose a failure do not replace those final gates.
+phases prevent the combined candidate from being declared ready. Invalidating a
+cached full-suite result does not itself require running that suite: reassess
+whether the changed behavior needs it.
+
+Local main publishers use `tools/main-landing.py`'s shared Git-directory lock
+from the initial main preflight through the verified push, releasing it before
+device delivery. The hook reenters an inherited lock and checks the source guard,
+current catalog, and source snapshot without invoking extraction builds.
+Source extraction is part of relevant development/localization work, not every
+push. Feature pushes do not wait. This coordinates participating
+linked worktrees, not old runners or other machines. A standalone hook owns the
+lock only during its checks, not Git's subsequent network update. Fresh-main
+verification and non-force publication remain mandatory.
 
 Signed products additionally require matching build identity, executable and
 resource-seal fingerprints, and fresh signature verification before reuse.
-After all gates pass, recheck `main` and publish the authorized update **before**
+After the selected checks pass, recheck `main` and publish the authorized update **before**
 independent physical-device installation. Unavailable-device retry budgets stay
 unchanged but are not part of the main-push prerequisite. Keep the enclosing
 build lease through remaining delivery and retain exact artifacts as usual.
+
+For hosted UI speed, replace setup sleeps only with observable readiness.
+`waitForHostedLayout` bounds waits for stable layer geometry and completed
+animations in static library/multiview matrices. Keep loading/shimmer waits and
+negative focus-observation windows intact; continuously animated fixtures are
+not candidates for this helper. Viewport, Dynamic Type, OCR, and pixel assertions
+must remain unchanged. Record actual timings rather than assuming a shorter
+sleep improves a run.
 
 ### 3. Fail fast — you learn a result in seconds, not minutes
 
@@ -199,6 +245,10 @@ Runner verdict regressions use the existing host-side unittest runner:
 
 ## App-hosted focus integration
 
+Episode-panel fixtures activate native window focus before reissuing their
+SwiftUI Browse entry request. Repeated window handoffs must start on Browse and
+still allow the playing episode to receive actual native focus.
+
 `PlayerSkipMarkerHostedTests` updates one live scrub track and waits for stable
 rendered frames before comparing native fills. Liquid Glass can keep changing
 after layout; comparing its first frames must not be mistaken for a marker color
@@ -278,6 +328,24 @@ Empty and single-profile summaries keep the same reachable action. These tests
 use synthetic received data, not pairing services or stored household credentials.
 Package-only UIKit snapshots cannot replace this gate:
 without an application scene, `drawHierarchy` returns an empty image.
+
+The `PlozziOSInteractionTests` scheme adds real native touch coverage for Settings
+on both an owned iPhone simulator and an owned iPad simulator. It launches the
+same presentation host with an explicit settings-fixture argument, exercising
+production views rather than copies. The fixture disables cloud sync in its own
+sandbox before creating the app model; it does not need shipping entitlements
+or stored accounts. Normal presentation-test launches still use the blank host.
+The UI-test target depends on that host, not additional package products.
+
+`SettingsInteractionTests` checks navigation from compact and split Settings,
+Cards and Display Size, independent theme and playback menus, caption previews
+and per-view overrides, and neighboring Home, subtitle, spoiler, Circadian Mode,
+and Live TV controls. These tests must synthesize taps: direct accessibility
+activation and screenshots alone miss a native List cell intercepting a
+neighbor's tap. Keep the shared lease, private package workspace, serial
+execution, and retained `xcresult` used by the presentation suite; select
+`-scheme PlozziOSInteractionTests -only-testing:PlozziOSInteractionTests/SettingsInteractionTests`
+with the explicit owned iOS simulator destination.
 
 `tools/run-focus-tests.sh` runs the `PlozzFocusTests` scheme in a minimal,
 separate `PlozzFocusHost` app. It uses the same package code but supplies a real
@@ -1174,8 +1242,10 @@ the FTP socket-timeout tests) are worth their ~1s each and should be left alone.
    `tools/test-fast.sh CoreModels FeatureAuth`. Preview with `--dry-run`.
 2. **Pre-integration (handing a branch off):** `tools/test-fast.sh` already expands
    foundational changes to the affected set.
-3. **Pre-merge / CI gate (before merging to main):** full sweep
-   `tools/run-tests.sh` (no args) — build-once, all suites.
+3. **Ordinary main landing:** agent-selected checks based on actual risk and
+   current evidence; no automatic full sweep. See "Main-gate execution and reuse."
+4. **Broad regression / distribution:** full sweep when warranted by the change
+   or required by the distribution lane. Existing CI schedules remain independent.
 
 ### `tools/test-fast.sh` usage
 ```

@@ -740,6 +740,7 @@ public struct ItemDetailView: View {
                             leadingInset: PlozzTheme.Metrics.heroLeadingPadding,
                             onSelect: onSelectChild
                         )
+                        .environment(\.plozzCardCaptionView, .episodes)
                     }
                     DetailExtrasView(
                         item: detail.item,

@@ -4,6 +4,18 @@ import CoreModels
 
 @MainActor
 final class LibraryBrowseViewModelTests: XCTestCase {
+    func testLibraryCaptionScopesDistinguishContainersFromTheirContents() {
+        let expected: [(LibraryContentMode, CardCaptionView)] = [
+            (.recommended, .recommended), (.titles, .browse),
+            (.collections, .collections), (.playlists, .playlists)
+        ]
+        for (mode, view) in expected {
+            XCTAssertEqual(LibraryBrowseScope.library.cardCaptionView(for: mode), view)
+            XCTAssertEqual(LibraryBrowseScope.collectionMembers.cardCaptionView(for: mode), .browse)
+            XCTAssertEqual(LibraryBrowseScope.playlistMembers.cardCaptionView(for: mode), .browse)
+        }
+    }
+
     private func makeVM(itemCount: Int, pageSize: Int = 10) -> (LibraryBrowseViewModel, FakeMediaProvider) {
         let provider = FakeMediaProvider(allItems: makeItems(itemCount))
         let vm = LibraryBrowseViewModel(

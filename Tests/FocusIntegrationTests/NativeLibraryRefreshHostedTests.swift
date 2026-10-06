@@ -5,12 +5,70 @@ import CoreModels
 @testable import FeatureHome
 import FeatureHomeCore
 import SwiftUI
+import TVUIKit
 import UIKit
 import Vision
 import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testRecommendedShowcaseUsesItsCaptionOverrideInsteadOfHome() async throws {
+        let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, recommendationHub: true)
+        let name = "RecommendedCaptionScope.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie, defaults: defaults
+        )
+        await model.loadRecommendationsIfNeeded()
+        XCTAssertEqual(model.contentMode, .recommended)
+        for visible in [false, true] {
+            let settings = CardCaptionSettings(
+                showsLabels: !visible, overrides: [.home: !visible, .recommended: visible]
+            )
+            try await withLibrary(model: model, captions: settings) { root, window in
+                XCTAssertNotNil(find(TVPosterView.self, in: root), "The real recommended media row must be mounted.")
+                XCTAssertEqual(find(SystemPosterCaption.CaptionView.self, in: root) != nil, visible)
+                capture(window, name: "recommended-labels-\(visible)")
+            }
+        }
+    }
+
+    func testNativeGridHonorsBrowseOverrideAndRemovesHiddenCaptionSpace() async throws {
+        let provider = RefreshLibraryProvider()
+        let model = LibraryBrowseViewModel(provider: provider, containerID: "library", containerKind: .movie)
+        await model.loadFirstPage()
+        for visible in [false, true] {
+            let settings = CardCaptionSettings(showsLabels: !visible, overrides: [.browse: visible])
+            try await withLibrary(model: model, captions: settings) { root, window in
+                let collection = try XCTUnwrap(find(UICollectionView.self, in: root))
+                let path = IndexPath(item: 0, section: 0)
+                let cell = try XCTUnwrap(collection.cellForItem(at: path) as? NativeTVLibraryCell)
+                let caption = try XCTUnwrap(find(SystemPosterCaption.CaptionView.self, in: cell))
+                XCTAssertEqual(caption.isHidden, !visible)
+                XCTAssertNotNil(cell.accessibilityLabel)
+                var environment = EnvironmentValues()
+                environment.plozzCardStyle = .borderless
+                environment.plozzCardCaptionSettings = settings
+                environment.plozzCardCaptionView = .browse
+                XCTAssertEqual(
+                    cell.bounds.height,
+                    NativeTVLibraryCell.height(for: cell.bounds.width, environment: environment),
+                    accuracy: 1
+                )
+                if visible {
+                    XCTAssertEqual(caption.frame.minY - cell.contentView.frame.maxY, 8, accuracy: 1)
+                }
+                let frame = caption.frame
+                XCTAssertTrue(cell.onRequestFocus?() == true)
+                try await Task.sleep(for: .milliseconds(250))
+                XCTAssertTrue(cell.isFocused)
+                XCTAssertEqual(caption.frame, frame, "Focus must not reflow the caption slot.")
+                capture(window, name: "library-labels-\(visible)")
+            }
+        }
+    }
+
     func testLibraryControlsScrollWithBothGridStylesAndRemainFocusableOnReturn() async throws {
         for style: CardFocusStyle in [.system, .highlight] {
             let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, supportsFilters: true)
@@ -1089,6 +1147,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         title: Text = Text("Library"),
         focusStyle: CardFocusStyle = .system,
         palette: ThemePalette = .dark,
+        captions: CardCaptionSettings = .default,
         presenter: TransientStatusPresenter = TransientStatusPresenter(announcement: { _ in }),
         onSelect: @escaping (MediaItem) -> Void = { _ in },
         body: (UIView, UIWindow) async throws -> Void
@@ -1104,6 +1163,7 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
                 .environment(\.plozzCardFocusStyle, focusStyle)
                 .environment(\.plozzCardStyle, .borderless)
                 .environment(\.themePalette, palette)
+                .environment(\.plozzCardCaptionSettings, captions)
                 .preferredColorScheme(palette.isLight ? .light : .dark)
                 .transientStatusOverlay(presenter: presenter, palette: palette)
         )

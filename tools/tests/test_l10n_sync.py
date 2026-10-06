@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "l10n-sync.py"
@@ -47,6 +50,25 @@ def info_documents(*languages: str) -> dict[Path, dict]:
 
 
 class LanguageReleaseParityTests(unittest.TestCase):
+    def test_source_preflight_preserves_structure_checks_but_defers_missing_translations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            catalog = Path(directory) / "Localizable.xcstrings"
+            catalog.write_text(json.dumps({"strings": {"New": entry()}}))
+            with patch.object(l10n_sync, "CATALOG", catalog), \
+                    patch.object(l10n_sync, "plural_problems", return_value=[]) as plurals, \
+                    patch.object(l10n_sync, "infoplist_problems", return_value=[]) as permissions, \
+                    patch.object(l10n_sync, "language_release_problems", return_value=["missing translation"]) as release:
+                self.assertEqual(l10n_sync.validate_catalog(require_translations=False), 0)
+                plurals.assert_called_once()
+                permissions.assert_called_once()
+                release.assert_not_called()
+                self.assertEqual(l10n_sync.validate_catalog(), 1)
+                release.assert_called_once()
+            with patch.object(l10n_sync, "CATALOG", catalog), \
+                    patch.object(l10n_sync, "plural_problems", return_value=["invalid plural"]), \
+                    patch.object(l10n_sync, "infoplist_problems", return_value=["permission mismatch"]):
+                self.assertEqual(l10n_sync.validate_catalog(require_translations=False), 2)
+
     def test_stale_catalog_entries_are_not_active(self) -> None:
         active = entry("nl")
         stale = entry("nl")

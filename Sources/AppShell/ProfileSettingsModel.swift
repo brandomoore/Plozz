@@ -298,7 +298,8 @@ public final class ProfileSettingsModel {
             uiDensityModel: uiDensityModel ?? UIDensitySettingsModel(store: UIDensitySettingsStore(namespace: ns)),
             cardStyleModel: cardStyleModel ?? CardStyleSettingsModel(
                 store: CardStyleSettingsStore(namespace: ns),
-                focusStore: CardFocusStyleSettingsStore(namespace: ns)
+                focusStore: CardFocusStyleSettingsStore(namespace: ns),
+                captionStore: CardCaptionSettingsStore(namespace: ns)
             ),
             watchStatusIndicatorModel: watchStatusIndicatorModel ?? WatchStatusIndicatorSettingsModel(store: WatchStatusIndicatorSettingsStore(namespace: ns)),
             navigationStyleModel: navigationStyleModel ?? NavigationStyleSettingsModel(

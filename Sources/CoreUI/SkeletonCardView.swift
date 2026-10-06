@@ -29,7 +29,9 @@ public struct SkeletonCardView: View {
     /// all. The skeleton is deliberately pixel-1:1 with the loaded card, so it has
     /// to drop the caption too — otherwise Continue Watching visibly shrinks the
     /// moment real cards replace the placeholders.
-    private let showsCaption: Bool
+    private let captionOverride: Bool?
+    @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
+    private var showsCaption: Bool { (captionOverride ?? !captionsHidden) && !showsSeriesArtwork }
     /// Mirrors `PosterCardView`'s series-artwork shape: taller than 16:9 (it
     /// reserves a band for its chrome) and narrower to compensate. Kept explicit
     /// rather than inferred from `showsCaption` so the placeholder and the real
@@ -50,14 +52,14 @@ public struct SkeletonCardView: View {
 
     public init(
         style: Style = .poster,
-        showsCaption: Bool = true,
+        showsCaption: Bool? = nil,
         showsSeriesArtwork: Bool = false,
         isFocused: Bool = false,
         showsProgress: Bool = false,
         focus: PlozzCardFocus.Binding? = nil
     ) {
         self.style = style
-        self.showsCaption = showsCaption
+        self.captionOverride = showsCaption
         self.showsSeriesArtwork = showsSeriesArtwork
         self.isFocused = isFocused
         self.showsProgress = showsProgress
@@ -126,11 +128,11 @@ public struct SkeletonCardView: View {
                 .aspectRatio(2.0 / 3.0, contentMode: .fit)
                 .frame(maxWidth: .infinity)
                 .overlay {
-                    RoundedRectangle(cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius, style: .continuous)
+                    RoundedRectangle(cornerRadius: metrics.posterArtworkCornerRadius, style: .continuous)
                         .fill(palette.fill)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius, style: .continuous))
-                .plozzMediaEdge(cornerRadius: PlozzTheme.Metrics.posterArtCornerRadius)
+                .clipShape(RoundedRectangle(cornerRadius: metrics.posterArtworkCornerRadius, style: .continuous))
+                .plozzMediaEdge(cornerRadius: metrics.posterArtworkCornerRadius)
                 .overlay {
                     SkeletonLoadingIndicator(isVisible: showsProgress)
                 }
@@ -147,7 +149,7 @@ public struct SkeletonCardView: View {
         }
         .shimmering()
         .plozzFramedMediaCard(
-            innerCornerRadius: PlozzTheme.Metrics.posterArtCornerRadius,
+            innerCornerRadius: metrics.posterArtworkCornerRadius,
             isFocused: surfaceFocused
         )
         .plozzCardRasterize(reduceTransparency: reduceTransparency)
@@ -161,11 +163,11 @@ public struct SkeletonCardView: View {
     // Mirrors `PosterCardView.landscapeCard`.
     private var landscapeCard: some View {
         VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
-            RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: metrics.landscapeArtworkCornerRadius, style: .continuous)
                 .fill(palette.fill)
                 .frame(width: artworkSize.width, height: artworkSize.height)
-                .clipShape(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
-                .plozzMediaEdge(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius)
+                .clipShape(RoundedRectangle(cornerRadius: metrics.landscapeArtworkCornerRadius, style: .continuous))
+                .plozzMediaEdge(cornerRadius: metrics.landscapeArtworkCornerRadius)
                 .overlay {
                     SkeletonLoadingIndicator(isVisible: showsProgress)
                 }
@@ -179,7 +181,7 @@ public struct SkeletonCardView: View {
         }
         .shimmering()
         .plozzFramedMediaCard(
-            innerCornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+            innerCornerRadius: metrics.landscapeArtworkCornerRadius,
             isFocused: surfaceFocused
         )
         .plozzCardRasterize(reduceTransparency: reduceTransparency)
@@ -312,12 +314,11 @@ public struct SkeletonCardView: View {
         }
     }
 
-    /// Outer corner radius reused for a borderless image — the framed card's outer
-    /// (glass) radius, matching `PosterCardView.borderlessCornerRadius`.
+    /// Matches the loaded card's platform-specific artwork rounding.
     private var borderlessCornerRadius: CGFloat {
         switch style {
-        case .poster: return metrics.posterCardCornerRadius
-        case .landscape: return metrics.landscapeCardCornerRadius
+        case .poster: return metrics.borderlessPosterCornerRadius
+        case .landscape: return metrics.borderlessLandscapeCornerRadius
         }
     }
 

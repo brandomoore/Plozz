@@ -611,6 +611,7 @@ public struct RootView: View {
             )
         )
         .environment(\.plozzCardStyle, appState.profileSettings.cardStyleModel.style)
+        .environment(\.plozzCardCaptionSettings, appState.profileSettings.cardStyleModel.captions)
         .environment(\.plozzCardFocusStyle, appState.profileSettings.cardStyleModel.focusStyle)
         .environment(\.plozzWatchStatusIndicator, appState.profileSettings.watchStatusIndicatorModel.indicator)
         // Read by the corner mark on a card whose title isn't in the library:

@@ -852,6 +852,7 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
                     item: item, style: shape, enablesAsyncArtworkFallback: false
                 ) {}.frame(width: shape == .poster ? 240 : 520)
                     .environment(\.plozzCardStyle, style)
+                    .environment(\.plozzCardCaptionsHidden, false)
                     // Rasterization belongs to custom focus; native projection
                     // can change the presented artwork's aspect ratio.
                     .environment(\.plozzCardFocusStyle, .outlined)

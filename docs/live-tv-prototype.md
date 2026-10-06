@@ -115,6 +115,9 @@ On iPhone/iPad, Sources and its grouped detail pages use a scroll-based settings
 surface rather than embedding multiple navigation links in one native List cell.
 Each tap pushes only its selected destination; one Back returns to the source
 page. This applies to both Settings and the Live TV toolbar's Sources entry.
+When embedded in a native List, the iPhone/iPad Sources pane clears its row's
+background, separator, and extra insets, so the shared settings gradient and
+group keylines continue through the whole page rather than an opaque inner panel.
 Source choices appear before saved sources, with descriptions of playlist URLs,
 local files (iPhone/iPad), and connected media servers. Playlist fields keep their
 labels visible while editing and show example URLs instead of repeating labels
@@ -801,6 +804,14 @@ prepared. Moving into the controls keeps the last selected audio. Select opens
 the focused picture full-screen; Back restores all retained players without
 retuning. On touch devices, tapping a picture selects its audio and expands it;
 Show all restores the layout. Tapping again reveals hidden controls.
+iPhone/iPad controls use the original container safe area even though the video
+canvas extends beneath system chrome. A compact Close control and separate Watch
+action stay at the top; a touch-sized bottom dock exposes Add, Layout, and Audio,
+with Favorite and channel management in More. At large text sizes or narrow
+windows the dock scrolls rather than truncating labels. Setup's pictures reserve
+the measured header and dock heights so landscape and large-text controls cannot
+cover them. TV focus controls and the retained players' full-screen geometry are
+unchanged.
 Watching hides controls after four seconds of inactivity. Editing, native menus,
 channel selection, preparation failures and VoiceOver keep them available.
 Native menu focus notifications do not write back into the pinned controls'

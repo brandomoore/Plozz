@@ -1608,7 +1608,7 @@ private struct PlozziOSDownloadAction: View {
     }
 }
 
-private struct PlozziOSInlineSeriesBrowser: View {
+struct PlozziOSInlineSeriesBrowser: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedSeasonID: String?
     @State private var railTargetID: String?
@@ -1659,49 +1659,17 @@ private struct PlozziOSInlineSeriesBrowser: View {
         if !seasons.isEmpty || !looseEpisodes.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
                 if !seasons.isEmpty {
-                    HStack(spacing: 10) {
-                        ScrollViewReader { proxy in
-                            ScrollView(.horizontal) {
-                                LazyHStack(spacing: 10) {
-                                    ForEach(seasons) { season in
-                                        PlozziOSSeasonButton(
-                                            title: season.title,
-                                            isSelected:
-                                                season.id == selectedSeasonID
-                                        ) {
-                                            hasInteractedWithEpisodeBrowser = true
-                                            selectedSeasonID = season.id
-                                        }
-                                        .id(season.id)
-                                    }
-                                }
-                            }
-                            .contentMargins(
-                                .leading,
-                                pageInset,
-                                for: .scrollContent
-                            )
-                            .contentMargins(
-                                .trailing,
-                                4,
-                                for: .scrollContent
-                            )
-                            .scrollIndicators(.hidden)
-                            .onChange(
-                                of: selectedSeasonID,
-                                initial: true
-                            ) { _, selectedSeasonID in
-                                guard let selectedSeasonID else { return }
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    proxy.scrollTo(
-                                        selectedSeasonID,
-                                        anchor: .center
-                                    )
-                                }
-                            }
-                        }
+                    PlozzContentTabs(
+                        options: seasons, id: \.id, selection: selectedSeasonID,
+                        horizontalInset: pageInset,
+                        title: { Text(verbatim: $0.title) },
+                        tabIdentifier: { "season-\($0.id)" }
+                    ) { season in
+                        hasInteractedWithEpisodeBrowser = true
+                        selectedSeasonID = season.id
                     }
-                    .padding(.trailing, pageInset)
+                    .accessibilityLabel("Season")
+                    .accessibilityIdentifier("series-season-tabs")
                 }
 
                 PlozziOSInlineEpisodeRail(
@@ -3360,45 +3328,6 @@ private struct PlozziOSSeasonDownloadPrompt: Identifiable {
     }
 }
 
-private struct PlozziOSSeasonButton: View {
-    @Environment(\.themePalette) private var palette
-
-    /// Season name from the server — content, so rendered verbatim.
-    let title: String   // l10n:content — season name from the server
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(
-                    isSelected
-                        ? palette.backgroundBase
-                        : palette.primaryText
-                )
-                .padding(.horizontal, 18)
-                .padding(.vertical, 10)
-                .background(
-                    isSelected
-                        ? palette.primaryText
-                        : palette.cardSurface.opacity(0.92),
-                    in: Capsule()
-                )
-                .overlay {
-                    if !isSelected {
-                        Capsule()
-                            .strokeBorder(
-                                palette.primaryText.opacity(0.2),
-                                lineWidth: 1
-                            )
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 private struct PlozziOSInlineEpisodeRail: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var scrollPositionID: String?
@@ -3499,6 +3428,7 @@ private struct PlozziOSInlineEpisodeSkeletonRail: View {
 }
 
 private struct PlozziOSInlineEpisodeSkeleton: View {
+    @Environment(\.plozzCardCaptionSettings) private var captionSettings
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.plozzMetrics) private var metrics
@@ -3509,7 +3439,7 @@ private struct PlozziOSInlineEpisodeSkeleton: View {
         if cardStyle == .framed {
             content
                 .plozzFramedMediaCard(
-                    innerCornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                    innerCornerRadius: metrics.landscapeArtworkCornerRadius
                 )
         } else {
             content
@@ -3517,25 +3447,27 @@ private struct PlozziOSInlineEpisodeSkeleton: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
             RoundedRectangle(
-                cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+                cornerRadius: metrics.landscapeArtworkCornerRadius,
                 style: .continuous
             )
             .fill(palette.fill)
             .frame(width: cardWidth, height: cardWidth * 9 / 16)
             .plozzMediaEdge(
-                cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                cornerRadius: metrics.landscapeArtworkCornerRadius
             )
 
-            VStack(alignment: .leading, spacing: 6) {
-                skeletonLine(width: 72, height: 10)
-                skeletonLine(width: cardWidth * 0.64, height: 17)
-                skeletonLine(width: cardWidth * 0.88, height: 13)
-                skeletonLine(width: cardWidth * 0.72, height: 13)
+            if captionSettings.showsLabels(in: .episodes) {
+                VStack(alignment: .leading, spacing: 6) {
+                    skeletonLine(width: 72, height: 10)
+                    skeletonLine(width: cardWidth * 0.64, height: 17)
+                    skeletonLine(width: cardWidth * 0.88, height: 13)
+                    skeletonLine(width: cardWidth * 0.72, height: 13)
+                }
+                .frame(maxWidth: .infinity, minHeight: 66, alignment: .topLeading)
+                .padding(.horizontal, metrics.landscapeCaptionInset)
             }
-            .frame(maxWidth: .infinity, minHeight: 66, alignment: .topLeading)
-            .padding(.horizontal, metrics.landscapeCaptionInset)
         }
         .frame(width: cardWidth, alignment: .leading)
         .padding(cardStyle == .framed ? 10 : 0)
@@ -3554,6 +3486,7 @@ private struct PlozziOSInlineEpisodeSkeleton: View {
 }
 
 private struct PlozziOSInlineEpisodeEntry: View {
+    @Environment(\.plozzCardCaptionSettings) private var captionSettings
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.plozzMetrics) private var metrics
@@ -3572,7 +3505,7 @@ private struct PlozziOSInlineEpisodeEntry: View {
         if cardStyle == .framed {
             content
                 .plozzFramedMediaCard(
-                    innerCornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                    innerCornerRadius: metrics.landscapeArtworkCornerRadius
                 )
                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
         } else {
@@ -3581,13 +3514,14 @@ private struct PlozziOSInlineEpisodeEntry: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
             Button {
                 onPlay(episode, false)
             } label: {
                 episodeArtwork
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(Text(verbatim: episode.title))
             // An unreleased episode has no file behind it, so tapping it can only
             // fail. It stays visible and legible — that IS the information — but
             // is inert, and its actions menu is withdrawn since none apply.
@@ -3617,7 +3551,7 @@ private struct PlozziOSInlineEpisodeEntry: View {
                 )
                 .clipShape(
                     RoundedRectangle(
-                        cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+                        cornerRadius: metrics.landscapeArtworkCornerRadius,
                         style: .continuous
                     )
                 )
@@ -3640,32 +3574,34 @@ private struct PlozziOSInlineEpisodeEntry: View {
                 .padding(.bottom, 14)
             }
 
-            VStack(alignment: .leading, spacing: 3) {
-                if let number = episode.episodeNumber {
-                    Text("Episode \(number)")
-                        .font(.caption2.weight(.semibold))
-                        .textCase(.uppercase)
-                        .plozzForeground(.secondary)
+            if captionSettings.showsLabels(in: .episodes) {
+                VStack(alignment: .leading, spacing: 3) {
+                    if let number = episode.episodeNumber {
+                        Text("Episode \(number)")
+                            .font(.caption2.weight(.semibold))
+                            .textCase(.uppercase)
+                            .plozzForeground(.secondary)
+                    }
+                    Text(episode.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                    if let overview = episode.overview, !overview.isEmpty {
+                        Text(overview.overviewMarkdown ?? AttributedString(overview))
+                            .font(.subheadline)
+                            .plozzForeground(.secondary)
+                            .lineLimit(2)
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: 40,
+                                alignment: .topLeading
+                            )
+                    } else {
+                        Color.clear.frame(height: 40).accessibilityHidden(true)
+                    }
                 }
-                Text(episode.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                if let overview = episode.overview, !overview.isEmpty {
-                    Text(overview.overviewMarkdown ?? AttributedString(overview))
-                        .font(.subheadline)
-                        .plozzForeground(.secondary)
-                        .lineLimit(2)
-                        .frame(
-                            maxWidth: .infinity,
-                            minHeight: 40,
-                            alignment: .topLeading
-                        )
-                } else {
-                    Color.clear.frame(height: 40).accessibilityHidden(true)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, metrics.landscapeCaptionInset)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, metrics.landscapeCaptionInset)
         }
         .frame(width: cardWidth, alignment: .leading)
         .padding(cardStyle == .framed ? 10 : 0)
@@ -3707,9 +3643,13 @@ private struct PlozziOSInlineEpisodeEntry: View {
             // on every platform; this was a bare filled rectangle with no glyph.
             MediaArtworkPlaceholder(
                 glyphSize: 32, symbol: .init(for: episode),
-                cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                cornerRadius: metrics.landscapeArtworkCornerRadius,
+                title: captionSettings.showsLabels(in: .episodes) ? nil : EpisodeColumnPresentation(
+                    item: episode, spoilerSettings: appModel.settings.spoilers.settings
+                ).titleLine
             )
         }
+        .showingPlaceholderWhileLoading(!captionSettings.showsLabels(in: .episodes))
         .frame(width: cardWidth, height: cardWidth * 9 / 16)
         .overlay {
             // The shared wash — this card's own gradient is where it came from.
@@ -3717,12 +3657,12 @@ private struct PlozziOSInlineEpisodeEntry: View {
         }
         .clipShape(
             RoundedRectangle(
-                cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+                cornerRadius: metrics.landscapeArtworkCornerRadius,
                 style: .continuous
             )
         )
         .plozzMediaEdge(
-            cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+            cornerRadius: metrics.landscapeArtworkCornerRadius,
             isEnabled: MediaArtworkPlaceholder.Symbol(for: episode) == .playback
         )
     }

@@ -528,7 +528,7 @@ struct DownloadTileContent: View {
         if cardStyle == .framed {
             content
                 .plozzFramedMediaCard(
-                    innerCornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                    innerCornerRadius: metrics.landscapeArtworkCornerRadius
                 )
                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
         } else {
@@ -544,12 +544,12 @@ struct DownloadTileContent: View {
                 .overlay { cornerScrim }
                 .clipShape(
                     RoundedRectangle(
-                        cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius,
+                        cornerRadius: metrics.landscapeArtworkCornerRadius,
                         style: .continuous
                     )
                 )
                 .plozzMediaEdge(
-                    cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
+                    cornerRadius: metrics.landscapeArtworkCornerRadius
                 )
                 .overlay(alignment: .bottom) { progressOverlay }
 

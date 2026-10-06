@@ -4,9 +4,18 @@ import FeatureLiveTVCore
 import SwiftUI
 
 enum LiveTVMultiviewGeometry {
-    static func viewport(in size: CGSize, isEditing: Bool = false) -> CGRect {
+    static func viewport(in size: CGSize, isEditing: Bool = false, editingInsets: EdgeInsets? = nil) -> CGRect {
         let canvas = CGRect(origin: .zero, size: size)
         guard isEditing else { return canvas }
+        #if os(iOS)
+        if let insets = editingInsets {
+            return CGRect(
+                x: insets.leading, y: insets.top,
+                width: max(1, size.width - insets.leading - insets.trailing),
+                height: max(1, size.height - insets.top - insets.bottom)
+            )
+        }
+        #endif
         #if os(tvOS)
         let horizontal = min(CGFloat(80), size.width / 12)
         let vertical = min(CGFloat(156), size.height / 4)
@@ -17,8 +26,10 @@ enum LiveTVMultiviewGeometry {
         return canvas.insetBy(dx: horizontal, dy: vertical)
     }
 
-    static func focusViewport(in size: CGSize, chromeVisible: Bool, isEditing: Bool = false) -> CGRect {
-        if isEditing { return viewport(in: size, isEditing: true) }
+    static func focusViewport(
+        in size: CGSize, chromeVisible: Bool, isEditing: Bool = false, editingInsets: EdgeInsets? = nil
+    ) -> CGRect {
+        if isEditing { return viewport(in: size, isEditing: true, editingInsets: editingInsets) }
         guard chromeVisible else { return viewport(in: size) }
         #if os(tvOS)
         let top = min(CGFloat(156), size.height / 4)
@@ -34,10 +45,10 @@ enum LiveTVMultiviewGeometry {
         for id: UUID, panes: [UUID], primary: UUID,
         layout: LiveTVMultiviewLayout, corner: LiveTVMultiviewCorner,
         insetSize: LiveTVMultiviewInsetSize, expanded: UUID?, size: CGSize,
-        isEditing: Bool = false, aspectRatio: CGFloat? = nil
+        isEditing: Bool = false, aspectRatio: CGFloat? = nil, editingInsets: EdgeInsets? = nil
     ) -> CGRect {
         if expanded != nil { return viewport(in: size) }
-        let area = viewport(in: size, isEditing: isEditing)
+        let area = viewport(in: size, isEditing: isEditing, editingInsets: editingInsets)
         let ordered = [primary] + panes.filter { $0 != primary }
         if ordered.count == 1 {
             return isEditing ? contentFrame(in: area, aspectRatio: aspectRatio) : area
@@ -108,19 +119,20 @@ enum LiveTVMultiviewGeometry {
         for id: UUID, panes: [UUID], primary: UUID,
         layout: LiveTVMultiviewLayout, corner: LiveTVMultiviewCorner,
         insetSize: LiveTVMultiviewInsetSize, expanded: UUID?, size: CGSize,
-        chromeVisible: Bool, isEditing: Bool = false, aspectRatio: CGFloat? = nil
+        chromeVisible: Bool, isEditing: Bool = false, aspectRatio: CGFloat? = nil, editingInsets: EdgeInsets? = nil
     ) -> CGRect {
         let picture = frame(
             for: id, panes: panes, primary: primary, layout: layout, corner: corner,
             insetSize: insetSize, expanded: expanded, size: size,
-            isEditing: isEditing, aspectRatio: aspectRatio
+            isEditing: isEditing, aspectRatio: aspectRatio, editingInsets: editingInsets
         )
         var region = contentFrame(in: picture, aspectRatio: aspectRatio)
         if expanded == nil, layout == .corner, id == primary,
            let secondary = panes.first(where: { $0 != primary }) {
             let inset = frame(
                 for: secondary, panes: panes, primary: primary, layout: layout, corner: corner,
-                insetSize: insetSize, expanded: nil, size: size, isEditing: isEditing
+                insetSize: insetSize, expanded: nil, size: size,
+                isEditing: isEditing, editingInsets: editingInsets
             )
             // Keep the primary target beside, never surrounding, the inset.
             let leading = corner == .topLeading || corner == .bottomLeading
@@ -129,7 +141,8 @@ enum LiveTVMultiviewGeometry {
             region = region.intersection(
                 CGRect(x: x, y: picture.minY, width: max(1, right - x), height: picture.height))
         }
-        return region.intersection(focusViewport(in: size, chromeVisible: chromeVisible, isEditing: isEditing))
+        return region.intersection(focusViewport(
+            in: size, chromeVisible: chromeVisible, isEditing: isEditing, editingInsets: editingInsets))
     }
 
     static func contentFrame(in area: CGRect, aspectRatio: CGFloat?) -> CGRect {
@@ -178,6 +191,9 @@ struct LiveTVMultiviewChromeState: Equatable {
 
 struct LiveTVMultiviewOverlay: View {
     let coordinator: LiveTVMultiviewCoordinator
+    var safeAreaInsets = EdgeInsets()
+    var editingInsets: EdgeInsets?
+    var onEditingInsetsChange: (EdgeInsets) -> Void = { _ in }
     let exit: () -> Void
     let returnToGuide: () -> Void
     let addChannel: () -> Void
@@ -206,6 +222,7 @@ struct LiveTVMultiviewOverlay: View {
                 ZStack(alignment: .topLeading) {
                     LiveTVMultiviewPaneViewport(
                         coordinator: coordinator, size: geometry.size,
+                        editingInsets: editingInsets,
                         chromeVisible: chrome.isVisible, focusScope: paneFocusScope,
                         focusedPaneID: focusedPaneID,
                         preparedWhileFocused: selectPreparedAudio,
@@ -216,6 +233,8 @@ struct LiveTVMultiviewOverlay: View {
                     if chrome.isVisible {
                         LiveTVMultiviewChrome(
                             coordinator: coordinator,
+                            safeAreaInsets: safeAreaInsets,
+                            onEditingInsetsChange: onEditingInsetsChange,
                             exit: { exitDestination = .player }, collapse: collapse, watch: finishSetup, setup: startSetup,
                             focusScope: controlsFocusScope,
                             restoresSetupFocus: restoringSetupFocus,
@@ -422,6 +441,7 @@ struct LiveTVMultiviewOverlay: View {
 private struct LiveTVMultiviewPaneViewport: View {
     let coordinator: LiveTVMultiviewCoordinator
     let size: CGSize
+    let editingInsets: EdgeInsets?
     let chromeVisible: Bool
     let focusScope: Namespace.ID
     let focusedPaneID: UUID?
@@ -433,7 +453,7 @@ private struct LiveTVMultiviewPaneViewport: View {
     var body: some View {
         // Revealing controls must not reshape the native focus section under the current picture.
         let viewport = LiveTVMultiviewGeometry.focusViewport(
-            in: size, chromeVisible: true, isEditing: coordinator.isEditingLayout)
+            in: size, chromeVisible: true, isEditing: coordinator.isEditingLayout, editingInsets: editingInsets)
         ZStack(alignment: .topLeading) {
             ForEach(coordinator.panes) { pane in
                 let frame = LiveTVMultiviewGeometry.frame(
@@ -442,7 +462,8 @@ private struct LiveTVMultiviewPaneViewport: View {
                     corner: coordinator.corner, insetSize: coordinator.insetSize,
                     expanded: coordinator.expandedPaneID, size: size,
                     isEditing: coordinator.isEditingLayout,
-                    aspectRatio: pane.videoAspectRatio.map { CGFloat($0) }
+                    aspectRatio: pane.videoAspectRatio.map { CGFloat($0) },
+                    editingInsets: editingInsets
                 )
                 let focusFrame = LiveTVMultiviewGeometry.focusFrame(
                     for: pane.id, panes: coordinator.panes.map(\.id),
@@ -450,7 +471,8 @@ private struct LiveTVMultiviewPaneViewport: View {
                     corner: coordinator.corner, insetSize: coordinator.insetSize,
                     expanded: coordinator.expandedPaneID, size: size,
                     chromeVisible: true, isEditing: coordinator.isEditingLayout,
-                    aspectRatio: pane.videoAspectRatio.map { CGFloat($0) }
+                    aspectRatio: pane.videoAspectRatio.map { CGFloat($0) },
+                    editingInsets: editingInsets
                 )
                 let visible = coordinator.expandedPaneID == nil || coordinator.expandedPaneID == pane.id
                 if visible {
@@ -485,6 +507,8 @@ private struct LiveTVMultiviewPaneViewport: View {
 
 private struct LiveTVMultiviewChrome: View {
     let coordinator: LiveTVMultiviewCoordinator
+    let safeAreaInsets: EdgeInsets
+    let onEditingInsetsChange: (EdgeInsets) -> Void
     let exit: () -> Void
     let collapse: () -> Void
     let watch: () -> Void
@@ -499,6 +523,15 @@ private struct LiveTVMultiviewChrome: View {
     let toggleFavorite: (() -> Void)?
 
     var body: some View {
+        #if os(iOS)
+        LiveTVMultiviewTouchChrome(
+            coordinator: coordinator, safeAreaInsets: safeAreaInsets,
+            exit: exit, collapse: collapse, watch: watch, setup: setup,
+            editing: editing, add: add, replace: replace,
+            isFavorite: isFavorite, toggleFavorite: toggleFavorite,
+            onEditingInsetsChange: onEditingInsetsChange
+        )
+        #else
         VStack(spacing: 0) {
             LiveTVMultiviewHeader(
                 exit: exit, editing: editing, watch: coordinator.isEditingLayout ? watch : nil)
@@ -540,6 +573,7 @@ private struct LiveTVMultiviewChrome: View {
         .simultaneousGesture(TapGesture().onEnded { _ in editing() })
         #else
         .focusScope(focusScope)
+        #endif
         #endif
     }
 }
@@ -670,6 +704,24 @@ private struct LiveTVMultiviewCaption: View {
     let audible: Bool
 
     var body: some View {
+        Group {
+            #if os(iOS)
+            ViewThatFits(in: .horizontal) {
+                contents.fixedSize(horizontal: true, vertical: false)
+                liveTVChannelLabel(pane.channel?.name).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            #else
+            contents
+            #endif
+        }
+        .font(.caption.weight(.semibold))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(.black.opacity(0.7))
+    }
+
+    private var contents: some View {
         HStack(spacing: 10) {
             if audible { Image(systemName: "speaker.wave.2.fill") }
             liveTVChannelLabel(pane.channel?.name)
@@ -678,10 +730,6 @@ private struct LiveTVMultiviewCaption: View {
             Spacer(minLength: 0)
             if pane.preparation.isPreparing { ProgressView().tint(.white) }
         }
-        .font(.caption.weight(.semibold))
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
-        .background(.black.opacity(0.7))
     }
 }
 
@@ -758,26 +806,7 @@ private struct LiveTVMultiviewToolbar: View {
                             .accessibilityIdentifier("live-multiview-add")
                     }
                     Menu {
-                        ForEach(LiveTVMultiviewLayout.allCases, id: \.self) { layout in
-                            Button {
-                                setup()
-                                coordinator.layout = layout
-                            } label: {
-                                Label(layout.title, systemImage: coordinator.layout == layout ? "checkmark" : "rectangle")
-                            }
-                        }
-                        if coordinator.layout == .corner {
-                            Section("Position") {
-                                ForEach(LiveTVMultiviewCorner.allCases, id: \.self) { corner in
-                                    Button(corner.title) { setup(); coordinator.corner = corner }
-                                }
-                            }
-                            Section("Size") {
-                                ForEach(LiveTVMultiviewInsetSize.allCases, id: \.self) { size in
-                                    Button(size.title) { setup(); coordinator.insetSize = size }
-                                }
-                            }
-                        }
+                        LiveTVMultiviewLayoutOptions(coordinator: coordinator, setup: setup)
                     } label: {
                         Label("Layout", systemImage: "rectangle.split.2x1")
                     }
@@ -851,6 +880,34 @@ private struct LiveTVMultiviewToolbar: View {
         #if os(tvOS)
         .focusSection()
         #endif
+    }
+}
+
+struct LiveTVMultiviewLayoutOptions: View {
+    let coordinator: LiveTVMultiviewCoordinator
+    let setup: () -> Void
+
+    var body: some View {
+        ForEach(LiveTVMultiviewLayout.allCases, id: \.self) { layout in
+            Button {
+                setup()
+                coordinator.layout = layout
+            } label: {
+                Label(layout.title, systemImage: coordinator.layout == layout ? "checkmark" : "rectangle")
+            }
+        }
+        if coordinator.layout == .corner {
+            Section("Position") {
+                ForEach(LiveTVMultiviewCorner.allCases, id: \.self) { corner in
+                    Button(corner.title) { setup(); coordinator.corner = corner }
+                }
+            }
+            Section("Size") {
+                ForEach(LiveTVMultiviewInsetSize.allCases, id: \.self) { size in
+                    Button(size.title) { setup(); coordinator.insetSize = size }
+                }
+            }
+        }
     }
 }
 

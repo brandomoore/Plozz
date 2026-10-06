@@ -146,19 +146,21 @@ final class ProfileSettingsModelTests: XCTestCase {
         defer {
             for namespace in [primary, other] {
                 UserDefaults.standard.removeObject(forKey: SettingsKey.scoped("com.plozz.heroSettings", namespace: namespace))
+                UserDefaults.standard.removeObject(forKey: SettingsKey.scoped(CardCaptionSettingsStore.storageKey, namespace: namespace))
+                UserDefaults.standard.removeObject(forKey: SettingsKey.scoped(CardCaptionSettingsStore.storageKey, namespace: namespace) + ".migrated")
             }
         }
         let model = ProfileSettingsModel(namespace: primary)
         let navigation = model.navigationStyleModel.style
         model.heroSettingsModel.settings.style = .followsFocus
-        model.heroSettingsModel.settings.showsCardCaptions = true
+        model.cardStyleModel.captions.setOverride(.show, for: .home)
 
         model.rebuild(namespace: other)
         XCTAssertEqual(model.heroSettingsModel.settings.style, .carousel)
-        XCTAssertFalse(model.heroSettingsModel.settings.showsCardCaptions)
+        XCTAssertFalse(model.cardStyleModel.captions.showsLabels(in: .home))
         model.rebuild(namespace: primary)
         XCTAssertEqual(model.heroSettingsModel.settings.style, .followsFocus)
-        XCTAssertTrue(model.heroSettingsModel.settings.showsCardCaptions)
+        XCTAssertTrue(model.cardStyleModel.captions.showsLabels(in: .home))
         XCTAssertEqual(model.navigationStyleModel.style, navigation)
     }
 

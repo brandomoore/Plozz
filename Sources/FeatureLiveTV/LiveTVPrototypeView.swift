@@ -105,6 +105,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var pendingServerConnection = false
     @State private var externalPlayback: PrototypeExternalPlayback?
     @State private var multiviewSelection: LiveTVMultiviewSelection?
+    @State private var multiviewEditingInsets: EdgeInsets?
     @State private var pendingMultiviewFavorite: LiveTVMultiviewFavorite?
     @State private var multiviewFavoriteIssue: LocalizedStringResource?
     @State private var managesLibraryChannels = false
@@ -347,7 +348,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                                 corner: multiview.corner, insetSize: multiview.insetSize,
                                 expanded: multiview.expandedPaneID, size: layout.bounds.size,
                                 isEditing: multiview.isEditingLayout,
-                                aspectRatio: pane.videoAspectRatio.map { CGFloat($0) }
+                                aspectRatio: pane.videoAspectRatio.map { CGFloat($0) },
+                                editingInsets: multiviewEditingInsets
                             )
                             .offsetBy(dx: layout.bounds.minX, dy: layout.bounds.minY)
                             : (expanded ? layout.bounds : layout.videoFrame)
@@ -409,6 +411,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 if showingMultiview {
                     LiveTVMultiviewOverlay(
                         coordinator: multiview,
+                        safeAreaInsets: geometry.safeAreaInsets,
+                        editingInsets: multiviewEditingInsets,
+                        onEditingInsetsChange: { multiviewEditingInsets = $0 },
                         exit: { leaveMultiview() },
                         returnToGuide: { leaveMultiview(); leavePlaybackForGuide() },
                         addChannel: { beginMultiviewSelection(.add) },

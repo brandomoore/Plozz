@@ -49,7 +49,9 @@ tools/l10n-sync.py --platform tvos # faster partial run; never prunes (see below
 `--reuse-if-unchanged` skips only the two extraction builds, never catalog sync or
 validation. A successful full extraction records a local content fingerprint of
 tracked and nonignored inputs, local xcconfigs, generated project settings,
-toolchain/SDKs, package checkout state, the catalog, and every extraction output.
+toolchain/SDKs, package checkout state, and every extraction output.
+Catalog-only edits reuse compiled extraction but still synchronize and validate
+the current catalog; completed snapshot updates do not force compilation.
 The generated build-number stamp is excluded; other project settings are not.
 An edit, missing/corrupt receipt, changed package checkout, or missing/changed
 `.stringsdata` causes a real rebuild. Partial, failed, and explicit `--no-build`
@@ -63,8 +65,10 @@ Git's repository-selection variables are cleared for extraction subprocesses,
 so invoking the check from a push hook cannot redirect dependency lookups back
 to the parent repository. Build configuration and lease variables are retained.
 
-The main pre-push hook uses this verified reuse so it does not repeat the
-extraction just completed by the pre-main pass. Omit the option to force a fresh
+Use verified reuse during change-relevant localization work. The main pre-push
+hook validates the current catalog and snapshot without compiling; it does not
+prove fresh source extraction. The agent must establish that evidence when
+translatable source/context changed. Omit the reuse option to force fresh
 extraction; do not substitute `--no-build`, which cannot prove platform coverage.
 
 ### Why a dedicated build

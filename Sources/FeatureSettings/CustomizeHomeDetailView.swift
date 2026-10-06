@@ -88,23 +88,6 @@ struct CustomizeHomeDetailView: View {
             HomeLayoutPicker(layout: $hero.settings.style)
 
             if hero.settings.style == .followsFocus {
-                VStack(alignment: .leading, spacing: 8) {
-                    Toggle(isOn: $hero.settings.showsCardCaptions) {
-                        Text(LocalizedStringResource(
-                            "homeLayout.showCardTitles",
-                            defaultValue: "Show titles under cards",
-                            comment: "Switch in the Showcase Home layout: show each title's name beneath its artwork card."
-                        ))
-                    }
-                        .toggleStyle(SettingsSwitchToggleStyle())
-                    Text(LocalizedStringResource(
-                        "homeLayout.showCardTitles.detail",
-                        defaultValue: "The title you're on is already shown at the top of the screen.",
-                        comment: "Explains why card titles are off by default in the Showcase Home layout: the focused title is named at the top."
-                    ))
-                        .settingsHelperText()
-                        .fixedSize(horizontal: false, vertical: true)
-                }
                 Toggle("Show ratings", isOn: $hero.settings.showsRatings)
                     .toggleStyle(SettingsSwitchToggleStyle())
                 if hero.settings.showsRatings {

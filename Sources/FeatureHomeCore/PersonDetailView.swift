@@ -165,6 +165,7 @@ public struct PersonDetailView: View {
             }
         }
         .task { await viewModel.load() }
+        .environment(\.plozzCardCaptionView, .filmography)
     }
 
     /// Headshot on the left, name and biography beside it, the pair centred on

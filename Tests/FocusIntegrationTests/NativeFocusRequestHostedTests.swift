@@ -825,6 +825,7 @@ final class NativeFocusRequestHostedTests: XCTestCase {
                     .environment(\.plozzMetrics, metrics)
                     .environment(\.plozzCardStyle, .borderless)
                     .environment(\.plozzCardFocusStyle, .system)
+                    .environment(\.plozzCardCaptionsHidden, false)
                 ))
                 fixture.window.rootViewController = host
                 fixture.window.layoutIfNeeded()

@@ -19,9 +19,13 @@ struct CompactCardStylePicker: View {
     /// Cards settings row) so both fit without heavy scrolling.
     var swatchHeight: CGFloat = 248
     @Environment(\.themePalette) private var palette
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 16))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+        layout {
             ForEach(CardStyle.allCases) { style in
                 PreviewCard(
                     title: style.displayName,

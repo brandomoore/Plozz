@@ -17,28 +17,23 @@ import SwiftUI
 /// That 1:1 match is the point: when real items arrive, nothing reflows or jumps.
 struct PlozziOSHomeSkeletonRail: View {
     @Environment(\.plozzCardStyle) private var cardStyle
-    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     let title: Text
     let style: PosterCardView.Style
     /// Enough cards to fill the widest supported screen; the rail clips the rest.
     var cardCount: Int = 8
-    /// Matches the caption-less Continue Watching card, so the placeholder is the
-    /// same height as the card replacing it.
-    var showsCaption: Bool = true
+    /// Matches the row's caption preference so replacing placeholders preserves height.
+    var showsCaption: Bool = CardCaptionSettings.default.showsLabels
     /// Matches Continue Watching's narrower, deeper series-artwork card shape.
     var showsSeriesArtwork: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            title
-                .font(.title2.bold())
-                .padding(
-                    .horizontal,
-                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
-                )
+        PlozziOSHomeRailLayout { rail(metrics: $0) }
+    }
 
+    private func rail(metrics: PlozzMetrics) -> some View {
+        PlozziOSHomeSection(title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0) {
             ScrollView(.horizontal) {
                 // Deliberately NOT lazy: the placeholders are cheap, and a lazy
                 // stack would only materialise the ones already on screen — the
@@ -47,7 +42,8 @@ struct PlozziOSHomeSkeletonRail: View {
                     alignment: .top,
                     spacing: PlozziOSMediaRailLayout.stackSpacing(
                         metrics: metrics,
-                        cardStyle: cardStyle
+                        cardStyle: cardStyle,
+                        visibleSpacing: PlozziOSHomeLayout.cardSpacing
                     )
                 ) {
                     ForEach(0..<cardCount, id: \.self) { _ in
@@ -68,11 +64,12 @@ struct PlozziOSHomeSkeletonRail: View {
             }
             .contentMargins(
                 .horizontal,
-                PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                PlozziOSMediaRailLayout.artworkAlignedInset(
+                    PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
+                    metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
-            .contentMargins(.vertical, 10, for: .scrollContent)
-            .scrollIndicators(.hidden)
+            .plozziOSHomeRailClearance()
             // The placeholders are not content the viewer can act on.
             .scrollDisabled(true)
             .accessibilityHidden(true)
@@ -90,6 +87,7 @@ struct PlozziOSHomeSkeletonScreen: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     let heroActive: Bool
+    var showsPosterCaptions: Bool = CardCaptionSettings.default.showsLabels
 
     var body: some View {
         PlozziOSHomeScrollView(heroActive: heroActive) {
@@ -99,9 +97,9 @@ struct PlozziOSHomeSkeletonScreen: View {
                     : .landscape
             )
         } rows: {
-            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .landscape)
-            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster)
-            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster)
+            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .landscape, showsCaption: showsPosterCaptions)
+            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster, showsCaption: showsPosterCaptions)
+            PlozziOSHomeSkeletonRail(title: Text(verbatim: " "), style: .poster, showsCaption: showsPosterCaptions)
         }
         .scrollDisabled(true)
         .accessibilityLabel("Loading Home")

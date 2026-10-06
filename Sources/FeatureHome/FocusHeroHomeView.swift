@@ -363,7 +363,6 @@ struct FocusHeroHomeView<RowContent: View>: View {
                 navigationStyle: navigationStyle
             )
             FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent)
-                .environment(\.plozzCardCaptionsHidden, !settings.showsCardCaptions)
                 .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -1236,6 +1235,8 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
             target.plozzMetrics = source.plozzMetrics
             target.plozzCardStyle = source.plozzCardStyle
             target.plozzCardFocusStyle = source.plozzCardFocusStyle
+            target.plozzCardCaptionSettings = source.plozzCardCaptionSettings
+            target.plozzCardCaptionView = source.plozzCardCaptionView
             target.plozzCardCaptionsHidden = source.plozzCardCaptionsHidden
             target.plozzWatchStatusIndicator = source.plozzWatchStatusIndicator
             target.plozzSeerConnected = source.plozzSeerConnected

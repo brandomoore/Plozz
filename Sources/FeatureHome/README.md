@@ -12,6 +12,29 @@ fallback when the user's server has no attached trailer.
   active account set (`[ResolvedAccount]`) so Home is a merged view
   across multiple servers / profiles. Uses the `MediaProvider`
   abstraction; never imports a specific provider module.
+- **Mobile Home posters** — portrait rails fit two full posters below 375pt,
+  three on larger phones, and a 28% preview at standard density. Wider windows add columns;
+  per-profile display-size choices scale the result. Loaded cards and placeholders
+  share `PlozziOSHomeRailLayout`, and their artwork starts on the heading keyline
+  after subtracting each card style's internal inset. Smaller mobile artwork uses
+  proportionate corners and a 20pt minimum watched badge, without shrinking folder
+  navigation badges. Continue Watching geometry and library grid columns are unchanged.
+- **Card labels** — Appearance > Cards owns a profile-scoped shared choice
+  (No labels by default), with Default / Labels / No labels exceptions by experience.
+  Home, Recommended, Browse, Collections, Playlists, Search, Watchlist, related titles,
+  episodes, extras, and filmography resolve the same policy on iOS and tvOS.
+  Collection and playlist contents follow Browse across every library. Library
+  navigation, cast names, essential list text, accessibility labels, and on-artwork
+  playback information stay intact. Existing Home choices migrate once from
+  `HeroSettings`; the card settings transfer with the profile. Native grids and
+  loading placeholders remove the same caption space as loaded cards. Touch captions
+  have a 4pt gap without TV focus travel; TV captions retain their focus clearance.
+- **Mobile Home rhythm** — every loaded, placeholder, library, and failed row uses
+  `PlozziOSHomeSection`: native Dynamic Type `title3` semibold headings, a 12pt
+  heading-to-artwork layout gap, and 32pt between sections. Home's media surfaces
+  sit 12pt apart; framed cards retain their interior artwork insets. Scroll shadow
+  clearance does not add invisible vertical padding, and framed artwork shares
+  the same vertical keylines as borderless posters.
 - **Item detail** — `ItemDetailView` + `ItemDetailViewModel` and
   `DetailHeroView` / `DetailExtrasView` render the cinematic full-bleed
   backdrop, logo, overview, ratings, cast, and Play/Resume button. Works
@@ -49,7 +72,21 @@ fallback when the user's server has no attached trailer.
   show Recommended by default for server-backed video libraries, with
   library-scoped Continue Watching and Recently Added plus native Plex hubs
   or Jellyfin/Emby movie recommendation categories. TV uses Showcase, showing
-  its mode tabs only while the first row is active; mobile uses rows.
+  its mode tabs only while the first row is active; mobile uses touch-sized rows.
+  iPhone and iPad keep Recommended, Browse, Collections, and Playlists in a
+  horizontally scrolling tab strip, limited to the provider's capabilities.
+  Library modes and series seasons both use CoreUI's `PlozzContentTabs`, with
+  the same selected glass pill, inactive text, touch sizing, and reveal behavior.
+  Tabs retain their identity through loading, empty, and failure states and
+  reveal the selected mode without compressing every label into a segmented
+  control. At accessibility sizes, an individual tab still fits the viewport.
+  Mobile controls scroll with the page; Filter and the current Sort occupy a
+  separate line instead of competing with the tabs. Row headings, artwork, grids,
+  and scan banners share the mobile page keyline (22pt compact, 36pt regular).
+  Mode changes reset to the padded page's true top, keeping both the tabs and
+  native navigation-bar scroll-edge appearance consistent across all four modes.
+  Recommendation rails remain horizontally lazy and share touch card appearance
+  and artwork keylines with mobile Home, retaining their roomier 14pt surface gap.
   Library Continue Watching uses Home's profile-selected series artwork and
   resume progress treatment, including profile spoiler protection on mobile.
   Merged libraries validate Continue Watching against every account-qualified
@@ -57,7 +94,7 @@ fallback when the user's server has no attached trailer.
   watch recency before limiting the row. Watch changes
   refresh recommendations on return (or while visible), retaining the current
   rows during the request and rejecting snapshots predating another watch change.
-  Changing tabs keeps the focused mode control
+  On tvOS, changing tabs keeps the focused mode control
   mounted while replacing content below it. A stable layout container owns the
   top inset across Recommended, Browse, Collections, and Playlists (a transparent
   `Group` would attach the inset to each replaceable content branch). Sort sits
@@ -182,8 +219,9 @@ Native library, poster, and landscape captions share the same density-aware
 artwork-to-caption gap, including loading placeholders. Native focus overflow
 stays outside the artwork layout slot. Poster caption travel reserves at least
 24 points for TVUIKit's enlargement, including compact densities, without
-reflowing the row or changing animation timing. This poster-specific clearance
-does not change playback-panel, grid, or circular-tile caption travel.
+reflowing the row or changing animation timing. Native library grids use the
+same resting gap and focus travel; playback-panel and circular-tile captions
+retain their own geometry.
 Transparent server covers retain their alpha but use the same rounded native
 poster treatment as opaque covers, rather than alpha-shaped cutout focus.
 This changes the native image-view treatment, not the cached artwork bitmap.

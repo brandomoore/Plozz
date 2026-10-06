@@ -1711,7 +1711,7 @@ struct PlozziOSPlexHomeUserSettingsView: View {
     }
 }
 
-private struct PlozziOSAppearanceSettingsView: View {
+struct PlozziOSAppearanceSettingsView: View {
     let appModel: PlozziOSAppModel
     @Bindable var theme: ThemeSettingsModel
     @Bindable var transparency: TransparencyPreferenceModel
@@ -1800,23 +1800,18 @@ private struct PlozziOSAppearanceSettingsView: View {
                 }
             }
 
-            SettingsSectionGroup("Library cards") {
-                Picker("Card style", selection: $cardStyle.style) {
-                    ForEach(CardStyle.allCases) { style in
-                        Text(style.displayName).tag(style)
-                    }
+            SettingsSectionGroup("Cards") {
+                NavigationLink("Cards") {
+                    CardAppearanceControls(cards: cardStyle, watchIndicator: watchIndicator)
                 }
+                .accessibilityIdentifier("appearance-cards")
                 Picker("Display size", selection: $density.density) {
                     ForEach(UIDensity.allCases) { density in
                         Label(density.displayName, systemImage: density.symbolName)
                             .tag(density)
                     }
                 }
-                Picker("Watch indicator", selection: $watchIndicator.indicator) {
-                    ForEach(WatchStatusIndicator.allCases) { indicator in
-                        Text(indicator.displayName).tag(indicator)
-                    }
-                }
+                .accessibilityIdentifier("appearance-display-size")
             }
 
             SettingsSectionGroup("Hide or Reorder Navigation") {

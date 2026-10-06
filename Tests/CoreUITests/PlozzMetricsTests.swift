@@ -1,9 +1,67 @@
 #if canImport(SwiftUI)
 import XCTest
+import SwiftUI
 import CoreModels
 @testable import CoreUI
 
 final class PlozzMetricsTests: XCTestCase {
+    func testTouchCardsUseProportionateBadgesAndCaptionSpacing() {
+        let touch = PlozzMetrics.touch(density: .standard)
+        let tv = PlozzMetrics.standard
+        XCTAssertEqual(touch.watchedBadgeSize, 21)
+        XCTAssertEqual(touch.folderNavigationBadgeSize, 36)
+        XCTAssertEqual(tv.watchedBadgeSize, PlozzTheme.Metrics.watchedBadgeSize)
+        XCTAssertEqual(tv.posterArtworkCornerRadius, PlozzTheme.Metrics.posterArtCornerRadius)
+        for density in UIDensity.allCases {
+            let metrics = PlozzMetrics.touch(density: density)
+            XCTAssertGreaterThanOrEqual(metrics.watchedBadgeSize, 20)
+            XCTAssertEqual(metrics.posterCaptionTopSpacing, 4)
+            for focus in CardFocusStyle.allCases {
+                XCTAssertEqual(metrics.focusCaptionPush(for: focus), 0)
+            }
+            let small = metrics.scalingPosters(by: 0.6)
+            XCTAssertEqual(small.posterCardCornerRadius, small.posterArtworkCornerRadius + small.cardInset)
+        }
+    }
+
+    func testTouchPosterAndContinueWatchingCornersMatchAtEveryDensityAndWidth() {
+        for density in UIDensity.allCases {
+            let base = PlozzMetrics.touch(density: density)
+            for factor in [CGFloat(0.5), 0.8, 1, 1.4, 2] {
+                let metrics = base.scalingPosters(by: factor)
+                XCTAssertEqual(metrics.posterArtworkCornerRadius, 12)
+                XCTAssertEqual(metrics.landscapeArtworkCornerRadius, 12)
+                XCTAssertEqual(metrics.borderlessPosterCornerRadius, 12)
+                XCTAssertEqual(metrics.borderlessLandscapeCornerRadius, 12)
+                XCTAssertEqual(metrics.posterCardCornerRadius, 12 + metrics.cardInset)
+                XCTAssertEqual(metrics.landscapeCardCornerRadius, 12 + metrics.cardInset)
+            }
+        }
+    }
+
+    func testTelevisionArtworkAndBorderlessCornersRemainUnchanged() {
+        for density in UIDensity.allCases {
+            let metrics = PlozzMetrics(density: density)
+            XCTAssertEqual(metrics.posterArtworkCornerRadius, 16)
+            XCTAssertEqual(metrics.landscapeArtworkCornerRadius, 18)
+            XCTAssertEqual(metrics.borderlessPosterCornerRadius, 16 + metrics.cardInset)
+            XCTAssertEqual(metrics.borderlessLandscapeCornerRadius, 18 + metrics.cardInset)
+        }
+    }
+
+    func testCaptionEnvironmentResolvesDefaultOverridesAndDestinationScopes() {
+        var environment = EnvironmentValues()
+        environment.plozzCardCaptionSettings = CardCaptionSettings(
+            showsLabels: false, overrides: [.browse: true, .home: false, .extras: true]
+        )
+        for view in CardCaptionView.allCases {
+            environment.plozzCardCaptionView = view
+            XCTAssertEqual(environment.plozzCardCaptionsHidden, view != .browse && view != .extras)
+        }
+        environment.plozzCardCaptionsHidden = true
+        environment.plozzCardCaptionView = .browse
+        XCTAssertFalse(environment.plozzCardCaptionsHidden, "A destination must not inherit its source's forced visibility.")
+    }
     func testStandardMatchesPlozzThemeConstants() {
         let m = PlozzMetrics(density: .standard)
         XCTAssertEqual(m.scale, 1.0)

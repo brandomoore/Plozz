@@ -357,6 +357,7 @@ public struct PlayerView: View {
             scrubPreview: viewModel.scrubPreview,
             authenticatedHTTPResolver:
                 viewModel.authenticatedHTTPResolver,
+            makeGeneratedScrubStills: { viewModel.makeGeneratedScrubStills() },
             showsSharedControls: showsSharedControls,
             themePalette: ThemePaletteBox(
                 makeControls: { model, actions, onExitToSurface in

@@ -50,6 +50,7 @@ public struct WatchlistBrowseView: View {
                     viewModel.watchlistLoadingPlaceholderCount
             )
         }
+        .environment(\.plozzCardCaptionView, .watchlist)
         .task(id: visibility) {
             await viewModel.loadIfNeeded(for: visibility)
         }

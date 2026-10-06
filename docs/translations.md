@@ -92,6 +92,14 @@ lacks native review without hiding a usable language from users.
 ## Commands
 
 ```sh
+# Early development preflight: validates source/plurals/permissions without
+# requiring translations that the next plan is meant to produce.
+python3 tools/l10n-sync.py --validate-source
+
+# Sync the current dual-platform source before planning. Exact compiled extraction
+# may be reused after catalog-only edits; current catalog validation is never skipped.
+python3 tools/l10n-sync.py --reuse-if-unchanged
+
 # Rebuild disposable full-language artifacts from the committed catalogs. This
 # makes incremental translation self-contained; no prior agent session is needed.
 tools/l10n-export-artifacts.py /tmp/plozz-translations
@@ -179,10 +187,12 @@ importer and Apple's catalog compiler before publishing the output directory.
 Any failure leaves the input artifacts and repository catalogs unchanged.
 Only the final explicit `l10n-import.py --apply` writes repository catalogs.
 
-## Automatic pre-main pass
+## Change-scoped pre-main pass
 
 Before exporting translation packets, validate the English catalog with
-`tools/l10n-sync.py --validate-only`, including its count/plural structures.
+`tools/l10n-sync.py --validate-source`, including its count/plural structures.
+This permits missing translations that the upcoming plan is intended to supply;
+`--validate-only` remains the complete current-catalog check.
 For reviewed source-only corrections, `l10n-import.py --source-delta` accepts a
 source-language artifact containing only existing keys, with `deltaKeys` in exact
 translation order and `sourceCatalogSHA256` matching the exported catalog hash.
@@ -192,37 +202,38 @@ translation. It cannot change permission prompts; ordinary language imports stil
 require full coverage. Re-export and review affected translations after changing
 source wording or plural structures.
 
-Localization runs as part of landing a feature, not on a timer. The committed
+Localization runs when relevant source/context changes, not on a timer or merely
+because a branch is landing. The committed
 `.githooks/pre-push` gate activates only for a push targeting `main`; ordinary
 feature-branch pushes stay fast. The repository uses `core.hooksPath=.githooks`.
 
-When an agent is told to merge or push a feature to `main`, the merge-time rule
-in the private Plozz agent instructions requires it to:
+The agent assesses changes to translatable source, comments, plural structures,
+and permission text. If these changed without sufficient current-source evidence:
 
-1. validates and syncs the English source catalog, using
+1. Validate and sync the English source catalog, using
    `l10n-sync.py --reuse-if-unchanged` when complete extraction evidence matches;
-2. plans the exact missing-or-source-changed delta, including permission prompts,
+2. Plan the exact missing-or-source-changed delta, including permission prompts,
    using the committed source fingerprint snapshot;
-3. for a nonempty plan, exports disposable artifacts, assigns bounded batches to
-   an author and a separate reviewer, and checks complete coverage using actual
+3. For a nonempty plan, export disposable artifacts, assign bounded batches to
+   an author and a separate reviewer, and check complete coverage using actual
    task identities;
-4. assembles reviewed batches through `l10n-batches.py merge` (which reuses
-   `l10n-merge-delta.py`) and imports only through `l10n-import.py`;
-5. runs catalog/source guards, pipeline tests, platform builds, and the full test
-   suite;
-6. updates the source snapshot and fast-forwards `main` only when every gate
-   passes and `main` has not moved.
+4. Assemble reviewed batches through `l10n-batches.py merge` (which reuses
+   `l10n-merge-delta.py`) and import only through `l10n-import.py`.
+5. Run catalog/source guards and the relevant checks justified by the change,
+   following `testing-policy.md`; retain the importer's Apple compiler checks.
+6. Update the source snapshot only after the selected checks pass, then publish
+   the explicitly authorized main update after verifying main has not moved.
 
 When the plan reports **zero units and zero batches**, there is nothing to author,
 review, assemble, or import. Skip the full-language artifact round trip and
-continue with source/catalog guards, pipeline tests, platform builds, and the
-full test gates. Do not manufacture review evidence for an empty delta.
+continue with source/catalog guards and the selected checks. Do not manufacture
+review evidence for an empty delta or trigger a full app matrix merely to merge.
 
-The pre-push hook is the mechanical backstop. It blocks `main` when source
-extraction is stale, any language lacks a key, a source fingerprint changed
-without reviewed translations, or catalog/source validation fails. The agent
-then completes the translation pass on the feature branch and retries the same
-push. Nothing polls and no partially localized feature reaches `main`.
+The pre-push hook checks the current catalog's language coverage, snapshot, and
+source guard without building. It does not prove that new Swift source has been
+extracted: that is the agent's responsibility when assessing relevant changes.
+A failed check requires completing the translation pass on the feature branch
+before retrying. Distribution retains its complete localization safeguards.
 
 This is a safety net after feature work, not permission to put user-facing
 `String` values back into models. The source guard still requires copy to use
