@@ -1,6 +1,6 @@
 // Plozz pairing links Worker.
 //
-// Serves exactly two paths on plozz.app (see wrangler.toml routes):
+// Serves the pairing and Trakt authentication paths (see wrangler.toml routes):
 //   1. /.well-known/apple-app-site-association
 //        The Apple App Site Association (AASA) file that lets iOS treat
 //        https://plozz.app/pair as a Universal Link into the Plozz app.
@@ -12,7 +12,7 @@
 //        Safari loads this page, which explains how to get Plozz and finish setup.
 //
 // Everything else on plozz.app is still served by the existing `plozz-website`
-// Cloudflare Pages project — this Worker only claims these two paths.
+// Cloudflare Pages project — this Worker claims only the listed routes.
 
 const APP_ID = "N8Z5T4AK3X.com.thatcube.Plozz";
 
@@ -21,6 +21,7 @@ const APP_ID = "N8Z5T4AK3X.com.thatcube.Plozz";
 const APP_STORE_URL = "https://testflight.apple.com/join/EKfReNMu";
 
 const AASA = {
+  webcredentials: { apps: [APP_ID] },
   applinks: {
     apps: [],
     details: [
@@ -54,6 +55,23 @@ export default {
           "cache-control": "no-store",
         },
       });
+    }
+
+    if (url.pathname === "/auth/trakt/callback") {
+      // ASWebAuthenticationSession intercepts this navigation on a verified app.
+      // Never echo, persist or exchange the authorization code on the server.
+      return new Response(
+        "Return to Plozz to finish connecting Trakt. If Plozz did not receive the sign-in, cancel and start Connect Trakt again in the app.",
+        {
+          headers: {
+            "content-type": "text/plain; charset=utf-8",
+            "cache-control": "no-store",
+            "referrer-policy": "no-referrer",
+            "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+            "x-content-type-options": "nosniff",
+          },
+        },
+      );
     }
 
     // Should not happen given the routes, but fall through gracefully.

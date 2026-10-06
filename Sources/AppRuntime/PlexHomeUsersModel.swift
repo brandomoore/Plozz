@@ -379,6 +379,19 @@ public final class PlexHomeUsersModel {
         plexTokenOverrides[accountID] ?? accountsProviders.accountStore.token(for: accountID)
     }
 
+    /// Watch outbox dispatch must wait for the selected viewer's actual server
+    /// credential, not merely a profile binding that is still being activated.
+    public func hasResolvedWatchMutationIdentity(forAccountID accountID: String) -> Bool {
+        guard accountsProviders.accounts.contains(where: {
+            $0.id == accountID && $0.server.provider == .plex
+        }) else { return false }
+        if let binding = profilesModel.activeProfile.homeUserBinding(forPlexAccount: accountID) {
+            return plexResolvedHomeUser[accountID] == binding.homeUserID
+                && !(plexTokenOverrides[accountID]?.isEmpty ?? true)
+        }
+        return plexResolvedHomeUser[accountID] == nil && plexTokenOverrides[accountID] == nil
+    }
+
     /// The effective credential revision for an account, using an override-scoped
     /// revision when a Plex Home-user override is active.
     public func effectiveCredentialRevision(for account: Account) -> CredentialRevision {

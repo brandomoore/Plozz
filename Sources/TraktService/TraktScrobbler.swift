@@ -104,9 +104,8 @@ public actor TraktScrobbler: TraktScrobbling {
         // we deliberately skip `.progress` to avoid spamming the scrobble API.
         guard let action = Self.action(for: event) else { return }
         guard let body = Self.scrobbleBody(for: item, progress: progress) else { return }
-        guard let token = await validAccessToken() else { return }
-
         do {
+            guard let token = try await validAccessToken() else { return }
             try await client.scrobble(action: action, body: body, accessToken: token)
             PlozzLog.playback.debug("Trakt scrobble \(action) succeeded")
         } catch {
@@ -127,7 +126,7 @@ public actor TraktScrobbler: TraktScrobbling {
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "trakt", item: item, outcome: "skip(no usable ids)"))
             return
         }
-        guard let token = await validAccessToken() else {
+        guard let token = try await validAccessToken() else {
             FanoutDiagnostics.emit(FanoutDiagnostics.scrobbleLine(tracker: "trakt", item: item, outcome: "skip(not connected)"))
             return
         }
@@ -141,25 +140,15 @@ public actor TraktScrobbler: TraktScrobbling {
     }
 
     /// Returns a usable access token, refreshing (and persisting) an expired one.
-    /// `nil` means "not connected" or "refresh failed" — caller no-ops.
-    private func validAccessToken() async -> String? {  // l10n:content — returns an OAuth access token; string literals inside are developer diagnostics only
+    /// Only a missing credential is disconnected. Refresh failures must retry.
+    private func validAccessToken() async throws -> String? {  // l10n:content — returns an OAuth access token
         let generation = profileGeneration.current
-        guard let tokens = tokenStore.load() else { return nil }
-        guard tokens.isExpired else { return tokens.accessToken }
-        do {
-            let refreshed = try await auth.refresh(tokens.refreshToken)
-                .inheritingAccountIdentity(from: tokens)
-            guard profileGeneration.performIfCurrent(
-                generation,
-                operation: { try? tokenStore.save(refreshed) }
-            ) else {
-                return nil
-            }
-            return refreshed.accessToken
-        } catch {
-            PlozzLog.playback.debug("Trakt token refresh failed (non-fatal)")
-            return nil
-        }
+        let token = try await TraktTokenCoordinator.shared.accessToken(
+            store: tokenStore.snapshot(), auth: auth
+        )
+        try Task.checkCancellation()
+        guard generation == profileGeneration.current else { throw CancellationError() }
+        return token
     }
 
     // MARK: - Mapping

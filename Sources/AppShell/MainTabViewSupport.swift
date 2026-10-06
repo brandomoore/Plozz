@@ -612,10 +612,9 @@ private func makePlayerViewModel(
         trailerViewModel.onSubtitleStyleChanged = onSubtitleStyleChanged
         return trailerViewModel
     }
-    // Capture only Sendable value types / closures for the durable convergence hook
-    // so it can run off the main actor when the player stops. The eager identity
-    // lookup itself is resolved at stop time, after the shared index has had the
-    // full playback window to warm.
+    // The player can invoke convergence off-main. Its bound bridge selects the
+    // identity snapshot on the main actor, atomically with profile validation,
+    // after the index has had the full playback window to warm.
     let convergingItem = request.item
     let primaryAccountID = accounts.first?.account.id
     // The live session key must match the origin target the factory derives for
@@ -713,7 +712,9 @@ private func makePlayerViewModel(
             // Guard the streaming server while it plays: a mid-play drain can't
             // disturb/zero its now-playing session. Deferred, not dropped.
             if let liveAccountID {
-                watchBridge.beginLiveSession(liveAccountID, liveItemID)
+                Task { @MainActor in
+                    watchBridge.beginLiveSession(liveAccountID, liveItemID)
+                }
             }
         },
         onPlaybackCheckpoint: makePlaybackCheckpointHandler(
@@ -762,30 +763,34 @@ func makePlaybackCheckpointHandler(
     identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef]
 ) -> @Sendable (_ position: TimeInterval, _ watchedPercent: Double) -> Void {
     { position, percent in
-        let union = identitySources(convergingItem)
-        let mutation = WatchMutationFactory.playbackStop(
-            item: convergingItem,
-            position: position,
-            watchedPercent: percent,
-            primaryAccountID: primaryAccountID,
-            additionalSources: union,
-            crossServerSync: watchBridge.crossServerSync()
-        )
-        guard let mutation else { return }
-        FanoutDiagnostics.emit(FanoutDiagnostics.stopLine(
-            title: convergingItem.title,
-            kind: convergingItem.kind,
-            itemID: convergingItem.id,
-            originAccountID: convergingItem.sourceAccountID ?? primaryAccountID,
-            identities: MediaItemIdentity.identities(for: convergingItem),
-            indexUnion: union,
-            mutationTargets: mutation.targets,
-            played: mutation.played,
-            resumePosition: mutation.resumePosition,
-            watchedPercent: percent,
-            phase: "checkpoint"
-        ))
-        watchBridge.checkpoint(mutation)
+        let capturedAt = Date()
+        Task { @MainActor in
+            let union = watchBridge.identitySources?(convergingItem) ?? identitySources(convergingItem)
+            let mutation = WatchMutationFactory.playbackStop(
+                item: convergingItem,
+                position: position,
+                watchedPercent: percent,
+                primaryAccountID: primaryAccountID,
+                additionalSources: union,
+                crossServerSync: watchBridge.crossServerSync(),
+                capturedAt: capturedAt
+            )
+            guard let mutation else { return }
+            FanoutDiagnostics.emit(FanoutDiagnostics.stopLine(
+                title: convergingItem.title,
+                kind: convergingItem.kind,
+                itemID: convergingItem.id,
+                originAccountID: convergingItem.sourceAccountID ?? primaryAccountID,
+                identities: MediaItemIdentity.identities(for: convergingItem),
+                indexUnion: union,
+                mutationTargets: mutation.targets,
+                played: mutation.played,
+                resumePosition: mutation.resumePosition,
+                watchedPercent: percent,
+                phase: "checkpoint"
+            ))
+            watchBridge.checkpoint(mutation)
+        }
     }
 }
 
@@ -798,33 +803,37 @@ func makePlaybackStoppedHandler(
     identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef]
 ) -> @Sendable (_ position: TimeInterval, _ watchedPercent: Double) -> Void {
     { position, percent in
-        let union = identitySources(convergingItem)
-        let mutation = WatchMutationFactory.playbackStop(
-            item: convergingItem,
-            position: position,
-            watchedPercent: percent,
-            primaryAccountID: primaryAccountID,
-            additionalSources: union,
-            crossServerSync: watchBridge.crossServerSync()
-        )
-        // (b)+(c) Make the stop event visible: the played item's resolved identity,
-        // the index union found for it, and the final mutation target set. Pure
-        // string building + fire-and-forget os_log — never delays the durable write.
-        FanoutDiagnostics.emit(FanoutDiagnostics.stopLine(
-            title: convergingItem.title,
-            kind: convergingItem.kind,
-            itemID: convergingItem.id,
-            originAccountID: convergingItem.sourceAccountID ?? primaryAccountID,
-            identities: MediaItemIdentity.identities(for: convergingItem),
-            indexUnion: union,
-            mutationTargets: mutation?.targets,
-            played: mutation?.played,
-            resumePosition: mutation?.resumePosition,
-            watchedPercent: percent
-        ))
-        // Queue the final write before lifting the live-session guard. `percent` rides
-        // along so the surface the user returns to can flip its resume bar in place.
-        watchBridge.finishPlayback(liveAccountID, liveItemID, percent, mutation, convergingItem)
+        let capturedAt = Date()
+        Task { @MainActor in
+            let union = watchBridge.identitySources?(convergingItem) ?? identitySources(convergingItem)
+            let mutation = WatchMutationFactory.playbackStop(
+                item: convergingItem,
+                position: position,
+                watchedPercent: percent,
+                primaryAccountID: primaryAccountID,
+                additionalSources: union,
+                crossServerSync: watchBridge.crossServerSync(),
+                capturedAt: capturedAt
+            )
+            // (b)+(c) Make the stop event visible: the played item's resolved identity,
+            // the index union found for it, and the final mutation target set. Pure
+            // string building + fire-and-forget os_log — never delays the durable write.
+            FanoutDiagnostics.emit(FanoutDiagnostics.stopLine(
+                title: convergingItem.title,
+                kind: convergingItem.kind,
+                itemID: convergingItem.id,
+                originAccountID: convergingItem.sourceAccountID ?? primaryAccountID,
+                identities: MediaItemIdentity.identities(for: convergingItem),
+                indexUnion: union,
+                mutationTargets: mutation?.targets,
+                played: mutation?.played,
+                resumePosition: mutation?.resumePosition,
+                watchedPercent: percent
+            ))
+            // Queue the final write before lifting the live-session guard. `percent` rides
+            // along so the surface the user returns to can flip its resume bar in place.
+            watchBridge.finishPlayback(liveAccountID, liveItemID, percent, mutation, convergingItem)
+        }
     }
 }
 

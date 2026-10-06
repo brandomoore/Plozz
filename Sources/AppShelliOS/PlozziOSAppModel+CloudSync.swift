@@ -41,6 +41,7 @@ extension PlozziOSAppModel {
     }
 
     static func makeCloudSync(for model: PlozziOSAppModel) -> CloudConfigSyncService? {
+        TraktSharedRefreshBootstrap.install(containerIdentifier: cloudContainerIdentifier)
         guard let baseDir = writableStateDirectory() else { return nil }
         let syncDir = baseDir.appendingPathComponent("PlozzSync", isDirectory: true)
         let configStateURL = syncDir.appendingPathComponent("cloud-config-v3.json")
@@ -70,6 +71,9 @@ extension PlozziOSAppModel {
             },
             applyRecords: { changes in
                 TrackerTokenSyncBridge.apply(changes)
+            },
+            onAccountSwitch: {
+                await TraktSharedRefreshBootstrap.synchronizeKnownAccounts()
             }
         )
 
@@ -94,6 +98,7 @@ extension PlozziOSAppModel {
         SyncedTokenRegistry.shared.setChangeHandler { [weak model] in
             Task { await model?.cloudSync?.publishLocalChanges() }
         }
+        Task { await TraktSharedRefreshBootstrap.synchronizeKnownAccounts() }
 
         var channels = [mediaChannel, trackerTokenChannel]
         channels.append(Self.makeLiveTVSyncChannel(
@@ -514,6 +519,7 @@ extension PlozziOSAppModel {
     // MARK: Lifecycle + change observation
 
     func startCloudSyncIfEnabled() {
+        TraktSharedRefreshBootstrap.install(containerIdentifier: Self.cloudContainerIdentifier)
         guard SyncSetupFeatureFlag().isEnabled else { return }
         guard !Self.isRunningUnitTests else { return }
         let config = cloudSync

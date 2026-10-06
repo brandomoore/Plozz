@@ -2,6 +2,10 @@ import Foundation
 import CoreModels
 import CoreNetworking
 
+enum TraktDeviceAuthorizationError: Error {
+    case pending
+}
+
 /// Orchestrates the Trakt OAuth **device-code** flow plus token maintenance.
 ///
 /// Device-code is the right grant for a TV: the app shows a short code, the user
@@ -36,23 +40,26 @@ public struct TraktAuthService: Sendable {
 
     /// Polls for approval of `code`, returning tokens once the user authorizes.
     ///
-    /// While the request is pending Trakt answers with a 4xx, which the shared
-    /// `HTTPClient` surfaces as a thrown error; we swallow those and keep polling
-    /// at `code.interval` until the code's `expires_in` deadline, then throw
-    /// `.quickConnectExpired`. Task cancellation (the user backs out) propagates.
+    /// Only HTTP 400 means pending. Rejection, invalid codes and transport
+    /// failures terminate the attempt; throttling lengthens subsequent intervals.
     public func awaitToken(for code: TraktDeviceCode) async throws -> TraktTokens {
+        guard code.expiresIn.isFinite, code.interval.isFinite else {
+            throw AppError.invalidResponse
+        }
         let deadline = Date().addingTimeInterval(code.expiresIn)
-        let pollInterval = max(code.interval, 1)
+        var pollInterval = max(code.interval, 1)
         while Date() < deadline {
             try Task.checkCancellation()
+            try await sleep(min(pollInterval, max(0, deadline.timeIntervalSinceNow)))
+            try Task.checkCancellation()
+            guard Date() < deadline else { break }
             do {
                 let response = try await client.requestToken(deviceCode: code.deviceCode)
                 return response.tokens
-            } catch is CancellationError {
-                throw AppError.cancelled
-            } catch {
-                // Still pending (or a transient error): wait and try again.
-                try await sleep(pollInterval)
+            } catch TraktDeviceAuthorizationError.pending {
+                continue
+            } catch AppError.rateLimited(let retryAfter) {
+                pollInterval = max(pollInterval + 5, retryAfter ?? 0)
             }
         }
         throw AppError.quickConnectExpired
@@ -61,6 +68,10 @@ public struct TraktAuthService: Sendable {
     /// Exchanges a refresh token for a fresh access token.
     public func refresh(_ refreshToken: String) async throws -> TraktTokens {
         try await client.refreshToken(refreshToken).tokens
+    }
+
+    func exchangeCode(_ code: String, verifier: String) async throws -> TraktTokens {
+        try await client.exchangeCode(code, verifier: verifier).tokens
     }
 
     /// Best-effort server-side revoke on disconnect.

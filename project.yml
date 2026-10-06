@@ -187,14 +187,9 @@ targets:
         # default (e.g. a contributor without the key), which disables the TVDB tier
         # and leaves the keyless providers powering enrichment. Attribution required.
         TVDBAPIKey: "$(TVDB_API_KEY)"
-        # Trakt OAuth application credentials, powering per-profile watch-history
-        # sync (scrobbling). Substituted from the TRAKT_CLIENT_ID /
-        # TRAKT_CLIENT_SECRET build settings (gitignored
-        # Config/Secrets.local.xcconfig). Empty by default, which disables Trakt
-        # sync (the Settings panel shows it as unavailable and scrobbling is a
-        # no-op). Create an app at https://trakt.tv/oauth/applications to get these.
+        # Public client ID for secretless PKCE/device-code OAuth.
+        # Config/Secrets.local.xcconfig supplies the registration-specific value.
         TraktClientID: "$(TRAKT_CLIENT_ID)"
-        TraktClientSecret: "$(TRAKT_CLIENT_SECRET)"
         # MyAnimeList client ID for anime tracking (device-code OAuth). Substituted
         # from MAL_CLIENT_ID build setting (gitignored Config/Secrets.local.xcconfig).
         # Empty by default, which disables MAL sync.
@@ -209,7 +204,7 @@ targets:
         AniListClientID: "$(ANILIST_CLIENT_ID)"
         AniListClientSecret: "$(ANILIST_CLIENT_SECRET)"
         # Last.fm music scrobbling. The API key + shared secret sign every call
-        # on-device (like Trakt/Simkl above, whose secrets also ship here) so the
+        # on-device (unlike secretless Trakt/Simkl authentication) so the
         # TV can run the no-typing desktop-auth poll flow. Substituted from
         # LASTFM_API_KEY / LASTFM_SHARED_SECRET (gitignored
         # Config/Secrets.local.xcconfig). Empty by default, which disables
@@ -410,7 +405,6 @@ targets:
             CFBundleURLSchemes:
               - plozz
         TraktClientID: "$(TRAKT_CLIENT_ID)"
-        TraktClientSecret: "$(TRAKT_CLIENT_SECRET)"
         SimklClientID: "$(SIMKL_CLIENT_ID)"
         AniListClientID: "$(ANILIST_CLIENT_ID)"
         AniListClientSecret: "$(ANILIST_CLIENT_SECRET)"

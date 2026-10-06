@@ -455,33 +455,7 @@ public struct RootView: View {
                             profileID: appState.profilesModel.activeProfileID
                         ),
                         isLiveTVProfileAuthorized: { appState.isLiveTVProfileAuthorized },
-                        // These bridge closures are `@Sendable` (the player may invoke
-                        // them off the main actor), but every `appState` watch method is
-                        // `@MainActor`-isolated. Hop to the main actor so the calls are
-                        // data-race-safe. The hop is semantically free: each method's real
-                        // work is already async (an enqueue+drain on the reconciler actor),
-                        // and the reconciler's newest-wins `capturedAt` clock tolerates the
-                        // ordering.
-                        watchBridge: WatchOutboxBridge(
-                            beginLiveSession: { accountID, itemID in
-                                Task { @MainActor in
-                                    appState.beginLiveWatchSession(accountID: accountID, itemID: itemID)
-                                }
-                            },
-                            finishPlayback: { accountID, itemID, watchedPercent, mutation, item in
-                                Task { @MainActor in
-                                    appState.finishLiveWatchSession(accountID: accountID, itemID: itemID, watchedPercent: watchedPercent, mutation: mutation, item: item)
-                                }
-                            },
-                            checkpoint: { mutation in
-                                Task { @MainActor in
-                                    appState.checkpointWatchState(mutation: mutation)
-                                }
-                            },
-                            crossServerSync: { [namespace = appState.profilesModel.activeNamespace] in
-                                PlaybackSettingsStore.currentSyncAcrossServers(namespace: namespace)
-                            }
-                        ),
+                        watchBridge: appState.makePlaybackWatchBridge(),
                         pendingWatchMutations: { await appState.pendingWatchMutations() },
                         appliedWatchRecency: { await appState.appliedWatchRecency() },
                         displayAccounts: appState.accountsProviders.accounts,

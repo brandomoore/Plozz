@@ -128,18 +128,15 @@ public actor TraktWatchlistDestination:
 
     private func validAccessToken() async throws -> String {
         let generation = profileGeneration.current
-        guard let tokens = tokenStore.load() else {
-            throw WatchlistDestinationError.authenticationRequired
-        }
-        guard tokens.isExpired else { return tokens.accessToken }
         do {
-            let refreshed = try await auth.refresh(tokens.refreshToken)
-                .inheritingAccountIdentity(from: tokens)
-            guard profileGeneration.performIfCurrent(
-                generation,
-                operation: { try? tokenStore.save(refreshed) }
-            ) else { throw CancellationError() }
-            return refreshed.accessToken
+            guard let token = try await TraktTokenCoordinator.shared.accessToken(
+                store: tokenStore.snapshot(), auth: auth
+            ) else { throw WatchlistDestinationError.authenticationRequired }
+            try Task.checkCancellation()
+            guard generation == profileGeneration.current else { throw CancellationError() }
+            return token
+        } catch let error as WatchlistDestinationError {
+            throw error
         } catch is CancellationError {
             throw WatchlistDestinationError.transient
         } catch AppError.unauthorized {

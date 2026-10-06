@@ -42,6 +42,27 @@ language every other module speaks.
 | UI state | `LoadState`, `AppError` |
 | Subtitles | `SubtitleBehavior`, `SubtitleStyle` (rendered by `FeaturePlayback`) |
 
+## Watch-state replay identity
+
+New shell watch intents carry `WatchMutationServerScope`: the originating Plozz
+profile and stable account/server/user identities, including the existing Plex
+Home binding. It contains no credentials or process-local token revisions.
+Runtime validation must also confirm that the selected Plex viewer's credential
+is actually installed before resolving its provider.
+
+The reconciler uses the existing delivery-authorization checks before dispatch.
+An unavailable server viewer defers the intact mutation without consuming its
+retry budget; it can resume when that viewer returns, including after relaunch.
+Server-user scope separates coalescing/clocks, live-session guards and UI replay.
+It does not replace the separate, deliberately non-restorable authorization
+requirement used for consent-gated library-channel completion.
+
+Scoped mutations use a version-2 ID envelope so older readers reject them rather
+than ignore an unfamiliar identity field. Removing or altering that requirement
+also fails decoding. Legacy unscoped mutations remain readable under their
+existing behavior. They are not retroactively stamped with the current
+server-user scope: their historical viewer cannot be reconstructed.
+
 ## Where to look first
 
 - `MediaProvider.swift` — the protocol that defines every backend.

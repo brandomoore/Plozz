@@ -774,6 +774,13 @@ struct MainTabView: View {
         }
     }
 
+    private var playbackScrobbler: RealtimePlaybackScrobbler {
+        RealtimePlaybackScrobbler(
+            trakt: trakt.playbackScrobbler(),
+            simkl: SimklServiceFactory.make(namespace: liveTVPreferencesNamespace).scrobbler
+        )
+    }
+
     private func openTitleFromLiveTV(_ item: MediaItem) {
         retainsExplicitHomeEntry = true
         pendingTitleRoute = item
@@ -1104,7 +1111,7 @@ struct MainTabView: View {
                 homePerfOverlayEnabled: diagnosticsModel.settings.homePerformanceOverlayEnabled,
                 themePalette: resolvedPalette,
                 ratingsProvider: ratingsProvider,
-                scrobbler: RealtimePlaybackScrobbler(trakt: trakt.scrobbler, simkl: simkl.scrobbler),
+                scrobbler: playbackScrobbler,
                 enqueueWatchMutation: enqueueWatchMutation,
                 watchBridge: watchBridge,
                 identitySources: identitySources,
@@ -1166,7 +1173,7 @@ struct MainTabView: View {
                 showDiagnostics: diagnosticsModel.settings.isEnabled,
                 themePalette: resolvedPalette,
                 ratingsProvider: ratingsProvider,
-                scrobbler: RealtimePlaybackScrobbler(trakt: trakt.scrobbler, simkl: simkl.scrobbler),
+                scrobbler: playbackScrobbler,
                 enqueueWatchMutation: enqueueWatchMutation,
                 watchBridge: watchBridge,
                 identitySources: identitySources,
@@ -1735,7 +1742,7 @@ struct MainTabView: View {
             audioPolicy: audioPolicyModel.resolvedPolicy(settings: playbackModel.settings),
             seriesTrackStore: seriesTrackStore,
             versionPreferences: VersionPreferenceStore(namespace: liveTVPreferencesNamespace),
-            scrobbler: RealtimePlaybackScrobbler(trakt: trakt.scrobbler, simkl: simkl.scrobbler),
+            scrobbler: playbackScrobbler,
             watchBridge: watchBridge,
             identitySources: identitySources,
             showDiagnostics: diagnosticsModel.settings.isEnabled,

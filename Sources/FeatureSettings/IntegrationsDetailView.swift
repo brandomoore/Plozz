@@ -16,9 +16,19 @@ struct IntegrationsDetailView: View {
     let lastfm: LastFmService
     @Bindable var playback: PlaybackSettingsModel
     let serverCount: Int
+    @State private var confirmingTraktReconnect = false
 
     var body: some View {
         SettingsSplitLayout(title: "Trackers", rows: rows)
+            .confirmationDialog("Reconnect Trakt for this profile?", isPresented: $confirmingTraktReconnect, titleVisibility: .visible) {
+                Button("Reconnect Trakt", role: .destructive) { trakt.connect() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Try Retry first. Reconnecting replaces this profile's Trakt connection on all your Plozz devices. Other profiles are not affected.")
+            }
+            .onChange(of: trakt.phase) { _, _ in
+                confirmingTraktReconnect = false
+            }
             .task {
                 // Load all statuses up front so the left list's value
                 // summaries are correct before any row is focused.
@@ -56,6 +66,13 @@ struct IntegrationsDetailView: View {
                         codeLifetime: trakt.codeLifetime,
                         onCancel: { trakt.cancelConnect() }
                     )
+                } else if case let .syncError(message, canReconnect) = trakt.phase {
+                    Text(message)
+                        .foregroundStyle(.secondary)
+                    Button("Retry") { Task { await trakt.refreshStatus() } }
+                    if canReconnect {
+                        Button("Reconnect Trakt") { confirmingTraktReconnect = true }
+                    }
                 } else {
                     trackerActionBar(
                         phase: traktRowPhase,
@@ -228,12 +245,13 @@ struct IntegrationsDetailView: View {
 
     private var traktRowPhase: TrackerRowPhase {
         switch trakt.phase {
-        case .unknown: .loading
+        case .unknown, .savingConnection: .loading
         case .unavailable: .unavailable
         case .disconnected: .disconnected
-        case .connecting: .connecting
+        case .connecting, .authorizing: .connecting
         case let .connected(name): .connected(name)
         case .error(let message): .error(message)
+        case .syncError(let message, _): .error(message)
         }
     }
 

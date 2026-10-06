@@ -42,6 +42,7 @@ struct PlozziOSPlayerView: View {
     /// Likewise for "See more" on a cast member, which opens their own page.
     @Environment(\.mediaPersonSourceNavigator) private var navigateToPerson
     @State private var viewModel: PlayerViewModel?
+    @State private var playbackSession: PlozziOSAppModel.PlaybackSession?
     @State private var playerIdentity = UUID()
     @State private var handoffTask: Task<Void, Never>?
     @State private var isPresented = false
@@ -136,6 +137,8 @@ struct PlozziOSPlayerView: View {
         }
         .task {
             suspendHeroPlayback()
+            let session = playbackSession ?? appModel.makePlaybackSession()
+            playbackSession = session
             guard usesStreamingQuality else {
                 if viewModel == nil {
                     viewModel = makeViewModel(item: request.item, startPosition: request.startPosition)
@@ -144,7 +147,7 @@ struct PlozziOSPlayerView: View {
                 return
             }
             for await network in PlozziOSStreamingNetwork.updates() {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, appModel.isCurrentPlaybackSession(session) else { return }
                 streamingNetwork = network
                 let connection = resolvedStreamingConnection()
                 if viewModel == nil {
@@ -187,7 +190,8 @@ struct PlozziOSPlayerView: View {
             let prefetched = outgoing.consumePrefetchedNext(matching: next.id)
             handoffTask = Task { @MainActor in
                 await outgoing.stop()
-                guard !Task.isCancelled, isPresented, viewModel === outgoing else {
+                guard !Task.isCancelled, isPresented, viewModel === outgoing,
+                      isCurrentPlaybackSession else {
                     handoffTask = nil
                     return
                 }
@@ -215,7 +219,8 @@ struct PlozziOSPlayerView: View {
                   handoffTask == nil else { return }
             handoffTask = Task { @MainActor in
                 await outgoing.stop()
-                guard !Task.isCancelled, isPresented, viewModel === outgoing else {
+                guard !Task.isCancelled, isPresented, viewModel === outgoing,
+                      isCurrentPlaybackSession else {
                     handoffTask = nil
                     return
                 }
@@ -308,7 +313,10 @@ struct PlozziOSPlayerView: View {
         }
         handoffTask = Task { @MainActor in
             await outgoing.stop()
-            guard !Task.isCancelled, isPresented else { handoffTask = nil; return }
+            guard !Task.isCancelled, isPresented, isCurrentPlaybackSession else {
+                handoffTask = nil
+                return
+            }
             let incoming = makeViewModel(
                 item: incomingItem, startPosition: continuation.position, continuation: continuation
             )
@@ -320,12 +328,18 @@ struct PlozziOSPlayerView: View {
         }
     }
 
+    private var isCurrentPlaybackSession: Bool {
+        playbackSession.map { appModel.isCurrentPlaybackSession($0) } ?? false
+    }
+
     private func makeViewModel(
         item: MediaItem,
         startPosition: TimeInterval,
         adoptedResolved: PlayerViewModel.PrefetchedPlayback? = nil,
         continuation: PlaybackContinuation? = nil
     ) -> PlayerViewModel {
+        let session = playbackSession ?? appModel.makePlaybackSession()
+        playbackSession = session
         let resolver = appModel.authenticatedHTTPResolver
         let playbackSettings = appModel.settings.playback.settings
         let model = appModel
@@ -354,7 +368,7 @@ struct PlozziOSPlayerView: View {
             seriesTrackStore: appModel.seriesTrackStore,
             seriesAccountFallbackID: item.sourceAccountID,
             startPosition: startPosition,
-            scrobbler: appModel.trackerScrobbler,
+            scrobbler: session.scrobbler,
             engineFactory: PlozziOSPlaybackEngineComposition.engineFactory(
                 networkFileResolver: appModel.mediaShareRuntime.networkFileResolver,
                 authenticatedHTTPResolver: resolver
@@ -367,6 +381,7 @@ struct PlozziOSPlayerView: View {
                 Task { @MainActor in
                     model?.finishPlayback(
                         for: item,
+                        session: session,
                         position: position,
                         watchedPercent: watchedPercent
                     )
@@ -374,13 +389,14 @@ struct PlozziOSPlayerView: View {
             },
             onPlaybackStarted: { [weak model] in
                 Task { @MainActor in
-                    model?.beginPlayback(for: item)
+                    model?.beginPlayback(for: item, session: session)
                 }
             },
             onPlaybackCheckpoint: { [weak model] position, watchedPercent in
                 Task { @MainActor in
                     model?.checkpointPlayback(
                         for: item,
+                        session: session,
                         position: position,
                         watchedPercent: watchedPercent
                     )

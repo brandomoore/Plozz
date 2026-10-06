@@ -26,21 +26,24 @@ import LastFmService
 /// both guard and converge through one value.
 struct WatchOutboxBridge: Sendable {
     /// Register `(accountID, itemID)` as the live in-app session (idempotent).
-    let beginLiveSession: @Sendable (_ accountID: String, _ itemID: String) -> Void
+    let beginLiveSession: @MainActor @Sendable (_ accountID: String, _ itemID: String) -> Void
     /// Queue the final convergence mutation, then end the live session and drain
     /// so old progress cannot overwrite the final state. `watchedPercent`
     /// (0...100) is the fraction watched at stop, used to drive the optimistic
     /// in-UI progress update (the resume bar on the surface the user returns to).
-    let finishPlayback: @Sendable (_ accountID: String?, _ itemID: String, _ watchedPercent: Double, _ mutation: WatchMutation?, _ item: MediaItem?) -> Void
+    let finishPlayback: @MainActor @Sendable (_ accountID: String?, _ itemID: String, _ watchedPercent: Double, _ mutation: WatchMutation?, _ item: MediaItem?) -> Void
     /// Durably enqueue a mid-play convergence `mutation` without ending the live
     /// session, so progress fans out to the **other** servers (the launch server
     /// stays deferred while it plays). Pure local enqueue + drain — no network on
     /// the caller's path.
-    let checkpoint: @Sendable (_ mutation: WatchMutation) -> Void
-    /// Live, off-main read of the active profile's "sync watch state across
+    let checkpoint: @MainActor @Sendable (_ mutation: WatchMutation) -> Void
+    /// Live read of the launch profile's "sync watch state across
     /// servers" preference, evaluated at stop/checkpoint time (not captured at
     /// player start) so flipping the toggle mid-playback takes effect on the next
     /// convergence. Backed by a thread-safe UserDefaults read.
     let crossServerSync: @Sendable () -> Bool
+    /// The shell fences this lookup to the launch profile/server identity. The
+    /// main-actor read keeps validation and snapshot selection atomic with a switch.
+    var identitySources: (@MainActor @Sendable (MediaItem) -> [MediaSourceRef])? = nil
 }
 #endif

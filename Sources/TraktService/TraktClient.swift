@@ -39,7 +39,7 @@ struct TraktClient: Sendable {
     func requestDeviceCode() async throws -> TraktDeviceCode {
         let endpoint = try Endpoint(method: .post, path: "/oauth/device/code", headers: headers())
             .jsonBody(["client_id": config.clientID ?? ""])
-        return try await http.decode(TraktDeviceCode.self, from: endpoint, baseURL: baseURL)
+        return try await http.decode(TraktDeviceCode.self, from: endpoint, baseURL: config.authBaseURL)
     }
 
     /// `POST /oauth/device/token` — exchanges a device code for tokens once the
@@ -47,12 +47,35 @@ struct TraktClient: Sendable {
     func requestToken(deviceCode: String) async throws -> TraktTokenResponse {
         let body = [
             "code": deviceCode,
-            "client_id": config.clientID ?? "",
-            "client_secret": config.clientSecret ?? ""
+            "client_id": config.clientID ?? ""
         ]
         let endpoint = try Endpoint(method: .post, path: "/oauth/device/token", headers: headers())
             .jsonBody(body)
-        return try await http.decode(TraktTokenResponse.self, from: endpoint, baseURL: baseURL)
+        let (data, response) = try await http.sendRaw(endpoint, baseURL: config.authBaseURL)
+        switch response.statusCode {
+        case 200:
+            return try decodeToken(data)
+        case 400:
+            throw TraktDeviceAuthorizationError.pending
+        case 404, 409:
+            throw AppError.invalidResponse
+        case 410:
+            throw AppError.quickConnectExpired
+        case 418:
+            throw AppError.cancelled
+        default:
+            throw oauthError(data: data, response: response)
+        }
+    }
+
+    func exchangeCode(_ code: String, verifier: String) async throws -> TraktTokenResponse {
+        try await tokenRequest([
+            "client_id": config.clientID ?? "",
+            "redirect_uri": config.redirectURI.absoluteString,
+            "code": code,
+            "code_verifier": verifier,
+            "grant_type": "authorization_code",
+        ])
     }
 
     /// `POST /oauth/token` — refreshes an expired access token.
@@ -60,25 +83,63 @@ struct TraktClient: Sendable {
         let body = [
             "refresh_token": refreshToken,
             "client_id": config.clientID ?? "",
-            "client_secret": config.clientSecret ?? "",
-            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "redirect_uri": config.redirectURI.absoluteString,
             "grant_type": "refresh_token"
         ]
-        let endpoint = try Endpoint(method: .post, path: "/oauth/token", headers: headers())
-            .jsonBody(body)
-        return try await http.decode(TraktTokenResponse.self, from: endpoint, baseURL: baseURL)
+        return try await tokenRequest(body)
     }
 
     /// `POST /oauth/revoke` — invalidates the token server-side on disconnect.
     func revoke(accessToken: String) async throws {
         let body = [
             "token": accessToken,
-            "client_id": config.clientID ?? "",
-            "client_secret": config.clientSecret ?? ""
+            "client_id": config.clientID ?? ""
         ]
         let endpoint = try Endpoint(method: .post, path: "/oauth/revoke", headers: headers())
             .jsonBody(body)
-        _ = try await http.send(endpoint, baseURL: baseURL)
+        _ = try await http.send(endpoint, baseURL: config.authBaseURL)
+    }
+
+    private func tokenRequest(_ body: [String: String]) async throws -> TraktTokenResponse {
+        var endpoint = try Endpoint(method: .post, path: "/oauth/token", headers: headers())
+            .jsonBody(body)
+        endpoint.reportsUndeliveredRequests = body["grant_type"] == "refresh_token"
+        let (data, response) = try await http.sendRaw(endpoint, baseURL: config.authBaseURL)
+        guard response.statusCode == 200 else {
+            throw oauthError(data: data, response: response)
+        }
+        return try decodeToken(data)
+    }
+
+    private func decodeToken(_ data: Data) throws -> TraktTokenResponse {
+        guard let response = try? JSONDecoder.plozz.decode(TraktTokenResponse.self, from: data),
+              !response.accessToken.isEmpty, !response.refreshToken.isEmpty,
+              response.expiresIn.isFinite, response.expiresIn > 0,
+              response.createdAt.isFinite else { throw AppError.decoding }
+        return response
+    }
+
+    private func oauthError(data: Data, response: HTTPURLResponse) -> AppError {
+        struct OAuthError: Decodable { let error: String }
+        if response.statusCode == 400,
+           (try? JSONDecoder().decode(OAuthError.self, from: data).error) == "invalid_grant" {
+            return .unauthorized
+        }
+        switch response.statusCode {
+        case 401, 403: return .unauthorized
+        case 429:
+            let header = response.value(forHTTPHeaderField: "Retry-After")
+            let seconds = header.flatMap(TimeInterval.init)
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss z"
+            let dateSeconds = header.flatMap { formatter.date(from: $0)?.timeIntervalSinceNow }
+            return .rateLimited(retryAfter: (seconds ?? dateSeconds).flatMap {
+                $0.isFinite ? max(0, $0) : nil
+            })
+        default: return .invalidResponse
+        }
     }
 
     // MARK: - User

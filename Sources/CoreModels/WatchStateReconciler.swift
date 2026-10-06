@@ -10,6 +10,7 @@ import Foundation
 /// treated as a confirmed write (so a Trakt 409 must be swallowed as success by the
 /// implementation, never rethrown).
 public protocol WatchMutationApplying: Sendable {
+    func requireServerScope(_ scope: WatchMutationServerScope) async throws
     /// Marks `target` played/unplayed on its server (addressed by `target.itemID`).
     func setPlayed(_ played: Bool, on target: WatchMutationTarget) async throws
     /// Marks `target` played/unplayed with the play's real `capturedAt`, for a
@@ -38,6 +39,9 @@ public protocol WatchMutationApplying: Sendable {
 }
 
 public extension WatchMutationApplying {
+    func requireServerScope(_ scope: WatchMutationServerScope) async throws {
+        throw WatchMutationServerScopeError.unsupportedApplier
+    }
     func removeFromContinueWatching(on target: WatchMutationTarget, capturedAt: Date) async throws {
         try await setResumePosition(0, on: target, capturedAt: capturedAt)
     }
@@ -91,8 +95,9 @@ public actor WatchStateReconciler {
     private var isDraining = false
     private var drainRequestedWhileDraining = false
 
-    /// `(accountID:itemID)` keys (matching ``WatchMutationTarget/id``) that have a
-    /// **live in-app playback session** right now. The reconciler never issues a
+    /// `(accountID:itemID)` plus the originating server viewer identify each
+    /// **live in-app playback session**. A delayed stop cannot end another Home
+    /// user's session on the same account/item. The reconciler never issues a
     /// convergence write against one of these targets — the live player already
     /// owns that server's now-playing session, and an out-of-band write (even via
     /// the session-less endpoints) is deferred until playback ends so a mid-play
@@ -100,7 +105,18 @@ public actor WatchStateReconciler {
     /// persisted: a kill mid-play simply forgets the guard, so a relaunch drains
     /// everything normally (durability preserved). Deferral ≠ drop — a guarded
     /// target stays queued and converges on ``endLiveSession(accountID:itemID:)``.
-    private var liveSessions: Set<String> = []
+    private struct LiveSession: Hashable {
+        let targetID: String
+        let profileID: String?
+        let accountIdentity: WatchMutationServerScope.AccountIdentity?
+
+        init(target: WatchMutationTarget, serverScope: WatchMutationServerScope?) {
+            targetID = target.id
+            profileID = serverScope?.profileID
+            accountIdentity = serverScope?.accounts.first { $0.accountID == target.accountID }
+        }
+    }
+    private var liveSessions: Set<LiveSession> = []
 
     public init(
         store: any WatchMutationStoring,
@@ -140,31 +156,44 @@ public actor WatchStateReconciler {
     /// session ends. Idempotent — registering the same session twice is a no-op.
     /// The live player itself keeps that server's now-playing session in sync; the
     /// outbox only converges the *other* servers + provides durability.
-    public func beginLiveSession(accountID: String, itemID: String) {
-        liveSessions.insert(WatchMutationTarget(accountID: accountID, itemID: itemID).id)
+    public func beginLiveSession(accountID: String, itemID: String, serverScope: WatchMutationServerScope? = nil) {
+        liveSessions.insert(LiveSession(
+            target: WatchMutationTarget(accountID: accountID, itemID: itemID), serverScope: serverScope
+        ))
     }
 
     /// Ends the live session for `(accountID, itemID)` and drains, so any writes
     /// that were deferred *because* it was playing now converge. Idempotent.
-    public func endLiveSession(accountID: String, itemID: String) async {
-        liveSessions.remove(WatchMutationTarget(accountID: accountID, itemID: itemID).id)
+    public func endLiveSession(accountID: String, itemID: String, serverScope: WatchMutationServerScope? = nil) async {
+        liveSessions.remove(LiveSession(
+            target: WatchMutationTarget(accountID: accountID, itemID: itemID), serverScope: serverScope
+        ))
         await drain()
     }
 
     /// Replace queued progress with the final stop before lifting the live guard.
     /// Draining first would write the old checkpoint back over a finished episode.
-    public func finishLiveSession(accountID: String?, itemID: String, mutation: WatchMutation?) async {
+    public func finishLiveSession(
+        accountID: String?, itemID: String, mutation: WatchMutation?, serverScope: WatchMutationServerScope? = nil
+    ) async {
         if let mutation { await enqueue(mutation) }
         if let accountID {
-            liveSessions.remove(WatchMutationTarget(accountID: accountID, itemID: itemID).id)
+            liveSessions.remove(LiveSession(
+                target: WatchMutationTarget(accountID: accountID, itemID: itemID),
+                serverScope: serverScope ?? mutation?.serverScope
+            ))
         }
         await drain()
     }
 
     /// Whether `(accountID, itemID)` is currently a guarded live session — for
-    /// diagnostics / tests.
-    public func isLiveSession(accountID: String, itemID: String) -> Bool {
-        liveSessions.contains(WatchMutationTarget(accountID: accountID, itemID: itemID).id)
+    /// diagnostics / tests. An omitted scope reports any viewer's matching session.
+    public func isLiveSession(accountID: String, itemID: String, serverScope: WatchMutationServerScope? = nil) -> Bool {
+        let target = WatchMutationTarget(accountID: accountID, itemID: itemID)
+        if let serverScope {
+            return liveSessions.contains(LiveSession(target: target, serverScope: serverScope))
+        }
+        return liveSessions.contains { $0.targetID == target.id }
     }
 
     // MARK: - Enqueue
@@ -210,7 +239,7 @@ public actor WatchStateReconciler {
         // A guarded write must not rewind an ordinary/manual action. Guarded
         // clocks never advance the ordinary title's high-water mark.
         if mutation.authorization != nil,
-           let accepted = state.clock[mutation.titleCoalesceKey], mutation.capturedAt < accepted {
+           let accepted = state.clock[mutation.serverTitleCoalesceKey], mutation.capturedAt < accepted {
             retireIfUnreferenced(mutation)
             return false
         }
@@ -281,6 +310,7 @@ public actor WatchStateReconciler {
         let incoming = Set(mutation.identities)
         return pending.firstIndex { candidate in
             guard candidate.authorization == mutation.authorization,
+                  candidate.serverScope == mutation.serverScope,
                   candidate.kind == mutation.kind,
                   candidate.seasonNumber == mutation.seasonNumber,
                   candidate.episodeNumber == mutation.episodeNumber,
@@ -302,6 +332,7 @@ public actor WatchStateReconciler {
     }
 
     private static func sameTitle(_ lhs: WatchMutation, _ rhs: WatchMutation) -> Bool {
+        guard lhs.serverScope == rhs.serverScope else { return false }
         if lhs.titleCoalesceKey == rhs.titleCoalesceKey { return true }
         guard lhs.kind == rhs.kind, lhs.seasonNumber == rhs.seasonNumber,
               lhs.episodeNumber == rhs.episodeNumber,
@@ -403,7 +434,7 @@ public actor WatchStateReconciler {
                 // Supersession re-check at drain time.
                 let accepted = state.clock[mutation.coalesceKey] ?? .distantPast
                 let manual = mutation.authorization == nil
-                    ? Date.distantPast : state.clock[mutation.titleCoalesceKey] ?? .distantPast
+                    ? Date.distantPast : state.clock[mutation.serverTitleCoalesceKey] ?? .distantPast
                 if mutation.capturedAt < max(accepted, manual) {
                     state.pending.removeAll { $0.id == mutationID }
                     retireIfUnreferenced(mutation)
@@ -414,16 +445,20 @@ public actor WatchStateReconciler {
                 let original = mutation
                 do {
                     let permission: WatchMutationDeliveryAuthorization?
-                    if let authorization = original.authorization {
-                        try await authorization.require()
+                    if original.authorization != nil || original.serverScope != nil {
+                        if let authorization = original.authorization { try await authorization.require() }
                         guard applier is any WatchMutationAuthorizationEnforcing else {
-                            throw WatchMutationAuthorizationError.unsupportedApplier
+                            if original.authorization != nil {
+                                throw WatchMutationAuthorizationError.unsupportedApplier
+                            }
+                            throw WatchMutationServerScopeError.unsupportedApplier
                         }
-                        permission = WatchMutationDeliveryAuthorization { [weak self] in
+                        permission = WatchMutationDeliveryAuthorization(serverScope: original.serverScope) { [weak self, applier] in
                             guard let self, await self.isPending(original) else {
                                 throw WatchMutationAuthorizationError.superseded
                             }
-                            try await authorization.require()
+                            if let authorization = original.authorization { try await authorization.require() }
+                            if let scope = original.serverScope { try await applier.requireServerScope(scope) }
                             guard await self.isPending(original) else {
                                 throw WatchMutationAuthorizationError.superseded
                             }
@@ -507,14 +542,17 @@ public actor WatchStateReconciler {
         if mutation.expansionPending {
             let expansion = await applier.expandTargets(for: mutation)
             try await WatchMutationDeliveryAuthorization.check()
+            let expandedTargets = expansion.targets.filter { target in
+                mutation.serverScope?.accounts.contains { $0.accountID == target.accountID } ?? true
+            }
             var seen = Set(mutation.targets.map(\.id)).union(mutation.appliedTargetIDs)
             var added = 0
-            for target in expansion.targets where seen.insert(target.id).inserted {
+            for target in expandedTargets where seen.insert(target.id).inserted {
                 mutation.targets.append(target)
                 added += 1
             }
             var optimisticSeen = Set(mutation.optimisticTargets.map(\.id))
-            for target in expansion.targets where optimisticSeen.insert(target.id).inserted {
+            for target in expandedTargets where optimisticSeen.insert(target.id).inserted {
                 mutation.optimisticTargets.append(target)
             }
             if expansion.isConclusive {
@@ -546,7 +584,7 @@ public actor WatchStateReconciler {
             // defer it (keep it queued) so a mid-play drain can't disturb the
             // now-playing session. The live player owns that server; the deferred
             // write converges when the session ends (endLiveSession drains).
-            if liveSessions.contains(target.id) {
+            if liveSessions.contains(LiveSession(target: target, serverScope: mutation.serverScope)) {
                 remaining.append(target)
                 FanoutDiagnostics.emit(FanoutDiagnostics.drainTargetLine(target, outcome: "deferred(live session)"))
                 continue
@@ -578,11 +616,14 @@ public actor WatchStateReconciler {
                     // row anyway); keyed by target and kept newest-wins so a fresh play
                     // supersedes an older one.
                     if resume > 0, mutation.played != true {
-                        let prior = state.appliedRecency[target.id]?.capturedAt ?? .distantPast
+                        let record = state.appliedRecency[target.id]
+                        let prior = record?.serverScope == mutation.serverScope
+                            ? record?.capturedAt ?? .distantPast : .distantPast
                         if mutation.capturedAt >= prior {
                             state.appliedRecency[target.id] = AppliedResumeRecord(
                                 capturedAt: mutation.capturedAt,
-                                appliedAt: now()
+                                appliedAt: now(),
+                                serverScope: mutation.serverScope
                             )
                         }
                     }
@@ -620,7 +661,7 @@ public actor WatchStateReconciler {
         // when the feed can actually advance, before any slow tracker mirrors.
         // Superseded writes must not replay older presentation state.
         let manualClock = mutation.authorization == nil
-            ? Date.distantPast : state.clock[mutation.titleCoalesceKey] ?? .distantPast
+            ? Date.distantPast : state.clock[mutation.serverTitleCoalesceKey] ?? .distantPast
         if !applied.isEmpty,
            mutation.capturedAt >= max(state.clock[mutation.coalesceKey] ?? .distantPast, manualClock) {
             var confirmed = mutation

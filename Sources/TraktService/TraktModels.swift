@@ -5,7 +5,7 @@ import Foundation
 
 /// The OAuth tokens persisted after a successful Trakt connection.
 ///
-/// Trakt access tokens are long-lived (currently ~3 months) but do expire, so
+/// Trakt access tokens expire (currently after seven days), so
 /// the refresh token is kept to silently renew them. `createdAt` + `expiresIn`
 /// derive the absolute expiry used to decide when to refresh.
 public struct TraktTokens: Codable, Sendable, Equatable {

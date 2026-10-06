@@ -352,7 +352,6 @@ final class PlozziOSAppModel {
     let simklService: SimklService
     let anilistService: AniListService
     let malService: MALService
-    let trackerScrobbler: PlozziOSTrackerScrobbler
     let crashReporting: CrashReportingSettingsModel
     let crashReportingController: CrashReportingController
     private(set) var requiresLaunchProfileSelection: Bool
@@ -608,6 +607,7 @@ final class PlozziOSAppModel {
             )
         )
         let trackerNamespace = profiles.activeNamespace
+        TraktSharedRefreshBootstrap.install()
         let traktService = TraktServiceFactory.make(namespace: trackerNamespace)
         let simklService = SimklServiceFactory.make(namespace: trackerNamespace)
         let anilistService = AniListServiceFactory.make(namespace: trackerNamespace)
@@ -650,12 +650,6 @@ final class PlozziOSAppModel {
         self.simklService = simklService
         self.anilistService = anilistService
         self.malService = malService
-        self.trackerScrobbler = PlozziOSTrackerScrobbler(
-            trakt: traktService.scrobbler,
-            simkl: simklService.scrobbler,
-            anilist: anilistService.scrobbler,
-            mal: malService.scrobbler
-        )
         self.crashReporting = CrashReportingSettingsModel()
         self.crashReportingController = CrashReportingController()
         self.requiresLaunchProfileSelection = requiresLaunchProfileSelection
@@ -1673,6 +1667,7 @@ final class PlozziOSAppModel {
     }
 
     private func applyWatchMutation(_ mutation: WatchMutation) {
+        let mutation = mutation.bindingServerScope(accountsProviders.watchMutationServerScope)
         let reconciler = watchReconciler
         Task {
             await reconciler.enqueue(mutation)
@@ -1680,22 +1675,69 @@ final class PlozziOSAppModel {
         }
     }
 
-    func beginPlayback(for item: MediaItem) {
+    /// Kept by the presentation across teardown/episode handoff, never rebuilt
+    /// from whichever profile is visible when a delayed callback arrives.
+    struct PlaybackSession: Sendable {
+        let profileID: String
+        let namespace: String?
+        let serverAuthorization: String
+        let serverScope: WatchMutationServerScope
+        let primaryAccountID: String?
+        let initialSnapshot: IdentityIndexSnapshot
+        let reconciler: WatchStateReconciler
+        let scrobbler: PlozziOSTrackerScrobbler
+    }
+
+    func makePlaybackSession() -> PlaybackSession {
+        let namespace = profiles.activeNamespace
+        return PlaybackSession(
+            profileID: profiles.activeProfileID,
+            namespace: namespace,
+            serverAuthorization: accountsProviders.liveTVAuthorizationID,
+            serverScope: accountsProviders.watchMutationServerScope,
+            primaryAccountID: accountsProviders.primaryActiveAccount?.id,
+            initialSnapshot: identityIndex.identitySnapshotStore.current,
+            reconciler: watchReconciler,
+            scrobbler: PlozziOSTrackerScrobbler(
+                trakt: traktService.playbackScrobbler(),
+                simkl: SimklServiceFactory.make(namespace: namespace).scrobbler,
+                anilist: AniListServiceFactory.make(namespace: namespace).scrobbler,
+                mal: MALServiceFactory.make(namespace: namespace).scrobbler
+            )
+        )
+    }
+
+    func isCurrentPlaybackSession(_ session: PlaybackSession) -> Bool {
+        profiles.activeProfileID == session.profileID
+            && accountsProviders.liveTVAuthorizationID == session.serverAuthorization
+            && accountsProviders.watchMutationServerScope == session.serverScope
+    }
+
+    private func playbackSources(for item: MediaItem, session: PlaybackSession) -> [MediaSourceRef] {
+        let snapshot = isCurrentPlaybackSession(session)
+            ? identityIndex.identitySnapshotStore.current
+            : session.initialSnapshot
+        return snapshot.sourceRefs(for: item)
+    }
+
+    func beginPlayback(for item: MediaItem, session: PlaybackSession) {
         guard let accountID = item.sourceAccountID
-            ?? accountsProviders.primaryActiveAccount?.id else {
+            ?? session.primaryAccountID else {
             return
         }
-        let reconciler = watchReconciler
+        let reconciler = session.reconciler
         Task {
             await reconciler.beginLiveSession(
                 accountID: accountID,
-                itemID: item.id
+                itemID: item.id,
+                serverScope: session.serverScope
             )
         }
     }
 
     func checkpointPlayback(
         for item: MediaItem,
+        session: PlaybackSession,
         position: TimeInterval,
         watchedPercent: Double
     ) {
@@ -1703,13 +1745,13 @@ final class PlozziOSAppModel {
             item: item,
             position: position,
             watchedPercent: watchedPercent,
-            primaryAccountID: accountsProviders.primaryActiveAccount?.id,
-            additionalSources: identityIndex.identitySourcesProvider(item),
-            crossServerSync: settings.playback.settings.syncWatchAcrossServers
-        ) else {
+            primaryAccountID: session.primaryAccountID,
+            additionalSources: playbackSources(for: item, session: session),
+            crossServerSync: PlaybackSettingsStore.currentSyncAcrossServers(namespace: session.namespace)
+        )?.bindingServerScope(session.serverScope) else {
             return
         }
-        let reconciler = watchReconciler
+        let reconciler = session.reconciler
         Task {
             await reconciler.enqueue(mutation)
             await reconciler.drain()
@@ -1718,32 +1760,37 @@ final class PlozziOSAppModel {
 
     func finishPlayback(
         for item: MediaItem,
+        session: PlaybackSession,
         position: TimeInterval,
         watchedPercent: Double
     ) {
         let accountID = item.sourceAccountID
-            ?? accountsProviders.primaryActiveAccount?.id
+            ?? session.primaryAccountID
         let mutation = WatchMutationFactory.playbackStop(
             item: item,
             position: position,
             watchedPercent: watchedPercent,
-            primaryAccountID: accountsProviders.primaryActiveAccount?.id,
+            primaryAccountID: session.primaryAccountID,
             // The eager identity index's known servers for this title. Without
             // it the fan-out only covers the item's own `sources`, so a title
             // reached from a Home row that only one server populated never gets
             // marked played on the OTHER servers that also have it — silent,
             // invisible data loss. tvOS has always passed this.
-            additionalSources: identityIndex.identitySourcesProvider(item),
-            crossServerSync: settings.playback.settings.syncWatchAcrossServers
-        )
-        publishPlaybackMutation(
-            mutation,
-            item: item,
-            watchedPercent: watchedPercent
-        )
-        let reconciler = watchReconciler
+            additionalSources: playbackSources(for: item, session: session),
+            crossServerSync: PlaybackSettingsStore.currentSyncAcrossServers(namespace: session.namespace)
+        )?.bindingServerScope(session.serverScope)
+        if isCurrentPlaybackSession(session) {
+            publishPlaybackMutation(
+                mutation,
+                item: item,
+                watchedPercent: watchedPercent
+            )
+        }
+        let reconciler = session.reconciler
         Task {
-            await reconciler.finishLiveSession(accountID: accountID, itemID: item.id, mutation: mutation)
+            await reconciler.finishLiveSession(
+                accountID: accountID, itemID: item.id, mutation: mutation, serverScope: session.serverScope
+            )
         }
     }
 
@@ -1802,11 +1849,25 @@ final class PlozziOSAppModel {
     }
 
     func pendingWatchMutations() async -> [WatchMutation] {
-        await watchReconciler.snapshot().pending
+        let profileID = profiles.activeProfileID
+        let pending = await watchReconciler.snapshot().pending
+        guard profiles.activeProfileID == profileID else { return [] }
+        return pending.filter {
+            accountsProviders.isCurrentWatchMutationServerScope(
+                $0.serverScope, isPlexIdentityResolved: plexHomeUsers.hasResolvedWatchMutationIdentity
+            )
+        }
     }
 
     func appliedWatchRecency() async -> [String: AppliedResumeRecord] {
-        await watchReconciler.snapshot().appliedRecency
+        let profileID = profiles.activeProfileID
+        let recency = await watchReconciler.snapshot().appliedRecency
+        guard profiles.activeProfileID == profileID else { return [:] }
+        return recency.filter {
+            accountsProviders.isCurrentWatchMutationServerScope(
+                $0.value.serverScope, isPlexIdentityResolved: plexHomeUsers.hasResolvedWatchMutationIdentity
+            )
+        }
     }
 
     private func makeWatchReconciler(profileID: String) -> WatchStateReconciler {
@@ -1841,10 +1902,21 @@ final class PlozziOSAppModel {
             isActive: { [weak self] in
                 await MainActor.run { self?.profiles.activeProfileID == profileID }
             },
+            validateServerScope: { [weak self] scope in
+                try await MainActor.run {
+                    guard let self else { throw WatchMutationServerScopeError.unavailable }
+                    try self.accountsProviders.requireWatchMutationServerScope(
+                        scope, isPlexIdentityResolved: self.plexHomeUsers.hasResolvedWatchMutationIdentity
+                    )
+                }
+            },
             resolveProvider: { [weak self] accountID in
                 await MainActor.run {
-                    guard self?.profiles.activeProfileID == profileID else { return nil }
-                    return self?.accountsProviders.provider(forAccountID: accountID)
+                    guard let self, self.profiles.activeProfileID == profileID else { return nil }
+                    return self.accountsProviders.provider(
+                        forWatchMutationAccountID: accountID,
+                        isPlexIdentityResolved: self.plexHomeUsers.hasResolvedWatchMutationIdentity
+                    )
                 }
             },
             applyTrakt: { intent in
@@ -1877,7 +1949,16 @@ final class PlozziOSAppModel {
             },
             allAccountIDs: { [weak self] in
                 await MainActor.run {
-                    self?.accountsProviders.homeAccounts.map(\.account.id) ?? []
+                    guard let self, self.profiles.activeProfileID == profileID else { return [] }
+                    if let scope = WatchMutationDeliveryAuthorization.current?.serverScope {
+                        do {
+                            try self.accountsProviders.requireWatchMutationServerScope(
+                                scope, isPlexIdentityResolved: self.plexHomeUsers.hasResolvedWatchMutationIdentity
+                            )
+                            return scope.accounts.map(\.accountID)
+                        } catch { return [] }
+                    }
+                    return self.accountsProviders.homeAccounts.map(\.account.id)
                 }
             },
             indexedSeriesSources: {
@@ -1907,9 +1988,19 @@ final class PlozziOSAppModel {
             onPersistenceFailure: {
                 PlozzLog.app.error("iOS durable watch outbox write failed")
             },
-            onServerStateApplied: { mutation in
+            onServerStateApplied: { [weak self] mutation in
                 guard let refresh = MediaItemMutation(confirmedWatchMutation: mutation) else { return }
-                Task { @MainActor in refresh.post() }
+                Task { @MainActor in
+                    guard let self, self.profiles.activeProfileID == profileID else { return }
+                    if let scope = mutation.serverScope {
+                        do {
+                            try self.accountsProviders.requireWatchMutationServerScope(
+                                scope, isPlexIdentityResolved: self.plexHomeUsers.hasResolvedWatchMutationIdentity
+                            )
+                        } catch { return }
+                    }
+                    refresh.post()
+                }
             }
         )
     }

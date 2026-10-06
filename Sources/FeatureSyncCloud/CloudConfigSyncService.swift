@@ -2,6 +2,7 @@ import Foundation
 import CloudKit
 import CoreModels
 import CoreNetworking
+import TraktService
 
 // MARK: - CloudConfigSyncService
 //
@@ -213,6 +214,13 @@ public actor CloudConfigSyncService {
     /// LIST never changes (only each channel's mutable `ledger`), so this is a
     /// `let`.
     private let channels: [Channel]
+
+    private nonisolated static func isDirectTrackerRecord(
+        _ name: String, schema: CloudSyncSchemaDescriptor
+    ) -> Bool {
+        schema == .trackerTokensV1 && TraktSharedRefresh.shared.isConfigured
+            && CloudTraktRefreshTransport.manages(recordName: name)
+    }
 
     /// Built lazily so merely CONSTRUCTING the service can't touch CloudKit.
     /// `CKContainer(identifier:)` traps (SIGTRAP) in any process whose entitlements
@@ -607,7 +615,8 @@ public actor CloudConfigSyncService {
             return
         }
         let plan = channel.ledger.reconcileLocal(
-            desired: desired, now: nowMillis(), synthesizeDeletions: channel.isHydrated())
+            desired: desired.filter { !Self.isDirectTrackerRecord($0.key, schema: channel.schema) },
+            now: nowMillis(), synthesizeDeletions: channel.isHydrated())
         if !plan.refusedDeletions.isEmpty {
             setDiagnostic("refused \(plan.refusedDeletions.count) deletion(s) in \(channel.schema.zoneName) — capture looked incomplete; not wiping peers")
         }
@@ -920,7 +929,12 @@ public actor CloudConfigSyncService {
             channels[0].ledger = primary?.ledger ?? SyncLedger()
             engineState = needsFullFetch ? nil : primary?.engineState
             for (channel, restored) in zip(channels.dropFirst(), additional) {
-                channel.ledger = restored.ledger
+                channel.ledger = SyncLedger(
+                    checkpoint: restored.ledger.checkpoint,
+                    entries: restored.ledger.entries.filter {
+                        !Self.isDirectTrackerRecord($0.key, schema: channel.schema)
+                    }
+                )
                 channel.ledgerAuthority = restored.authority
             }
             hasRestoredLocalState = true
@@ -1062,7 +1076,10 @@ public actor CloudConfigSyncService {
                     inZoneWith: channel.schema.zoneID, since: token, desiredKeys: []
                 )
                 for (id, result) in batch.modificationResultsByID {
-                    if case .success = result { serverNames.insert(id.recordName) }
+                    if case .success = result,
+                       !Self.isDirectTrackerRecord(id.recordName, schema: channel.schema) {
+                        serverNames.insert(id.recordName)
+                    }
                 }
                 token = batch.changeToken
                 if !batch.moreComing { break }
@@ -1255,6 +1272,17 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
         }
         guard persist() else { return nil }
         let schemas = channels.map(\.schema)
+        let directChanges = syncEngine.state.pendingRecordZoneChanges.filter { change in
+            switch change {
+            case .saveRecord(let id), .deleteRecord(let id):
+                return schemas.contains {
+                    $0.contains(id) && Self.isDirectTrackerRecord(id.recordName, schema: $0)
+                }
+            @unknown default: return false
+            }
+        }
+        // Includes pending legacy LWW writes restored from an older app build.
+        syncEngine.state.remove(pendingRecordZoneChanges: directChanges)
         let scope = context.options.scope
         let changes = syncEngine.state.pendingRecordZoneChanges.filter { change in
             guard scope.contains(change) else { return false }
@@ -1331,7 +1359,14 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
         let knownZoneNames = Set(channels.map { $0.schema.zoneName })
         for channel in channels {
             var incoming: [SyncRemoteRecord] = []
+            var directHints: SyncLocalChanges = [:]
             for mod in event.modifications where mod.record.recordID.zoneID.zoneName == channel.schema.zoneName {
+                if Self.isDirectTrackerRecord(mod.record.recordID.recordName, schema: channel.schema) {
+                    // Opaque hints only: the direct owner reads the authoritative
+                    // server record. Never persist credentials in the LWW ledger.
+                    directHints[mod.record.recordID.recordName] = Data()
+                    continue
+                }
                 if let rec = SyncRemoteRecord(ckRecord: mod.record, schema: channel.schema) {
                     incoming.append(rec)
                 } else {
@@ -1342,9 +1377,18 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
             }
             var deletedNames: [SyncRecordID] = []
             for del in event.deletions where del.recordID.zoneID.zoneName == channel.schema.zoneName {
+                if Self.isDirectTrackerRecord(del.recordID.recordName, schema: channel.schema) {
+                    directHints.updateValue(nil, forKey: del.recordID.recordName)
+                    continue
+                }
                 deletedNames.append(del.recordID.recordName)
             }
 
+            if !directHints.isEmpty {
+                let applyRecords = channel.applyRecords
+                let hints = directHints
+                await outsideDelegateContext { await applyRecords(hints) }
+            }
             guard !incoming.isEmpty || !deletedNames.isEmpty else { continue }
             guard accepts(incoming, for: channel) else { return }
             let changes = channel.ledger.applyFetched(saved: incoming, deleted: deletedNames, now: nowMillis())
@@ -1371,6 +1415,7 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
         for channel in channels {
             let schema = channel.schema
             for saved in event.savedRecords where schema.matches(saved) {
+                guard !Self.isDirectTrackerRecord(saved.recordID.recordName, schema: schema) else { continue }
                 guard let record = SyncRemoteRecord(ckRecord: saved, schema: schema) else {
                     setDiagnostic("Save acknowledgement contained an invalid payload in \(schema.zoneName); keeping the pending local value.")
                     continue
@@ -1379,6 +1424,7 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
                                         savedEditedAt: record.editedAt, systemFields: record.systemFields)
             }
             for id in event.deletedRecordIDs where schema.contains(id) {
+                guard !Self.isDirectTrackerRecord(id.recordName, schema: schema) else { continue }
                 channel.ledger.applyDeleteSuccess(id.recordName)
             }
 
@@ -1390,6 +1436,7 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
                 let record = failure.record
                 guard schema.matches(record) else { continue }
                 let name = record.recordID.recordName
+                guard !Self.isDirectTrackerRecord(name, schema: schema) else { continue }
                 switch failure.error.code {
                 case .serverRecordChanged:
                     guard let serverRecord = failure.error.serverRecord,

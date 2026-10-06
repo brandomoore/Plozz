@@ -54,15 +54,38 @@ struct PlozziOSTrackerSettingsView: View {
 private struct TraktSettingsContent: View {
     let service: TraktService
     @Environment(\.openURL) private var openURL
+    @State private var browser = TraktBrowserAuthorization()
+    @State private var confirmingReconnect = false
 
     var body: some View {
+        Group {
+            content
+        }
+        .confirmationDialog("Reconnect Trakt for this profile?", isPresented: $confirmingReconnect, titleVisibility: .visible) {
+            Button("Reconnect Trakt", role: .destructive, action: connect)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Try Retry first. Reconnecting replaces this profile's Trakt connection on all your Plozz devices. Other profiles are not affected.")
+        }
+        .onChange(of: service.phase) { _, _ in
+            confirmingReconnect = false
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch service.phase {
-        case .unknown:
+        case .unknown, .savingConnection:
             loadingStatus
         case .unavailable:
             unavailableStatus
         case .disconnected:
             connectButton
+        case .authorizing:
+            loadingStatus
+            Button("Cancel", role: .cancel) {
+                service.cancelConnect()
+            }
         case let .connecting(userCode, verificationURL, _):
             Text("Enter this code on Trakt:")
                 .plozzForeground(.secondary)
@@ -85,11 +108,28 @@ private struct TraktSettingsContent: View {
         case let .error(message):
             errorStatus(message)
             connectButton
+        case let .syncError(message, canReconnect):
+            errorStatus(message)
+            Button("Retry") {
+                Task { await service.refreshStatus() }
+            }
+            if canReconnect {
+                Button("Reconnect Trakt") { confirmingReconnect = true }
+            }
         }
     }
 
     private var connectButton: some View {
-        Button("Connect Trakt") {
+        Button("Connect Trakt", action: connect)
+    }
+
+    private func connect() {
+        if #available(iOS 17.4, *),
+           Bundle.main.bundleIdentifier == "com.thatcube.Plozz" {
+            service.connect { url, callback in
+                try await browser.authorize(url: url, callback: callback)
+            }
+        } else {
             service.connect()
         }
     }
