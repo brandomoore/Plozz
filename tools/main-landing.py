@@ -71,7 +71,7 @@ def pre_push(root, updates):
             print("▸ Pre-main localization gate", flush=True)
             for command in (
                 ["tools/l10n-guard.sh"],
-                [sys.executable, "tools/l10n-sync.py", "--check", "--quiet", "--reuse-if-unchanged"],
+                [sys.executable, "tools/l10n-sync.py", "--validate-only"],
                 [sys.executable, "tools/l10n-export-source.py", delta.name,
                  "--missing-for", "nl", "--check-snapshot"],
             ):

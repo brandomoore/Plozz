@@ -379,7 +379,7 @@ raise SystemExit(7 if os.environ.get("FAIL_STEP")==Path(__file__).name else 0)
 """)
         return self.write(".githooks/pre-push", (TOOLS.parent / ".githooks/pre-push").read_text())
 
-    def test_main_hook_keeps_guards_and_uses_one_validating_extraction_check(self):
+    def test_main_hook_validates_catalog_without_rebuilding_at_publication(self):
         hook = self.prepare_hook()
         log = self.root / "hook.log"
         result = subprocess.run(["bash", str(hook)], cwd=self.root,
@@ -391,8 +391,7 @@ raise SystemExit(7 if os.environ.get("FAIL_STEP")==Path(__file__).name else 0)
         calls = [json.loads(line) for line in lines[1:]]
         sync = [call for call in calls if call[0] == "l10n-sync.py"]
         self.assertEqual(len(sync), 1)
-        self.assertIn("--check", sync[0])
-        self.assertIn("--reuse-if-unchanged", sync[0])
+        self.assertEqual(sync[0], ["l10n-sync.py", "--validate-only"])
         self.assertIn("--check-snapshot", calls[-1])
 
     def test_hook_stops_on_failed_check_and_leaves_feature_push_fast(self):

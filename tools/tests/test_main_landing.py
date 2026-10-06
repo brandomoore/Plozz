@@ -96,6 +96,7 @@ class MainLandingTests(unittest.TestCase):
         commands = [call.args[0] for call in run.call_args_list]
         self.assertEqual(len(commands), 3)
         self.assertEqual(commands[0], ["tools/l10n-guard.sh"])
-        self.assertIn("--check", commands[1])
+        self.assertIn("--validate-only", commands[1])
+        self.assertNotIn("--reuse-if-unchanged", commands[1])
         self.assertIn("--check-snapshot", commands[2])
         self.assertTrue(all(call.kwargs["pass_fds"] for call in run.call_args_list))
