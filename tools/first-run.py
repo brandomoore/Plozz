@@ -86,6 +86,15 @@ def verify_identity(info, signed, identity, platform):
         raise ValueError("Test app must not register normal Plozz deep links.")
 
 
+def verify_integrations(info):
+    for key in ["TMDBBearerToken", "TVDBAPIKey", "TraktClientID"]:
+        value = info.get(key, "")
+        if not isinstance(value, str) or not value.strip() or "$(" in value:
+            raise ValueError(f"Expected metadata/integration configuration is missing: {key}")
+    if "TraktClientSecret" in info:
+        raise ValueError("Native Trakt configuration must not include a client secret.")
+
+
 def signing_arguments(environment):
     values = dict(environment)
     config = ROOT / ".env.fastlane"
@@ -236,10 +245,7 @@ def main():
             for key in ["CFBundleVersion", "CFBundleShortVersionString"]:
                 if ext_info.get(key) != info.get(key):
                     raise ValueError("App and Top Shelf versions differ.")
-        for key in ["TMDBBearerToken", "TVDBAPIKey", "TraktClientID", "TraktClientSecret"]:
-            value = info.get(key, "")
-            if not value or "$(" in value:
-                raise ValueError(f"Expected metadata/integration configuration is missing: {key}")
+        verify_integrations(info)
         preserved = evidence / "Plozz.app"
         command(["ditto", str(app), str(preserved)], environment, timeout=120)
         (evidence / "artifact.json").write_text(json.dumps({

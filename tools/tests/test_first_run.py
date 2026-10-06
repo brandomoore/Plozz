@@ -96,6 +96,19 @@ class FirstRunTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 MODULE.signing_arguments({"ASC_KEY_PATH": str(root / "missing")})
 
+    def test_native_integrations_require_public_trakt_id_without_a_client_secret(self):
+        info = {"TMDBBearerToken": "fixture", "TVDBAPIKey": "fixture", "TraktClientID": "public-id"}
+        MODULE.verify_integrations(info)
+        for key in info:
+            for value in ["", " ", "$(UNRESOLVED)", None]:
+                with self.subTest(key=key, value=value), self.assertRaisesRegex(ValueError, key):
+                    MODULE.verify_integrations({**info, key: value})
+            missing = {name: value for name, value in info.items() if name != key}
+            with self.subTest(missing=key), self.assertRaisesRegex(ValueError, key):
+                MODULE.verify_integrations(missing)
+        with self.assertRaisesRegex(ValueError, "must not include"):
+            MODULE.verify_integrations({**info, "TraktClientSecret": "fixture-not-a-secret"})
+
     def test_timeout_stops_owned_descendants_even_when_parent_exits_after_term(self):
         process = MagicMock()
         process.__enter__.return_value = process
