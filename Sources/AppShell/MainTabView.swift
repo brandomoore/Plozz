@@ -530,6 +530,7 @@ struct MainTabView: View {
             // library selected in rail/sidebar mode, use the top bar, then return
             // without that library destination being erased.
             set: {
+                HandoffDiagnostics.emit("NAVIGATION event=topTabSelection previous=\(resolvedSelectedTab.rawValue) requested=\($0.rawValue)")
                 recordedProcessLaunch = Self.processLaunch
                 releaseExplicitLiveTVEntry(ifLeavingFor: destination(for: $0))
                 selectedTabRaw = resolvedTopBarTab($0).rawValue
@@ -1682,6 +1683,8 @@ struct MainTabView: View {
                 releaseExplicitLiveTVEntry(ifLeavingFor: selected)
             }
             MainThreadStallProbe.context = CrashReportScreen(context: destination).rawValue
+            HandoffDiagnostics.emit(
+                "NAVIGATION event=screen style=\(navigationStyle.rawValue) screen=\(CrashReportScreen(context: destination).rawValue)")
             BrowseDiagnostics.event("screen tab=\(destination)")
             // Keeps person tracing alive across relaunches once it has been
             // asked for, so restoring the live stream never costs the repro.

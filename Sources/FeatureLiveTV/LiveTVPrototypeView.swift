@@ -713,6 +713,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     private var loadingContent: some View {
         presentedContent
+        .onChange(of: isInitialCatalogLoading, initial: true) { _, loading in
+            HandoffDiagnostics.emit("LIVE_TV event=guideLoading loading=\(loading) channels=\(model.channels.count)")
+        }
         .task(id: isActive ? reloadRequest : -1) {
             await reloadCatalog()
         }

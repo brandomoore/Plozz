@@ -7,10 +7,10 @@ public struct IPTVImportProgress: Sendable, Equatable {
 
     public var message: LocalizedStringResource {
         switch stage {
-        case .playlist: "Reading playlist: \(entries) entries"
-        case .channels: "Adding live channels: \(entries)"
-        case .movies: "Adding movies: \(entries)"
-        case .series: "Adding series: \(entries)"
+        case .playlist: "Reading playlist: \(entries.formatted())"
+        case .channels: "Adding live channels: \(entries.formatted())"
+        case .movies: "Adding movies: \(entries.formatted())"
+        case .series: "Adding series: \(entries.formatted())"
         }
     }
 }

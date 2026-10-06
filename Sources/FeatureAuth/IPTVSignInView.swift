@@ -166,7 +166,7 @@ private struct IPTVAddressField: View {
     let title: LocalizedStringResource
     @Binding var value: String
     var body: some View {
-        TextField("", text: $value, prompt: Text(title))
+        TextField(text: $value, prompt: Text(title)) { Text(title) }
             .accessibilityLabel(Text(title))
             .textContentType(.URL)
             .textInputAutocapitalization(.never)

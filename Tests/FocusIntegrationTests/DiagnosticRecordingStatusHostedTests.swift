@@ -99,6 +99,12 @@ final class DiagnosticRecordingStatusHostedTests: XCTestCase {
         XCTAssertTrue(badge.superview === window)
         XCTAssertFalse(badge.canBecomeFocused)
         XCTAssertFalse(badge.isUserInteractionEnabled)
+        XCTAssertEqual(badge.accessibilityLabel, String(localized: DiagnosticRecordingPhase.recording.text))
+        XCTAssertEqual(badge.text, "  \u{25CF}  Recording  ")
+        XCTAssertEqual(
+            badge.attributedText?.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? UIColor,
+            .systemRed
+        )
         XCTAssertTrue(UIFocusSystem.focusSystem(for: window)?.focusedItem === focused)
         XCTAssertTrue(window.bounds.contains(badge.frame))
         XCTAssertEqual(badge.layer.animation(forKey: "recording-expiry")?.duration, 15)
