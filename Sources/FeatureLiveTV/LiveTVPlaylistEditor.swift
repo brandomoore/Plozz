@@ -37,33 +37,10 @@ struct LiveTVPlaylistEditor: View {
             }
             .disabled(model.isChecking)
 
-            SettingsSectionGroup("Program guide") {
-                ForEach($model.guideAddresses) { $guide in
-                    LiveTVGuideAddressEditor(address: $guide.address) {
-                        let id = guide.id
-                        model.guideAddresses.removeAll { $0.id == id }
-                    }
-                    .contextMenu {
-                        Button("Move guide earlier") { model.moveGuide(guide.id, by: -1) }
-                            .disabled(model.guideAddresses.first?.id == guide.id)
-                        Button("Move guide later") { model.moveGuide(guide.id, by: 1) }
-                            .disabled(model.guideAddresses.last?.id == guide.id)
-                    }
-                }
-                Button {
-                    model.guideAddresses.append(.init())
-                } label: {
-                    LiveTVSetupActionLabel(title: "Add another guide", symbol: "plus")
-                }
-                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
-                .disabled(model.guideAddresses.count >= 32)
-                .accessibilityIdentifier("live-tv-add-guide")
-            } footer: {
-                Text("Optional XMLTV or .xml.gz. List preferred guides first.")
-            }
-            .disabled(model.isChecking)
+            LiveTVGuideFields(guides: $model.guideAddresses)
+                .disabled(model.isChecking)
 
-            SettingsSectionGroup {
+            VStack(alignment: .leading, spacing: 12) {
                 if model.usesUnencryptedAddresses {
                     Text("HTTP is unencrypted. Prefer HTTPS.")
                         .font(.caption)
@@ -110,10 +87,14 @@ struct LiveTVPlaylistEditor: View {
                     }
                     .fixedSize(horizontal: false, vertical: true)
                 }
-            } footer: {
                 Text("Checks the playlist, not individual streams.")
+                    .font(.footnote)
+                    .settingsRowSecondary()
             }
         }
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         .task(id: checkRequest) {
             guard let request = checkRequest else { return }
             await model.check()
@@ -210,7 +191,7 @@ final class LiveTVPlaylistEditorModel {
     ) {
         self.name = name
         self.playlistAddress = playlistURL?.absoluteString ?? ""
-        self.guideAddresses = guideURLs.isEmpty ? [.init()] : guideURLs.map { .init(address: $0.absoluteString) }
+        self.guideAddresses = guideURLs.map { .init(address: $0.absoluteString) }
         self.loader = loader
     }
 

@@ -16,18 +16,26 @@ struct LiveTVSetupWelcome: View {
     var body: some View {
         GeometryReader { geometry in
             let inset = geometry.size.width >= 900 ? PlozzTheme.Spacing.xxxLarge : PlozzTheme.Spacing.large
+            #if os(iOS)
+            let maximumWidth: CGFloat = 640
+            let choiceSpacing = PlozzTheme.Spacing.medium
+            let fitsRow = false
+            #else
+            let maximumWidth = PlozzTheme.Metrics.settingsContentMaxWidth
+            let choiceSpacing = PlozzTheme.Spacing.large
             let contentWidth = min(
-                PlozzTheme.Metrics.settingsContentMaxWidth, geometry.size.width - inset * 2)
+                maximumWidth, geometry.size.width - inset * 2)
             let choiceCount = createChannel == nil ? 2 : 3
             let fitsRow = contentWidth >= CGFloat(choiceCount) * 320
                 + CGFloat(choiceCount - 1) * PlozzTheme.Spacing.large
                 && !typeSize.isAccessibilitySize
+            #endif
             ScrollView {
                 VStack(alignment: .leading, spacing: PlozzTheme.Spacing.xLarge) {
                     LiveTVSetupIntroduction()
                     let layout = fitsRow
-                        ? AnyLayout(HStackLayout(alignment: .top, spacing: PlozzTheme.Spacing.large))
-                        : AnyLayout(VStackLayout(alignment: .leading, spacing: PlozzTheme.Spacing.large))
+                        ? AnyLayout(HStackLayout(alignment: .top, spacing: choiceSpacing))
+                        : AnyLayout(VStackLayout(alignment: .leading, spacing: choiceSpacing))
                     layout {
                         LiveTVSetupChoice(
                             title: "IPTV playlist",
@@ -55,7 +63,7 @@ struct LiveTVSetupWelcome: View {
                                 detail: "Your authorized library becomes themed channels with automatic guides.",
                                 actionTitle: automaticChannels?.enabled == true
                                     ? "Manage channels" : "Enable channels",
-                                symbol: "calendar",
+                                symbol: "sparkles.tv",
                                 action: createChannel
                             )
                             .accessibilityIdentifier("live-tv-setup-library")
@@ -82,7 +90,7 @@ struct LiveTVSetupWelcome: View {
                         LiveTVEnrollmentStatusRow(status: status)
                     }
                 }
-                .frame(maxWidth: PlozzTheme.Metrics.settingsContentMaxWidth, alignment: .leading)
+                .frame(maxWidth: maximumWidth, alignment: .leading)
                 .padding(inset)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
@@ -137,9 +145,35 @@ private struct LiveTVSetupChoice: View {
     let symbol: String
     let action: () -> Void
     @Environment(\.themePalette) private var palette
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         Button(action: action) {
+            #if os(iOS)
+            HStack(alignment: .top, spacing: 16) {
+                if !typeSize.isAccessibilitySize { sourceIcon }
+                VStack(alignment: .leading, spacing: 6) {
+                    if typeSize.isAccessibilitySize {
+                        HStack {
+                            sourceIcon
+                            Spacer()
+                            chevron
+                        }
+                        .padding(.bottom, 8)
+                    }
+                    Text(title).font(.headline)
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.secondaryText)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if !typeSize.isAccessibilitySize { chevron.padding(.top, 5) }
+            }
+            .foregroundStyle(palette.primaryText)
+            .multilineTextAlignment(.leading)
+            .padding(20)
+            #else
             VStack(alignment: .leading, spacing: PlozzTheme.Spacing.large) {
                 Image(systemName: symbol)
                     .resizable()
@@ -179,9 +213,25 @@ private struct LiveTVSetupChoice: View {
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(PlozzTheme.Spacing.large)
+            #endif
         }
         .buttonStyle(SettingsCardButtonStyle())
         .accessibilityLabel(actionTitle)
         .accessibilityHint(detail)
+    }
+
+    private var sourceIcon: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 22, weight: .regular))
+            .frame(width: 44, height: 44)
+            .background(palette.fillSubtle, in: RoundedRectangle(cornerRadius: 12))
+            .accessibilityHidden(true)
+    }
+
+    private var chevron: some View {
+        Image(systemName: "chevron.forward")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(palette.secondaryText)
+            .accessibilityHidden(true)
     }
 }

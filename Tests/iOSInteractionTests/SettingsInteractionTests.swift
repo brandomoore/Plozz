@@ -48,6 +48,7 @@ final class SettingsInteractionTests: XCTestCase {
         openSettingsPage("Appearance")
         app.buttons["appearance-cards"].tap()
         XCTAssertTrue(app.navigationBars["Cards"].waitForExistence(timeout: 3), app.debugDescription)
+        assertInlineTitle("Cards")
         XCTAssertFalse(app.buttons["Micro"].exists)
     }
 
@@ -260,6 +261,27 @@ final class SettingsInteractionTests: XCTestCase {
         reveal(row, settingsMenu: !usesAboutPage)
         row.tap()
         XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 3), app.debugDescription)
+        assertInlineTitle(title)
+    }
+
+    private func assertInlineTitle(_ title: String) {
+        let bar = app.navigationBars[title]
+        let heading = bar.staticTexts[title].firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 3), app.debugDescription)
+        var titleRegion = bar.frame
+        let sidebar = app.navigationBars["Settings"]
+        // iPad reports a full-window bar, but centers its title in the detail column.
+        if sidebar.exists, sidebar.frame.width < bar.frame.width {
+            if sidebar.frame.minX <= bar.frame.minX {
+                titleRegion.origin.x = sidebar.frame.maxX
+                titleRegion.size.width = bar.frame.maxX - sidebar.frame.maxX
+            } else {
+                titleRegion.size.width = sidebar.frame.minX - bar.frame.minX
+            }
+        }
+        XCTAssertEqual(heading.frame.midX, titleRegion.midX, accuracy: 4, app.debugDescription)
+        XCTAssertLessThanOrEqual(bar.frame.height, 64, "Subpages must not reserve a large-title block.")
+        XCTAssertLessThanOrEqual(heading.frame.height, 32, "Subpages must use the native inline title font.")
     }
 
     private func button(_ title: String) -> XCUIElement {

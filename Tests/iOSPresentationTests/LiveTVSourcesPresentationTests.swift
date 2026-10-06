@@ -1,7 +1,7 @@
 #if os(iOS)
 import CoreModels
 import CoreUI
-import FeatureLiveTV
+@testable import FeatureLiveTV
 import SwiftUI
 import UIKit
 import Vision
@@ -9,6 +9,46 @@ import XCTest
 
 @MainActor
 final class LiveTVSourcesPresentationTests: XCTestCase {
+    func testSetupChoicesFitTabletWidthsInBothDirections() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width in [CGFloat(768), 834] {
+            for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+                window.frame = CGRect(x: 0, y: 0, width: width, height: 1024)
+                window.rootViewController = UIHostingController(rootView:
+                    LiveTVSetupWelcome(addPlaylist: {}, useServer: {}, createChannel: {})
+                        .environment(\.themePalette, .light)
+                        .environment(\.colorScheme, .light)
+                        .environment(\.dynamicTypeSize, .large)
+                        .environment(\.layoutDirection, direction)
+                        .environment(\.locale, Locale(identifier: "en_US"))
+                )
+                window.makeKeyAndVisible()
+                try await waitForHostedLayout(window)
+                let image = snapshot(window)
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "tablet-onboarding-\(Int(width))-\(direction)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+                let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                    .joined(separator: " ")
+                for choice in ["IPTV playlist", "Media server", "Plozz channels"] {
+                    XCTAssertTrue(text.contains(choice), "\(choice) must be visible without scrolling: \(text)")
+                }
+            }
+        }
+    }
+
     func testEmbeddedSourcesRevealTheSettingsBackgroundWithoutExtraRowInsets() async throws {
         let suite = "LiveTVSourcesPresentation.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

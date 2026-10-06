@@ -60,21 +60,8 @@ struct LiveTVImportedPlaylistEditor: View {
                     .font(.caption)
             }
             .disabled(saving)
-            SettingsSectionGroup("Program guide") {
-                ForEach($guides) { $guide in
-                    LiveTVGuideAddressEditor(address: $guide.address) {
-                        guides.removeAll { $0.id == guide.id }
-                    }
-                }
-                Button { guides.append(.init()) } label: {
-                    LiveTVSetupActionLabel(title: "Add another guide", symbol: "plus")
-                }
-                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
-                .disabled(guides.count >= 32)
-            } footer: {
-                Text("List preferred guides first. Relative addresses require the provider's HTTP or HTTPS base URL.")
-            }
-            .disabled(saving)
+            LiveTVGuideFields(guides: $guides)
+                .disabled(saving)
             SettingsSectionGroup {
                 if saving { ProgressView("Importing playlist") }
                 Button { saveRequest = UUID() } label: {
@@ -87,6 +74,7 @@ struct LiveTVImportedPlaylistEditor: View {
             }
         }
         #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
         .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.data]) { result in
             do { fileURL = try result.get() }
             catch { issue = "The selected file couldn't be opened." }

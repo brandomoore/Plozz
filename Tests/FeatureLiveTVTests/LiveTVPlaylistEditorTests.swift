@@ -5,6 +5,13 @@ import XCTest
 
 @MainActor
 final class LiveTVPlaylistEditorTests: XCTestCase {
+    func testOptionalGuideStartsAbsentAndSavedGuidesRemainVisible() {
+        XCTAssertTrue(LiveTVPlaylistEditorModel().guideAddresses.isEmpty)
+        let guide = URL(string: "https://example.test/guide.xml")!
+        let model = LiveTVPlaylistEditorModel(guideURLs: [guide])
+        XCTAssertEqual(model.guideAddresses.map(\.address), [guide.absoluteString])
+    }
+
     func testCheckingPlaylistAllowsNoGuideAndKeepsCredentialsInTheURL() async throws {
         let loader = PlaylistEditorLoader(channels: [LiveTVPrototypeModel().channels[0]])
         let model = LiveTVPlaylistEditorModel(loader: loader)
@@ -33,7 +40,7 @@ final class LiveTVPlaylistEditorTests: XCTestCase {
             XCTAssertFalse(model.isChecking)
         }
         model.playlistAddress = "https://example.test/list"
-        model.guideAddresses[0].address = "not a guide URL"
+        model.guideAddresses.append(.init(address: "not a guide URL"))
         await model.check()
         XCTAssertEqual(model.issue, .invalidGuideAddress)
         let requests = await loader.playlistRequests
@@ -47,7 +54,7 @@ final class LiveTVPlaylistEditorTests: XCTestCase {
         )
         await model.check()
         model.name = "My channels"
-        model.guideAddresses[0].address = "https://example.test/guide.xml.gz"
+        model.guideAddresses.append(.init(address: "https://example.test/guide.xml.gz"))
         let review = try XCTUnwrap(model.currentReview)
         XCTAssertEqual(review.input.name, "My channels")
         XCTAssertEqual(review.input.guideURLs.count, 1)
@@ -110,7 +117,7 @@ final class LiveTVPlaylistEditorTests: XCTestCase {
     func testHTTPWarningCoversPlaylistAndGuideLinks() {
         let model = LiveTVPlaylistEditorModel(playlistURL: URL(string: "https://example.test/list"))
         XCTAssertFalse(model.usesUnencryptedAddresses)
-        model.guideAddresses[0].address = "http://example.test/guide.xml"
+        model.guideAddresses.append(.init(address: "http://example.test/guide.xml"))
         XCTAssertTrue(model.usesUnencryptedAddresses)
         model.guideAddresses[0].address = ""
         model.playlistAddress = "http://example.test/list"

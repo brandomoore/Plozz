@@ -70,6 +70,7 @@ struct PlozziOSLibrariesView: View {
             }
         }
         .navigationTitle("Home")
+        .toolbarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Add Server", systemImage: "plus", action: onAddServer)

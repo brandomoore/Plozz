@@ -90,6 +90,10 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   viewport full-width so the title's scroll-edge blur reaches both navigation
   edges. Horizontal safe-area padding insets the content without narrowing that
   viewport; both list rows and grouped scrolling panels retain their spacing.
+  Settings subpages default to the system's centered inline navigation title on
+  both iPhone and iPad, including the iPad detail column. Root destinations keep
+  their leading large titles; only the Settings root overrides the shared surface
+  title mode. Modal utility pages also use inline titles without custom fonts.
   The compact Settings drawer keeps its title leading beside a native close
   button at the top, switching to a centered inline title only after scrolling.
   Its first section uses a tighter 8pt content margin.

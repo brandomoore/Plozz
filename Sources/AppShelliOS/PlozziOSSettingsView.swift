@@ -469,7 +469,7 @@ private struct PlozziOSSettingsSplitView: View {
             }
             .navigationTitle("Settings")
             .toolbar(removing: .sidebarToggle)
-            .settingsPageSurface()
+            .settingsPageSurface(titleDisplayMode: .large)
         } detail: {
             NavigationStack {
                 ZStack {
@@ -1251,9 +1251,8 @@ private struct PlozziOSSettingsCompactMenu: View {
             }
         }
         .contentMargins(.top, 8, for: .scrollContent)
-        .settingsPageSurface()
+        .settingsPageSurface(titleDisplayMode: isHeaderCollapsed ? .inline : .inlineLarge)
         .navigationTitle("Settings")
-        .toolbarTitleDisplayMode(isHeaderCollapsed ? .inline : .inlineLarge)
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top > 12
         } action: { _, collapsed in

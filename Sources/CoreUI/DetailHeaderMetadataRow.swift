@@ -97,6 +97,9 @@ public struct DetailHeaderMetadataRow: View {
                     }
                     .lineLimit(nil)
                     .navigationTitle(Text(detailsTitle))
+                    #if os(iOS)
+                    .toolbarTitleDisplayMode(.inline)
+                    #endif
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Done") { showsDetails = false }

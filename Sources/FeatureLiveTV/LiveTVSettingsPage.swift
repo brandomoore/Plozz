@@ -33,11 +33,11 @@ struct LiveTVSetupField: View {
     var example: String? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .settingsRowSecondary()
-            TextField(text: $text, prompt: example.map { Text(verbatim: $0) }) { Text(title) }
+            TextField(text: $text, prompt: Text(verbatim: example ?? "")) { Text(title) }
                 .font(.body)
                 .frame(minHeight: minimumHeight)
                 .textInputAutocapitalization(isAddress ? .never : .words)
@@ -73,9 +73,13 @@ struct LiveTVGuideAddressEditor: View {
                 .frame(width: 320)
         }
         #else
-        VStack(alignment: .leading, spacing: 12) {
+        HStack(alignment: .bottom, spacing: 8) {
             addressField
-            removeButton
+            Button("Remove guide", systemImage: "minus.circle", role: .destructive, action: remove)
+                .labelStyle(.iconOnly)
+                .frame(minWidth: 44, minHeight: 44)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("live-tv-remove-guide")
         }
         #endif
     }
@@ -96,15 +100,54 @@ struct LiveTVGuideAddressEditor: View {
     }
 }
 
+struct LiveTVGuideFields: View {
+    @Binding var guides: [LiveTVPlaylistEditorModel.GuideAddress]
+
+    var body: some View {
+        SettingsSectionGroup("Program guide") {
+            ForEach($guides) { $guide in
+                LiveTVGuideAddressEditor(address: $guide.address) {
+                    let id = guide.id
+                    guides.removeAll { $0.id == id }
+                }
+                .contextMenu {
+                    Button("Move guide earlier") { move(guide.id, by: -1) }
+                        .disabled(guides.first?.id == guide.id)
+                    Button("Move guide later") { move(guide.id, by: 1) }
+                        .disabled(guides.last?.id == guide.id)
+                }
+            }
+            Button { guides.append(.init()) } label: {
+                LiveTVSetupActionLabel(
+                    title: guides.isEmpty ? "Add guide" : "Add another guide", symbol: "plus"
+                )
+            }
+            .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+            .disabled(guides.count >= 32)
+            .accessibilityIdentifier("live-tv-add-guide")
+        } footer: {
+            Text("Optional XMLTV or .xml.gz. List preferred guides first.")
+        }
+    }
+
+    private func move(_ id: UUID, by offset: Int) {
+        guard let index = guides.firstIndex(where: { $0.id == id }),
+              guides.indices.contains(index + offset) else { return }
+        guides.swapAt(index, index + offset)
+    }
+}
+
 struct LiveTVSettingsPage<Content: View>: View {
     let title: LocalizedStringResource
+    var sourceName: String? = nil
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         #if os(tvOS)
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                SettingsPageHeader(title)
+                if let sourceName { SettingsPageHeader(verbatim: sourceName) }
+                else { SettingsPageHeader(title) }
                 content()
             }
             .frame(maxWidth: PlozzTheme.Metrics.settingsContentMaxWidth, alignment: .leading)
@@ -118,7 +161,7 @@ struct LiveTVSettingsPage<Content: View>: View {
         SettingsPageScroll {
             content()
         }
-        .navigationTitle(Text(title))
+        .navigationTitle(sourceName.map { Text(verbatim: $0) } ?? Text(title))
         #endif
     }
 }

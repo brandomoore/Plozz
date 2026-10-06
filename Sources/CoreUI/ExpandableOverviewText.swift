@@ -337,6 +337,9 @@ public struct ExpandableOverviewText: View {
             }
             .background(palette.settingsBackground)
             .navigationTitle(title)
+            #if os(iOS)
+            .toolbarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 if style == .inline {
                     ToolbarItem(placement: .confirmationAction) {

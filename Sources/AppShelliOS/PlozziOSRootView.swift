@@ -1497,7 +1497,7 @@ private struct PlozziOSWatchlistLandingView: View {
         }
         .navigationTitle("Watchlist")
         .environment(\.plozzCardCaptionView, .watchlist)
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 PlozziOSSettingsAvatarButton(action: onShowSettings)
@@ -1591,6 +1591,7 @@ private struct PlozziOSHomeLandingView: View {
                 }
             }
             .navigationTitle("Home")
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     PlozziOSSettingsAvatarButton(action: onShowSettings)

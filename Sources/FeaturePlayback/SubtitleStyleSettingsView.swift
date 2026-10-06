@@ -77,6 +77,9 @@ public struct SubtitleStyleSettingsView: View {
         }
         #else
         .navigationTitle(Text(pageTitle))
+        #if os(iOS)
+        .toolbarTitleDisplayMode(.inline)
+        #endif
         #endif
         .onChange(of: style, initial: true) { previous, value in
             controls.subtitleStyle = value

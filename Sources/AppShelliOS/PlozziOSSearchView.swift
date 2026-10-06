@@ -54,7 +54,7 @@ struct PlozziOSSearchView: View {
             for: .navigationBar
         )
         .navigationTitle(horizontalSizeClass == .compact ? Text(verbatim: "") : Text("Search"))
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.large)
         .environment(\.plozzCardCaptionView, .search)
         .task(id: viewModel.query) {
             await viewModel.search()

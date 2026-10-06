@@ -113,18 +113,26 @@ pane. Setup and source pages reuse Plozz's shared settings groups, row labels,
 switches, focus/card styles and page heading.
 On iPhone/iPad, Sources and its grouped detail pages use a scroll-based settings
 surface rather than embedding multiple navigation links in one native List cell.
-Each tap pushes only its selected destination; one Back returns to the source
-page. This applies to both Settings and the Live TV toolbar's Sources entry.
+Saved sources appear first as compact icon/name/status rows. Each opens its own
+page for enabling, editing, checking and removing that source; guide policy and
+diagnostics sit behind named links rather than expanding every source inline.
+Each tap pushes only its selected destination, and Back returns one level.
+This applies to both Settings and the Live TV toolbar's Sources entry.
 When embedded in a native List, the iPhone/iPad Sources pane clears its row's
 background, separator, and extra insets, so the shared settings gradient and
 group keylines continue through the whole page rather than an opaque inner panel.
-Source choices appear before saved sources, with descriptions of playlist URLs,
+The mobile welcome screen uses compact, whole-row choices instead of tall cards
+with duplicate action footers. Modal sheets have an icon-only Close control,
+distinct from the form's Add/Save action. Source choices cover playlist URLs,
 local files (iPhone/iPad), and connected media servers. Playlist fields keep their
 labels visible while editing and show example URLs instead of repeating labels
 as URL placeholders. Primary setup actions use full-width Settings rows with
 at least 64-point height on Apple TV and 44-point height on iPhone/iPad; removing
-a guide is a labeled action beside its URL on Apple TV and a full-width action
-below it on iPhone/iPad, rather than a small icon. Both playlist editors
+a guide is a labeled action beside its URL on Apple TV and an accessible
+44-point icon button beside the field on iPhone/iPad. New playlists start with
+no guide fields; Add guide reveals the first, then Add another guide reveals
+additional fields. Existing guides remain visible when editing. Guide mapping
+on mobile is offered only when explicit or discovered guides exist. Both playlist editors
 limit guide fields to 32 and retain explicit guide priority. Adding a URL still
 checks and saves in one action; canceling or failing validation writes nothing.
 Add/save/import and server-check actions use the app's filled primary pill,

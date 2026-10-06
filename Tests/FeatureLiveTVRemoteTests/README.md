@@ -72,11 +72,15 @@ tools/with-apple-build-lease.sh plozz-mobile-sources-fixture -- bash -c '
 '
 ```
 
-The touch tests cover both the typed Sources entry and Live TV Settings. With a
-saved playlist and isolated catalog, every add/edit/import/scan/mapping/details
-action must push only its intended page, and one Back must return to Sources.
-They also exercise the center of the source-summary row, not just its text,
-and require zero source writes and network requests.
+The touch tests cover both the typed Sources entry and Live TV Settings. Saved
+sources appear as compact rows, with editing, scans, guide settings and diagnostics
+on the selected source's page. Every action must push only its intended page and
+Back must return one level. Subpage titles must use the same compact, centered
+native navigation-bar geometry on iPhone and iPad. Read-only navigation requires zero writes/requests;
+confirmed removal writes once and returns to the source list. Empty playlist
+forms have Close rather than Done and reveal guide fields only after Add guide.
+Onboarding checks whole-row actions, phone-sized bounds, large text and RTL/light
+appearance, with screenshot attachments for visual review.
 
 ## Coverage and isolation
 
