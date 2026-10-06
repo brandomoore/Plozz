@@ -177,7 +177,11 @@ When embedded in a native List, the iPhone/iPad Sources pane clears its row's
 background, separator, and extra insets, so the shared settings gradient and
 group keylines continue through the whole page rather than an opaque inner panel.
 The mobile welcome screen uses compact, whole-row choices instead of tall cards
-with duplicate action footers. Modal sheets have an icon-only Close control,
+with duplicate action footers. Source cards use the detail page's shared adaptive
+surface: a theme-aware gradient wash and edge, or an opaque surface when gradients
+or transparency are disabled. IPTV setup uses the same settings-page background
+as the other setup sheets. Short source descriptions keep Plex's guide-only limit
+explicit. Modal sheets have an icon-only Close control,
 distinct from the form's Add/Save action. Source choices cover playlist URLs,
 local files (iPhone/iPad), and connected media servers. Playlist fields keep their
 labels visible while editing and show example URLs instead of repeating labels

@@ -29,7 +29,7 @@ public struct IPTVSignInView: View {
             VStack(alignment: .leading, spacing: 24) {
                 OnboardingHeader(
                     Text("Connect your IPTV provider"),
-                    subtitle: Text("Use a playlist file, link, or account details supplied by your provider.")
+                    subtitle: Text("Add a playlist or sign in.")
                 )
                 IPTVConnectionFields(model: model)
                     .disabled(model.isConnecting)
@@ -47,10 +47,11 @@ public struct IPTVSignInView: View {
             .frame(maxWidth: .infinity)
         }
         .foregroundStyle(palette.primaryText)
-        .background(palette.settingsBackground)
+        .background { SettingsPageBackground() }
         .navigationTitle("IPTV")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
         #else
         .onExitCommand { model.cancel(); onCancel() }
         #endif
@@ -103,14 +104,14 @@ private struct IPTVConnectionFields: View {
                             .textContentType(.password)
                     }
                 } footer: {
-                    Text("Personalized links usually include everything needed to sign in.")
+                    Text("Your link may already include a login.")
                 }
             }
             Toggle("Advanced options", isOn: $showsAdvanced)
             if showsAdvanced {
                 IPTVAdvancedFields(model: model)
             }
-            Text("HTTP is unencrypted. Use HTTPS whenever your provider supports it.")
+            Text("HTTP is unencrypted. Use HTTPS when available.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

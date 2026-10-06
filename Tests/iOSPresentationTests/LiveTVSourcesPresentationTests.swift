@@ -1,6 +1,7 @@
 #if os(iOS)
 import CoreModels
 import CoreUI
+import FeatureAuth
 @testable import FeatureLiveTV
 import SwiftUI
 import UIKit
@@ -9,6 +10,66 @@ import XCTest
 
 @MainActor
 final class LiveTVSourcesPresentationTests: XCTestCase {
+    func testIPTVSetupUsesTheSharedSettingsBackground() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for width in [CGFloat(390), 834] {
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 1024)
+            for (theme, palette) in [("dark", ThemePalette.dark), ("black", .pureBlack), ("light", .light)] {
+                for gradient in [false, true] {
+                    window.overrideUserInterfaceStyle = palette.isLight ? .light : .dark
+                    var images: [UIImage] = []
+                    for showsSetup in [true, false] {
+                        host.rootView = AnyView(
+                            NavigationStack {
+                                if showsSetup {
+                                    IPTVSignInView(
+                                        deviceID: "setup-presentation-fixture",
+                                        onAuthenticated: { _ in }, onCancel: {}
+                                    )
+                                } else {
+                                    ScrollView { Color.clear.frame(height: 100) }
+                                        .background { SettingsPageBackground() }
+                                        .navigationTitle("IPTV")
+                                        .navigationBarTitleDisplayMode(.inline)
+                                        .toolbarBackground(.hidden, for: .navigationBar)
+                                }
+                            }
+                            .environment(\.themePalette, palette)
+                            .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                            .environment(\.gradientBackgroundsEnabled, gradient)
+                            .environment(\.locale, Locale(identifier: "en_US"))
+                        )
+                        try await settle(window)
+                        images.append(snapshot(window))
+                    }
+                    let attachment = XCTAttachment(image: images[0])
+                    attachment.name = "iptv-setup-\(Int(width))-\(theme)-gradient-\(gradient)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                    for y in [CGFloat(150), 500, 900] {
+                        for x in [CGFloat(8), width - 8] {
+                            let point = CGPoint(x: x, y: y)
+                            for (actual, reference) in zip(try pixel(images[0], at: point), try pixel(images[1], at: point)) {
+                                XCTAssertLessThanOrEqual(abs(actual - reference), 2,
+                                    "IPTV setup must reveal the shared settings background at \(point).")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testOnboardingDoesNotCoverTheFullPageBackgroundWithAnInsetPanel() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -89,7 +150,7 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
                 try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
                 let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
                     .joined(separator: " ")
-                for choice in ["IPTV playlist", "Media server", "Plozz channels"] {
+                for choice in ["IPTV provider", "Media server", "Plozz channels"] {
                     XCTAssertTrue(text.contains(choice), "\(choice) must be visible without scrolling: \(text)")
                 }
             }

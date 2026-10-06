@@ -39,7 +39,7 @@ struct LiveTVSetupWelcome: View {
                     layout {
                         LiveTVSetupChoice(
                             title: "IPTV provider",
-                            detail: "Connect an M3U playlist or Xtream account for channels, movies, and series.",
+                            detail: "M3U playlists and Xtream accounts.",
                             actionTitle: "Connect provider",
                             symbol: "list.bullet.rectangle",
                             action: addPlaylist
@@ -49,7 +49,7 @@ struct LiveTVSetupWelcome: View {
                             title: "Media server",
                             detail: LocalizedStringResource(
                                 "liveTV.setup.server.detail",
-                                defaultValue: "Watch Live TV from Jellyfin or Emby. Plex supports guide browsing only.",
+                                defaultValue: "Jellyfin or Emby. Plex guide only.",
                                 comment: "Media-server setup choice. Plex Live TV currently supplies guide listings, not live playback; this is separate from generated channels using a Plex media library."
                             ),
                             actionTitle: "Choose server",
@@ -60,7 +60,7 @@ struct LiveTVSetupWelcome: View {
                         if let createChannel {
                             LiveTVSetupChoice(
                                 title: "Plozz channels",
-                                detail: "Your authorized library becomes themed channels with automatic guides.",
+                                detail: "Turn your library into TV channels.",
                                 actionTitle: automaticChannels?.enabled == true
                                     ? "Manage channels" : "Enable channels",
                                 symbol: "sparkles.tv",
@@ -71,6 +71,7 @@ struct LiveTVSetupWelcome: View {
                                 ? Text("Manage Plozz channels") : Text("Enable Plozz channels"))
                         }
                     }
+                    .plozzAdaptiveCardSurface()
                     .fixedSize(horizontal: false, vertical: true)
                     if let automaticChannels, automaticChannels.needsEmptyState {
                         LiveTVAutomaticChannelsStatusView(state: automaticChannels)
@@ -150,7 +151,7 @@ private struct LiveTVSetupIntroduction: View {
             Text("Add your channels")
                 .font(.largeTitle.weight(.semibold))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Choose a source to start watching. You can add more later.")
+            Text("Choose a source to start watching.")
                 .font(.callout)
                 .foregroundStyle(palette.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)

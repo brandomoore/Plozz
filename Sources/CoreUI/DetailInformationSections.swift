@@ -93,7 +93,7 @@ public struct DetailInformationSections: View {
         if hasContent {
             sectionBody
                 .environment(\.plozzNativeInformationFocus, true)
-                .environment(\.plozzGradientCardSurface, gradientEnabled && !reduceTransparency)
+                .plozzAdaptiveCardSurface()
                 .padding(.horizontal, horizontalInset)
                 .padding(.top, bandTopPadding)
                 .padding(.bottom, bandBottomPadding)
