@@ -26,6 +26,10 @@ fallback when the user's server has no attached trailer.
   Detail-page episodes always retain their identifying labels on both platforms,
   including when an older profile has a saved episode-specific No labels choice.
   Episodes are not offered in label customization.
+  On TV, the episode title moves down on focus and back up on exit in every
+  focus style, including System; the synopsis keeps its delayed reveal.
+  Loading captions use the same motion without changing row geometry, and
+  Reduce Motion keeps the caption stationary.
   Collection and playlist contents follow Browse across every library. Library
   navigation, cast names, essential list text, accessibility labels, and on-artwork
   playback information stay intact. Existing Home choices migrate once from
