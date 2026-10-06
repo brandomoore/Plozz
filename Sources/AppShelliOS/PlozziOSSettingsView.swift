@@ -51,8 +51,9 @@ struct PlozziOSSettingsView: View {
                         onSwitchTo: onSwitchTo
                     )
                     .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done", action: onClose)
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Close", systemImage: "xmark", action: onClose)
+                                .labelStyle(.iconOnly)
                         }
                     }
                 }
@@ -869,6 +870,7 @@ private struct PlozziOSSettingsCompactMenu: View {
     @State private var confirmSignOutAll = false
     @State private var confirmEraseICloud = false
     @State private var showMetadata = false
+    @State private var isHeaderCollapsed = false
     private var developerMode: DeveloperModeModel { .shared }
     @State private var showDeveloperUnlockedAlert = false
     /// Whether the Parental PIN has been entered for the Kids Profile currently
@@ -1248,9 +1250,15 @@ private struct PlozziOSSettingsCompactMenu: View {
                 }
             }
         }
+        .contentMargins(.top, 8, for: .scrollContent)
         .settingsPageSurface()
         .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(isHeaderCollapsed ? .inline : .inlineLarge)
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.contentOffset.y + geometry.contentInsets.top > 12
+        } action: { _, collapsed in
+            isHeaderCollapsed = collapsed
+        }
         .onChange(of: appModel.profiles.activeProfileID) { _, _ in isParentalUnlocked = false }
         .onChange(of: appModel.profiles.parentalPIN) { _, _ in isParentalUnlocked = false }
         .navigationDestination(isPresented: $showMetadata) {

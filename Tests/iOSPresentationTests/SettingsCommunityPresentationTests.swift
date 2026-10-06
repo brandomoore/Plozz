@@ -13,8 +13,11 @@ import XCTest
 final class SettingsCommunityPresentationTests: XCTestCase {
     private var capturedImages: [CGImage] = []
 
-    func testCompactSettingsHeaderStaysOneRowAcrossPhoneWidthsAndLargeText() async throws {
+    func testCompactSettingsTitleStartsLeadingAndCentersOnlyAfterScrolling() async throws {
         let model = PlozziOSAppModel()
+        let originalTheme = model.settings.theme.theme
+        model.settings.theme.theme = .dark
+        defer { model.settings.theme.theme = originalTheme }
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
               ContinuousClock.now < deadline {
@@ -47,23 +50,34 @@ final class SettingsCommunityPresentationTests: XCTestCase {
             let bar = try XCTUnwrap(navigationBar(in: window))
             XCTAssertEqual(bar.topItem?.title, "Settings")
             XCTAssertLessThanOrEqual(bar.bounds.height, 64, "Settings must not reserve a large-title block.")
-            let text = try recognizedText(in: window, name: "settings-header-\(Int(size.width))-\(textSize)")
-            XCTAssertTrue(text.contains("Settings"), text)
-            XCTAssertTrue(text.contains("Done"), text)
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["en-US"]
-            try VNImageRequestHandler(cgImage: XCTUnwrap(capturedImages.last)).perform([request])
-            let barFrame = bar.convert(bar.bounds, to: window)
-            for title in ["Settings", "Done"] {
-                let label = try XCTUnwrap(request.results?.first { $0.topCandidates(1).first?.string == title })
-                let centerY = (1 - label.boundingBox.midY) * size.height
-                XCTAssertGreaterThanOrEqual(centerY, barFrame.minY)
-                XCTAssertLessThanOrEqual(centerY, barFrame.maxY, "Title and Done must share the compact header.")
-            }
+            let expanded = try settingsTitleFrame(in: window, name: "settings-leading-\(Int(size.width))-\(textSize)")
+            XCTAssertLessThanOrEqual(expanded.minX, 32, "The resting title must follow the leading card keyline.")
             let scroll = try XCTUnwrap(scrollViews(in: window).first)
             XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+            scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentOffset.y + 300), animated: false)
+            try await waitForHostedLayout(window)
+            let collapsed = try settingsTitleFrame(in: window, name: "settings-scrolled-\(Int(size.width))-\(textSize)")
+            XCTAssertEqual(collapsed.midX, size.width / 2, accuracy: 4, "Only the scrolled title is centered.")
+            XCTAssertLessThanOrEqual(bar.bounds.height, 64)
+            scroll.setContentOffset(CGPoint(x: 0, y: -scroll.adjustedContentInset.top), animated: false)
+            try await waitForHostedLayout(window)
+            let restored = try settingsTitleFrame(in: window, name: "settings-restored-\(Int(size.width))-\(textSize)")
+            XCTAssertLessThanOrEqual(restored.minX, 32, "Returning to the top restores the leading title.")
         }
+    }
+
+    private func settingsTitleFrame(in window: UIWindow, name: String) throws -> CGRect {
+        _ = try recognizedText(in: window, name: name)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: XCTUnwrap(capturedImages.last)).perform([request])
+        let label = try XCTUnwrap(request.results?.first { $0.topCandidates(1).first?.string == "Settings" })
+        let bounds = label.boundingBox
+        return CGRect(
+            x: bounds.minX * window.bounds.width, y: (1 - bounds.maxY) * window.bounds.height,
+            width: bounds.width * window.bounds.width, height: bounds.height * window.bounds.height
+        )
     }
 
     private func navigationBar(in view: UIView) -> UINavigationBar? {

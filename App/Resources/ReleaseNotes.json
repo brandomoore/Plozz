@@ -2,6 +2,77 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/050",
+      "version": "2026.10.5",
+      "marketingVersion": "2026.9.25",
+      "build": 50,
+      "releasedAt": "2026-10-05",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "On-device seek previews for Original-quality streams without server thumbnails.",
+            "Shared card-label settings in Appearance > Cards, with per-view overrides and names on cards without artwork.",
+            "Live TV sources and imported playlists sync through the main iCloud Sync setting."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Softer Fullscreen Hero Home gradients.",
+            "Closer card labels.",
+            "Larger Live TV playlist imports with lower memory use.",
+            "More responsive Live TV channel preparation and iCloud sync.",
+            "Progress and result messages for Reload From iCloud.",
+            "Expanded crash and Live TV diagnostics.",
+            {
+              "text": "Smoother navigation through large Live TV guides.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Responsive Home poster rows, tighter card corners, and smaller watched indicators.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Scrollable library and season tabs, with Filter and Sort on a separate row.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Multiview controls adapt to narrow screens and larger text.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Compact, left-aligned Settings header that centers on scroll.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Startup account updates skipping profile selection or PIN checks.",
+            "Live TV sync failures from accumulated schedule history.",
+            {
+              "text": "Clipped Live TV guide focus outlines.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Settings taps opening the wrong menu and Live TV source navigation opening multiple pages.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Multiview controls overlapping the notch or status bar.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Opaque detail panels covering artwork gradients.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/049",
       "version": "2026.10.5",
       "marketingVersion": "2026.9.25",
