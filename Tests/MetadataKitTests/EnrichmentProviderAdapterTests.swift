@@ -46,6 +46,10 @@ private struct FakeTMDb: TMDbEnriching {
     func backdropURLs(for query: MetadataQuery, limit: Int) async -> [URL] { Array(backdrops.prefix(limit)) }
     var people: [MediaPerson] = []
     func cast(for query: MetadataQuery, limit: Int) async -> [MediaPerson] { people }
+    func detailMetadata(for query: MetadataQuery, missing: Set<MetadataField>) async -> MetadataEnrichment {
+        guard missing.contains(.cast), !people.isEmpty else { return MetadataEnrichment() }
+        return MetadataEnrichment(cast: SourcedValue(value: people, source: .tmdb))
+    }
     func artworkURL(_ kind: ArtworkKind, for query: MetadataQuery) async -> URL? {
         switch kind {
         case .poster: return poster

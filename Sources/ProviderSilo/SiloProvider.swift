@@ -355,6 +355,7 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
             isPlayed: dto.user_state?.played ?? dto.user_data?.played ?? false,
             posterURL: resourceURL(dto.poster_url ?? dto.still_url),
             backdropURL: resourceURL(dto.backdrop_url), logoURL: resourceURL(dto.logo_url),
+            ratings: displayRatings(dto.ratings ?? []), usesProviderRatings: dto.ratings != nil,
             providerIDs: ids, mediaInfo: versions.first?.sourceMetadata, sourceAccountID: accountID,
             libraryID: libraryID, versions: versions,
             isFavorite: dto.user_state?.in_watchlist ?? false,
@@ -374,6 +375,31 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
                     }
                 }
             ))
+    }
+
+    private func displayRatings(_ ratings: [SiloRating]) -> [ExternalRating] {
+        var seen = Set<String>()
+        return ratings.enumerated().compactMap { order, rating in
+            guard rating.score.isFinite, (0...100).contains(rating.score),
+                  !rating.source.isEmpty, !rating.name.isEmpty, !rating.display.isEmpty,
+                  seen.insert(rating.source).inserted else {
+                PlozzLog.networking.error("Silo returned an invalid or duplicate display rating.")
+                return nil
+            }
+            let source: RatingSource
+            switch rating.source {
+            case "rt_critic": source = .rottenTomatoes
+            case "rt_audience": source = .rottenTomatoesAudience
+            default: source = RatingSource(rawValue: rating.source) ?? .provider
+            }
+            return ExternalRating(
+                source: source, value: rating.score, scale: .outOfHundred,
+                providerDisplay: .init(
+                    sourceID: rating.source, name: rating.name,
+                    value: rating.display, order: order
+                )
+            )
+        }
     }
 
     private func inheritingSeriesArtwork(_ episode: MediaItem, from series: MediaItem) -> MediaItem {

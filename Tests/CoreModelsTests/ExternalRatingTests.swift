@@ -2,6 +2,48 @@ import XCTest
 @testable import CoreModels
 
 final class ExternalRatingTests: XCTestCase {
+    func testHydratedSelectedEmptyRatingsReplaceStaleScoresAndBlockLaterGapFills() {
+        let score = ExternalRating(source: .imdb, value: 8, scale: .outOfTen)
+        var seed = MediaItem(id: "movie", title: "Movie", kind: .movie, ratings: [score])
+        var full = seed
+        full.ratings = []
+        full.usesProviderRatings = true
+        seed.mergeHydratedRatings(from: full)
+        XCTAssertTrue(seed.ratings.isEmpty)
+        XCTAssertTrue(seed.usesProviderRatings)
+        var stale = full
+        stale.usesProviderRatings = false
+        stale.ratings = [score]
+        seed.mergeHydratedRatings(from: stale)
+        XCTAssertTrue(seed.ratings.isEmpty)
+        seed.fillingMissingPresentation(from: stale)
+        XCTAssertTrue(seed.ratings.isEmpty)
+    }
+
+    func testProviderSourcesKeepDistinctIdentityAndDisplayOrder() throws {
+        let entries = ["a", "b"].enumerated().map { index, source in
+            ExternalRating(source: .provider, value: 84, scale: .outOfHundred,
+                           providerDisplay: .init(sourceID: source, name: source, value: "4.2", order: index))
+        }
+        let merged = entries.mergedWithAuthoritative([])
+        XCTAssertEqual(merged.map(\.id), ["a", "b"])
+        XCTAssertEqual(merged.map(\.displayValue), ["4.2", "4.2"])
+        XCTAssertEqual(merged.first?.normalized ?? 0, 0.84, accuracy: 0.001)
+        let encoded = try JSONEncoder().encode(entries)
+        XCTAssertEqual(try JSONDecoder().decode([ExternalRating].self, from: encoded), entries)
+    }
+
+    func testPresentationDonorCannotRestoreServerHiddenRatings() {
+        var item = MediaItem(id: "silo", title: "Title", kind: .movie, usesProviderRatings: true)
+        let donor = MediaItem(
+            id: "plex", title: "Title", kind: .movie,
+            ratings: [.init(source: .rottenTomatoes, value: 90, scale: .percent)]
+        )
+        item.fillingMissingPresentation(from: donor)
+        XCTAssertTrue(item.ratings.isEmpty)
+        XCTAssertTrue(item.usesProviderRatings)
+    }
+
     // MARK: Normalization
 
     func testNormalizedOutOfTen() {

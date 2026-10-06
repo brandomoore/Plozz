@@ -253,6 +253,7 @@ public final class ItemDetailViewModel {
     private let provider: any MediaProvider
     private let itemID: String
     private let ratingsProvider: any ExternalRatingsProviding
+    private let detailMetadataResolver: @Sendable (MediaItem) async -> MetadataEnrichment
     /// External until a real library source is resolved. Both shells observe this
     /// instead of freezing the index's ownership answer at navigation time.
     public private(set) var isDiscoveryItem: Bool
@@ -506,6 +507,7 @@ public final class ItemDetailViewModel {
         availabilityRegionCode: String =
             Locale.current.region?.identifier ?? "US",
         ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider(),
+        detailMetadataResolver: @escaping @Sendable (MediaItem) async -> MetadataEnrichment = { _ in MetadataEnrichment() },
         sourceAccountID: String? = nil,
         originSourceAccountID: String? = nil,
         onlineTrailerResolver: @escaping OnlineTrailerResolving = ItemDetailViewModel.defaultOnlineTrailerResolver,
@@ -536,6 +538,7 @@ public final class ItemDetailViewModel {
         // instead, which is why a share's resume never survived a relaunch).
         self.activeSourceAccountID = sourceAccountID ?? originSourceAccountID
         self.ratingsProvider = ratingsProvider
+        self.detailMetadataResolver = detailMetadataResolver
         self.sourceAccountID = sourceAccountID
         self.originSourceAccountID = originSourceAccountID
         self.onlineTrailerResolver = onlineTrailerResolver
@@ -952,7 +955,8 @@ public final class ItemDetailViewModel {
            !Task.isCancelled,
            sourceGeneration == generation,
            case var .loaded(latest) = state,
-           latest.item.id == enriched.id {
+           latest.item.id == enriched.id,
+           !latest.item.usesProviderRatings {
             latest.item.ratings =
                 latest.item.ratings.mergedWithAuthoritative(externalRatings)
             state = .loaded(latest)
@@ -964,7 +968,7 @@ public final class ItemDetailViewModel {
         _ enrichment: MetadataEnrichment,
         to item: MediaItem
     ) -> MediaItem {
-        var copy = item
+        var copy = DetailMetadataResolver.applying(enrichment, to: item)
         if copy.overview?.isEmpty != false, let overview = enrichment.overview {
             copy.overview = overview.value
             copy.metadataProvenance.set(overview, for: .overview)
@@ -997,10 +1001,6 @@ public final class ItemDetailViewModel {
            let backdrop = enrichment.detailBackdrop {
             copy.heroBackdropURL = backdrop.value
             copy.metadataProvenance.set(backdrop, for: .detailBackdrop)
-        }
-        if copy.cast.isEmpty, let cast = enrichment.cast {
-            copy.people = cast.value
-            copy.metadataProvenance.set(cast, for: .cast)
         }
         for (key, value) in enrichment.externalIDs
         where copy.providerIDs[key] == nil {
@@ -1226,6 +1226,7 @@ public final class ItemDetailViewModel {
             for: item,
             sourceGeneration: sourceGeneration
         )
+        async let metadataDone: Void = enrichDetailMetadata(for: item, sourceGeneration: sourceGeneration)
         async let extrasDone: Void = loadExtras(
             for: item,
             children: children,
@@ -1235,6 +1236,7 @@ public final class ItemDetailViewModel {
         _ = await trailersDone
         _ = await ratingsDone
         _ = await overviewDone
+        _ = await metadataDone
         _ = await extrasDone
     }
 
@@ -1731,6 +1733,7 @@ public final class ItemDetailViewModel {
         guard !Task.isCancelled else { return }
         await enrichRatings(for: item, sourceGeneration: reloadSourceGeneration)
         await enrichOverview(for: item, sourceGeneration: reloadSourceGeneration)
+        await enrichDetailMetadata(for: item, sourceGeneration: reloadSourceGeneration)
         async let trailers: Void = loadTrailers(
             for: item,
             provider: provider,
@@ -2395,11 +2398,24 @@ public final class ItemDetailViewModel {
     /// already-loaded detail. Failures are silent — the screen keeps whatever
     /// backend-native ratings it already has.
     private func enrichRatings(for item: MediaItem, sourceGeneration: UInt64) async {
+        guard !item.usesProviderRatings else { return }
         let external = await ratingsProvider.ratings(for: item)
         guard !Task.isCancelled, self.sourceGeneration == sourceGeneration else { return }
         guard !external.isEmpty else { return }
-        guard case var .loaded(detail) = state, detail.item.id == item.id else { return }
+        guard case var .loaded(detail) = state, detail.item.id == item.id,
+              !detail.item.usesProviderRatings else { return }
         detail.item.ratings = detail.item.ratings.mergedWithAuthoritative(external)
+        state = .loaded(detail)
+    }
+
+    private func enrichDetailMetadata(for item: MediaItem, sourceGeneration: UInt64) async {
+        guard !DetailMetadataResolver.missingFields(in: item).isEmpty, !Task.isCancelled else { return }
+        let enrichment = await detailMetadataResolver(item)
+        guard !Task.isCancelled, self.sourceGeneration == sourceGeneration,
+              case var .loaded(detail) = state, detail.item.id == item.id else { return }
+        let enriched = DetailMetadataResolver.applying(enrichment, to: detail.item)
+        guard enriched != detail.item else { return }
+        detail.item = enriched
         state = .loaded(detail)
     }
 

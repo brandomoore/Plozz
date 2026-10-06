@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 
 extension TMDbAccess {
@@ -28,6 +29,7 @@ extension TMDbAccess {
 public struct TMDbMetadataProvider: ArtworkProvider {
     public let id = "tmdb"
     private let access: TMDbAccess
+    private let detailHTTP: MetadataDiscoveryHTTPClient
 
     /// API host: the proxy base (which forwards to TMDb, injecting the key) or
     /// TMDb directly when a local token is configured.
@@ -44,8 +46,9 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         access.metadataAuthorizationHeaders
     }
 
-    public init(access: TMDbAccess) {
+    public init(access: TMDbAccess, detailHTTP: MetadataDiscoveryHTTPClient = MetadataDiscoveryHTTPClient()) {
         self.access = access
+        self.detailHTTP = detailHTTP
     }
 
     public var isEnabled: Bool { access.isEnabled }
@@ -216,25 +219,29 @@ public struct TMDbMetadataProvider: ArtworkProvider {
     /// episodes/seasons) over a title search.
     /// Billed cast, best-first, or `[]`.
     ///
-    /// TV uses `aggregate_credits`, which merges a person's roles across every
-    /// season — the plain `credits` endpoint returns only the *first* season's
-    /// billing, so a later-season regular would be missing from a show the viewer
-    /// is midway through.
+    /// Series use aggregate credits; seasons and episodes use their own credits.
     public func cast(for query: MetadataQuery, limit: Int = 40) async -> [MediaPerson] {
-        guard isEnabled, limit > 0, let id = await resolveID(for: query) else { return [] }
-        let isTV = query.isTV
-        let path = isTV
-            ? "/3/tv/\(id)/aggregate_credits"
-            : "/3/movie/\(id)/credits"
-        guard let url = url(path),
-              let response = await MetadataHTTP.get(CreditsResponse.self, url: url, headers: authHeaders)
-        else { return [] }
+        guard isEnabled, limit > 0 else { return [] }
+        do {
+            try Task.checkCancellation()
+            guard let id = try await detailID(for: query),
+                  let path = Self.creditsPath(id: id, query: query), let url = url(path),
+                  let credits = try await detailResponse(CreditsResponse.self, url: url) else { return [] }
+            return Self.cast(from: credits, limit: limit)
+        } catch is CancellationError {
+            return []
+        } catch {
+            PlozzLog.networking.error("TMDB cast enrichment failed; retaining available server credits.")
+            return []
+        }
+    }
 
-        return (response.cast ?? []).prefix(limit).compactMap { entry -> MediaPerson? in
+    static func cast(from response: CreditsResponse, limit: Int = 40) -> [MediaPerson] {
+        var seen = Set<Int>()
+        return ((response.cast ?? []) + (response.guest_stars ?? [])).compactMap { entry -> MediaPerson? in
             guard let name = entry.name?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !name.isEmpty, let personID = entry.id
+                  !name.isEmpty, let personID = entry.id, seen.insert(personID).inserted
             else { return nil }
-            // A TV entry carries `roles`; a film entry carries `character`.
             let rawRole = (entry.roles?.first?.character ?? entry.character)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let role = (rawRole?.isEmpty ?? true) ? nil : rawRole
@@ -243,8 +250,143 @@ public struct TMDbMetadataProvider: ArtworkProvider {
                 name: name,
                 role: role,
                 kind: "Actor",
-                imageURL: entry.profile_path.flatMap { URL(string: "\(imageBase)/w342\($0)") }
+                imageURL: entry.profile_path.flatMap { URL(string: "https://image.tmdb.org/t/p/w342\($0)") }
             )
+        }.prefix(limit).map { $0 }
+    }
+
+    static func creditsPath(id: String, query: MetadataQuery) -> String? {
+        switch query.kind {
+        case .movie, .video: return "/3/movie/\(id)/credits"
+        case .series: return "/3/tv/\(id)/aggregate_credits"
+        case .season:
+            guard let season = query.seasonNumber, season >= 0 else { return nil }
+            return "/3/tv/\(id)/season/\(season)/credits"
+        case .episode:
+            guard let season = query.seasonNumber, season >= 0,
+                  let episode = query.episodeNumber, episode > 0 else { return nil }
+            return "/3/tv/\(id)/season/\(season)/episode/\(episode)/credits"
+        default: return nil
+        }
+    }
+
+    public func detailMetadata(
+        for query: MetadataQuery,
+        missing: Set<MetadataField>
+    ) async throws -> MetadataEnrichment {
+        try Task.checkCancellation()
+        guard isEnabled, query.contentType != .music,
+              let id = try await detailID(for: query) else { return MetadataEnrichment() }
+        var result = MetadataEnrichment()
+        if !missing.isDisjoint(with: [.cast, .directors, .writers]),
+           let path = Self.creditsPath(id: id, query: query), let url = url(path),
+           let credits = try await detailResponse(CreditsResponse.self, url: url) {
+            result = Self.creditMetadata(credits, missing: missing, sourceURL: url)
+        }
+        try Task.checkCancellation()
+        if !missing.isDisjoint(with: [.genres, .studios, .taglines, .overview]) {
+            let base = "/3/\(query.isTV ? "tv" : "movie")/\(id)"
+            if let url = url(base),
+               let facts = try await detailResponse(DetailFacts.self, url: url) {
+                if missing.contains(.genres), let values = Self.names(facts.genres) {
+                    result.genres = SourcedValue(value: values, source: .tmdb, sourceURL: url)
+                }
+                if missing.contains(.studios), let values = Self.names(facts.production_companies) {
+                    result.studios = SourcedValue(value: values, source: .tmdb, sourceURL: url)
+                }
+                if query.kind == .movie || query.kind == .series || query.kind == .video {
+                    if missing.contains(.overview), let text = facts.overview?.tmdbNonEmpty {
+                        result.overview = SourcedValue(value: text, source: .tmdb, sourceURL: url)
+                    }
+                    if missing.contains(.taglines), let text = facts.tagline?.tmdbNonEmpty {
+                        result.tagline = SourcedValue(value: text, source: .tmdb, sourceURL: url)
+                    }
+                }
+            }
+            if missing.contains(.overview), query.kind == .episode || query.kind == .season,
+               let creditsPath = Self.creditsPath(id: id, query: query),
+               let url = url(String(creditsPath.dropLast("/credits".count))),
+               let facts = try await detailResponse(DetailFacts.self, url: url),
+               let text = facts.overview?.tmdbNonEmpty {
+                result.overview = SourcedValue(value: text, source: .tmdb, sourceURL: url)
+            }
+        }
+        return result
+    }
+
+    static func creditMetadata(
+        _ response: CreditsResponse,
+        missing: Set<MetadataField>,
+        sourceURL: URL? = nil
+    ) -> MetadataEnrichment {
+        var result = MetadataEnrichment()
+        let cast = Self.cast(from: response)
+        if missing.contains(.cast), !cast.isEmpty {
+            result.cast = SourcedValue(value: cast, source: .tmdb, sourceURL: sourceURL)
+        }
+        for (field, kind, jobs) in [
+            (MetadataField.directors, "Director", Set(["Director"])),
+            (MetadataField.writers, "Writer", Set(["Writer", "Screenplay", "Story", "Teleplay"]))
+        ] where missing.contains(field) {
+            var seen = Set<Int>()
+            let people = (response.crew ?? []).compactMap { credit -> MediaPerson? in
+                let reportedJobs = (credit.jobs ?? []).compactMap(\.job) + [credit.job].compactMap { $0 }
+                guard !jobs.isDisjoint(with: reportedJobs),
+                      let id = credit.id, let name = credit.name?.tmdbNonEmpty,
+                      seen.insert(id).inserted else { return nil }
+                return MediaPerson(
+                    id: "tmdb:person:\(id)", name: name, kind: kind,
+                    imageURL: credit.profile_path.flatMap { URL(string: "https://image.tmdb.org/t/p/w342\($0)") }
+                )
+            }
+            if !people.isEmpty {
+                let sourced = SourcedValue(value: people, source: MetadataSource.tmdb, sourceURL: sourceURL)
+                if field == .directors { result.directors = sourced } else { result.writers = sourced }
+            }
+        }
+        return result
+    }
+
+    private static func names(_ entries: [NamedFact]?) -> [String]? {
+        var seen = Set<String>()
+        let names = (entries ?? []).compactMap { $0.name?.tmdbNonEmpty }.filter { seen.insert($0).inserted }
+        return names.isEmpty ? nil : names
+    }
+
+    /// Rich credits must not attach to a popular near-match or reinterpret a child's ID as a show's.
+    private func detailID(for query: MetadataQuery) async throws -> String? {
+        if let id = stampedID(for: query) { return Int(id).flatMap { $0 > 0 ? id : nil } }
+        let scoped = query.seriesScoped
+        for (namespace, source) in [(ProviderIDNamespace.imdb, "imdb_id"), (.tvdb, "tvdb_id")] {
+            guard let externalID = scoped.providerIDs.providerID(namespace) else { continue }
+            guard let escaped = externalID.addingPercentEncoding(withAllowedCharacters: .alphanumerics),
+                  let url = url("/3/find/\(escaped)?external_source=\(source)"),
+                  let response = try await detailResponse(FindResponse.self, url: url),
+                  let result = (query.isTV ? response.tv_results : response.movie_results)?.first,
+                  let id = result.id, id > 0 else { return nil }
+            return String(id)
+        }
+        guard !query.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let escaped = metadataEscaped(query.title) else { return nil }
+        var path = "/3/search/\(query.isTV ? "tv" : "movie")?query=\(escaped)&include_adult=false"
+        if let year = query.year { path += "&\(query.isTV ? "first_air_date_year" : "year")=\(year)" }
+        guard let url = url(path),
+              let results = try await detailResponse(SearchResponse.self, url: url)?.results,
+              let match = Self.bestMatch(for: query, among: results),
+              let name = match.displayTitle,
+              MediaItemIdentity.normalizedTitle(name) == MediaItemIdentity.normalizedTitle(query.title),
+              query.year == nil || match.year == query.year,
+              let id = match.id else { return nil }
+        return String(id)
+    }
+
+    private func detailResponse<Value: Decodable & Sendable>(_ type: Value.Type, url: URL) async throws -> Value? {
+        var request = URLRequest(url: url)
+        for (name, value) in authHeaders { request.setValue(value, forHTTPHeaderField: name) }
+        do {
+            return try await detailHTTP.decode(type, from: request)
+        } catch MetadataDiscoveryHTTPError.status(404, _) {
+            return nil
         }
     }
 
@@ -529,10 +671,10 @@ public struct TMDbMetadataProvider: ArtworkProvider {
 
     // MARK: - DTOs
 
-    struct SearchResponse: Decodable {
+    struct SearchResponse: Decodable, Sendable {
         let results: [SearchResult]
     }
-    struct SearchResult: Decodable {
+    struct SearchResult: Decodable, Sendable {
         let id: Int?
         let poster_path: String?
         /// Films carry `title`, series carry `name`.
@@ -577,17 +719,45 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         let provider_name: String?
         let logo_path: String?
     }
-    struct CreditsResponse: Decodable {
+    struct CreditsResponse: Decodable, Sendable {
         let cast: [CreditEntry]?
+        let guest_stars: [CreditEntry]?
+        let crew: [CrewEntry]?
     }
-    struct CreditEntry: Decodable {
+    struct CrewEntry: Decodable, Sendable {
+        let id: Int?
+        let name: String?
+        let job: String?
+        let jobs: [CrewJob]?
+        let profile_path: String?
+    }
+    struct CrewJob: Decodable, Sendable {
+        let job: String?
+    }
+    struct DetailFacts: Decodable, Sendable {
+        let overview: String?
+        let tagline: String?
+        let genres: [NamedFact]?
+        let production_companies: [NamedFact]?
+    }
+    struct NamedFact: Decodable, Sendable {
+        let name: String?
+    }
+    struct FindResponse: Decodable, Sendable {
+        let movie_results: [FoundTitle]?
+        let tv_results: [FoundTitle]?
+    }
+    struct FoundTitle: Decodable, Sendable {
+        let id: Int?
+    }
+    struct CreditEntry: Decodable, Sendable {
         let id: Int?
         let name: String?
         let character: String?
         let profile_path: String?
         let roles: [CreditRole]?
     }
-    struct CreditRole: Decodable {
+    struct CreditRole: Decodable, Sendable {
         let character: String?
     }
     struct RelatedResponse: Decodable {

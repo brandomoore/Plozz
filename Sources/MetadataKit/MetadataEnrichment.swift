@@ -33,9 +33,11 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
     /// Every known future episode, oldest first, when the provider lists more than
     /// the next one (TheTVDB). Empty for single-next providers (AniList, TVmaze).
     public var upcomingEpisodes: [UpcomingEpisode]
-    /// Billed cast, best-first. Only a file-based share resolves this externally;
-    /// a media server sends its people with the item.
+    /// Billed cast, best-first, independent of the crew groups.
     public var cast: SourcedValue<[MediaPerson]>?
+    public var directors: SourcedValue<[MediaPerson]>?
+    public var writers: SourcedValue<[MediaPerson]>?
+    public var studios: SourcedValue<[String]>?
     /// The provider-stated release cadence, when reported. Never inferred.
     public var cadence: AirCadence?
 
@@ -54,7 +56,10 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         upcomingEpisode: UpcomingEpisode? = nil,
         upcomingEpisodes: [UpcomingEpisode] = [],
         cadence: AirCadence? = nil,
-        cast: SourcedValue<[MediaPerson]>? = nil
+        cast: SourcedValue<[MediaPerson]>? = nil,
+        directors: SourcedValue<[MediaPerson]>? = nil,
+        writers: SourcedValue<[MediaPerson]>? = nil,
+        studios: SourcedValue<[String]>? = nil
     ) {
         self.externalIDs = externalIDs
         self.title = title
@@ -71,6 +76,9 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         self.upcomingEpisodes = upcomingEpisodes
         self.cadence = cadence
         self.cast = cast
+        self.directors = directors
+        self.writers = writers
+        self.studios = studios
     }
 
     public var isEmpty: Bool {
@@ -79,6 +87,7 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
             && episodeStillURL == nil && bannerURL == nil && score == nil
             && backdropCandidates.isEmpty && upcomingEpisode == nil
             && upcomingEpisodes.isEmpty && cast == nil && cadence == nil
+            && directors == nil && writers == nil && studios == nil
     }
 
     /// The best backdrop for the full-bleed home hero (the top-ranked candidate).
@@ -115,6 +124,9 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         // once (`triedForField` prevents repeats) and the singular survives.
         if !upcomingEpisodes.isEmpty { fields.insert(.nextAiringEpisode) }
         if cast != nil { fields.insert(.cast) }
+        if directors != nil { fields.insert(.directors) }
+        if writers != nil { fields.insert(.writers) }
+        if studios != nil { fields.insert(.studios) }
         return fields
     }
 
@@ -141,6 +153,9 @@ public struct MetadataEnrichment: Sendable, Equatable, Codable {
         fill(&logoURL, from: other.logoURL, field: .logoURL, present: present)
         fill(&episodeStillURL, from: other.episodeStillURL, field: .episodeThumbnail, present: present)
         fill(&cast, from: other.cast, field: .cast, present: present)
+        fill(&directors, from: other.directors, field: .directors, present: present)
+        fill(&writers, from: other.writers, field: .writers, present: present)
+        fill(&studios, from: other.studios, field: .studios, present: present)
         // Banner and score have no dedicated MetadataField (bonus art/metadata);
         // still first-writer-wins, and never blocked by `present`.
         if bannerURL == nil { bannerURL = other.bannerURL }

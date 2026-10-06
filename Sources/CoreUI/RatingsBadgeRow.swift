@@ -140,7 +140,7 @@ public struct RatingBadge: View {
         // row, producing values such as "8…".
         .fixedSize(horizontal: true, vertical: false)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(rating.source.displayName) rating \(rating.displayValue)")
+        .accessibilityLabel("\(rating.displayName) rating \(rating.displayValue)")
     }
 
     @ViewBuilder
@@ -165,6 +165,18 @@ public struct RatingSourceIcon: View {
     }
 
     public var body: some View {
+        if let display = rating.providerDisplay, rating.source != .tmdb {
+            Text(verbatim: display.name)
+                .font(.system(size: size * 0.65, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+        } else {
+            brandedIcon
+        }
+    }
+
+    @ViewBuilder
+    private var brandedIcon: some View {
         switch rating.source.icon {
         case .star:
             Image(systemName: "star.fill")
@@ -303,7 +315,7 @@ public struct RatingTile: View {
         // the About/info cards); a plain filled surface on iOS/iPadOS.
         .plozzFocusableCard(cornerRadius: cornerRadius)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(verbatim: "\(rating.source.displayName) \(rating.displayValue)"))
+        .accessibilityLabel(Text(verbatim: "\(rating.displayName) \(rating.displayValue)"))
     }
 
     @ViewBuilder
@@ -321,9 +333,9 @@ public struct RatingTile: View {
     /// when the source reports one.
     private var subtitleText: String {
         if let count = rating.ratingCountText {
-            return "\(rating.source.shortLabel) · \(count)"
+            return "\(rating.shortLabel) · \(count)"
         }
-        return rating.source.shortLabel
+        return rating.shortLabel
     }
 
     private var iconSize: CGFloat {

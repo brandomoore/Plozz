@@ -1,5 +1,6 @@
 import Foundation
 import CoreModels
+import CoreNetworking
 
 /// Whether any wide-backdrop variant is among the requested fields. The three
 /// backdrop fields are served together (one response → home hero + detail backdrop),
@@ -207,6 +208,7 @@ public protocol TMDbEnriching: Sendable {
     func backdropURLs(for query: MetadataQuery, limit: Int) async -> [URL]
     func artworkURL(_ kind: ArtworkKind, for query: MetadataQuery) async -> URL?
     func cast(for query: MetadataQuery, limit: Int) async -> [MediaPerson]
+    func detailMetadata(for query: MetadataQuery, missing: Set<MetadataField>) async throws -> MetadataEnrichment
 }
 
 extension TMDbMetadataProvider: TMDbEnriching {}
@@ -216,21 +218,17 @@ extension TMDbMetadataProvider: TMDbEnriching {}
 /// poster, clear logo, and per-episode stills. Inert when TMDb isn't configured.
 public struct TMDbEnrichmentProvider: MetadataEnrichmentProvider {
     public let id: MetadataSource = .tmdb
-    public let capabilities: Set<MetadataCapability> = [.poster, .backdrop, .logo, .episodeStill, .cast]
+    public let capabilities: Set<MetadataCapability> = [.poster, .backdrop, .logo, .episodeStill, .cast, .canonicalText, .tagline]
     public let policy: ProviderPolicy
     private let provider: any TMDbEnriching
     private let backdropLimit: Int
 
-    /// `version: 2` — a title search now prefers an EXACT title match over
-    /// TMDb's own popularity order, so it can answer with a different (correct)
-    /// title than before. Searching "The Circle" used to resolve to Kingsman:
-    /// The Golden Circle, and that answer is cached under version 1: without a
-    /// bump the fixed matcher would never run for any title already looked up,
-    /// and the wrong artwork and metadata would keep being served.
+    /// Version 3 adds scoped credits and descriptive facts; older cached cast
+    /// answers may describe the whole show rather than the requested episode.
     public init(
         provider: any TMDbEnriching,
         backdropLimit: Int = 4,
-        policy: ProviderPolicy = ProviderPolicy(version: 2)
+        policy: ProviderPolicy = ProviderPolicy(version: 3)
     ) {
         self.provider = provider
         self.backdropLimit = backdropLimit
@@ -238,7 +236,11 @@ public struct TMDbEnrichmentProvider: MetadataEnrichmentProvider {
     }
 
     public func enrich(_ query: MetadataQuery, missing: Set<MetadataField>) async -> MetadataEnrichment {
-        guard provider.isEnabled else { return MetadataEnrichment() }
+        await enrichReporting(query, missing: missing).enrichment
+    }
+
+    public func enrichReporting(_ query: MetadataQuery, missing: Set<MetadataField>) async -> ProviderResponse {
+        guard provider.isEnabled else { return ProviderResponse(enrichment: MetadataEnrichment(), health: .empty) }
         var out = MetadataEnrichment()
         if requestsBackdrop(missing) {
             let urls = await provider.backdropURLs(for: query, limit: backdropLimit)
@@ -253,11 +255,26 @@ public struct TMDbEnrichmentProvider: MetadataEnrichmentProvider {
         if missing.contains(.episodeThumbnail), let url = await provider.artworkURL(.thumbnail, for: query) {
             out.episodeStillURL = SourcedValue(value: url, source: .tmdb)
         }
-        if missing.contains(.cast) {
-            let people = await provider.cast(for: query, limit: 40)
-            if !people.isEmpty { out.cast = SourcedValue(value: people, source: .tmdb) }
+        let detailFields = missing.intersection([.cast, .directors, .writers, .studios, .genres, .overview, .taglines])
+        if !detailFields.isEmpty {
+            do {
+                out.fillMissing(from: try await provider.detailMetadata(for: query, missing: detailFields))
+            } catch {
+                let failure: ProviderFailureKind
+                switch error {
+                case MetadataDiscoveryHTTPError.status(401, _), MetadataDiscoveryHTTPError.status(403, _):
+                    failure = .unauthorized
+                case MetadataDiscoveryHTTPError.status(429, let retryAfter):
+                    failure = .rateLimited(retryAfter: retryAfter)
+                default: failure = .transient
+                }
+                if !Task.isCancelled {
+                    PlozzLog.networking.error("TMDB detail enrichment failed; retaining available metadata.")
+                }
+                return ProviderResponse(enrichment: out, health: .failure(failure))
+            }
         }
-        return out
+        return ProviderResponse(enrichment: out, health: out.isEmpty ? .empty : .ok)
     }
 }
 

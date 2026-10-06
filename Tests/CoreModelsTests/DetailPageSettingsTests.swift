@@ -116,7 +116,7 @@ final class DetailPageSettingsTests: XCTestCase {
         var settings = DetailPageSettings(
             maxHeaderRatings: 2,
             ratingSourceOrder: [.metacritic, .imdb, .rottenTomatoesAudience, .rottenTomatoes, .tmdb],
-            enabledRatingSources: Set(RatingSource.allCases).subtracting([.community])
+            enabledRatingSources: Set(RatingSource.allCases).subtracting([.community, .provider])
         )
         let available = [tmdb, audience, imdb, critics]
         XCTAssertEqual(settings.enabledRatingSources.count, 8)
@@ -128,6 +128,21 @@ final class DetailPageSettingsTests: XCTestCase {
             from: available, isAnime: false, hidesRatings: false
         ), [imdb, audience, critics])
         XCTAssertEqual(settings.enabledRatingSources.count, 8)
+    }
+
+    func testProviderSelectedRatingsRetainServerOrderAndViewerVisibility() {
+        let imdb = ExternalRating(
+            source: .imdb, value: 80, scale: .outOfHundred,
+            providerDisplay: .init(sourceID: "imdb", name: "IMDb", value: "8.0", order: 0)
+        )
+        let tmdb = ExternalRating(
+            source: .tmdb, value: 70, scale: .outOfHundred,
+            providerDisplay: .init(sourceID: "tmdb", name: "TMDB", value: "7.0", order: 1)
+        )
+        var settings = DetailPageSettings(ratingSourceOrder: [.tmdb, .imdb])
+        XCTAssertEqual(settings.headerRatings(from: [tmdb, imdb], isAnime: false, hidesRatings: false), [imdb, tmdb])
+        settings.enabledRatingSources.remove(.imdb)
+        XCTAssertEqual(settings.headerRatings(from: [imdb, tmdb], isAnime: false, hidesRatings: false), [tmdb])
     }
 
     func testCodablePreservesCountAndReadsLegacySettingsWithoutResettingChoices() throws {

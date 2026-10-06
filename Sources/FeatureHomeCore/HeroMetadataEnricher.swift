@@ -187,6 +187,7 @@ public struct HeroMetadataEnricher: Sendable {
                 enriched[index].overview = root.overview
                 enriched[index].taglines = root.taglines
                 enriched[index].ratings = root.ratings
+                enriched[index].usesProviderRatings = root.usesProviderRatings
                 enriched[index].familyGuidance = root.familyGuidance
                 enriched[index].people = root.people
                 enriched[index].studios = root.studios
@@ -219,9 +220,7 @@ public struct HeroMetadataEnricher: Sendable {
             if enriched[index].taglines.isEmpty {
                 enriched[index].taglines = root.taglines
             }
-            if enriched[index].ratings.isEmpty {
-                enriched[index].ratings = root.ratings
-            }
+            enriched[index].mergeHydratedRatings(from: root)
             if enriched[index].familyGuidance == nil {
                 enriched[index].familyGuidance = root.familyGuidance
             }
@@ -363,6 +362,7 @@ public struct HeroMetadataEnricher: Sendable {
         }
         var enriched = items
         for index in enriched.indices {
+            guard !enriched[index].usesProviderRatings else { continue }
             guard let cached = await cachedProvider.cachedRatings(for: enriched[index]),
                   !cached.isEmpty else {
                 continue

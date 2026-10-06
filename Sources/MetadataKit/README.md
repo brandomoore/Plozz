@@ -32,6 +32,24 @@ load-bearing.
   library is enriched with a one-time burst of calls, then effectively
   none.
 - `MetadataHTTP` — internal lightweight `URLSession` transport for enrichment.
+- `DetailMetadataResolver` — fills missing cast, directors, writers, studios and
+  genres after a provider's full detail response, using the same pipeline on
+  tvOS and iOS/iPadOS. Cast and crew are separate gaps: an existing cast does not
+  hide missing directors, and adding cast never erases server crew. Source
+  changes and cancellation discard stale results. Household source preferences
+  and the current TMDB credential still apply.
+  TMDB credits use the movie, series, season or episode endpoint as appropriate;
+  an episode never inherits a whole show's directing/writing credits. Exact
+  external IDs take precedence and a failed ID lookup never falls back to a
+  different title. A title-only match must agree on title and any supplied year.
+  Season and episode cache keys remain distinct from the series and each other.
+  Child detail queries promote only explicit series IDs for show-level providers,
+  retaining season/episode numbers for scoped credits; an episode's own ID or
+  title never stands in for an unidentified show.
+  TMDB transport failures report provider health, rather than caching an outage
+  or revoked credential as an authoritative absence of credits.
+  Artwork, playable identity, file/stream facts and Common Sense are not filled
+  by this resolver.
 - `HeroDiscoveryProviding` — separate candidate-feed seam for TMDB,
   AniList, TheTVDB, and TVmaze. It does not call Trakt.
 - `HeroDiscoveryService` — bounded, coalesced public-feed reads, provider-level

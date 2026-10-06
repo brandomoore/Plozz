@@ -272,6 +272,8 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// External/critical ratings (IMDb, Rotten Tomatoes, …), in their native
     /// scales. May be enriched asynchronously after the item first loads.
     public var ratings: [ExternalRating]
+    /// The server selected the complete display list, including an intentional empty list.
+    public var usesProviderRatings: Bool
 
     /// External database identifiers (e.g. `["Imdb": "tt0111161", "Tmdb": "278"]`),
     /// used by enrichment services to look up additional ratings/metadata.
@@ -494,6 +496,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         fallbackArtworkURL: URL? = nil,
         logoURL: URL? = nil,
         ratings: [ExternalRating] = [],
+        usesProviderRatings: Bool = false,
         providerIDs: [String: String] = [:],
         discoverySources: [HeroDiscoverySource] = [],
         discoveryURLs: [String: URL] = [:],
@@ -561,6 +564,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         self.fallbackArtworkURL = fallbackArtworkURL
         self.logoURL = logoURL
         self.ratings = ratings
+        self.usesProviderRatings = usesProviderRatings
         self.providerIDs = providerIDs
         self.discoverySources = HeroDiscoverySource.normalized(discoverySources)
         self.discoveryURLs = HeroDiscoverySource.validatedURLs(discoveryURLs)
@@ -612,6 +616,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         case seriesID, seasonID, runtime, resumePosition, playedPercentage, isPlayed, hasBeenPlayed
         case posterURL, seriesPosterURL, backdropURL, heroBackdropURL
         case fallbackArtworkURL, logoURL, ratings, providerIDs, metadataProvenance
+        case usesProviderRatings
         case discoverySources
         case discoveryURLs
         case allowsTitleBasedMetadataMatching
@@ -670,6 +675,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         fallbackArtworkURL = try container.decodeIfPresent(URL.self, forKey: .fallbackArtworkURL)
         logoURL = try container.decodeIfPresent(URL.self, forKey: .logoURL)
         ratings = try container.decodeIfPresent([ExternalRating].self, forKey: .ratings) ?? []
+        usesProviderRatings = try container.decodeIfPresent(Bool.self, forKey: .usesProviderRatings) ?? false
         providerIDs = try container.decodeIfPresent([String: String].self, forKey: .providerIDs) ?? [:]
         discoverySources = HeroDiscoverySource.normalized(
             (try container.decodeIfPresent([String].self, forKey: .discoverySources) ?? [])

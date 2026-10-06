@@ -41,6 +41,7 @@ public struct DetailOpenEnvironment {
     public let crossServerSourceResolver: (@Sendable (MediaItem) async -> [MediaSourceRef])?
     /// External ratings (IMDb/RT/Metacritic) provider for live enrichment.
     public let ratingsProvider: any ExternalRatingsProviding
+    public let detailMetadataResolver: @Sendable (MediaItem) async -> MetadataEnrichment
     /// Refreshes a discovery (Seerr) title's request/availability. `nil` when Seerr
     /// isn't wired.
     public let discoveryStatusRefresh: (@Sendable (MediaItem) async -> (MediaAvailabilityStatus, Double?)?)?
@@ -63,6 +64,7 @@ public struct DetailOpenEnvironment {
         crossServerSourceResolver: (@Sendable (MediaItem) async -> [MediaSourceRef])?,
         continueWatchingSnapshot: @escaping @MainActor () -> [MediaItem] = { [] },
         ratingsProvider: any ExternalRatingsProviding = DisabledRatingsProvider(),
+        detailMetadataResolver: @escaping @Sendable (MediaItem) async -> MetadataEnrichment = { _ in MetadataEnrichment() },
         discoveryStatusRefresh: (@Sendable (MediaItem) async -> (MediaAvailabilityStatus, Double?)?)? = nil,
         loadSeasonEpisodeRoster:
             (@Sendable (MediaItem, Int) async -> SeasonEpisodeRosterResult)? = nil,
@@ -76,6 +78,7 @@ public struct DetailOpenEnvironment {
         self.continueWatchingSnapshot = continueWatchingSnapshot
         self.crossServerSourceResolver = crossServerSourceResolver
         self.ratingsProvider = ratingsProvider
+        self.detailMetadataResolver = detailMetadataResolver
         self.discoveryStatusRefresh = discoveryStatusRefresh
         self.loadSeasonEpisodeRoster = loadSeasonEpisodeRoster
         self.makeRelatedTitlesLoader = makeRelatedTitlesLoader
@@ -270,6 +273,7 @@ public struct DetailOpenEnvironment {
             discoveryStatusRefresh: discoveryStatusRefresh,
             loadSeasonEpisodeRoster: loadSeasonEpisodeRoster,
             ratingsProvider: ratingsProvider,
+            detailMetadataResolver: detailMetadataResolver,
             sourceAccountID: selectedSource?.accountID ?? item.sourceAccountID,
             originSourceAccountID: libraryOrigin,
             initialSources: sources,
@@ -341,6 +345,7 @@ public struct DetailOpenEnvironment {
             ),
             loadSeasonEpisodeRoster: loadSeasonEpisodeRoster,
             ratingsProvider: ratingsProvider,
+            detailMetadataResolver: detailMetadataResolver,
             sourceAccountID: sourceAccountID,
             originSourceAccountID: originAccountID,
             alternateProviderResolver: resolveOptionalProvider,

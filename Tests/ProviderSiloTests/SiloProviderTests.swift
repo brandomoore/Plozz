@@ -365,6 +365,62 @@ final class SiloCredentialStub: RotatingCredentialStoring, @unchecked Sendable {
 final class SiloProviderTests: XCTestCase {
   private let base = URL(string: "https://silo.test/base")!
 
+  func testDetailRatingsUseOnlyServerSelectedFormattedList() async throws {
+    let raw = try credential().encoded()
+    let http = SiloHTTPStub([
+      "/api/v2/catalog/items/movie:1": """
+      {"content_id":"movie:1","type":"movie","title":"Title",
+       "rating_rt_critic":99,"rating_imdb":7.35,
+       "ratings":[
+        {"source":"imdb","name":"IMDb","score":73.5,"display":"7.4"},
+        {"source":"tmdb","name":"TMDB","score":81,"display":"8.1"},
+        {"source":"kinopoisk","name":"Kinopoisk","score":85,"display":"8.5"}]}
+      """
+    ])
+    let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    let item = try await provider.item(id: "movie:1")
+    XCTAssertTrue(item.usesProviderRatings)
+    XCTAssertEqual(item.ratings.map(\.id), ["imdb", "tmdb", "kinopoisk"])
+    XCTAssertEqual(item.ratings.map(\.displayValue), ["7.4", "8.1", "8.5"])
+    XCTAssertEqual(item.ratings.map(\.displayName), ["IMDb", "TMDB", "Kinopoisk"])
+    XCTAssertEqual(item.ratings.first?.normalized ?? 0, 0.735, accuracy: 0.001)
+    XCTAssertFalse(item.ratings.contains { $0.source == .rottenTomatoes })
+    let restored = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(item))
+    XCTAssertEqual(restored.ratings, item.ratings)
+    XCTAssertTrue(restored.usesProviderRatings)
+  }
+
+  func testExplicitEmptyRatingsDifferFromLegacyAbsentRatings() async throws {
+    for (field, expected) in [(",\"ratings\":[]", true), ("", false)] {
+      let raw = try credential().encoded()
+      let http = SiloHTTPStub([
+        "/api/v2/catalog/items/movie:1":
+          "{\"content_id\":\"movie:1\",\"type\":\"movie\",\"title\":\"Title\",\"rating_imdb\":9\(field)}"
+      ])
+      let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+      let item = try await provider.item(id: "movie:1")
+      XCTAssertEqual(item.usesProviderRatings, expected)
+      XCTAssertTrue(item.ratings.isEmpty, "Raw metadata is not the display list")
+    }
+  }
+
+  func testInvalidAndDuplicateRatingsDoNotHideValidEntries() async throws {
+    let raw = try credential().encoded()
+    let http = SiloHTTPStub([
+      "/api/v2/catalog/items/movie:1": """
+      {"content_id":"movie:1","type":"movie","title":"Title",
+       "ratings":[
+         {"source":"imdb","name":"IMDb","score":101,"display":"10.1"},
+         {"source":"tmdb","name":"TMDB","score":0,"display":"0.0"},
+         {"source":"tmdb","name":"TMDB","score":90,"display":"9.0"}]}
+      """
+    ])
+    let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    let item = try await provider.item(id: "movie:1")
+    XCTAssertEqual(item.ratings.map(\.id), ["tmdb"])
+    XCTAssertEqual(item.ratings.first?.displayValue, "0.0")
+  }
+
   func credential() throws -> SiloCredential {
     let tokens = try JSONDecoder().decode(
       SiloTokenPair.self,

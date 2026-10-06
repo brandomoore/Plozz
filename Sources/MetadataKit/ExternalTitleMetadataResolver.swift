@@ -85,6 +85,9 @@ public actor ExternalTitleMetadataResolver {
             .logoURL,
             .detailBackdrop,
             .cast,
+            .directors,
+            .writers,
+            .studios,
             .providerID(ProviderIDNamespace.tmdb.canonicalKey),
             .providerID(ProviderIDNamespace.tvdb.canonicalKey),
             .providerID(ProviderIDNamespace.imdb.canonicalKey),
@@ -160,6 +163,9 @@ public actor ExternalTitleMetadataResolver {
             fields.insert(.detailBackdrop)
         }
         if !item.cast.isEmpty { fields.insert(.cast) }
+        if item.people.contains(where: { $0.kind?.lowercased() == "director" }) { fields.insert(.directors) }
+        if item.people.contains(where: { $0.kind?.lowercased() == "writer" }) { fields.insert(.writers) }
+        if !item.studios.isEmpty { fields.insert(.studios) }
         for key in item.providerIDs.keys {
             fields.insert(.providerID(key))
         }

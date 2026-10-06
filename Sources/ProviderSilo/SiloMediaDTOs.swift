@@ -47,6 +47,7 @@ struct SiloItem: Decodable, Sendable {
     let rating_tmdb: Double?
     let rating_rt_critic: Double?
     let rating_rt_audience: Double?
+    let ratings: [SiloRating]?
     let sort_metrics: SiloSortMetrics?
     let imdb_id: String?
     let tmdb_id: String?
@@ -59,6 +60,13 @@ struct SiloItem: Decodable, Sendable {
     let credits: SiloMarker?
     let recap: SiloMarker?
     let preview: SiloMarker?
+}
+
+struct SiloRating: Decodable, Sendable {
+    let source: String
+    let name: String
+    let score: Double
+    let display: String
 }
 
 struct SiloSortMetrics: Decodable, Sendable {

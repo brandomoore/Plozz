@@ -25,6 +25,8 @@ public enum RatingSource: String, Codable, Sendable, Hashable, CaseIterable {
     /// A backend's generic critic rating when the upstream source is
     /// unspecified.
     case critic
+    /// A server-selected rating service not otherwise known to this client.
+    case provider
 
     /// Human-readable label for the badge.
     // Mostly brand/format names (IMDb, Rotten Tomatoes, RT Audience, Metacritic,
@@ -42,6 +44,7 @@ public enum RatingSource: String, Codable, Sendable, Hashable, CaseIterable {
         case .tmdb: return "TMDB"
         case .community: return "Community"
         case .critic: return "Critics"
+        case .provider: return "Rating"
         }
     }
 
@@ -58,6 +61,7 @@ public enum RatingSource: String, Codable, Sendable, Hashable, CaseIterable {
         case .tmdb: return "TMDB"
         case .community: return "Community"
         case .critic: return "Critics"
+        case .provider: return "Rating"
         }
     }
 
@@ -81,6 +85,7 @@ public enum RatingSource: String, Codable, Sendable, Hashable, CaseIterable {
         case .letterboxd: return 6
         case .community: return 7
         case .critic: return 8
+        case .provider: return 9
         }
     }
 
@@ -98,7 +103,7 @@ public enum RatingSource: String, Codable, Sendable, Hashable, CaseIterable {
         // Letterboxd (whose score genuinely is a star rating).
         case .imdb: return .imdb
         case .anilist: return .anilist
-        case .letterboxd, .community: return .star
+        case .letterboxd, .community, .provider: return .star
         case .critic: return .critic
         case .metacritic: return .metacritic
         }
@@ -213,6 +218,20 @@ public enum RatingScale: String, Codable, Sendable, Hashable {
 /// Stored in the source's own units (so `displayValue` looks familiar) with a
 /// `normalized` 0...1 accessor for cross-source comparison or progress UI.
 public struct ExternalRating: Codable, Hashable, Sendable, Identifiable {
+    public struct ProviderDisplay: Codable, Hashable, Sendable {
+        public var sourceID: String
+        public var name: String
+        public var value: String
+        public var order: Int
+
+        public init(sourceID: String, name: String, value: String, order: Int) {
+            self.sourceID = sourceID
+            self.name = name
+            self.value = value
+            self.order = order
+        }
+    }
+
     public var source: RatingSource
     /// The raw score in `scale`'s units (e.g. `8.8`, `74`).
     public var value: Double
@@ -222,21 +241,28 @@ public struct ExternalRating: Codable, Hashable, Sendable, Identifiable {
     public var ratingCount: Int?
     /// Upstream-provided verdict, when available.
     public var verdict: RatingVerdict?
+    /// A provider's selected text mark, formatted score and ordering.
+    public var providerDisplay: ProviderDisplay?
 
-    public var id: RatingSource { source }
+    public var id: String { providerDisplay?.sourceID ?? source.rawValue }
+    public var displayName: String { providerDisplay?.name ?? source.displayName }
+    public var shortLabel: String { providerDisplay?.name ?? source.shortLabel }
+    public var sortRank: Int { providerDisplay?.order ?? source.sortRank }
 
     public init(
         source: RatingSource,
         value: Double,
         scale: RatingScale,
         ratingCount: Int? = nil,
-        verdict: RatingVerdict? = nil
+        verdict: RatingVerdict? = nil,
+        providerDisplay: ProviderDisplay? = nil
     ) {
         self.source = source
         self.value = value
         self.scale = scale
         self.ratingCount = ratingCount
         self.verdict = verdict
+        self.providerDisplay = providerDisplay
     }
 
     public var cohort: RatingCohort {
@@ -245,7 +271,7 @@ public struct ExternalRating: Codable, Hashable, Sendable, Identifiable {
             return .critics
         case .rottenTomatoesAudience:
             return .audience
-        case .imdb, .letterboxd, .anilist, .tmdb, .community:
+        case .imdb, .letterboxd, .anilist, .tmdb, .community, .provider:
             return .community
         }
     }
@@ -265,6 +291,7 @@ public struct ExternalRating: Codable, Hashable, Sendable, Identifiable {
     /// A familiar, source-appropriate display string (e.g. `8.8`, `74%`,
     /// `74/100`, `4.1/5`).
     public var displayValue: String {
+        if let providerDisplay { return providerDisplay.value }
         switch scale {
         case .outOfTen:
             // Always one decimal so a whole score reads as "7.0", not "7".
@@ -335,16 +362,16 @@ public extension Array where Element == ExternalRating {
     /// Authoritative entries (e.g. from a dedicated ratings API) replace any
     /// existing entry of the same source. Result is ordered by `sortRank`.
     func mergedWithAuthoritative(_ authoritative: [ExternalRating]) -> [ExternalRating] {
-        var bySource: [RatingSource: ExternalRating] = [:]
-        for rating in self { bySource[rating.source] = rating }
+        var bySource: [String: ExternalRating] = [:]
+        for rating in self { bySource[rating.id] = rating }
         for rating in authoritative {
             var enriched = rating
-            if let existing = bySource[rating.source] {
+            if let existing = bySource[rating.id] {
                 enriched.ratingCount = enriched.ratingCount ?? existing.ratingCount
                 enriched.verdict = enriched.verdict ?? existing.verdict
             }
-            bySource[rating.source] = enriched
+            bySource[rating.id] = enriched
         }
-        return bySource.values.sorted { $0.source.sortRank < $1.source.sortRank }
+        return bySource.values.sorted { $0.sortRank < $1.sortRank }
     }
 }

@@ -81,9 +81,10 @@ public struct MetadataField: RawRepresentable, Codable, Hashable, Sendable {
     /// schedule resolver — never on the ordinary MediaItem field-fill path — so it
     /// adds no work to normal enrichment.
     public static let nextAiringEpisode = Self(rawValue: "nextAiringEpisode")
-    /// Billed cast. Only a file-based share needs this resolved externally — a
-    /// media server sends its people with the item.
+    /// Billed cast, filled externally only when absent from the hydrated item.
     public static let cast = Self(rawValue: "cast")
+    public static let directors = Self(rawValue: "directors")
+    public static let writers = Self(rawValue: "writers")
 
     public static func providerID(_ namespace: String) -> Self {
         Self(rawValue: "providerID.\(namespace.lowercased())")

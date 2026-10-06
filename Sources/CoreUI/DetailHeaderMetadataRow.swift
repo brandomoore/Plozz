@@ -80,7 +80,7 @@ public struct DetailHeaderMetadataRow: View {
                                 }
                                 ForEach(ratings) { rating in
                                     HStack {
-                                        Text(verbatim: rating.source.displayName)
+                                        Text(verbatim: rating.displayName)
                                         Spacer()
                                         RatingBadge(rating: rating)
                                     }

@@ -119,6 +119,7 @@ public struct CachingRatingsProvider: CachedExternalRatingsProviding {
     }
 
     public func ratings(for item: MediaItem) async -> [ExternalRating] {
+        guard !item.usesProviderRatings else { return [] }
         let key = directCacheKey(for: item)
         let resolved: [ExternalRating]
         if let cached = await cache.ratings(forKey: key) {
@@ -135,6 +136,7 @@ public struct CachingRatingsProvider: CachedExternalRatingsProviding {
     }
 
     public func cachedRatings(for item: MediaItem) async -> [ExternalRating]? {
+        guard !item.usesProviderRatings else { return [] }
         if let seriesKey = seriesFallbackCacheKey(for: item),
            let series = await cache.ratings(forKey: seriesKey) {
             return Self.sanitized(series, for: item)

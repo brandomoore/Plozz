@@ -1,5 +1,6 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import AppRuntime
 import CoreModels
 import CoreNetworking
 import CoreUI
@@ -1075,6 +1076,7 @@ struct HomeTab: View {
             crossServerSourceResolver: crossServerSourceResolver(in: accounts, identitySources: identitySources),
             continueWatchingSnapshot: { runtime.continueWatchingForDetail },
             ratingsProvider: ratingsProvider,
+            detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
             discoveryStatusRefresh: { await seer.availability(for: $0) },
             loadSeasonEpisodeRoster: { await seer.seasonEpisodeRoster(for: $0, seasonNumber: $1) },
             makeRelatedTitlesLoader: {

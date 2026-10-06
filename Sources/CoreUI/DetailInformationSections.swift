@@ -811,7 +811,7 @@ public struct DetailInformationSections: View {
 
     var sortedRatings: [ExternalRating] {
         // Header preferences select a preview, never a subset of the full Ratings section.
-        item.ratings.sorted { $0.source.sortRank < $1.source.sortRank }
+        item.ratings.sorted { $0.sortRank < $1.sortRank }
     }
 
     var familyGuidanceSummary: FamilyGuidanceSummary? {

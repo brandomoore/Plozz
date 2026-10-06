@@ -94,5 +94,7 @@ public extension MetadataCapability {
         .ratings: .ratings,
         .nextAiringEpisode: .nextAiringEpisode,
         .cast: .cast,
+        .directors: .cast,
+        .writers: .cast,
     ]
 }

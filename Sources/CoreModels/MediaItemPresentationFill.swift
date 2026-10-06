@@ -1,6 +1,14 @@
 import Foundation
 
 public extension MediaItem {
+    /// A fresh server-selected list is authoritative, including an empty list.
+    mutating func mergeHydratedRatings(from full: MediaItem) {
+        if full.usesProviderRatings || (!usesProviderRatings && ratings.isEmpty) {
+            ratings = full.ratings
+            usesProviderRatings = full.usesProviderRatings
+        }
+    }
+
     /// Take from `donor` whatever this copy lacks, changing nothing it already has.
     ///
     /// The other half of folding duplicates. ``MediaItemMerger`` decides identity —
@@ -65,7 +73,16 @@ public extension MediaItem {
             logoURL = donated
             adoptedArtwork.append(donated)
         }
-        ratings = ratings.mergedWithAuthoritative(donor.ratings)
+        if !usesProviderRatings {
+            if donor.usesProviderRatings {
+                if ratings.isEmpty {
+                    ratings = donor.ratings
+                    usesProviderRatings = true
+                }
+            } else {
+                ratings = ratings.mergedWithAuthoritative(donor.ratings)
+            }
+        }
         if artworkSelections.isEmpty, !donor.artworkSelections.isEmpty {
             artworkSelections = donor.artworkSelections
             adoptedArtwork.append(contentsOf: donor.artworkSelections

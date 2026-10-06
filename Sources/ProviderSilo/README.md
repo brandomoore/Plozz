@@ -93,6 +93,17 @@ disclosure instead of repeating the same instructions.
 - Watched state and the native Silo watchlist write back to Silo. Batched resume
   synchronization checks each result, not only HTTP success.
 
+## Detail ratings
+
+Native v2 detail ratings use the server-selected `ratings` list, preserving its
+order, plain-text source marks and preformatted values (including plugin
+sources). TMDB may use its approved mark. An explicit empty list stays empty:
+external rating lookups, cached ratings and duplicate-title merges must not
+restore a source the administrator excluded. Raw `rating_*` values remain
+sorting facts, not a substitute display list. Older responses without `ratings`
+retain ordinary external enrichment. Invalid scores and duplicate entries are
+logged and omitted without losing the rest of the title.
+
 ## Streaming quality
 
 The mobile quality controls use Silo's native protocol-3 preferences and video

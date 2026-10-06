@@ -7,6 +7,61 @@ import Observation
 
 @MainActor
 final class ItemDetailViewModelTests: XCTestCase {
+    func testAllProvidersFillDetailGapsAfterHydrationWithoutReplacingServerCrew() async {
+        for kind: ProviderKind in [.plex, .jellyfin, .emby, .silo, .mediaShare] {
+            let director = MediaPerson(id: "server-director", name: "Server director", kind: "Director")
+            let item = MediaItem(
+                id: "movie", title: "Movie", kind: .movie, overview: "Server plot",
+                people: [director], sourceAccountID: "account"
+            )
+            let provider = FakeMediaProvider(allItems: [item], kind: kind)
+            let actor = MediaPerson(id: "tmdb:person:1", name: "Actor", kind: "Actor")
+            let vm = ItemDetailViewModel(
+                provider: provider, itemID: item.id,
+                initialItem: MediaItem(id: item.id, title: item.title, kind: .movie),
+                detailMetadataResolver: { hydrated in
+                    XCTAssertEqual(hydrated.people, [director], "Do not judge gaps from the Home seed")
+                    return MetadataEnrichment(
+                        cast: .init(value: [actor], source: .tmdb),
+                        studios: .init(value: ["Studio"], source: .tmdb)
+                    )
+                },
+                sourceAccountID: "account",
+                onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+                trailerCache: TrailerResolutionCache()
+            )
+            await vm.load()
+            XCTAssertEqual(vm.state.value?.item.people, [director, actor], "\(kind)")
+            XCTAssertEqual(vm.state.value?.item.studios, ["Studio"], "\(kind)")
+            XCTAssertEqual(vm.state.value?.item.overview, "Server plot")
+            vm.suspendEnrichment()
+        }
+    }
+
+    func testCancelledDetailEnrichmentCannotPublishLateCrew() async {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie, overview: "Plot")
+        let provider = FakeMediaProvider(allItems: [item], kind: .jellyfin)
+        let entered = AsyncGate()
+        let release = AsyncGate()
+        let vm = ItemDetailViewModel(
+            provider: provider, itemID: item.id,
+            detailMetadataResolver: { _ in
+                entered.open()
+                await release.wait()
+                return MetadataEnrichment(studios: .init(value: ["Late studio"], source: .tmdb))
+            },
+            onlineTrailerResolver: { _ in [] }, playableVideoIDResolver: { _ in nil },
+            trailerCache: TrailerResolutionCache()
+        )
+        let load = Task { await vm.load() }
+        await entered.wait()
+        load.cancel()
+        release.open()
+        await load.value
+        XCTAssertEqual(vm.state.value?.item.studios, [])
+        vm.suspendEnrichment()
+    }
+
     func testResumePublishesEarlyWithoutChoosingASeasonBeforeItArrives() async {
         for holdResume in [true, false] {
             let show = MediaItem(

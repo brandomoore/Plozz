@@ -444,7 +444,7 @@ final class FocusHeroMetadata {
             item.overview = full.overview
         }
         if item.taglines.isEmpty { item.taglines = full.taglines }
-        if item.ratings.isEmpty { item.ratings = full.ratings }
+        item.mergeHydratedRatings(from: full)
         if item.familyGuidance == nil { item.familyGuidance = full.familyGuidance }
         if item.logoURL == nil { item.logoURL = full.logoURL }
         if item.heroBackdropURL == nil { item.heroBackdropURL = full.heroBackdropURL }

@@ -14,7 +14,7 @@ public struct DetailPageSettings: Codable, Equatable, Sendable {
     public static let headerRatingCountRange = 1...RatingSource.allCases.count
     public static let defaultRatingOrder: [RatingSource] = [
         .rottenTomatoesAudience, .rottenTomatoes, .imdb, .anilist, .tmdb,
-        .metacritic, .letterboxd, .community, .critic
+        .metacritic, .letterboxd, .community, .critic, .provider
     ]
     public static let `default` = DetailPageSettings()
 
@@ -64,6 +64,11 @@ public struct DetailPageSettings: Codable, Equatable, Sendable {
         hidesRatings: Bool
     ) -> [ExternalRating] {
         guard showsHeaderRatings, !hidesRatings else { return [] }
+        if available.contains(where: { $0.providerDisplay != nil }) {
+            return Array(available.filter {
+                enabledRatingSources.contains($0.source) && (!$0.source.isAnimeOnly || isAnime)
+            }.sorted { $0.sortRank < $1.sortRank }.prefix(maxHeaderRatings))
+        }
         return Array(orderedSources.compactMap { source in
             guard enabledRatingSources.contains(source),
                   !source.isAnimeOnly || isAnime else { return nil }

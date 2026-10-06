@@ -112,6 +112,19 @@ private final class CountingProvider: ExternalRatingsProviding, @unchecked Senda
 final class RatingsCacheTests: XCTestCase {
     private let sample = [ExternalRating(source: .imdb, value: 8.8, scale: .outOfTen)]
 
+    func testProviderSelectedEmptyListDoesNotFetchOrRestoreCachedRatings() async {
+        let cache = RatingsCache(ttl: 1000)
+        let base = CountingProvider(result: sample)
+        let provider = CachingRatingsProvider(base: base, cache: cache)
+        await cache.store(sample, forKey: "tt0111161")
+        var selected = movie()
+        selected.usesProviderRatings = true
+        let fetched = await provider.ratings(for: selected)
+        let cached = await provider.cachedRatings(for: selected)
+        XCTAssertEqual(fetched, [])
+        XCTAssertEqual(cached, [])
+        XCTAssertEqual(base.callCount, 0)
+    }
     func testServesFromCacheWithinTTL() async {
         let cache = RatingsCache(ttl: 1000, now: { Date(timeIntervalSince1970: 0) })
         let base = CountingProvider(result: sample)

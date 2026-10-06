@@ -295,6 +295,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
                     await seer.seasonEpisodeRoster(for: item, seasonNumber: number)
                 },
                 ratingsProvider: RatingsServiceFactory.make(),
+                detailMetadataResolver: { await DetailMetadataResolver.household.resolve($0) },
                 sourceAccountID: selectedSource?.accountID ?? item.sourceAccountID,
                 originSourceAccountID: originSourceAccountID,
                 initialSources: initialSources,
