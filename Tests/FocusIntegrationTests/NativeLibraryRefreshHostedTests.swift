@@ -12,6 +12,105 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    func testLibraryHeaderClearanceAndFullBleedArtworkFollowNavigation() async throws {
+        for style in [NavigationStyle.sidebar, .tabBar, .rail] {
+            try await withNavigatedLibrary(style: style) { root, window, model in
+                let artwork = try XCTUnwrap(self.findView(named: "HeroWipeContainerView", in: root))
+                let frame = artwork.convert(artwork.bounds, to: window)
+                let controller = try XCTUnwrap(window.rootViewController)
+                let header = try XCTUnwrap(self.findController(NativeLibraryHeaderController.self, in: controller))
+                let headerFrame = header.view.convert(header.view.bounds, to: window)
+                self.capture(window, name: "library-native-\(style)", drawsHierarchy: true)
+                let log = XCTAttachment(string: "\(style) artwork=\(frame) header=\(headerFrame) safeArea=\(window.safeAreaInsets)")
+                log.name = "library-\(style)-geometry"
+                log.lifetime = .keepAlways
+                self.add(log)
+                XCTAssertEqual(frame.maxX, window.bounds.maxX, accuracy: 1, "\(style): artwork must reach the physical trailing edge.")
+                XCTAssertEqual(frame.minY, window.bounds.minY, accuracy: 1, "\(style): artwork must start at the physical top edge.")
+                let expectedTop = window.safeAreaInsets.top + (style == .sidebar ? 60 : 0)
+                XCTAssertEqual(headerFrame.minY, expectedTop, accuracy: 1,
+                               "Only a visible native sidebar page button needs extra header clearance.")
+                XCTAssertEqual(headerFrame.minX, window.safeAreaInsets.left, accuracy: 1)
+                XCTAssertEqual(headerFrame.maxX, window.bounds.maxX - window.safeAreaInsets.right, accuracy: 1,
+                               "Full-bleed artwork must not remove the controls' trailing safety margin.")
+                let firstControl = try XCTUnwrap(self.focusItems(in: header.host.view).compactMap {
+                    NavigationRowFocusRequester.frame(of: $0, relativeTo: window)
+                }.min { $0.minX < $1.minX })
+                XCTAssertEqual(firstControl.minX, window.safeAreaInsets.left + (style == .rail ? 144 : 0) + 6,
+                               accuracy: 1, "Pinned rail clearance must remain on the foreground, not the artwork.")
+                for mode: LibraryContentMode in [.titles, .collections, .playlists, .recommended] {
+                    await model.setContentMode(mode)
+                    try await Task.sleep(for: .milliseconds(150))
+                    window.layoutIfNeeded()
+                    let current = try XCTUnwrap(self.findController(NativeLibraryHeaderController.self, in: controller))
+                    XCTAssertTrue(current === header, "Mode switches must keep the mounted header.")
+                    let currentFrame = current.view.convert(current.view.bounds, to: window)
+                    XCTAssertEqual(currentFrame.minY, expectedTop, accuracy: 1, "\(style), \(mode)")
+                    XCTAssertEqual(currentFrame.maxX, headerFrame.maxX, accuracy: 1, "\(style), \(mode)")
+                    self.capture(window, name: "library-\(style)-\(mode)", drawsHierarchy: true)
+                }
+            }
+        }
+    }
+
+    private func withNavigatedLibrary(
+        style: NavigationStyle,
+        body: (UIView, UIWindow, LibraryBrowseViewModel) async throws -> Void
+    ) async throws {
+        let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, recommendationHub: true)
+        let name = "LibraryNativeNavigation.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let model = LibraryBrowseViewModel(
+            provider: provider, containerID: "library", containerKind: .movie, defaults: defaults)
+        await model.loadRecommendationsIfNeeded()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: LibraryNavigationLayoutFixture(model: model, style: style))
+        let container = LibraryFocusFixtureController()
+        container.addChild(host)
+        container.view.addSubview(host.view)
+        host.view.frame = window.bounds
+        host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        host.didMove(toParent: container)
+        window.rootViewController = container
+        window.makeKeyAndVisible()
+        window.layoutIfNeeded()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .seconds(1))
+        let header = try XCTUnwrap(findController(NativeLibraryHeaderController.self, in: host))
+        let focus = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+        let target = try XCTUnwrap(focusItems(in: header.host.view).first)
+        for _ in 0..<50 where focus.focusedItem == nil {
+            focus.requestFocusUpdate(to: host)
+            focus.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        container.target = target
+        for _ in 0..<50 {
+            focus.requestFocusUpdate(to: container)
+            focus.updateFocusIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+            if focus.focusedItem === target { break }
+        }
+        XCTAssertTrue(focus.focusedItem === target, "\(style): focus must enter the library header.")
+        container.target = nil
+        try await Task.sleep(for: .milliseconds(300))
+        window.layoutIfNeeded()
+        try await body(host.view, window, model)
+    }
+
+    private func findView(named name: String, in view: UIView) -> UIView? {
+        if String(describing: type(of: view)) == name { return view }
+        return view.subviews.lazy.compactMap { self.findView(named: name, in: $0) }.first
+    }
+
     func testRecommendedShowcaseUsesItsCaptionOverrideInsteadOfHome() async throws {
         let provider = RefreshLibraryProvider(kind: .jellyfin, supportsModes: true, recommendationHub: true)
         let name = "RecommendedCaptionScope.\(UUID())"
@@ -1222,13 +1321,13 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         return controller.children.lazy.compactMap { self.findController(type, in: $0) }.first
     }
 
-    private func focusItems(in window: UIWindow) -> [any UIFocusItem] {
-        var containers: [any UIFocusItemContainer] = [window]
+    private func focusItems(in root: UIView) -> [any UIFocusItem] {
+        var containers: [any UIFocusItemContainer] = [root]
         var seen = Set<ObjectIdentifier>()
         var result: [any UIFocusItem] = []
         while let container = containers.popLast() {
             guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
-            let frame = container.coordinateSpace.convert(window.bounds, from: window)
+            let frame = container.coordinateSpace.convert(root.bounds, from: root)
             for item in container.focusItems(in: frame) {
                 if let children = item.focusItemContainer { containers.append(children) }
                 if let view = item as? UIView { containers.append(view) }
@@ -1239,11 +1338,15 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
     }
 
     @discardableResult
-    private func capture(_ window: UIWindow, name: String) -> UIImage {
+    private func capture(_ window: UIWindow, name: String, drawsHierarchy: Bool = false) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image {
-            window.layer.render(in: $0.cgContext)
+            if drawsHierarchy {
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            } else {
+                window.layer.render(in: $0.cgContext)
+            }
         }
         let attachment = XCTAttachment(image: image)
         attachment.name = name
@@ -1264,6 +1367,53 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
             context.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         }
         return bytes
+    }
+}
+
+private struct LibraryNavigationLayoutFixture: View {
+    let model: LibraryBrowseViewModel
+    let style: NavigationStyle
+    @State private var path: [Int] = []
+
+    var body: some View {
+        Group {
+            if style == .rail {
+                NavigationStack { library }
+                    .environment(\.plozzNavigationContentInset, 128)
+                    .environment(\.plozzPinnedSidebarActive, true)
+            } else if style == .sidebar {
+                tabs.tabViewStyle(.sidebarAdaptable)
+            } else {
+                tabs.tabViewStyle(.tabBarOnly)
+            }
+        }
+        .environment(\.plozzNavigationStyle, style)
+        .environment(\.plozzCardFocusStyle, .system)
+        .environment(\.plozzCardStyle, .borderless)
+        .preferredColorScheme(.dark)
+    }
+
+    private var tabs: some View {
+        TabView(selection: .constant(0)) {
+            Tab("Movies", systemImage: "film", value: 0) {
+                NavigationStack(path: $path) {
+                    if style == .sidebar {
+                        library
+                    } else {
+                        Button("Open Library") { path.append(1) }
+                            .navigationDestination(for: Int.self) { _ in library }
+                            .task { if path.isEmpty { path.append(1) } }
+                    }
+                }
+            }
+            Tab("Search", systemImage: "magnifyingglass", value: 1) {
+                Button("Search") {}
+            }
+        }
+    }
+
+    private var library: some View {
+        LibraryBrowseView(viewModel: model, title: Text("Movies"), onSelect: { _ in })
     }
 }
 

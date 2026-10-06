@@ -97,8 +97,13 @@ fallback when the user's server has no attached trailer.
   On tvOS, changing tabs keeps the focused mode control
   mounted while replacing content below it. A stable layout container owns the
   top inset across Recommended, Browse, Collections, and Playlists (a transparent
-  `Group` would attach the inset to each replaceable content branch). Sort sits
-  on that same top navigation line alongside Filter and file browsing.
+  `Group` would attach the inset to each replaceable content branch).
+  Library pages discard the native container's top-bar inset and reserve only
+  screen-safe spacing plus clearance for the native sidebar's visible page button.
+  The outer focus host and Recommended content both break out at the trailing
+  edge so artwork reaches the screen edge; headers and grids retain their safe
+  margins, including the custom pinned rail's foreground inset. Home is unchanged.
+  Sort sits on that same top navigation line alongside Filter and file browsing.
   Filter and Sort form a compact pair. Alphabet navigation stays on the
   scrolling rail; there is no separate Jump to letter button.
   Without mode tabs, the library/share display name occupies the left of the
