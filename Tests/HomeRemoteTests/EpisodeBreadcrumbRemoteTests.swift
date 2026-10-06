@@ -38,7 +38,12 @@ final class EpisodeBreadcrumbRemoteTests: XCTestCase {
             XCUIRemote.shared.press(.up)
         }
         waitFor { breadcrumb.hasFocus }
-        attach(app.screenshot(), name: "episode-breadcrumb-focused")
+        let focused = app.screenshot()
+        attach(focused, name: "episode-breadcrumb-focused")
+        let focusedFrame = breadcrumb.frame
+        let brightFraction = Double(try brightPixels(in: focused, frame: focusedFrame))
+            / Double(focusedFrame.width * focusedFrame.height)
+        XCTAssertLessThan(brightFraction, 0.5, "The breadcrumb must remain text, not a filled focus chip.")
         XCUIRemote.shared.press(.select)
         waitFor { app.staticTexts["breadcrumb-route"].label == "show|season-2|breadcrumb-account" }
         attach(app.screenshot(), name: "episode-breadcrumb-opened-show")

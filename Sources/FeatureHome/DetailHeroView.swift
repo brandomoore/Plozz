@@ -539,6 +539,19 @@ struct DetailHeroView: View, Equatable {
     /// Self-labelling in a way an icon button is not: it says both where you are
     /// and that you can leave, and it sits where the eye naturally starts rather
     /// than in a row of watch-state actions where navigation doesn't belong.
+    private struct SeriesBreadcrumbButtonStyle: ButtonStyle {
+        let isFocused: Bool
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .foregroundStyle(Color.primary)
+                .opacity(configuration.isPressed ? 0.7 : (isFocused ? 1 : 0.9))
+                .scaleEffect(isFocused && !reduceMotion ? 1.06 : 1, anchor: .leading)
+                .contentShape(Rectangle())
+        }
+    }
+
     @ViewBuilder
     private func seriesBreadcrumb(_ show: String, action: MediaItemAction) -> some View {
         HStack(spacing: 0) {
@@ -553,7 +566,7 @@ struct DetailHeroView: View, Equatable {
                 }
                 .font(.system(size: 30, weight: .semibold))
             }
-            .buttonStyle(PlozzPanelHeaderButtonStyle())
+            .buttonStyle(SeriesBreadcrumbButtonStyle(isFocused: heroActionRowFocus == .parent))
             .disabled(onPlay != nil && !breadcrumbAcceptsFocus)
             .focused($heroActionRowFocus, equals: .parent)
             // Gate the actual button, not a second focusable wrapper that
