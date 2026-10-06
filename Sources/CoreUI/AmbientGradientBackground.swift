@@ -8,9 +8,11 @@ import UIKit
 /// Static mesh design adapted from tresby's Ambient theme (Plozz PR #75).
 /// Only palette changes crossfade; there is no display-clock or drifting mesh.
 public struct AmbientGradientBackground: View {
+    public static let fullscreenHeroTintSaturation = 0.5
     let palette: ThemePalette
     var tint: [Color]?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.artworkGradientTintSaturation) private var tintSaturation
     #if os(tvOS)
     @Environment(\.ambientBackdropModel) private var ambient
     #endif
@@ -21,7 +23,7 @@ public struct AmbientGradientBackground: View {
     }
 
     public var body: some View {
-        let colors = Self.meshColors(tint: tint, palette: palette)
+        let colors = Self.meshColors(tint: tint, palette: palette, tintSaturation: tintSaturation)
         Self.mesh(colors: colors)
             #if os(tvOS)
             .background {
@@ -70,7 +72,7 @@ public struct AmbientGradientBackground: View {
     ]
     private static let tintSlots = [0, 0, 1, 0, 1, 1, 2, 2, 3]
 
-    static func meshColors(tint: [Color]?, palette: ThemePalette) -> [Color] {
+    static func meshColors(tint: [Color]?, palette: ThemePalette, tintSaturation: Double = 1) -> [Color] {
         let stock = palette.isLight ? light : dark
         let brightnessScale = palette.isLight ? 1.0 : (palette == .pureBlack ? 0.32 : 0.88)
         return stock.indices.map { index in
@@ -88,7 +90,8 @@ public struct AmbientGradientBackground: View {
             let value = max(stop.0, stop.1, stop.2)
             return Color(
                 hue: Double(hue),
-                saturation: palette.isLight ? Double(min(saturation, 0.6)) * 0.3 : Double(min(saturation, 0.75)) * 0.8,
+                saturation: (palette.isLight ? Double(min(saturation, 0.6)) * 0.3 : Double(min(saturation, 0.75)) * 0.8)
+                    * tintSaturation,
                 brightness: palette.isLight ? value : min(value * 1.25, 0.36) * brightnessScale
             )
             #else
@@ -202,7 +205,16 @@ private struct AmbientBackdropModelKey: EnvironmentKey {
     static let defaultValue: AmbientBackdropModel? = nil
 }
 
+private struct ArtworkGradientTintSaturationKey: EnvironmentKey {
+    static let defaultValue = 1.0
+}
+
 extension EnvironmentValues {
+    var artworkGradientTintSaturation: Double {
+        get { self[ArtworkGradientTintSaturationKey.self] }
+        set { self[ArtworkGradientTintSaturationKey.self] = newValue }
+    }
+
     var ambientBackdropModel: AmbientBackdropModel? {
         get { self[AmbientBackdropModelKey.self] }
         set { self[AmbientBackdropModelKey.self] = newValue }
@@ -218,8 +230,10 @@ public extension EnvironmentValues {
 
 public extension View {
     /// Scope the tint and its cache to one page identity, never the app root.
-    func artworkGradientBackground(scope: ObjectIdentifier, isVisible: Bool) -> some View {
-        modifier(ArtworkGradientHost(scope: scope, isVisible: isVisible))
+    func artworkGradientBackground(
+        scope: ObjectIdentifier, isVisible: Bool, tintSaturation: Double = 1
+    ) -> some View {
+        modifier(ArtworkGradientHost(scope: scope, isVisible: isVisible, tintSaturation: tintSaturation))
     }
 
 }
@@ -227,6 +241,7 @@ public extension View {
 private struct ArtworkGradientHost: ViewModifier {
     let scope: ObjectIdentifier
     let isVisible: Bool
+    let tintSaturation: Double
     @State private var model = AmbientBackdropModel()
     #if canImport(UIKit)
     @State private var artwork = HeroArtworkDisplayState()
@@ -241,6 +256,7 @@ private struct ArtworkGradientHost: ViewModifier {
                     #endif
             }
             .environment(\.ambientBackdropModel, model)
+            .environment(\.artworkGradientTintSaturation, tintSaturation)
             #if canImport(UIKit)
             .environment(\.heroArtworkDisplayState, artwork)
             #endif

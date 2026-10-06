@@ -817,7 +817,11 @@ public struct HomeView: View {
             navigationActivity.recordInteraction()
             viewModel.noteHomeNavigationInteraction()
         }
-        .artworkGradientBackground(scope: ObjectIdentifier(viewModel), isVisible: heroIsFrontmost)
+        .artworkGradientBackground(
+            scope: ObjectIdentifier(viewModel), isVisible: heroIsFrontmost,
+            tintSaturation: carouselSettings?.isActive == true
+                ? AmbientGradientBackground.fullscreenHeroTintSaturation : 1
+        )
         .background(
             HomeShareScanRefreshObserver(
                 onRefresh: { Task { await viewModel.load(showLoadingState: false) } },

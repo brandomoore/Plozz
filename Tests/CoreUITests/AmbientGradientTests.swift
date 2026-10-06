@@ -6,6 +6,33 @@ import XCTest
 
 @MainActor
 final class AmbientGradientTests: XCTestCase {
+    func testFullscreenHeroHalvesTintSaturationWithoutChangingHueBrightnessOrStockColors() {
+        for palette in [ThemePalette.dark, .pureBlack, .light] {
+            let tints: [Color] = [.red, .green, .blue, .purple]
+            let standard = AmbientGradientBackground.meshColors(tint: tints, palette: palette)
+            let subdued = AmbientGradientBackground.meshColors(
+                tint: tints, palette: palette,
+                tintSaturation: AmbientGradientBackground.fullscreenHeroTintSaturation
+            )
+            for (before, after) in zip(standard, subdued) {
+                var h0: CGFloat = 0, s0: CGFloat = 0, b0: CGFloat = 0, a0: CGFloat = 0
+                var h1: CGFloat = 0, s1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+                XCTAssertTrue(UIColor(before).getHue(&h0, saturation: &s0, brightness: &b0, alpha: &a0))
+                XCTAssertTrue(UIColor(after).getHue(&h1, saturation: &s1, brightness: &b1, alpha: &a1))
+                XCTAssertEqual(h0, h1, accuracy: 0.0001)
+                XCTAssertEqual(s1, s0 * 0.5, accuracy: 0.0001)
+                XCTAssertEqual(b0, b1, accuracy: 0.0001)
+                XCTAssertEqual(a0, a1, accuracy: 0.0001)
+            }
+            for tint: [Color]? in [nil, []] {
+                XCTAssertEqual(
+                    AmbientGradientBackground.meshColors(tint: tint, palette: palette),
+                    AmbientGradientBackground.meshColors(tint: tint, palette: palette, tintSaturation: 0.5)
+                )
+            }
+        }
+    }
+
     func testPaletteTraceFingerprintsDistinguishArtworkWithoutRevealingURLs() throws {
         let first = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://private.example/art/one?token=secret")))
         let second = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://private.example/art/two?token=secret")))

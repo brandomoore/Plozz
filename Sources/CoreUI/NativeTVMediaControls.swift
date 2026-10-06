@@ -265,12 +265,15 @@ private struct NativeCardBackground: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.ambientBackdropModel) private var ambient
     @Environment(\.plozzGradientCardSurface) private var gradientSurface
+    @Environment(\.artworkGradientTintSaturation) private var tintSaturation
     let apply: (UIColor) -> Void
 
     private var color: Color {
         guard gradientSurface else { return palette.raised.fill }
         // TVUIKit's flat fill remains a fallback until the page-aligned surface is ready.
-        return AmbientGradientBackground.meshColors(tint: ambient?.colors, palette: palette)[4]
+        return AmbientGradientBackground.meshColors(
+            tint: ambient?.colors, palette: palette, tintSaturation: tintSaturation
+        )[4]
             .mix(with: palette.informationSurface, by: DetailInformationSections.bandFillOpacity)
             .mix(with: palette.gradientSurfaceTint, by: ThemePalette.gradientSurfaceFillOpacity)
     }

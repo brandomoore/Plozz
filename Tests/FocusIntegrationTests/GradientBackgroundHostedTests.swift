@@ -8,6 +8,35 @@ import XCTest
 
 @MainActor
 final class GradientBackgroundHostedTests: XCTestCase {
+    func testFullscreenHeroTintDoesNotLeakIntoDetailOrShowcaseScopes() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let identity = NSObject()
+        let scope = ObjectIdentifier(identity)
+        var values: [String: Double] = [:]
+        window.rootViewController = UIHostingController(rootView:
+            VStack {
+                GradientTintProbe { values["home"] = $0 }
+                GradientTintProbe { values["detail"] = $0 }
+                    .artworkGradientBackground(scope: scope, isVisible: false)
+                GradientTintProbe { values["showcase"] = $0 }
+                    .artworkGradientBackground(scope: scope, isVisible: false, tintSaturation: 1)
+            }
+            .artworkGradientBackground(
+                scope: scope, isVisible: false,
+                tintSaturation: AmbientGradientBackground.fullscreenHeroTintSaturation
+            )
+        )
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while values.count != 3, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(values, ["home": 0.5, "detail": 1, "showcase": 1])
+    }
+
     func testNativeCardsMatchTheLocalGradientThroughScrollingResizingAndAppearanceChanges() async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
@@ -40,8 +69,11 @@ final class GradientBackgroundHostedTests: XCTestCase {
         for size in [CGSize(width: 1920, height: 1080), CGSize(width: 1280, height: 720)] {
             window.frame.size = size
             let viewport = window.bounds.insetBy(dx: 80, dy: 60)
-            for palette in [ThemePalette.dark, .pureBlack, .light] {
+            for (palette, saturation) in [
+                (ThemePalette.dark, 1.0), (.pureBlack, 1), (.light, 1), (.dark, 0.5)
+            ] {
                 state.palette = palette
+                state.tintSaturation = saturation
                 state.enabled = true
                 state.reduceTransparency = false
                 window.layoutIfNeeded()
@@ -53,6 +85,7 @@ final class GradientBackgroundHostedTests: XCTestCase {
                 let scroll = try XCTUnwrap(descendants(UIScrollView.self, in: window).first)
                 let referenceRenderer = ImageRenderer(content:
                     AmbientGradientBackground(palette: palette, tint: colors)
+                        .environment(\.artworkGradientTintSaturation, saturation)
                         .overlay(palette.informationSurface.opacity(0.4))
                         .overlay((palette.isLight ? Color.black : .white).opacity(0.05))
                         .frame(width: viewport.width, height: viewport.height)
@@ -496,6 +529,7 @@ private struct GradientFixtureCard: View {
 @MainActor @Observable
 private final class GradientSurfaceFixtureState {
     var palette = ThemePalette.dark
+    var tintSaturation = 1.0
     var enabled = true
     var reduceTransparency = false
     var showsCards = false
@@ -533,6 +567,7 @@ private struct GradientSurfaceFixture: View {
         .environment(\.themePalette, state.palette)
         .environment(\.colorScheme, state.palette.isLight ? .light : .dark)
         .environment(\.ambientBackdropModel, ambient)
+        .environment(\.artworkGradientTintSaturation, state.tintSaturation)
         .environment(\.plozzCardFocusStyle, .system)
         .environment(\.plozzGradientCardSurface, state.enabled && !state.reduceTransparency)
         .environment(\.plozzReduceTransparency, state.reduceTransparency)
@@ -550,5 +585,14 @@ private struct GradientSurfaceFixturePaint: View {
         } else {
             state.palette.backgroundBase
         }
+    }
+}
+
+private struct GradientTintProbe: View {
+    @Environment(\.artworkGradientTintSaturation) private var saturation
+    let report: (Double) -> Void
+
+    var body: some View {
+        Color.clear.frame(width: 1, height: 1).onAppear { report(saturation) }
     }
 }

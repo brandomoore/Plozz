@@ -24,6 +24,10 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   colour array; no full-screen clock, blur, or per-frame page invalidation runs.
   Reduce Motion disables the palette crossfade. Dark uses a softer wash and Black
   retains more visible colour while staying darker; Light's palette is unchanged.
+  Fullscreen Hero Home uses half the artwork tint's saturation on both platforms,
+  retaining its hue and brightness without desaturating the hero image. Showcase,
+  detail pages, and untinted stock gradients retain their existing treatment.
+  Tint saturation is page-scoped and shared with native card fills/textures.
   Settings panels and detail information cards share a 5%-white wash in Dark and
   Black, or a 5%-black wash in Light, so they remain distinct without replacing
   the gradient's colour. SwiftUI surfaces keep their shadow and a matching
