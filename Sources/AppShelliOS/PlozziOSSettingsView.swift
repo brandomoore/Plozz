@@ -50,13 +50,13 @@ struct PlozziOSSettingsView: View {
                         onSwitchProfile: onSwitchProfile,
                         onSwitchTo: onSwitchTo
                     )
-                }
-                .toolbarBackground(.hidden, for: .navigationBar)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done", action: onClose)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done", action: onClose)
+                        }
                     }
                 }
+                .toolbarBackground(.hidden, for: .navigationBar)
             }
         }
         .environment(appModel.profiles)
@@ -882,16 +882,6 @@ private struct PlozziOSSettingsCompactMenu: View {
             && appModel.profiles.parentalPIN != nil
     }
 
-    /// Re-seals when the profile changes or the PIN is replaced. The split view
-    /// does the same; without it this layout kept an unlock proved for a
-    /// different profile, or against a PIN that no longer exists.
-    private var resealTriggers: some View {
-        Color.clear
-            .frame(width: 0, height: 0)
-            .onChange(of: appModel.profiles.activeProfileID) { _, _ in isParentalUnlocked = false }
-            .onChange(of: appModel.profiles.parentalPIN) { _, _ in isParentalUnlocked = false }
-    }
-
     private var isParentalSealed: Bool {
         showsParentalControlsSection && !isParentalUnlocked
     }
@@ -909,7 +899,6 @@ private struct PlozziOSSettingsCompactMenu: View {
         ScrollView {
             LazyVStack(spacing: 18) {
                 // Live media-share scan/enrich progress. Renders nothing when idle.
-                resealTriggers
                 ShareScanStatusHeader(
                     status: appModel.shareScanStatus,
                     shareIDs: appModel.mediaShareAccountIDs
@@ -1261,6 +1250,9 @@ private struct PlozziOSSettingsCompactMenu: View {
         }
         .settingsPageSurface()
         .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: appModel.profiles.activeProfileID) { _, _ in isParentalUnlocked = false }
+        .onChange(of: appModel.profiles.parentalPIN) { _, _ in isParentalUnlocked = false }
         .navigationDestination(isPresented: $showMetadata) {
             PlozziOSMetadataSettingsView(deps: appModel.makeMetadataSettingsDependencies())
         }

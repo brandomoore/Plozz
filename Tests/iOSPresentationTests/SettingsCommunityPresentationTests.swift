@@ -13,6 +13,64 @@ import XCTest
 final class SettingsCommunityPresentationTests: XCTestCase {
     private var capturedImages: [CGImage] = []
 
+    func testCompactSettingsHeaderStaysOneRowAcrossPhoneWidthsAndLargeText() async throws {
+        let model = PlozziOSAppModel()
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for (size, textSize) in [
+            (CGSize(width: 320, height: 568), DynamicTypeSize.large),
+            (CGSize(width: 390, height: 844), .large),
+            (CGSize(width: 440, height: 956), .large),
+            (CGSize(width: 390, height: 844), .accessibility3)
+        ] {
+            window.frame = CGRect(origin: .zero, size: size)
+            window.rootViewController = UIHostingController(rootView:
+                PlozziOSSettingsView(appModel: model, onClose: {}, systemColorScheme: .dark)
+                    .environment(\.horizontalSizeClass, .compact)
+                    .environment(\.dynamicTypeSize, textSize)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+            )
+            window.makeKeyAndVisible()
+            try await waitForHostedLayout(window)
+            let bar = try XCTUnwrap(navigationBar(in: window))
+            XCTAssertEqual(bar.topItem?.title, "Settings")
+            XCTAssertLessThanOrEqual(bar.bounds.height, 64, "Settings must not reserve a large-title block.")
+            let text = try recognizedText(in: window, name: "settings-header-\(Int(size.width))-\(textSize)")
+            XCTAssertTrue(text.contains("Settings"), text)
+            XCTAssertTrue(text.contains("Done"), text)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(capturedImages.last)).perform([request])
+            let barFrame = bar.convert(bar.bounds, to: window)
+            for title in ["Settings", "Done"] {
+                let label = try XCTUnwrap(request.results?.first { $0.topCandidates(1).first?.string == title })
+                let centerY = (1 - label.boundingBox.midY) * size.height
+                XCTAssertGreaterThanOrEqual(centerY, barFrame.minY)
+                XCTAssertLessThanOrEqual(centerY, barFrame.maxY, "Title and Done must share the compact header.")
+            }
+            let scroll = try XCTUnwrap(scrollViews(in: window).first)
+            XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
+        }
+    }
+
+    private func navigationBar(in view: UIView) -> UINavigationBar? {
+        if let bar = view as? UINavigationBar { return bar }
+        return view.subviews.lazy.compactMap { self.navigationBar(in: $0) }.first
+    }
+
     func testUpdateDialogShowsDiscordJoinButtonWithoutQRCodeOnPhoneAndPad() async throws {
         let suite = "ReleaseNotesCommunity.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
