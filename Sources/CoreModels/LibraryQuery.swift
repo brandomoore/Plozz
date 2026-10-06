@@ -330,18 +330,30 @@ public struct LibraryQueryRecord: Sendable {
     }
 
     public var estimatedStorageBytes: Int {
-        let sourceBytes = reference.sources.reduce(0) { bytes, source in
-            bytes + MemoryLayout<MediaSourceRef>.stride + source.accountID.utf8.count
-                + source.itemID.utf8.count + (source.libraryID?.utf8.count ?? 0)
-                + (source.serverName?.utf8.count ?? 0) + (source.accountName?.utf8.count ?? 0)
-                + (source.edition?.utf8.count ?? 0)
+        var bytes: Int = MemoryLayout<Self>.stride
+        bytes += title.utf8.count
+        bytes += sortName.utf8.count
+        bytes += originalTitle?.utf8.count ?? 0
+        bytes += contentRating?.utf8.count ?? 0
+        bytes += reference.id.utf8.count
+        bytes += reference.accountID?.utf8.count ?? 0
+        bytes += seriesID?.utf8.count ?? 0
+        for genre in genres {
+            bytes += genre.utf8.count + 24
         }
-        return MemoryLayout<Self>.stride + title.utf8.count + sortName.utf8.count
-            + (originalTitle?.utf8.count ?? 0) + (contentRating?.utf8.count ?? 0)
-            + reference.id.utf8.count + (reference.accountID?.utf8.count ?? 0)
-            + (seriesID?.utf8.count ?? 0) + genres.reduce(0) { $0 + $1.utf8.count + 24 }
-            + sourceBytes
-            + providerIDs.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count + 48 }
+        for source in reference.sources {
+            bytes += MemoryLayout<MediaSourceRef>.stride
+            bytes += source.accountID.utf8.count
+            bytes += source.itemID.utf8.count
+            bytes += source.libraryID?.utf8.count ?? 0
+            bytes += source.serverName?.utf8.count ?? 0
+            bytes += source.accountName?.utf8.count ?? 0
+            bytes += source.edition?.utf8.count ?? 0
+        }
+        for (key, value) in providerIDs {
+            bytes += key.utf8.count + value.utf8.count + 48
+        }
+        return bytes
     }
 
     public mutating func includeEpisodeFacts(_ episode: Self) {
