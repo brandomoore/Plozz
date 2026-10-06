@@ -2790,7 +2790,7 @@ struct PlozziOSHomeLibraryCard: View {
                         .lineLimit(1)
                 }
             }
-            .padding(.horizontal, metrics.landscapeCaptionInset)
+            .padding(.trailing, metrics.landscapeCaptionInset)
             .padding(
                 .bottom,
                 cardStyle == .framed ? metrics.landscapeCaptionInset : 0

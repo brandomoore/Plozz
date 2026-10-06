@@ -22,13 +22,18 @@ fallback when the user's server has no attached trailer.
 - **Card labels** — Appearance > Cards owns a profile-scoped shared choice
   (No labels by default), with Default / Labels / No labels exceptions by experience.
   Home, Recommended, Browse, Collections, Playlists, Search, Watchlist, related titles,
-  episodes, extras, and filmography resolve the same policy on iOS and tvOS.
+  extras, and filmography resolve the same policy on iOS and tvOS.
+  Detail-page episodes always retain their identifying labels on both platforms,
+  including when an older profile has a saved episode-specific No labels choice.
+  Episodes are not offered in label customization.
   Collection and playlist contents follow Browse across every library. Library
   navigation, cast names, essential list text, accessibility labels, and on-artwork
   playback information stay intact. Existing Home choices migrate once from
   `HeroSettings`; the card settings transfer with the profile. Native grids and
   loading placeholders remove the same caption space as loaded cards. Touch captions
   have a 4pt gap without TV focus travel; TV captions retain their focus clearance.
+- Mobile library provider icons align with the thumbnail's leading edge; the
+  library name and server name share the adjacent text column.
 - **Mobile Home rhythm** — every loaded, placeholder, library, and failed row uses
   `PlozziOSHomeSection`: native Dynamic Type `title3` semibold headings, a 12pt
   heading-to-artwork layout gap, and 32pt between sections. Home's media surfaces

@@ -5,11 +5,57 @@ import CoreUI
 #if os(tvOS)
 import Observation
 import UIKit
+import Vision
 #endif
 
 #if os(tvOS)
 @MainActor
 final class MediaRowEpisodeEntryHostedTests: XCTestCase {
+    func testDetailEpisodeLabelsRemainVisibleWithSavedHidePreferences() async throws {
+        let image = try await seedImage()
+        let episode = MediaItem(
+            id: "episode-label-fixture", title: "The Hidden Room", kind: .episode,
+            episodeNumber: 4, posterURL: image
+        )
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for style in [CardFocusStyle.system, .highlight] {
+            let host = UIHostingController(rootView:
+                EpisodeColumnCard(item: episode, action: {})
+                    .environment(\.plozzCardCaptionView, .episodes)
+                    .environment(\.plozzCardCaptionSettings, CardCaptionSettings(
+                        showsLabels: false, overrides: [.episodes: false]
+                    ))
+                    .environment(\.plozzCardFocusStyle, style)
+                    .environment(\.themePalette, .dark)
+                    .preferredColorScheme(.dark)
+            )
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            window.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(400))
+            let rendered = screenshot(window)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(rendered.cgImage)).perform([request])
+            let copy = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            XCTAssertTrue(copy.contains("The Hidden Room"), "\(style): \(copy)")
+            XCTAssertTrue(copy.contains("E4"), "\(style): the episode number must remain visible.")
+            let attachment = XCTAttachment(image: rendered)
+            attachment.name = "detail-episode-labels-\(style)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testEntranceGateKeepsTheEpisodePreviewOutOfFocusUntilEnabled() async throws {
         let image = try await seedImage()
         let model = EpisodeEntryFixture()

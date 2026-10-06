@@ -127,7 +127,7 @@ public struct CardCaptionCustomizationView: View {
         #if os(tvOS)
         SettingsSplitLayout(
             title: "Labels by view",
-            rows: CardCaptionView.allCases.map { view in
+            rows: CardCaptionView.customizableCases.map { view in
                 SettingsSplitRow(
                     id: view.rawValue,
                     title: view.displayName,
@@ -152,7 +152,7 @@ public struct CardCaptionCustomizationView: View {
                     .listRowSeparator(.hidden)
             }
             SettingsSectionGroup {
-                ForEach(CardCaptionView.allCases, id: \.rawValue) { view in
+                ForEach(CardCaptionView.customizableCases, id: \.rawValue) { view in
                     Picker(view.displayName, selection: selection(for: view)) { options }
                         .accessibilityIdentifier("card-label-view-\(view.rawValue)")
                 }

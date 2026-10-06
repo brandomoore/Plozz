@@ -3485,7 +3485,7 @@ private struct PlozziOSInlineEpisodeSkeleton: View {
     }
 }
 
-private struct PlozziOSInlineEpisodeEntry: View {
+struct PlozziOSInlineEpisodeEntry: View {
     @Environment(\.plozzCardCaptionSettings) private var captionSettings
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozzCardStyle) private var cardStyle
