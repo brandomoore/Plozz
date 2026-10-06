@@ -105,7 +105,7 @@ public struct LiveTVPrototypeChannel: Codable, Identifiable, Equatable, Sendable
         self.groups = groups
     }
 
-    private static func metadataValues(_ value: String?) -> [String] {
+    fileprivate static func metadataValues(_ value: String?) -> [String] {
         (value ?? "").split { $0 == ";" || $0 == "," || $0 == "/" }
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     }
@@ -910,22 +910,25 @@ public final class LiveTVPrototypeModel {
         catalogRevision &+= 1
         #if DEBUG
         if let suppliedChannels {
-            let count = suppliedChannels.isEmpty ? 0 : (isLargeCatalog ? 5_000 : suppliedChannels.count)
-            channels = (0..<count).map { index in
-                let channel = suppliedChannels[index % suppliedChannels.count]
-                let copy = index / suppliedChannels.count
-                guard copy > 0 else { return channel }
-                return LiveTVPrototypeChannel(
-                    id: "\(channel.id)-copy-\(copy)", number: index + 1,
-                    name: "\(channel.name) (copy \(copy + 1))", category: channel.category,
-                    symbol: channel.symbol, accent: channel.accent, source: channel.source,
-                    tagline: channel.tagline, logoURL: channel.logoURL, streamURL: channel.streamURL,
-                    logoNeedsDarkBackground: channel.logoNeedsDarkBackground,
-                    guideID: channel.guideID, guideName: channel.guideName,
-                    httpHeaders: channel.httpHeaders,
-                    playlistSourceID: channel.playlistSourceID, language: channel.language, country: channel.country,
-                    groups: channel.groups
-                )
+            if isLargeCatalog, !suppliedChannels.isEmpty {
+                channels = (0..<5_000).map { index in
+                    let channel = suppliedChannels[index % suppliedChannels.count]
+                    let copy = index / suppliedChannels.count
+                    guard copy > 0 else { return channel }
+                    return LiveTVPrototypeChannel(
+                        id: "\(channel.id)-copy-\(copy)", number: index + 1,
+                        name: "\(channel.name) (copy \(copy + 1))", category: channel.category,
+                        symbol: channel.symbol, accent: channel.accent, source: channel.source,
+                        tagline: channel.tagline, logoURL: channel.logoURL, streamURL: channel.streamURL,
+                        logoNeedsDarkBackground: channel.logoNeedsDarkBackground,
+                        guideID: channel.guideID, guideName: channel.guideName,
+                        httpHeaders: channel.httpHeaders,
+                        playlistSourceID: channel.playlistSourceID, language: channel.language, country: channel.country,
+                        groups: channel.groups
+                    )
+                }
+            } else {
+                channels = suppliedChannels
             }
         } else {
             let count = isLargeCatalog ? 5_000 : Self.baseStations.count
@@ -934,17 +937,20 @@ public final class LiveTVPrototypeModel {
         #else
         channels = suppliedChannels ?? []
         #endif
-        channels = channels.map { channel in
-            guard let value = channelOverrides[channel.id] else { return channel }
-            return LiveTVPrototypeChannel(
-                id: channel.id, number: channel.number, name: value.name ?? channel.name,
-                category: value.category ?? channel.category, symbol: channel.symbol, accent: channel.accent,
-                source: channel.source, tagline: channel.tagline, logoURL: channel.logoURL,
-                streamURL: channel.streamURL, logoNeedsDarkBackground: channel.logoNeedsDarkBackground,
-                guideID: channel.guideID, guideName: channel.guideName, httpHeaders: channel.httpHeaders,
-                playlistSourceID: channel.playlistSourceID, language: value.language ?? channel.language,
-                country: value.country ?? channel.country, groups: value.category.map { [$0] } ?? channel.groups
-            )
+        let channelOverrides = channelOverrides
+        if !channelOverrides.isEmpty {
+            channels = channels.map { channel in
+                guard let value = channelOverrides[channel.id] else { return channel }
+                return LiveTVPrototypeChannel(
+                    id: channel.id, number: channel.number, name: value.name ?? channel.name,
+                    category: value.category ?? channel.category, symbol: channel.symbol, accent: channel.accent,
+                    source: channel.source, tagline: channel.tagline, logoURL: channel.logoURL,
+                    streamURL: channel.streamURL, logoNeedsDarkBackground: channel.logoNeedsDarkBackground,
+                    guideID: channel.guideID, guideName: channel.guideName, httpHeaders: channel.httpHeaders,
+                    playlistSourceID: channel.playlistSourceID, language: value.language ?? channel.language,
+                    country: value.country ?? channel.country, groups: value.category.map { [$0] } ?? channel.groups
+                )
+            }
         }
         channelsByID = Dictionary(uniqueKeysWithValues: channels.map { ($0.id, $0) })
         channelOrdinalsByID = Dictionary(
@@ -967,64 +973,91 @@ public final class LiveTVPrototypeModel {
         let normalizedQuery = Self.normalized(query)
         let selectedCategory = category.map(Self.normalized)
         let hiddenChannelIDs = effectiveHiddenChannelIDs
+        let language = language.map(Self.normalized)
+        let country = country.map(Self.normalized)
+        let source = source
+        let playlistSourceID = playlistSourceID
+        let favoritesOnly = favoritesOnly
+        let favoriteIDs = favoriteIDs
+        let guideOnly = guideOnly
+        let sort = sort
 
-        visibleChannels = channels.compactMap { channel -> (LiveTVPrototypeChannel, Int)? in
+        visibleChannels = channels.compactMap { channel -> (channel: LiveTVPrototypeChannel, rank: Int, name: String)? in
             guard !hiddenChannelIDs.contains(channel.id),
                   selectedCategory == nil || channel.categories.contains(where: { Self.normalized($0) == selectedCategory }),
                   source == nil || channel.source == source,
-                  language == nil || channel.languages.contains(where: { Self.normalized($0) == language.map(Self.normalized) }),
-                  country == nil || channel.countries.contains(where: { Self.normalized($0) == country.map(Self.normalized) }),
+                  language == nil || channel.languages.contains(where: { Self.normalized($0) == language }),
+                  country == nil || channel.countries.contains(where: { Self.normalized($0) == country }),
                   playlistSourceID == nil || channel.playlistSourceID == playlistSourceID,
                   !favoritesOnly || favoriteIDs.contains(channel.id),
                   !guideOnly || hasGuide(for: channel)
             else { return nil }
 
-            guard !normalizedQuery.isEmpty else { return (channel, 0) }
+            // Normalize once per match, not on every comparison of a large lineup.
+            let name = sort == .name || !normalizedQuery.isEmpty ? Self.normalized(channel.name) : ""
+            guard !normalizedQuery.isEmpty else { return (channel, 0, name) }
             let number = String(channel.number)
             if number == normalizedQuery {
-                return (channel, 0)
+                return (channel, 0, name)
             }
             let fields = [
-                Self.normalized(channel.name),
+                name,
                 number,
                 Self.normalized(channel.categories.joined(separator: " ")),
                 Self.normalized(channel.source.rawValue)
             ]
             if fields.contains(where: { $0.hasPrefix(normalizedQuery) }) {
-                return (channel, 1)
+                return (channel, 1, name)
             }
             if fields.contains(where: { $0.contains(normalizedQuery) }) {
-                return (channel, 2)
+                return (channel, 2, name)
             }
             return nil
         }
         .sorted { lhs, rhs in
-            if lhs.1 != rhs.1 {
-                return lhs.1 < rhs.1
+            if lhs.rank != rhs.rank {
+                return lhs.rank < rhs.rank
             }
-            return channelsAreOrdered(lhs.0, before: rhs.0)
+            switch sort {
+            case .channelNumber:
+                if lhs.channel.number != rhs.channel.number {
+                    return lhs.channel.number < rhs.channel.number
+                }
+            case .name:
+                if lhs.name != rhs.name { return lhs.name < rhs.name }
+            }
+            return lhs.channel.id < rhs.channel.id
         }
-        .map(\.0)
+        .map(\.channel)
         refreshGuideChannels()
     }
 
     private func refreshCategories() {
         let hiddenChannelIDs = effectiveHiddenChannelIDs
-        categories = Set(
-            channels.lazy
-                .filter { !hiddenChannelIDs.contains($0.id) }
-                .flatMap(\.categories)
-        ).sorted {
+        var categoryValues = Set<String>()
+        var languageValues = Set<String>()
+        var countryValues = Set<String>()
+        for channel in channels where !hiddenChannelIDs.contains(channel.id) {
+            categoryValues.formUnion(channel.categories)
+            if let language = channel.language { languageValues.insert(language) }
+            if let country = channel.country { countryValues.insert(country) }
+        }
+        categories = categoryValues.sorted {
             Self.normalized($0) < Self.normalized($1)
         }
-        languages = Set(unhiddenCatalogChannels.flatMap(\.languages)).sorted()
-        countries = Set(unhiddenCatalogChannels.flatMap(\.countries)).sorted()
+        languages = Set(languageValues.flatMap(LiveTVPrototypeChannel.metadataValues)).sorted()
+        countries = Set(countryValues.flatMap(LiveTVPrototypeChannel.metadataValues)).sorted()
     }
 
     private func refreshGuideChannels() {
-        let visibleByID = Dictionary(uniqueKeysWithValues: visibleChannels.map { ($0.id, $0) })
-        let recent = showsRecentChannels ? recentChannelIDs.compactMap { visibleByID[$0] } : []
+        let recentIDs = showsRecentChannels ? recentChannelIDs : []
+        let retainedIDs = Set(recentIDs).union(favoriteOrder)
+        let visibleByID = retainedIDs.isEmpty ? [:] : Dictionary(
+            uniqueKeysWithValues: visibleChannels.lazy.filter { retainedIDs.contains($0.id) }.map { ($0.id, $0) }
+        )
+        let recent = recentIDs.compactMap { visibleByID[$0] }
         let orderedIDs = Set(favoriteOrder)
+        let favoriteIDs = favoriteIDs
         let favorites = favoriteOrder.compactMap { visibleByID[$0] }
             + visibleChannels.filter { favoriteIDs.contains($0.id) && !orderedIDs.contains($0.id) }
         let groups: [(LiveTVGuideSection, [LiveTVPrototypeChannel])] = [
@@ -1038,25 +1071,6 @@ public final class LiveTVPrototypeModel {
         orderedGuideRowIDs = updated.map(\.id)
         guideEntries = Dictionary(uniqueKeysWithValues: updated.map { ($0.id, $0) })
         guideChannels = updated
-    }
-
-    private func channelsAreOrdered(
-        _ lhs: LiveTVPrototypeChannel,
-        before rhs: LiveTVPrototypeChannel
-    ) -> Bool {
-        switch sort {
-        case .channelNumber:
-            if lhs.number != rhs.number {
-                return lhs.number < rhs.number
-            }
-        case .name:
-            let lhsName = Self.normalized(lhs.name)
-            let rhsName = Self.normalized(rhs.name)
-            if lhsName != rhsName {
-                return lhsName < rhsName
-            }
-        }
-        return lhs.id < rhs.id
     }
 
     private func hasGuide(for channel: LiveTVPrototypeChannel) -> Bool {

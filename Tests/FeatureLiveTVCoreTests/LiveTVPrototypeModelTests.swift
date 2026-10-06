@@ -5,6 +5,82 @@ import XCTest
 
 @MainActor
 final class LiveTVPrototypeModelTests: XCTestCase {
+    func testHundredThousandImportedChannelsRemainBrowsableInBothSortOrders() async throws {
+        let channels = await Task.detached {
+            (0..<100_000).map { index in
+                LiveTVPrototypeChannel(
+                    id: "large-\(index)", number: index + 1,
+                    name: "Channel \(100_000 - index)", category: "Group \(index % 80)",
+                    symbol: "tv", accent: 0, source: .iptv, tagline: "",
+                    language: "English", country: "US"
+                )
+            }
+        }.value
+        for count in [10_000, 100_000] {
+            for sort in [LiveTVPrototypeSort.channelNumber, .name] {
+                let model = LiveTVPrototypeModel(channels: [])
+                model.sort = sort
+                let input = Array(channels.prefix(count))
+                try model.replaceCatalog(channels: input, programs: [])
+                XCTAssertEqual(model.channels.count, count)
+                XCTAssertEqual(model.visibleChannels.count, count)
+                XCTAssertEqual(model.guideChannels.count, count)
+                XCTAssertEqual(model.categories.count, 80)
+                XCTAssertEqual(model.languages, ["English"])
+                XCTAssertEqual(model.countries, ["US"])
+                XCTAssertEqual(Set(model.guideRowIDs.map(\.channelID)), Set(input.map(\.id)))
+                for (left, right) in zip(model.visibleChannels, model.visibleChannels.dropFirst()) {
+                    if sort == .name { XCTAssertLessThan(left.name, right.name) }
+                    else { XCTAssertLessThan(left.number, right.number) }
+                }
+            }
+        }
+    }
+
+    func testPreparedBrowseKeysPreserveRelevanceTieBreaksAndMetadataFacets() throws {
+        let channels = [
+            LiveTVPrototypeChannel(
+                id: "b", number: 7, name: "cafe", category: "Sports", symbol: "tv", accent: 0,
+                source: .iptv, tagline: "", language: " English / German ", country: " CA / DE "
+            ),
+            LiveTVPrototypeChannel(
+                id: "a", number: 7, name: " Café ", category: "International", symbol: "tv", accent: 0,
+                source: .iptv, tagline: "", language: "English;Français", country: "US, CA",
+                groups: ["News", "Europe"]
+            ),
+            LiveTVPrototypeChannel(
+                id: "c", number: 1, name: "cafe 7", category: "News", symbol: "tv", accent: 0,
+                source: .iptv, tagline: ""
+            ),
+            LiveTVPrototypeChannel(
+                id: "d", number: 99, name: "7 network", category: "Sports", symbol: "tv", accent: 0,
+                source: .iptv, tagline: "", language: " English / German ", country: " CA / DE "
+            )
+        ]
+        let model = LiveTVPrototypeModel(channels: [])
+        try model.replaceCatalog(channels: channels, programs: [])
+        XCTAssertEqual(model.visibleChannels.map(\.id), ["c", "a", "b", "d"])
+        XCTAssertEqual(model.categories, ["Europe", "News", "Sports"])
+        XCTAssertEqual(model.languages, ["English", "Français", "German"])
+        XCTAssertEqual(model.countries, ["CA", "DE", "US"])
+
+        model.sort = .name
+        XCTAssertEqual(model.visibleChannels.map(\.id), ["d", "a", "b", "c"])
+        model.query = "7"
+        XCTAssertEqual(model.visibleChannels.map(\.id), ["a", "b", "d", "c"])
+        model.query = ""
+        model.language = "francais"
+        XCTAssertEqual(model.visibleChannels.map(\.id), ["a"])
+        model.language = nil
+        model.country = " de "
+        XCTAssertEqual(model.visibleChannels.map(\.id), ["d", "b"])
+        model.country = nil
+        XCTAssertTrue(model.hideChannel(channels[1]))
+        XCTAssertEqual(model.categories, ["News", "Sports"])
+        XCTAssertEqual(model.languages, ["English", "German"])
+        XCTAssertEqual(model.countries, ["CA", "DE"])
+    }
+
     func testConfiguredCatalogUsesOnlySuppliedChannelsAndListings() throws {
         let channel = LiveTVPrototypeChannel(
             id: "configured-channel", number: 1, name: "Configured channel", category: "News",

@@ -104,6 +104,16 @@ decoded by page; the guide still holds lightweight channel values for its full
 lineup. This is not a claim of unlimited device memory or measured performance
 on every older device.
 
+The shared live-channel publication path normalizes each matching name once,
+rather than during every sort comparison, and collects language/country facets
+from distinct metadata values. It avoids full-lineup copies for absent overrides
+and indexes only the visible recent/favorite shortcuts it needs. This preserves
+all channels, search relevance, ID tie-breaks and profile filters; it does not
+cap the lineup. `LiveTVLargePlaylistHostedTests` measures the synchronous
+publication of 10,000 and 100,000 channels in both sort orders with a one-second
+budget. That focused budget is not an end-to-end import, memory, frame-pacing,
+or older-hardware guarantee.
+
 Private URLs and authentication headers remain in Keychain credentials and
 encrypted catalogue records. Playback uses an account/revision/session-fenced
 locator and a provider-owned loopback proxy. It forwards authorized headers
