@@ -5,6 +5,10 @@ public enum CardCaptionView: String, CaseIterable, Codable, Sendable {
     case home, recommended, browse, collections, playlists, search, watchlist
     case related, episodes, extras, filmography
 
+    public static var customizableCases: [Self] {
+        allCases.filter { $0 != .episodes }
+    }
+
     public var displayName: LocalizedStringResource {
         switch self {
         case .home: "Home"
@@ -47,7 +51,8 @@ public struct CardCaptionSettings: Codable, Equatable, Sendable {
     }
 
     public func showsLabels(in view: CardCaptionView) -> Bool {
-        overrides[view] ?? showsLabels
+        // Episode stills alone do not identify an episode, even with a saved hide override.
+        view == .episodes || (overrides[view] ?? showsLabels)
     }
 
     public func override(for view: CardCaptionView) -> CardCaptionOverride {

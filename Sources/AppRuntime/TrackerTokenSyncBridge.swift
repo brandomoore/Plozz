@@ -48,6 +48,7 @@ public enum TrackerTokenSyncBridge {
         var records: [SyncRecordID: Data] = [:]
         var signedOut: Set<SyncRecordID> = []
         for account in SyncedTokenRegistry.shared.knownAccounts() {
+            guard !TraktSharedRefreshBootstrap.manages(account) else { continue }
             let name = recordName(for: account)
             if SyncedTokenRegistry.shared.isSignedOut(account) {
                 // Omitted below, which is how the ledger expresses a deletion.
@@ -61,6 +62,7 @@ public enum TrackerTokenSyncBridge {
         }
         for (name, value) in fallback where records[name] == nil {
             guard let account = account(fromRecordName: name) else { continue }
+            guard !TraktSharedRefreshBootstrap.manages(account) else { continue }
             // A real sign-out must not be resurrected by its own ledger entry.
             guard !signedOut.contains(name) else { continue }
             // Otherwise this device simply doesn't have the token: either it has
@@ -89,7 +91,14 @@ public enum TrackerTokenSyncBridge {
     @discardableResult
     public static func apply(_ changes: SyncLocalChanges) -> [SyncedTokenRegistry.Account] {
         var touched: [SyncedTokenRegistry.Account] = []
+        var sharedTrakt: Set<SyncedTokenRegistry.Account> = []
         for (name, value) in changes {
+            if let account = TraktSharedRefreshBootstrap.account(forRecordName: name),
+               TraktSharedRefreshBootstrap.manages(account) {
+                SyncedTokenRegistry.shared.register(service: account.service, account: account.account)
+                sharedTrakt.insert(account)
+                continue
+            }
             guard let account = account(fromRecordName: name) else { continue }
             let store = SyncedTokenRegistry.store(for: account)
             guard let value else {
@@ -114,6 +123,10 @@ public enum TrackerTokenSyncBridge {
                 account: account.account
             )
             touched.append(account)
+        }
+        if !sharedTrakt.isEmpty {
+            let accounts = Array(sharedTrakt)
+            Task { await TraktSharedRefreshBootstrap.synchronize(accounts) }
         }
         if !touched.isEmpty {
             // The services hold their connection phase in memory, so a token

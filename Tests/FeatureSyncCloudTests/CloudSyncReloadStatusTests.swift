@@ -4,76 +4,75 @@ import XCTest
 
 @MainActor
 final class CloudSyncReloadStatusTests: XCTestCase {
-    func testReloadStaysBusyThroughIntermediateEnginePhasesAndRejectsDuplicateRequests() async {
+    func testRecoveryStaysBusyThroughIntermediateEnginePhasesAndRejectsDuplicateRequests() async {
         let status = CloudSyncStatus()
         let gate = ReloadGate()
         let started = expectation(description: "Reload started")
         let task = Task {
-            await status.reload { await gate.run(started: started) }
+            await status.recover { await gate.run(started: started) }
         }
         await fulfillment(of: [started], timeout: 2)
-        XCTAssertTrue(status.isReloading)
-        XCTAssertNil(status.reloadResult)
-        XCTAssertNotNil(status.reloadSummary)
+        XCTAssertTrue(status.isRecovering)
+        XCTAssertNil(status.recoveryResult)
 
         status.setPhase(.idle, syncedNow: true)
-        XCTAssertTrue(status.isReloading)
-        await status.reload {
+        XCTAssertTrue(status.isRecovering)
+        let duplicate = await status.recover {
             XCTFail("An in-flight reload must not reset the sync engine again")
             return .failed
         }
-        XCTAssertTrue(status.isReloading)
-        XCTAssertNil(status.reloadResult)
+        XCTAssertNil(duplicate)
+        XCTAssertTrue(status.isRecovering)
+        XCTAssertNil(status.recoveryResult)
 
         await gate.complete(.completed)
         await task.value
-        XCTAssertFalse(status.isReloading)
-        XCTAssertEqual(status.reloadResult, .completed)
-        XCTAssertNotNil(status.reloadSummary)
+        XCTAssertFalse(status.isRecovering)
+        XCTAssertEqual(status.recoveryResult, .completed)
     }
 
     func testEveryResultIsRetainedIndependentlyOfAutomaticSync() async {
         let status = CloudSyncStatus()
-        XCTAssertNil(status.reloadSummary)
-        for result in [CloudSyncReloadResult.completed, .failed, .unavailable, .interrupted] {
-            await status.reload { result }
-            XCTAssertFalse(status.isReloading)
-            XCTAssertEqual(status.reloadResult, result)
+        XCTAssertNil(status.recoveryResult)
+        for result in [CloudSyncRecoveryResult.completed, .failed, .unavailable, .interrupted] {
+            let completed = await status.recover { result }
+            XCTAssertEqual(completed, result)
+            XCTAssertFalse(status.isRecovering)
+            XCTAssertEqual(status.recoveryResult, result)
             status.setPhase(.syncing)
             status.setPhase(.idle, syncedNow: true)
-            XCTAssertEqual(status.reloadResult, result)
-            XCTAssertNotNil(status.reloadSummary)
+            XCTAssertEqual(status.recoveryResult, result)
         }
     }
 
     func testRetryClearsPreviousResultUntilTheNewOperationCompletes() async {
         let status = CloudSyncStatus()
-        await status.reload { .failed }
+        await status.recover { .failed }
         let gate = ReloadGate()
         let started = expectation(description: "Retry started")
         let task = Task {
-            await status.reload { await gate.run(started: started) }
+            await status.recover { await gate.run(started: started) }
         }
         await fulfillment(of: [started], timeout: 2)
-        XCTAssertTrue(status.isReloading)
-        XCTAssertNil(status.reloadResult)
+        XCTAssertTrue(status.isRecovering)
+        XCTAssertNil(status.recoveryResult)
         await gate.complete(.completed)
         await task.value
-        XCTAssertEqual(status.reloadResult, .completed)
+        XCTAssertEqual(status.recoveryResult, .completed)
     }
 }
 
 private actor ReloadGate {
-    private var continuation: CheckedContinuation<CloudSyncReloadResult, Never>?
+    private var continuation: CheckedContinuation<CloudSyncRecoveryResult, Never>?
 
-    func run(started: XCTestExpectation) async -> CloudSyncReloadResult {
+    func run(started: XCTestExpectation) async -> CloudSyncRecoveryResult {
         await withCheckedContinuation {
             continuation = $0
             started.fulfill()
         }
     }
 
-    func complete(_ result: CloudSyncReloadResult) {
+    func complete(_ result: CloudSyncRecoveryResult) {
         continuation?.resume(returning: result)
         continuation = nil
     }

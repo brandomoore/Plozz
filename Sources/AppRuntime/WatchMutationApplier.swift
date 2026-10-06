@@ -16,7 +16,11 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     /// profile's in-flight drain must keep its mutations queued, never write
     /// through services/providers now scoped to another profile.
     private let isActive: @Sendable () async -> Bool
-    /// Main-actor provider resolution (account id → live provider).
+    private let validateServerScope: @Sendable (WatchMutationServerScope) async throws -> Void
+    /// Main-actor provider resolution (account id → live provider). Scoped
+    /// dispatches must validate the task-local server scope in that same actor
+    /// turn; `AccountsProvidersModel.provider(forWatchMutationAccountID:...)`
+    /// supplies this atomic check-and-resolve contract.
     private let resolveProvider: @Sendable (String) async -> (any MediaProvider)?
     private let applyTrakt: @Sendable (TraktScrobbleIntent) async throws -> Void
     private let applySimkl: @Sendable (TraktScrobbleIntent) async throws -> Void
@@ -71,6 +75,9 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
 
     public init(
         isActive: @escaping @Sendable () async -> Bool = { true },
+        validateServerScope: @escaping @Sendable (WatchMutationServerScope) async throws -> Void = { _ in
+            throw WatchMutationServerScopeError.unavailable
+        },
         resolveProvider: @escaping @Sendable (String) async -> (any MediaProvider)?,
         applyTrakt: @escaping @Sendable (TraktScrobbleIntent) async throws -> Void,
         applySimkl: @escaping @Sendable (TraktScrobbleIntent) async throws -> Void,
@@ -84,6 +91,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         searchDeadline: TimeInterval = 4
     ) {
         self.isActive = isActive
+        self.validateServerScope = validateServerScope
         self.resolveProvider = resolveProvider
         self.applyTrakt = applyTrakt
         self.applySimkl = applySimkl
@@ -97,6 +105,18 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         self.searchDeadline = searchDeadline
     }
 
+    public func requireServerScope(_ scope: WatchMutationServerScope) async throws {
+        try await validateServerScope(scope)
+    }
+
+    private func scopedProvider(for accountID: String) async -> (any MediaProvider)? {
+        if let scope = WatchMutationDeliveryAuthorization.current?.serverScope,
+           !scope.accounts.contains(where: { $0.accountID == accountID }) {
+            return nil
+        }
+        return await resolveProvider(accountID)
+    }
+
     public func setPlayed(_ played: Bool, on target: WatchMutationTarget) async throws {
         try await setPlayed(played, on: target, capturedAt: Date())
     }
@@ -104,7 +124,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     public func setPlayed(_ played: Bool, on target: WatchMutationTarget, capturedAt: Date) async throws {
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        guard let provider = await resolveProvider(target.accountID) else {
+        guard let provider = await scopedProvider(for: target.accountID) else {
             FanoutDiagnostics.emit("write.setPlayed acct=\(target.accountID) item=\(target.itemID) -> provider=nil (unreachable/unresolved, will retry)")
             throw AppError.serverUnreachable
         }
@@ -142,7 +162,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     ) async throws {
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        guard let provider = await resolveProvider(target.accountID) else {
+        guard let provider = await scopedProvider(for: target.accountID) else {
             FanoutDiagnostics.emit("write.setResume acct=\(target.accountID) item=\(target.itemID) -> provider=nil (unreachable/unresolved, will retry)")
             throw AppError.serverUnreachable
         }
@@ -288,7 +308,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         // Discover the origin series identity. Needs the origin server; if it can't
         // be reached, report it inconclusive so a later drain retries (we never
         // guess a series identity).
-        guard let originProvider = await resolveProvider(origin.accountID) else {
+        guard let originProvider = await scopedProvider(for: origin.accountID) else {
             return WatchTargetExpansion(inconclusiveAccountIDs: [origin.accountID])
         }
         let originSeries: MediaItem
@@ -310,7 +330,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
             guard await WatchMutationDeliveryAuthorization.allowsExpansion() else {
                 return WatchTargetExpansion(inconclusiveAccountIDs: ["authorization"])
             }
-            if let provider = await resolveProvider(accountID) {
+            if let provider = await scopedProvider(for: accountID) {
                 providers[accountID] = provider
             }
         }

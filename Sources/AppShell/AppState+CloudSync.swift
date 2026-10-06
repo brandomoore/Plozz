@@ -77,6 +77,7 @@ extension AppState {
     /// `UserDefaults` (thread-safe) so it needs no main-actor hop. Returns `nil`
     /// only if no writable state location exists.
     static func makeCloudSync(for appState: AppState) -> CloudConfigSyncService? {
+        TraktSharedRefreshBootstrap.install(containerIdentifier: cloudContainerIdentifier)
         // tvOS restricts persistent storage — .applicationSupportDirectory often
         // can't be created — so fall back to Caches (CKSyncEngine can rebuild its
         // state if it's ever purged). Per-Apple-TV-user (both dirs are partitioned
@@ -111,6 +112,9 @@ extension AppState {
             },
             applyRecords: { changes in
                 TrackerTokenSyncBridge.apply(changes)
+            },
+            onAccountSwitch: {
+                await TraktSharedRefreshBootstrap.synchronizeKnownAccounts()
             }
         )
 
@@ -135,6 +139,7 @@ extension AppState {
         SyncedTokenRegistry.shared.setChangeHandler { [weak appState] in
             Task { await appState?.cloudSync?.publishLocalChanges() }
         }
+        Task { await TraktSharedRefreshBootstrap.synchronizeKnownAccounts() }
 
         var channels = [mediaChannel, trackerTokenChannel]
         channels.append(Self.makeLiveTVSyncChannel(
@@ -286,10 +291,12 @@ extension AppState {
     /// THIS device. Other devices re-converge from the clean slate. Local config is
     /// untouched.
     public func resetCloudSync() {
-        guard !cloudSyncStatus.isReloading else { return }
         let config = cloudSync
         Task {
-            await config?.resetAndReseed()
+            await CloudSyncRecoveryFeedback.run(.reset, status: cloudSyncStatus, presenter: transientStatusPresenter) {
+                guard let config else { return .unavailable }
+                return await config.resetAndReseed()
+            }
         }
     }
 
@@ -297,8 +304,8 @@ extension AppState {
     /// re-download the whole zone fresh. Non-destructive to the shared cloud data.
     public func redownloadCloudSync() {
         let config = cloudSync
-        Task { [cloudSyncStatus] in
-            await cloudSyncStatus.reload {
+        Task {
+            await CloudSyncRecoveryFeedback.run(.reload, status: cloudSyncStatus, presenter: transientStatusPresenter) {
                 guard let config else { return .unavailable }
                 return await config.redownloadFromCloud()
             }
@@ -697,6 +704,7 @@ extension AppState {
 
     /// Activate the engine (if enabled) and start observing local config changes.
     func startCloudSyncIfEnabled() {
+        TraktSharedRefreshBootstrap.install(containerIdentifier: Self.cloudContainerIdentifier)
         guard SyncSetupFeatureFlag().isEnabled else { return }
         // Never start a real CloudKit engine inside a unit-test host. xctest runs
         // without the app's iCloud entitlement, so CloudKit traps (SIGTRAP) the

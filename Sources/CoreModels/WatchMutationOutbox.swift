@@ -20,10 +20,12 @@ public struct AppliedResumeRecord: Codable, Sendable, Equatable {
     /// our write). The device-clock basis for the overlay's freshness gate, so a
     /// stale record is pruned rather than left to override a later legitimate play.
     public var appliedAt: Date
+    public var serverScope: WatchMutationServerScope?
 
-    public init(capturedAt: Date, appliedAt: Date) {
+    public init(capturedAt: Date, appliedAt: Date, serverScope: WatchMutationServerScope? = nil) {
         self.capturedAt = capturedAt
         self.appliedAt = appliedAt
+        self.serverScope = serverScope
     }
 }
 

@@ -121,7 +121,13 @@ struct EpisodeRowEntryPlaceholder: View {
                     .frame(height: 24, alignment: .leading)
                 }
                 .padding(.top, metrics.landscapeCaptionTopSpacing + metrics.focusCaptionPush)
-                .offset(y: reduceMotion || focusStyle.usesSystemEffect || isFocused ? 0 : -metrics.focusCaptionPush)
+                .offset(y: reduceMotion || isFocused ? 0 : -metrics.focusCaptionPush)
+                .animation(
+                    reduceMotion ? nil : PlozzTheme.Metrics.cardFocusAnimation(
+                        isFocused: isFocused, focusStyle: focusStyle, reduceMotion: reduceMotion
+                    ),
+                    value: isFocused
+                )
             }
         }
         .frame(width: EpisodeColumnCard.artworkSize.width, alignment: .leading)

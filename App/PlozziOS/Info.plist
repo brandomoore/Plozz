@@ -78,8 +78,6 @@
 	<string>$(TVDB_API_KEY)</string>
 	<key>TraktClientID</key>
 	<string>$(TRAKT_CLIENT_ID)</string>
-	<key>TraktClientSecret</key>
-	<string>$(TRAKT_CLIENT_SECRET)</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Bungee-Regular.ttf</string>

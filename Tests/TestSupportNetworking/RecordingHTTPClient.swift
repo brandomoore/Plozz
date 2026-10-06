@@ -15,6 +15,7 @@ import FoundationNetworking
 /// describe the wrong service in their doc comment.
 final class RecordingHTTPClient: HTTPClient, @unchecked Sendable {
     struct Sent {
+        let baseURL: URL
         let path: String
         let queryItems: [URLQueryItem]
         let headers: [String: String]
@@ -76,6 +77,7 @@ final class RecordingHTTPClient: HTTPClient, @unchecked Sendable {
     ) async throws -> (Data, HTTPURLResponse) {
         lock.lock()
         sent.append(Sent(
+            baseURL: baseURL,
             path: endpoint.path,
             queryItems: endpoint.queryItems,
             headers: endpoint.headers,

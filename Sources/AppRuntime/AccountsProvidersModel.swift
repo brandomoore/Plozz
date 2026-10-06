@@ -120,6 +120,63 @@ public final class AccountsProvidersModel {
         return profilesModel.activeProfileID + "|" + identities.joined(separator: "|")
     }
 
+    /// Stable watch-state ownership. Unlike the live authorization fingerprint,
+    /// this survives token rotation and process restarts.
+    public var watchMutationServerScope: WatchMutationServerScope {
+        let primaryID = primaryActiveAccount?.id
+        return WatchMutationServerScope(
+            profile: profilesModel.activeProfile,
+            accounts: accounts.filter { activeAccountIDs.contains($0.id) || $0.id == primaryID }
+        )
+    }
+
+    public func requireWatchMutationServerScope(
+        _ scope: WatchMutationServerScope,
+        isPlexIdentityResolved: (String) -> Bool
+    ) throws {
+        guard profilesModel.activeProfileID == scope.profileID else {
+            throw WatchMutationServerScopeError.unavailable
+        }
+        let current = watchMutationServerScope
+        guard scope.accounts.allSatisfy({ expected in
+            current.accounts.contains(expected)
+                && (expected.providerKind != .plex || isPlexIdentityResolved(expected.accountID))
+        }) else {
+            throw WatchMutationServerScopeError.unavailable
+        }
+    }
+
+    public func isCurrentWatchMutationServerScope(
+        _ scope: WatchMutationServerScope?,
+        isPlexIdentityResolved: (String) -> Bool
+    ) -> Bool {
+        guard let scope else { return true }
+        do {
+            try requireWatchMutationServerScope(scope, isPlexIdentityResolved: isPlexIdentityResolved)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Validate and resolve without a suspension between them. The returned
+    /// provider therefore cannot belong to a replacement viewer, even if a
+    /// switch happens while the caller awaits this main-actor operation.
+    public func provider(
+        forWatchMutationAccountID accountID: String,
+        isPlexIdentityResolved: (String) -> Bool
+    ) -> (any MediaProvider)? {
+        if let scope = WatchMutationDeliveryAuthorization.current?.serverScope {
+            guard scope.accounts.contains(where: { $0.accountID == accountID }) else { return nil }
+            do {
+                try requireWatchMutationServerScope(scope, isPlexIdentityResolved: isPlexIdentityResolved)
+            } catch {
+                return nil
+            }
+        }
+        return provider(forAccountID: accountID)
+    }
+
     public func liveTVProviderResolver() -> LiveTVServerProviderResolver {
         let expectedProfile = profilesModel.activeProfileID
         return { [weak self] accountID in

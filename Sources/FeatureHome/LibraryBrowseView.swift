@@ -6,6 +6,8 @@ import CoreUI
 import FeatureHomeCore
 
 #if os(tvOS)
+import UIKit
+
 @MainActor
 @Observable
 private final class ShowcaseNavigationVisibility {
@@ -75,6 +77,7 @@ public struct LibraryBrowseView: View {
     @Environment(\.plozzMetrics) private var metrics
     /// Custom pinned-sidebar clearance. Native top/sidebar styles publish zero.
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
+    @Environment(\.plozzNavigationStyle) private var navigationStyle
     /// Per-profile card presentation. Decides how far a grid card insets its
     /// artwork, which is what the banner's edges have to match.
     @Environment(\.plozzCardStyle) private var cardStyle
@@ -111,7 +114,7 @@ public struct LibraryBrowseView: View {
     public var body: some View {
         #if os(tvOS)
         NativeLibraryFocusHost(scrollTarget: nativeScrollTarget, content: libraryContent)
-            .ignoresSafeArea(.container, edges: .vertical)
+            .ignoresSafeArea(.container, edges: [.vertical, .trailing])
             .toolbar(.hidden, for: .tabBar)
         #else
         libraryContent
@@ -168,6 +171,7 @@ public struct LibraryBrowseView: View {
                 content: navigationHeader
                     .padding(.vertical, PlozzTheme.Spacing.large)
             )
+            .padding(.top, headerTopClearance)
             .modifier(
                 ShowcaseNavigationVisibilityModifier(
                     visibility: showcaseNavigation,
@@ -259,7 +263,24 @@ public struct LibraryBrowseView: View {
             }
             while !Task.isCancelled { try? await Task.sleep(nanoseconds: 1_000_000_000) }
         }
+        #if os(tvOS)
+        // The inner hosting controller still inherits the hidden native tab bar's
+        // safe area. Only the library controls reserve visible chrome clearance.
+        .ignoresSafeArea(.container, edges: .top)
+        #endif
     }
+
+    #if os(tvOS)
+    private var headerTopClearance: CGFloat {
+        let overscan = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?.safeAreaInsets.top ?? 60
+        // The native sidebar's compact page button remains visible above content.
+        let pageButtonHeight: CGFloat = navigationStyle == .sidebar ? 60 : 0
+        return overscan + pageButtonHeight
+    }
+    #endif
 
     private var recommendedContent: some View {
         ContentStateView(
@@ -345,6 +366,7 @@ public struct LibraryBrowseView: View {
                 )
             }
         }
+        .ignoresSafeArea(.container, edges: .trailing)
     }
     #endif
 

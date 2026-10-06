@@ -52,15 +52,18 @@ final class PlozzMetricsTests: XCTestCase {
     func testCaptionEnvironmentResolvesDefaultOverridesAndDestinationScopes() {
         var environment = EnvironmentValues()
         environment.plozzCardCaptionSettings = CardCaptionSettings(
-            showsLabels: false, overrides: [.browse: true, .home: false, .extras: true]
+            showsLabels: false, overrides: [.browse: true, .home: false, .extras: true, .episodes: false]
         )
         for view in CardCaptionView.allCases {
             environment.plozzCardCaptionView = view
-            XCTAssertEqual(environment.plozzCardCaptionsHidden, view != .browse && view != .extras)
+            XCTAssertEqual(environment.plozzCardCaptionsHidden, view != .browse && view != .extras && view != .episodes)
         }
         environment.plozzCardCaptionsHidden = true
         environment.plozzCardCaptionView = .browse
         XCTAssertFalse(environment.plozzCardCaptionsHidden, "A destination must not inherit its source's forced visibility.")
+        environment.plozzCardCaptionsHidden = true
+        environment.plozzCardCaptionView = .episodes
+        XCTAssertFalse(environment.plozzCardCaptionsHidden, "Episode identity must survive source preferences and old hide overrides.")
     }
     func testStandardMatchesPlozzThemeConstants() {
         let m = PlozzMetrics(density: .standard)

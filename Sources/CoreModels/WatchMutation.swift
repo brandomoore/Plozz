@@ -91,6 +91,7 @@ public struct TraktScrobbleIntent: Codable, Hashable, Sendable {
 public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
     public var id: UUID
     public private(set) var authorization: WatchMutationAuthorization?
+    public private(set) var serverScope: WatchMutationServerScope?
     /// When the user's action actually happened (NOT when it is sent). The basis
     /// for stale-write suppression: a queued write older than what has already been
     /// accepted for this title is dropped so a late offline write can't rewind state.
@@ -216,6 +217,7 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
     ) {
         self.id = id
         self.authorization = nil
+        self.serverScope = nil
         self.capturedAt = capturedAt
         self.canonicalMediaID = canonicalMediaID
         self.seasonNumber = seasonNumber
@@ -247,13 +249,20 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         case resumePosition, played, clearResume, targets, optimisticTargets, trakt, traktPending
         case simklPending, anilistPending, malPending
         case attempts, episodeOrigin, expansionPending, appliedTargetIDs, expansionStartedAt, identities, kind
-        case anchorTitle, anchorYear, authorization
+        case anchorTitle, anchorYear, authorization, serverScope
     }
 
     private struct AuthorizedIdentity: Codable {
         let version: Int
         let value: UUID
         let requirement: UUID
+    }
+
+    private struct ServerScopedIdentity: Codable {
+        let version: Int
+        let value: UUID
+        let serverScope: String
+        let requirement: UUID?
     }
 
     /// Decodes tolerating outbox files written before `episodeOrigin` /
@@ -266,7 +275,19 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
         // Explicit null/malformed requirements must not downgrade a guarded intent.
         authorization = container.contains(.authorization)
             ? try container.decode(WatchMutationAuthorization.self, forKey: .authorization) : nil
-        if let authorization {
+        serverScope = container.contains(.serverScope)
+            ? try container.decode(WatchMutationServerScope.self, forKey: .serverScope) : nil
+        if let serverScope {
+            let identity = try container.decode(ServerScopedIdentity.self, forKey: .id)
+            guard identity.version == 2,
+                  identity.serverScope == serverScope.persistenceKey,
+                  identity.requirement == authorization?.id else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .id, in: container, debugDescription: "Mismatched server-user requirement"
+                )
+            }
+            id = identity.value
+        } else if let authorization {
             let identity = try container.decode(AuthorizedIdentity.self, forKey: .id)
             guard identity.version == 1, identity.requirement == authorization.id else {
                 throw DecodingError.dataCorruptedError(
@@ -311,7 +332,18 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        if let authorization {
+        if let serverScope {
+            // Both legacy scalar IDs and the v1 authorization reader reject this
+            // envelope rather than silently dropping its server-user requirement.
+            try container.encode(
+                ServerScopedIdentity(
+                    version: 2, value: id, serverScope: serverScope.persistenceKey,
+                    requirement: authorization?.id
+                ), forKey: .id
+            )
+            try container.encode(serverScope, forKey: .serverScope)
+            try container.encodeIfPresent(authorization, forKey: .authorization)
+        } else if let authorization {
             // Older readers require a scalar UUID here. They must reject, not
             // replay a protected intent after ignoring an unknown optional key.
             try container.encode(
@@ -347,9 +379,9 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
     }
 
     /// Title-level key used to COALESCE queued mutations (latest wins, targets
-    /// unioned) and to key the stale-write clock. Excludes the account/day so any
-    /// server's write for the same title/episode collapses to one queue entry.
-    /// Guarded intents add an isolated requirement domain; the ordinary key is unchanged.
+    /// unioned) and to key the stale-write clock within the originating server-user
+    /// scope. Different Home users must not supersede one another. Legacy unscoped
+    /// keys are unchanged; consent-guarded intents add their own requirement domain.
     ///
     /// Scoped by media **kind**: TMDb/TVDb reuse one integer id space across movies
     /// and series (movie 550 ≠ tv 550), so an unscoped key would collapse a movie's
@@ -358,12 +390,26 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
     /// with no persisted `kind` uses a stable `?` token so it keeps coalescing with
     /// its own kind rather than silently splitting mid-flight.
     public var coalesceKey: String {
-        guard let authorization else { return titleCoalesceKey }
-        return "@authorized:\(authorization.id.uuidString)|\(titleCoalesceKey)"
+        guard let authorization else { return serverTitleCoalesceKey }
+        return "@authorized:\(authorization.id.uuidString)|\(serverTitleCoalesceKey)"
+    }
+
+    var serverTitleCoalesceKey: String {
+        guard let serverScope else { return titleCoalesceKey }
+        return "@server:\(serverScope.persistenceKey)|\(titleCoalesceKey)"
     }
 
     var titleCoalesceKey: String {
         "\(kind?.rawValue ?? "?")|\(canonicalMediaID)|s\(seasonNumber.map(String.init) ?? "-")|e\(episodeNumber.map(String.init) ?? "-")"
+    }
+
+    /// Capture at intent/session creation. Later enqueue paths cannot replace an
+    /// existing viewer with whichever one happens to be visible now.
+    public func bindingServerScope(_ scope: WatchMutationServerScope) -> WatchMutation {
+        guard serverScope == nil else { return self }
+        var result = self
+        result.serverScope = scope
+        return result
     }
 
     /// Tag before handing the value to any asynchronous enqueue path. No global
@@ -398,6 +444,7 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
     /// `profile` is folded in by the reconciler (its store is profile-scoped) so it
     /// is omitted here.
     public func traktIdempotencyKey(dayBucket: String) -> String {
+        // Tracker ownership remains per Plozz profile, not per server Home user.
         "\(titleCoalesceKey)|\(dayBucket)"
     }
 

@@ -2,13 +2,29 @@ import XCTest
 @testable import CoreModels
 
 final class CardCaptionSettingsTests: XCTestCase {
-    func testFreshProfilesShareNoLabelsDefaultAndPostersAreFirst() {
+    func testFreshProfilesKeepEpisodeLabelsAndPostersAreFirst() {
         XCTAssertEqual(CardStyle.allCases.first, .default)
         let settings = CardCaptionSettings.default
         XCTAssertTrue(settings.overrides.isEmpty)
         for view in CardCaptionView.allCases {
-            XCTAssertFalse(settings.showsLabels(in: view))
+            XCTAssertEqual(settings.showsLabels(in: view), view == .episodes)
             XCTAssertEqual(settings.override(for: view), .automatic)
+        }
+    }
+
+    func testEpisodeIdentitySurvivesSharedAndPersistedHideChoices() throws {
+        XCTAssertFalse(CardCaptionView.customizableCases.contains(.episodes))
+        XCTAssertEqual(Set(CardCaptionView.customizableCases), Set(CardCaptionView.allCases).subtracting([.episodes]))
+        for shared in [false, true] {
+            var settings = CardCaptionSettings(showsLabels: shared, overrides: [.episodes: false])
+            XCTAssertTrue(settings.showsLabels(in: .episodes))
+            let restored = try JSONDecoder().decode(CardCaptionSettings.self, from: JSONEncoder().encode(settings))
+            XCTAssertTrue(restored.showsLabels(in: .episodes))
+            settings.setOverride(.hide, for: .episodes)
+            XCTAssertTrue(settings.showsLabels(in: .episodes))
+            settings.resetOverrides()
+            XCTAssertTrue(settings.showsLabels(in: .episodes))
+            XCTAssertEqual(settings.showsLabels(in: .home), shared)
         }
     }
 

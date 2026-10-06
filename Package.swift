@@ -503,7 +503,7 @@ let package = Package(
         // Apple ID's devices. NEVER carries tokens/passwords (that's pairing).
         .target(
             name: "FeatureSyncCloud",
-            dependencies: ["CoreModels", "CoreNetworking", "CoreSecureStore"]
+            dependencies: ["CoreModels", "CoreNetworking", "CoreSecureStore", "TraktService"]
         ),
 
         // MARK: Music (browse + audio playback engine)
@@ -789,7 +789,9 @@ let package = Package(
                 "ProviderPlex",
                 "ProviderIPTV",
                 "ProviderShare",
-                "CoreSecureStore"
+                "CoreSecureStore",
+                "TraktService",
+                "FeatureSyncCloud"
             ]
         ),
 

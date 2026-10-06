@@ -41,6 +41,7 @@ extension PlozziOSAppModel {
     }
 
     static func makeCloudSync(for model: PlozziOSAppModel) -> CloudConfigSyncService? {
+        TraktSharedRefreshBootstrap.install(containerIdentifier: cloudContainerIdentifier)
         guard let baseDir = writableStateDirectory() else { return nil }
         let syncDir = baseDir.appendingPathComponent("PlozzSync", isDirectory: true)
         let configStateURL = syncDir.appendingPathComponent("cloud-config-v3.json")
@@ -70,6 +71,9 @@ extension PlozziOSAppModel {
             },
             applyRecords: { changes in
                 TrackerTokenSyncBridge.apply(changes)
+            },
+            onAccountSwitch: {
+                await TraktSharedRefreshBootstrap.synchronizeKnownAccounts()
             }
         )
 
@@ -94,6 +98,7 @@ extension PlozziOSAppModel {
         SyncedTokenRegistry.shared.setChangeHandler { [weak model] in
             Task { await model?.cloudSync?.publishLocalChanges() }
         }
+        Task { await TraktSharedRefreshBootstrap.synchronizeKnownAccounts() }
 
         var channels = [mediaChannel, trackerTokenChannel]
         channels.append(Self.makeLiveTVSyncChannel(
@@ -514,6 +519,7 @@ extension PlozziOSAppModel {
     // MARK: Lifecycle + change observation
 
     func startCloudSyncIfEnabled() {
+        TraktSharedRefreshBootstrap.install(containerIdentifier: Self.cloudContainerIdentifier)
         guard SyncSetupFeatureFlag().isEnabled else { return }
         guard !Self.isRunningUnitTests else { return }
         let config = cloudSync
@@ -654,10 +660,12 @@ extension PlozziOSAppModel {
     /// Reset a corrupted/divergent sync: wipe the iCloud zone and re-seed from this
     /// device. Local config is untouched.
     func resetCloudSync() {
-        guard !cloudSyncStatus.isReloading else { return }
         let config = cloudSync
         Task {
-            await config?.resetAndReseed()
+            await CloudSyncRecoveryFeedback.run(.reset, status: cloudSyncStatus, presenter: transientStatusPresenter) {
+                guard let config else { return .unavailable }
+                return await config.resetAndReseed()
+            }
         }
     }
 
@@ -665,8 +673,8 @@ extension PlozziOSAppModel {
     /// whole zone fresh. Non-destructive to the shared cloud data.
     func redownloadCloudSync() {
         let config = cloudSync
-        Task { [cloudSyncStatus] in
-            await cloudSyncStatus.reload {
+        Task {
+            await CloudSyncRecoveryFeedback.run(.reload, status: cloudSyncStatus, presenter: transientStatusPresenter) {
                 guard let config else { return .unavailable }
                 return await config.redownloadFromCloud()
             }

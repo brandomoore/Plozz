@@ -36,6 +36,7 @@
     <key>com.apple.developer.associated-domains</key>
     <array>
         <string>applinks:plozz.app</string>
+        <string>webcredentials:plozz.app</string>
     </array>
 </dict>
 </plist>

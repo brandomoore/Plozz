@@ -1,11 +1,35 @@
 import Foundation
 import Observation
 
-public enum CloudSyncReloadResult: Equatable, Sendable {
+public enum CloudSyncRecoveryResult: Equatable, Sendable {
     case completed
     case unavailable
     case interrupted
     case failed
+}
+
+public enum CloudSyncRecoveryAction: Sendable {
+    case reload
+    case reset
+
+    public var progressMessage: LocalizedStringResource {
+        switch self {
+        case .reload: "Reloading from iCloud…"
+        case .reset: "Resetting iCloud Sync…"
+        }
+    }
+
+    public func message(for result: CloudSyncRecoveryResult) -> LocalizedStringResource {
+        switch (self, result) {
+        case (.reload, .completed): "Reloaded the latest settings from iCloud."
+        case (.reset, .completed): "Reset iCloud Sync using this device's settings."
+        case (_, .unavailable): "iCloud Sync is unavailable. Check that it is on and you are signed in to iCloud."
+        case (.reload, .interrupted): "Reload was interrupted. Try again."
+        case (.reset, .interrupted): "Reset was interrupted. Try again."
+        case (.reload, .failed): "Couldn’t reload from iCloud. Try again."
+        case (.reset, .failed): "Couldn't reset iCloud Sync. Try again."
+        }
+    }
 }
 
 // MARK: - CloudSyncStatus
@@ -40,8 +64,8 @@ public final class CloudSyncStatus {
     /// across devices: if one shows 0 (or fewer) than another, that device isn't
     /// receiving — the fastest on-device confirmation of a one-way sync.
     public internal(set) var syncedRecordCount: Int?
-    public private(set) var isReloading = false
-    public private(set) var reloadResult: CloudSyncReloadResult?
+    public private(set) var isRecovering = false
+    public private(set) var recoveryResult: CloudSyncRecoveryResult?
 
     /// Debounces error display: a transient conflict that self-heals on the engine's
     /// own retry shouldn't flash a scary "Couldn't sync". The error is only shown if
@@ -51,25 +75,17 @@ public final class CloudSyncStatus {
     public init() {}
 
     /// Keep manual recovery separate from the engine's intermediate fetch/send phases.
-    public func reload(
-        operation: @Sendable () async -> CloudSyncReloadResult
-    ) async {
-        guard !isReloading else { return }
-        isReloading = true
-        reloadResult = nil
-        reloadResult = await operation()
-        isReloading = false
-    }
-
-    public var reloadSummary: LocalizedStringResource? {
-        if isReloading { return "Reloading from iCloud…" }
-        switch reloadResult {
-        case .completed: return "Reloaded the latest settings from iCloud."
-        case .unavailable: return "iCloud Sync is unavailable. Check that it is on and you are signed in to iCloud."
-        case .interrupted: return "Reload was interrupted. Try again."
-        case .failed: return "Couldn’t reload from iCloud. Try again."
-        case nil: return nil
-        }
+    @discardableResult
+    public func recover(
+        operation: @Sendable () async -> CloudSyncRecoveryResult
+    ) async -> CloudSyncRecoveryResult? {
+        guard !isRecovering else { return nil }
+        isRecovering = true
+        recoveryResult = nil
+        let result = await operation()
+        recoveryResult = result
+        isRecovering = false
+        return result
     }
 
     /// Non-error phase update (idle/syncing/signedOut/disabled). Cancels any pending

@@ -6,43 +6,42 @@ public struct SyncStatusPresentation {
     let isSyncing: Bool
     let itemCount: Int?
     let accountTag: String?
-    let isReloading: Bool
-    let reloadSummary: LocalizedStringResource?
+    let isRecovering: Bool
 
     public init(
         summary: LocalizedStringResource,
         isSyncing: Bool,
         itemCount: Int? = nil,
         accountTag: String? = nil,
-        isReloading: Bool = false,
-        reloadSummary: LocalizedStringResource? = nil
+        isRecovering: Bool = false
     ) {
         self.summary = summary
         self.isSyncing = isSyncing
         self.itemCount = itemCount
         self.accountTag = accountTag
-        self.isReloading = isReloading
-        self.reloadSummary = reloadSummary
+        self.isRecovering = isRecovering
     }
 }
 
-public struct SyncReloadStatusLine: View {
-    let provider: SyncStatusProvider
-
-    public init(provider: SyncStatusProvider) {
-        self.provider = provider
-    }
+public struct SyncRecoveryWarning: View {
+    public init() {}
 
     public var body: some View {
-        let status = provider.make()
-        if let summary = status.reloadSummary {
-            HStack(spacing: 12) {
-                if status.isReloading { ProgressView().controlSize(.small) }
-                Text(summary)
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Only for troubleshooting")
+                    .font(.callout.weight(.semibold))
+                Text("Sync is automatic. You should not normally need either option. If changes are missing, try Reload first. Use Reset only if Reload does not help.")
+                    .font(.footnote)
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("cloud-sync-reload-status")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("cloud-sync-recovery-warning")
     }
 }
 

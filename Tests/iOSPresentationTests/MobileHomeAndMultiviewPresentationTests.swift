@@ -201,6 +201,44 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         }
     }
 
+    func testDetailEpisodeLabelsIgnoreGlobalAndSavedHidePreferences() async throws {
+        let app = PlozziOSAppModel()
+        let artwork = try await posterArtwork()
+        let episode = MediaItem(
+            id: "episode-label-fixture", title: "The Hidden Room", kind: .episode,
+            episodeNumber: 4, posterURL: artwork
+        )
+        try await withWindow { window, host in
+            for width in [CGFloat(390), 768] {
+                for style in [CardStyle.borderless, .framed] {
+                    window.frame.size = CGSize(width: width, height: 600)
+                    host.rootView = AnyView(
+                        PlozziOSInlineEpisodeEntry(episode: episode, episodes: [episode], onPlay: { _, _ in })
+                            .padding(22)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .background(Color.black)
+                            .environment(app)
+                            .environment(\.plozzCardCaptionSettings, CardCaptionSettings(
+                                showsLabels: false, overrides: [.episodes: false]
+                            ))
+                            .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
+                            .environment(\.plozzCardStyle, style)
+                            .environment(\.plozzMetrics, .touch(density: .standard))
+                            .environment(\.themePalette, .dark)
+                    )
+                    try await settle(window)
+                    let image = snapshot(window, name: "detail-episode-labels-\(Int(width))-\(style)")
+                    let observations = try text(image)
+                    let title = try textFrame("The Hidden Room", observations: observations, size: image.size)
+                    let number = try textFrame("EPISODE 4", observations: observations, size: image.size)
+                    let artworkBottom = try XCTUnwrap(posterRuns(image, axis: .vertical, at: 100).first).upperBound
+                    XCTAssertGreaterThan(number.minY, CGFloat(artworkBottom), "The identity must remain below the thumbnail.")
+                    XCTAssertGreaterThan(title.minY, number.maxY)
+                }
+            }
+        }
+    }
+
     func testLibraryNameAndServerShareOneCaptionColumn() async throws {
         let artwork = try await posterArtwork()
         let library = AggregatedLibrary(
@@ -244,8 +282,27 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     XCTAssertEqual(title.minX, server.minX, accuracy: 3,
                                    "The server name must align with the library name, not the provider icon.")
                     XCTAssertGreaterThan(server.minY, title.maxY)
-                    XCTAssertLessThan(server.minY - title.maxY, typeSize.isAccessibilitySize ? 16 : 10)
-                    let artworkBottom = try XCTUnwrap(posterRuns(image, axis: .vertical, at: 100).first).upperBound
+                    // OCR ink bounds need 2pt of tolerance around large system-font leading.
+                    XCTAssertLessThan(server.minY - title.maxY, typeSize.isAccessibilitySize ? 18 : 10)
+                    let artworkRows = try XCTUnwrap(posterRuns(image, axis: .vertical, at: 100).first)
+                    let artworkBottom = artworkRows.upperBound
+                    let artworkMiddle = CGFloat(artworkRows.lowerBound + artworkRows.count / 2)
+                    let artworkLeft = try XCTUnwrap(posterRuns(image, at: artworkMiddle).first).lowerBound
+                    let pixels = try rgbaPixels(image)
+                    let cg = try XCTUnwrap(image.cgImage)
+                    var badgeLeft = cg.width
+                    for y in Int(CGFloat(artworkBottom + 1) * image.scale)..<cg.height {
+                        for x in 0..<min(cg.width, Int(title.minX * image.scale)) {
+                            let index = (y * cg.width + x) * 4
+                            if pixels[index] > 20 && Int(pixels[index]) > Int(pixels[index + 2]) + 15
+                                && pixels[index + 1] > 15 && Int(pixels[index + 1]) > Int(pixels[index + 2]) + 10 {
+                                badgeLeft = min(badgeLeft, x)
+                            }
+                        }
+                    }
+                    XCTAssertLessThan(badgeLeft, cg.width, "The Plex provider badge must be rendered.")
+                    XCTAssertEqual(CGFloat(badgeLeft) / image.scale, CGFloat(artworkLeft), accuracy: 2,
+                                   "The provider badge must align with the thumbnail's leading edge.")
                     XCTAssertGreaterThan(title.minY, CGFloat(artworkBottom))
                     XCTAssertLessThan(title.minY - CGFloat(artworkBottom), typeSize.isAccessibilitySize ? 20 : 12,
                                       "The badge must not add an extra artwork-to-title gap.")

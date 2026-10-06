@@ -86,20 +86,27 @@ public final class SyncedTokenBox<Token: Codable & Sendable>: @unchecked Sendabl
         guard let legacy = legacyData(account: account),
               let token = try? JSONDecoder().decode(Token.self, from: legacy)
         else { return nil }
-        try? save(token)
-        removeLegacy(account: account)
+        do {
+            try save(token, account: account)
+            try removeLegacy(account: account)
+        } catch {
+            FanoutDiagnostics.emit("keychain.migration result=FAILED legacy=retained")
+        }
         return token
     }
 
     public func save(_ token: Token) throws {
+        try save(token, account: currentAccount())
+    }
+
+    private func save(_ token: Token, account: String) throws {
         let data = try JSONEncoder().encode(token)
         guard let raw = String(data: data, encoding: .utf8) else {
             throw SyncedTokenBoxError.encoding
         }
-        let account = currentAccount()
         do {
             try synced.setString(raw, for: account)
-            registerForSync()
+            SyncedTokenRegistry.shared.register(service: service, account: account)
             SyncedTokenRegistry.shared.clearSignedOut(
                 .init(service: service, account: account)
             )
@@ -142,14 +149,13 @@ public final class SyncedTokenBox<Token: Codable & Sendable>: @unchecked Sendabl
     public func clear() throws {
         let account = currentAccount()
         try synced.removeValue(for: account)
+        // A failed legacy deletion must not report a successful sign-out.
+        try removeLegacy(account: account)
         // Deliberate: this must sign the account's other devices out too.
         SyncedTokenRegistry.shared.markSignedOut(
             .init(service: service, account: account)
         )
         SyncedTokenRegistry.shared.noteChanged()
-        // Signing out must not leave a pre-migration copy behind for `load` to
-        // resurrect on the next launch.
-        removeLegacy(account: account)
     }
 
     private func decode(_ raw: String) -> Token? {
@@ -161,7 +167,8 @@ public final class SyncedTokenBox<Token: Codable & Sendable>: @unchecked Sendabl
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account,
+            kSecAttrSynchronizable as String: false
         ]
     }
 
@@ -175,8 +182,11 @@ public final class SyncedTokenBox<Token: Codable & Sendable>: @unchecked Sendabl
         return result as? Data
     }
 
-    private func removeLegacy(account: String) {
-        SecItemDelete(legacyQuery(account: account) as CFDictionary)
+    private func removeLegacy(account: String) throws {
+        let status = SecItemDelete(legacyQuery(account: account) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.unexpectedStatus(status)
+        }
     }
 }
 

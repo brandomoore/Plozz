@@ -2,36 +2,32 @@ import Foundation
 
 /// Configuration for the Trakt integration.
 ///
-/// Trakt OAuth requires a registered application's **client id** and **client
-/// secret**. These are read from configuration only and are **never committed**:
-/// the app supplies them via Info.plist (`TraktClientID` / `TraktClientSecret`,
-/// substituted from the `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET` build settings
-/// in the gitignored `Config/Secrets.local.xcconfig`), falling back to the
-/// process environment for `swift test` / CI / local runs.
-///
-/// When the credentials don't resolve, Trakt sync is disabled: the Settings
-/// panel shows an "unavailable" state and scrobbling becomes a no-op.
+/// Native OAuth uses a public client ID, never a client secret. Authentication
+/// and media API requests have separate hosts. The HTTPS redirect must exactly
+/// match the developer registration and the app's verified Universal Link.
 public struct TraktConfig: Sendable, Equatable {
     /// Trakt application client id (also sent as the `trakt-api-key` header).
     public var clientID: String?
-    /// Trakt application client secret (used only for the OAuth token exchange).
-    public var clientSecret: String?
     /// Trakt API base URL.
     public var apiBaseURL: URL
+    public var authBaseURL: URL
+    public var redirectURI: URL
 
     public init(
         clientID: String? = nil,
-        clientSecret: String? = nil,
-        apiBaseURL: URL = URL(string: "https://api.trakt.tv")!
+        apiBaseURL: URL = URL(string: "https://api.trakt.tv")!,
+        authBaseURL: URL = URL(string: "https://auth.trakt.tv")!,
+        redirectURI: URL = URL(string: "https://plozz.app/auth/trakt/callback")!
     ) {
         self.clientID = Self.sanitize(clientID)
-        self.clientSecret = Self.sanitize(clientSecret)
         self.apiBaseURL = apiBaseURL
+        self.authBaseURL = authBaseURL
+        self.redirectURI = redirectURI
     }
 
-    /// Whether both credentials resolved, so the feature can be offered.
+    /// Device-code and PKCE grants both need only a client ID.
     public var isConfigured: Bool {
-        clientID != nil && clientSecret != nil
+        clientID != nil
     }
 
     /// Resolves configuration from the app bundle's Info.plist, falling back to
@@ -41,10 +37,8 @@ public struct TraktConfig: Sendable, Equatable {
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> TraktConfig {
         let plistID = bundle.object(forInfoDictionaryKey: "TraktClientID") as? String
-        let plistSecret = bundle.object(forInfoDictionaryKey: "TraktClientSecret") as? String
         return TraktConfig(
-            clientID: sanitize(plistID) ?? sanitize(environment["TRAKT_CLIENT_ID"]),
-            clientSecret: sanitize(plistSecret) ?? sanitize(environment["TRAKT_CLIENT_SECRET"])
+            clientID: sanitize(plistID) ?? sanitize(environment["TRAKT_CLIENT_ID"])
         )
     }
 

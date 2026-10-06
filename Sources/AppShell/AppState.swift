@@ -436,11 +436,22 @@ public final class AppState {
                     self?.profilesModel.activeProfileID == profileID
                 }
             },
+            validateServerScope: { [weak self] scope in
+                try await MainActor.run {
+                    guard let self else { throw WatchMutationServerScopeError.unavailable }
+                    try self.accountsProviders.requireWatchMutationServerScope(
+                        scope, isPlexIdentityResolved: self.plexHomeUsers.hasResolvedWatchMutationIdentity
+                    )
+                }
+            },
             resolveProvider: { [weak self] accountID in
                 await MainActor.run {
-                    guard self?.profilesModel.activeProfileID == profileID
+                    guard let self, self.profilesModel.activeProfileID == profileID
                     else { return nil }
-                    return self?.accountsProviders.provider(forAccountID: accountID)
+                    return self.accountsProviders.provider(
+                        forWatchMutationAccountID: accountID,
+                        isPlexIdentityResolved: self.plexHomeUsers.hasResolvedWatchMutationIdentity
+                    )
                 }
             },
             applyTrakt: { intent in
@@ -479,7 +490,18 @@ public final class AppState {
                 // never empty (expansion perpetually "inconclusive" until the retry
                 // cap) and episode expansion would probe servers outside the active
                 // profile. Scope must match what gets indexed.
-                await MainActor.run { self?.accountsProviders.homeAccounts.map(\.account.id) ?? [] }
+                await MainActor.run {
+                    guard let self, self.profilesModel.activeProfileID == profileID else { return [] }
+                    if let scope = WatchMutationDeliveryAuthorization.current?.serverScope {
+                        do {
+                            try self.accountsProviders.requireWatchMutationServerScope(
+                                scope, isPlexIdentityResolved: self.plexHomeUsers.hasResolvedWatchMutationIdentity
+                            )
+                            return scope.accounts.map(\.accountID)
+                        } catch { return [] }
+                    }
+                    return self.accountsProviders.homeAccounts.map(\.account.id)
+                }
             },
             indexedSeriesSources: { [identitySnapshotStore = identityIndex.identitySnapshotStore] originSeries in
                 identitySnapshotStore.current.sources(for: originSeries).filter { $0.kind == .series }
@@ -502,9 +524,19 @@ public final class AppState {
             onPersistenceFailure: {
                 PlozzLog.app.error("Durable watch outbox write failed")
             },
-            onServerStateApplied: { mutation in
+            onServerStateApplied: { [weak self] mutation in
                 guard let refresh = MediaItemMutation(confirmedWatchMutation: mutation) else { return }
-                Task { @MainActor in refresh.post() }
+                Task { @MainActor in
+                    guard let self, self.profilesModel.activeProfileID == profileID else { return }
+                    if let scope = mutation.serverScope {
+                        do {
+                            try self.accountsProviders.requireWatchMutationServerScope(
+                                scope, isPlexIdentityResolved: self.plexHomeUsers.hasResolvedWatchMutationIdentity
+                            )
+                        } catch { return }
+                    }
+                    refresh.post()
+                }
             }
         )
     }
@@ -519,7 +551,14 @@ public final class AppState {
     /// The outbox's not-yet-confirmed mutations, so the Home Continue Watching row
     /// can reflect in-app plays the servers haven't recorded yet (r8-cw-outbox-patch).
     public func pendingWatchMutations() async -> [WatchMutation] {
-        await watchReconciler.snapshot().pending
+        let profileID = profilesModel.activeProfileID
+        let pending = await watchReconciler.snapshot().pending
+        guard profilesModel.activeProfileID == profileID else { return [] }
+        return pending.filter {
+            accountsProviders.isCurrentWatchMutationServerScope(
+                $0.serverScope, isPlexIdentityResolved: plexHomeUsers.hasResolvedWatchMutationIdentity
+            )
+        }
     }
 
     /// Recently-applied in-progress resume writes (keyed by `"accountID:itemID"`),
@@ -527,7 +566,14 @@ public final class AppState {
     /// inflation back down to the play's real time — the offline-drained-Plex-resume
     /// re-float fix. Short-lived (see ``WatchStateReconciler`` `resumeRecencyTTL`).
     public func appliedWatchRecency() async -> [String: AppliedResumeRecord] {
-        await watchReconciler.snapshot().appliedRecency
+        let profileID = profilesModel.activeProfileID
+        let recency = await watchReconciler.snapshot().appliedRecency
+        guard profilesModel.activeProfileID == profileID else { return [:] }
+        return recency.filter {
+            accountsProviders.isCurrentWatchMutationServerScope(
+                $0.value.serverScope, isPlexIdentityResolved: plexHomeUsers.hasResolvedWatchMutationIdentity
+            )
+        }
     }
 
     /// Records a watch mutation's intent durably (stale-suppressed + coalesced) and
@@ -535,6 +581,7 @@ public final class AppState {
     /// coordinator and player use so every watch fans out to all servers + Trakt and
     /// survives relaunch.
     public func enqueueWatchMutation(_ mutation: WatchMutation) {
+        let mutation = mutation.bindingServerScope(accountsProviders.watchMutationServerScope)
         let reconciler = watchReconciler
         Task {
             await reconciler.enqueue(mutation)
@@ -542,33 +589,66 @@ public final class AppState {
         }
     }
 
-    /// Durably records a **mid-play convergence checkpoint** without ending the live
-    /// session: it enqueues + drains so progress fans out to the **other** servers
-    /// (the launch server stays deferred by its still-active live session and is
-    /// caught up by the final `finishLiveWatchSession`). Pure local enqueue + drain
-    /// — no optimistic UI flip (the user is in the fullscreen player). Coalesces
-    /// cleanly with later checkpoints and the final stop via the reconciler's
-    /// newest-wins `capturedAt` clock.
-    public func checkpointWatchState(mutation: WatchMutation) {
+    /// Capture before playback starts, never after the player's asynchronous stop.
+    /// The outbox belongs to the launching viewer even if another profile now
+    /// occupies the same server account (for example a different Plex Home user).
+    func makePlaybackWatchBridge() -> WatchOutboxBridge {
         let reconciler = watchReconciler
-        Task {
-            await reconciler.enqueue(mutation)
-            await reconciler.drain()
+        let profileID = profilesModel.activeProfileID
+        let namespace = profilesModel.activeNamespace
+        let serverAuthorization = accountsProviders.liveTVAuthorizationID
+        let serverScope = accountsProviders.watchMutationServerScope
+        let initialSnapshot = identityIndex.identitySnapshotStore.current
+        let isCurrent: @MainActor @Sendable () -> Bool = { [weak self] in
+            guard let self else { return false }
+            return self.profilesModel.activeProfileID == profileID
+                && self.accountsProviders.liveTVAuthorizationID == serverAuthorization
+                && self.accountsProviders.watchMutationServerScope == serverScope
         }
-    }
-
-    /// Registers `(accountID, itemID)` as the live in-app playback session so the
-    /// reconciler defers convergence writes against that exact server while it is
-    /// playing — a mid-play drain can never disturb/zero the now-playing session.
-    public func beginLiveWatchSession(accountID: String, itemID: String) {
-        let reconciler = watchReconciler
-        Task { await reconciler.beginLiveSession(accountID: accountID, itemID: itemID) }
+        return WatchOutboxBridge(
+            beginLiveSession: { accountID, itemID in
+                Task {
+                    await reconciler.beginLiveSession(accountID: accountID, itemID: itemID, serverScope: serverScope)
+                }
+            },
+            finishPlayback: { [weak self] accountID, itemID, percent, mutation, item in
+                let mutation = mutation?.bindingServerScope(serverScope)
+                if isCurrent() {
+                    self?.publishOptimisticWatchState(
+                        itemID: itemID, mutation: mutation, watchedPercent: percent, item: item
+                    )
+                }
+                Task {
+                    await reconciler.finishLiveSession(
+                        accountID: accountID, itemID: itemID, mutation: mutation, serverScope: serverScope
+                    )
+                }
+            },
+            checkpoint: { mutation in
+                let mutation = mutation.bindingServerScope(serverScope)
+                Task {
+                    await reconciler.enqueue(mutation)
+                    await reconciler.drain()
+                }
+            },
+            crossServerSync: {
+                PlaybackSettingsStore.currentSyncAcrossServers(namespace: namespace)
+            },
+            identitySources: { [weak self] item in
+                let snapshot = isCurrent()
+                    ? self?.identityIndex.identitySnapshotStore.current ?? initialSnapshot
+                    : initialSnapshot
+                return snapshot.sourceRefs(for: item)
+            }
+        )
     }
 
     /// Queues the final convergence mutation before ending the live session, so
     /// an old progress checkpoint cannot drain over the just-finished episode.
-    /// `accountID` is optional so a barely-started/untargeted stop still flushes deferred work.
+    /// Synchronous shell actions only; ordinary player callbacks use their captured
+    /// `makePlaybackWatchBridge()` instead of resolving the current viewer here.
     public func finishLiveWatchSession(accountID: String?, itemID: String, watchedPercent: Double, mutation: WatchMutation?, item: MediaItem? = nil) {
+        let mutation = mutation?.bindingServerScope(accountsProviders.watchMutationServerScope)
         let reconciler = watchReconciler
         // (a) Index state captured at the moment of stop — the value the fan-out
         // actually saw. If crossServer=0 here, the index never warmed a union for
@@ -1105,6 +1185,7 @@ public final class AppState {
         )
         // Seed Trakt with the active profile's namespace so its scrobbler and the
         // Settings connection model read that profile's own Trakt tokens.
+        TraktSharedRefreshBootstrap.install()
         self.traktService = traktService ?? TraktServiceFactory.make(namespace: ns)
         // Seed other trackers with the same profile namespace.
         self.simklService = simklService ?? SimklServiceFactory.make(namespace: ns)

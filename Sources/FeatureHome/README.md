@@ -22,13 +22,22 @@ fallback when the user's server has no attached trailer.
 - **Card labels** — Appearance > Cards owns a profile-scoped shared choice
   (No labels by default), with Default / Labels / No labels exceptions by experience.
   Home, Recommended, Browse, Collections, Playlists, Search, Watchlist, related titles,
-  episodes, extras, and filmography resolve the same policy on iOS and tvOS.
+  extras, and filmography resolve the same policy on iOS and tvOS.
+  Detail-page episodes always retain their identifying labels on both platforms,
+  including when an older profile has a saved episode-specific No labels choice.
+  Episodes are not offered in label customization.
+  On TV, the episode title moves down on focus and back up on exit in every
+  focus style, including System; the synopsis keeps its delayed reveal.
+  Loading captions use the same motion without changing row geometry, and
+  Reduce Motion keeps the caption stationary.
   Collection and playlist contents follow Browse across every library. Library
   navigation, cast names, essential list text, accessibility labels, and on-artwork
   playback information stay intact. Existing Home choices migrate once from
   `HeroSettings`; the card settings transfer with the profile. Native grids and
   loading placeholders remove the same caption space as loaded cards. Touch captions
   have a 4pt gap without TV focus travel; TV captions retain their focus clearance.
+- Mobile library provider icons align with the thumbnail's leading edge; the
+  library name and server name share the adjacent text column.
 - **Mobile Home rhythm** — every loaded, placeholder, library, and failed row uses
   `PlozziOSHomeSection`: native Dynamic Type `title3` semibold headings, a 12pt
   heading-to-artwork layout gap, and 32pt between sections. Home's media surfaces
@@ -97,8 +106,13 @@ fallback when the user's server has no attached trailer.
   On tvOS, changing tabs keeps the focused mode control
   mounted while replacing content below it. A stable layout container owns the
   top inset across Recommended, Browse, Collections, and Playlists (a transparent
-  `Group` would attach the inset to each replaceable content branch). Sort sits
-  on that same top navigation line alongside Filter and file browsing.
+  `Group` would attach the inset to each replaceable content branch).
+  Library pages discard the native container's top-bar inset and reserve only
+  screen-safe spacing plus clearance for the native sidebar's visible page button.
+  The outer focus host and Recommended content both break out at the trailing
+  edge so artwork reaches the screen edge; headers and grids retain their safe
+  margins, including the custom pinned rail's foreground inset. Home is unchanged.
+  Sort sits on that same top navigation line alongside Filter and file browsing.
   Filter and Sort form a compact pair. Alphabet navigation stays on the
   scrolling rail; there is no separate Jump to letter button.
   Without mode tabs, the library/share display name occupies the left of the

@@ -1,5 +1,50 @@
 import Foundation
 
+/// A durable viewer identity, not an authorization grant or a credential
+/// generation. Token refresh and relaunch preserve it; choosing another server
+/// user does not. Existing profile binding migration defines Plex Home identity.
+public struct WatchMutationServerScope: Codable, Hashable, Sendable {
+    public struct AccountIdentity: Codable, Hashable, Sendable {
+        public let accountID: String
+        public let providerKind: ProviderKind
+        public let serverID: String
+        public let userID: String
+        public let plexHomeUserID: String?
+
+        public init(account: Account, profile: Profile) {
+            accountID = account.id
+            providerKind = account.server.provider
+            serverID = account.server.id
+            userID = account.userID
+            plexHomeUserID = account.server.provider == .plex
+                ? profile.homeUserBinding(forPlexAccount: account.id)?.homeUserID : nil
+        }
+    }
+
+    public let profileID: String
+    public let accounts: [AccountIdentity]
+
+    public init(profile: Profile, accounts: [Account]) {
+        profileID = profile.id
+        self.accounts = accounts.map { AccountIdentity(account: $0, profile: profile) }
+            .sorted { $0.accountID < $1.accountID }
+    }
+
+    /// Length-delimited fields distinguish missing Home identity (owner) from a
+    /// named user without storing tokens or process-local credential revisions.
+    var persistenceKey: String {
+        ([profileID] + accounts.flatMap {
+            [$0.accountID, $0.providerKind.rawValue, $0.serverID, $0.userID,
+             $0.plexHomeUserID.map { "home:\($0)" } ?? "owner"]
+        }).map { "\($0.utf8.count):\($0)" }.joined()
+    }
+}
+
+public enum WatchMutationServerScopeError: Error, Equatable, Sendable {
+    /// Retry without changing the pending intent; this viewer may return later.
+    case unavailable, unsupportedApplier
+}
+
 public enum WatchMutationAuthorizationError: Error, Equatable, Sendable {
     case denied, capabilityUnavailable, unsupportedApplier, superseded
 }
@@ -76,9 +121,16 @@ public struct WatchMutationAuthorization: Codable, Hashable, Sendable {
 /// It cannot retract requests that have already been dispatched.
 public struct WatchMutationDeliveryAuthorization: Sendable {
     @TaskLocal public static var current: WatchMutationDeliveryAuthorization?
+    public let serverScope: WatchMutationServerScope?
     private let validator: @Sendable () async throws -> Void
 
-    init(validator: @escaping @Sendable () async throws -> Void) { self.validator = validator }
+    init(
+        serverScope: WatchMutationServerScope? = nil,
+        validator: @escaping @Sendable () async throws -> Void
+    ) {
+        self.serverScope = serverScope
+        self.validator = validator
+    }
 
     public static func check() async throws {
         if let current { try await current.validator() }

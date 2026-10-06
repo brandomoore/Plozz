@@ -7,7 +7,7 @@ import CoreNetworking
 private let traktBaseURL = URL(string: "https://api.trakt.tv")!
 
 private func configured() -> TraktConfig {
-    TraktConfig(clientID: "CLIENT", clientSecret: "SECRET")
+    TraktConfig(clientID: "CLIENT")
 }
 
 private func tokenJSON(access: String = "acc", refresh: String = "ref", expiresIn: Double = 7_776_000, createdAt: Double = Date().timeIntervalSince1970) -> String {
@@ -32,16 +32,16 @@ private func episode(tvdb: String? = "12345") -> MediaItem {
 // MARK: - Config
 
 final class TraktConfigTests: XCTestCase {
-    func testIsConfiguredRequiresBothCredentials() {
-        XCTAssertTrue(TraktConfig(clientID: "a", clientSecret: "b").isConfigured)
-        XCTAssertFalse(TraktConfig(clientID: "a", clientSecret: nil).isConfigured)
-        XCTAssertFalse(TraktConfig(clientID: "", clientSecret: "b").isConfigured)
+    func testIsConfiguredRequiresOnlyClientID() {
+        XCTAssertTrue(TraktConfig(clientID: "a").isConfigured)
+        XCTAssertFalse(TraktConfig().isConfigured)
+        XCTAssertFalse(TraktConfig(clientID: "").isConfigured)
     }
 
     func testSanitizeRejectsPlaceholderAndEmpty() {
-        XCTAssertNil(TraktConfig(clientID: "$(TRAKT_CLIENT_ID)", clientSecret: "x").clientID)
-        XCTAssertNil(TraktConfig(clientID: "   ", clientSecret: "x").clientID)
-        XCTAssertEqual(TraktConfig(clientID: " abc ", clientSecret: "x").clientID, "abc")
+        XCTAssertNil(TraktConfig(clientID: "$(TRAKT_CLIENT_ID)").clientID)
+        XCTAssertNil(TraktConfig(clientID: "   ").clientID)
+        XCTAssertEqual(TraktConfig(clientID: " abc ").clientID, "abc")
     }
 }
 

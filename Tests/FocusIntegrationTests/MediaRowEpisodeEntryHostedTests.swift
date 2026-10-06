@@ -5,11 +5,199 @@ import CoreUI
 #if os(tvOS)
 import Observation
 import UIKit
+import Vision
 #endif
 
 #if os(tvOS)
 @MainActor
 final class MediaRowEpisodeEntryHostedTests: XCTestCase {
+    func testEpisodeTitleAnimatesDownAndBackWithoutMovingTheRow() async throws {
+        try await assertCaptionMotion(loading: false)
+    }
+
+    func testLoadingCaptionUsesTheSameFocusMotionAsEpisodes() async throws {
+        try await assertCaptionMotion(loading: true)
+    }
+
+    private func assertCaptionMotion(loading: Bool) async throws {
+        let artwork = try await seedImage()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let reduceMotion = UIAccessibility.isReduceMotionEnabled
+        defer { previous?.makeKeyAndVisible() }
+        for style in CardFocusStyle.allCases {
+            let model = EpisodeEntryFixture()
+            model.focusStyle = style
+            model.resumeTarget = "episode-motion"
+            var episode = MediaItem(
+                id: model.resumeTarget, title: "The Hidden Room", kind: .episode,
+                episodeNumber: 4, posterURL: artwork
+            )
+            episode.overview = "A secret behind the door."
+            model.items = loading ? [] : [episode]
+            model.phase = loading ? .loading : .ready
+            let host = EpisodeEntryHost(model: model)
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+            window.rootViewController = host
+            host.view.backgroundColor = .black
+            host.row.view.backgroundColor = .clear
+            window.makeKeyAndVisible()
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+            host.view.layoutIfNeeded()
+            await waitUntil { model.appeared && host.heroIsFocused }
+            try await Task.sleep(for: .milliseconds(400))
+            let before = screenshot(window)
+            let title = try recognizedText(loading ? "Loading episodes" : "The Hidden Room", in: before)
+            let push = PlozzMetrics.standard.focusCaptionPush
+            let region = CGRect(
+                x: title.minX - 2, y: title.minY - 2,
+                width: title.width + 4, height: title.height + push + 4
+            )
+            let rowFrame = host.row.view.frame
+            let initialY = try titleInkY(in: captionImage(window, region: region))
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            host.prefersRow = true
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            let entering = try await titleMotion(window, region: region)
+            XCTAssertFalse(host.heroIsFocused)
+            XCTAssertTrue(model.events.contains(loading ? "placeholder" : episode.id))
+            let focusedY = try XCTUnwrap(entering.last)
+            XCTAssertEqual(focusedY - initialY, reduceMotion ? 0 : push, accuracy: 2,
+                           "\(style): the title itself must move down by the reserved clearance.")
+            if !loading {
+                _ = try recognizedText("A secret behind the door", in: screenshot(window))
+            }
+            capture(window, system: system, name: "episode-caption-focused-\(style)-\(loading)-\(reduceMotion)")
+
+            host.prefersRow = false
+            system.requestFocusUpdate(to: host)
+            system.updateFocusIfNeeded()
+            let leaving = try await titleMotion(window, region: region)
+            XCTAssertTrue(host.heroIsFocused)
+            XCTAssertEqual(try XCTUnwrap(leaving.last), initialY, accuracy: 2)
+            XCTAssertEqual(host.row.view.frame, rowFrame, "Caption movement must not shift or resize the rail.")
+            if reduceMotion {
+                XCTAssertTrue((entering + leaving).allSatisfy { abs($0 - initialY) <= 2 },
+                              "\(style): Reduce Motion must keep the title stationary.")
+            } else {
+                for samples in [entering, leaving] {
+                    XCTAssertTrue(samples.contains { $0 > initialY + 2 && $0 < focusedY - 2 },
+                                  "\(style): title movement must animate, not jump between endpoints: \(samples)")
+                }
+            }
+            let attachment = XCTAttachment(string: "initial=\(initialY)\nentering=\(entering)\nleaving=\(leaving)")
+            attachment.name = "episode-title-motion-\(style)-\(loading)-\(reduceMotion)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    private func recognizedText(_ value: String, in image: UIImage) throws -> CGRect {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+        let observation = try XCTUnwrap(request.results?.first {
+            $0.topCandidates(1).first?.string.contains(value) == true
+        }, "Missing rendered text: \(value)")
+        let bounds = observation.boundingBox
+        return CGRect(
+            x: bounds.minX * image.size.width, y: (1 - bounds.maxY) * image.size.height,
+            width: bounds.width * image.size.width, height: bounds.height * image.size.height
+        )
+    }
+
+    private func captionImage(_ window: UIWindow, region: CGRect) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: region.size, format: format).image { context in
+            context.cgContext.translateBy(x: -region.minX, y: -region.minY)
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+        }
+    }
+
+    private func titleMotion(_ window: UIWindow, region: CGRect) async throws -> [CGFloat] {
+        var positions: [CGFloat] = []
+        let deadline = ContinuousClock.now + .milliseconds(650)
+        repeat {
+            positions.append(try titleInkY(in: captionImage(window, region: region)))
+            try await Task.sleep(for: .milliseconds(10))
+        } while ContinuousClock.now < deadline
+        return positions
+    }
+
+    private func titleInkY(in image: UIImage) throws -> CGFloat {
+        let cgImage = try XCTUnwrap(image.cgImage)
+        var bytes = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
+        try bytes.withUnsafeMutableBytes { buffer in
+            let context = try XCTUnwrap(CGContext(
+                data: buffer.baseAddress, width: cgImage.width, height: cgImage.height,
+                bitsPerComponent: 8, bytesPerRow: cgImage.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+        }
+        let firstRow = (0..<cgImage.height).first { y in
+            (0..<cgImage.width).filter { x in
+                let index = (y * cgImage.width + x) * 4
+                return bytes[index] > 220 && bytes[index + 1] > 220 && bytes[index + 2] > 220
+            }.count >= 3
+        }
+        return CGFloat(try XCTUnwrap(firstRow, "The episode title must remain rendered during focus changes."))
+    }
+
+    func testDetailEpisodeLabelsRemainVisibleWithSavedHidePreferences() async throws {
+        let image = try await seedImage()
+        let episode = MediaItem(
+            id: "episode-label-fixture", title: "The Hidden Room", kind: .episode,
+            episodeNumber: 4, posterURL: image
+        )
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for style in [CardFocusStyle.system, .highlight] {
+            let host = UIHostingController(rootView:
+                EpisodeColumnCard(item: episode, action: {})
+                    .environment(\.plozzCardCaptionView, .episodes)
+                    .environment(\.plozzCardCaptionSettings, CardCaptionSettings(
+                        showsLabels: false, overrides: [.episodes: false]
+                    ))
+                    .environment(\.plozzCardFocusStyle, style)
+                    .environment(\.themePalette, .dark)
+                    .preferredColorScheme(.dark)
+            )
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            window.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(400))
+            let rendered = screenshot(window)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(rendered.cgImage)).perform([request])
+            let copy = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            XCTAssertTrue(copy.contains("The Hidden Room"), "\(style): \(copy)")
+            XCTAssertTrue(copy.contains("E4"), "\(style): the episode number must remain visible.")
+            let attachment = XCTAttachment(image: rendered)
+            attachment.name = "detail-episode-labels-\(style)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testEntranceGateKeepsTheEpisodePreviewOutOfFocusUntilEnabled() async throws {
         let image = try await seedImage()
         let model = EpisodeEntryFixture()
@@ -442,6 +630,8 @@ private struct EpisodeEntryFixtureView: View {
         )
         .frame(height: 520)
         .environment(\.plozzCardFocusStyle, model.focusStyle)
+        .environment(\.plozzCardCaptionView, .episodes)
+        .preferredColorScheme(.dark)
         .environment(\.plozzPinnedSidebarActive, model.pinnedSidebarActive)
         .environment(\.plozzNavigationContentInset, model.navigationInset)
         .onAppear { model.appeared = true }

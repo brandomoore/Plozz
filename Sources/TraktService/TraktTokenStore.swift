@@ -16,33 +16,32 @@ public protocol TraktTokenStoring: Sendable {
     /// storage location (backward compatible with already-connected devices);
     /// any other namespace scopes tokens to that household profile.
     func setNamespace(_ namespace: String?)
+    /// A fixed namespace view sharing the same backing storage.
+    func snapshot() -> any TraktTokenStoring
+    /// Equal for independent stores addressing the same credential.
+    var coordinationID: String { get }
 }
 
 #if canImport(Security)
-/// `Security.framework`-backed token store using a single generic-password item
-/// holding the JSON-encoded `TraktTokens` blob.
-///
-/// Mirrors the app's existing Keychain conventions (see `FeatureAuth.KeychainStore`):
-/// `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` so the token survives a
-/// reboot (tvOS has no passcode prompt) but never leaves the device or syncs to
-/// iCloud. Kept self-contained here so the service stays decoupled from FeatureAuth.
-///
-/// Per-profile: the Keychain account is the base account for the default profile
-/// (`nil` namespace → `trakt.oauth`, backward compatible) and `trakt.oauth.<ns>`
-/// for any other household profile, so each profile connects an independent Trakt
-/// account. A reference type with a lock-guarded namespace so the facade and the
-/// scrobbler actor share one instance and both observe profile switches.
-
 /// Keychain-backed token store for Trakt, on the shared synced box so this
-/// sign-in reaches the account's other devices.
+/// sign-in reaches the profile's other devices through iCloud Keychain and the
+/// app's encrypted CloudKit transport. The default namespace retains `trakt.oauth`;
+/// other profiles use `trakt.oauth.<namespace>`.
 public final class KeychainTraktTokenStore: TraktTokenStoring, @unchecked Sendable {
     private let box: SyncedTokenBox<TraktTokens>
+    private let service: String
+    private let account: String
+    private var namespace: String?
+    private let lock = NSLock()
 
     public init(
         service: String = "com.plozz.app.tokens",
         account: String = "trakt.oauth",
         namespace: String? = nil
     ) {
+        self.service = service
+        self.account = account
+        self.namespace = namespace
         box = SyncedTokenBox(
             service: service,
             account: account,
@@ -50,7 +49,23 @@ public final class KeychainTraktTokenStore: TraktTokenStoring, @unchecked Sendab
         )
     }
 
-    public func setNamespace(_ namespace: String?) { box.setNamespace(namespace) }
+    public func setNamespace(_ namespace: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.namespace = namespace
+        box.setNamespace(namespace)
+    }
+    public func snapshot() -> any TraktTokenStoring {
+        lock.lock()
+        defer { lock.unlock() }
+        return KeychainTraktTokenStore(service: service, account: account, namespace: namespace)
+    }
+    public var coordinationID: String {
+        lock.lock()
+        defer { lock.unlock() }
+        let suffix = namespace.flatMap { $0.isEmpty ? nil : ".\($0)" } ?? ""
+        return "\(service)\u{0}\(account)\(suffix)"
+    }
     public func load() -> TraktTokens? { box.load() }
     public func save(_ tokens: TraktTokens) throws { try box.save(tokens) }
     public func clear() throws { try box.clear() }
@@ -65,12 +80,35 @@ public enum TraktTokenStoreError: Error, Equatable {
 /// Namespace-keyed so each profile's tokens stay isolated (the default profile
 /// uses the empty-string key).
 public final class InMemoryTraktTokenStore: TraktTokenStoring, @unchecked Sendable {
-    private var storage: [String: TraktTokens] = [:]
+    private final class Storage: @unchecked Sendable {
+        let id = UUID().uuidString
+        let lock = NSLock()
+        var tokens: [String: TraktTokens] = [:]
+    }
+    private let storage: Storage
     private var namespace: String?
     private let lock = NSLock()
 
     public init(tokens: TraktTokens? = nil) {
-        if let tokens { storage[""] = tokens }
+        storage = Storage()
+        if let tokens { storage.tokens[""] = tokens }
+    }
+
+    private init(storage: Storage, namespace: String?) {
+        self.storage = storage
+        self.namespace = namespace
+    }
+
+    public func snapshot() -> any TraktTokenStoring {
+        lock.lock()
+        defer { lock.unlock() }
+        return InMemoryTraktTokenStore(storage: storage, namespace: namespace)
+    }
+
+    public var coordinationID: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return "\(storage.id)\u{0}\(namespace ?? "")"
     }
 
     public func setNamespace(_ namespace: String?) {
@@ -80,16 +118,19 @@ public final class InMemoryTraktTokenStore: TraktTokenStoring, @unchecked Sendab
 
     public func load() -> TraktTokens? {
         lock.lock(); defer { lock.unlock() }
-        return storage[namespace ?? ""]
+        storage.lock.lock(); defer { storage.lock.unlock() }
+        return storage.tokens[namespace ?? ""]
     }
 
     public func save(_ tokens: TraktTokens) throws {
         lock.lock(); defer { lock.unlock() }
-        storage[namespace ?? ""] = tokens
+        storage.lock.lock(); defer { storage.lock.unlock() }
+        storage.tokens[namespace ?? ""] = tokens
     }
 
     public func clear() throws {
         lock.lock(); defer { lock.unlock() }
-        storage[namespace ?? ""] = nil
+        storage.lock.lock(); defer { storage.lock.unlock() }
+        storage.tokens[namespace ?? ""] = nil
     }
 }

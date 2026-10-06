@@ -130,7 +130,13 @@ public struct EpisodeColumnCard: View, Equatable {
             )
             .padding(.top, 10)
         }
-        .offset(y: reduceMotion || focusStyle.usesSystemEffect || isFocused ? 0 : -metrics.focusCaptionPush)
+        .offset(y: reduceMotion || isFocused ? 0 : -metrics.focusCaptionPush)
+        .animation(
+            reduceMotion ? nil : PlozzTheme.Metrics.cardFocusAnimation(
+                isFocused: isFocused, focusStyle: focusStyle, reduceMotion: reduceMotion
+            ),
+            value: isFocused
+        )
     }
 
     private var synopsisTaskID: SynopsisTaskID {
