@@ -38,9 +38,9 @@ struct LiveTVSetupWelcome: View {
                         : AnyLayout(VStackLayout(alignment: .leading, spacing: choiceSpacing))
                     layout {
                         LiveTVSetupChoice(
-                            title: "IPTV playlist",
-                            detail: "Add channels with an M3U or M3U8 playlist URL.",
-                            actionTitle: "Add playlist",
+                            title: "IPTV provider",
+                            detail: "Connect an M3U playlist or Xtream account for channels, movies, and series.",
+                            actionTitle: "Connect provider",
                             symbol: "list.bullet.rectangle",
                             action: addPlaylist
                         )

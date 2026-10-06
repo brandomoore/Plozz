@@ -40,7 +40,7 @@ public final class LiveTVServerEnrollmentCoordinator {
         let request = generation
         var seen: Set<String> = []
         let choices = choices.filter {
-            [.plex, .jellyfin, .emby].contains($0.kind) && seen.insert($0.id).inserted
+            [.plex, .jellyfin, .emby, .iptv].contains($0.kind) && seen.insert($0.id).inserted
         }
         statuses = choices.map { LiveTVServerEnrollmentStatus(choice: $0) }
         var added: [String] = []

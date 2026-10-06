@@ -34,6 +34,7 @@ let package = Package(
         .library(name: "FeatureDiscovery", targets: ["FeatureDiscovery"]),
         .library(name: "ProviderJellyfin", targets: ["ProviderJellyfin"]),
         .library(name: "ProviderSilo", targets: ["ProviderSilo"]),
+        .library(name: "ProviderIPTV", targets: ["ProviderIPTV"]),
         .library(name: "ProviderPlex", targets: ["ProviderPlex"]),
         .library(name: "ProviderShare", targets: ["ProviderShare"]),
         .library(name: "ProviderTrailers", targets: ["ProviderTrailers"]),
@@ -334,6 +335,11 @@ let package = Package(
             dependencies: ["CoreModels", "CoreNetworking"]
         ),
         .target(
+            name: "ProviderIPTV",
+            dependencies: ["CoreModels", "CoreNetworking"],
+            linkerSettings: [.linkedLibrary("sqlite3")]
+        ),
+        .target(
             name: "ProviderPlex",
             dependencies: ["CoreModels", "CoreNetworking"]
         ),
@@ -409,7 +415,7 @@ let package = Package(
         ),
         .target(
             name: "FeatureAuthCore",
-            dependencies: ["CoreModels", "CoreNetworking", "CoreSecureStore", "ProviderJellyfin", "ProviderPlex", "ProviderSilo"]
+            dependencies: ["CoreModels", "CoreNetworking", "CoreSecureStore", "ProviderJellyfin", "ProviderPlex", "ProviderSilo", "ProviderIPTV"]
         ),
         .target(
             name: "FeatureAuth",
@@ -781,6 +787,7 @@ let package = Package(
                 "ProviderJellyfin",
                 "ProviderSilo",
                 "ProviderPlex",
+                "ProviderIPTV",
                 "ProviderShare",
                 "CoreSecureStore"
             ]
@@ -970,6 +977,10 @@ let package = Package(
         .testTarget(
             name: "ProviderSiloTests",
             dependencies: ["ProviderSilo", "CoreModels", "CoreNetworking"]
+        ),
+        .testTarget(
+            name: "ProviderIPTVTests",
+            dependencies: ["ProviderIPTV", "CoreModels", "CoreNetworking"]
         ),
         .testTarget(
             name: "ProviderPlexTests",

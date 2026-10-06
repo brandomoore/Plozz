@@ -103,6 +103,10 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var timeAnchor = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970 / 1_800) * 1_800)
     @State private var pendingTuneID: String?
     @State private var pendingServerConnection = false
+    @State private var pendingIPTVConnection = false
+    @State private var pendingIPTVPlaylist: LiveTVPlaylistSource?
+    @State private var pendingIPTVMode: IPTVCredential.Mode = .playlist
+    @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
     @State private var externalPlayback: PrototypeExternalPlayback?
     @State private var multiviewSelection: LiveTVMultiviewSelection?
     @State private var multiviewEditingInsets: EdgeInsets?
@@ -618,6 +622,10 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             } else if let favorite = pendingMultiviewFavorite {
                 pendingMultiviewFavorite = nil
                 restoreMultiviewFavorite(favorite)
+            } else if pendingIPTVConnection {
+                pendingIPTVConnection = false
+                providerSetupRouter?.connectIPTV(playlist: pendingIPTVPlaylist, mode: pendingIPTVMode)
+                pendingIPTVPlaylist = nil
             } else if pendingServerConnection {
                 pendingServerConnection = false
                 connectServer?()
@@ -881,6 +889,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 enrollment.invalidate()
                 loadedRequest = nil
                 pendingServerConnection = false
+                pendingIPTVConnection = false
+                pendingIPTVPlaylist = nil
                 pendingTuneID = nil
                 pendingMultiviewFavorite = nil
                 sheet = nil
@@ -962,7 +972,10 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                       sources.configuration.playlists.isEmpty && sources.configuration.servers.isEmpty {
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: canvasWidth) {
                     LiveTVSetupWelcome(
-                        addPlaylist: { sheet = .addPlaylist },
+                        addPlaylist: {
+                            if providerSetupRouter != nil { requestIPTVConnection() }
+                            else { sheet = .addPlaylist }
+                        },
                         useServer: { sheet = .serverSetup },
                         issue: sources.mutationIssue?.message,
                         serverStatuses: enrollment.statuses.filter { $0.phase != .idle },
@@ -1063,6 +1076,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     model: sources, imports: imports, refresh: { reloadRequest &+= 1 },
                     serverChoices: serverChoices, serverProviderResolver: serverProviderResolver,
                     connectServer: connectServer == nil ? nil : requestServerConnection,
+                    connectIPTV: providerSetupRouter == nil ? nil : requestIPTVConnection,
                     sourceFilterID: model.configuredSourceID,
                     browseSource: { sourceID in
                         model.source = nil
@@ -1112,6 +1126,19 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         pendingTuneID = nil
         pendingServerConnection = true
         sheet = nil
+    }
+
+    private func requestIPTVConnection(
+        _ playlist: LiveTVPlaylistSource? = nil, mode: IPTVCredential.Mode = .playlist
+    ) {
+        if sheet != nil {
+            pendingIPTVConnection = true
+            pendingIPTVPlaylist = playlist
+            pendingIPTVMode = mode
+            sheet = nil
+        } else {
+            providerSetupRouter?.connectIPTV(playlist: playlist, mode: mode)
+        }
     }
 
     private var libraryCatalogRevision: PrototypeLibraryCatalogRevision? {

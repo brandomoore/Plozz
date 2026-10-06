@@ -52,6 +52,7 @@ public struct ServerLiveTVChannel: Hashable, Identifiable, Sendable {
     /// Credential-free artwork only; never a tuner or playback URL.
     public let imageURL: URL?
     public let isRadio: Bool
+    public let groups: [String]
     public let currentProgramme: ServerLiveTVProgramme?
 
     public init(
@@ -60,6 +61,7 @@ public struct ServerLiveTVChannel: Hashable, Identifiable, Sendable {
         number: String? = nil,
         imageURL: URL? = nil,
         isRadio: Bool = false,
+        groups: [String] = [],
         currentProgramme: ServerLiveTVProgramme? = nil
     ) {
         self.id = id
@@ -67,6 +69,7 @@ public struct ServerLiveTVChannel: Hashable, Identifiable, Sendable {
         self.number = number
         self.imageURL = imageURL
         self.isRadio = isRadio
+        self.groups = groups
         self.currentProgramme = currentProgramme
     }
 }

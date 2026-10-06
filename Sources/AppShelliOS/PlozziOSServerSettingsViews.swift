@@ -104,6 +104,7 @@ private struct PlozziOSServerSettingsDetailView: View {
     let appModel: PlozziOSAppModel
     let serverKey: String
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
     @State private var confirmRemoveServer = false
     @State private var confirmRemoveEverywhere = false
     @State private var selectedAccountID: String?
@@ -140,6 +141,16 @@ private struct PlozziOSServerSettingsDetailView: View {
                     }
                 } footer: {
                     Text("Removing a sign-in affects every profile on this \(deviceName).")
+                }
+
+                if group.providerKind == .iptv, let providerSetupRouter {
+                    SettingsSectionGroup {
+                        ForEach(group.accounts) { account in
+                            Button("Edit connection", systemImage: "pencil") {
+                                providerSetupRouter.connectIPTV(account: account)
+                            }
+                        }
+                    }
                 }
 
                 if group.accounts.count > 1 {

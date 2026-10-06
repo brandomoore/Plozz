@@ -22,9 +22,21 @@ struct AddServerView: View {
     @State private var validationTask: Task<Void, Never>?
 
     let appModel: PlozziOSAppModel
+    private let initialIPTVPlaylist: LiveTVPlaylistSource?
+    private let initialIPTVAccount: Account?
+    private let initialProfileID: String
+    private let initialIPTVMode: IPTVCredential.Mode
 
-    init(appModel: PlozziOSAppModel, initialProvider: ProviderKind = .jellyfin, initialAddress: String = "") {
+    init(
+        appModel: PlozziOSAppModel, initialProvider: ProviderKind = .jellyfin, initialAddress: String = "",
+        initialIPTVPlaylist: LiveTVPlaylistSource? = nil, initialIPTVAccount: Account? = nil,
+        initialIPTVMode: IPTVCredential.Mode = .playlist
+    ) {
         self.appModel = appModel
+        self.initialIPTVPlaylist = initialIPTVPlaylist
+        self.initialIPTVAccount = initialIPTVAccount
+        initialProfileID = appModel.profiles.activeProfileID
+        self.initialIPTVMode = initialIPTVMode
         // Media Share isn't a media *server*; callers route it elsewhere. Guard
         // against it here so the provider picker never lands on an invalid state.
         _provider = State(initialValue: initialProvider == .mediaShare ? .jellyfin : initialProvider)
@@ -35,6 +47,31 @@ struct AddServerView: View {
 
     var body: some View {
         NavigationStack {
+            if provider == .iptv {
+                IPTVSignInView(
+                    deviceID: appModel.deviceID,
+                    address: initialIPTVPlaylist?.playlistURL.absoluteString ?? address,
+                    name: initialIPTVPlaylist?.name ?? "",
+                    guideAddress: initialIPTVPlaylist?.guideURLs.first?.absoluteString ?? "",
+                    guideURLs: initialIPTVPlaylist?.guideURLs ?? [],
+                    reconnecting: initialIPTVAccount.map {
+                        $0.session(token: appModel.accountStore.token(for: $0.id) ?? "")
+                    },
+                    initialMode: initialIPTVMode,
+                    discoversPlaylistGuides: initialIPTVPlaylist?.discoversPlaylistGuides ?? true,
+                    onAuthenticated: {
+                        guard appModel.profiles.activeProfileID == initialProfileID,
+                              initialIPTVAccount.map({ previous in
+                                  appModel.accounts.contains {
+                                      $0.id == previous.id && $0.credentialRevision == previous.credentialRevision
+                                  }
+                              }) != false else { throw IPTVAuthViewModel.CompletionError.persistence }
+                        guard appModel.persist([$0]) else { throw IPTVAuthViewModel.CompletionError.persistence }
+                        dismiss()
+                    },
+                    onCancel: { dismiss() }
+                )
+            } else {
             Form {
                 Section {
                     ManagedProviderPicker(provider: $provider)
@@ -123,6 +160,7 @@ struct AddServerView: View {
             .onDisappear {
                 validationTask?.cancel()
                 isValidating = false
+            }
             }
         }
     }

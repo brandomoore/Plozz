@@ -158,6 +158,7 @@ public final class AccountsProvidersModel {
         case .plex: .plex
         case .jellyfin: .jellyfin
         case .emby: .emby
+        case .iptv: .iptv
         case .mediaShare, .silo: nil
         }
     }
@@ -247,7 +248,7 @@ public final class AccountsProvidersModel {
         for account: Account,
         token: String
     ) -> ProviderResolutionContext {
-        let localMediaContext = account.server.provider == .mediaShare
+        let localMediaContext = account.server.provider == .mediaShare || account.server.provider == .iptv
             ? LocalMediaContext(
                 accountID: account.id,
                 profileID: profilesModel.activeProfileID,

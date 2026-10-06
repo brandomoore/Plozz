@@ -96,6 +96,8 @@ public final class AppState {
     /// cancelling Quick Connect returns to *that* provider's server picker
     /// rather than the provider chooser. `nil` starts the flow at the chooser.
     public private(set) var pendingOnboardingProvider: ProviderKind?
+    @ObservationIgnored public private(set) var pendingIPTVPlaylist: LiveTVPlaylistSource?
+    @ObservationIgnored public private(set) var pendingIPTVAccount: Account?
     /// Additional server identity being added from a profile's "Watching as"
     /// page. Carries enough context to select the new account after persistence.
     private var pendingAdditionalUser: (serverKey: String, profileID: String)?
@@ -1286,6 +1288,7 @@ public final class AppState {
         siloCredentials: (any RotatingCredentialStoring)?
     ) -> ProviderRegistry {
         let registry = ProviderRegistry()
+        ManagedProviderRegistry.registerIPTV(into: registry, durableStore: durableLocalStateStore)
         registry.register(.silo) { context in
             guard let siloCredentials else { throw AppError.unauthorized }
             return try SiloProvider(context: context, credentials: siloCredentials)
@@ -1515,7 +1518,8 @@ public final class AppState {
     /// setup not yet done) this seeds the always-present default profile from
     /// the sign-in identity and detours through the profile confirm step;
     /// otherwise it enters the app directly.
-    public func didAuthenticate(_ session: UserSession) {
+    @discardableResult
+    public func didAuthenticate(_ session: UserSession) -> Bool {
         let isFirstRun = accountsProviders.accounts.isEmpty && !profilesModel.firstRunProfileSetupComplete
         // Every provider now gets a STABLE, deterministic id derived from its
         // (provider + server + user) identity — so re-adding the same server (e.g. to
@@ -1529,7 +1533,7 @@ public final class AppState {
             try accountsProviders.accountStore.add(account, token: session.accessToken)
         } catch {
             apply(.authenticationFailed(.unknown("")))
-            return
+            return false
         }
         finalizeAddedAccount(
             session: session,
@@ -1537,6 +1541,7 @@ public final class AppState {
             previousAccount: previousAccount,
             isFirstRun: isFirstRun
         )
+        return true
     }
 
     /// Shared onboarding tail once an account has been persisted: retire the old
@@ -1568,6 +1573,8 @@ public final class AppState {
         clearRemovalTombstone(for: account.id)
         // Flow finished — next add-account starts at the chooser.
         pendingOnboardingProvider = nil
+        pendingIPTVPlaylist = nil
+        pendingIPTVAccount = nil
         if completesAdditionalIdentity {
             // "Add Another User" is an identity change on an existing server,
             // not a new-server onboarding. The existing Libraries screen will
@@ -2272,13 +2279,19 @@ public final class AppState {
     }
 
     /// Begins adding another account from inside the signed-in app.
-    public func addAccount() {
+    public func addAccount(
+        provider: ProviderKind? = nil, playlist: LiveTVPlaylistSource? = nil, iptvAccount: Account? = nil
+    ) {
         // A fresh add-account flow always starts at the provider chooser.
-        pendingOnboardingProvider = nil
+        pendingOnboardingProvider = provider
+        pendingIPTVPlaylist = playlist
+        pendingIPTVAccount = iptvAccount
         apply(.addAccountRequested)
     }
 
     public func cancelAuthentication() {
+        pendingIPTVPlaylist = nil
+        pendingIPTVAccount = nil
         if pendingAdditionalUser != nil {
             // This auth screen was opened from Watching as, not from the server
             // picker. The Libraries navigation stack remains mounted underneath;

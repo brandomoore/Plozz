@@ -118,7 +118,16 @@ extension LiveTVPrototypeImportModel {
                 guard acceptServerResult(
                     source, context: context, request: request, sourceRevision: sourceRevision, into: model
                 ) else { continue }
-                var catalog = try LiveTVServerCatalog(source: source, context: context, channels: channels)
+                let mapping = Task.detached(priority: .userInitiated) {
+                    try LiveTVServerCatalog(source: source, context: context, channels: channels)
+                }
+                var catalog = try await withTaskCancellationHandler {
+                    try await mapping.value
+                } onCancel: { mapping.cancel() }
+                try Task.checkCancellation()
+                guard acceptServerResult(
+                    source, context: context, request: request, sourceRevision: sourceRevision, into: model
+                ) else { continue }
                 let previous = cachedServerCatalogs[source.id]
                 if let previous {
                     let known = Set(catalog.channels.map(\.id))

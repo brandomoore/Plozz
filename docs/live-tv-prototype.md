@@ -61,6 +61,57 @@ remain Debug-only; neither is a production default or a source offered to users.
 
 ## Try
 
+### IPTV accounts and large catalogues
+
+**Sources > IPTV provider** and **Add Server > IPTV** use the same account
+setup on Apple TV, iPhone and iPad. Connections accept a personalized M3U URL,
+HTTP Basic credentials, a bearer token, custom request headers, or an Xtream
+server/username/password. On iPhone and iPad, **Playlist file (M3U)** imports
+through Files into the same disk-backed catalogue. File catalogues remain on
+the importing device; they are not copied by account sync. Use a playlist URL
+for a source that should refresh independently on multiple devices.
+
+The provider separates live channels, movies and recognizable series/episodes.
+Movies and series use ordinary paged libraries, Search, details, playback and
+profile-scoped Continue Watching. Live-only accounts do not create empty movie
+or TV libraries. Xtream categories become channel groups and item tags.
+Explicit XMLTV guides are ordered, with separate first-guide-origin headers;
+Xtream otherwise uses its native guide API. Auto-discovered guide URLs on
+another origin require explicit configuration for URL-based playlists.
+
+Catalogue imports stream into encrypted SQLite staging, not a retained
+document or a giant array of media items. They have no legacy 128 MiB document
+or 100,000-entry cutoff. Individual lines/records, guide documents and playback
+manifests remain bounded; malformed data, unsupported protocols, exhausted
+storage and provider errors remain explicit failures. Movies and series are
+decoded by page; the guide still holds lightweight channel values for its full
+lineup. This is not a claim of unlimited device memory or measured performance
+on every older device.
+
+Private URLs and authentication headers remain in Keychain credentials and
+encrypted catalogue records. Playback uses an account/revision/session-fenced
+locator and a provider-owned loopback proxy. It forwards authorized headers
+only to the original origin, rewrites HLS playlists and supports byte ranges.
+Ambient cookies and credential stores are disabled. HTTP remains unencrypted;
+use HTTPS when available. HLS/file playback does not establish DRM, DASH,
+browser-login, or remote AirPlay receiver support. Credential-protected artwork
+is not currently resolved; credential-bearing artwork URLs are not published
+into ordinary item caches.
+
+**Settings > Servers > account > Edit connection** reconnects an account without
+changing its account identity or losing profile watch state. New credentials
+use a fresh encrypted catalogue; the existing connection is replaced only
+after authentication/import and persistence succeed. A removed account,
+changed credential revision or switched profile invalidates an in-flight form.
+
+Existing legacy sources remain intact. Their details offer **Connect as IPTV
+account** for URL sources, preserving the name, URL, guide order and discovery
+choice. This is additive, not an automatic migration: disable the old source
+after connecting to avoid duplicate channels. Existing source approvals,
+favorites and manual guide mappings are not silently reassigned. Legacy source
+editors and encrypted imported-file archives retain their existing bounds and
+compatibility; new account/file imports use the disk-backed path.
+
 Source setup appears only after the initial source reload, server enrollment,
 and library-catalog restoration have established that there are no channels.
 On iPhone and iPad, onboarding reveals the same full-page background as the
@@ -318,7 +369,8 @@ is no prior in-memory history to migrate on the first updated launch.
   Channel-list entries can also point to HLS streams.
   Playlist downloads parse incrementally, with bounded line buffering rather
   than a retained raw response, full decoded string and split-line array.
-  Imports accept up to 100,000 entries and 128 MiB, with a 64 KiB line bound.
+  Legacy source imports accept up to 100,000 entries and 128 MiB, with a 64 KiB
+  line bound. New IPTV account imports use the disk-backed path described above.
   An exact 100,000-entry network fixture exceeds the previous 20 MiB ceiling
   without truncation. Parsed response caching has a separate 64 MiB budget;
   guide bodies retain their existing limits and cannot reuse playlist validators.
@@ -958,7 +1010,7 @@ results distinct. Only confidently missing streams can be automatically hidden;
 restoring a scan-hidden channel does not change a manual hide. Scanner network
 permissions do not grant the media engine a transport capability it lacks.
 
-Xtream-compatible login, DVB-I, DASH-specific integration, catch-up,
+DVB-I, DASH-specific integration, catch-up,
 programme-rating restrictions and recording management are outside this
 implementation. Source-configuration PIN protection is not a
 programme-content rating filter. Real tuner installations remain a validation

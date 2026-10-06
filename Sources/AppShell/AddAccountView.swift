@@ -17,6 +17,7 @@ struct AddAccountView: View {
     let signedInServers: [SignedInServer]
     let onMediaBrowserServerSelected: (MediaServer) -> Void
     let onPlexAuthenticated: (UserSession) -> Void
+    let onIPTVAuthenticated: (UserSession) throws -> Void
     let onPlexAuthenticatedMany: ([UserSession]) -> Void
     let onShareConfigured: (ShareDraft) -> Void
     let onWebDAVShareConfigured: (WebDAVShareConfiguration) -> Void
@@ -24,6 +25,8 @@ struct AddAccountView: View {
     let onCancel: () -> Void
     var onSetUpFromAnotherDevice: (() -> Void)?
     var onStandalonePlayback: (() -> Void)?
+    let initialIPTVPlaylist: LiveTVPlaylistSource?
+    let reconnectingIPTV: UserSession?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var choice: ProviderKind?
@@ -37,9 +40,12 @@ struct AddAccountView: View {
         deviceID: String,
         canReturnToApp: Bool,
         initialProvider: ProviderKind? = nil,
+        initialIPTVPlaylist: LiveTVPlaylistSource? = nil,
+        reconnectingIPTV: UserSession? = nil,
         signedInServers: [SignedInServer] = [],
         onMediaBrowserServerSelected: @escaping (MediaServer) -> Void,
         onPlexAuthenticated: @escaping (UserSession) -> Void,
+        onIPTVAuthenticated: ((UserSession) throws -> Void)? = nil,
         onPlexAuthenticatedMany: @escaping ([UserSession]) -> Void = { _ in },
         onShareConfigured: @escaping (ShareDraft) -> Void = { _ in },
         onWebDAVShareConfigured: @escaping (WebDAVShareConfiguration) -> Void = { _ in },
@@ -49,10 +55,13 @@ struct AddAccountView: View {
         onStandalonePlayback: (() -> Void)? = nil
     ) {
         self.deviceID = deviceID
+        self.initialIPTVPlaylist = initialIPTVPlaylist
+        self.reconnectingIPTV = reconnectingIPTV
         self.canReturnToApp = canReturnToApp
         self.signedInServers = signedInServers
         self.onMediaBrowserServerSelected = onMediaBrowserServerSelected
         self.onPlexAuthenticated = onPlexAuthenticated
+        self.onIPTVAuthenticated = onIPTVAuthenticated ?? onPlexAuthenticated
         self.onPlexAuthenticatedMany = onPlexAuthenticatedMany
         self.onShareConfigured = onShareConfigured
         self.onWebDAVShareConfigured = onWebDAVShareConfigured
@@ -121,6 +130,16 @@ struct AddAccountView: View {
                 signedInServers: signedInServers.filter { $0.server.provider == .silo },
                 onBack: navigateBackToChooser
             ) { onMediaBrowserServerSelected($0) }
+        case .iptv:
+            IPTVSignInView(
+                deviceID: deviceID, address: initialIPTVPlaylist?.playlistURL.absoluteString ?? "",
+                name: initialIPTVPlaylist?.name ?? "",
+                guideAddress: initialIPTVPlaylist?.guideURLs.first?.absoluteString ?? "",
+                guideURLs: initialIPTVPlaylist?.guideURLs ?? [],
+                reconnecting: reconnectingIPTV,
+                discoversPlaylistGuides: initialIPTVPlaylist?.discoversPlaylistGuides ?? true,
+                onAuthenticated: onIPTVAuthenticated, onCancel: navigateBackToChooser
+            )
         case .mediaShare:
             AddMediaShareView(
                 isPageReady: pageIsReady,
@@ -158,6 +177,7 @@ struct AddAccountView: View {
         case .emby: "emby"
         case .plex: "plex"
         case .silo: "silo"
+        case .iptv: "iptv"
         case .mediaShare: "mediaShare"
         }
     }
@@ -220,6 +240,7 @@ private enum ProviderChooserFocus: Hashable {
     case emby
     case plex
     case silo
+    case iptv
     case mediaShare
     case standalonePlayback
     case setUpFromAnotherDevice
@@ -230,6 +251,7 @@ private enum ProviderChooserFocus: Hashable {
         case .emby: self = .emby
         case .plex: self = .plex
         case .silo: self = .silo
+        case .iptv: self = .iptv
         case .mediaShare: self = .mediaShare
         }
     }
@@ -298,6 +320,7 @@ private struct ProviderChooserView: View {
              (.some(.emby), .left),
              (.some(.plex), .left),
              (.some(.silo), .left),
+             (.some(.iptv), .left),
              (.some(.mediaShare), .left),
              (.some(.standalonePlayback), .left):
             focusedControl = .back
@@ -391,6 +414,11 @@ private struct ProviderChoiceGroup: View {
                 focusedControl: focusedControl
             ) {
                 onSelect(.mediaShare)
+            }
+
+            Divider().padding(.horizontal, 1)
+            ProviderChoiceRow(provider: .iptv, height: 88, focusedControl: focusedControl) {
+                onSelect(.iptv)
             }
 
             if let onStandalonePlayback {

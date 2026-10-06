@@ -26,6 +26,8 @@ public struct PlozziOSRootView: View {
     @State private var heroTrailerController = HeroTrailerController()
     @State private var sidebarGeometry = PlozziOSSidebarGeometryModel()
     @State private var showingAddServer = false
+    @State private var providerSetupRouter = ManagedProviderSetupRouter()
+    @State private var iptvSetup: ManagedProviderSetupRouter.Request?
     @State private var addServerPresentationColorScheme: ColorScheme = .dark
     @State private var showingSettings = false
     /// Owned here rather than in the tab shell so `receivePairingURL` can see
@@ -108,6 +110,13 @@ public struct PlozziOSRootView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .environment(\.managedProviderSetupRouter, providerSetupRouter)
+        .onChange(of: providerSetupRouter.request?.id) { _, _ in
+            guard let request = providerSetupRouter.request else { return }
+            iptvSetup = request
+            providerSetupRouter.request = nil
+            showAddServer()
+        }
         // One opaque cover for profile PIN then Plex PIN. Separate presentations
         // briefly exposed the tab shell between them.
         .fullScreenCover(isPresented: profileAccessGateBinding) {
@@ -288,14 +297,17 @@ public struct PlozziOSRootView: View {
             isPresented: $showingAddServer,
             onDismiss: {
                 serverSetupSeed = nil
+                iptvSetup = nil
                 appModel.finishManagedServerPresentation()
                 consumeDeferredPairingURL()
             }
         ) {
             AddServerView(
                 appModel: appModel,
-                initialProvider: serverSetupSeed?.provider ?? .jellyfin,
-                initialAddress: serverSetupSeed?.candidateBaseURLs.first?.absoluteString ?? ""
+                initialProvider: iptvSetup == nil ? serverSetupSeed?.provider ?? .jellyfin : .iptv,
+                initialAddress: serverSetupSeed?.candidateBaseURLs.first?.absoluteString ?? "",
+                initialIPTVPlaylist: iptvSetup?.playlist, initialIPTVAccount: iptvSetup?.account,
+                initialIPTVMode: iptvSetup?.mode ?? .playlist
             )
                 .preferredColorScheme(addServerPresentationColorScheme)
                 .presentationSizing(.page)

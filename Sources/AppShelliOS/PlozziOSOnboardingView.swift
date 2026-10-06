@@ -72,6 +72,8 @@ struct PlozziOSOnboardingView: View {
             providerRow(.silo)
             divider
             providerRow(.mediaShare)
+            divider
+            providerRow(.iptv)
             if let onStandalonePlayback {
                 divider
                 Button(action: onStandalonePlayback) {

@@ -11,6 +11,8 @@ import UIKit
 struct PlozziOSSettingsView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showingAddServer = false
+    @State private var providerSetupRouter = ManagedProviderSetupRouter()
+    @State private var iptvSetup: ManagedProviderSetupRouter.Request?
     /// A server we're signing an ADDITIONAL user into, so the Add Server sheet
     /// opens pre-filled with it instead of at the provider chooser.
     @State private var addUserServer: MediaServer?
@@ -61,6 +63,13 @@ struct PlozziOSSettingsView: View {
             }
         }
         .environment(appModel.profiles)
+        .environment(\.managedProviderSetupRouter, providerSetupRouter)
+        .onChange(of: providerSetupRouter.request?.id) { _, _ in
+            guard let request = providerSetupRouter.request else { return }
+            iptvSetup = request
+            providerSetupRouter.request = nil
+            showAddServer()
+        }
         .scrollContentBackground(.hidden)
         .background { SettingsPageBackground() }
         .transientStatusOverlay(
@@ -76,12 +85,15 @@ struct PlozziOSSettingsView: View {
             onDismiss: {
                 appModel.finishManagedServerPresentation()
                 addUserServer = nil
+                iptvSetup = nil
             }
         ) {
             AddServerView(
                 appModel: appModel,
-                initialProvider: addUserServer?.provider ?? .jellyfin,
-                initialAddress: addUserServer?.baseURL.absoluteString ?? ""
+                initialProvider: iptvSetup == nil ? addUserServer?.provider ?? .jellyfin : .iptv,
+                initialAddress: addUserServer?.baseURL.absoluteString ?? "",
+                initialIPTVPlaylist: iptvSetup?.playlist, initialIPTVAccount: iptvSetup?.account,
+                initialIPTVMode: iptvSetup?.mode ?? .playlist
             )
                 .preferredColorScheme(addServerPresentationColorScheme)
                 .presentationSizing(.page)

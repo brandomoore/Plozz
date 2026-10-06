@@ -17,6 +17,7 @@ public struct LiveTVSourcesView: View {
     private let serverChoices: [LiveTVServerChoice]
     private let serverProviderResolver: LiveTVServerProviderResolver?
     private let connectServer: (() -> Void)?
+    private var connectIPTV: ((LiveTVPlaylistSource?, IPTVCredential.Mode) -> Void)?
     private let sourceFilterID: String?
     private let browseSource: ((String?) -> Void)?
     private let didConfigurePlaylist: () -> Void
@@ -92,6 +93,7 @@ public struct LiveTVSourcesView: View {
         serverChoices: [LiveTVServerChoice] = [],
         serverProviderResolver: LiveTVServerProviderResolver? = nil,
         connectServer: (() -> Void)? = nil,
+        connectIPTV: ((LiveTVPlaylistSource?, IPTVCredential.Mode) -> Void)? = nil,
         sourceFilterID: String? = nil,
         browseSource: ((String?) -> Void)? = nil,
         didConfigurePlaylist: @escaping () -> Void = {},
@@ -107,6 +109,7 @@ public struct LiveTVSourcesView: View {
         self.serverChoices = serverChoices
         self.serverProviderResolver = serverProviderResolver
         self.connectServer = connectServer
+        self.connectIPTV = connectIPTV
         self.sourceFilterID = sourceFilterID
         self.browseSource = browseSource
         self.didConfigurePlaylist = didConfigurePlaylist
@@ -128,7 +131,7 @@ public struct LiveTVSourcesView: View {
                 removeSource: { pendingRemoval = $0 }, commitRemoval: remove,
                 createChannel: createChannel,
                 scanChannels: scanChannels, scanCoordinator: scanCoordinator,
-                didImportPlaylist: didImportPlaylist
+                didImportPlaylist: didImportPlaylist, connectIPTV: connectIPTV
             )
             if presentation == .settingsPane {
                 VStack(alignment: .leading, spacing: 24) {
@@ -246,6 +249,7 @@ private enum LiveTVSourceRemoval {
 }
 
 private struct LiveTVSourcesContent: View {
+    @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
     let model: LiveTVSourceManagementModel
     let imports: LiveTVPrototypeImportModel?
     let refresh: (@MainActor () -> Void)?
@@ -261,6 +265,7 @@ private struct LiveTVSourcesContent: View {
     let scanChannels: (() -> Void)?
     let scanCoordinator: LiveTVChannelScanCoordinator?
     let didImportPlaylist: (String) -> Void
+    var connectIPTV: ((LiveTVPlaylistSource?, IPTVCredential.Mode) -> Void)? = nil
 
     var body: some View {
         if let issue = model.loadIssue {
@@ -287,7 +292,7 @@ private struct LiveTVSourcesContent: View {
                                 model: model, imports: imports, sourceID: source.id,
                                 didConfigurePlaylist: didConfigurePlaylist,
                                 refresh: refresh, scanCoordinator: scanCoordinator,
-                                removeSource: { commitRemoval(.playlist($0)) }
+                                removeSource: { commitRemoval(.playlist($0)) }, connectIPTV: connectIPTV
                             )
                         } label: {
                             SettingsRowLabel(
@@ -462,7 +467,7 @@ private struct LiveTVSourcesContent: View {
                                 model: model, imports: imports, sourceID: source.id,
                                 didConfigurePlaylist: didConfigurePlaylist,
                                 refresh: refresh, scanCoordinator: scanCoordinator,
-                                removeSource: { commitRemoval(.playlist($0)) }
+                                removeSource: { commitRemoval(.playlist($0)) }, connectIPTV: connectIPTV
                             )
                         } label: {
                             LiveTVPlaylistSourceSummary(
@@ -545,6 +550,16 @@ private struct LiveTVSourcesContent: View {
 
     private var setupActions: some View {
         SettingsSectionGroup("Add a source") {
+            if connectIPTV != nil || providerSetupRouter != nil {
+                Button {
+                    if let connectIPTV { connectIPTV(nil, .playlist) }
+                    else { providerSetupRouter?.connectIPTV() }
+                } label: {
+                    LiveTVSetupActionLabel(title: "IPTV provider", symbol: "antenna.radiowaves.left.and.right")
+                }
+                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                .accessibilityIdentifier("live-tv-add-playlist")
+            } else {
             NavigationLink {
                 LiveTVPlaylistEditor { input in
                     let previousIDs = Set(model.configuration.playlists.map(\.id))
@@ -561,8 +576,18 @@ private struct LiveTVSourcesContent: View {
             }
             .buttonStyle(SettingsFocusButtonStyle(size: .contained))
             .accessibilityIdentifier("live-tv-add-playlist")
+            }
             #if os(iOS)
-            if let imports, imports.supportsDurableCatalog {
+            if connectIPTV != nil || providerSetupRouter != nil {
+                Button {
+                    if let connectIPTV { connectIPTV(nil, .file) }
+                    else { providerSetupRouter?.connectIPTV(mode: .file) }
+                } label: {
+                    LiveTVSetupActionLabel(title: "Playlist file (M3U)", symbol: "doc.badge.plus")
+                }
+                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                .accessibilityIdentifier("live-tv-import-playlist")
+            } else if let imports, imports.supportsDurableCatalog {
                 NavigationLink {
                     LiveTVImportedPlaylistEditor(
                         sources: model, imports: imports, didConfigurePlaylist: didConfigurePlaylist,
@@ -667,13 +692,31 @@ private struct LiveTVPlaylistSourceDetails: View {
     let refresh: (@MainActor () -> Void)?
     let scanCoordinator: LiveTVChannelScanCoordinator?
     let removeSource: (LiveTVPlaylistSource) -> Bool
+    var connectIPTV: ((LiveTVPlaylistSource?, IPTVCredential.Mode) -> Void)? = nil
     @State private var confirmsRemoval = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
 
     var body: some View {
         if let source = model.configuration.playlists.first(where: { $0.id == sourceID }) {
             LiveTVSettingsPage(title: "Source details", sourceName: source.name) {
                 LiveTVSourceMutationMessage(issue: model.mutationIssue)
+                if source.importedPlaylistID == nil, connectIPTV != nil || providerSetupRouter != nil {
+                    SettingsSectionGroup {
+                        Button {
+                            do {
+                                try model.ensureCanMutate()
+                                if let connectIPTV { connectIPTV(source, .playlist) }
+                                else { providerSetupRouter?.connectIPTV(playlist: source) }
+                            } catch { model.mutationIssue = .accessDenied }
+                        } label: {
+                            LiveTVSetupActionLabel(title: "Connect as IPTV account", symbol: "person.crop.circle.badge.plus")
+                        }
+                        .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                    } footer: {
+                        Text("Use account setup for large playlists, authentication, movies, and series. Your existing source and preferences are kept; disable this source after connecting to avoid duplicate channels.")
+                    }
+                }
                 SettingsSectionGroup {
                     Toggle(isOn: Binding(
                         get: { source.isEnabled },
