@@ -588,11 +588,15 @@ public struct PlexClient: Sendable {
     /// Both static and smart collections resolve through their children endpoint.
     /// Omitting `sort` preserves the server's configured collection order.
     func collectionMembers(ratingKey: String, start: Int, size: Int) async throws -> PlexMediaContainer {
-        try await decodeStreamEnriched(
-            PlexMediaContainerResponse.self,
+        let endpoint = Endpoint(
             path: "/library/metadata/\(ratingKey)/children",
-            query: containerQuery(start: start, size: size)
-        ).MediaContainer
+            // Request extra streams without whitelisting away the members of
+            // smart collections on servers that honor response customization.
+            queryItems: containerQuery(start: start, size: size)
+                + [URLQueryItem(name: "includeOptionalElements", value: "Stream")],
+            headers: headers
+        )
+        return try await decode(PlexMediaContainerResponse.self, endpoint).MediaContainer
     }
 
     /// `GET /library/metadata/{ratingKey}/extras` — trailers and other extras

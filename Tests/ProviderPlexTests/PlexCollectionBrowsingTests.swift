@@ -158,6 +158,60 @@ final class PlexCollectionBrowsingTests: XCTestCase {
             XCTAssertFalse(query.contains { ["type", "sort"].contains($0.name) })
             XCTAssertTrue(query.contains(URLQueryItem(name: "X-Plex-Container-Start", value: "60")))
             XCTAssertTrue(query.contains(URLQueryItem(name: "X-Plex-Container-Size", value: "2")))
+            XCTAssertTrue(query.contains(URLQueryItem(name: "includeGuids", value: "1")))
+            XCTAssertTrue(query.contains(URLQueryItem(name: "includeOptionalElements", value: "Stream")))
+            XCTAssertFalse(query.contains { ["includeElements", "excludeElements"].contains($0.name) })
+        }
+    }
+
+    func testSmartCollectionMembersSurviveServerElementWhitelisting() async throws {
+        let page = try await provider(CollectionWhitelistHTTPClient()).collectionMembers(
+            of: "13", page: PageRequest()
+        )
+        XCTAssertEqual(page.items.map(\.id), ["member"])
+        XCTAssertEqual(page.items.map(\.kind), [.movie])
+        XCTAssertEqual(page.totalCount, 1)
+    }
+
+    func testMembershipRejectsNonemptyEnvelopeWithMissingMembers() async {
+        for start in [0, 60] {
+            for json in [
+                #"{"MediaContainer":{"size":2}}"#,
+                #"{"MediaContainer":{"size":2,"Metadata":[]}}"#,
+                #"{"MediaContainer":{"size":0,"totalSize":64}}"#,
+                #"{"MediaContainer":{"size":0,"Directory":[{"key":"unexpected","title":"Unexpected"}]}}"#
+            ] {
+                let http = StubHTTPClient()
+                http.stub(pathSuffix: "/library/metadata/13/children", json: json)
+                do {
+                    _ = try await provider(http).collectionMembers(
+                        of: "13", page: PageRequest(startIndex: start, limit: 2)
+                    )
+                    XCTFail("Omitted members must produce a retryable error, not an empty collection")
+                } catch {
+                    XCTAssertEqual(error as? AppError, .invalidResponse)
+                }
+            }
+        }
+    }
+
+    func testMembershipAcceptsEmptyCollectionsAndExhaustedPages() async throws {
+        for start in [0, 60] {
+            for json in [
+                #"{"MediaContainer":{"size":0}}"#,
+                #"{"MediaContainer":{"size":0,"Metadata":[]}}"#,
+                "{\"MediaContainer\":{\"size\":0,\"totalSize\":\(start)}}"
+            ] {
+                let http = StubHTTPClient()
+                http.stub(pathSuffix: "/library/metadata/13/children", json: json)
+                let page = try await provider(http).collectionMembers(
+                    of: "13", page: PageRequest(startIndex: start)
+                )
+                XCTAssertTrue(page.items.isEmpty)
+                XCTAssertEqual(page.startIndex, start)
+                XCTAssertEqual(page.totalCount, start)
+                XCTAssertFalse(page.hasMore)
+            }
         }
     }
 
@@ -264,13 +318,19 @@ final class PlexCollectionBrowsingTests: XCTestCase {
     private struct CollectionWhitelistHTTPClient: HTTPClient {
         func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
             guard endpoint.path == "/library/sections/2/all"
-                    || endpoint.path == "/library/sections/2/collections" else {
+                    || endpoint.path == "/library/sections/2/collections"
+                    || endpoint.path == "/library/metadata/13/children" else {
                 throw AppError.notFound
             }
             let json: String
             if endpoint.queryItems.contains(URLQueryItem(name: "includeElements", value: "Stream")) {
                 json = """
                 {"MediaContainer":{"identifier":"com.plexapp.plugins.library","size":1,"librarySectionID":2}}
+                """
+            } else if endpoint.path.hasSuffix("/children") {
+                json = """
+                {"MediaContainer":{"size":1,"totalSize":1,
+                  "Metadata":[{"ratingKey":"member","type":"movie","title":"Member","librarySectionID":2}]}}
                 """
             } else {
                 json = """
