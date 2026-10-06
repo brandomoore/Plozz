@@ -60,9 +60,13 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
                     let header = try XCTUnwrap(request.results?.first {
                         $0.topCandidates(1).first?.string == "ADD A SOURCE"
                     })
-                    let y = (1 - header.boundingBox.midY) * window.bounds.height
-                    XCTAssertEqual(header.boundingBox.minX * width, 24, accuracy: 2,
-                                   "The pane must not gain a second native List row inset.")
+                    let headerFrame = CGRect(
+                        x: header.boundingBox.minX * width,
+                        y: (1 - header.boundingBox.maxY) * window.bounds.height,
+                        width: header.boundingBox.width * width,
+                        height: header.boundingBox.height * window.bounds.height
+                    )
+                    let y = headerFrame.midY
                     host.rootView = AnyView(
                         NavigationStack {
                             Color.clear.settingsPageSurface()
@@ -75,6 +79,8 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
                     )
                     try await settle(window)
                     let reference = snapshot(window)
+                    XCTAssertEqual(try leadingInkEdge(actual, background: reference, header: headerFrame),
+                                   24, accuracy: 2, "The pane must not gain a second native List row inset.")
                     for x in [width * 0.7, width - 32] {
                         let point = CGPoint(x: x, y: y)
                         for (observed, expected) in zip(try pixel(actual, at: point), try pixel(reference, at: point)) {
@@ -99,6 +105,26 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
         return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
             XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
         }
+    }
+
+    private func leadingInkEdge(_ image: UIImage, background: UIImage, header: CGRect) throws -> CGFloat {
+        let top = max(0, Int(floor(header.minY)) - 2)
+        let bottom = min(Int(image.size.height), Int(ceil(header.maxY)) + 2)
+        let right = min(Int(image.size.width), Int(ceil(header.maxX)) + 2)
+        var leading: Int?
+        // Vision's line box can extend beyond the glyphs; ignore faint panel shadows.
+        scan: for x in 0..<right {
+            for y in top..<bottom {
+                let point = CGPoint(x: x, y: y)
+                let observed = try pixel(image, at: point)
+                let expected = try pixel(background, at: point)
+                if zip(observed, expected).contains(where: { abs($0.0 - $0.1) > 40 }) {
+                    leading = x
+                    break scan
+                }
+            }
+        }
+        return CGFloat(try XCTUnwrap(leading, "The source header must have visible text."))
     }
 
     private func pixel(_ image: UIImage, at point: CGPoint) throws -> [Int] {
