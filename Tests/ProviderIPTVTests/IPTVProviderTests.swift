@@ -76,11 +76,35 @@ final class IPTVProviderTests: XCTestCase {
             XCTAssertLessThanOrEqual(parser.bufferedByteCount, M3UPlaylistParser.maximumLineBytes + 3)
             XCTAssertTrue(parser.takeCatalogEntries().isEmpty)
         }
+
         try parser.append(Data("#EXTINF:-1,News\nhttps://provider.example/live/news.ts\n".utf8))
         let result = try parser.finish()
         XCTAssertEqual(result.entryCount, 1)
         XCTAssertEqual(parser.takeCatalogEntries().count, 1)
         XCTAssertGreaterThan(parser.byteCount, 128 * 1_024 * 1_024)
+    }
+
+    func testChannelFileExtensionsDoNotCreateMoviesAndExplicitLiveTypeWins() throws {
+        var parser = M3UPlaylistParser().makeCatalogStream()
+        try parser.append(Data("""
+        #EXTM3U
+        #EXTINF:-1 tvg-name="News24 City" group-title="Italy",News24 City
+        https://dc3.telesveva.com:4433/news24.mp4
+        #EXTINF:-1 tvg-name="Tv Uno" group-title="Italy",Tv Uno
+        http://ftp.tiscali.it/francescovernata/TVUNO/monoscopioTvUNOint-1.wmv
+        #EXTINF:120 tvg-type="live",Channel S01E01
+        https://provider.example/movie/channel.mkv
+        #EXTINF:-1 tvg-type="movie",Explicit film
+        https://provider.example/film.m3u8
+        #EXTINF:3600,Finite video
+        https://provider.example/video
+
+        """.utf8))
+        _ = try parser.finish()
+        let records = parser.takeCatalogEntries().flatMap(IPTVMapping.playlistEntry)
+        XCTAssertEqual(records.map(\.item.kind), [.video, .video, .video, .movie, .movie])
+        XCTAssertEqual(records.map(\.isLive), [true, true, true, false, false])
+        XCTAssertEqual(records.prefix(2).map(\.item.tags), [["Italy"], ["Italy"]])
     }
 
     func testCatalogAcceptsOversizedOptionalHeaderWithoutRetainingIt() throws {

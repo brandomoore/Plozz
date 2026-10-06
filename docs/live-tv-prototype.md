@@ -81,6 +81,13 @@ The provider separates live channels, movies and recognizable series/episodes.
 Movies and series use ordinary paged libraries, Search, details, playback and
 profile-scoped Continue Watching. Live-only accounts do not create empty movie
 or TV libraries. Xtream categories become channel groups and item tags.
+M3U file extensions alone never classify an entry as a movie: channels can use
+MP4, WMV or other file URLs. An explicit live type takes precedence; otherwise
+VOD classification uses declared types, movie/series paths, episode metadata or
+a positive duration. Existing URL catalogues refresh once for revised mapping
+without resetting the account; previously imported files need reimporting to
+apply that mapping. Account-backed IPTV channels pass the same active-profile
+authorization checks during enrollment, loading and playback.
 Explicit XMLTV guides are ordered, with separate first-guide-origin headers;
 Xtream otherwise uses its native guide API. Auto-discovered guide URLs on
 another origin require explicit configuration for URL-based playlists.

@@ -4,6 +4,7 @@ import CryptoKit
 import Foundation
 
 actor IPTVClient {
+    private static let playlistCatalogScope = "playlist-v2"
     let credential: IPTVCredential
     private let http: IPTVHTTP
     private let artworkSecrets: [String]
@@ -83,7 +84,7 @@ actor IPTVClient {
             try Task.checkCancellation()
         }
         try Task.checkCancellation()
-        let scope = credential.mode == .playlist ? "playlist" : library
+        let scope = credential.mode == .playlist ? Self.playlistCatalogScope : library
         if !force, let raw = try catalog.state(scope),
            let time = TimeInterval(raw), Date().timeIntervalSince1970 - time < 1_800 { return }
         refresh = Task {
@@ -153,7 +154,7 @@ actor IPTVClient {
         try Task.checkCancellation()
         try catalog.commitImport(
             library: credential.mode == .playlist ? nil : library,
-            scope: credential.mode == .playlist ? "playlist" : library
+            scope: credential.mode == .playlist ? Self.playlistCatalogScope : library
         )
     }
 

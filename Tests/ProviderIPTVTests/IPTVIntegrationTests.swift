@@ -111,6 +111,34 @@ final class IPTVIntegrationTests: XCTestCase {
         XCTAssertEqual(results.2.count, 1)
     }
 
+    func testFreshLegacyPlaylistCacheIsReclassifiedOnceWithoutResettingItsAccount() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let credential = try IPTVCredential(mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list")))
+        let catalogURL = root.appendingPathComponent(credential.identity.uuidString + ".sqlite")
+        do {
+            let old = try IPTVCatalog(url: catalogURL, key: credential.catalogKey)
+            try old.insert(IPTVRecord(
+                item: MediaItem(id: "movie:old-misclassification", title: "Channel", kind: .movie, libraryID: "movies"),
+                streamURL: XCTUnwrap(URL(string: "https://provider.test/channel.mp4"))
+            ))
+            try old.setState("playlist", String(Date().timeIntervalSince1970))
+        }
+        IPTVFixture.state.handler = { _ in
+            (200, [:], Data("#EXTM3U\n#EXTINF:-1,Channel\nhttps://provider.test/channel.mp4\n".utf8))
+        }
+        let client = try IPTVClient(credential: credential, directory: root, configuration: configuration())
+        let movies = try await client.page(library: "movies", kind: .movie, page: .init(limit: 20))
+        let channels = try await client.liveChannels()
+        XCTAssertTrue(movies.items.isEmpty)
+        XCTAssertEqual(channels.map(\.name), ["Channel"])
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+        let reopened = try IPTVClient(credential: credential, directory: root, configuration: configuration())
+        let restored = try await reopened.liveChannels()
+        XCTAssertEqual(restored.map(\.id), channels.map(\.id))
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1, "Current mapping must reuse the refreshed catalogue")
+    }
+
     func testCancellingOneImporterDoesNotCancelAnotherWaitingCaller() async throws {
         let entered = expectation(description: "Playlist download started")
         let gate = DispatchSemaphore(value: 0)

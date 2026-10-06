@@ -91,13 +91,18 @@ enum IPTVMapping {
         let channel = entry.channel
         guard let url = channel.streamURL else { return [] }
         let attributes = entry.attributes
-        let contentType = (attributes["tvg-type"] ?? attributes["type"] ?? "").lowercased()
+        let contentType = (attributes["tvg-type"] ?? attributes["type"] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let path = url.path.lowercased()
         let episode = episodeIdentity(channel.name, attributes: attributes)
-        let isSeries = contentType == "series" || contentType == "episode" || path.contains("/series/") || episode != nil
-        let fileTypes: Set<String> = ["mp4", "m4v", "mkv", "avi", "mov", "webm", "wmv"]
-        let isMovie = contentType == "movie" || contentType == "vod" || path.contains("/movie/")
-            || fileTypes.contains(url.pathExtension.lowercased()) || (entry.duration ?? 0) > 0
+        let explicitlyLive = contentType == "live"
+        let isSeries = !explicitlyLive && (
+            contentType == "series" || contentType == "episode" || path.contains("/series/") || episode != nil
+        )
+        // A channel can serve a looping file; its container does not identify a movie.
+        let isMovie = !explicitlyLive && (
+            contentType == "movie" || contentType == "vod" || path.contains("/movie/") || (entry.duration ?? 0) > 0
+        )
         let identity = digest([channel.guideID ?? "", channel.name, channel.groups.joined(separator: ";"),
                                url.lastPathComponent].joined(separator: "\u{1F}"))
         if isSeries, let episode {

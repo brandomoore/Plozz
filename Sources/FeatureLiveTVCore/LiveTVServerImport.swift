@@ -224,7 +224,7 @@ extension LiveTVPrototypeImportModel {
 
     func authorizedContext(for source: LiveTVServerSource) -> LiveTVAuthorizedServerProvider? {
         guard let context = serverProviderResolver(source.accountID), context.accountID == source.accountID,
-              !context.authorizationID.isEmpty, [.jellyfin, .plex, .emby].contains(context.kind)
+              !context.authorizationID.isEmpty, [.jellyfin, .plex, .emby, .iptv].contains(context.kind)
         else { return nil }
         return context
     }

@@ -980,7 +980,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ProviderIPTVTests",
-            dependencies: ["ProviderIPTV", "CoreModels", "CoreNetworking"]
+            dependencies: ["ProviderIPTV", "CoreModels", "CoreNetworking", "FeatureLiveTVCore"]
         ),
         .testTarget(
             name: "ProviderPlexTests",
