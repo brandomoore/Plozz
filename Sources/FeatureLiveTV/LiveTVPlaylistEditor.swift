@@ -1,5 +1,6 @@
 import CoreUI
 import CoreModels
+import CoreNetworking
 import FeatureLiveTVCore
 import Observation
 import SwiftUI
@@ -19,7 +20,7 @@ struct LiveTVPlaylistEditor: View {
         self.isEditing = isEditing
         self.save = save
         _model = State(initialValue: LiveTVPlaylistEditorModel(
-            name: name, playlistURL: playlistURL, guideURLs: guideURLs
+            name: name, playlistURL: playlistURL, guideURLs: guideURLs, isEditing: isEditing
         ))
     }
 
@@ -184,15 +185,21 @@ final class LiveTVPlaylistEditorModel {
     private var review: Review?
     @ObservationIgnored private var revision = 0
     @ObservationIgnored private let loader: any LiveTVSourceLoading
+    @ObservationIgnored private let setupDiagnostics: IPTVSetupDiagnostics
+    @ObservationIgnored private let isEditing: Bool
+    @ObservationIgnored private var diagnosticAttempt: IPTVSetupAttempt?
 
     init(
         name: String = "", playlistURL: URL? = nil, guideURLs: [URL] = [],
+        isEditing: Bool = false, setupDiagnostics: IPTVSetupDiagnostics = .shared,
         loader: any LiveTVSourceLoading = LiveTVSourceLoader()
     ) {
         self.name = name
         self.playlistAddress = playlistURL?.absoluteString ?? ""
         self.guideAddresses = guideURLs.map { .init(address: $0.absoluteString) }
         self.loader = loader
+        self.isEditing = isEditing
+        self.setupDiagnostics = setupDiagnostics
     }
 
     var currentReview: Review? {
@@ -246,67 +253,100 @@ final class LiveTVPlaylistEditorModel {
     }
 
     func check() async {
-        revision &+= 1
+        cancelCheck()
         let request = revision
         isChecking = false
         review = nil
         issue = nil
+        let attempt = beginDiagnostic()
+        diagnosticAttempt = attempt
+        var readyToSave = false
+        defer {
+            if !readyToSave {
+                attempt?.finish(.init(.cancelled))
+                if request == revision { diagnosticAttempt = nil }
+            }
+        }
         let input: ValidatedInput
         switch validatedInputResult {
         case .success(let value):
             input = value
         case .failure(let failure):
             issue = failure
+            attempt?.finish(.init(.invalidInput))
             return
         }
         isChecking = true
         defer { if request == revision { isChecking = false } }
         do {
-            let imported = try await loader.loadPlaylist(from: input.playlistURL)
+            attempt?.advance(to: .playlist)
+            let imported = try await IPTVSetupDiagnostics.$current.withValue(attempt) {
+                try await loader.loadPlaylist(from: input.playlistURL)
+            }
             guard !Task.isCancelled, request == revision, input == validatedInput else { return }
+            attempt?.record(entries: imported.entryCount, skippedEntries: imported.skippedEntryCount)
             guard !imported.channels.isEmpty else {
                 issue = .noChannels
+                attempt?.finish(.init(.empty))
                 return
             }
             review = Review(
                 input: input, channelCount: imported.channels.count,
                 skippedEntryCount: imported.skippedEntryCount
             )
+            readyToSave = true
         } catch is CancellationError {
             return
         } catch let failure as LiveTVSourceImportError {
             guard request == revision, !Task.isCancelled, failure != .cancelled else { return }
+            attempt?.finish(.sanitized(failure))
             issue = .download(failure)
         } catch {
             guard request == revision, !Task.isCancelled else { return }
+            attempt?.finish(.sanitized(error))
             issue = .download(.downloadFailed)
         }
     }
 
     func cancelCheck() {
+        diagnosticAttempt?.finish(.init(.cancelled))
+        diagnosticAttempt = nil
         revision &+= 1
         isChecking = false
     }
 
     func save(using persist: (ValidatedInput) throws -> Void) -> Bool {
         guard let review = currentReview else {
+            diagnosticAttempt?.finish(.init(.cancelled))
+            diagnosticAttempt = nil
+            beginDiagnostic()?.finish(.init(.invalidInput))
             issue = .checkRequired
             return false
         }
+        let attempt = diagnosticAttempt ?? beginDiagnostic()
+        defer { diagnosticAttempt = nil }
+        attempt?.advance(to: .persistence)
         do {
             try persist(review.input)
+            attempt?.finish()
             issue = nil
             return true
         } catch LiveTVSourceManagementModel.MutationError.accessDenied {
+            attempt?.finish(.init(.accessDenied))
             issue = .accessDenied
             return false
         } catch LiveTVSourceManagementModel.MutationError.changedSource {
+            attempt?.finish(.init(.sourceChanged))
             issue = .sourceChanged
             return false
         } catch {
+            attempt?.finish(.init(.storage))
             issue = .saveFailed
             return false
         }
     }
 
+    private func beginDiagnostic() -> IPTVSetupAttempt? {
+        setupDiagnostics.begin(source: .playlistURL, authentication: .url, entry: isEditing ? .editSource : .addSource)
+    }
 }

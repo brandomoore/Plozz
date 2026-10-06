@@ -1,10 +1,59 @@
 import CoreModels
 import Foundation
+import ProviderIPTV
 @testable import FeatureAuthCore
 import XCTest
 
 @MainActor
 final class IPTVAuthViewModelTests: XCTestCase {
+    func testValidationAndHandledAuthenticationFailuresAreAutomaticallyRecorded() async throws {
+        let diagnostics = IPTVSetupDiagnostics()
+        let buffer = AuthSetupBuffer()
+        let finished = expectation(description: "Handled authentication failure")
+        diagnostics.start {
+            buffer.append($0)
+            if $0.stage == .authentication, $0.outcome == .failed { finished.fulfill() }
+        }
+        let invalid = IPTVAuthViewModel(
+            deviceID: "private", address: "ftp://private.test", setupDiagnostics: diagnostics,
+            onAuthenticated: { _ in XCTFail("Invalid address cannot authenticate") }
+        )
+        invalid.connect()
+        XCTAssertEqual(buffer.values.last?.stage, .validation)
+        XCTAssertEqual(buffer.values.last?.failure?.reason, .invalidInput)
+        let model = IPTVAuthViewModel(
+            deviceID: "private", address: "https://private.test/list?token=private",
+            setupDiagnostics: diagnostics,
+            signIn: { _, _, _, _ in
+                IPTVSetupDiagnostics.current?.advance(to: .authentication)
+                throw IPTVError.authentication
+            },
+            onAuthenticated: { _ in XCTFail("Rejected authentication cannot persist") }
+        )
+        model.connect()
+        await fulfillment(of: [finished], timeout: 3)
+        XCTAssertEqual(buffer.values.last?.failure?.reason, .authentication)
+        XCTAssertNotNil(model.issue)
+        XCTAssertFalse(model.isConnecting)
+    }
+
+    func testDisabledDiagnosticsDoNotChangeSuccessfulSetup() async {
+        let finished = expectation(description: "Account saved without reporting")
+        let diagnostics = IPTVSetupDiagnostics()
+        let model = IPTVAuthViewModel(
+            deviceID: "device", address: "https://provider.example/list", setupDiagnostics: diagnostics,
+            signIn: { credential, _, _, _ in
+                XCTAssertNil(IPTVSetupDiagnostics.current)
+                return IPTVSignInGate.session(credential)
+            },
+            onAuthenticated: { _ in finished.fulfill() }
+        )
+        model.connect()
+        await fulfillment(of: [finished], timeout: 3)
+        XCTAssertNil(model.issue)
+        XCTAssertFalse(model.isConnecting)
+    }
+
     func testPlaylistBasicBearerAndGuideHeadersStaySeparate() throws {
         let model = IPTVAuthViewModel(
             deviceID: "device", address: "https://provider.example/list",
@@ -60,9 +109,13 @@ final class IPTVAuthViewModelTests: XCTestCase {
 
     func testCancellationRejectsLateSuccessfulAuthentication() async throws {
         let gate = IPTVSignInGate()
+        let diagnostics = IPTVSetupDiagnostics()
+        let buffer = AuthSetupBuffer()
+        diagnostics.start { buffer.append($0) }
         var received = 0
         let model = IPTVAuthViewModel(
             deviceID: "device", address: "https://provider.example/list",
+            setupDiagnostics: diagnostics,
             signIn: { credential, _, _, _ in await gate.complete(credential) },
             onAuthenticated: { _ in received += 1 }
         )
@@ -73,13 +126,22 @@ final class IPTVAuthViewModelTests: XCTestCase {
         for _ in 0..<50 { await Task.yield() }
         XCTAssertEqual(received, 0)
         XCTAssertFalse(model.isConnecting)
+        XCTAssertEqual(buffer.values.filter { $0.outcome == .cancelled }.count, 1)
+        XCTAssertFalse(buffer.values.contains { $0.outcome == .failed || $0.outcome == .succeeded })
     }
 
     func testPersistenceFailureRemainsVisibleAndAllowsRetry() async throws {
+        let diagnostics = IPTVSetupDiagnostics()
+        let buffer = AuthSetupBuffer()
+        diagnostics.start { buffer.append($0) }
         let model = IPTVAuthViewModel(
             deviceID: "device", address: "https://provider.example/list",
+            setupDiagnostics: diagnostics,
             signIn: { credential, _, _, _ in IPTVSignInGate.session(credential) },
-            onAuthenticated: { _ in throw IPTVAuthViewModel.CompletionError.persistence }
+            onAuthenticated: { _ in
+                XCTAssertNil(IPTVSetupDiagnostics.current, "Account activation must not pass setup telemetry to background work")
+                throw IPTVAuthViewModel.CompletionError.persistence
+            }
         )
         defer { model.cancel() }
         model.connect()
@@ -87,6 +149,15 @@ final class IPTVAuthViewModelTests: XCTestCase {
         while model.issue == nil, ContinuousClock.now < deadline { await Task.yield() }
         XCTAssertNotNil(model.issue)
         XCTAssertTrue(model.canConnect)
+        XCTAssertEqual(buffer.values.last?.stage, .persistence)
+        XCTAssertEqual(buffer.values.last?.failure?.reason, .storage)
+    }
+
+    private final class AuthSetupBuffer: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [IPTVSetupDiagnostic] = []
+        var values: [IPTVSetupDiagnostic] { lock.withLock { storage } }
+        func append(_ value: IPTVSetupDiagnostic) { lock.withLock { storage.append(value) } }
     }
 
     func testEditingConnectionRetainsAccountIdentityAndUsesFreshPrivateCatalog() async throws {

@@ -37,6 +37,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         cacheDirectory: URL? = nil, configuration: URLSessionConfiguration? = nil,
         progress: @escaping @Sendable (IPTVImportProgress) -> Void = { _ in }
     ) async throws -> UserSession {
+        IPTVSetupDiagnostics.current?.advance(to: .catalogOpen)
         let client = try IPTVClient(
             credential: credential, directory: cacheDirectory, configuration: configuration, progress: progress
         )
@@ -45,6 +46,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
             try await client.ensureCatalog(library)
         }
         try Task.checkCancellation()
+        IPTVSetupDiagnostics.current?.advance(to: .sessionCreation)
         return try makeSession(credential: credential, name: name, deviceID: deviceID)
     }
 
@@ -52,8 +54,10 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         _ url: URL, credential: IPTVCredential, name: String, deviceID: String,
         cacheDirectory: URL? = nil, progress: @escaping @Sendable (IPTVImportProgress) -> Void = { _ in }
     ) async throws -> UserSession {
+        IPTVSetupDiagnostics.current?.advance(to: .catalogOpen)
         let client = try IPTVClient(credential: credential, directory: cacheDirectory, progress: progress)
         try await client.importFile(url)
+        IPTVSetupDiagnostics.current?.advance(to: .sessionCreation)
         return try makeSession(credential: credential, name: name, deviceID: deviceID)
     }
 

@@ -32,11 +32,14 @@ final class IPTVHTTP: Sendable {
         request.httpMethod = method
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        let diagnostic = IPTVSetupDiagnostics.current
+        diagnostic?.willRequest()
         let (bytes, response) = try await session.bytes(for: request)
         guard let response = response as? HTTPURLResponse else {
             bytes.task.cancel()
             throw IPTVError.malformed
         }
+        diagnostic?.received(status: response.statusCode, response: .init(mimeType: response.mimeType))
         guard (200...299).contains(response.statusCode) else {
             bytes.task.cancel()
             if response.statusCode == 401 || response.statusCode == 403 { throw IPTVError.authentication }

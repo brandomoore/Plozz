@@ -205,6 +205,20 @@ final class IPTVCatalog {
 public enum IPTVError: Error, LocalizedError, Sendable {
     case invalidAddress, authentication, expired, unsupported, malformed, storage, oversizedRecord, empty, fileUnavailable
 
+    public var setupFailure: IPTVSetupDiagnostic.Failure {
+        switch self {
+        case .invalidAddress: .init(.invalidInput)
+        case .authentication: .init(.authentication)
+        case .expired: .init(.expired)
+        case .unsupported: .init(.unsupported)
+        case .malformed: .init(.malformed)
+        case .storage: .init(.storage)
+        case .oversizedRecord: .init(.tooLarge)
+        case .empty: .init(.empty)
+        case .fileUnavailable: .init(.fileUnavailable)
+        }
+    }
+
     public var errorDescription: String? { String(localized: userDescription) }
 
     public var userDescription: LocalizedStringResource {

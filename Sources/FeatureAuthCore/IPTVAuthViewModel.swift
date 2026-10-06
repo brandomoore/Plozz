@@ -52,6 +52,8 @@ public final class IPTVAuthViewModel {
     private let onAuthenticated: (UserSession) throws -> Void
     private let signIn: SignIn
     private let reconnecting: UserSession?
+    private let setupDiagnostics: IPTVSetupDiagnostics
+    @ObservationIgnored private var diagnosticAttempt: IPTVSetupAttempt?
     private var flow: Task<Void, Never>?
     private var generation = UUID()
 
@@ -59,6 +61,7 @@ public final class IPTVAuthViewModel {
         deviceID: String, address: String = "", name: String = "", guideAddress: String = "",
         guideURLs: [URL] = [], reconnecting: UserSession? = nil, initialMode: IPTVCredential.Mode = .playlist,
         discoversPlaylistGuides: Bool = true,
+        setupDiagnostics: IPTVSetupDiagnostics = .shared,
         signIn: @escaping SignIn = { credential, name, deviceID, progress in
             try await IPTVProvider.signIn(credential: credential, name: name, deviceID: deviceID, progress: progress)
         },
@@ -72,6 +75,7 @@ public final class IPTVAuthViewModel {
         additionalGuides = guideURLs.dropFirst().map { Guide(address: $0.absoluteString) }
         self.onAuthenticated = onAuthenticated
         self.signIn = signIn
+        self.setupDiagnostics = setupDiagnostics
         mode = initialMode
         self.reconnecting = reconnecting
         if let reconnecting {
@@ -111,6 +115,12 @@ public final class IPTVAuthViewModel {
         cancel()
         issue = nil
         let current = generation
+        let attempt = setupDiagnostics.begin(
+            source: mode == .file ? .playlistFile : mode == .xtream ? .xtream : .playlistURL,
+            authentication: diagnosticAuthentication,
+            entry: reconnecting == nil ? .addAccount : .reconnectAccount
+        )
+        diagnosticAttempt = attempt
         do {
             let credential = try makeCredential()
             let enteredName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -120,45 +130,71 @@ public final class IPTVAuthViewModel {
             isConnecting = true
             progressMessage = "Checking your connection"
             flow = Task { [weak self, deviceID, signIn] in
-                do {
-                    let progress: @Sendable (IPTVImportProgress) -> Void = { [weak self] progress in
-                        Task { @MainActor [weak self] in
-                            guard let self, self.generation == current else { return }
-                            self.progressMessage = progress.message
+                await IPTVSetupDiagnostics.$current.withValue(attempt) {
+                    defer { attempt?.finish(.init(.cancelled)) }
+                    do {
+                        let progress: @Sendable (IPTVImportProgress) -> Void = { [weak self] progress in
+                            Task { @MainActor [weak self] in
+                                guard let self, self.generation == current else { return }
+                                self.progressMessage = progress.message
+                            }
                         }
+                        var session: UserSession
+                        if let fileURL {
+                            let accessed = fileURL.startAccessingSecurityScopedResource()
+                            defer { if accessed { fileURL.stopAccessingSecurityScopedResource() } }
+                            session = try await IPTVProvider.importFile(
+                                fileURL, credential: credential, name: displayName, deviceID: deviceID, progress: progress
+                            )
+                        } else {
+                            session = try await signIn(credential, displayName, deviceID, progress)
+                        }
+                        try Task.checkCancellation()
+                        guard let self, self.generation == current else { return }
+                        if let previous = self.reconnecting {
+                            session.server.id = previous.server.id
+                            session.userID = previous.userID
+                        }
+                        self.isConnecting = false
+                        attempt?.advance(to: .persistence)
+                        // Account activation can spawn long-lived refresh/sync tasks.
+                        try IPTVSetupDiagnostics.$current.withValue(nil) {
+                            try self.onAuthenticated(session)
+                        }
+                        attempt?.finish()
+                    } catch {
+                        guard let self, self.generation == current, !Task.isCancelled else { return }
+                        let failure: IPTVSetupDiagnostic.Failure = error is CompletionError
+                            ? .init(.storage) : (error as? IPTVError)?.setupFailure ?? .sanitized(error)
+                        attempt?.finish(failure)
+                        self.isConnecting = false
+                        self.show(error)
                     }
-                    var session: UserSession
-                    if let fileURL {
-                        let accessed = fileURL.startAccessingSecurityScopedResource()
-                        defer { if accessed { fileURL.stopAccessingSecurityScopedResource() } }
-                        session = try await IPTVProvider.importFile(
-                            fileURL, credential: credential, name: displayName, deviceID: deviceID, progress: progress
-                        )
-                    } else {
-                        session = try await signIn(credential, displayName, deviceID, progress)
-                    }
-                    try Task.checkCancellation()
-                    guard let self, self.generation == current else { return }
-                    if let previous = self.reconnecting {
-                        session.server.id = previous.server.id
-                        session.userID = previous.userID
-                    }
-                    self.isConnecting = false
-                    try self.onAuthenticated(session)
-                } catch {
-                    guard let self, self.generation == current, !Task.isCancelled else { return }
-                    self.isConnecting = false
-                    self.show(error)
                 }
             }
-        } catch { show(error) }
+        } catch {
+            attempt?.finish(.init(.invalidInput))
+            show(error)
+        }
     }
 
     public func cancel() {
+        diagnosticAttempt?.finish(.init(.cancelled))
+        diagnosticAttempt = nil
         generation = UUID()
         flow?.cancel()
         flow = nil
         isConnecting = false
+    }
+
+    private var diagnosticAuthentication: IPTVSetupDiagnostic.Authentication {
+        if mode == .file { return .none }
+        if mode == .xtream { return .xtream }
+        switch authentication {
+        case .basic: return .basic
+        case .bearer: return .bearer
+        case .none: return headers.isEmpty ? .url : .customHeaders
+        }
     }
 
     public func makeCredential() throws -> IPTVCredential {

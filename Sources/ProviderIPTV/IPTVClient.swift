@@ -36,6 +36,8 @@ actor IPTVClient {
     }
 
     func authenticate() async throws {
+        let diagnostic = IPTVSetupDiagnostics.current
+        diagnostic?.advance(to: .authentication)
         if credential.mode == .file {
             guard try catalog.state("playlist") != nil else { throw IPTVError.fileUnavailable }
             return
@@ -46,6 +48,7 @@ actor IPTVClient {
             var parser = M3UPlaylistParser(
                 baseURL: response.url ?? credential.address, permitsAuthenticationHeaders: true
             ).makeCatalogStream()
+            defer { diagnostic?.record(playlistBytes: parser.byteCount) }
             var chunk = Data()
             for try await byte in bytes {
                 try Task.checkCancellation()
@@ -58,8 +61,11 @@ actor IPTVClient {
             }
             try parser.append(chunk)
             if parser.hasPlayableHLSTag { return }
-            _ = try parser.finish()
-            guard !parser.takeCatalogEntries().isEmpty else { throw IPTVError.empty }
+            let result = try parser.finish()
+            guard !parser.takeCatalogEntries().isEmpty else {
+                diagnostic?.record(entries: 0, skippedEntries: result.skippedEntryCount)
+                throw IPTVError.empty
+            }
             return
         }
         let response = try await object(url: endpoint())
@@ -119,10 +125,13 @@ actor IPTVClient {
     }
 
     private func importCatalog(_ library: String) async throws {
+        let diagnostic = IPTVSetupDiagnostics.current
         if credential.mode == .xtream,
            authenticatedAt.map({ Date().timeIntervalSince($0) > 300 }) != false {
             try await authenticate()
         }
+        diagnostic?.advance(to: credential.mode == .playlist ? .playlist
+            : library == "movies" ? .movies : library == "series" ? .series : .channels)
         try catalog.beginImport()
         defer { catalog.discardImport() }
         if credential.mode == .playlist {
@@ -139,6 +148,7 @@ actor IPTVClient {
             progress(IPTVImportProgress(stage: stage, entries: 0))
             let categories = try await categories(library: library)
             var count = 0
+            defer { diagnostic?.record(entries: count) }
             var parser = IPTVJSONArrayStream()
             try await read(url: endpoint(action: action)) { data in
                 try parser.append(data) { bytes in
@@ -152,6 +162,7 @@ actor IPTVClient {
             progress(IPTVImportProgress(stage: stage, entries: count))
         }
         try Task.checkCancellation()
+        diagnostic?.advance(to: .catalogCommit)
         try catalog.commitImport(
             library: credential.mode == .playlist ? nil : library,
             scope: credential.mode == .playlist ? Self.playlistCatalogScope : library
@@ -182,14 +193,17 @@ actor IPTVClient {
 
     func importFile(_ url: URL) async throws {
         guard credential.mode == .file, url.isFileURL else { throw IPTVError.invalidAddress }
+        IPTVSetupDiagnostics.current?.advance(to: .playlist)
         try catalog.beginImport()
         defer { catalog.discardImport() }
         try await importPlaylist(fileURL: url)
         try Task.checkCancellation()
+        IPTVSetupDiagnostics.current?.advance(to: .catalogCommit)
         try catalog.commitImport(library: nil, scope: "playlist")
     }
 
     private func importPlaylist(fileURL: URL? = nil) async throws {
+        let diagnostic = IPTVSetupDiagnostics.current
         let origin: URL
         let bytes: URLSession.AsyncBytes?
         if fileURL != nil {
@@ -206,6 +220,7 @@ actor IPTVClient {
         ).makeCatalogStream()
         var chunk = Data()
         var count = 0
+        defer { diagnostic?.record(entries: count, playlistBytes: parser.byteCount) }
         progress(IPTVImportProgress(stage: .playlist, entries: 0))
         func persist(_ entries: [M3UPlaylistParser.CatalogEntry]) throws {
             for entry in entries {
@@ -242,6 +257,7 @@ actor IPTVClient {
         try parser.append(chunk)
         do {
             let result = try parser.finish()
+            diagnostic?.record(skippedEntries: result.skippedEntryCount)
             try persist(parser.takeCatalogEntries())
             progress(IPTVImportProgress(stage: .playlist, entries: count))
             // Addresses are kept in a sealed catalogue record, never plaintext state.

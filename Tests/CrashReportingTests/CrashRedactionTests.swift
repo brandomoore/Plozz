@@ -5,6 +5,91 @@ import XCTest
 @testable import CrashReporting
 
 final class CrashRedactionTests: XCTestCase {
+    func testSetupFailureSurvivesWithoutPrivateValuesOrUntrustedTags() throws {
+        let diagnostic = try setupFailure(status: 403)
+        let event = try XCTUnwrap(SentryCrashReporter.setupEvent(diagnostic))
+        event.context?["iptv_setup"]?["url"] = "https://private.test/token"
+        event.context?["iptv_setup"]?["headers"] = ["Authorization": "private credential"]
+        event.context?["iptv_setup"]?["filename"] = "Private channels.m3u"
+        event.tags?["private"] = "Private profile"
+        event.tags?["device.model"] = "AppleTV6,2"
+        event.tags?["os.version"] = "26.6.0"
+        event.tags?["last_screen"] = "settings"
+        event.message = SentryMessage(formatted: "Private server error")
+        event.fingerprint = ["private account ID"]
+        let clean = try XCTUnwrap(CrashRedaction.scrub(event))
+        let data = try XCTUnwrap(clean.context?["iptv_setup"])
+        let encoded = try JSONSerialization.data(withJSONObject: data, options: [.sortedKeys])
+        let text = String(decoding: encoded, as: UTF8.self)
+        XCTAssertFalse(text.contains("private"))
+        XCTAssertFalse(text.contains("Private"))
+        XCTAssertEqual(data["http_status"] as? Int, 403)
+        XCTAssertEqual(data["entries"] as? Int, 100_000)
+        XCTAssertEqual(clean.tags?["device.model"], "AppleTV6,2")
+        XCTAssertEqual(clean.tags?["os.version"], "26.6.0")
+        XCTAssertEqual(clean.tags?["last_screen"], "settings")
+        XCTAssertNil(clean.tags?["private"])
+        XCTAssertEqual(clean.fingerprint, ["iptv_setup", "playlistURL", "authentication", "authentication", "403", "none"])
+        event.tags?["device.model"] = "Private device"
+        event.tags?["os.version"] = "https://private.test"
+        XCTAssertNil(CrashRedaction.scrub(event)?.tags?["device.model"])
+        XCTAssertNil(CrashRedaction.scrub(event)?.tags?["os.version"])
+    }
+
+    func testSetupRedactionRejectsInvalidEnumsAndNumericPayloads() throws {
+        let data = SentryCrashReporter.setupData(try setupFailure(status: 401))
+        for key in ["source", "authentication", "entry", "stage", "outcome", "reason"] {
+            let event = Event(level: .warning)
+            event.tags = ["report.kind": "iptv-setup"]
+            event.context = ["iptv_setup": data]
+            event.context?["iptv_setup"]?[key] = "Private input"
+            XCTAssertNil(CrashRedaction.scrub(event), key)
+        }
+        let crumb = Breadcrumb(level: .info, category: "plozz.iptv_setup")
+        crumb.data = data
+        for (key, value) in [
+            ("entries", true as Any), ("playlist_bytes", "private" as Any),
+            ("skipped_entries", -1 as Any), ("requests", Double.infinity as Any),
+            ("http_status", 200.5 as Any), ("elapsed_ms", Int.max as Any),
+            ("stage_ms", Double.nan as Any), ("network_code", -99_999 as Any)
+        ] {
+            crumb.data?[key] = value
+        }
+        crumb.data?["response"] = "Private server response"
+        let clean = try XCTUnwrap(CrashRedaction.scrub(crumb)?.data)
+        XCTAssertEqual(Set(clean.keys), ["source", "authentication", "entry", "stage", "outcome", "reason"])
+        crumb.data = data
+        crumb.data?["outcome"] = "succeeded"
+        crumb.data?["reason"] = "Private failure"
+        crumb.data?["network_code"] = -1001
+        XCTAssertNil(CrashRedaction.scrub(crumb)?.data?["reason"])
+        XCTAssertNil(CrashRedaction.scrub(crumb)?.data?["network_code"])
+    }
+
+    func testSetupReportsDeduplicateFailuresAndBoundTotalReports() throws {
+        let gate = IPTVSetupReportGate()
+        let failure = try setupFailure(status: 401)
+        XCTAssertTrue(gate.accept(failure))
+        XCTAssertFalse(gate.accept(failure))
+        for status in 402...410 {
+            XCTAssertTrue(gate.accept(try setupFailure(status: status)))
+        }
+        XCTAssertFalse(gate.accept(try setupFailure(status: 500)))
+    }
+
+    private func setupFailure(status: Int) throws -> IPTVSetupDiagnostic {
+        let diagnostics = IPTVSetupDiagnostics()
+        let buffer = CrashSetupBuffer()
+        diagnostics.start { buffer.append($0) }
+        let attempt = try XCTUnwrap(diagnostics.begin(source: .playlistURL, authentication: .basic, entry: .addAccount))
+        attempt.advance(to: .authentication)
+        attempt.willRequest()
+        attempt.received(status: status, response: .html)
+        attempt.record(entries: 100_000, playlistBytes: 40_000_000, skippedEntries: 5)
+        attempt.finish(.init(.authentication))
+        return try XCTUnwrap(buffer.last)
+    }
+
     func testPlaylistLimitEventContainsOnlyTypedLimitAndCounts() throws {
         let diagnostic = LiveTVPlaylistLimitDiagnostic(
             limit: .responseBodyBytes, observed: 20_971_521, maximum: 20_971_520
@@ -121,5 +206,12 @@ final class CrashRedactionTests: XCTestCase {
         let data = try XCTUnwrap(CrashRedaction.scrub(crumb)?.data)
         XCTAssertEqual(Set(data.keys), ["operation", "stage", "outcome"])
     }
+}
+
+private final class CrashSetupBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: IPTVSetupDiagnostic?
+    var last: IPTVSetupDiagnostic? { lock.withLock { value } }
+    func append(_ value: IPTVSetupDiagnostic) { lock.withLock { self.value = value } }
 }
 #endif
