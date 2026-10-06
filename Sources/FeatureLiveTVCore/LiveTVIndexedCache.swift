@@ -102,39 +102,40 @@ public actor LiveTVIndexedCache {
         guard try fileURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
             throw LiveTVSourceImportError.invalidPlaylist
         }
-        let data = try readBoundedFile(fileURL, maximumBytes: LiveTVPlaylistParser.maximumBytes)
-        return try storeImportedPlaylist(data: data, id: id, baseURL: baseURL)
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        defer { try? handle.close() }
+        return try LiveTVImportedPlaylistArchive.write(
+            to: importedPlaylistURL(id), key: importedFileKey(),
+            context: durableScope + ":" + id.uuidString.lowercased(), baseURL: baseURL
+        ) { try handle.read(upToCount: LiveTVImportedPlaylistArchive.chunkBytes) }
     }
 
     public func storeImportedPlaylist(
         data: Data, id: UUID, baseURL: URL? = nil
     ) throws -> LiveTVPlaylistImport {
-        guard baseURL.map(LiveTVPlaylistSource.isSupportedURL) ?? true else {
-            throw LiveTVSourceImportError.invalidPlaylist
+        var offset = 0
+        return try LiveTVImportedPlaylistArchive.write(
+            to: importedPlaylistURL(id), key: importedFileKey(),
+            context: durableScope + ":" + id.uuidString.lowercased(), baseURL: baseURL
+        ) {
+            guard offset < data.count else { return nil }
+            let end = min(data.count, offset + LiveTVImportedPlaylistArchive.chunkBytes)
+            defer { offset = end }
+            return data.subdata(in: offset..<end)
         }
-        let playlist = try LiveTVPlaylistParser(baseURL: baseURL).parse(data)
-        guard !playlist.channels.isEmpty else { throw LiveTVSourceImportError.invalidPlaylist }
-        let payload = try catalogEncoder.encode(ImportedPlaylistDocument(data: data, baseURL: baseURL))
-        let aad = Data((durableScope + ":" + id.uuidString.lowercased()).utf8)
-        let sealed = try AES.GCM.seal(payload, using: importedFileKey(), authenticating: aad)
-        guard let bytes = sealed.combined else { throw LiveTVCacheError.invalidRecord }
-        try Task.checkCancellation()
-        let destination = try importedPlaylistURL(id)
-        try bytes.write(to: destination, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
-        return playlist
     }
 
     public func importedPlaylist(id: UUID) throws -> LiveTVPlaylistImport {
-        let bytes = try readBoundedFile(
-            importedPlaylistURL(id), maximumBytes: LiveTVPlaylistParser.maximumBytes * 2 + 65_536
-        )
-        let aad = Data((durableScope + ":" + id.uuidString.lowercased()).utf8)
-        let plaintext = try AES.GCM.open(
-            AES.GCM.SealedBox(combined: bytes), using: importedFileKey(), authenticating: aad
-        )
-        let document = try catalogDecoder.decode(ImportedPlaylistDocument.self, from: plaintext)
-        return try LiveTVPlaylistParser(baseURL: document.baseURL).parse(document.data)
+        var parser: LiveTVPlaylistParser.Stream?
+        try LiveTVImportedPlaylistArchive.read(
+            from: importedPlaylistURL(id), key: importedFileKey(),
+            context: durableScope + ":" + id.uuidString.lowercased()
+        ) { data, baseURL in
+            if parser == nil { parser = LiveTVPlaylistParser(baseURL: baseURL).makeStream() }
+            try parser?.append(data)
+        }
+        guard var parser else { throw LiveTVSourceImportError.invalidPlaylist }
+        return try parser.finish()
     }
 
     public func removeImportedPlaylist(id: UUID) throws {
@@ -142,9 +143,43 @@ public actor LiveTVIndexedCache {
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
 
-    private struct ImportedPlaylistDocument: Codable {
-        let data: Data
-        let baseURL: URL?
+    public func exportImportedPlaylist(id: UUID) throws -> LiveTVImportedPlaylistTransfer {
+        var chunks: [Data] = []
+        var baseURL: URL?
+        try LiveTVImportedPlaylistArchive.read(
+            from: importedPlaylistURL(id), key: importedFileKey(),
+            context: durableScope + ":" + id.uuidString.lowercased()
+        ) { data, base in
+            baseURL = base
+            for offset in stride(from: 0, to: data.count, by: LiveTVImportedPlaylistArchive.chunkBytes) {
+                chunks.append(data.subdata(in: offset..<min(data.count, offset + LiveTVImportedPlaylistArchive.chunkBytes)))
+            }
+        }
+        return try LiveTVImportedPlaylistTransfer(chunks: chunks, baseURL: baseURL)
+    }
+
+    public func hasImportedPlaylist(id: UUID) throws -> Bool {
+        FileManager.default.fileExists(atPath: try importedPlaylistURL(id).path)
+    }
+
+    public func restoreSyncedImportedPlaylist(_ transfer: LiveTVImportedPlaylistTransfer, id: UUID) throws {
+        let destination = try importedPlaylistURL(id)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            let existing = try exportImportedPlaylist(id: id)
+            guard existing.digest == transfer.digest, existing.baseURL == transfer.baseURL else {
+                throw LiveTVCacheError.invalidRecord
+            }
+            return
+        }
+        var index = 0
+        _ = try LiveTVImportedPlaylistArchive.write(
+            to: destination, key: importedFileKey(),
+            context: durableScope + ":" + id.uuidString.lowercased(), baseURL: transfer.baseURL
+        ) {
+            guard index < transfer.chunks.count else { return nil }
+            defer { index += 1 }
+            return transfer.chunks[index]
+        }
     }
 
     private func importedPlaylistURL(_ id: UUID) throws -> URL {
@@ -173,17 +208,19 @@ public actor LiveTVIndexedCache {
         )
     }
 
-    private func readBoundedFile(_ url: URL, maximumBytes: Int) throws -> Data {
+    private func boundedFileDigest(_ url: URL, maximumBytes: Int) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
-        var data = Data()
-        while let next = try handle.read(upToCount: min(65_536, maximumBytes - data.count + 1)),
+        var digest = SHA256()
+        var count = 0
+        while let next = try handle.read(upToCount: min(65_536, maximumBytes - count + 1)),
               !next.isEmpty {
             try Task.checkCancellation()
-            data.append(next)
-            guard data.count <= maximumBytes else { throw LiveTVSourceImportError.responseTooLarge }
+            count += next.count
+            guard count <= maximumBytes else { throw LiveTVSourceImportError.responseTooLarge }
+            digest.update(data: next)
         }
-        return data
+        return LiveTVIdentityDigest.hex(digest.finalize())
     }
 
     func identityReviews(
@@ -812,10 +849,10 @@ public actor LiveTVIndexedCache {
             guard let id = url.host.flatMap(UUID.init(uuidString:)) else { throw LiveTVCacheError.invalidRecord }
             let file = try importedPlaylistURL(id)
             if FileManager.default.fileExists(atPath: file.path) {
-                let encrypted = try readBoundedFile(
+                let digest = try boundedFileDigest(
                     file, maximumBytes: LiveTVPlaylistParser.maximumBytes * 2 + 65_536
                 )
-                material.append(LiveTVIdentityDigest.hex(SHA256.hash(data: encrypted)))
+                material.append(digest)
             } else {
                 material.append("missing-imported-file")
             }

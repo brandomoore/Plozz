@@ -7,6 +7,77 @@ import XCTest
 
 @MainActor
 final class AppearanceConsistencyHostedTests: XCTestCase {
+    #if os(iOS)
+    func testSettingsScrollEdgesSpanTheNavigationBarWhileRowsStayInset() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        for usesList in [true, false] {
+            let probe = SettingsLayoutProbe()
+            fixture.host.rootView = AnyView(SettingsLayoutFixture(usesList: usesList, probe: probe))
+            try await waitUntil { !probe.firstRow.isEmpty }
+            let scroll = try XCTUnwrap(firstView(UIScrollView.self, in: fixture.window))
+            let bar = try XCTUnwrap(firstView(UINavigationBar.self, in: fixture.window))
+            let barFrame = bar.convert(bar.bounds, to: fixture.window)
+            let rowInset: CGFloat = usesList ? 40 : 24
+            XCTAssertEqual(probe.firstRow.minX, barFrame.minX + rowInset, accuracy: 1)
+            XCTAssertEqual(probe.firstRow.maxX, barFrame.maxX - rowInset, accuracy: 1)
+            XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height + 220)
+
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: 220), animated: false)
+            fixture.window.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(200))
+            let scrollFrame = scroll.convert(scroll.bounds, to: fixture.window)
+            XCTAssertEqual(scrollFrame.minX, barFrame.minX, accuracy: 1,
+                           "The native leading scroll-edge blur must reach the navigation edge.")
+            XCTAssertEqual(scrollFrame.maxX, barFrame.maxX, accuracy: 1,
+                           "The native trailing scroll-edge blur must reach the navigation edge.")
+            attach(try capture(fixture.window), name: usesList ? "settings-list-scrolled" : "settings-panels-scrolled")
+        }
+    }
+
+    private final class SettingsLayoutProbe {
+        var firstRow = CGRect.zero
+    }
+
+    private struct SettingsLayoutFixture: View {
+        let usesList: Bool
+        let probe: SettingsLayoutProbe
+
+        var body: some View {
+            NavigationStack {
+                Group {
+                    if usesList {
+                        SettingsPageList { rows }
+                    } else {
+                        SettingsPageScroll { rows }
+                    }
+                }
+                .navigationTitle("Settings")
+            }
+            .environment(\.themePalette, .dark)
+            .environment(\.colorScheme, .dark)
+            .transaction { $0.disablesAnimations = true }
+        }
+
+        private var rows: some View {
+            ForEach(0..<24, id: \.self) { index in
+                SettingsSectionGroup {
+                    Text(verbatim: "Settings row \(index)")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                    if index == 0 { probe.firstRow = frame }
+                }
+            }
+        }
+    }
+
+    private func firstView<T: UIView>(_ type: T.Type, in root: UIView) -> T? {
+        if let match = root as? T { return match }
+        return root.subviews.lazy.compactMap { self.firstView(type, in: $0) }.first
+    }
+    #endif
+
     func testContinueWatchingLogosStayTheSameAcrossThemesWhileHeroInkAdapts() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

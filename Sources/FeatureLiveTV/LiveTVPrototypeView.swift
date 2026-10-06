@@ -1782,7 +1782,14 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     private func tune(_ id: String, origin: LiveTVGuideRowID? = nil) {
         guard activity.acceptsInteraction else {
-            HandoffDiagnostics.emit("LIVE_TV event=watchIgnored reason=inactiveDestination")
+            let phase = scenePhase == .active ? "active" : scenePhase == .background ? "background" : "inactive"
+            HandoffDiagnostics.emit(
+                "LIVE_TV event=watchIgnored reason=interactionInactive"
+                    + " destination=\(isActive) scene=\(phase) authorized=\(isProfileAuthorized())"
+                    + " sourcesReady=\(sources?.hasLoaded ?? true) sourcesFailed=\(sourceApplicationFailed)"
+                    + " playbackAllowed=\(allowsPlayback) coordinatorActive=\(playback.isActive)"
+                    + " coordinatorInteractive=\(playback.isInteractionActive)"
+            )
             return
         }
         if let selection = multiviewSelection {

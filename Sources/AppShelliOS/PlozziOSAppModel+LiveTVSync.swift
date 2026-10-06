@@ -33,11 +33,28 @@ extension PlozziOSAppModel {
         )
     }
 
+    static func makeLiveTVSourceSyncChannel(
+        bridge: LiveTVSourceSyncBridge?, stateFileURL: URL
+    ) -> CloudConfigSyncService.ChannelConfiguration {
+        .init(
+            schema: .liveTVSourcesV1, stateFileURL: stateFileURL,
+            captureRecords: { $0 }, applyRecords: { _ in },
+            isHydrated: { [weak bridge] in bridge != nil },
+            captureSnapshot: { [weak bridge] snapshot in
+                guard let bridge else { throw CancellationError() }
+                return try await bridge.capture(snapshot)
+            },
+            applySnapshot: { [weak bridge] snapshot in await bridge?.apply(snapshot) },
+            snapshotAuthority: { LiveTVPortableSyncPreferenceStore.storageEpoch() }
+        )
+    }
+
     func observeLiveTVPortableSync() {
         guard liveTVPortableSyncLifecycle == nil, let bridge = liveTVPortableSync else { return }
         liveTVPortableSyncLifecycle = LiveTVPortableSyncLifecycle(
             profiles: profiles, observesLibraryRuntime: true
         ) { [weak self] in
+            self?.liveTVPortableSync?.refreshParticipation()
             self?.scheduleCloudPublish()
         }
         LiveTVPortableSyncPresentation.shared.connect(

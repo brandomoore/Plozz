@@ -141,6 +141,11 @@ public struct SessionStateMachine: Sendable {
         allowsStandalonePlayback: Bool = false
     ) -> SessionState {
         switch (state, event) {
+        case (.launching, .accountsChanged):
+            // Foreground credential recovery can finish before bootstrap.
+            // Only restore may leave launch after the shell prepares profile/PIN gates.
+            return state
+
         // Launch restore.
         case let (.launching, .restored(accounts)):
             return AppAdmissionContext(

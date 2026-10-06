@@ -1,12 +1,12 @@
 import CoreModels
+import CoreNetworking
 import CoreSecureStore
 import FeatureLiveTVCore
 import Foundation
 import Observation
 
-/// One shared composition adapter for both shells. No new CKSyncEngine, credential
-/// transport or automatic opt-in. Register its capture/apply methods on the
-/// `.liveTVStateV1` channel of the existing CloudConfigSyncService.
+/// Shared composition for both shells. Portable state and encrypted source
+/// transfer are separate channels on the existing CloudKit engine.
 @MainActor
 @Observable
 public final class LiveTVPortableSyncBridge {
@@ -22,6 +22,10 @@ public final class LiveTVPortableSyncBridge {
     @ObservationIgnored private let profiles: ProfilesModel
     @ObservationIgnored private let directory: URL
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let followsMainSync: Bool
+    @ObservationIgnored public lazy var sourceSync = LiveTVSourceSyncBridge(
+        profiles: profiles, defaults: defaults, store: sourceStore, cache: LiveTVCatalogStorage.cache
+    )
     @ObservationIgnored private let sourceStore: @MainActor (String) -> any LiveTVSourcesStoring
     @ObservationIgnored private let definitions: (@MainActor (String) -> any LibraryChannelDefinitionStoring)?
     @ObservationIgnored private let snapshots: (any LibraryChannelSnapshotStoring)?
@@ -33,6 +37,7 @@ public final class LiveTVPortableSyncBridge {
     @ObservationIgnored private var operationWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var operationAuthority: [String: ProfileAuthority] = [:]
     @ObservationIgnored private var operationAdapters: [String: LiveTVPortableSyncAdapter] = [:]
+    @ObservationIgnored private var diagnosticFailures: [String: LiveTVSyncDiagnostic] = [:]
 
     private struct ProfileAuthority: Equatable {
         let namespace: String?
@@ -41,6 +46,7 @@ public final class LiveTVPortableSyncBridge {
 
     public init(
         profiles: ProfilesModel, directory: URL, defaults: UserDefaults = .standard,
+        followsMainSync: Bool = false,
         sourceStore: (@MainActor (String) -> any LiveTVSourcesStoring)? = nil,
         definitions: (@MainActor (String) -> any LibraryChannelDefinitionStoring)? = nil,
         snapshots: (any LibraryChannelSnapshotStoring)? = nil,
@@ -51,6 +57,7 @@ public final class LiveTVPortableSyncBridge {
         self.profiles = profiles
         self.directory = directory
         self.defaults = defaults
+        self.followsMainSync = followsMainSync
         self.sourceStore = sourceStore ?? { profileID in
             LiveTVSourceStorage.approvalAwareStore(
                 profileID: profileID,
@@ -81,7 +88,11 @@ public final class LiveTVPortableSyncBridge {
         var result = fallback
         let removed: Set<String>
         do { removed = try removedProfiles() }
-        catch { return fallback }
+        catch {
+            recordFailure(error, operation: .capture, stage: .removedProfiles)
+            return fallback
+        }
+        clearDiagnosticFailures(.capture, profileID: "")
         if !removed.isEmpty {
             result = result.filter {
                 guard let key = LiveTVPortableRecordKey.parse($0.key) else { return true }
@@ -96,20 +107,32 @@ public final class LiveTVPortableSyncBridge {
                 continue
             }
             guard mayApply(profile.id, epoch: epoch) else { continue }
+            var stage = trace(.capture, .prepareJournal)
             do {
                 try await prepare(adapter, profileID: profile.id, epoch: epoch, records: incomingRecords)
                 var libraryIssue: Status?
+                stage = trace(.capture, .libraryState)
                 let deferred = try await pendingLibraryState(adapter, profileID: profile.id, epoch: epoch)
                 guard mayApply(profile.id, epoch: epoch) else { continue }
                 do { try await applyLibrary(deferred, profileID: profile.id, epoch: epoch) }
-                catch { libraryIssue = Self.libraryStatus(for: error) }
+                catch {
+                    libraryIssue = Self.libraryStatus(for: error)
+                    recordFailure(error, operation: .capture, stage: stage, profileID: profile.id)
+                }
+                stage = trace(.capture, .identities)
                 try await applyDeferredIdentities(adapter, profileID: profile.id, epoch: epoch)
+                stage = trace(.capture, .guideMappings)
                 try await applyDeferredMappings(adapter, profileID: profile.id, epoch: epoch)
                 guard mayApply(profile.id, epoch: epoch) else { continue }
                 var libraryState: LiveTVPortableLibraryExport?
+                stage = trace(.capture, .libraryState)
                 do { libraryState = try await captureLibraryState(profileID: profile.id, epoch: epoch) }
-                catch { libraryIssue = Self.libraryStatus(for: error) }
+                catch {
+                    libraryIssue = Self.libraryStatus(for: error)
+                    recordFailure(error, operation: .capture, stage: stage, profileID: profile.id)
+                }
                 guard mayApply(profile.id, epoch: epoch) else { continue }
+                stage = trace(.capture, .guideMappings)
                 let cache = guideCache(profile.id)
                 let mappingAuthority = try cache.map { _ in try guideAuthority(profile.id) }
                 let mappings: LiveTVPortableGuideMappingExport?
@@ -118,8 +141,10 @@ public final class LiveTVPortableSyncBridge {
                 } else {
                     mappings = nil
                 }
+                stage = trace(.capture, .identities)
                 let identities = try await captureIdentityHints(profile.id)
                 guard mayApply(profile.id, epoch: epoch) else { continue }
+                stage = trace(.capture, .prepareJournal)
                 try await prepare(
                     adapter, profileID: profile.id, epoch: epoch,
                     records: incomingRecords, preparedLibrary: libraryState
@@ -132,32 +157,54 @@ public final class LiveTVPortableSyncBridge {
                     libraryState = nil
                     libraryIssue = .pendingLibraryReview
                 }
-                let captured = try adapter.capture(
-                    sourceStore: sourceStore(profile.id), libraryDefinitions: libraryState?.state.definitions,
-                    snapshots: libraryState?.state.snapshots ?? [], preparedLibrary: libraryState,
-                    guideMappings: mappings?.mappings,
-                    unresolvedGuideMappingIDs: mappings?.unresolvedChannelIDs ?? [],
-                    identityHints: identities?.filter {
-                        mappingAuthority?.authorization.allowsPlaylist($0.value.sourceID) ?? true
-                    }, fallback: fallback
-                )
+                stage = trace(.capture, .captureRecords)
+                let captured = try await adapter.committingJournal {
+                    guard mayApply(profile.id, epoch: epoch) else { throw CancellationError() }
+                    return try adapter.capture(
+                        sourceStore: sourceStore(profile.id), libraryDefinitions: libraryState?.state.definitions,
+                        snapshots: libraryState?.state.snapshots ?? [], preparedLibrary: libraryState,
+                        guideMappings: mappings?.mappings,
+                        unresolvedGuideMappingIDs: mappings?.unresolvedChannelIDs ?? [],
+                        identityHints: identities?.filter {
+                            mappingAuthority?.authorization.allowsPlaylist($0.value.sourceID) ?? true
+                        }, fallback: fallback
+                    )
+                }
+                guard mayApply(profile.id, epoch: epoch) else { continue }
+                stage = trace(.capture, .identities)
                 try await applyDeferredIdentities(adapter, profileID: profile.id, epoch: epoch)
+                stage = trace(.capture, .guideMappings)
                 try await applyDeferredMappings(adapter, profileID: profile.id, epoch: epoch)
                 guard mayApply(profile.id, epoch: epoch) else { continue }
+                stage = trace(.capture, .libraryState)
                 let pending = try await pendingLibraryState(adapter, profileID: profile.id, epoch: epoch)
                 guard mayApply(profile.id, epoch: epoch) else { continue }
                 do { try await applyLibrary(pending, profileID: profile.id, epoch: epoch) }
-                catch { libraryIssue = Self.libraryStatus(for: error) }
+                catch {
+                    libraryIssue = Self.libraryStatus(for: error)
+                    recordFailure(error, operation: .capture, stage: stage, profileID: profile.id)
+                }
                 guard mayApply(profile.id, epoch: epoch) else { continue }
                 result.merge(captured, uniquingKeysWith: { _, new in new })
-                try await updateStatus(pending, profileID: profile.id, epoch: epoch)
+                stage = trace(.capture, .validateRecords)
+                try await updateStatus(pending, profileID: profile.id, epoch: epoch, operation: .capture)
                 if let libraryIssue { statuses[profile.id] = libraryIssue }
+                finishDiagnostic(.capture, profileID: profile.id)
             } catch {
-                if mayApply(profile.id, epoch: epoch) { statuses[profile.id] = .unavailable }
+                if error is CancellationError { continue }
+                if mayApply(profile.id, epoch: epoch) {
+                    statuses[profile.id] = .unavailable
+                    recordFailure(error, operation: .capture, stage: stage, profileID: profile.id)
+                }
             }
         }
         guard epoch == LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults) else { return [:] }
-        guard let latestRemoved = try? removedProfiles() else { return fallback }
+        let latestRemoved: Set<String>
+        do { latestRemoved = try removedProfiles() }
+        catch {
+            recordFailure(error, operation: .capture, stage: .removedProfiles)
+            return fallback
+        }
         guard !latestRemoved.isEmpty else { return result }
         return result.filter {
             guard let key = LiveTVPortableRecordKey.parse($0.key) else { return true }
@@ -178,7 +225,13 @@ public final class LiveTVPortableSyncBridge {
 
     private func applySerially(_ changes: SyncLocalChanges, epoch: String) async {
         let known = Set(profiles.profiles.map(\.id))
-        guard let removed = try? removedProfiles() else { return }
+        let removed: Set<String>
+        do { removed = try removedProfiles() }
+        catch {
+            recordFailure(error, operation: .apply, stage: .removedProfiles)
+            return
+        }
+        clearDiagnosticFailures(.apply, profileID: "")
         let profileIDs = Set(changes.keys.compactMap(LiveTVPortableRecordKey.parse).map(\.profileID))
         for profileID in profileIDs.sorted() where known.contains(profileID) && !removed.contains(profileID) {
             guard epoch == LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults) else { return }
@@ -188,23 +241,39 @@ public final class LiveTVPortableSyncBridge {
                 continue
             }
             guard mayApply(profileID, epoch: epoch) else { continue }
+            var stage = trace(.apply, .prepareJournal)
             do {
                 try await prepare(adapter, profileID: profileID, epoch: epoch, records: changes)
-                let pending = try adapter.apply(
-                    changes, sourceStore: sourceStore(profileID), includeLibrarySnapshots: false
-                )
+                stage = trace(.apply, .applyRecords)
+                let pending = try await adapter.committingJournal {
+                    guard mayApply(profileID, epoch: epoch) else { throw CancellationError() }
+                    return try adapter.apply(
+                        changes, sourceStore: sourceStore(profileID), includeLibrarySnapshots: false
+                    )
+                }
+                guard mayApply(profileID, epoch: epoch) else { continue }
+                stage = trace(.apply, .libraryState)
                 if let definitions {
-                    try applyLibraryRevocations(pending, profileID: profileID, store: definitions(profileID))
+                    try await applyLibraryRevocations(pending, profileID: profileID, store: definitions(profileID))
                 }
                 let report = await libraryPreparation.resolve(pending)
                 guard mayApply(profileID, epoch: epoch) else { continue }
+                stage = trace(.apply, .identities)
                 try await applyDeferredIdentities(adapter, profileID: profileID, epoch: epoch)
+                stage = trace(.apply, .guideMappings)
                 try await applyDeferredMappings(adapter, profileID: profileID, epoch: epoch)
+                stage = trace(.apply, .libraryState)
                 try await applyLibrary(report, profileID: profileID, epoch: epoch)
                 guard mayApply(profileID, epoch: epoch) else { continue }
-                try await updateStatus(report, profileID: profileID, epoch: epoch)
+                stage = trace(.apply, .validateRecords)
+                try await updateStatus(report, profileID: profileID, epoch: epoch, operation: .apply)
+                finishDiagnostic(.apply, profileID: profileID)
             } catch {
-                if mayApply(profileID, epoch: epoch) { statuses[profileID] = Self.libraryStatus(for: error) }
+                if error is CancellationError { continue }
+                if mayApply(profileID, epoch: epoch) {
+                    statuses[profileID] = Self.libraryStatus(for: error)
+                    recordFailure(error, operation: .apply, stage: stage, profileID: profileID)
+                }
             }
         }
     }
@@ -212,6 +281,7 @@ public final class LiveTVPortableSyncBridge {
     /// Wire to the existing profile removal lifecycle, not to a transient missing
     /// profile roster during cloud hydration.
     public func removeProfile(_ profileID: String) throws {
+        if followsMainSync { try sourceSync.removeProfile(profileID) }
         var removed = try removedProfiles()
         removed.insert(profileID)
         try FileManager.default.createDirectory(at: metadataDirectory, withIntermediateDirectories: true)
@@ -220,12 +290,16 @@ public final class LiveTVPortableSyncBridge {
         )
         try adapter(profileID).resetForAccountChange()
         statuses.removeValue(forKey: profileID)
+        clearDiagnosticFailures(.capture, profileID: profileID)
+        clearDiagnosticFailures(.apply, profileID: profileID)
     }
 
     public func accountDidChange() {
         LiveTVPortableSyncPreferenceStore.accountDidChange(defaults: defaults)
+        if followsMainSync { sourceSync.accountDidChange() }
         Task { await libraryPreparation.discardExport() }
         statuses = [:]
+        diagnosticFailures = [:]
         for profile in profiles.profiles {
             statuses[profile.id] = .localOnly
         }
@@ -247,7 +321,8 @@ public final class LiveTVPortableSyncBridge {
             sourceStore: sourceStore(profileID), includeLibrarySnapshots: false
         )
         if let definitions {
-            try applyLibraryRevocations(pending, profileID: profileID, store: definitions(profileID))
+            try await applyLibraryRevocations(pending, profileID: profileID, store: definitions(profileID))
+            guard mayApply(profileID, epoch: epoch) else { throw CancellationError() }
             if pending.journalRevision.map(adapter.isCurrentJournalRevision) != true {
                 pending = try adapter.pending(
                     sourceStore: sourceStore(profileID), includeLibrarySnapshots: false
@@ -300,9 +375,12 @@ public final class LiveTVPortableSyncBridge {
         } catch {
             if error as? LibraryChannelError == .publicationConflict, mayApply(profileID, epoch: epoch) {
                 try await prepare(adapter, profileID: profileID, epoch: epoch)
-                _ = try adapter.markLibrariesForReview(
-                    Set(applicable.libraryDefinitions.map(\.id)), ifCurrent: revision
-                )
+                _ = try await adapter.committingJournal {
+                    guard mayApply(profileID, epoch: epoch) else { throw CancellationError() }
+                    return try adapter.markLibrariesForReview(
+                        Set(applicable.libraryDefinitions.map(\.id)), ifCurrent: revision
+                    )
+                }
             }
             throw error
         }
@@ -316,7 +394,8 @@ public final class LiveTVPortableSyncBridge {
         guard let revision = report.journalRevision,
               adapter(profileID).isCurrentJournalRevision(revision) else { return }
         let store = definitions(profileID)
-        try applyLibraryRevocations(report, profileID: profileID, store: store)
+        try await applyLibraryRevocations(report, profileID: profileID, store: store)
+        guard mayApply(profileID, epoch: epoch) else { return }
         guard !report.libraryDefinitions.isEmpty else { return }
         guard let staging = snapshots as? any LibraryChannelSnapshotStaging else {
             throw LibraryChannelError.storageFailed
@@ -370,7 +449,7 @@ public final class LiveTVPortableSyncBridge {
     /// currently valid schedule while pausing it; never install a partial recipe.
     private func applyLibraryRevocations(
         _ report: LiveTVPortableImport, profileID: String, store: any LibraryChannelDefinitionStoring
-    ) throws {
+    ) async throws {
         guard !report.deletedLibraryIDs.isEmpty || !report.disabledLibraryIDs.isEmpty else { return }
         guard let revision = report.journalRevision,
               adapter(profileID).isCurrentJournalRevision(revision) else { return }
@@ -384,9 +463,10 @@ public final class LiveTVPortableSyncBridge {
         }
         if current != previous { try saveLibrary(current, replacing: previous, store: store) }
         if !report.deletedLibraryIDs.isEmpty {
-            _ = try adapter(profileID).acknowledgeLibraries(
-                report.deletedLibraryIDs, ifCurrent: revision
-            )
+            let adapter = adapter(profileID)
+            _ = try await adapter.committingJournal {
+                try adapter.acknowledgeLibraries(report.deletedLibraryIDs, ifCurrent: revision)
+            }
         }
         if current != previous {
             NotificationCenter.default.post(name: .plozzLiveTVPortableStateDidApply, object: profileID)
@@ -413,10 +493,14 @@ public final class LiveTVPortableSyncBridge {
         if current != latest {
             try saveLibrary(current, replacing: latest, store: store)
         }
-        _ = try adapter(profileID).acknowledgeLibraries(
-            Set(report.libraryDefinitions.map(\.id)).union(report.deletedLibraryIDs),
-            ifCurrent: revision
-        )
+        let adapter = adapter(profileID)
+        _ = try await adapter.committingJournal {
+            guard mayApply(profileID, epoch: epoch) else { throw CancellationError() }
+            return try adapter.acknowledgeLibraries(
+                Set(report.libraryDefinitions.map(\.id)).union(report.deletedLibraryIDs),
+                ifCurrent: revision
+            )
+        }
         if current != latest || !report.snapshots.isEmpty || !report.deletedLibraryIDs.isEmpty {
             NotificationCenter.default.post(name: .plozzLiveTVPortableStateDidApply, object: profileID)
         }
@@ -450,7 +534,10 @@ public final class LiveTVPortableSyncBridge {
               try guideAuthority(profileID) == authority else { return }
         let currentMappings = try adapter.deferredGuideMappings()
         guard applied.allSatisfy({ currentMappings[$0] == mappings[$0] }) else { return }
-        try adapter.acknowledgeMappings(applied)
+        try await adapter.committingJournal {
+            guard mayApply(profileID, epoch: epoch) else { throw CancellationError() }
+            try adapter.acknowledgeMappings(applied)
+        }
         NotificationCenter.default.post(name: .plozzLiveTVPortableStateDidApply, object: profileID)
     }
 
@@ -486,13 +573,17 @@ public final class LiveTVPortableSyncBridge {
             try await prepare(adapter, profileID: profileID, epoch: epoch)
             guard !LiveTVPlaybackIdentityHold.isHeld(profileID: profileID) else { return }
             guard try adapter.deferredIdentityHints() == hints else { return }
-            try adapter.acknowledgeIdentityHints(Set(hints.keys))
+            try await adapter.committingJournal {
+                guard mayApply(profileID, epoch: epoch) else { throw CancellationError() }
+                try adapter.acknowledgeIdentityHints(Set(hints.keys))
+            }
             NotificationCenter.default.post(name: .plozzLiveTVPortableStateDidApply, object: profileID)
         }
     }
 
     private func mayApply(_ profileID: String, epoch: String) -> Bool {
         !Task.isCancelled
+            && (!followsMainSync || SyncSetupFeatureFlag(defaults: defaults).isEnabled)
             && epoch == LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults)
             && profiles.profiles.contains { $0.id == profileID }
             && adapter(profileID).isEnabled
@@ -510,9 +601,22 @@ public final class LiveTVPortableSyncBridge {
     }
 
     private func currentAuthority() -> [String: ProfileAuthority] {
+        refreshParticipation()
         var result: [String: ProfileAuthority] = [:]
         for profile in profiles.profiles { result[profile.id] = authority(profile.id) }
         return result
+    }
+
+    public func refreshParticipation() {
+        guard followsMainSync else { return }
+        let enabled = SyncSetupFeatureFlag(defaults: defaults).isEnabled
+        for profile in profiles.profiles {
+            let preference = LiveTVPortableSyncPreferenceStore(
+                defaults: defaults, profileID: profile.id,
+                namespace: profile.id == profiles.rootNamespaceOwnerID ? nil : profile.id
+            )
+            if preference.isEnabled != enabled { preference.isEnabled = enabled }
+        }
     }
 
     private func adapter(_ profileID: String) -> LiveTVPortableSyncAdapter {
@@ -520,7 +624,7 @@ public final class LiveTVPortableSyncBridge {
         let adapter = LiveTVPortableSyncAdapter(
             directory: directory, profileID: profileID, defaults: defaults,
             namespace: profileID == profiles.rootNamespaceOwnerID ? nil : profileID,
-            requiresPreparedJournal: true
+            requiresPreparedJournal: true, includesPlaylistSources: !followsMainSync
         )
         if operationInProgress { operationAdapters[profileID] = adapter }
         return adapter
@@ -556,6 +660,13 @@ public final class LiveTVPortableSyncBridge {
     }
 
     public func statusSummary(profileID: String) -> LocalizedStringResource {
+        if followsMainSync {
+            switch sourceSync.statuses[profileID] {
+            case .unavailable: return "Some Live TV sources could not be synced."
+            case .pendingFiles(let count): return "Waiting for \(count) imported playlists to finish syncing."
+            default: break
+            }
+        }
         guard let status = statuses[profileID] else { return "Waiting to sync Live TV." }
         switch status {
         case .localOnly: return "Live TV settings stay on this device."
@@ -581,17 +692,26 @@ public final class LiveTVPortableSyncBridge {
         return .unavailable
     }
 
-    private func updateStatus(_ report: LiveTVPortableImport, profileID: String, epoch: String) async throws {
+    private func updateStatus(
+        _ report: LiveTVPortableImport, profileID: String, epoch: String,
+        operation: LiveTVSyncDiagnostic.Operation
+    ) async throws {
         let adapter = adapter(profileID)
         try await prepare(adapter, profileID: profileID, epoch: epoch)
         let pendingIdentities = try adapter.deferredIdentityHints()
         let pendingMappings = try adapter.deferredGuideMappings()
         let pendingChannels = Set(pendingIdentities.keys).union(pendingMappings.keys)
-        if report.rejectedCount > 0 { statuses[profileID] = .unavailable }
+        if report.rejectedCount > 0 {
+            statuses[profileID] = .unavailable
+            recordFailure(LiveTVPortableStateError.invalidRecord, operation: operation,
+                          stage: .validateRecords, profileID: profileID)
+        }
         else if !report.libraryReviewIDs.isEmpty { statuses[profileID] = .pendingLibraryReview }
         else if (!report.libraryDefinitions.isEmpty && (definitions == nil || snapshots == nil))
             || ((!report.deletedLibraryIDs.isEmpty || !report.disabledLibraryIDs.isEmpty) && definitions == nil) {
             statuses[profileID] = .unavailable
+            recordFailure(LibraryChannelError.storageFailed, operation: operation,
+                          stage: .libraryState, profileID: profileID)
         }
         else if !report.incompleteSnapshotIDs.isEmpty {
             statuses[profileID] = .pendingSchedules(report.incompleteSnapshotIDs.count)
@@ -617,10 +737,98 @@ public final class LiveTVPortableSyncBridge {
             LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults), isDirectory: true
         )
     }
+
+    private func trace(
+        _ operation: LiveTVSyncDiagnostic.Operation, _ stage: LiveTVSyncDiagnostic.Stage
+    ) -> LiveTVSyncDiagnostic.Stage {
+        LiveTVSyncDiagnostic(operation: operation, stage: stage, outcome: .started).publish()
+        return stage
+    }
+
+    private func finishDiagnostic(_ operation: LiveTVSyncDiagnostic.Operation, profileID: String) {
+        guard statuses[profileID] != .unavailable else { return }
+        clearDiagnosticFailures(operation, profileID: profileID)
+        LiveTVSyncDiagnostic(operation: operation, stage: .finish, outcome: .succeeded).publish()
+    }
+
+    private func clearDiagnosticFailures(_ operation: LiveTVSyncDiagnostic.Operation, profileID: String) {
+        let prefix = "\(operation.rawValue):\(profileID):"
+        diagnosticFailures = diagnosticFailures.filter { !$0.key.hasPrefix(prefix) }
+    }
+
+    private func recordFailure(
+        _ error: Error, operation: LiveTVSyncDiagnostic.Operation,
+        stage: LiveTVSyncDiagnostic.Stage, profileID: String = ""
+    ) {
+        guard !(error is CancellationError), !Task.isCancelled else { return }
+        if !profileID.isEmpty {
+            guard mayApply(
+                profileID, epoch: LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults)
+            ) else { return }
+        }
+        if Self.libraryStatus(for: error) != .unavailable {
+            LiveTVSyncDiagnostic(operation: operation, stage: stage, outcome: .deferred).publish()
+            return
+        }
+        let failure = Self.diagnosticFailure(error)
+        let diagnostic = LiveTVSyncDiagnostic(
+            operation: operation, stage: stage, outcome: .failed,
+            failure: failure
+        )
+        let key = "\(operation.rawValue):\(profileID):\(stage.rawValue)"
+        guard diagnosticFailures[key] != diagnostic else { return }
+        diagnosticFailures[key] = diagnostic
+        PlozzLog.sync.error(
+            "PLZLTVSYNC \(operation.rawValue).\(stage.rawValue) failed " +
+            "reason=\(failure.reason.rawValue) code=\(failure.code.map(String.init) ?? "none")"
+        )
+        diagnostic.publish()
+    }
+
+    static func diagnosticFailure(_ error: Error) -> LiveTVSyncDiagnostic.Failure {
+        if let error = error as? LiveTVPortableStateError {
+            switch error {
+            case .invalidRecord: return .init(reason: .invalidRecord)
+            case .unsupportedVersion: return .init(reason: .unsupportedVersion)
+            case .tooLarge: return .init(reason: .tooLarge)
+            case .wrongProfile: return .init(reason: .wrongProfile)
+            case .incompleteSnapshot: return .init(reason: .incompleteSnapshot)
+            }
+        }
+        if let error = error as? KeychainError {
+            switch error {
+            case .unexpectedStatus(let code): return .init(reason: .keychain, code: Int(code))
+            case .encodingFailed: return .init(reason: .serialization)
+            }
+        }
+        if let error = error as? LiveTVPortableSyncAdapter.PreparationError {
+            switch error {
+            case .preparationRequired: return .init(reason: .journalPreparation)
+            case .preparationSuperseded, .journalChanged: return .init(reason: .journalChanged)
+            case .accountChanged: return .init(reason: .authorizationChanged)
+            }
+        }
+        if let error = error as? LibraryChannelError {
+            switch error {
+            case .storageFailed: return .init(reason: .storage)
+            case .invalidSnapshot: return .init(reason: .invalidRecord)
+            case .catalogTooLarge: return .init(reason: .tooLarge)
+            case .authorizationChanged: return .init(reason: .authorizationChanged)
+            case .snapshotUnavailable: return .init(reason: .snapshotUnavailable)
+            default: return .init(reason: .library)
+            }
+        }
+        if error is DecodingError || error is EncodingError { return .init(reason: .serialization) }
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain || nsError.domain == NSPOSIXErrorDomain {
+            return .init(reason: .storage, code: nsError.code)
+        }
+        return .init(reason: .other)
+    }
 }
 
-/// Only immutable inputs cross this boundary. Consent checks, source changes,
-/// acknowledgements and compare-and-swap publication stay on the main actor.
+/// Only immutable inputs cross this boundary. Consent checks, source changes
+/// and compare-and-swap publication stay on the main actor; journal I/O is awaited.
 actor LiveTVPortableLibraryPreparation {
     private var cachedExport: LiveTVPortableLibraryExport?
     private let makeExport: @Sendable (

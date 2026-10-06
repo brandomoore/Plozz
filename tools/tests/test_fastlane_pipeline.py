@@ -51,6 +51,14 @@ end
 def harness.asc_api_key; { key: "fixture" }; end
 def harness.select_release_xcode; end
 def harness.require_crash_reporting_dsn; end
+def harness.require_sentry_symbols
+  @events << "symbol preflight"
+  raise "symbol preflight failed" if ENV["SCENARIO"] == "symbol_preflight_failure"
+end
+def harness.upload_sentry_symbols
+  @events << "symbols both"
+  raise "symbols failed" if ENV["SCENARIO"] == "symbol_failure"
+end
 def harness.next_build_number; @events << "number"; 39; end
 def harness.marketing_version; "2026.9.17"; end
 def harness.release_notes_entry
@@ -345,7 +353,8 @@ class FastlanePipelineTests(unittest.TestCase):
     def test_lanes_keep_archive_gate_and_platform_notes(self) -> None:
         result = self.ruby(FASTFILE_HARNESS)
         self.assertEqual(
-            result["events"], ["number", "gate", "Plozz", "PlozziOS", "validate IPAs", "upload both", "tag"]
+            result["events"], ["symbol preflight", "number", "gate", "Plozz", "PlozziOS",
+                               "validate IPAs", "symbols both", "upload both", "tag"]
         )
         tv, ios = [job["options"] for job in result["jobs"]]
         self.assertEqual(tv["changelog"], "Plozz 2026.9.29 (39)\n\nUpdated\n• Shared\n• TV only")
@@ -427,13 +436,31 @@ puts JSON.generate(commands: harness.instance_variable_get(:@commands).map { |c|
         self.assertIn("--prerelease", command)
 
     def test_failure_never_tags_or_blindly_retries(self) -> None:
-        for scenario in ("gate_failure", "archive_failure", "upload_failure"):
+        for scenario in ("gate_failure", "archive_failure", "symbol_failure", "upload_failure"):
             with self.subTest(scenario=scenario):
                 result = self.ruby(FASTFILE_HARNESS, SCENARIO=scenario)
                 self.assertNotIn("tag", result["events"])
                 self.assertEqual(result["events"].count("number"), 1)
                 expected_uploads = 1 if scenario == "upload_failure" else 0
                 self.assertEqual(result["events"].count("upload both"), expected_uploads)
+
+    def test_symbol_preflight_stops_before_archiving(self) -> None:
+        result = self.ruby(FASTFILE_HARNESS, SCENARIO="symbol_preflight_failure")
+        self.assertEqual(result["events"], ["symbol preflight"])
+        self.assertEqual(result["error"], "symbol preflight failed")
+
+    def test_app_store_symbols_precede_any_apple_changes(self) -> None:
+        source = FASTFILE_HARNESS.replace("begin\n  harness.beta", """
+def harness.sync_app_store_versions(*); @events << "Apple version"; end
+def harness.upload_to_app_store(**); @events << "App Store upload"; end
+begin
+  harness.release""")
+        result = self.ruby(source)
+        self.assertLess(result["events"].index("symbols both"), result["events"].index("Apple version"))
+        self.assertEqual(result["events"].count("App Store upload"), 2)
+        failed = self.ruby(source, SCENARIO="symbol_failure")
+        self.assertNotIn("Apple version", failed["events"])
+        self.assertNotIn("App Store upload", failed["events"])
 
     def test_package_options_are_private_and_not_xcargs(self) -> None:
         env = {

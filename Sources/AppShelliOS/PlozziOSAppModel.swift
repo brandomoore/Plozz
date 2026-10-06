@@ -136,6 +136,9 @@ final class PlozziOSAppModel {
     @ObservationIgnored
     var cloudPublishTask: Task<Void, Never>?
 
+    @ObservationIgnored
+    lazy var portableCredentialPublisher = Self.makePortableCredentialPublisher()
+
     /// Guards against overlapping same-Apple-ID credential auto-adopt attempts.
     @ObservationIgnored
     var isAutoAdoptingSyncSetup = false

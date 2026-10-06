@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import CoreModels
 
@@ -207,6 +208,39 @@ private func assertConverged(_ devices: [FakeDevice], _ msg: String = "",
 }
 
 final class SyncLedgerTests: XCTestCase {
+    func testLocalCaptureReceiptSurvivesRemoteWinnerAndPersistence() throws {
+        var ledger = SyncLedger()
+        let local = Data("local".utf8)
+        let remote = Data("remote".utf8)
+        _ = ledger.reconcileLocal(desired: ["source": local], now: 10)
+        let receipt = Data(SHA256.hash(data: local))
+        XCTAssertEqual(ledger.entries["source"]?.localCaptureDigest, receipt)
+        _ = ledger.applyFetched(saved: [.init(
+            recordName: "source", value: remote, editedAt: 20, systemFields: Data()
+        )], deleted: [], now: 20)
+        XCTAssertEqual(ledger.entries["source"]?.localValue, remote)
+        XCTAssertEqual(ledger.entries["source"]?.localCaptureDigest, receipt)
+        let restored = try JSONDecoder().decode(SyncLedger.self, from: JSONEncoder().encode(ledger))
+        XCTAssertTrue(restored.hasSamePersistedState(as: ledger))
+        let stamp = ledger.entries["source"]?.editedAt
+        let echo = ledger.reconcileLocal(desired: ["source": remote], now: 30)
+        XCTAssertTrue(echo.isEmpty)
+        XCTAssertEqual(ledger.entries["source"]?.editedAt, stamp)
+        XCTAssertEqual(ledger.entries["source"]?.localCaptureDigest, Data(SHA256.hash(data: remote)))
+    }
+
+    func testLegacyEntryWithoutCaptureReceiptRemainsDecodable() throws {
+        let json = Data("""
+        {"entries":{"source":{"syncedEditedAt":0,"localValue":"YQ==","editedAt":1,
+        "dirty":true,"pendingDelete":false,"wasSynced":false,"resyncSeen":false}},"clock":1}
+        """.utf8)
+        var ledger = try JSONDecoder().decode(SyncLedger.self, from: json)
+        XCTAssertNil(ledger.entries["source"]?.localCaptureDigest)
+        _ = ledger.reconcileLocal(desired: ["source": Data("a".utf8)], now: 2)
+        XCTAssertEqual(ledger.entries["source"]?.localCaptureDigest, Data(SHA256.hash(data: Data("a".utf8))))
+        XCTAssertEqual(ledger.entries["source"]?.editedAt, 1)
+    }
+
 
     // MARK: Basic propagation
 

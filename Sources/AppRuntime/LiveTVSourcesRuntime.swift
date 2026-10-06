@@ -90,6 +90,7 @@ public final class LiveTVSourcesRuntime {
     public func restore() async {
         activate()
         await catalog.restore()
+        await scanBinding.waitUntilPrepared()
     }
 
     public func invalidate() {

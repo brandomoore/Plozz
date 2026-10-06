@@ -42,7 +42,9 @@ public struct LiveTVScanSourcesView: View {
 
     public var body: some View {
         LiveTVSettingsPage(title: "Check channels") {
-            if coordinator.sourceIDs.isEmpty {
+            if coordinator.isPreparingCatalog {
+                ProgressView()
+            } else if coordinator.sourceIDs.isEmpty {
                 SettingsSectionGroup {
                     Text("Import a playlist before scanning.")
                     LiveTVScanIssueContent(coordinator: coordinator)
@@ -63,7 +65,9 @@ private struct LiveTVScanSourceActions: View {
     let sourceID: String
 
     var body: some View {
-        if let progress = coordinator.progress, progress.sourceID == sourceID,
+        if coordinator.isPreparingCatalog {
+            ProgressView()
+        } else if let progress = coordinator.progress, progress.sourceID == sourceID,
            coordinator.isScanning {
             LiveTVScanProgressContent(coordinator: coordinator, progress: progress)
         } else if coordinator.canScan(sourceID: sourceID) {
@@ -111,7 +115,9 @@ public struct LiveTVScanImportOffer: View {
     }
 
     public var body: some View {
-        if coordinator.canScan(sourceID: sourceID) {
+        if coordinator.isPreparingCatalog {
+            ProgressView()
+        } else if coordinator.canScan(sourceID: sourceID) {
             SettingsSectionGroup("Check channels") {
                 Text("Scan for unavailable links, or start watching now.")
                     .foregroundStyle(.secondary)

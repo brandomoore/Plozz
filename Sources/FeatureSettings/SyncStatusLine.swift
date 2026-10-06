@@ -6,17 +6,43 @@ public struct SyncStatusPresentation {
     let isSyncing: Bool
     let itemCount: Int?
     let accountTag: String?
+    let isReloading: Bool
+    let reloadSummary: LocalizedStringResource?
 
     public init(
         summary: LocalizedStringResource,
         isSyncing: Bool,
         itemCount: Int? = nil,
-        accountTag: String? = nil
+        accountTag: String? = nil,
+        isReloading: Bool = false,
+        reloadSummary: LocalizedStringResource? = nil
     ) {
         self.summary = summary
         self.isSyncing = isSyncing
         self.itemCount = itemCount
         self.accountTag = accountTag
+        self.isReloading = isReloading
+        self.reloadSummary = reloadSummary
+    }
+}
+
+public struct SyncReloadStatusLine: View {
+    let provider: SyncStatusProvider
+
+    public init(provider: SyncStatusProvider) {
+        self.provider = provider
+    }
+
+    public var body: some View {
+        let status = provider.make()
+        if let summary = status.reloadSummary {
+            HStack(spacing: 12) {
+                if status.isReloading { ProgressView().controlSize(.small) }
+                Text(summary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("cloud-sync-reload-status")
+        }
     }
 }
 

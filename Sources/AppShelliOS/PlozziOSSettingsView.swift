@@ -59,6 +59,7 @@ struct PlozziOSSettingsView: View {
                 }
             }
         }
+        .environment(appModel.profiles)
         .scrollContentBackground(.hidden)
         .background { SettingsPageBackground() }
         .transientStatusOverlay(

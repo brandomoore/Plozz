@@ -31,12 +31,12 @@ final class CloudSyncRestorationTests: XCTestCase {
 
         let expected = ledger("after-construction")
         try JSONEncoder().encode(PrimaryState(ledger: expected)).write(to: file)
-        let first = await service.restoredLedgers()
+        let first = try await service.restoredLedgers()
         XCTAssertEqual(first.count, 1)
         XCTAssertTrue(try XCTUnwrap(first.first).hasSamePersistedState(as: expected))
 
         try JSONEncoder().encode(PrimaryState(ledger: ledger("later"))).write(to: file)
-        let second = await service.restoredLedgers()
+        let second = try await service.restoredLedgers()
         XCTAssertTrue(try XCTUnwrap(second.first).hasSamePersistedState(as: expected))
     }
 
@@ -54,7 +54,7 @@ final class CloudSyncRestorationTests: XCTestCase {
             .init(schema: .mediaStateV1, stateFileURL: secondaryFile,
                   captureRecords: { $0 }, applyRecords: { _ in })
         ])
-        let restored = await service.restoredLedgers()
+        let restored = try await service.restoredLedgers()
         XCTAssertEqual(restored.count, 2)
         guard restored.count == 2 else { return }
         XCTAssertTrue(restored[0].hasSamePersistedState(as: expectedPrimary))
@@ -66,6 +66,16 @@ final class CloudSyncRestorationTests: XCTestCase {
         let file = folder.appendingPathComponent("primary.json")
         let service = CloudConfigSyncService(configuration(file))
         await service.activate()
+        let restored = await service.hasRestoredLocalState
+        XCTAssertFalse(restored)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+    }
+
+    func testReloadOfAnInactiveServiceReportsUnavailableWithoutTouchingStorage() async {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let service = CloudConfigSyncService(configuration(folder.appendingPathComponent("primary.json")))
+        let result = await service.redownloadFromCloud()
+        XCTAssertEqual(result, .unavailable)
         let restored = await service.hasRestoredLocalState
         XCTAssertFalse(restored)
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))

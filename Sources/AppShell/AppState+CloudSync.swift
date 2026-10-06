@@ -141,6 +141,10 @@ extension AppState {
             bridge: appState.liveTVPortableSync,
             stateFileURL: syncDir.appendingPathComponent("cloud-live-tv-state-v1.json")
         ))
+        channels.append(Self.makeLiveTVSourceSyncChannel(
+            bridge: appState.liveTVPortableSync?.sourceSync,
+            stateFileURL: syncDir.appendingPathComponent("cloud-live-tv-sources-v1.sealed")
+        ))
         appState.observeLiveTVPortableSync()
         return CloudConfigSyncService(.init(
             containerIdentifier: cloudContainerIdentifier,
@@ -282,6 +286,7 @@ extension AppState {
     /// THIS device. Other devices re-converge from the clean slate. Local config is
     /// untouched.
     public func resetCloudSync() {
+        guard !cloudSyncStatus.isReloading else { return }
         let config = cloudSync
         Task {
             await config?.resetAndReseed()
@@ -292,8 +297,11 @@ extension AppState {
     /// re-download the whole zone fresh. Non-destructive to the shared cloud data.
     public func redownloadCloudSync() {
         let config = cloudSync
-        Task {
-            await config?.redownloadFromCloud()
+        Task { [cloudSyncStatus] in
+            await cloudSyncStatus.reload {
+                guard let config else { return .unavailable }
+                return await config.redownloadFromCloud()
+            }
         }
     }
 

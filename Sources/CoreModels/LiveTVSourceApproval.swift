@@ -341,6 +341,8 @@ public final class LiveTVApprovalAwareSourcesStore: LiveTVPortableSourcesStoring
         defer { Self.lock.unlock() }
         try configuration.validate()
         let previous = try load()
+        var configuration = configuration
+        configuration.syncCheckpoint = previous.syncCheckpoint
         try approvals.invalidateChangedSources(previous: previous, updated: configuration)
         try suppression.prepareChange(previous: previous, updated: configuration)
         try underlying.save(configuration)

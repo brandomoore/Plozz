@@ -7,7 +7,7 @@ channels and scheduled library channels, using Plozz's existing AetherEngine
 It lives
 inside Plozz's actual navigation instead of replacing the application root.
 Release builds include the same navigation, standalone onboarding, source
-management, guide/search, Multiview, playback and opt-in portable sync. Existing
+management, guide/search, Multiview, playback and profile-scoped iCloud sync. Existing
 profile authorization, parental approval, account, source and persistence gates
 remain in force.
 
@@ -76,6 +76,9 @@ shift or resize the skeleton or loaded guide.
 The shell keeps this clearance while Live TV temporarily suppresses navigation
 to focus its first channel or restore guide focus. Navigation visibility and input
 remain gated; the full-screen video and native Search use their own full bounds.
+The guide background still reaches the trailing screen edge, but channel and
+programme controls retain the guide's inner gutter on both sides so their focus
+outline stays fully visible, including in right-to-left layouts.
 An empty configuration does not contact a public feed or play an unsolicited
 channel. Add your own M3U playlist or use an authorized
 connected server. Plozz does not provide or offer a public channel catalog.
@@ -108,7 +111,11 @@ are available there; playlist/guide editing and server renaming open their
 specific editors directly. Hidden-channel restoration also lives in its detail
 pane. Setup and source pages reuse Plozz's shared settings groups, row labels,
 switches, focus/card styles and page heading.
-The embedded iPhone/iPad Sources pane clears its enclosing native List row's
+On iPhone/iPad, Sources and its grouped detail pages use a scroll-based settings
+surface rather than embedding multiple navigation links in one native List cell.
+Each tap pushes only its selected destination; one Back returns to the source
+page. This applies to both Settings and the Live TV toolbar's Sources entry.
+When embedded in a native List, the iPhone/iPad Sources pane clears its row's
 background, separator, and extra insets, so the shared settings gradient and
 group keylines continue through the whole page rather than an opaque inner panel.
 Source choices appear before saved sources, with descriptions of playlist URLs,
@@ -161,8 +168,11 @@ is no prior in-memory history to migrate on the first updated launch.
   The focus engine no longer traverses a full-catalog set of synthetic lazy-stack
   placeholders. Each row has its own hosting boundary, preserving the logo/programme
   focus column and keeping keyboard-collapse scrolling aimed at the actual row.
-  Stable row identities, cached row configuration and measured heights avoid
-  rebuilding unrelated rows as focus moves. Guide lookup indices are refreshed
+  Stable row identities and cached row configuration avoid rebuilding unrelated
+  rows as focus moves. The native layout computes frames only for the requested
+  viewport, using the guide's shared Dynamic Type-scaled row and section-label
+  metrics. It can jump directly into a 100,000-row catalog without a synchronous
+  full-catalog self-sizing layout pass. Guide lookup indices are refreshed
   with catalog/filter changes, not rebuilt for every scroll callback.
   The current category remains identified. Leaving Search restores the
   original guide occurrence and time position; the video stays in the same player.
@@ -294,6 +304,15 @@ is no prior in-memory history to migrate on the first updated launch.
   The address can describe an M3U channel list or a direct HLS stream. A direct
   master or media manifest imports one channel, not one channel per segment.
   Channel-list entries can also point to HLS streams.
+  Playlist downloads parse incrementally, with bounded line buffering rather
+  than a retained raw response, full decoded string and split-line array.
+  Imports accept up to 100,000 entries and 128 MiB, with a 64 KiB line bound.
+  An exact 100,000-entry network fixture exceeds the previous 20 MiB ceiling
+  without truncation. Parsed response caching has a separate 64 MiB budget;
+  guide bodies retain their existing limits and cannot reuse playlist validators.
+  Imported files use authenticated, chunked encrypted archives and incremental
+  parsing; legacy encrypted files remain readable. Failed replacements retain
+  the original, and incomplete or tampered archives cannot publish a catalog.
   Source details retain playlist/skipped-entry counts, guide matches, loaded
   listings and per-feed failures; the guide overview shows loaded coverage.
   Settings restores authorized cached channels and guide statistics without
@@ -570,6 +589,13 @@ without blocking browsing or playback. Sources exposes Scan channels,
 Scan results, Show hidden and Rescan channels. Browsing also exposes Check
 channels. Importing a playlist does not start probes automatically.
 
+Scan catalog preparation parses origins and hashes stream/health identities on a
+cancellable worker, not the main actor. Identical authorized playlist/channel
+inputs reuse the existing binding when guides publish again. Source edits and
+refreshes revoke old scan eligibility immediately; a completed preparation must
+still match the active owner, catalog request and freshly checked authorization.
+Scan controls show progress while preparing; browsing and playback remain usable.
+
 Results belong to the profile, source, channel and stream identity. Confirmed
 missing links can be hidden reversibly without deleting playlist entries,
 Favorites or guide mappings. Restore is separate from manually hiding a channel.
@@ -818,12 +844,57 @@ Generated completion never writes resume position or sends a legacy
 playback-stop event. Pending completions retain runtime consent and account
 authorization checks; restoring an outbox cannot recreate an expired grant.
 
-Optional portable Live TV state covers channel preferences, matching hints and
-generated definitions/snapshots, not source URLs, imported playlist bytes,
-credentials, parental approvals, history grants or channel health. Incomplete
-snapshot transfers remain pending. Identity changes are deferred while
+Live TV follows the main iCloud Sync switch for each profile. The existing
+portable channel covers channel preferences, matching hints and generated
+definitions/snapshots. A separate encrypted source channel carries playlist
+and guide addresses, stable guide identities, source options and imported files.
+Both use the same existing CloudKit engine. Source records reuse deployed
+encrypted fields in an isolated zone; old clients cannot erase them.
+Parental approvals, history grants and channel health remain device-local.
+Server sign-in credentials retain their existing authorization flow.
+
+Imported files use immutable, bounded chunks and a manifest containing their
+byte count and checksum. A source is installed only after the complete file
+verifies, regardless of delivery order. Imported identities cannot replace
+different existing file content. Source deletions use explicit tombstones.
+Canonical source observations and remote-ownership receipts are committed with
+the source configuration in Keychain, preserving unreported local edits.
+Captured edits remain pending until a durable ledger receipt acknowledges that
+exact intent. A failed write or restart cannot let an older cloud fallback
+overwrite them; a recorded server-wins conflict can still converge normally.
+Account/profile/root-namespace and snapshot-order fences reject stale work;
+an account change quarantines sources received from the previous account.
+Parental grants are invalidated through the existing approval-aware store.
+
+Encrypted CloudKit channels also seal their local ledgers with a device-only
+Keychain key. A small atomic index references separately encrypted entry files,
+so acknowledgements do not rewrite all imported playlist bytes. Legacy plaintext
+credential ledgers migrate only after validation; unreadable keys or ciphertext
+never restore an empty ledger. These reconstructable files are excluded from
+backup, and missing encrypted ledgers force a complete cloud fetch. Source
+ledger indexes also bind the account epoch, so an old file left by a failed
+account-switch write cannot be replayed as the new account's sources. Channel
+state commits before engine cursors advance; failed persistence stops delivery
+and retries from the last durable state. Source transfer retains a 256 MiB
+aggregate record budget rather than silently dropping
+files when an account exceeds the device's supported working set.
+
+Incomplete transfers remain pending. Identity changes are deferred while
 playback holds their identities, while authorization revocation takes effect
-immediately. Each device still configures and authorizes its own sources.
+immediately. New clients leave legacy plaintext playlist descriptors unchanged,
+but only the encrypted channel owns playlist configuration.
+
+The mobile Settings root supplies its active profile model to both compact and
+split navigation, including the shared Live TV sync controls and pending-source
+list. Availability still comes from the bridge registered for that exact model;
+the UI does not substitute a different profile or infer CloudKit availability.
+
+Sync troubleshooting shows a dedicated Reload From iCloud progress indicator
+and retains its completed, unavailable, interrupted or failed outcome on both
+platforms. Intermediate automatic fetch/send updates cannot dismiss that
+indicator or overwrite its result. Reload and Reset are disabled during a
+reload, and repeated reload requests cannot rebuild the sync engine concurrently.
+Full reloads retain the existing per-channel ledger and verified-deletion rules.
 
 Portable library schedule validation, snapshot assembly/encoding and merge
 planning run on a serial worker actor using immutable inputs. Prepared exports
@@ -843,6 +914,14 @@ prepared views; UI-facing readers require preparation rather than falling back
 to synchronous decoding. Pending-source lists reload asynchronously, while
 saving a source checks only its own descriptor record. Prepared journal data is
 discarded when the operation ends.
+
+The journal enforces its 128 MiB serialized-storage bound before writing; the
+separate 64 MiB input bound applies to each preparation, not accumulated state.
+Replacing or deleting a known library definition retires snapshot parts only
+when no remaining definition revision references that generation. Current,
+future, retained and pending revisions all count. Retirement uses explicit
+tombstones; old unreferenced parts are not discarded merely by age or absence of
+a definition, because a delayed transfer may deliver its definition later.
 
 Unchanged schedule exports are reused by the worker after comparing the complete
 definitions and snapshots, not snapshot IDs alone. Authorization reads still

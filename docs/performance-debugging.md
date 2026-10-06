@@ -44,6 +44,59 @@ early (the decision tree in §4 routes you):
 
 ---
 
+## Sentry diagnostics and matching symbols
+
+Crash-reporting consent gates all uploads. Automatic UI/network breadcrumbs and
+performance tracing remain disabled. Reports retain a bounded history of fixed
+screen categories and typed Live TV sync stages; failures include only an
+allowlisted reason and, for known system errors, a numeric code. No source/profile
+identity, playlist URL, media title, error description or user-info dictionary is
+included. Repeated sync failures are reported once per profile/operation/stage
+until recovery. Expected schedule deferrals and cancellation are not failures.
+Numeric SDK memory measurements and its low-memory flag survive redaction;
+device names, installation IDs and arbitrary contexts do not.
+The `PLZLTVSYNC` local log uses the same non-secret vocabulary.
+
+Playlist import limit warnings contain only a closed limit category and numeric
+observed/maximum counts. Header size, received bytes, parser input, header-line
+size and entry count are distinguishable without uploading an address, channel
+name, credential, error description or playlist content. Reporting is gated by
+crash-reporting consent and limited to one warning per category per reporter
+lifecycle. These measurements diagnose an unavailable input; a screenshot of the
+generic import error alone cannot establish which limit was reached.
+
+Missing breadcrumbs in a shared issue or formatted summary are not proof that
+the original event contained none. Check the event and its debug images: an app
+image with `debug_status: missing` specifically means Sentry lacks its matching
+symbols. An unknown framework source location alone does not establish that.
+
+Before distribution, configure `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` and
+`SENTRY_PROJECT` in the private Plozz env file (or CI environment), and install
+`sentry-cli`. The `beta` and `release` lanes validate both IPAs, then upload each
+archive's UUID-matched app/extension dSYMs and wait for Sentry processing before
+uploading either platform to Apple. Source bundles are explicitly excluded.
+Local builds/archives do not need Sentry upload credentials.
+
+For an existing retained archive, use
+`python3 tools/upload-sentry-symbols.py /path/to/Plozz-tvOS.xcarchive`.
+The UUID must match the event's exact binary; rebuilding the same Git commit does
+not recreate its symbols. Missing historical breadcrumbs cannot be recovered by
+uploading symbols. Symbolication improves attribution, not proof of a hang's cause.
+
+Portable iCloud Keychain publication runs on a dedicated serial utility queue,
+including local credential reads and encoding. Unchanged values are not rewritten.
+Sign-out and purge use the same queue, invalidate older publications, and hide
+pending removals from auto-connect. Turning sync off cancels queued publication;
+an already executing Security call cannot be interrupted.
+
+Live TV portable journal commits keep consent checks and authoritative local-store
+changes on the main actor, then await atomic file writes on a worker. The journal
+revision is fenced until completion, and observation receipts are written after
+their records. Cloud capture and acknowledgements cannot report success before
+that commit. Failures invalidate preparation and preserve the caller's fallback;
+unchanged observations do not trigger another disk flush. Do not fix `fsync`
+hangs by removing atomic writes or returning before persistence finishes.
+
 ## 0. The Apple TV is the only honest signal
 
 - The Simulator does **not** reproduce these problems. CPU, memory pressure, the
@@ -701,6 +754,14 @@ the app's visible-status acknowledgement, the recorder's Darwin start
 notification, and five seconds without an early disconnect before authorizing
 input. Heartbeats maintain the badge; a missing heartbeat expires it after
 15 seconds, including a render-server fade if the main thread is blocked.
+Debug builds also export `Library/Caches/Plozz/diagnostic-images-{preparing,finished,failed}.json`
+on those status transitions, not recording heartbeats. Each snapshot includes the
+PID, build, image UUIDs and executable-segment load/file addresses; names contain
+only binary basenames. dyld callbacks safely copy loaded-image metadata, and file
+writes run on a utility queue. Copy these files alongside a raw trace when
+Instruments loses image mappings. Match the PID/build and exact dSYM UUID before
+resolving addresses; never reuse another process's ASLR mappings. Unmapped images
+and export failures are reported explicitly.
 Release builds have no receiver. `--no-indicator` is an explicit opt-out for
 an older/release build, not an automatic fallback when an acknowledgement fails.
 

@@ -23,7 +23,8 @@ public struct LiveTVPortableSyncPreferenceStore: Sendable {
         )
     }
 
-    /// Device-local consent. Never add this key to ProfileSettingsTransfer.
+    /// Device-local activation/replay fence, never a portable preference.
+    /// Production composition keeps activation aligned with the main sync switch.
     public var isEnabled: Bool {
         get {
             let epoch = Self.storageEpoch(defaults: defaults)

@@ -53,6 +53,8 @@ struct PrototypeBrowser: View {
     @State private var timeline = PrototypeTimelineScroll()
     #if os(tvOS)
     @State private var nativeScroll = PrototypeGuideScrollController()
+    @ScaledMetric(relativeTo: .subheadline) private var nativeRowHeight = PrototypeLayout.rowHeight
+    @ScaledMetric(relativeTo: .caption) private var nativeSectionFontSize = PrototypeLayout.sectionFontSize
     #endif
     @FocusState private var focused: PrototypeBrowseFocus?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -130,7 +132,12 @@ struct PrototypeBrowser: View {
                     let gatesFocus = (railActive && restrictDirectionalEntry)
                         || isRestoringFocus || requiresContentFocusHandoff
                     PrototypeNativeGuideList(
-                        rows: model.guideRowIDs, scrollController: nativeScroll,
+                        rows: model.guideRowIDs,
+                        rowHeight: PrototypeLayout.rowHeight(for: geometry.size.width, scaledHeight: nativeRowHeight)
+                            + PrototypeLayout.rowGap,
+                        sectionHeight: PrototypeLayout.guideSectionLabelHeight(fontSize: nativeSectionFontSize)
+                            + PrototypeLayout.smallGap + PrototypeLayout.sectionLabelGap,
+                        scrollController: nativeScroll,
                         scrolled: { row, offset in
                             if scrollID != row { scrollID = row }
                             let fade = PrototypeScrollFade(before: offset)
@@ -709,7 +716,11 @@ struct PrototypeGuideSectionLabel: View {
             .foregroundStyle(palette.secondaryText)
             .lineLimit(1).minimumScaleFactor(0.8)
             .padding(.horizontal, PrototypeLayout.rowInset)
+            #if os(tvOS)
+            .frame(height: PrototypeLayout.guideSectionLabelHeight(fontSize: fontSize), alignment: .leading)
+            #else
             .frame(minHeight: PrototypeLayout.sectionLabelHeight, alignment: .leading)
+            #endif
             .accessibilityAddTraits(.isHeader)
     }
 }

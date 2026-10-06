@@ -73,6 +73,8 @@ final class MediaAliasShellIntegrationTests: XCTestCase {
         ]
         expectedSchemas.append(.liveTVStateV1)
         expectedFiles.append("cloud-live-tv-state-v1.json")
+        expectedSchemas.append(.liveTVSourcesV1)
+        expectedFiles.append("cloud-live-tv-sources-v1.sealed")
         XCTAssertEqual(schemas, expectedSchemas)
         XCTAssertEqual(
             stateFileURLs.map(\.lastPathComponent),
@@ -85,12 +87,11 @@ final class MediaAliasShellIntegrationTests: XCTestCase {
             "channel zones must be disjoint"
         )
 
-        // Credentials must never ride in a plaintext field, and nothing else
-        // should quietly start being encrypted either.
+        // Both credential-bearing channels must use encrypted payloads.
         XCTAssertEqual(
             schemas.filter(\.encryptsValue),
-            [.trackerTokensV1],
-            "only the tracker-token channel carries an encrypted payload"
+            [.trackerTokensV1, .liveTVSourcesV1],
+            "tracker tokens and complete Live TV sources carry encrypted payloads"
         )
     }
 

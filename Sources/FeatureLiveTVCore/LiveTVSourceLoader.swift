@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import CoreModels
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -13,12 +14,16 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
 
     private struct Response: Sendable {
         let data: Data
+        let playlist: LiveTVPlaylistImport?
+        let byteCount: Int
         let finalURL: URL
         let etag: String?
         let modified: String?
         let expires: Date
         let permitsPersistence: Bool
         let cacheControl: String
+
+        var cacheCost: Int { byteCount + (playlist?.channels.count ?? 0) * 512 }
     }
 
     public init(configuration suppliedConfiguration: URLSessionConfiguration? = nil) {
@@ -36,47 +41,15 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
         let response = try await download(
             from: url,
             maximumBytes: Self.playlistLimit,
-            tooLargeError: .responseTooLarge
+            tooLargeError: .responseTooLarge, parsesPlaylist: true
         )
         try Task.checkCancellation()
-        let task = Task.detached(priority: .userInitiated) {
-            let parsed: LiveTVPlaylistImport
-            if response.data.starts(with: [0x1f, 0x8b]) {
-                throw LiveTVSourceImportError.guideWithoutPlaylist
-            }
-            let prefix = String(decoding: response.data.prefix(512), as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if prefix.hasPrefix("<tv") || prefix.hasPrefix("<?xml") {
-                throw LiveTVSourceImportError.guideWithoutPlaylist
-            }
-            do {
-                parsed = try LiveTVPlaylistParser(baseURL: response.finalURL).parse(response.data)
-            } catch LiveTVSourceImportError.streamManifest {
-                guard let text = String(data: response.data, encoding: .utf8),
-                      text.contains("#EXT-X-STREAM-INF:") || text.contains("#EXT-X-TARGETDURATION:") else {
-                    throw LiveTVSourceImportError.invalidPlaylist
-                }
-                let digest = SHA256.hash(data: Data(response.finalURL.absoluteString.utf8))
-                    .map { String(format: "%02x", $0) }.joined()
-                parsed = LiveTVPlaylistImport(
-                    channels: [LiveTVPrototypeChannel(
-                        id: "iptv-direct-" + digest, number: 1, name: response.finalURL.host ?? "Live channel",
-                        category: "Other", symbol: "tv", accent: 0, source: .iptv, tagline: "Live stream",
-                        streamURL: response.finalURL
-                    )], entryCount: 1, skippedEntryCount: 0
-                )
-            }
-            return LiveTVPlaylistImport(
-                channels: parsed.channels, entryCount: parsed.entryCount, skippedEntryCount: parsed.skippedEntryCount,
-                declaredGuideURLs: parsed.declaredGuideURLs, permitsPersistence: response.permitsPersistence,
-                originURL: parsed.originURL
-            )
-        }
-        return try await withTaskCancellationHandler {
-            try await task.value
-        } onCancel: {
-            task.cancel()
-        }
+        guard let parsed = response.playlist else { throw LiveTVSourceImportError.invalidPlaylist }
+        return LiveTVPlaylistImport(
+            channels: parsed.channels, entryCount: parsed.entryCount, skippedEntryCount: parsed.skippedEntryCount,
+            declaredGuideURLs: parsed.declaredGuideURLs, permitsPersistence: response.permitsPersistence,
+            originURL: parsed.originURL
+        )
     }
 
     public func loadGuide(
@@ -140,7 +113,8 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
     private func download(
         from url: URL,
         maximumBytes: Int,
-        tooLargeError: LiveTVSourceImportError
+        tooLargeError: LiveTVSourceImportError,
+        parsesPlaylist: Bool = false
     ) async throws -> Response {
         guard let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme),
@@ -151,8 +125,12 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
             throw LiveTVSourceImportError.invalidResponse
         }
 
-        if let cached = responses[url], cached.expires > Date() {
-            guard cached.data.count <= maximumBytes else { throw tooLargeError }
+        let cached = responses[url].flatMap { ($0.playlist != nil) == parsesPlaylist ? $0 : nil }
+        if let cached, cached.expires > Date() {
+            guard cached.byteCount <= maximumBytes else {
+                throw sizeFailure(tooLargeError, limit: .responseBodyBytes,
+                                  observed: Int64(cached.byteCount), maximum: maximumBytes)
+            }
             return cached
         }
         var lastFailure: LiveTVSourceImportError = .downloadFailed
@@ -162,7 +140,7 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
             var request = URLRequest(url: url)
             request.timeoutInterval = 120
             request.setValue("gzip, identity", forHTTPHeaderField: "Accept-Encoding")
-            if let cached = responses[url] {
+            if let cached {
                 request.setValue(cached.etag, forHTTPHeaderField: "If-None-Match")
                 request.setValue(cached.modified, forHTTPHeaderField: "If-Modified-Since")
             }
@@ -172,9 +150,15 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
                 throw LiveTVSourceImportError.invalidResponse
             }
             if response.statusCode == 304 {
-                guard let cached = responses[url] else { throw LiveTVSourceImportError.invalidResponse }
-                guard cached.data.count <= maximumBytes else { throw tooLargeError }
-                let refreshed = responsePayload(data: cached.data, response: response, url: url, previous: cached)
+                guard let cached else { throw LiveTVSourceImportError.invalidResponse }
+                guard cached.byteCount <= maximumBytes else {
+                    throw sizeFailure(tooLargeError, limit: .responseBodyBytes,
+                                      observed: Int64(cached.byteCount), maximum: maximumBytes)
+                }
+                let refreshed = responsePayload(
+                    data: cached.data, response: response, url: url, previous: cached,
+                    playlist: cached.playlist, byteCount: cached.byteCount
+                )
                 retainResponse(refreshed, for: url)
                 return refreshed
             }
@@ -205,22 +189,61 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
                 throw LiveTVSourceImportError.invalidResponse
             }
             if response.expectedContentLength > Int64(maximumBytes) {
-                throw tooLargeError
+                throw sizeFailure(tooLargeError, limit: .responseHeaderBytes,
+                                  observed: response.expectedContentLength, maximum: maximumBytes)
             }
             var data = Data()
-            data.reserveCapacity(
-                min(maximumBytes, max(0, Int(response.expectedContentLength)))
-            )
+            if !parsesPlaylist {
+                data.reserveCapacity(min(maximumBytes, max(0, Int(response.expectedContentLength))))
+            }
+            var parser = parsesPlaylist
+                ? LiveTVPlaylistParser(baseURL: response.url ?? url).makeStream() : nil
+            var prefix = Data()
+            var received = 0
             for try await byte in bytes {
                 if Task.isCancelled {
                     throw LiveTVSourceImportError.cancelled
                 }
-                guard data.count < maximumBytes else {
-                    throw tooLargeError
+                guard received < maximumBytes else {
+                    throw sizeFailure(tooLargeError, limit: .responseBodyBytes,
+                                      observed: Int64(received) + 1, maximum: maximumBytes)
                 }
-                data.append(byte)
+                received += 1
+                if parsesPlaylist {
+                    if prefix.count < 512 {
+                        prefix.append(byte)
+                        let text = String(decoding: prefix, as: UTF8.self)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        if prefix.starts(with: [0x1f, 0x8b]) || text.hasPrefix("<tv") || text.hasPrefix("<?xml") {
+                            throw LiveTVSourceImportError.guideWithoutPlaylist
+                        }
+                    }
+                    try parser?.append(byte)
+                } else {
+                    data.append(byte)
+                }
             }
-            let result = responsePayload(data: data, response: response, url: url)
+            var playlist: LiveTVPlaylistImport?
+            if var parser {
+                do {
+                    playlist = try parser.finish()
+                } catch LiveTVSourceImportError.streamManifest {
+                    guard parser.hasPlayableHLSTag else { throw LiveTVSourceImportError.invalidPlaylist }
+                    let finalURL = response.url ?? url
+                    let digest = SHA256.hash(data: Data(finalURL.absoluteString.utf8))
+                        .map { String(format: "%02x", $0) }.joined()
+                    playlist = LiveTVPlaylistImport(
+                        channels: [LiveTVPrototypeChannel(
+                            id: "iptv-direct-" + digest, number: 1, name: finalURL.host ?? "Live channel",
+                            category: "Other", symbol: "tv", accent: 0, source: .iptv, tagline: "Live stream",
+                            streamURL: finalURL
+                        )], entryCount: 1, skippedEntryCount: 0
+                    )
+                }
+            }
+            let result = responsePayload(
+                data: data, response: response, url: url, playlist: playlist, byteCount: received
+            )
             retainResponse(result, for: url)
             return result
           } catch is CancellationError {
@@ -236,8 +259,19 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
         throw lastFailure
     }
 
+    private func sizeFailure(
+        _ error: LiveTVSourceImportError, limit: LiveTVPlaylistLimitDiagnostic.Limit,
+        observed: Int64, maximum: Int
+    ) -> LiveTVSourceImportError {
+        if error == .responseTooLarge {
+            LiveTVPlaylistLimitDiagnostic(limit: limit, observed: observed, maximum: Int64(maximum)).publish()
+        }
+        return error
+    }
+
     private func responsePayload(
-        data: Data, response: HTTPURLResponse, url: URL, previous: Response? = nil
+        data: Data, response: HTTPURLResponse, url: URL, previous: Response? = nil,
+        playlist: LiveTVPlaylistImport? = nil, byteCount: Int? = nil
     ) -> Response {
         let directives = (response.value(forHTTPHeaderField: "Cache-Control") ?? previous?.cacheControl ?? "").lowercased()
         let maxAge = directives.split(separator: ",").compactMap { directive -> Double? in
@@ -254,7 +288,8 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
         let lifetime = effectiveMaxAge.isFinite && age.isFinite
             ? min(max(0, effectiveMaxAge - currentAge), 86_400) : 0
         return Response(
-            data: data, finalURL: response.url ?? previous?.finalURL ?? url,
+            data: data, playlist: playlist, byteCount: byteCount ?? data.count,
+            finalURL: response.url ?? previous?.finalURL ?? url,
             etag: response.value(forHTTPHeaderField: "ETag") ?? previous?.etag,
             modified: response.value(forHTTPHeaderField: "Last-Modified") ?? previous?.modified,
             expires: received.addingTimeInterval(directives.contains("no-cache") ? 0 : lifetime),
@@ -268,11 +303,11 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
             return
         }
         let maximumBytes = 64 * 1_024 * 1_024
-        let retainedBytes = responses.values.reduce(0) { $0 + $1.data.count } - (responses[url]?.data.count ?? 0)
-        if retainedBytes + result.data.count > maximumBytes || (responses[url] == nil && responses.count >= 256) {
+        let retainedBytes = responses.values.reduce(0) { $0 + $1.cacheCost } - (responses[url]?.cacheCost ?? 0)
+        if retainedBytes + result.cacheCost > maximumBytes || (responses[url] == nil && responses.count >= 256) {
             responses.removeAll(keepingCapacity: true)
         }
-        if result.data.count <= maximumBytes { responses[url] = result }
+        if result.cacheCost <= maximumBytes { responses[url] = result }
     }
 
     private func httpDate(_ value: String) -> Date? {

@@ -37,13 +37,7 @@ enum PrototypeLayout {
     static let minimumGuideOpacity = 0.05
     static let guideInset = PlozzTheme.Metrics.Radius.inset
     static let stationArtworkInset = guideInset + 8
-    static var guideTrailingInset: CGFloat {
-        #if os(tvOS)
-        0
-        #else
-        guideInset
-        #endif
-    }
+    static let guideTrailingInset = guideInset
     static var guideRadius: CGFloat { rowRadius + guideInset }
     static let controlRadius = PlozzTheme.Metrics.Radius.control
     static let controlInset = PlozzTheme.Spacing.xSmall
@@ -123,6 +117,12 @@ enum PrototypeLayout {
     static func rowHeight(for width: CGFloat, scaledHeight: CGFloat) -> CGFloat {
         usesCompactRows(width) ? scaledHeight * compactRowHeight / rowHeight : scaledHeight
     }
+
+    #if os(tvOS)
+    static func guideSectionLabelHeight(fontSize: CGFloat) -> CGFloat {
+        max(sectionLabelHeight, ceil(UIFont.systemFont(ofSize: fontSize, weight: .medium).lineHeight))
+    }
+    #endif
 
     static func timelineWidth(for width: CGFloat) -> CGFloat {
         max(1, width - stationWidth(for: width) - columnGap)

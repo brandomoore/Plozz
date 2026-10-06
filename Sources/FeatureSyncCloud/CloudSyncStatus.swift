@@ -1,6 +1,13 @@
 import Foundation
 import Observation
 
+public enum CloudSyncReloadResult: Equatable, Sendable {
+    case completed
+    case unavailable
+    case interrupted
+    case failed
+}
+
 // MARK: - CloudSyncStatus
 //
 // Observable, MainActor-isolated status the UI binds to for a "last synced" line
@@ -33,6 +40,8 @@ public final class CloudSyncStatus {
     /// across devices: if one shows 0 (or fewer) than another, that device isn't
     /// receiving — the fastest on-device confirmation of a one-way sync.
     public internal(set) var syncedRecordCount: Int?
+    public private(set) var isReloading = false
+    public private(set) var reloadResult: CloudSyncReloadResult?
 
     /// Debounces error display: a transient conflict that self-heals on the engine's
     /// own retry shouldn't flash a scary "Couldn't sync". The error is only shown if
@@ -40,6 +49,28 @@ public final class CloudSyncStatus {
     @ObservationIgnored private var pendingErrorTask: Task<Void, Never>?
 
     public init() {}
+
+    /// Keep manual recovery separate from the engine's intermediate fetch/send phases.
+    public func reload(
+        operation: @Sendable () async -> CloudSyncReloadResult
+    ) async {
+        guard !isReloading else { return }
+        isReloading = true
+        reloadResult = nil
+        reloadResult = await operation()
+        isReloading = false
+    }
+
+    public var reloadSummary: LocalizedStringResource? {
+        if isReloading { return "Reloading from iCloud…" }
+        switch reloadResult {
+        case .completed: return "Reloaded the latest settings from iCloud."
+        case .unavailable: return "iCloud Sync is unavailable. Check that it is on and you are signed in to iCloud."
+        case .interrupted: return "Reload was interrupted. Try again."
+        case .failed: return "Couldn’t reload from iCloud. Try again."
+        case nil: return nil
+        }
+    }
 
     /// Non-error phase update (idle/syncing/signedOut/disabled). Cancels any pending
     /// debounced error, since we've made forward progress.

@@ -46,6 +46,38 @@ Use a new result-bundle path for each run. Existing DerivedData can be reused; d
 not clear shared caches. The generated `.xcodeproj` is ignored by Git. This command
 does not regenerate the shipping app project or install the app on an Apple TV.
 
+### Mobile Sources navigation
+
+The `LiveTVMobileSourcesFixture` scheme hosts the same Sources content on iOS.
+After generating the fixture project above, select an iOS 26-or-newer iPhone or
+iPad simulator and run:
+
+```bash
+export IOS_SIMULATOR_ID='REPLACE_WITH_IOS_SIMULATOR_UDID'
+export GIT_CONFIG_PARAMETERS="'safe.bareRepository=all'"
+tools/with-apple-build-lease.sh plozz-mobile-sources-fixture -- bash -c '
+  set -e
+  source tools/lib/swift-package-storage.sh
+  configure_plozz_package_resolution "$PWD/.build/package-workspaces/mobile-source-navigation"
+  xcodebuild \
+    -project Tests/FeatureLiveTVRemoteTests/LiveTVSearchFixture.xcodeproj \
+    -scheme LiveTVMobileSourcesFixture \
+    -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_ID" \
+    -derivedDataPath .build/mobile-source-navigation \
+    -resultBundlePath ".build/mobile-source-results-$(date +%Y%m%d-%H%M%S).xcresult" \
+    "${PACKAGE_RESOLUTION_ARGS[@]}" \
+    -parallel-testing-enabled NO \
+    -collect-test-diagnostics never \
+    test
+'
+```
+
+The touch tests cover both the typed Sources entry and Live TV Settings. With a
+saved playlist and isolated catalog, every add/edit/import/scan/mapping/details
+action must push only its intended page, and one Back must return to Sources.
+They also exercise the center of the source-summary row, not just its text,
+and require zero source writes and network requests.
+
 ## Coverage and isolation
 
 - Actual `PrototypeBrowser` inside native `PrototypeNativeSearch`: keyboard entry,

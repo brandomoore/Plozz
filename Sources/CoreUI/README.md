@@ -86,6 +86,10 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   changes card height. Spoiler blur applies to images, not fallback names.
 - **Content state** — `ContentStateView` renders the `LoadState`
   loading / loaded / empty / failed states identically across features.
+- **Mobile settings surfaces** — `SettingsPageSurface` keeps the native scroll
+  viewport full-width so the title's scroll-edge blur reaches both navigation
+  edges. Horizontal safe-area padding insets the content without narrowing that
+  viewport; both list rows and grouped scrolling panels retain their spacing.
 - **Subtitle appearance** — editing the live subtitle look now happens in
   the player (`FeaturePlayback`'s in-player Style screen), not via a shared
   Settings card.

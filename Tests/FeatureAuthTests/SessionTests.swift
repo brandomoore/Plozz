@@ -20,6 +20,22 @@ final class SessionStateMachineTests: XCTestCase {
         XCTAssertEqual(m.state, .onboarding(.selectingServer, canReturnToApp: false))
     }
 
+    func testAccountRecoveryCannotSkipLaunchRestoration() {
+        for standalone in [false, true] {
+            for accounts in [[], [account()]] {
+                var machine = SessionStateMachine()
+                machine.apply(.accountsChanged(accounts), allowsStandalonePlayback: standalone)
+                XCTAssertEqual(machine.state, .launching)
+                machine.apply(.restored(accounts), allowsStandalonePlayback: standalone)
+                XCTAssertEqual(
+                    machine.state,
+                    standalone || !accounts.isEmpty
+                        ? .ready : .onboarding(.selectingServer, canReturnToApp: false)
+                )
+            }
+        }
+    }
+
     func testRestoreStandaloneWithoutAccountsBecomesReady() {
         var m = SessionStateMachine()
         m.apply(.restored([]), allowsStandalonePlayback: true)

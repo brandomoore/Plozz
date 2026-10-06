@@ -17,6 +17,11 @@ public final class LiveTVScanCatalogBinding {
     @ObservationIgnored private var channels: [LiveTVPrototypeChannel] = []
     @ObservationIgnored private var isActive = false
     @ObservationIgnored private var ownsScan = false
+    @ObservationIgnored private var preparation: Task<Void, Never>?
+    @ObservationIgnored private var preparationID = UUID()
+    @ObservationIgnored private var preparedInput: (
+        authority: LiveTVSourceAuthorization, playlists: [LiveTVPlaylistSource], channels: [LiveTVPrototypeChannel]
+    )?
 
     public init(
         profileID: String, model: LiveTVPrototypeModel,
@@ -30,6 +35,7 @@ public final class LiveTVScanCatalogBinding {
     }
 
     deinit {
+        preparation?.cancel()
         // Avoid the isolated-deinit back-deployment thunk on older Swift
         // runtimes while keeping cleanup on the main actor.
         let cleanup: @MainActor @Sendable () -> Void = {
@@ -68,6 +74,8 @@ public final class LiveTVScanCatalogBinding {
     }
 
     public func invalidate(_ sourceIDs: Set<String>) {
+        cancelPreparation()
+        if coordinator.isPreparingCatalog { coordinator.deactivate() }
         for id in sourceIDs { coordinator.invalidate(sourceID: id) }
         synchronizeVisibility()
     }
@@ -82,11 +90,16 @@ public final class LiveTVScanCatalogBinding {
         bind()
     }
 
+    public func waitUntilPrepared() async {
+        await preparation?.value
+    }
+
     public func synchronizeVisibility() {
         model?.setScanHiddenChannelIDs(coordinator.scanHiddenChannelIDs)
     }
 
     private func clearRuntime() {
+        cancelPreparation()
         coordinator.deactivate()
         model?.setScanHiddenChannelIDs([])
     }
@@ -118,17 +131,60 @@ public final class LiveTVScanCatalogBinding {
         do {
             let authority = try authorization(configuration)
             guard authority.profileID == profileID else { throw LiveTVChannelScanError.sourceUnavailable }
-            let allowed = authority.filtering(configuration)
-            let sources = try allowed.playlists.filter(\.isEnabled).map {
-                try LiveTVChannelScanSource(source: $0, channels: channels)
+            let playlists = authority.filtering(configuration).playlists.filter(\.isEnabled)
+            if let input = preparedInput,
+               input.authority == authority, input.playlists == playlists, input.channels == channels {
+                return
             }
-            try coordinator.bind(profileID: profileID, sources: sources)
-            issue = nil
-            synchronizeVisibility()
-        } catch {
-            issue = (error as? LiveTVChannelScanError) ?? .sourceUnavailable
             clearRuntime()
-            HandoffDiagnostics.emit("LIVE_TV event=scanCatalogUnavailable")
+            coordinator.beginCatalogPreparation()
+            issue = nil
+            preparedInput = (authority, playlists, channels)
+            let channels = channels
+            let profileID = profileID
+            let request = preparationID
+            let worker = Task.detached(priority: .utility) {
+                let sources = try playlists.map {
+                    try Task.checkCancellation()
+                    return try LiveTVChannelScanSource(source: $0, channels: channels)
+                }
+                return try LiveTVChannelScanCoordinator.prepareCatalog(profileID: profileID, sources: sources)
+            }
+            preparation = Task { [weak self] in
+                do {
+                    let catalog = try await withTaskCancellationHandler {
+                        try await worker.value
+                    } onCancel: {
+                        worker.cancel()
+                    }
+                    try Task.checkCancellation()
+                    guard let self, self.preparationID == request, self.isActive, self.ownsScan else { return }
+                    guard try self.authorization(self.configuration) == authority else {
+                        throw LiveTVChannelScanError.sourceUnavailable
+                    }
+                    try self.coordinator.bind(catalog)
+                    self.preparation = nil
+                    self.synchronizeVisibility()
+                } catch {
+                    guard !Task.isCancelled, let self, self.preparationID == request else { return }
+                    self.fail(error)
+                }
+            }
+        } catch {
+            fail(error)
         }
+    }
+
+    private func cancelPreparation() {
+        preparation?.cancel()
+        preparation = nil
+        preparationID = UUID()
+        preparedInput = nil
+    }
+
+    private func fail(_ error: Error) {
+        issue = (error as? LiveTVChannelScanError) ?? .sourceUnavailable
+        clearRuntime()
+        HandoffDiagnostics.emit("LIVE_TV event=scanCatalogUnavailable")
     }
 }

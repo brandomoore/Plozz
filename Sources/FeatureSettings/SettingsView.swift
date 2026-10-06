@@ -1499,6 +1499,7 @@ private struct SyncTroubleshootingView: View {
     @State private var confirmsReset = false
 
     var body: some View {
+        let isReloading = statusProvider?.make().isReloading == true
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 SettingsPageHeader("Troubleshooting")
@@ -1523,6 +1524,8 @@ private struct SyncTroubleshootingView: View {
                             )
                         }
                         .buttonStyle(SettingsFocusButtonStyle())
+                        .disabled(isReloading)
+                        .accessibilityIdentifier("cloud-sync-reload")
 
                         Button { confirmsReset = true } label: {
                             SettingsRowLabel(
@@ -1536,6 +1539,12 @@ private struct SyncTroubleshootingView: View {
                             )
                         }
                         .buttonStyle(SettingsFocusButtonStyle())
+                        .disabled(isReloading)
+                        if let statusProvider {
+                            SyncReloadStatusLine(provider: statusProvider)
+                                .font(.footnote)
+                                .settingsRowSecondary()
+                        }
                     }
                 }
             }

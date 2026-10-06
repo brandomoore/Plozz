@@ -1,4 +1,5 @@
 import CryptoKit
+import CoreModels
 import Foundation
 
 public struct LiveTVPlaylistImport: Codable, Sendable {
@@ -83,7 +84,7 @@ public enum LiveTVSourceImportError: Error, Equatable, Sendable {
 }
 
 public struct LiveTVPlaylistParser: Sendable {
-    public static let maximumBytes = 20 * 1_024 * 1_024
+    public static let maximumBytes = 128 * 1_024 * 1_024
     public static let maximumEntries = 100_000
     public static let maximumLineBytes = 64 * 1_024
     // Contrast hints must not pull the regression channel catalog into shipping builds.
@@ -100,180 +101,205 @@ public struct LiveTVPlaylistParser: Sendable {
     public func parse(_ data: Data) throws -> LiveTVPlaylistImport {
         try Task.checkCancellation()
         guard data.count <= Self.maximumBytes else {
-            throw LiveTVSourceImportError.responseTooLarge
+            throw limitExceeded(.inputBytes, observed: data.count, maximum: Self.maximumBytes)
         }
-        guard let text = String(data: data, encoding: .utf8)
-            ?? String(data: data, encoding: .isoLatin1)
-        else {
-            throw LiveTVSourceImportError.invalidPlaylist
-        }
-        return try parse(text)
+        var stream = makeStream()
+        try stream.append(data)
+        return try stream.finish()
     }
 
     public func parse(_ text: String) throws -> LiveTVPlaylistImport {
         guard text.utf8.count <= Self.maximumBytes else {
-            throw LiveTVSourceImportError.responseTooLarge
+            throw limitExceeded(.decodedBytes, observed: text.utf8.count, maximum: Self.maximumBytes)
         }
-        let text = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
-        let rawLines = text.split(
-            omittingEmptySubsequences: false,
-            whereSeparator: { $0.isNewline }
-        )
-        guard let firstContentLine = rawLines.first(where: {
-            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }), firstContentLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            .hasPrefix("#EXTM3U")
-        else {
-            throw LiveTVSourceImportError.invalidPlaylist
-        }
-        guard !rawLines.contains(where: {
-            $0.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("#EXT-X-")
-        }) else {
-            throw LiveTVSourceImportError.streamManifest
-        }
+        var stream = makeStream()
+        for byte in text.utf8 { try stream.append(byte) }
+        return try stream.finish()
+    }
 
-        var channels: [LiveTVPrototypeChannel] = []
-        var pending: PendingEntry?
-        var entryCount = 0
-        var skippedEntryCount = 0
-        var fallbackNumber = 0
-        var importedIDs = Set<String>()
-        guard firstContentLine.utf8.count <= Self.maximumLineBytes else {
-            throw LiveTVSourceImportError.responseTooLarge
-        }
-        let header = firstContentLine.trimmingCharacters(in: .whitespacesAndNewlines)
-        let headerAttributes = parseAttributes(String(header.dropFirst("#EXTM3U".count)))
-        var declaredGuideURLs: [URL] = []
-        for key in ["url-tvg", "x-tvg-url"] {
-            for address in (headerAttributes[key] ?? "").split(separator: ",") {
-                if let url = supportedURL(
-                    address.trimmingCharacters(in: .whitespacesAndNewlines), relativeTo: baseURL
-                ), !declaredGuideURLs.contains(url) {
-                    declaredGuideURLs.append(url)
-                }
-            }
+    public func makeStream() -> Stream { Stream(parser: self) }
+
+    public struct Stream: Sendable {
+        private let parser: LiveTVPlaylistParser
+        private var lineBuffer = Data()
+        private var lineByteCount = 0
+        private var previousByte: UInt8 = 0
+        private var penultimateByte: UInt8 = 0
+        private var hasHeader = false
+        private var isHLS = false
+        public private(set) var hasPlayableHLSTag = false
+        public private(set) var byteCount = 0
+        private var channels: [LiveTVPrototypeChannel] = []
+        private var pending: PendingEntry?
+        private var entryCount = 0
+        private var skippedEntryCount = 0
+        private var fallbackNumber = 0
+        private var importedIDs = Set<String>()
+        private var declaredGuideURLs: [URL] = []
+
+        fileprivate init(parser: LiveTVPlaylistParser) { self.parser = parser }
+
+        var bufferedByteCount: Int { lineBuffer.count }
+
+        public mutating func append(_ data: Data) throws {
+            for byte in data { try append(byte) }
         }
 
-        for (index, rawLine) in rawLines.enumerated() {
-            if index.isMultiple(of: 128) {
-                try Task.checkCancellation()
+        public mutating func append(_ byte: UInt8) throws {
+            if byteCount.isMultiple(of: 16_384) { try Task.checkCancellation() }
+            byteCount += 1
+            guard byteCount <= LiveTVPlaylistParser.maximumBytes else {
+                throw parser.limitExceeded(.inputBytes, observed: byteCount, maximum: LiveTVPlaylistParser.maximumBytes)
             }
-            guard rawLine.utf8.count <= Self.maximumLineBytes else {
-                if rawLine.hasPrefix("#EXTINF:") {
-                    entryCount += 1
-                    skippedEntryCount += 1
-                    guard entryCount <= Self.maximumEntries else {
-                        throw LiveTVSourceImportError.responseTooLarge
-                    }
-                }
-                if pending != nil {
-                    skippedEntryCount += 1
-                    pending = nil
-                }
-                continue
+            let separatorLength: Int
+            if (10...13).contains(byte) {
+                separatorLength = 1
+            } else if byte == 0x85, previousByte == 0xC2 {
+                separatorLength = 2
+            } else if (byte == 0xA8 || byte == 0xA9), previousByte == 0x80, penultimateByte == 0xE2 {
+                separatorLength = 3
+            } else {
+                separatorLength = 0
             }
-            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !line.isEmpty else { continue }
+            penultimateByte = previousByte
+            previousByte = byte
+            lineByteCount += 1
+            if lineBuffer.count < LiveTVPlaylistParser.maximumLineBytes + 3 { lineBuffer.append(byte) }
+            if separatorLength > 0 {
+                if lineByteCount == lineBuffer.count { lineBuffer.removeLast(separatorLength) }
+                lineByteCount -= separatorLength
+                try consumeBufferedLine()
+            }
+        }
 
-            if line.hasPrefix("#EXTINF:") {
-                if pending != nil {
-                    skippedEntryCount += 1
-                }
-                entryCount += 1
-                guard entryCount <= Self.maximumEntries else {
-                    throw LiveTVSourceImportError.responseTooLarge
-                }
-                pending = parseEXTINF(line)
-                if pending == nil {
-                    skippedEntryCount += 1
-                }
-                continue
-            }
-
-            if line.hasPrefix("#EXTVLCOPT:") {
-                guard var entry = pending,
-                      let header = parseVLCOption(line)
-                else { continue }
-                entry.headers[header.name] = header.value
-                pending = entry
-                continue
-            }
-
-            guard !line.hasPrefix("#"), var entry = pending else { continue }
-            pending = nil
-            // Kodi-style `url|User-Agent=...&Referer=...` carries per-stream headers.
-            let pipe = line.firstIndex(of: "|")
-            let address = pipe.map { String(line[..<$0]) } ?? line
-            guard let streamURL = supportedURL(address, relativeTo: baseURL) else {
-                skippedEntryCount += 1
-                continue
-            }
-            if let pipe {
-                for header in parsePipeHeaders(line[line.index(after: pipe)...]) {
-                    entry.headers[header.name] = header.value
-                }
-            }
-
-            fallbackNumber += 1
-            let number = validChannelNumber(entry.attributes["tvg-chno"])
-                ?? fallbackNumber
-            let tvgID = clean(entry.attributes["tvg-id"])
-            let logoURL = clean(entry.attributes["tvg-logo"])
-                .flatMap { supportedURL($0, relativeTo: baseURL) }
-            let groups = categoryNames(from: entry.attributes["group-title"])
-            let category = groups.first ?? "Other"
-            let groupDescription = groups.isEmpty
-                ? "Other"
-                : groups.joined(separator: " • ")
-            let guideName = clean(entry.attributes["tvg-name"])
-            let digestInput = [
-                tvgID ?? "",
-                entry.name,
-                streamURL.absoluteString,
-            ].joined(separator: "\u{1F}")
-            let digest = SHA256.hash(data: Data(digestInput.utf8))
-                .map { String(format: "%02x", $0) }
-                .joined()
-            let channelID = "iptv-\(digest)"
-            guard importedIDs.insert(channelID).inserted else {
-                skippedEntryCount += 1
-                continue
-            }
-
-            channels.append(
-                LiveTVPrototypeChannel(
-                    id: channelID,
-                    number: number,
-                    name: entry.name,
-                    category: category,
-                    symbol: symbol(for: groupDescription),
-                    accent: accent(for: digest),
-                    source: .iptv,
-                    tagline: groupDescription,
-                    logoURL: logoURL,
-                    streamURL: streamURL,
-                    logoNeedsDarkBackground: logoURL.map(Self.darkLogoURLs.contains) ?? false,
-                    guideID: tvgID,
-                    guideName: guideName,
-                    httpHeaders: entry.headers,
-                    language: clean(entry.attributes["tvg-language"]),
-                    country: clean(entry.attributes["tvg-country"]), groups: groups
-                )
+        public mutating func finish() throws -> LiveTVPlaylistImport {
+            try Task.checkCancellation()
+            if lineByteCount > 0 { try consumeBufferedLine() }
+            if isHLS { throw LiveTVSourceImportError.streamManifest }
+            if pending != nil { skippedEntryCount += 1; pending = nil }
+            guard hasHeader, entryCount > 0 else { throw LiveTVSourceImportError.invalidPlaylist }
+            return LiveTVPlaylistImport(
+                channels: channels, entryCount: entryCount, skippedEntryCount: skippedEntryCount,
+                declaredGuideURLs: declaredGuideURLs, originURL: parser.baseURL
             )
         }
 
-        if pending != nil {
-            skippedEntryCount += 1
+        private mutating func consumeBufferedLine() throws {
+            defer {
+                lineBuffer.removeAll(keepingCapacity: true)
+                lineByteCount = 0
+                previousByte = 0
+                penultimateByte = 0
+            }
+            guard lineByteCount <= LiveTVPlaylistParser.maximumLineBytes else {
+                if !hasHeader {
+                    throw parser.limitExceeded(.headerLineBytes, observed: lineByteCount,
+                                               maximum: LiveTVPlaylistParser.maximumLineBytes)
+                }
+                if lineBuffer.starts(with: Data("#EXTINF:".utf8)) {
+                    try countEntry()
+                    skippedEntryCount += 1
+                }
+                if pending != nil { skippedEntryCount += 1; pending = nil }
+                return
+            }
+            guard let rawLine = String(data: lineBuffer, encoding: .utf8)
+                ?? String(data: lineBuffer, encoding: .isoLatin1) else {
+                throw LiveTVSourceImportError.invalidPlaylist
+            }
+            for line in rawLine.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
+                try consumeLine(String(line))
+            }
         }
-        guard entryCount > 0 else {
-            throw LiveTVSourceImportError.invalidPlaylist
+
+        private mutating func consumeLine(_ rawLine: String) throws {
+            var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !hasHeader, line.hasPrefix("\u{FEFF}") { line.removeFirst() }
+            guard !line.isEmpty else { return }
+            if !hasHeader {
+                guard line.hasPrefix("#EXTM3U") else { throw LiveTVSourceImportError.invalidPlaylist }
+                hasHeader = true
+                let attributes = parser.parseAttributes(String(line.dropFirst("#EXTM3U".count)))
+                for key in ["url-tvg", "x-tvg-url"] {
+                    for address in (attributes[key] ?? "").split(separator: ",") {
+                        if let url = parser.supportedURL(
+                            address.trimmingCharacters(in: .whitespacesAndNewlines), relativeTo: parser.baseURL
+                        ), !declaredGuideURLs.contains(url) { declaredGuideURLs.append(url) }
+                    }
+                }
+                return
+            }
+            if line.hasPrefix("#EXT-X-") {
+                isHLS = true
+                hasPlayableHLSTag = hasPlayableHLSTag || line.hasPrefix("#EXT-X-STREAM-INF:")
+                    || line.hasPrefix("#EXT-X-TARGETDURATION:")
+                channels.removeAll(keepingCapacity: false)
+                importedIDs.removeAll(keepingCapacity: false)
+                pending = nil
+                return
+            }
+            guard !isHLS else { return }
+            if line.hasPrefix("#EXTINF:") {
+                if pending != nil { skippedEntryCount += 1 }
+                try countEntry()
+                pending = parser.parseEXTINF(line)
+                if pending == nil { skippedEntryCount += 1 }
+                return
+            }
+            if line.hasPrefix("#EXTVLCOPT:") {
+                guard var entry = pending, let header = parser.parseVLCOption(line) else { return }
+                entry.headers[header.name] = header.value
+                pending = entry
+                return
+            }
+            guard !line.hasPrefix("#"), var entry = pending else { return }
+            pending = nil
+            let pipe = line.firstIndex(of: "|")
+            let address = pipe.map { String(line[..<$0]) } ?? line
+            guard let streamURL = parser.supportedURL(address, relativeTo: parser.baseURL) else {
+                skippedEntryCount += 1
+                return
+            }
+            if let pipe {
+                for header in parser.parsePipeHeaders(line[line.index(after: pipe)...]) {
+                    entry.headers[header.name] = header.value
+                }
+            }
+            fallbackNumber += 1
+            let tvgID = parser.clean(entry.attributes["tvg-id"])
+            let logoURL = parser.clean(entry.attributes["tvg-logo"])
+                .flatMap { parser.supportedURL($0, relativeTo: parser.baseURL) }
+            let groups = parser.categoryNames(from: entry.attributes["group-title"])
+            let groupDescription = groups.isEmpty ? "Other" : groups.joined(separator: " • ")
+            let digestInput = [tvgID ?? "", entry.name, streamURL.absoluteString].joined(separator: "\u{1F}")
+            let digest = SHA256.hash(data: Data(digestInput.utf8)).map { String(format: "%02x", $0) }.joined()
+            let channelID = "iptv-\(digest)"
+            guard importedIDs.insert(channelID).inserted else { skippedEntryCount += 1; return }
+            channels.append(LiveTVPrototypeChannel(
+                id: channelID, number: parser.validChannelNumber(entry.attributes["tvg-chno"]) ?? fallbackNumber,
+                name: entry.name, category: groups.first ?? "Other", symbol: parser.symbol(for: groupDescription),
+                accent: parser.accent(for: digest), source: .iptv, tagline: groupDescription,
+                logoURL: logoURL, streamURL: streamURL,
+                logoNeedsDarkBackground: logoURL.map(LiveTVPlaylistParser.darkLogoURLs.contains) ?? false,
+                guideID: tvgID, guideName: parser.clean(entry.attributes["tvg-name"]), httpHeaders: entry.headers,
+                language: parser.clean(entry.attributes["tvg-language"]),
+                country: parser.clean(entry.attributes["tvg-country"]), groups: groups
+            ))
         }
-        return LiveTVPlaylistImport(
-            channels: channels,
-            entryCount: entryCount,
-            skippedEntryCount: skippedEntryCount,
-            declaredGuideURLs: declaredGuideURLs, originURL: baseURL
-        )
+
+        private mutating func countEntry() throws {
+            entryCount += 1
+            guard entryCount <= LiveTVPlaylistParser.maximumEntries else {
+                throw parser.limitExceeded(.entries, observed: entryCount, maximum: LiveTVPlaylistParser.maximumEntries)
+            }
+        }
+    }
+
+    private func limitExceeded(
+        _ limit: LiveTVPlaylistLimitDiagnostic.Limit, observed: Int, maximum: Int
+    ) -> LiveTVSourceImportError {
+        LiveTVPlaylistLimitDiagnostic(limit: limit, observed: Int64(observed), maximum: Int64(maximum)).publish()
+        return .responseTooLarge
     }
 
     private struct PendingEntry {

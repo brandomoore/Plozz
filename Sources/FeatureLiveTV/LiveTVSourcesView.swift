@@ -359,6 +359,7 @@ private struct LiveTVSourcesContent: View {
                                 SettingsRowLabel(icon: "link", title: "Correct guide mapping")
                             }
                             .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                            .accessibilityIdentifier("live-tv-guide-mapping-\(source.id)")
                         }
                         if let failure = imports.guideDiscoveryFailures[source.id] {
                             Text(failure.userDescription)
@@ -388,6 +389,7 @@ private struct LiveTVSourcesContent: View {
                             )
                         }
                         .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                        .accessibilityIdentifier("live-tv-source-details-\(source.id)")
                     }
                     Button(role: .destructive) {
                         removeSource(.playlist(source))
@@ -485,6 +487,7 @@ private struct LiveTVSourcesContent: View {
                 }
                 .buttonStyle(SettingsFocusButtonStyle(size: .contained))
                 .accessibilityHint("Choose a saved playlist from Files.")
+                .accessibilityIdentifier("live-tv-import-playlist")
             }
             #endif
             NavigationLink {

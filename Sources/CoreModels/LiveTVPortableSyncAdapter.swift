@@ -102,7 +102,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         let pendingRemoteFingerprint: String?
     }
 
-    private struct ObservedLocal: Codable, Sendable {
+    private struct ObservedLocal: Codable, Equatable, Sendable {
         var sourceIDs: Set<String> = []
         var libraryIDs: Set<String> = []
         var favoriteOrder: [String] = []
@@ -111,12 +111,14 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         var pendingIdentityIDs: Set<String> = []
         var clearedIdentityHintFingerprints: [String: String]?
         var libraryReviewIDs: Set<String>?
+        var snapshotRetirementCandidates: Set<UUID>?
         var hydratedConsentRevision: String?
     }
 
     private struct Journal: Sendable {
         var records: [String: Data] = [:]
         var stored: [String: StoredRecord] = [:]
+        var storedByteCounts: [String: Int] = [:]
         var decoded: [String: LiveTVPortableRecord] = [:]
         var directoryExists = false
     }
@@ -212,6 +214,13 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             writing = false
             revisionLock.unlock()
         }
+
+        func reserveCommit() -> UUID {
+            revisionLock.lock()
+            defer { revisionLock.unlock() }
+            writing = true
+            return revision
+        }
     }
 
     private final class CoordinatorRegistry: @unchecked Sendable {
@@ -240,9 +249,13 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
     private let preferences: LiveTVPreferencesStore
     private let namespace: String?
     private let requiresPreparedJournal: Bool
+    private let includesPlaylistSources: Bool
     private let coordinator: JournalCoordinator
     private var preparedJournal: PreparedJournal?
     private var preparationID = UUID()
+    private var stagedWrites: [URL: Data]?
+    private var stagedDirectoryCreation = false
+    private let writeFile: @Sendable (Data, URL) throws -> Void
     private static let coordinators = CoordinatorRegistry()
     private static let maximumRecords = 50_000
     private static let maximumJournalBytes = 128 * 1_024 * 1_024
@@ -250,12 +263,12 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
 
     public convenience init(
         directory: URL, profileID: String, defaults: UserDefaults = .standard,
-        requiresPreparedJournal: Bool = false
+        requiresPreparedJournal: Bool = false, includesPlaylistSources: Bool = true
     ) {
         self.init(
             directory: directory, profileID: profileID, defaults: defaults,
             namespace: profileID == ProfileStore.defaultProfileID ? nil : profileID,
-            requiresPreparedJournal: requiresPreparedJournal
+            requiresPreparedJournal: requiresPreparedJournal, includesPlaylistSources: includesPlaylistSources
         )
     }
 
@@ -264,12 +277,17 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
     /// The bounded, read-only pendingPlaylistDescriptor Save guard is an exception.
     public init(
         directory: URL, profileID: String, defaults: UserDefaults = .standard, namespace: String?,
-        requiresPreparedJournal: Bool = false
+        requiresPreparedJournal: Bool = false, includesPlaylistSources: Bool = true,
+        writeFile: @escaping @Sendable (Data, URL) throws -> Void = {
+            try $0.write(to: $1, options: .atomic)
+        }
     ) {
         self.profileID = profileID
         self.defaults = defaults
         self.namespace = namespace
         self.requiresPreparedJournal = requiresPreparedJournal
+        self.includesPlaylistSources = includesPlaylistSources
+        self.writeFile = writeFile
         let epoch = LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults)
         accountEpoch = epoch
         let journalDirectory = directory
@@ -280,6 +298,91 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         preferences = LiveTVPreferencesStore(
             defaults: defaults, namespace: namespace
         )
+    }
+
+    /// Keep authority checks and local-store mutations synchronous on the main
+    /// actor, then await durable journal I/O without holding a lock on that actor.
+    /// No result or acknowledgement escapes before its journal is committed.
+    @MainActor
+    public func committingJournal<Value: Sendable>(
+        _ operation: @MainActor () throws -> Value
+    ) async throws -> Value {
+        try Task.checkCancellation()
+        let (value, writes, createDirectory, revision) = try stageJournal(operation)
+        guard let revision else { return value }
+        let directory = directory
+        let writeFile = writeFile
+        let worker = Task.detached(priority: .utility) {
+            try Task.checkCancellation()
+            if createDirectory {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            }
+            // Observation receipts must never become durable before their records.
+            for (url, data) in writes where url.lastPathComponent != "observed-local.json" {
+                try Task.checkCancellation()
+                try writeFile(data, url)
+            }
+            if let data = writes[directory.appendingPathComponent("observed-local.json")] {
+                try Task.checkCancellation()
+                try writeFile(data, directory.appendingPathComponent("observed-local.json"))
+            }
+        }
+        do {
+            try await withTaskCancellationHandler {
+                try await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+        } catch {
+            finishJournalCommit(revision: revision, succeeded: false)
+            throw error
+        }
+        finishJournalCommit(revision: revision, succeeded: true)
+        try Task.checkCancellation()
+        guard accountEpoch == LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults) else {
+            throw PreparationError.accountChanged
+        }
+        return value
+    }
+
+    @MainActor
+    private func stageJournal<Value>(
+        _ operation: @MainActor () throws -> Value
+    ) throws -> (Value, [URL: Data], Bool, UUID?) {
+        coordinator.operationLock.lock()
+        defer { coordinator.operationLock.unlock() }
+        guard stagedWrites == nil, !coordinator.snapshot().writing else {
+            throw PreparationError.journalChanged
+        }
+        stagedWrites = [:]
+        stagedDirectoryCreation = false
+        defer {
+            stagedWrites = nil
+            stagedDirectoryCreation = false
+        }
+        do {
+            let value = try operation()
+            let writes = stagedWrites ?? [:]
+            let revision = writes.isEmpty && !stagedDirectoryCreation ? nil : coordinator.reserveCommit()
+            return (value, writes, stagedDirectoryCreation, revision)
+        } catch {
+            invalidateAfterFailedOperation()
+            throw error
+        }
+    }
+
+    private func finishJournalCommit(revision: UUID, succeeded: Bool) {
+        coordinator.operationLock.lock()
+        defer { coordinator.operationLock.unlock() }
+        coordinator.endWrite()
+        if !succeeded || coordinator.snapshot().revision != revision {
+            invalidateAfterFailedOperation()
+        }
+    }
+
+    private func writeJournalFile(_ data: Data, to url: URL) throws {
+        if stagedWrites != nil { stagedWrites?[url] = data }
+        else { try writeFile(data, url) }
     }
 
     /// Reads and fully validates the journal, observation, and incoming/fallback
@@ -449,6 +552,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
                   (try? decodedRecord(value, key: key)) != nil else { continue }
             records[name] = value
         }
+        let previousSnapshotIDs = try referencedSnapshotIDs(in: records)
         var observed = try readObserved()
         let configuration = try sourceConfiguration(sourceStore)
         let localPreferences = try preferences.load()
@@ -489,7 +593,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         observed.favoriteOrder = localPreferences.favoriteOrder
 
         let sourceIDs = Set(configuration.playlists.map(\.id) + configuration.servers.map(\.id))
-        for source in configuration.playlists {
+        for source in configuration.playlists where includesPlaylistSources {
             try put(.init(source: .init(
                 kind: source.importedPlaylistID == nil ? .playlist : .importedPlaylist,
                 name: source.name, isEnabled: source.isEnabled,
@@ -510,6 +614,10 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         }
         for removed in observed.sourceIDs.subtracting(sourceIDs) {
             let removedKey = key(.source, removed)
+            if !includesPlaylistSources {
+                guard let bytes = records[removedKey.recordName],
+                      try decodedRecord(bytes, key: removedKey).source?.kind == .server else { continue }
+            }
             if let bytes = records[removedKey.recordName],
                let accountID = try decodedRecord(bytes, key: removedKey).source?.accountID {
                 try suppression.setSuppressed(true, accountID: accountID)
@@ -548,6 +656,27 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             }
             try cacheLocal(prepared.value, bytes: prepared.bytes, key: key)
             records[name] = prepared.bytes
+        }
+        if let libraryDefinitions {
+            // Only a known reference transition proves retirement. Unreferenced
+            // incoming parts may precede their definitions, regardless of their age.
+            let publishedSnapshotIDs = try referencedSnapshotIDs(in: records)
+            let retirementCandidates = (observed.snapshotRetirementCandidates ?? [])
+                .union(previousSnapshotIDs.subtracting(publishedSnapshotIDs))
+            let protectedSnapshotIDs = publishedSnapshotIDs.union(
+                libraryDefinitions.flatMap { $0.revisions.map(\.snapshotID) }
+            )
+            let retiredSnapshotIDs = retirementCandidates.subtracting(protectedSnapshotIDs)
+            let pendingRetirement = retirementCandidates.subtracting(retiredSnapshotIDs)
+            observed.snapshotRetirementCandidates = pendingRetirement.isEmpty ? nil : pendingRetirement
+            if !retiredSnapshotIDs.isEmpty {
+                for (name, bytes) in records {
+                    guard let key = LiveTVPortableRecordKey.parse(name), key.kind == .snapshot,
+                          let snapshot = try decodedRecord(bytes, key: key).snapshot,
+                          retiredSnapshotIDs.contains(snapshot.snapshotID) else { continue }
+                    try put(.init(isDeleted: true), key: key, into: &records)
+                }
+            }
         }
         observed.hydratedConsentRevision = consentRevision
         try write(records)
@@ -798,6 +927,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
     public func resetForAccountChange() throws {
         coordinator.operationLock.lock()
         defer { coordinator.operationLock.unlock() }
+        guard !coordinator.snapshot().writing else { throw PreparationError.journalChanged }
         preparationID = UUID()
         discardPreparedJournalLocked()
         LiveTVPortableSyncPreferenceStore(defaults: defaults, profileID: profileID, namespace: namespace).isEnabled = false
@@ -900,6 +1030,9 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
     private func applySource(
         _ record: LiveTVPortableRecord, id: String, configuration: inout LiveTVSourcesConfiguration
     ) {
+        if !includesPlaylistSources,
+           record.source?.kind != .server,
+           !configuration.servers.contains(where: { $0.id == id }) { return }
         if record.isDeleted {
             configuration.playlists.removeAll { $0.id == id }
             configuration.servers.removeAll { $0.id == id }
@@ -943,10 +1076,10 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             guard recordKey.kind == .source
                 || (recordKey.kind == .library && pendingLibraryIDs.contains(recordKey.entityID)) else { continue }
             let record = try decodedRecord(bytes, key: recordKey)
-            if let source = record.source, source.kind == .playlist, !localPlaylists.contains(recordKey.entityID) {
+            if includesPlaylistSources, let source = record.source, source.kind == .playlist, !localPlaylists.contains(recordKey.entityID) {
                 report.pendingPlaylists[recordKey.entityID] = source
             }
-            if let source = record.source, source.kind == .importedPlaylist,
+            if includesPlaylistSources, let source = record.source, source.kind == .importedPlaylist,
                !localPlaylists.contains(recordKey.entityID) {
                 report.localFileSources[recordKey.entityID] = source
             }
@@ -1159,6 +1292,7 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             throw PreparationError.accountChanged
         }
         let fence = coordinator.snapshot()
+        guard !fence.writing else { throw PreparationError.journalChanged }
         if preparedJournal?.revision != fence.revision || fence.writing {
             discardPreparedJournalLocked()
         }
@@ -1414,20 +1548,33 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
             journal.decoded[stored.name] = try LiveTVPortableRecord.decode(stored.value, key: recordKey)
             journal.records[stored.name] = stored.value
             journal.stored[stored.name] = stored
+            journal.storedByteCounts[stored.name] = data.count
         }
         return journal
+    }
+
+    private func referencedSnapshotIDs(in records: [String: Data]) throws -> Set<UUID> {
+        var ids = Set<UUID>()
+        for (name, bytes) in records {
+            guard let key = LiveTVPortableRecordKey.parse(name), key.kind == .library,
+                  let definition = try decodedRecord(bytes, key: key).library else { continue }
+            ids.formUnion(definition.revisions.map(\.snapshotID))
+        }
+        return ids
     }
 
     private func write(
         _ records: [String: Data], appliedNames: Set<String> = [], receivedFingerprints: [String: String] = [:]
     ) throws {
-        guard records.count <= Self.maximumRecords,
-              records.values.reduce(0, { $0 + $1.count }) <= Self.maximumInputBytes else {
+        guard records.count <= Self.maximumRecords else {
             throw LiveTVPortableStateError.tooLarge
         }
         var journal = try readJournal()
         let currentConsentRevision = consent.consentRevision
-        var updates: [(StoredRecord, LiveTVPortableRecord?)] = []
+        var updates: [(StoredRecord, LiveTVPortableRecord?, Data)] = []
+        var total = journal.storedByteCounts.reduce(0) {
+            $0 + (records[$1.key] == nil ? $1.value : 0)
+        }
         for (name, bytes) in records {
             let old = journal.stored[name]
             let payloadUnchanged = old?.name == name && old?.value == bytes
@@ -1439,25 +1586,40 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
                 name: name, value: bytes, appliedConsentRevision: revision, pendingRemoteFingerprint: pending
             )
             if payloadUnchanged, old?.appliedConsentRevision == revision,
-               old?.pendingRemoteFingerprint == pending { continue }
+               old?.pendingRemoteFingerprint == pending,
+               let size = journal.storedByteCounts[name] {
+                guard size <= Self.maximumJournalBytes - total else {
+                    throw LiveTVPortableStateError.tooLarge
+                }
+                total += size
+                continue
+            }
             guard let key = LiveTVPortableRecordKey.parse(name), key.profileID == profileID else {
                 throw LiveTVPortableStateError.wrongProfile
             }
             let value: LiveTVPortableRecord?
             if payloadUnchanged { value = nil }
             else { value = try decodedRecord(bytes, key: key) }
-            updates.append((stored, value))
+            let encoded = try JSONEncoder().encode(stored)
+            guard encoded.count <= LiveTVPortableRecord.maximumBytes * 2,
+                  encoded.count <= Self.maximumJournalBytes - total else {
+                throw LiveTVPortableStateError.tooLarge
+            }
+            total += encoded.count
+            updates.append((stored, value, encoded))
         }
         guard !updates.isEmpty || !journal.directoryExists else { return }
         let changesPayload = updates.contains { $0.1 != nil }
         try mutateJournal {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            for (stored, _) in updates {
+            if stagedWrites != nil { stagedDirectoryCreation = true }
+            else { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
+            for (stored, _, encoded) in updates {
                 let url = directory.appendingPathComponent(Self.digest(stored.name)).appendingPathExtension("record")
-                try JSONEncoder().encode(stored).write(to: url, options: .atomic)
+                try writeJournalFile(encoded, to: url)
             }
-            for (stored, value) in updates {
+            for (stored, value, encoded) in updates {
                 journal.stored[stored.name] = stored
+                journal.storedByteCounts[stored.name] = encoded.count
                 // Receipt-only updates must not copy the shared payload dictionaries.
                 if let value {
                     journal.records[stored.name] = stored.value
@@ -1501,10 +1663,11 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
     }
 
     private func writeObserved(_ observed: ObservedLocal) throws {
+        guard preparedJournal?.observed != observed else { return }
         let data = try JSONEncoder().encode(observed)
         guard data.count <= 2 * 1_024 * 1_024 else { throw LiveTVPortableStateError.tooLarge }
         try mutateJournal {
-            try data.write(to: directory.appendingPathComponent("observed-local.json"), options: .atomic)
+            try writeJournalFile(data, to: directory.appendingPathComponent("observed-local.json"))
             preparedJournal?.observed = observed
         }
     }

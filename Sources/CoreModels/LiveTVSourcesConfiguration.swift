@@ -174,14 +174,16 @@ public struct LiveTVSourcesConfiguration: Codable, Equatable, Sendable {
     public static let empty = LiveTVSourcesConfiguration()
     public var playlists: [LiveTVPlaylistSource]
     public var servers: [LiveTVServerSource]
+    public var syncCheckpoint: LiveTVSourcesSyncCheckpoint?
 
     public init(playlists: [LiveTVPlaylistSource] = [], servers: [LiveTVServerSource] = []) {
         self.playlists = playlists
         self.servers = servers
+        syncCheckpoint = nil
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, playlists, servers
+        case version, playlists, servers, syncCheckpoint
     }
 
     public init(from decoder: any Decoder) throws {
@@ -190,6 +192,7 @@ public struct LiveTVSourcesConfiguration: Codable, Equatable, Sendable {
         guard version == 1 else { throw LiveTVSourcesStoreError.unsupportedVersion }
         playlists = try values.decode([LiveTVPlaylistSource].self, forKey: .playlists)
         servers = try values.decodeIfPresent([LiveTVServerSource].self, forKey: .servers) ?? []
+        syncCheckpoint = try values.decodeIfPresent(LiveTVSourcesSyncCheckpoint.self, forKey: .syncCheckpoint)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -197,6 +200,41 @@ public struct LiveTVSourcesConfiguration: Codable, Equatable, Sendable {
         try values.encode(1, forKey: .version)
         try values.encode(playlists, forKey: .playlists)
         try values.encode(servers, forKey: .servers)
+        try values.encodeIfPresent(syncCheckpoint, forKey: .syncCheckpoint)
+    }
+
+    /// Saved atomically with the credential-bearing configuration in Keychain.
+    /// Only digests and ownership receipts, never parental grants.
+    public struct LiveTVSourcesSyncCheckpoint: Codable, Equatable, Sendable {
+        public var profileID: String
+        public var accountEpoch: String
+        public var observed: [String: Data]
+        public var pendingCaptures: [String: Data]
+        public var receivedSourceIDs: Set<String>
+        public var importedFiles: [String: Data]
+
+        public init(profileID: String, accountEpoch: String) {
+            self.profileID = profileID
+            self.accountEpoch = accountEpoch
+            observed = [:]
+            pendingCaptures = [:]
+            receivedSourceIDs = []
+            importedFiles = [:]
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case profileID, accountEpoch, observed, pendingCaptures, receivedSourceIDs, importedFiles
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            profileID = try values.decode(String.self, forKey: .profileID)
+            accountEpoch = try values.decode(String.self, forKey: .accountEpoch)
+            observed = try values.decode([String: Data].self, forKey: .observed)
+            pendingCaptures = try values.decodeIfPresent([String: Data].self, forKey: .pendingCaptures) ?? [:]
+            receivedSourceIDs = try values.decode(Set<String>.self, forKey: .receivedSourceIDs)
+            importedFiles = try values.decode([String: Data].self, forKey: .importedFiles)
+        }
     }
 
     public func validate() throws {

@@ -7,6 +7,60 @@ import XCTest
 
 @MainActor
 final class LiveTVPortableSyncBridgeTests: XCTestCase {
+    func testSyncFailureReportsSafeStageOnceUntilRecoveryAndPreservesFallback() async throws {
+        let fixture = try makeFixture()
+        let profileID = fixture.profiles.activeProfileID
+        fixture.consent(profileID).isEnabled = true
+        let recorder = PortableDiagnosticRecorder()
+        let observer = NotificationCenter.default.addObserver(
+            forName: LiveTVSyncDiagnostic.notification, object: nil, queue: nil
+        ) { notification in
+            if let value = notification.object as? LiveTVSyncDiagnostic { recorder.append(value) }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        var shouldFail = true
+        let bridge = LiveTVPortableSyncBridge(
+            profiles: fixture.profiles, directory: fixture.directory, defaults: fixture.defaults,
+            sourceStore: { _ in fixture.sources },
+            captureIdentityHints: { _ in
+                if shouldFail {
+                    throw NSError(domain: NSCocoaErrorDomain, code: 777, userInfo: [
+                        NSLocalizedDescriptionKey: "Private playlist https://private.test/secret"
+                    ])
+                }
+                return nil
+            }
+        )
+        let fallback = ["unrecognized-channel": Data("preserved".utf8)]
+        let first = await bridge.capture(fallback: fallback)
+        let second = await bridge.capture(fallback: fallback)
+        XCTAssertEqual(first, fallback)
+        XCTAssertEqual(second, fallback)
+        XCTAssertEqual(bridge.statuses[profileID], .unavailable)
+        XCTAssertEqual(recorder.failures, [.init(
+            operation: .capture, stage: .identities, outcome: .failed,
+            failure: .init(reason: .storage, code: 777)
+        )])
+        shouldFail = false
+        _ = await bridge.capture(fallback: fallback)
+        XCTAssertEqual(bridge.statuses[profileID], .ready)
+        shouldFail = true
+        _ = await bridge.capture(fallback: fallback)
+        XCTAssertEqual(recorder.failures.count, 2)
+    }
+
+    func testDiagnosticClassificationNeverUsesUnknownDomainsOrDescriptions() {
+        let failure = LiveTVPortableSyncBridge.diagnosticFailure(NSError(
+            domain: "https://private.test/secret", code: 999,
+            userInfo: [NSLocalizedDescriptionKey: "private profile name"]
+        ))
+        XCTAssertEqual(failure, .init(reason: .other))
+        XCTAssertEqual(
+            LiveTVPortableSyncBridge.diagnosticFailure(LiveTVPortableStateError.tooLarge),
+            .init(reason: .tooLarge)
+        )
+    }
+
     func testOnlyResolvedGuideMappingsAreAcknowledgedAndPendingMappingsRetryOnCapture() async throws {
         let fixture = try makeFixture()
         let profileID = fixture.profiles.activeProfileID
@@ -516,10 +570,26 @@ private final class PortableAppliedCounter: @unchecked Sendable {
         defer { lock.unlock() }
         return count
     }
+
     func increment() {
         lock.lock()
         defer { lock.unlock() }
         count += 1
+    }
+}
+
+private final class PortableDiagnosticRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [LiveTVSyncDiagnostic] = []
+    func append(_ value: LiveTVSyncDiagnostic) {
+        lock.lock()
+        defer { lock.unlock() }
+        values.append(value)
+    }
+    var failures: [LiveTVSyncDiagnostic] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values.filter { $0.outcome == .failed }
     }
 }
 #endif

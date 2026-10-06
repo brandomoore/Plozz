@@ -3,6 +3,7 @@ import SwiftUI
 import UIKit
 
 #if DEBUG
+import CoreModels
 import CoreNetworking
 import notify
 
@@ -66,6 +67,9 @@ final class DiagnosticRecordingController {
         expiry?.cancel()
         let changed = self.phase != phase
         self.phase = phase
+        if changed, let imagePhase = DiagnosticImageMap.Phase(rawValue: phase.rawValue) {
+            DiagnosticImageMap.record(imagePhase)
+        }
         let label: UILabel
         if let badge {
             label = badge

@@ -284,7 +284,7 @@ private struct PlozziOSLiveTVSourcesContent: View {
     @State private var scanOfferSourceID: String?
 
     var body: some View {
-        SettingsPageList {
+        SettingsPageScroll {
             LiveTVSourcesView(
                 store: runtime.store, catalog: runtime.catalog, presentation: .settingsPane,
                 serverChoices: accounts.liveTVServerChoices,

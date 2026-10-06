@@ -379,12 +379,18 @@ raise SystemExit(7 if os.environ.get("FAIL_STEP")==Path(__file__).name else 0)
 """)
         return self.write(".githooks/pre-push", (TOOLS.parent / ".githooks/pre-push").read_text())
 
+    def run_hook(self, update, **overrides):
+        env = {**os.environ, "HOOK_LOG": str(self.root / "hook.log"), **overrides}
+        # Stub checks in this independent repository do not inherit the caller's locks.
+        for name in ("PLOZZ_MAIN_LANDING_FD", "APPLE_BUILD_LEASE_LOCK_FD", "APPLE_BUILD_LEASE_PROOF_FD"):
+            env.pop(name, None)
+        return subprocess.run(["bash", str(self.root / ".githooks/pre-push")], cwd=self.root,
+                              input=update, text=True, capture_output=True, env=env)
+
     def test_main_hook_validates_catalog_without_rebuilding_at_publication(self):
-        hook = self.prepare_hook()
+        self.prepare_hook()
         log = self.root / "hook.log"
-        result = subprocess.run(["bash", str(hook)], cwd=self.root,
-                                input="feature a refs/heads/main b\n", text=True,
-                                capture_output=True, env={**os.environ, "HOOK_LOG": str(log)})
+        result = self.run_hook("feature a refs/heads/main b\n")
         self.assertEqual(result.returncode, 0, result.stderr)
         lines = log.read_text().splitlines()
         self.assertEqual(lines[0], "guard")
@@ -395,20 +401,26 @@ raise SystemExit(7 if os.environ.get("FAIL_STEP")==Path(__file__).name else 0)
         self.assertIn("--check-snapshot", calls[-1])
 
     def test_hook_stops_on_failed_check_and_leaves_feature_push_fast(self):
-        hook = self.prepare_hook()
+        self.prepare_hook()
         log = self.root / "hook.log"
-        env = {**os.environ, "HOOK_LOG": str(log), "FAIL_STEP": "l10n-sync.py"}
-        result = subprocess.run(["bash", str(hook)], cwd=self.root,
-                                input="feature a refs/heads/main b\n", text=True,
-                                capture_output=True, env=env)
+        result = self.run_hook("feature a refs/heads/main b\n", FAIL_STEP="l10n-sync.py")
         self.assertEqual(result.returncode, 7)
         self.assertNotIn("l10n-export-source.py", log.read_text())
         log.unlink()
-        result = subprocess.run(["bash", str(hook)], cwd=self.root,
-                                input="feature a refs/heads/feature b\n", text=True,
-                                capture_output=True, env=env)
+        result = self.run_hook("feature a refs/heads/feature b\n", FAIL_STEP="l10n-sync.py")
         self.assertEqual(result.returncode, 0)
         self.assertFalse(log.exists())
+
+    def test_isolated_hook_does_not_borrow_parent_lock_descriptors(self):
+        self.prepare_hook()
+        with patch.dict(os.environ, {
+            "PLOZZ_MAIN_LANDING_FD": "99999",
+            "APPLE_BUILD_LEASE_LOCK_FD": "99998",
+            "APPLE_BUILD_LEASE_PROOF_FD": "99997",
+        }):
+            result = self.run_hook("feature a refs/heads/main b\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--check-snapshot", (self.root / "hook.log").read_text())
 
 
 if __name__ == "__main__":
