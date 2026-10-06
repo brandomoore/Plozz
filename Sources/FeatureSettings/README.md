@@ -54,6 +54,13 @@ and the single place caption customization lives.
 
 ## Invariants
 
+- **Automatic iCloud sync.** The main sync page does not show a separate Live TV
+  explanation panel. Recovery lives in Troubleshooting, with a warning above
+  Reload and Reset explaining that neither is normally needed. Both platforms
+  use the shared transient-status presenter for progress and the actual result,
+  and disable both actions while either is running. Reset still requires
+  confirmation. Pending Live TV source repair rows remain in Troubleshooting.
+
 - **Profile-namespaced settings.** Per-user prefs (theme, captions,
   diagnostics, spoiler) are namespaced by the active profile id; the
   default profile uses no suffix so an upgrading install keeps existing

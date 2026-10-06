@@ -1285,11 +1285,6 @@ public struct SettingsView: View {
                     }
                 }
 
-                SettingsPanel(title: "Live TV") {
-                    LiveTVPortableSyncSettings()
-                    LiveTVPortableSyncPendingSettings()
-                }
-
                 if let onSetUpAnotherDevice {
                     SettingsPanel(contentPadding: .settingsPanelRowContent) {
                         setUpAnotherDeviceRow(onSetUpAnotherDevice)
@@ -1499,7 +1494,7 @@ private struct SyncTroubleshootingView: View {
     @State private var confirmsReset = false
 
     var body: some View {
-        let isReloading = statusProvider?.make().isReloading == true
+        let isRecovering = statusProvider?.make().isRecovering == true
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 SettingsPageHeader("Troubleshooting")
@@ -1508,10 +1503,11 @@ private struct SyncTroubleshootingView: View {
                 }
                 SettingsPanel(
                     title: "Recovery",
-                    footer: "Try Reload first. Reset only if changes are still missing.",
                     contentPadding: .settingsPanelRowContent
                 ) {
                     VStack(spacing: 12) {
+                        SyncRecoveryWarning()
+
                         Button(action: repair.redownload) {
                             SettingsRowLabel(
                                 icon: "arrow.down.circle",
@@ -1524,7 +1520,7 @@ private struct SyncTroubleshootingView: View {
                             )
                         }
                         .buttonStyle(SettingsFocusButtonStyle())
-                        .disabled(isReloading)
+                        .disabled(isRecovering)
                         .accessibilityIdentifier("cloud-sync-reload")
 
                         Button { confirmsReset = true } label: {
@@ -1539,14 +1535,10 @@ private struct SyncTroubleshootingView: View {
                             )
                         }
                         .buttonStyle(SettingsFocusButtonStyle())
-                        .disabled(isReloading)
-                        if let statusProvider {
-                            SyncReloadStatusLine(provider: statusProvider)
-                                .font(.footnote)
-                                .settingsRowSecondary()
-                        }
+                        .disabled(isRecovering)
                     }
                 }
+                LiveTVPortableSyncPendingSettings()
             }
             .frame(maxWidth: 1200, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)

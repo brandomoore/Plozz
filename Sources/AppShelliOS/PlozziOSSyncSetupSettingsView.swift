@@ -172,11 +172,6 @@ struct PlozziOSSyncSetupSettingsView: View {
                 Text("Syncs profiles, settings, and servers. Logins stay on each device.")
             }
 
-            SettingsSectionGroup("Live TV") {
-                LiveTVPortableSyncSettings()
-                LiveTVPortableSyncPendingSettings()
-            }
-
             SettingsSectionGroup("Set Up Another Device") {
                 if model.nearbyDevices.isEmpty {
                     HStack(spacing: 12) {
@@ -297,8 +292,7 @@ struct PlozziOSSyncSetupSettingsView: View {
                 isSyncing: appModel.cloudSyncStatus.phase == .syncing,
                 itemCount: appModel.cloudSyncStatus.syncedRecordCount,
                 accountTag: appModel.cloudSyncStatus.accountTag,
-                isReloading: appModel.cloudSyncStatus.isReloading,
-                reloadSummary: appModel.cloudSyncStatus.reloadSummary
+                isRecovering: appModel.cloudSyncStatus.isRecovering
             )
         }
     }
@@ -326,32 +320,22 @@ private struct PlozziOSSyncTroubleshootingView: View {
             }
 
             SettingsSectionGroup("Recovery") {
+                SyncRecoveryWarning()
                 Button {
                     appModel.redownloadCloudSync()
                 } label: {
                     Label("Reload From iCloud", systemImage: "arrow.down.circle")
                 }
-                .disabled(appModel.cloudSyncStatus.isReloading)
+                .disabled(appModel.cloudSyncStatus.isRecovering)
                 .accessibilityIdentifier("cloud-sync-reload")
                 Button(role: .destructive) {
                     showResetConfirm = true
                 } label: {
                     Label("Reset Sync", systemImage: "arrow.counterclockwise.icloud")
                 }
-                .disabled(appModel.cloudSyncStatus.isReloading)
-                SyncReloadStatusLine(provider: SyncStatusProvider {
-                    SyncStatusPresentation(
-                        summary: appModel.cloudSyncStatus.summary,
-                        isSyncing: appModel.cloudSyncStatus.phase == .syncing,
-                        isReloading: appModel.cloudSyncStatus.isReloading,
-                        reloadSummary: appModel.cloudSyncStatus.reloadSummary
-                    )
-                })
-                .font(.footnote)
-                .plozzForeground(.secondary)
-            } footer: {
-                Text("Try Reload first. Reset only if changes are still missing.")
+                .disabled(appModel.cloudSyncStatus.isRecovering)
             }
+            LiveTVPortableSyncPendingSettings()
         }
         .navigationTitle("Troubleshooting")
         .navigationBarTitleDisplayMode(.inline)

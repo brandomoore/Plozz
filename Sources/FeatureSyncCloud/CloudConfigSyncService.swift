@@ -549,29 +549,33 @@ public actor CloudConfigSyncService {
     /// `bypassBaselineGate` is set ONLY by reset/reseed, which has just made the
     /// server state known (it deleted all records), so publishing local as fresh
     /// creates is deliberate and safe.
-    public func publishLocalChanges(bypassBaselineGate: Bool = false) async {
-        guard isActive, config.isEnabled(), let engine else { return }
+    @discardableResult
+    public func publishLocalChanges(bypassBaselineGate: Bool = false) async -> Bool {
+        guard isActive, config.isEnabled(), let engine else { return false }
+        var completed = true
         for channel in channels {
-            await publish(channel, engine: engine, bypassBaselineGate: bypassBaselineGate)
+            let published = await publish(channel, engine: engine, bypassBaselineGate: bypassBaselineGate)
+            completed = completed && published
         }
+        return completed
     }
 
     /// Publish ONE channel's local diffs. Every safety rule below is evaluated
     /// per-channel EXCEPT the three SHARED gates (`suspendPublishUntilFetch`,
     /// `isFullResyncing`, `didConfirmServerState`) — see their declarations for why
     /// they're shared rather than per-channel.
-    private func publish(_ channel: Channel, engine: CKSyncEngine, bypassBaselineGate: Bool) async {
+    private func publish(_ channel: Channel, engine: CKSyncEngine, bypassBaselineGate: Bool) async -> Bool {
         let generation = engineGeneration
-        guard isActive, engine === self.engine else { return }
+        guard isActive, engine === self.engine else { return false }
         guard !suspendPublishUntilFetch else {
             PlozzLog.sync.info("CloudSync[\(channel.schema.zoneName)]: publish skipped — suspended pending account-switch fetch")
-            return
+            return false
         }
         // S3: never publish while a full resync has the baselines cleared — it would
         // re-mark everything dirty and resurrect peer deletions.
         guard !isFullResyncing else {
             PlozzLog.sync.info("CloudSync[\(channel.schema.zoneName)]: publish skipped — full resync in progress")
-            return
+            return false
         }
         // S1: a device that hasn't confirmed the current account's server state AND
         // has no local baseline for THIS channel must not publish — fresh-stamped
@@ -579,7 +583,7 @@ public actor CloudConfigSyncService {
         // didConfirmServerState on a successful fetch; real fetched data sets it too.)
         guard bypassBaselineGate || didConfirmServerState || channel.ledger.hasServerBaseline else {
             PlozzLog.sync.info("CloudSync[\(channel.schema.zoneName)]: publish deferred — server state not yet confirmed on a baseline-less device")
-            return
+            return false
         }
         // C2 (reentrancy anti-clobber): `captureRecords` awaits a hop to the app's
         // @MainActor, suspending this actor. A queued fetched-changes apply can run in
@@ -592,19 +596,19 @@ public actor CloudConfigSyncService {
         var desired: [SyncRecordID: Data] = [:]
         var stabilized = false
         for _ in 0..<4 {
-            guard persist() else { return }
+            guard persist() else { return false }
             let rev = channel.ledger.remoteRevision
             if let capture = channel.captureSnapshot {
                 do { desired = try await capture(channel.snapshot()) }
                 catch {
                     setDiagnostic("Channel capture unavailable in \(channel.schema.zoneName) (code \((error as NSError).code))")
                     setStatus(.error, error: "Some local data could not be prepared for sync. Saved data has not been removed.")
-                    return
+                    return false
                 }
             } else {
                 desired = await channel.captureRecords(channel.ledger.syncedValues())
             }
-            guard isActive, engine === self.engine, generation == engineGeneration, config.isEnabled() else { return }
+            guard isActive, engine === self.engine, generation == engineGeneration, config.isEnabled() else { return false }
             if channel.ledger.remoteRevision == rev { stabilized = true; break }
         }
         // S4: if a remote apply kept interleaving every capture, the snapshot may
@@ -612,7 +616,7 @@ public actor CloudConfigSyncService {
         // clobber the just-arrived change) — skip this publish; a later one retries.
         guard stabilized else {
             PlozzLog.sync.info("CloudSync[\(channel.schema.zoneName)]: publish deferred — capture kept racing remote applies; will retry")
-            return
+            return false
         }
         let plan = channel.ledger.reconcileLocal(
             desired: desired.filter { !Self.isDirectTrackerRecord($0.key, schema: channel.schema) },
@@ -620,10 +624,10 @@ public actor CloudConfigSyncService {
         if !plan.refusedDeletions.isEmpty {
             setDiagnostic("refused \(plan.refusedDeletions.count) deletion(s) in \(channel.schema.zoneName) — capture looked incomplete; not wiping peers")
         }
-        guard persist() else { return }
+        guard persist() else { return false }
         guard !plan.isEmpty else {
             PlozzLog.sync.info("CloudSync[\(channel.schema.zoneName)]: publish — nothing changed")
-            return
+            return true
         }
         var pending: [CKSyncEngine.PendingRecordZoneChange] = []
         for up in plan.uploads { pending.append(.saveRecord(channel.schema.recordID(forRecordName: up.recordName))) }
@@ -631,6 +635,7 @@ public actor CloudConfigSyncService {
         engine.state.add(pendingRecordZoneChanges: pending)
         reportRecordCount()
         PlozzLog.sync.info("CloudSync[\(channel.schema.zoneName)]: queued \(plan.uploads.count) save(s), \(plan.deletes.count) delete(s)")
+        return true
     }
 
     /// Publish and immediately send is intentionally NOT used — forcing sendChanges
@@ -640,8 +645,9 @@ public actor CloudConfigSyncService {
     /// Opt-out: erase this app's synced config from iCloud but KEEP the zones, so
     /// peers receive normal record deletions (never a zone-delete that strands
     /// their tokens). Covers EVERY multiplexed channel.
-    public func deleteAllServerData() async {
-        guard isActive, let engine else { return }
+    @discardableResult
+    public func deleteAllServerData() async -> CloudSyncRecoveryResult {
+        guard isActive, let engine else { return .unavailable }
         for channel in channels {
             let names = channel.ledger.entries.keys
             guard !names.isEmpty else { continue }
@@ -649,34 +655,57 @@ public actor CloudConfigSyncService {
             for name in names { pending.append(.deleteRecord(channel.schema.recordID(forRecordName: name))) }
             engine.state.add(pendingRecordZoneChanges: pending)
         }
-        guard isActive, engine === self.engine else { return }
-        try? await sendChangesDetached(engine)
-        guard isActive, engine === self.engine else { return }
+        guard isActive, engine === self.engine else { return .interrupted }
+        do {
+            try await sendChangesDetached(engine)
+        } catch {
+            setDiagnostic("delete synced data: \(Self.describe(error))")
+            setStatus(.error, error: (error as NSError).localizedDescription)
+            return .failed
+        }
+        guard isActive, engine === self.engine else { return .interrupted }
+        guard engine.state.pendingRecordZoneChanges.isEmpty else {
+            setDiagnostic("delete synced data: some deletions remain pending")
+            return .failed
+        }
         for channel in channels { channel.ledger = SyncLedger() }
-        persist()
+        return persist() ? .completed : .failed
     }
 
     /// Erase this app's synced config from iCloud and RE-SEED it from THIS device's
     /// current local config — the "Reset Synced Data" action. Deletes records (keeps
     /// the zones so peers get normal deletions), clears every channel's ledger, then
     /// republishes local as fresh creates. Local config is never touched.
-    public func resetAndReseed() async {
-        guard isActive, config.isEnabled(), await accountIsAvailable() else { return }
-        guard restorePersistedStateIfNeeded() else { return }
+    @discardableResult
+    public func resetAndReseed() async -> CloudSyncRecoveryResult {
+        guard isActive, config.isEnabled(), await accountIsAvailable() else { return .unavailable }
+        guard restorePersistedStateIfNeeded() else { return .failed }
         setStatus(.syncing)
-        await deleteAllServerData()   // deletes records + clears every channel's ledger
-        guard isActive else { return }
+        let deletion = await deleteAllServerData()
+        guard deletion == .completed else { return deletion }
+        guard isActive, config.isEnabled() else { return .interrupted }
         rebuildEngine()
+        guard let engine else { return .failed }
         // Server state is known (just emptied), so bypass the baseline gate to re-seed.
-        await publishLocalChanges(bypassBaselineGate: true)
-        guard isActive else { return }
+        let published = await publishLocalChanges(bypassBaselineGate: true)
+        guard isActive, engine === self.engine, config.isEnabled() else { return .interrupted }
+        guard published else { return .failed }
         do {
-            if let engine { try await sendChangesDetached(engine) }
+            try await sendChangesDetached(engine)
+            guard isActive, engine === self.engine, config.isEnabled() else { return .interrupted }
+            guard channels.allSatisfy({
+                $0.ledger.pendingUploads().isEmpty && $0.ledger.pendingDeletes().isEmpty
+            }) else {
+                setDiagnostic("reset: some changes remain pending")
+                return .failed
+            }
             setStatus(.idle, syncedNow: true)
             PlozzLog.sync.info("CloudSync: reset + reseeded from this device")
+            return .completed
         } catch {
             setDiagnostic("reset: \(Self.describe(error))")
             setStatus(.error, error: (error as NSError).localizedDescription)
+            return .failed
         }
     }
 
@@ -692,7 +721,7 @@ public actor CloudConfigSyncService {
     /// lockstep, and each runs its own `beginFullResync`/`endFullResync` lifecycle
     /// against that shared re-fetch.
     @discardableResult
-    public func redownloadFromCloud() async -> CloudSyncReloadResult {
+    public func redownloadFromCloud() async -> CloudSyncRecoveryResult {
         guard isActive, config.isEnabled() else { return .unavailable }
         guard await accountIsAvailable() else { setStatus(.signedOut); return .unavailable }
         guard !isFullResyncing else { return .interrupted }

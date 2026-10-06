@@ -908,8 +908,7 @@ public struct RootView: View {
             isSyncing: status.phase == .syncing,
             itemCount: status.syncedRecordCount,
             accountTag: status.accountTag,
-            isReloading: status.isReloading,
-            reloadSummary: status.reloadSummary
+            isRecovering: status.isRecovering
         )
     }
 }
