@@ -104,6 +104,7 @@ public struct LiveTVChannelScanSource: Sendable {
         var targets: [LiveTVChannelScanTarget] = []
         var unprobeable: [LiveTVChannelScanUnprobeable] = []
         for channel in channels where channel.source == .iptv && channel.playlistSourceID == source.id {
+            try Task.checkCancellation()
             guard let url = channel.streamURL,
                   ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
                 unprobeable.append(LiveTVChannelScanUnprobeable(
@@ -171,6 +172,7 @@ public final class LiveTVChannelScanCoordinator {
     public private(set) var scanHiddenChannelIDs: Set<String> = []
     public private(set) var issue: LiveTVChannelScanError?
     public private(set) var sourceIDs: Set<String> = []
+    public private(set) var isPreparingCatalog = false
     public private(set) var resultsRevision = 0
     public var isScanning: Bool { progress.map { !$0.isFinished && !$0.isCancelled } ?? false }
 
@@ -205,15 +207,55 @@ public final class LiveTVChannelScanCoordinator {
     /// Call before publishing any source/profile/catalog replacement. This
     /// never reads or mutates the browser model, playback, favorites or mappings.
     public func bind(profileID: String, sources: [LiveTVChannelScanSource]) throws {
+        do {
+            try bind(Self.prepareCatalog(profileID: profileID, sources: sources))
+        } catch {
+            if error as? LiveTVChannelScanError == .invalidCatalog {
+                deactivate()
+                issue = .invalidCatalog
+            }
+            throw error
+        }
+    }
+
+    struct PreparedCatalog: Sendable {
+        let profileID: String
+        let sources: [String: LiveTVChannelScanSource]
+        let healthIdentities: [String: [String: LiveTVChannelHealthIdentity]]
+    }
+
+    nonisolated static func prepareCatalog(
+        profileID: String, sources: [LiveTVChannelScanSource]
+    ) throws -> PreparedCatalog {
+        try Task.checkCancellation()
         guard !profileID.isEmpty, Set(sources.map(\.id)).count == sources.count,
               sources.reduce(0, { $0 + $1.channelCount }) <= 50_000,
               Set(sources.flatMap { $0.channelIdentities.map(\.id) }).count == sources.reduce(0, { $0 + $1.channelCount })
         else {
-            deactivate()
-            issue = .invalidCatalog
             throw LiveTVChannelScanError.invalidCatalog
         }
         let newSources = Dictionary(uniqueKeysWithValues: sources.map { ($0.id, $0) })
+        let identities = try newSources.mapValues { source in
+            try Dictionary(uniqueKeysWithValues: source.channelIdentities.map { channel in
+                try Task.checkCancellation()
+                return (channel.id, Self.makeIdentity(
+                    profileID: profileID, source: source,
+                    channelID: channel.id, streamIdentity: channel.streamIdentity
+                ))
+            })
+        }
+        return PreparedCatalog(profileID: profileID, sources: newSources, healthIdentities: identities)
+    }
+
+    func beginCatalogPreparation() {
+        deactivate()
+        isPreparingCatalog = true
+    }
+
+    func bind(_ prepared: PreparedCatalog) throws {
+        defer { isPreparingCatalog = false }
+        let profileID = prepared.profileID
+        let newSources = prepared.sources
         let unchanged = self.profileID == profileID &&
             self.sources.mapValues(\.signature) == newSources.mapValues(\.signature)
         if unchanged && loaded {
@@ -226,14 +268,7 @@ public final class LiveTVChannelScanCoordinator {
         progress = nil
         self.profileID = profileID
         self.sources = newSources
-        healthIdentities = newSources.mapValues { source in
-            Dictionary(uniqueKeysWithValues: source.channelIdentities.map { channel in
-                (channel.id, Self.makeIdentity(
-                    profileID: profileID, source: source,
-                    channelID: channel.id, streamIdentity: channel.streamIdentity
-                ))
-            })
-        }
+        healthIdentities = prepared.healthIdentities
         sourceIDs = Set(newSources.keys)
         scanHiddenChannelIDs = []
         do {
@@ -269,6 +304,7 @@ public final class LiveTVChannelScanCoordinator {
 
     public func deactivate() {
         cancel()
+        isPreparingCatalog = false
         profileID = nil
         sources = [:]
         healthIdentities = [:]
@@ -501,7 +537,7 @@ public final class LiveTVChannelScanCoordinator {
         )
     }
 
-    private static func makeIdentity(
+    nonisolated private static func makeIdentity(
         profileID: String, source: LiveTVChannelScanSource, channelID: String, streamIdentity: String
     ) -> LiveTVChannelHealthIdentity {
         LiveTVChannelHealthIdentity(

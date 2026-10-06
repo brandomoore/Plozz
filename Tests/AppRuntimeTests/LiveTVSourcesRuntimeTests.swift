@@ -60,6 +60,7 @@ final class LiveTVSourcesRuntimeTests: XCTestCase {
         let imports = runtime.catalog.imports
 
         await runtime.catalog.refresh()
+        await runtime.scanBinding.waitUntilPrepared()
 
         XCTAssertTrue(imports === runtime.catalog.imports)
         XCTAssertTrue(runtime.isCurrent)

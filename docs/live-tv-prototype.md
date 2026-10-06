@@ -586,6 +586,13 @@ without blocking browsing or playback. Sources exposes Scan channels,
 Scan results, Show hidden and Rescan channels. Browsing also exposes Check
 channels. Importing a playlist does not start probes automatically.
 
+Scan catalog preparation parses origins and hashes stream/health identities on a
+cancellable worker, not the main actor. Identical authorized playlist/channel
+inputs reuse the existing binding when guides publish again. Source edits and
+refreshes revoke old scan eligibility immediately; a completed preparation must
+still match the active owner, catalog request and freshly checked authorization.
+Scan controls show progress while preparing; browsing and playback remain usable.
+
 Results belong to the profile, source, channel and stream identity. Confirmed
 missing links can be hidden reversibly without deleting playlist entries,
 Favorites or guide mappings. Restore is separate from manually hiding a channel.
