@@ -14,6 +14,8 @@ struct FocusHostApp: App {
                 PlayerCastFocusFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--share-folder-fixture") {
                 ShareFolderBrowserFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--episode-breadcrumb-fixture") {
+                EpisodeBreadcrumbFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--episode-row-fixture") {
                 EpisodeRowRemoteFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--subtitle-style-input-fixture") {

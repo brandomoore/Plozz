@@ -48,6 +48,10 @@ fallback when the user's server has no attached trailer.
   `DetailHeroView` / `DetailExtrasView` render the cinematic full-bleed
   backdrop, logo, overview, ratings, cast, and Play/Resume button. Works
   for movies, episodes, and people.
+  An episode's show breadcrumb is a single native button with visible resting
+  and focused states. Play takes initial focus when available; Up then reaches
+  the show, preserving its source account and season. Episodes without Play
+  keep the breadcrumb immediately eligible for focus.
   Page ownership is identity-based, not an appearance-callback counter: repeated
   appearances and late departures cannot hide a different detail or give it the
   previous movie's trailer. A confirmed cancelled cinematic Back restores the page that

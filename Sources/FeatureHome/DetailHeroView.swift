@@ -553,18 +553,12 @@ struct DetailHeroView: View, Equatable {
                 }
                 .font(.system(size: 30, weight: .semibold))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PlozzPanelHeaderButtonStyle())
+            .disabled(onPlay != nil && !breadcrumbAcceptsFocus)
             .focused($heroActionRowFocus, equals: .parent)
-            // tvOS gives entry focus to the topmost focusable element, and no
-            // amount of `defaultFocus` (tried at `.automatic` and
-            // `.userInitiated`, on both this view and the scroll column) beat it
-            // — the page kept opening focused on "leave" instead of "play".
-            // Removing the breadcrumb from the focus system until focus has
-            // landed is what actually decides it. `.focusable(false)` rather
-            // than `.disabled` so it never *looks* inert; and the gate opens on
-            // the action row actually taking focus rather than on a timer, which
-            // raced and let the breadcrumb win whenever the page was slow.
-            .focusable(breadcrumbAcceptsFocus)
+            // Gate the actual button, not a second focusable wrapper that
+            // receives Select without invoking its action. The style stays
+            // legible while entry focus is reserved for Play.
             .accessibilityLabel("Go to \(show)")
             .accessibilityHint(action.title)
             Spacer(minLength: 0)
@@ -577,10 +571,11 @@ struct DetailHeroView: View, Equatable {
         // uses to catch "up" from a far-right season chip.
         .frame(maxWidth: .infinity, alignment: .leading)
         .focusSection()
-        .onChange(of: heroActionRowFocus) { _, focus in
-            // Any hero control taking focus means entry focus has resolved, so
-            // the breadcrumb can safely join the focus system.
-            if focus != nil { breadcrumbAcceptsFocus = true }
+        .onChange(
+            of: heroActionRowFocus != nil || playButtonHasFocus || playButtonFocus?.wrappedValue == true,
+            initial: true
+        ) { _, hasFocus in
+            if hasFocus { breadcrumbAcceptsFocus = true }
         }
     }
 
