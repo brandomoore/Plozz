@@ -75,6 +75,11 @@ Before distribution, configure `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` and
 `sentry-cli`. The `beta` and `release` lanes validate both IPAs, then upload each
 archive's UUID-matched app/extension dSYMs and wait for Sentry processing before
 uploading either platform to Apple. Source bundles are explicitly excluded.
+The uploader verifies every archive debug UUID, including dependencies, through
+the configured project's symbol API. This accepts already-processed symbols
+without relying on `sentry-cli --require-all`, which can reject existing uploads.
+Missing debug information, API failures and redirects still block distribution;
+the token must allow reading the project's debug files as well as uploading them.
 Local builds/archives do not need Sentry upload credentials.
 
 For an existing retained archive, use

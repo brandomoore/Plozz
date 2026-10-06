@@ -2,6 +2,7 @@
 """Upload only UUID-verified archive dSYMs, never application source files."""
 
 import argparse
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -9,6 +10,8 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +44,7 @@ def configuration(environ=None, root=ROOT):
     cli = shutil.which("sentry-cli", path=env.get("PATH"))
     if not cli:
         raise ValueError("Install sentry-cli before distributing a build (brew install getsentry/tools/sentry-cli).")
+    symbol_api_url(env)
     return cli, env
 
 
@@ -83,11 +87,50 @@ def archive_symbols(archive):
     return symbols, available
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def symbol_api_url(env):
+    base = env.get("SENTRY_URL", "https://sentry.io").rstrip("/")
+    parts = urllib.parse.urlsplit(base)
+    if (parts.scheme != "https" or not parts.hostname or parts.username is not None
+            or parts.password is not None or parts.query or parts.fragment):
+        raise ValueError("SENTRY_URL must be an HTTPS server URL without credentials, query or fragment.")
+    org, project = (urllib.parse.quote(env[key], safe="") for key in ("SENTRY_ORG", "SENTRY_PROJECT"))
+    return f"{base}/api/0/projects/{org}/{project}/files/dsyms/"
+
+
+def verify_processed_symbols(ids, env):
+    base = symbol_api_url(env)
+    opener = urllib.request.build_opener(NoRedirect())
+    for debug_id in sorted(ids):
+        request = urllib.request.Request(
+            base + "?" + urllib.parse.urlencode({"debug_id": debug_id}),
+            headers={"Authorization": "Bearer " + env["SENTRY_AUTH_TOKEN"]},
+        )
+        try:
+            with opener.open(request, timeout=30) as response:
+                rows = json.load(response)
+        except (OSError, ValueError):
+            raise ValueError("Could not verify processed Sentry symbols; distribution must not proceed.") from None
+        if not isinstance(rows, list):
+            raise ValueError("Invalid Sentry symbol response; distribution must not proceed.")
+        if not any(
+            isinstance(row, dict) and str(row.get("debugId", "")).lower() == debug_id
+            and row.get("symbolType") == "macho" and isinstance(row.get("data"), dict)
+            and isinstance(row["data"].get("features"), list) and "debug" in row["data"]["features"]
+            for row in rows
+        ):
+            raise ValueError(f"Sentry lacks processed debug information for {debug_id}; distribution must not proceed.")
+
+
 def upload(archive, cli, env):
     symbols, ids = archive_symbols(archive)
     command = [
         cli, "debug-files", "upload", "--org", env["SENTRY_ORG"],
-        "--project", env["SENTRY_PROJECT"], "--wait", "--require-all",
+        "--project", env["SENTRY_PROJECT"], "--wait",
         "--type", "dsym", "--no-sources", "--no-zips",
     ]
     for debug_id in sorted(ids):
@@ -101,6 +144,8 @@ def upload(archive, cli, env):
         print(output, end="" if output.endswith("\n") else "\n")
     if result.returncode:
         raise ValueError("Sentry symbol upload/processing failed; distribution must not proceed.")
+    # CLI --require-all rejects some already-processed files; verify the server's exact UUIDs instead.
+    verify_processed_symbols(ids, env)
     print(f"Sentry processed {len(ids)} archive debug UUIDs.")
 
 
