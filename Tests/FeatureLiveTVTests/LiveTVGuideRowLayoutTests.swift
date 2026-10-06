@@ -158,7 +158,7 @@ final class LiveTVGuideRowLayoutTests: XCTestCase {
                     layout.contentFrame.minX - layout.bounds.minX,
                     32 + (navigationInset > 0 ? PrototypeLayout.inset : 0) + navigationInset
                 )
-                XCTAssertEqual(PrototypeLayout.guideTrailingInset, 0)
+                XCTAssertEqual(PrototypeLayout.guideTrailingInset, PrototypeLayout.guideInset)
                 XCTAssertEqual(PrototypeLayout.guideShape.cornerRadii.topTrailing, 0)
                 #else
                 XCTAssertEqual(layout.guideTrailingExtension, 0)

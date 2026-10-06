@@ -70,6 +70,43 @@ final class LiveTVGuideFocusTests: XCTestCase {
         add(attachment)
     }
 
+    func testChannelContentFocusKeepsAnInnerGutterAtTheScreenEdge() async throws {
+        try await requireNativeFocus()
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+            let probe = try GuideFocusProbe(section: .channels)
+            try probe.model.replacePrograms([])
+            let window = makeWindow(
+                GuideFocusHarness(probe: probe, fixedSize: false)
+                    .ignoresSafeArea()
+                    .environment(\.layoutDirection, direction)
+            )
+            defer { window.isHidden = true; window.rootViewController = nil }
+            await waitForCompletion(probe)
+            XCTAssertTrue(probe.completed)
+            XCTAssertEqual(probe.selectedRow, probe.origin)
+            let item = try XCTUnwrap(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+            var environment: (any UIFocusEnvironment)? = item
+            var container: (any UIFocusItemContainer)?
+            while let current = environment, container == nil {
+                container = current.focusItemContainer
+                environment = current.parentFocusEnvironment
+            }
+            let frame = try XCTUnwrap(container).coordinateSpace.convert(item.frame, to: window)
+            let gutter = direction == .leftToRight
+                ? window.bounds.maxX - frame.maxX
+                : frame.minX - window.bounds.minX
+            XCTAssertGreaterThan(frame.width, PrototypeLayout.stationColumnWidth, "Focus the channel content, not its logo")
+            print("Guide channel focus: direction=\(direction) frame=\(frame) window=\(window.bounds) trailingGutter=\(gutter)")
+            XCTAssertGreaterThanOrEqual(gutter, PrototypeLayout.guideInset - 0.5)
+            let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { context in
+                window.layer.render(in: context.cgContext)
+            })
+            attachment.name = "Channel content focus \(direction)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testUnfocusableGuideReleasesRestorationAndCanBeEnteredAgain() async throws {
         try await requireNativeFocus()
         let probe = try GuideFocusProbe(section: .channels)

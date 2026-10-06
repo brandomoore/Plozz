@@ -70,6 +70,11 @@ profiles mapped to the same Plex user. Local Profile Locks and Kids Profile exit
 gates remain in force for manual switching. Disabling automatic sign-in removes
 the stored session without changing any PIN; sign-out invalidates it.
 
+Foreground account or profile-membership credential recovery must leave a
+launching session in `launching`. The shell's bootstrap owns profile/PIN gates
+and automatic sign-in restoration before emitting `restored`; an early
+`accountsChanged` must not skip that step while Home's cache is prewarming.
+
 ## Where to look first
 
 - `SessionStateMachine.swift` — the pure auth-state reducer (start here

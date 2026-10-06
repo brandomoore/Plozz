@@ -1,4 +1,5 @@
 import CoreModels
+import CoreSecureStore
 import FeatureAuth
 import Foundation
 import XCTest
@@ -13,10 +14,26 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         let defaults: UserDefaults
     }
 
+    private final class AdmissionMembershipStore: SecureStoring, @unchecked Sendable {
+        private let storage = InMemorySecureStore()
+        var failMembershipReads = false
+
+        func setString(_ value: String, for key: String) throws { try storage.setString(value, for: key) }
+        func string(for key: String) -> String? { storage.string(for: key) }
+        func readString(for key: String) throws -> String? {
+            if failMembershipReads, key.hasPrefix("com.plozz.profile.activeAccounts.") {
+                throw CocoaError(.fileReadUnknown)
+            }
+            return try storage.readString(for: key)
+        }
+        func removeValue(for key: String) throws { try storage.removeValue(for: key) }
+    }
+
     private func makeHarness(
         standalone: Bool = false,
         profileSetupComplete: Bool = false,
-        withAccount: Bool = false
+        withAccount: Bool = false,
+        profileSecrets: (any SecureStoring)? = nil
     ) throws -> Harness {
         let suite = "AppAdmissionIntegrationTests.\(UUID().uuidString)"
         addTeardownBlock {
@@ -38,7 +55,7 @@ final class AppAdmissionIntegrationTests: XCTestCase {
                 deviceID: "device"
             ), token: "test-token")
         }
-        let profiles = ProfilesModel(store: ProfileStore(defaults: defaults))
+        let profiles = ProfilesModel(store: ProfileStore(defaults: defaults, secureStore: profileSecrets))
         if profileSetupComplete { profiles.markFirstRunProfileSetupComplete() }
         let admission = AppAdmissionStore(defaults: defaults)
         if standalone { admission.recordStandaloneChoice() }
@@ -101,6 +118,37 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         harness.state.profileFlow.switchProfile(to: profile.id)
         XCTAssertEqual(harness.state.profileFlow.pendingLockedProfile?.id, profile.id)
         XCTAssertFalse(harness.profiles.firstRunProfileSetupComplete)
+    }
+
+    func testForegroundCredentialRecoveryCannotSkipProfileUnlockDuringLaunch() throws {
+        let secrets = AdmissionMembershipStore()
+        let harness = try makeHarness(
+            profileSetupComplete: true, withAccount: true, profileSecrets: secrets
+        )
+        var profile = harness.profiles.activeProfile
+        profile.replaceLock(with: try XCTUnwrap(ProfileLock.make(pin: "1234", iterations: 64)))
+        harness.profiles.update(profile)
+        secrets.failMembershipReads = true
+        harness.profiles.setActiveAccountIDs(["media-account"], for: profile.id)
+        XCTAssertTrue(harness.profiles.unconfirmedAccountSelectionProfileIDs.contains(profile.id))
+        XCTAssertEqual(harness.state.state, .launching)
+
+        secrets.failMembershipReads = false
+        harness.state.retryUnconfirmedCredentials()
+        XCTAssertFalse(harness.profiles.unconfirmedAccountSelectionProfileIDs.contains(profile.id))
+        XCTAssertEqual(harness.state.state, .launching, "Foreground recovery must not bypass the launch task")
+        XCTAssertFalse(harness.state.isLiveTVProfileAuthorized)
+
+        // RootView only bootstraps while the session is still launching.
+        if case .launching = harness.state.state { harness.state.bootstrap() }
+        XCTAssertEqual(harness.state.state, .ready)
+        XCTAssertTrue(harness.state.profileFlow.isChoosingProfile)
+        harness.state.profileFlow.switchProfile(to: profile.id)
+        XCTAssertFalse(harness.state.profileFlow.submitProfileLockPIN("0000"))
+        XCTAssertFalse(harness.state.isLiveTVProfileAuthorized)
+        XCTAssertTrue(harness.state.profileFlow.submitProfileLockPIN("1234"))
+        XCTAssertFalse(harness.state.profileFlow.isChoosingProfile)
+        XCTAssertTrue(harness.state.isLiveTVProfileAuthorized)
     }
 
     func testStandaloneEntryUsesExistingProfileAndSkipsServerOnlySteps() throws {

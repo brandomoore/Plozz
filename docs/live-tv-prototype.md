@@ -76,6 +76,9 @@ shift or resize the skeleton or loaded guide.
 The shell keeps this clearance while Live TV temporarily suppresses navigation
 to focus its first channel or restore guide focus. Navigation visibility and input
 remain gated; the full-screen video and native Search use their own full bounds.
+The guide background still reaches the trailing screen edge, but channel and
+programme controls retain the guide's inner gutter on both sides so their focus
+outline stays fully visible, including in right-to-left layouts.
 An empty configuration does not contact a public feed or play an unsolicited
 channel. Add your own M3U playlist or use an authorized
 connected server. Plozz does not provide or offer a public channel catalog.

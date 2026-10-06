@@ -37,13 +37,7 @@ enum PrototypeLayout {
     static let minimumGuideOpacity = 0.05
     static let guideInset = PlozzTheme.Metrics.Radius.inset
     static let stationArtworkInset = guideInset + 8
-    static var guideTrailingInset: CGFloat {
-        #if os(tvOS)
-        0
-        #else
-        guideInset
-        #endif
-    }
+    static let guideTrailingInset = guideInset
     static var guideRadius: CGFloat { rowRadius + guideInset }
     static let controlRadius = PlozzTheme.Metrics.Radius.control
     static let controlInset = PlozzTheme.Spacing.xSmall
