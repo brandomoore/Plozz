@@ -2,6 +2,77 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/050",
+      "version": "2026.10.5",
+      "marketingVersion": "2026.9.25",
+      "build": 50,
+      "releasedAt": "2026-10-05",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "On-device seek previews for supported titles without server-generated thumbnails, when streaming at Original quality.",
+            "Card labels in Appearance > Cards, with a shared setting, per-view overrides, and readable names when artwork is missing.",
+            "Encrypted iCloud sync for Live TV playlist and guide sources, including imported playlists, using the main iCloud Sync setting."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Softer artwork-colored backgrounds on Fullscreen Hero Home. Showcase and detail backgrounds keep their existing intensity.",
+            "Closer, more consistent labels beneath media cards.",
+            "Support for larger Live TV playlists, with lower memory use while importing.",
+            "Less blocking work during Live TV channel preparation and iCloud sync.",
+            "Clear progress and completion or failure messages for Reload From iCloud.",
+            "More useful privacy-safe crash and Live TV diagnostics.",
+            {
+              "text": "Smoother navigation through large Live TV guides.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Home poster rows adapt to narrow phones, with consistent spacing, tighter corners, and smaller watched indicators.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Scrollable library and season tabs, with Filter and Sort on a separate row.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Clearer Multiview touch controls that adapt to narrow screens and larger text.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "A compact Settings header with a left-aligned title that centers only after scrolling.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Startup account updates bypassing profile selection or PIN checks.",
+            "Large Live TV libraries failing to sync as obsolete schedule history accumulates.",
+            {
+              "text": "Live TV focus outlines clipping at the edge of the guide.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Settings taps opening a neighboring menu, or Live TV source navigation pushing multiple pages.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Multiview controls overlapping the notch or status bar.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Solid backgrounds hiding artwork gradients behind compact detail information.",
+              "platforms": ["iOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/049",
       "version": "2026.10.5",
       "marketingVersion": "2026.9.25",
