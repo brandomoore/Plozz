@@ -21,7 +21,7 @@ tools/generate-project.sh
 ```
 
 Open `Plozz.xcodeproj` and run a **Plozz** build on Apple TV or
-**PlozziOS** on iPhone/iPad. Choose a media server or **Live TV / IPTV** during
+**PlozziOS** on iPhone/iPad. Choose and connect a media server or **IPTV** during
 first-run setup, then complete the ordinary profile and appearance steps.
 Standalone IPTV requires no media-server account. Select **Live TV** in
 navigation. Apple TV supports the top tabs, native sidebar and custom
@@ -70,6 +70,12 @@ server/username/password. On iPhone and iPad, **Playlist file (M3U)** imports
 through Files into the same disk-backed catalogue. File catalogues remain on
 the importing device; they are not copied by account sync. Use a playlist URL
 for a source that should refresh independently on multiple devices.
+
+The first-run chooser selects a provider, not a playback destination. Its
+**IPTV** entry opens the playlist/provider connection form directly, just as
+account management does. **Live TV** is a destination inside the app: it can
+show channels from a connected media server or an IPTV provider. Server users
+do not need to select IPTV to use their server's Live TV.
 
 The provider separates live channels, movies and recognizable series/episodes.
 Movies and series use ordinary paged libraries, Search, details, playback and
@@ -920,6 +926,16 @@ Both use the same existing CloudKit engine. Source records reuse deployed
 encrypted fields in an isolated zone; old clients cannot erase them.
 Parental approvals, history grants and channel health remain device-local.
 Server sign-in credentials retain their existing authorization flow.
+
+These generated-channel snapshots are different from IPTV catalogue/guide
+downloads: they carry immutable library-item inputs so devices agree on the
+generated schedule, not video files. Authenticated IPTV accounts use the normal
+account-descriptor and credential-transfer paths; their disk-backed catalogues
+and downloaded guides remain local. The imported files mentioned below belong
+to the older playlist-source transfer path, not the newer IPTV account catalogue.
+For genuinely empty onboarding and separate cloud-restoration tests, use the
+[cloud-enabled first-user cases](per-branch-builds.md#cloud-enabled-first-user-cases)
+rather than resetting the normal app or disabling sync.
 
 Imported files use immutable, bounded chunks and a manifest containing their
 byte count and checksum. A source is installed only after the complete file

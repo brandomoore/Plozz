@@ -43,4 +43,21 @@ final class SyncPairingInviteCodecTests: XCTestCase {
         XCTAssertNil(SyncPairingInvite.decode("https://example.com/other#zzz"))
         XCTAssertNil(SyncPairingInvite.decode("not a url"))
     }
+
+    func testFirstRunInvitesCannotCrossIntoRealOrDifferentTestHouseholds() {
+        let installation = AppInstallation.firstRun(UUID())
+        let invite = SyncPairingInvite(
+            serviceName: "TEST", publicKeyData: SyncPairingIdentity().publicKeyData,
+            context: SyncPairingContext(), installation: installation
+        )
+        XCTAssertTrue(invite.encoded().hasPrefix(installation.pairingURLPrefix))
+        XCTAssertEqual(SyncPairingInvite.decode(invite.encoded(), installation: installation), invite)
+        XCTAssertNil(SyncPairingInvite.decode(invite.encoded()))
+        XCTAssertNil(SyncPairingInvite.decode(invite.encodedPayload()))
+        XCTAssertNil(SyncPairingInvite.decode(
+            invite.encodedPayload(), installation: .firstRun(UUID())
+        ))
+        XCTAssertNil(SyncPairingInvite.decode(sampleInvite().encoded(), installation: installation))
+        XCTAssertNil(SyncPairingInvite.decode(sampleInvite().encodedPayload(), installation: installation))
+    }
 }

@@ -1223,10 +1223,7 @@ private struct OnboardingPageContent: View {
 
                 },
                 onCancel: { appState.cancelAuthentication() },
-                onSetUpFromAnotherDevice: onSetUpFromAnotherDevice,
-                onStandalonePlayback: AppState.isStandalonePlaybackAvailable && !canReturnToApp
-                    ? { _ = appState.enterStandalonePlayback() }
-                    : nil
+                onSetUpFromAnotherDevice: onSetUpFromAnotherDevice
             )
 
         case let .authenticating(server):

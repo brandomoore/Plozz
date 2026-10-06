@@ -47,6 +47,8 @@ install_apple_build_lease_traps
 # literal token, which would break the canonical bundle id.
 export PLOZZ_ID_SUFFIX="${PLOZZ_ID_SUFFIX:-}"
 export PLOZZ_NAME_SUFFIX="${PLOZZ_NAME_SUFFIX:-}"
+export PLOZZ_PAIRING_SERVICE_TYPE="${PLOZZ_PAIRING_SERVICE_TYPE:-_plozz-pair._tcp}"
+export PLOZZ_URL_SCHEME="${PLOZZ_URL_SCHEME:-plozz}"
 # tvOS entitlements paths — canonical by default. A --branded build overrides
 # these with the stripped variants (User Management + App Group removed) so a
 # fresh per-branch App ID can sign without those special capabilities.
@@ -78,6 +80,8 @@ generation_signature="$(
     printf '%s\n' \
       "PLOZZ_ID_SUFFIX=${PLOZZ_ID_SUFFIX}" \
       "PLOZZ_NAME_SUFFIX=${PLOZZ_NAME_SUFFIX}" \
+      "PLOZZ_PAIRING_SERVICE_TYPE=${PLOZZ_PAIRING_SERVICE_TYPE}" \
+      "PLOZZ_URL_SCHEME=${PLOZZ_URL_SCHEME}" \
       "PLOZZ_TV_APP_ENTITLEMENTS=${PLOZZ_TV_APP_ENTITLEMENTS}" \
       "PLOZZ_TV_TOPSHELF_ENTITLEMENTS=${PLOZZ_TV_TOPSHELF_ENTITLEMENTS}" \
       "PLOZZ_IOS_APP_ENTITLEMENTS=${PLOZZ_IOS_APP_ENTITLEMENTS}"

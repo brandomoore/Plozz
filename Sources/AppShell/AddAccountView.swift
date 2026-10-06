@@ -7,10 +7,7 @@ import FeatureAuth
 import FeatureDiscovery
 import FeatureDiscoveryCore
 
-/// Entry point for adding an account, letting the user pick which backend to
-/// connect: **Jellyfin**, **Emby**, **Plex**, or a direct media share.
-/// (plex.tv PIN link). Selecting a provider pushes its own sign-in flow; both
-/// ultimately hand back through `AppState` and join the multi-account list.
+/// Chooses a provider and opens its connection flow before adding the account.
 struct AddAccountView: View {
     let deviceID: String
     let canReturnToApp: Bool
@@ -24,7 +21,6 @@ struct AddAccountView: View {
     let onMediaShareConfigured: (MediaShareOnboardingResult) -> Void
     let onCancel: () -> Void
     var onSetUpFromAnotherDevice: (() -> Void)?
-    var onStandalonePlayback: (() -> Void)?
     let initialIPTVPlaylist: LiveTVPlaylistSource?
     let reconnectingIPTV: UserSession?
 
@@ -51,8 +47,7 @@ struct AddAccountView: View {
         onWebDAVShareConfigured: @escaping (WebDAVShareConfiguration) -> Void = { _ in },
         onMediaShareConfigured: @escaping (MediaShareOnboardingResult) -> Void = { _ in },
         onCancel: @escaping () -> Void,
-        onSetUpFromAnotherDevice: (() -> Void)? = nil,
-        onStandalonePlayback: (() -> Void)? = nil
+        onSetUpFromAnotherDevice: (() -> Void)? = nil
     ) {
         self.deviceID = deviceID
         self.initialIPTVPlaylist = initialIPTVPlaylist
@@ -68,7 +63,6 @@ struct AddAccountView: View {
         self.onMediaShareConfigured = onMediaShareConfigured
         self.onCancel = onCancel
         self.onSetUpFromAnotherDevice = onSetUpFromAnotherDevice
-        self.onStandalonePlayback = onStandalonePlayback
         // Seed the flow's starting screen. This also lets "Add Another Plex
         // Account" enter Plex linking directly instead of returning to the
         // provider chooser.
@@ -158,8 +152,7 @@ struct AddAccountView: View {
             isPreparingPlex: isPreparingPlex,
             onBack: cancelPreparationOrReturn,
             onSelect: navigate(to:),
-            onSetUpFromAnotherDevice: onSetUpFromAnotherDevice,
-            onStandalonePlayback: onStandalonePlayback
+            onSetUpFromAnotherDevice: onSetUpFromAnotherDevice
         )
     }
 
@@ -242,7 +235,6 @@ private enum ProviderChooserFocus: Hashable {
     case silo
     case iptv
     case mediaShare
-    case standalonePlayback
     case setUpFromAnotherDevice
 
     init(provider: ProviderKind) {
@@ -264,7 +256,6 @@ private struct ProviderChooserView: View {
     let onBack: () -> Void
     let onSelect: (ProviderKind) -> Void
     var onSetUpFromAnotherDevice: (() -> Void)?
-    var onStandalonePlayback: (() -> Void)?
     @FocusState private var focusedControl: ProviderChooserFocus?
 
     var body: some View {
@@ -277,8 +268,7 @@ private struct ProviderChooserView: View {
                 ProviderChoiceGroup(
                     focusedControl: $focusedControl,
                     isPreparingPlex: isPreparingPlex,
-                    onSelect: onSelect,
-                    onStandalonePlayback: showsBranding ? onStandalonePlayback : nil
+                    onSelect: onSelect
                 )
                 .allowsHitTesting(!isPreparingPlex)
             }
@@ -321,8 +311,7 @@ private struct ProviderChooserView: View {
              (.some(.plex), .left),
              (.some(.silo), .left),
              (.some(.iptv), .left),
-             (.some(.mediaShare), .left),
-             (.some(.standalonePlayback), .left):
+             (.some(.mediaShare), .left):
             focusedControl = .back
         case (.some(.back), .right):
             focusedControl = .jellyfin
@@ -363,7 +352,6 @@ private struct ProviderChoiceGroup: View {
     let focusedControl: FocusState<ProviderChooserFocus?>.Binding
     let isPreparingPlex: Bool
     let onSelect: (ProviderKind) -> Void
-    var onStandalonePlayback: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -419,32 +407,6 @@ private struct ProviderChoiceGroup: View {
             Divider().padding(.horizontal, 1)
             ProviderChoiceRow(provider: .iptv, height: 88, focusedControl: focusedControl) {
                 onSelect(.iptv)
-            }
-
-            if let onStandalonePlayback {
-                Divider().padding(.horizontal, 1)
-                Button(action: onStandalonePlayback) {
-                    HStack(spacing: 24) {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
-                            .font(.system(size: 42))
-                            .frame(width: 64, height: 64)
-                        Text("Live TV / IPTV")
-                            .font(.system(size: 32, weight: .semibold))
-                        Spacer(minLength: 24)
-                        Image(systemName: "chevron.forward")
-                            .font(.system(size: 22, weight: .semibold))
-                            .settingsRowSecondary()
-                    }
-                    .padding(.horizontal, 24)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 108)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
-                .focused(focusedControl, equals: .standalonePlayback)
-                .disabled(isPreparingPlex)
-                .accessibilityHint("Use your own playlist without signing in to a media server.")
-                .padding(12)
             }
         }
         .frame(width: 720)

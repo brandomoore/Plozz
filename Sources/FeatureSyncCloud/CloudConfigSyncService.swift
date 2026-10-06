@@ -44,6 +44,7 @@ public actor CloudConfigSyncService {
     /// independent channels are supplied via `init(_:channels:)`.
     public struct Configuration: Sendable {
         public var containerIdentifier: String
+        public var installation: AppInstallation
         public var schema: CloudSyncSchemaDescriptor
         public var isEnabled: @Sendable () -> Bool
         /// Capture the current canonical, NON-SECRET flat record map from the app's
@@ -77,9 +78,11 @@ public actor CloudConfigSyncService {
             applyRecords: @escaping @Sendable (SyncLocalChanges) async -> Void,
             onAccountSwitch: @escaping @Sendable () async -> Void = {},
             isHydrated: @escaping @Sendable () -> Bool = { true },
-            status: CloudSyncStatus? = nil
+            status: CloudSyncStatus? = nil,
+            installation: AppInstallation = .current
         ) {
             self.containerIdentifier = containerIdentifier
+            self.installation = installation
             self.stateFileURL = stateFileURL
             self.schema = schema
             self.isEnabled = isEnabled
@@ -236,28 +239,15 @@ public actor CloudConfigSyncService {
     /// `startCloudSyncIfEnabled` reached `activate()`. They should just run without
     /// cloud sync.
     ///
-    /// `SecTaskCopyValueForEntitlement` is macOS-only, so on iOS/tvOS we read the
-    /// entitlements out of the embedded provisioning profile instead. When there is
-    /// no profile to read we assume we ARE entitled: that is the conservative
-    /// direction, since sync is only switched off when the absence can be positively
-    /// proven, and a real user's build is never disabled by a parsing failure.
-    private static let hasCloudKitEntitlement: Bool = {
-        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
-              let data = try? Data(contentsOf: url)
-        else { return true }
-
-        // The profile is CMS-signed; the payload is a plain plist embedded between
-        // these markers. Scanning for them avoids pulling in a CMS decoder for what
-        // is a one-shot launch check.
-        guard let start = data.range(of: Data("<?xml".utf8)),
-              let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
-              let profile = try? PropertyListSerialization.propertyList(
-                  from: data[start.lowerBound..<end.upperBound], format: nil) as? [String: Any],
-              let entitlements = profile["Entitlements"] as? [String: Any]
-        else { return true }
-
-        let containers = entitlements["com.apple.developer.icloud-container-identifiers"] as? [String]
-        return containers?.isEmpty == false
+    /// Distribution keeps the existing missing-profile behavior. First-run device
+    /// builds require positive proof rather than silently becoming an offline test.
+    private lazy var hasCloudKitEntitlement: Bool = {
+        let data = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision")
+            .flatMap { try? Data(contentsOf: $0) }
+        return CloudSyncEntitlementPolicy.permits(
+            container: config.containerIdentifier, profileData: data,
+            requiresProof: config.installation.firstRunCaseID != nil
+        )
     }()
     private var engine: CKSyncEngine?
     /// Bumped every time the engine is rebuilt; events from an older engine are
@@ -295,13 +285,19 @@ public actor CloudConfigSyncService {
     private(set) var hasRestoredLocalState = false
 
     public init(_ configuration: Configuration, channels extraChannels: [ChannelConfiguration] = []) {
+        precondition(
+            configuration.installation.firstRunCaseID == nil
+                || configuration.containerIdentifier == configuration.installation.cloudContainerIdentifier,
+            "First-run sync cannot use a normal Plozz container."
+        )
         self.config = configuration
-        self.schema = configuration.schema
+        let primarySchema = configuration.schema.scoped(to: configuration.installation)
+        self.schema = primarySchema
         self.stateFileURL = configuration.stateFileURL
 
         let primary = Channel(
             isPrimary: true,
-            schema: configuration.schema,
+            schema: primarySchema,
             stateFileURL: configuration.stateFileURL,
             captureRecords: configuration.captureRecords,
             applyRecords: configuration.applyRecords,
@@ -313,17 +309,18 @@ public actor CloudConfigSyncService {
 
         var built: [Channel] = [primary]
         for extra in extraChannels {
+            let schema = extra.schema.scoped(to: configuration.installation)
             built.append(Channel(
                 isPrimary: false,
-                schema: extra.schema,
+                schema: schema,
                 stateFileURL: extra.stateFileURL,
                 captureRecords: extra.captureRecords,
                 applyRecords: extra.applyRecords,
                 onAccountSwitch: extra.onAccountSwitch,
                 isHydrated: extra.isHydrated,
                 ledger: SyncLedger(),
-                stateCodec: extra.stateCodec ?? (extra.schema.encryptsValue
-                    ? .deviceLocal(context: configuration.containerIdentifier + ":" + extra.schema.zoneName)
+                stateCodec: extra.stateCodec ?? (schema.encryptsValue
+                    ? .deviceLocal(context: configuration.containerIdentifier + ":" + schema.zoneName)
                     : nil),
                 captureSnapshot: extra.captureSnapshot, applySnapshot: extra.applySnapshot,
                 snapshotAuthority: extra.snapshotAuthority
@@ -395,7 +392,12 @@ public actor CloudConfigSyncService {
         }
         // Reported as `disabled` rather than `signedOut`: the user has not signed
         // out of anything, this build simply cannot do cloud sync at all.
-        guard Self.hasCloudKitEntitlement else {
+        guard hasCloudKitEntitlement else {
+            if config.installation.firstRunCaseID != nil {
+                setDiagnostic("First-run test blocked: the test CloudKit container is not provisioned.")
+                setStatus(.error, error: "First-run iCloud provisioning is missing.")
+                return
+            }
             PlozzLog.sync.info("CloudSync: disabled — this build carries no iCloud entitlement")
             setStatus(.disabled)
             return
@@ -408,7 +410,11 @@ public actor CloudConfigSyncService {
         engine.state.add(pendingDatabaseChanges: channels.map { .saveZone(CKRecordZone(zoneID: $0.schema.zoneID)) })
         for channel in channels { await cleanupLegacyZonesIfNeeded(for: channel) }
         // Fetch before publish — the anti-clobber ordering.
-        do { try await fetchChangesDetached(engine); markServerStateConfirmed() }
+        do {
+            try await fetchChangesDetached(engine)
+            markServerStateConfirmed()
+            recordFirstRunCloudFetch()
+        }
         catch { setDiagnostic("activate fetch: \(Self.describe(error))") }
         // publishLocalChanges enforces the suspend / baseline / resync gates itself, so
         // a fresh device whose fetch failed simply no-ops instead of clobbering.
@@ -428,6 +434,28 @@ public actor CloudConfigSyncService {
         engine = nil
         setStatus(.disabled)
         PlozzLog.sync.info("CloudSync: deactivated")
+    }
+
+    private func recordFirstRunCloudFetch() {
+        guard let id = config.installation.firstRunCaseID else { return }
+        let url = stateFileURL.deletingLastPathComponent().appendingPathComponent("first-run-cloud.json")
+        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        do {
+            let receipt: [String: Any] = [
+                "case": id.uuidString.lowercased(),
+                "container": config.containerIdentifier,
+                "zones": channels.map(\.schema.zoneName),
+                "fetchSucceeded": true,
+                "recordsBeforeInitialPublish": channels.reduce(0) { $0 + $1.ledger.entries.count }
+            ]
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            try JSONSerialization.data(withJSONObject: receipt, options: [.sortedKeys])
+                .write(to: url, options: .atomic)
+        } catch {
+            setDiagnostic("First-run cloud receipt could not be saved.")
+        }
     }
 
     /// One-time: delete only the legacy CloudKit zones named by this channel's
@@ -886,7 +914,7 @@ public actor CloudConfigSyncService {
         // reconcileServerInventory — passes through this method first. Returning
         // false makes them all no-op instead of trapping. See
         // `hasCloudKitEntitlement`.
-        guard Self.hasCloudKitEntitlement else { return false }
+        guard hasCloudKitEntitlement else { return false }
         do { return try await container.accountStatus() == .available }
         catch { PlozzLog.sync.error("CloudSync: accountStatus failed: \(error.localizedDescription)"); return false }
     }
@@ -1204,6 +1232,15 @@ public actor CloudConfigSyncService {
 // MARK: - CKSyncEngineDelegate
 
 extension CloudConfigSyncService: CKSyncEngineDelegate {
+    public func nextFetchChangesOptions(
+        _ context: CKSyncEngine.FetchChangesContext, syncEngine: CKSyncEngine
+    ) async -> CKSyncEngine.FetchChangesOptions {
+        var options = context.options
+        if config.installation.firstRunCaseID != nil {
+            options.scope = .zoneIDs(channels.map(\.schema.zoneID).filter(options.scope.contains))
+        }
+        return options
+    }
 
     public func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
         // Generation + activation fence: ignore events from a stale engine (post-

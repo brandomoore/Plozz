@@ -64,12 +64,7 @@ public struct PlozziOSRootView: View {
     public var body: some View {
         Group {
             if !appModel.canEnterApp {
-                PlozziOSOnboardingView(
-                    appModel: appModel,
-                    onStandalonePlayback: PlozziOSAppModel.isStandalonePlaybackAvailable
-                        ? { _ = appModel.enterStandalonePlayback() }
-                        : nil
-                )
+                PlozziOSOnboardingView(appModel: appModel)
             } else if appModel.mustChooseProfile
                 || (appModel.requiresLaunchProfileSelection
                     && !appModel.didCompleteLaunchProfileSelection) {

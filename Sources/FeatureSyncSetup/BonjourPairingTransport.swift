@@ -10,7 +10,7 @@ import CoreModels
 // Both then exchange framed messages over one NWConnection: target sends its
 // invite, source sends the sealed bundle.
 
-public let kPlozzPairingServiceType = "_plozz-pair._tcp"
+public let kPlozzPairingServiceType = AppInstallation.current.pairingServiceType
 
 public enum BonjourPairingError: Error, Equatable {
     case listenerFailed

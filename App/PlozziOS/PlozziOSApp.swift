@@ -1,5 +1,6 @@
 import AppShelliOS
 import AppRuntime
+import CoreModels
 import CoreUI
 import SwiftUI
 import UIKit
@@ -31,6 +32,7 @@ struct PlozziOSApp: App {
     @UIApplicationDelegateAdaptor(PlozziOSAppDelegate.self) private var appDelegate
 
     init() {
+        _ = AppInstallation.current
         ProcessSignalPolicy.ignoreBrokenPipe()
         URLCache.shared = URLCache(
             memoryCapacity: 64 * 1024 * 1024,

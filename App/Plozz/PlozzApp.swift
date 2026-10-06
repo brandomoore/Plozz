@@ -15,6 +15,7 @@ struct PlozzApp: App {
     #endif
 
     init() {
+        _ = AppInstallation.current
         ProcessSignalPolicy.ignoreBrokenPipe()
         URLCache.shared = URLCache(
             memoryCapacity: 64 * 1024 * 1024,   // 64 MB in memory

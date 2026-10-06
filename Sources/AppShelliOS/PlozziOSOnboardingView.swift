@@ -5,13 +5,11 @@ import SwiftUI
 
 /// iOS/iPadOS first-run onboarding — mirrors the tvOS entry: the branded Plozz
 /// logo + "Free forever and open source." tagline, a direct provider chooser
-/// (Jellyfin / Plex / Emby / Media Share), and a "Set up from another device"
-/// button. Standalone playback is an optional alternative, not a provider.
+/// and a "Set up from another device" button.
 @MainActor
 struct PlozziOSOnboardingView: View {
     @Environment(\.themePalette) private var palette
     let appModel: PlozziOSAppModel
-    var onStandalonePlayback: (() -> Void)? = nil
     @State private var addProvider: OnboardingProvider?
     @State private var showReceive = false
     @State private var showAddShare = false
@@ -74,29 +72,6 @@ struct PlozziOSOnboardingView: View {
             providerRow(.mediaShare)
             divider
             providerRow(.iptv)
-            if let onStandalonePlayback {
-                divider
-                Button(action: onStandalonePlayback) {
-                    HStack(spacing: 16) {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
-                            .font(.title2)
-                            .foregroundStyle(palette.accent)
-                            .frame(width: 40, height: 40)
-                        Text("Live TV / IPTV")
-                            .font(.headline)
-                            .foregroundStyle(palette.primaryText)
-                        Spacer()
-                        Image(systemName: "chevron.forward")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(palette.secondaryText)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 16)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Use your own playlist without signing in to a media server.")
-            }
         }
         .background(palette.cardSurface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
