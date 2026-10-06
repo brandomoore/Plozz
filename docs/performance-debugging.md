@@ -754,6 +754,14 @@ the app's visible-status acknowledgement, the recorder's Darwin start
 notification, and five seconds without an early disconnect before authorizing
 input. Heartbeats maintain the badge; a missing heartbeat expires it after
 15 seconds, including a render-server fade if the main thread is blocked.
+Debug builds also export `Library/Caches/Plozz/diagnostic-images-{preparing,finished,failed}.json`
+on those status transitions, not recording heartbeats. Each snapshot includes the
+PID, build, image UUIDs and executable-segment load/file addresses; names contain
+only binary basenames. dyld callbacks safely copy loaded-image metadata, and file
+writes run on a utility queue. Copy these files alongside a raw trace when
+Instruments loses image mappings. Match the PID/build and exact dSYM UUID before
+resolving addresses; never reuse another process's ASLR mappings. Unmapped images
+and export failures are reported explicitly.
 Release builds have no receiver. `--no-indicator` is an explicit opt-out for
 an older/release build, not an automatic fallback when an acknowledgement fails.
 

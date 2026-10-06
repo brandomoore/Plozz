@@ -34,9 +34,31 @@ final class DiagnosticRecordingStatusHostedTests: XCTestCase {
             DiagnosticRecordingPhase.preparing.acknowledgement, &token, .main
         ) { _ in visible.fulfill() }, UInt32(NOTIFY_STATUS_OK))
         defer { notify_cancel(token) }
+        let requestedAt = Date()
         XCTAssertEqual(notify_post(DiagnosticRecordingPhase.preparing.notification), UInt32(NOTIFY_STATUS_OK))
         await fulfillment(of: [visible], timeout: 2)
         XCTAssertNotNil(window.subviews.first { $0.accessibilityIdentifier == "diagnostic-recording-status" })
+        let directory = try FileManager.default.url(
+            for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: false
+        )
+        let imageMap = directory.appendingPathComponent("Plozz/diagnostic-images-preparing.json")
+        let deadline = ContinuousClock.now + .seconds(5)
+        var exported = false
+        while ContinuousClock.now < deadline {
+            if FileManager.default.fileExists(atPath: imageMap.path) {
+                let attributes = try FileManager.default.attributesOfItem(atPath: imageMap.path)
+                if let modified = attributes[.modificationDate] as? Date, modified >= requestedAt {
+                    exported = true
+                    break
+                }
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(exported, "Preparing must export a fresh map asynchronously.")
+        let metadata = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: imageMap)) as? [String: Any])
+        XCTAssertEqual(metadata["processIdentifier"] as? Int, Int(ProcessInfo.processInfo.processIdentifier))
+        XCTAssertEqual(metadata["phase"] as? String, "preparing")
+        XCTAssertFalse(try XCTUnwrap(metadata["images"] as? [[String: Any]]).isEmpty)
     }
 
     func testRecordingBadgeAcknowledgesVisibilityWithoutTakingFocusAndExpires() async throws {
