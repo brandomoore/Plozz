@@ -269,7 +269,7 @@ def check_conflicts(files: list[Path]) -> int:
 
 
 
-def validate_catalog() -> int:
+def validate_catalog(*, require_translations: bool = True) -> int:
     """Check the artifact translators actually receive.
 
     The guard's AST rule for brand names enumerated call sites, which meant a
@@ -297,7 +297,8 @@ def validate_catalog() -> int:
 
     problems += plural_problems(strings)
     problems += infoplist_problems()
-    problems += language_release_problems(strings)
+    if require_translations:
+        problems += language_release_problems(strings)
 
     for problem in problems:
         print(f"  ✗ {problem}")
@@ -656,6 +657,8 @@ def main() -> int:
                         help="Reuse proven full extraction only when inputs and output are unchanged.")
     parser.add_argument("--validate-only", action="store_true",
                         help="Check the committed catalog without extracting anything (for CI).")
+    parser.add_argument("--validate-source", action="store_true",
+                        help="Check source, permissions, and plural structure before translation planning; not a release gate.")
     parser.add_argument("--coverage", action="store_true",
                         help="Report per-language translation coverage and exit.")
     parser.add_argument("--clean", action="store_true",
@@ -678,12 +681,13 @@ def main() -> int:
         report_coverage()
         return 0
 
-    if args.validate_only:
-        problems = validate_catalog()
+    if args.validate_only or args.validate_source:
+        problems = validate_catalog(require_translations=not args.validate_source or args.validate_only)
         if problems:
             print(f"✗ {problems} catalog problem(s).", file=sys.stderr)
             return 1
-        print("✓ Catalog validates.")
+        print("✓ Catalog source validates; translation completeness is not checked."
+              if args.validate_source and not args.validate_only else "✓ Catalog validates.")
         return 0
 
     if shutil.which("xcrun") is None:

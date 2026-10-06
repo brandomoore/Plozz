@@ -55,7 +55,90 @@ def command(repo: Path, *args: str) -> bytes:
                                    stderr=subprocess.PIPE, timeout=30)
 
 
-def source_fingerprint(repo: Path, *, exclude: set[str] | None = None) -> str:
+def phase_paths(repo: Path, scope: str) -> tuple[set[str], set[str]]:
+    """Resolve ownership from the package and XcodeGen graphs, never a suite list.
+
+    Unowned paths remain inputs to every phase. Dependency conditions and source
+    exclusions are deliberately over-inclusive.
+    """
+    manifest = json.loads(command(repo, "swift", "package", "dump-package"))
+    spec = json.loads(command(
+        repo, "ruby", "-ryaml", "-rjson", "-e",
+        "puts JSON.generate(YAML.safe_load(File.read(ARGV.fetch(0)), aliases: true))",
+        "project.yml",
+    ))
+    if spec.get("include") or spec.get("targetTemplates") or any(
+        target.get("templates") for target in spec["targets"].values()
+    ):
+        raise FreshnessError("Validation scoping requires an expanded XcodeGen target graph")
+    targets = manifest["targets"]
+    products = {p["name"]: p["targets"] for p in manifest["products"]}
+    paths, dependencies = {}, {}
+    for target in targets:
+        name = "package:" + target["name"]
+        paths[name] = {target.get("path") or (
+            ("Tests/" if target["type"] == "test" else "Sources/") + target["name"]
+        )}
+        dependencies[name] = {
+            "package:" + value[0]
+            for dependency in target.get("dependencies", [])
+            for key, value in dependency.items() if key in ("target", "byName")
+            and value and any(t["name"] == value[0] for t in targets)
+        }
+    for name, target in spec["targets"].items():
+        owner = "project:" + name
+        paths[owner] = {
+            source if isinstance(source, str) else source["path"]
+            for source in target.get("sources", [])
+        }
+        dependencies[owner] = set()
+        for dependency in target.get("dependencies", []):
+            if "target" in dependency:
+                dependencies[owner].add("project:" + dependency["target"])
+            if dependency.get("package") == manifest["name"]:
+                product = dependency.get("product", dependency["package"])
+                dependencies[owner].update("package:" + n for n in products[product])
+    def scheme_roots(name, *, tests=False):
+        scheme = spec["schemes"][name]
+        selected = set(scheme.get("build", {}).get("targets", {}))
+        if tests:
+            selected.update(
+                target if isinstance(target, str) else target["name"]
+                for target in scheme.get("test", {}).get("targets", [])
+            )
+        if not selected:
+            raise FreshnessError(f"No validation targets in scheme: {name}")
+        return {"project:" + target for target in selected}
+    roots = {
+        "package": {"package:" + t["name"] for t in targets if t["type"] == "test"},
+        "tvos-hosted": scheme_roots("PlozzFocusTests", tests=True),
+        "ios-hosted": scheme_roots("PlozziOSPresentationTests", tests=True),
+        "tvos-build": scheme_roots("Plozz"),
+        "ios-build": scheme_roots("PlozziOS"),
+        "extraction": scheme_roots("Plozz") | scheme_roots("PlozziOS"),
+    }
+    pending = list(roots[scope])
+    visited = set()
+    while pending:
+        name = pending.pop()
+        if name not in visited:
+            if name not in paths:
+                raise FreshnessError(f"Unresolved validation target: {name}")
+            visited.add(name)
+            pending.extend(dependencies[name])
+    def normalized(names):
+        result = set()
+        for name in names:
+            for path in paths[name]:
+                value = Path(path)
+                if value.is_absolute() or ".." in value.parts:
+                    raise FreshnessError("Validation source path leaves the worktree")
+                result.add(value.as_posix().rstrip("/"))
+        return result
+    return normalized(paths), normalized(visited)
+
+
+def source_fingerprint(repo: Path, *, exclude: set[str] | None = None, scope: str = "all") -> str:
     """Hash actual bytes, including dirty/untracked sources and local build config.
 
     Only digests leave this function; local xcconfigs and generated projects may
@@ -71,6 +154,17 @@ def source_fingerprint(repo: Path, *, exclude: set[str] | None = None) -> str:
         "Plozz.xcodeproj/project.pbxproj",
         "Plozz.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
     })
+    if scope != "all":
+        owned, selected = phase_paths(repo, scope)
+        def under(name, roots):
+            return any(root == "." or name == root or name.startswith(root + "/") for root in roots)
+        names = {
+            name for name in names
+            if (under(name, selected)
+                or not (name.startswith("docs/") or ("/" not in name and name.endswith(".md"))))
+            and name != "tools/l10n-source-snapshot.json"
+            and (not under(name, owned) or under(name, selected))
+        }
     result = hashlib.sha256()
     for name in sorted(names - excluded):
         path = repo / name
@@ -100,9 +194,14 @@ def environment_fingerprint() -> str:
         "LDFLAGS", "LANG", "LC_ALL", "XDG_CONFIG_HOME",
     }
     prefixes = ("PLOZZ_", "SWIFT_", "CLANG_", "OTHER_", "DYLD_")
+    operational = {
+        "PLOZZ_BUILD_LEASE_WRAPPED", "PLOZZ_MAIN_LANDING_FD",
+        "PLOZZ_TV_ID", "PLOZZ_TV_XCTEST_ID", "PLOZZ_IPHONE_CORE_ID",
+        "PLOZZ_IPAD_CORE_ID", "PLOZZ_SIM_ID", "PLOZZ_IOS_SIM_ID", "PLOZZ_FOCUS_RESULTS",
+    }
     values = {key: value for key, value in os.environ.items()
               if (key in names or key.startswith(prefixes))
-              and key != "PLOZZ_BUILD_LEASE_WRAPPED"}
+              and key not in operational}
     override = os.environ.get("XCODE_XCCONFIG_FILE")
     if override:
         values["XCODE_XCCONFIG_CONTENT_SHA256"] = digest(read_stable(Path(override)))
@@ -189,7 +288,8 @@ class ExtractionReceipt:
 
     def inputs(self) -> str:
         return digest(canonical({
-            "source": source_fingerprint(self.repo, exclude={str(self.catalog.relative_to(self.repo))}),
+            "source": source_fingerprint(
+                self.repo, exclude={str(self.catalog.relative_to(self.repo))}, scope="extraction"),
             "environment": environment_fingerprint(),
             "toolchain": self.toolchain,
             "arch": self.arch,
@@ -207,7 +307,6 @@ class ExtractionReceipt:
                 isinstance(recorded, dict) and recorded.get("schemaVersion") == 1
                 and recorded.get("platforms") == ["ios", "tvos"]
                 and recorded.get("inputs") == inputs
-                and recorded.get("catalog") == digest(read_stable(self.catalog))
                 and recorded.get("packages") == package_workspace_fingerprint(self.repo, self.workspace)
                 and output is not None and recorded.get("output") == output
             )

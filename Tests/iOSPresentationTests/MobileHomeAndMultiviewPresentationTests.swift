@@ -607,7 +607,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                             .environment(\.themePalette, .dark)
                             .environment(\.locale, Locale(identifier: "en_US"))
                     )
-                    try await settle(window)
+                    try await waitForHostedLayout(window)
                     let image = snapshot(window, name: "multiview-\(Int(size.width))-\(Int(size.height))-\(textSize)")
                     let observations = try text(image)
                     let safe = window.bounds.inset(by: host.view.safeAreaInsets)
@@ -629,7 +629,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     if textSize.isAccessibilitySize,
                        let toolbar = scrollViews(window).first(where: { $0.contentSize.width > $0.bounds.width + 1 }) {
                         toolbar.setContentOffset(CGPoint(x: toolbar.contentSize.width - toolbar.bounds.width, y: 0), animated: false)
-                        try await settle(window)
+                        try await waitForHostedLayout(window)
                         let revealed = try text(snapshot(window, name: "multiview-large-text-trailing-\(Int(size.width))"))
                         for label in ["Layout", "More"] {
                             let frame = try textFrame(label, observations: revealed, size: size)
@@ -646,12 +646,12 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
             window.frame.size = CGSize(width: 390, height: 844)
             host.additionalSafeAreaInsets = UIEdgeInsets(top: 24, left: 0, bottom: 20, right: 0)
             host.rootView = AnyView(MultiviewTouchFixture(coordinator: coordinator).environment(\.themePalette, .dark))
-            try await settle(window)
+            try await waitForHostedLayout(window)
             var observations = try text(snapshot(window, name: "multiview-two-channel-editing"))
             _ = try textFrame("Audio", observations: observations, size: window.bounds.size)
             _ = try textFrame("Add", observations: observations, size: window.bounds.size)
             coordinator.finishEditingLayout()
-            try await settle(window)
+            try await waitForHostedLayout(window)
             observations = try text(snapshot(window, name: "multiview-two-channel-watching"))
             _ = try textFrame("Edit layout", observations: observations, size: window.bounds.size)
             _ = try textFrame("Audio", observations: observations, size: window.bounds.size)
@@ -663,7 +663,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     symbol: "tv", accent: number, source: .iptv, tagline: "",
                     streamURL: URL(string: "https://example.invalid/touch-\(number).m3u8")!
                 ))?.value
-                try await settle(window)
+                try await waitForHostedLayout(window)
                 observations = try text(snapshot(window, name: "multiview-\(number)-channels-small-phone"))
                 for label in number == 3 ? ["Add", "Layout", "Audio", "More"] : ["Layout", "Audio", "More"] {
                     let frame = try textFrame(label, observations: observations, size: window.bounds.size)

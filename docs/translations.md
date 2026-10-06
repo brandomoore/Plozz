@@ -92,6 +92,14 @@ lacks native review without hiding a usable language from users.
 ## Commands
 
 ```sh
+# Early development preflight: validates source/plurals/permissions without
+# requiring translations that the next plan is meant to produce.
+python3 tools/l10n-sync.py --validate-source
+
+# Sync the current dual-platform source before planning. Exact compiled extraction
+# may be reused after catalog-only edits; current catalog validation is never skipped.
+python3 tools/l10n-sync.py --reuse-if-unchanged
+
 # Rebuild disposable full-language artifacts from the committed catalogs. This
 # makes incremental translation self-contained; no prior agent session is needed.
 tools/l10n-export-artifacts.py /tmp/plozz-translations

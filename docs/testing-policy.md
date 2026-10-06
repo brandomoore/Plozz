@@ -95,14 +95,35 @@ landing. Record phase start/end times, current status, commands, and retained
 result locations. Start with the localization delta plan; an empty delta does
 not need artifact assembly/import.
 
-An interrupted landing may reuse a completed phase only when its complete
+Run new or affected hosted classes/methods before the full matrix, so a broken
+fixture fails early. Focused results never stand in for a full hosted result.
+
+An interrupted landing may reuse a completed phase only when its consumed
 source/configuration, toolchain/SDK, package workspace, simulator runtime, and
-command recipe match. Keep the authoritative passing summary and expected-bundle
+command recipe match. `tools/lib/l10n_freshness.py` derives consumers from the
+current Swift package and XcodeGen dependency graphs. A TV-only hosted fixture
+edit reruns TV hosted tests, not package tests, iOS hosted tests, or app builds.
+Shared production changes invalidate every consumer. Unknown paths, configuration,
+and tooling are conservatively shared inputs; ordinary documentation and the
+completed localization snapshot do not invalidate compilation. Documentation
+explicitly consumed as a target resource still does.
+Run whole-tree architecture and test-hygiene guards on every invocation,
+including when package-test evidence is reused.
+
+Keep the authoritative passing summary and expected-bundle
 evidence, not just a success marker; missing or changed evidence reruns the gate.
 A failed fresh attempt invalidates an earlier success. Inputs changing between
 phases prevent the combined candidate from being declared ready. A changed
 candidate still requires the full package and hosted gates; targeted regressions
 used to diagnose a failure do not replace those final gates.
+
+Local main publishers use `tools/main-landing.py`'s shared Git-directory lock
+from the initial main preflight through the verified push, releasing it before
+device delivery. The hook reenters an inherited lock and retains every
+localization gate; feature pushes do not wait. This coordinates participating
+linked worktrees, not old runners or other machines. A standalone hook owns the
+lock only during its checks, not Git's subsequent network update. Fresh-main
+verification and non-force publication remain mandatory.
 
 Signed products additionally require matching build identity, executable and
 resource-seal fingerprints, and fresh signature verification before reuse.
@@ -110,6 +131,14 @@ After all gates pass, recheck `main` and publish the authorized update **before*
 independent physical-device installation. Unavailable-device retry budgets stay
 unchanged but are not part of the main-push prerequisite. Keep the enclosing
 build lease through remaining delivery and retain exact artifacts as usual.
+
+For hosted UI speed, replace setup sleeps only with observable readiness.
+`waitForHostedLayout` bounds waits for stable layer geometry and completed
+animations in static library/multiview matrices. Keep loading/shimmer waits and
+negative focus-observation windows intact; continuously animated fixtures are
+not candidates for this helper. Viewport, Dynamic Type, OCR, and pixel assertions
+must remain unchanged. Record actual timings rather than assuming a shorter
+sleep improves a run.
 
 ### 3. Fail fast — you learn a result in seconds, not minutes
 

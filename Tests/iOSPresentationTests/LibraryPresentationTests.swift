@@ -29,7 +29,7 @@ final class LibraryPresentationTests: XCTestCase {
             try await withLibrary(provider: provider, appModel: appModel, size: size, sizeClass: sizeClass) { window, model in
                 for mode in model.availableContentModes {
                     await model.setContentMode(mode)
-                    try await self.settle(window)
+                    try await waitForHostedLayout(window)
                     let scroll = try XCTUnwrap(self.scrollViews(in: window).first)
                     XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1)
                     let text = try self.capture(window, name: "\(name)-\(mode.rawValue)")
@@ -43,10 +43,10 @@ final class LibraryPresentationTests: XCTestCase {
                     }
                     if mode == .titles {
                         scroll.setContentOffset(CGPoint(x: 0, y: 400), animated: false)
-                        try await self.settle(window)
+                        try await waitForHostedLayout(window)
                         let offset = scroll.contentOffset.y
                         await model.loadFirstPageIfNeeded()
-                        try await self.settle(window)
+                        try await waitForHostedLayout(window)
                         XCTAssertEqual(scroll.contentOffset.y, offset, accuracy: 1,
                                        "An unchanged library must not jump on return.")
                     } else {
@@ -75,7 +75,7 @@ final class LibraryPresentationTests: XCTestCase {
                 ) { window, model in
                     for mode in model.availableContentModes {
                         await model.setContentMode(mode)
-                        try await self.settle(window)
+                        try await waitForHostedLayout(window)
                         let page = try XCTUnwrap(self.scrollViews(in: window).first)
                         XCTAssertLessThanOrEqual(page.contentSize.width, page.bounds.width + 1)
                         let text = try self.capture(window, name: "large-text-\(sizeClass)-\(textSize)-\(light)-\(mode.rawValue)")
@@ -117,10 +117,10 @@ final class LibraryPresentationTests: XCTestCase {
                 for mode in [LibraryContentMode.titles, .collections, .playlists, .recommended, .titles] {
                     if mode == .collections {
                         page.setContentOffset(CGPoint(x: 0, y: 400), animated: false)
-                        try await self.settle(window)
+                        try await waitForHostedLayout(window)
                     }
                     await model.setContentMode(mode)
-                    try await self.settle(window)
+                    try await waitForHostedLayout(window)
                     let currentTabs = try XCTUnwrap(self.scrollViews(in: window).dropFirst().first)
                     let frame = currentTabs.convert(currentTabs.bounds, to: window)
                     let offset = page.contentOffset.y + page.adjustedContentInset.top
