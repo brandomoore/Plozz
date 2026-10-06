@@ -3,6 +3,32 @@ import Foundation
 import XCTest
 
 final class LibraryQueryTests: XCTestCase {
+    func testEmptyRecordStorageEstimateContainsOnlyTheRecordStride() {
+        let record = LibraryQueryRecord(MediaItem(id: "", title: "", kind: .movie))
+        XCTAssertEqual(record.estimatedStorageBytes, MemoryLayout<LibraryQueryRecord>.stride)
+    }
+
+    func testStorageEstimateIncludesUTF8OptionalFieldsAndCollectionOverheads() {
+        var record = LibraryQueryRecord(MediaItem(id: "id", title: "é", kind: .movie))
+        record.sortName = "猫"
+        record.originalTitle = "📺"
+        record.contentRating = "PG"
+        record.reference.accountID = "ac"
+        record.seriesID = "ser"
+        record.genres = ["a", "🎬"]
+        record.providerIDs = ["tmdb": "42", "é": "猫"]
+        record.reference.sources = [
+            MediaSourceRef(accountID: "a", itemID: "item", libraryID: "lib",
+                           serverName: "TV", accountName: "é", edition: "猫"),
+            MediaSourceRef(accountID: "b", itemID: "two")
+        ]
+
+        // 53 UTF-8 bytes, two genre entries at 24 bytes, and two provider entries at 48 bytes.
+        let expected = MemoryLayout<LibraryQueryRecord>.stride
+            + 2 * MemoryLayout<MediaSourceRef>.stride + 197
+        XCTAssertEqual(record.estimatedStorageBytes, expected)
+    }
+
     func testDuplicatesCountsDistinctItemsRatherThanRepeatedReferences() {
         let first = MediaSourceRef(accountID: "account", itemID: "first", kind: .movie)
         let second = MediaSourceRef(accountID: "account", itemID: "second", kind: .movie)
