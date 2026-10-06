@@ -381,6 +381,7 @@ class FastlanePipelineTests(unittest.TestCase):
                 self.assertFalse(options[key])
         self.assertTrue(result["git_parameters"].endswith("'safe.bareRepository=all'"))
         self.assertIn("'test.preserve=value'", result["git_parameters"])
+        self.assertTrue(all(options["clean"] is False for options in result["options"]))
 
     def test_real_apple_version_resolver_uses_catalog_and_pins_the_invocation(self) -> None:
         source = FASTFILE_HARNESS.split("module AppleBuildLease")[0] + r"""
@@ -448,6 +449,32 @@ puts JSON.generate(commands: harness.instance_variable_get(:@commands).map { |c|
         result = self.ruby(FASTFILE_HARNESS, SCENARIO="symbol_preflight_failure")
         self.assertEqual(result["events"], ["symbol preflight"])
         self.assertEqual(result["error"], "symbol preflight failed")
+
+    def test_real_symbol_helpers_are_callable_before_the_build_lane(self) -> None:
+        source = FASTFILE_HARNESS.split("module AppleBuildLease")[0] + r"""
+def harness.sh(command)
+  (@commands ||= []) << command
+  raise "symbol check failed" if ENV["SCENARIO"] == "symbol_preflight_failure"
+  ""
+end
+begin
+  harness.require_sentry_symbols
+  harness.upload_sentry_symbols
+rescue => e
+  error = e.message
+end
+puts JSON.generate(commands: harness.instance_variable_get(:@commands), error: error)
+"""
+        result = self.ruby(source)
+        self.assertIsNone(result["error"])
+        self.assertEqual(result["commands"], [
+            "cd .. && python3 tools/upload-sentry-symbols.py --check",
+            f"cd .. && python3 tools/upload-sentry-symbols.py {ROOT}/build/Plozz-tvOS.xcarchive",
+            f"cd .. && python3 tools/upload-sentry-symbols.py {ROOT}/build/Plozz-iOS.xcarchive",
+        ])
+        failed = self.ruby(source, SCENARIO="symbol_preflight_failure")
+        self.assertEqual(failed["error"], "symbol check failed")
+        self.assertEqual(failed["commands"], result["commands"][:1])
 
     def test_app_store_symbols_precede_any_apple_changes(self) -> None:
         source = FASTFILE_HARNESS.replace("begin\n  harness.beta", """

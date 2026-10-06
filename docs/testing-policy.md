@@ -111,7 +111,8 @@ reported as focused results, never as a full-suite pass.
 When translatable source/copy, comments, plurals, or permission text changed,
 complete extraction and the reviewed delta pipeline in `translations.md` before
 publication. An empty delta needs no artifact assembly/import. Distribution
-still requires its existing full validation, signing, and localization safeguards.
+uses the risk-based release selection below; signing, archive verification,
+localization, and release-note approval remain required.
 
 An interrupted landing may reuse a completed phase only when its consumed
 source/configuration, toolchain/SDK, package workspace, simulator runtime, and
@@ -156,6 +157,65 @@ negative focus-observation windows intact; continuously animated fixtures are
 not candidates for this helper. Viewport, Dynamic Type, OCR, and pixel assertions
 must remain unchanged. Record actual timings rather than assuming a shorter
 sleep improves a run.
+
+### TestFlight: risk-based checks and a frozen candidate
+
+TestFlight preparation is not an automatic full-matrix main gate. Select checks
+from the net change since the last distributed build and the evidence already
+collected during development. Record the selection, evidence, omitted suites,
+and remaining stages before starting expensive work.
+
+| Change | Default additional validation |
+| --- | --- |
+| Narrow UI change | Affected hosted tests on the affected platform |
+| Shared behavior | Relevant package suites and affected platform integration tests |
+| Broad or high-risk change, inadequate evidence | Expand to the necessary full suites |
+| Release tooling only | Offline orchestration tests, then the real archive/export checks |
+| Notes or ordinary documentation only | Catalog/rendering and relevant integrity checks; no app test sweep |
+
+Run cheap release preflight first: verify credentials without printing them,
+symbol-upload prerequisites, release identity, and catalog validity. After
+release-tooling changes, run `python3 -m unittest discover -s tools/tests -p
+test_fastlane_pipeline.py` before app tests or archives. The offline suite must
+exercise real helper registration, not only mocked lane implementations.
+
+Integrate the intended main revision once, complete requested fixes and
+localization, commit the notes, and freeze the candidate before approval and
+expensive validation. Record its exact commit and approved platform renderings.
+Do not pull subsequent main changes into a frozen release automatically. If new
+content is explicitly added, reassess only affected coverage and renew content
+approval rather than restarting every stage.
+
+Reuse passing evidence when its consumed source/configuration and execution
+inputs match. A commit hash or conservative cache miss alone does not justify
+rerunning every suite: inspect the delta and record a narrower coverage decision.
+Do not label stale results as current or a focused run as a full-suite pass.
+Tooling, test, or documentation-only changes do not invalidate app behavior
+evidence when their lack of effect on its inputs is demonstrated.
+
+Recover at the failed stage. Diagnose an assertion before rerunning tests;
+rerun the affected scope after a fix. Retry an infrastructure failure in a new
+bounded invocation without cleanup, preserving completed independent results.
+Do not restart passing platforms or package suites just because another stage
+failed. Stop and report a repeated infrastructure failure instead of entering an
+unbounded retry loop.
+
+The signed distribution archives are the release compile/signing checks; do not
+require two additional Debug device builds merely to permit them. Local device
+delivery is a separate operation and may reuse a verified exact-source Debug
+artifact. An unavailable device must not block TestFlight. Keep project writers
+serial in a worktree; independent device installation and upload checks may run
+alongside work that does not mutate their artifacts.
+Archives use Xcode's incremental build instead of an unconditional clean.
+Artifact identity and export checks still apply to both platforms before upload.
+
+Always retain localization freshness and reviewed translation requirements,
+explicit note approval, both-platform archive/export identity and signature
+checks, symbol uploads, and actual processing/distribution verification.
+Never skip a known relevant failure. Selected-release retries retain their
+version/build and use partial-upload receipts instead of starting another build.
+Report the current stage and blocker when the plan changes; do not present a
+main merge as completion of a still-pending TestFlight release.
 
 ### 3. Fail fast — you learn a result in seconds, not minutes
 

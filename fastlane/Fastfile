@@ -197,17 +197,6 @@ def require_crash_reporting_dsn
     return
   end
 
-  def require_sentry_symbols
-    sh("cd .. && python3 tools/upload-sentry-symbols.py --check")
-  end
-
-  def upload_sentry_symbols
-    RELEASE_TARGETS.each do |target|
-      archive = File.join(REPO_ROOT, target[:archive_path])
-      sh("cd .. && python3 tools/upload-sentry-symbols.py #{archive.shellescape}")
-    end
-  end
-
   config_path = File.join(
     ENV["XDG_CONFIG_HOME"] || File.join(Dir.home, ".config"), "plozz", "env"
   )
@@ -219,6 +208,17 @@ def require_crash_reporting_dsn
     "  PLOZZ_SENTRY_DSN=https://<key>@o<org>.ingest.<region>.sentry.io/<project>\n\n" \
     "To ship blind anyway: PLOZZ_ALLOW_NO_CRASH_REPORTING=1 fastlane beta --env fastlane"
   )
+end
+
+def require_sentry_symbols
+  sh("cd .. && python3 tools/upload-sentry-symbols.py --check")
+end
+
+def upload_sentry_symbols
+  RELEASE_TARGETS.each do |target|
+    archive = File.join(REPO_ROOT, target[:archive_path])
+    sh("cd .. && python3 tools/upload-sentry-symbols.py #{archive.shellescape}")
+  end
 end
 
 # Apple keeps one version series while Plozz publishes dated, numbered
@@ -566,7 +566,7 @@ lane :build do |options|
                  " -authenticationKeyID #{ENV['ASC_KEY_ID'].shellescape}" \
                  " -authenticationKeyIssuerID #{ENV['ASC_ISSUER_ID'].shellescape}"
   end
-  RELEASE_TARGETS.each_with_index do |target, index|
+  RELEASE_TARGETS.each do |target|
     UI.header("Archiving #{target[:name]}")
     generate_project
     build_app(
@@ -577,7 +577,7 @@ lane :build do |options|
       output_directory: OUTPUT_DIR,
       output_name: target[:output_name],
       archive_path: target[:archive_path],
-      clean: index.zero?,
+      clean: false,
       xcargs: prov_args,
       **swift_package_build_options(target)
     )

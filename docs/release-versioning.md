@@ -73,6 +73,10 @@ catalog markup or URLs.
 
 Use the documented local signing/API configuration; never commit credentials.
 Builds retain a shared Apple build lease and platform-private package workspaces.
+Follow the risk-based TestFlight procedure in [testing-policy.md](testing-policy.md):
+freeze the candidate, reuse relevant evidence, and run only justified additional
+tests. Distribution archives provide build/signing evidence; a full test sweep
+and separate Debug builds are not automatic release prerequisites.
 
 ```sh
 # Local archive only; not upload permission.
