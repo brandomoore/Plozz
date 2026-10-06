@@ -88,6 +88,9 @@ a positive duration. Existing URL catalogues refresh once for revised mapping
 without resetting the account; previously imported files need reimporting to
 apply that mapping. Account-backed IPTV channels pass the same active-profile
 authorization checks during enrollment, loading and playback.
+Bracketed availability notices such as `[NO PUBLIC STREAM]` are skipped, not
+resolved into fake relative channel URLs. Valid relative addresses, encoded
+filenames and IPv6 streams remain supported.
 Explicit XMLTV guides are ordered, with separate first-guide-origin headers;
 Xtream otherwise uses its native guide API. Auto-discovered guide URLs on
 another origin require explicit configuration for URL-based playlists.
@@ -752,6 +755,26 @@ Leaving the Live TV destination releases playback and invalidates pending tunes,
 including when a native tab keeps its view alive. Ordinary playback tears down
 on background entry; explicit mobile PiP/AirPlay follows the authorization-gated
 continuation policy below.
+
+## IPTV compatibility checks
+
+`ProviderIPTVTests` includes controlled Basic, bearer, cookie, custom-header,
+signed-query and Xtream authentication cases. They exercise sign-in, catalogue
+import, provider restoration and actual requests through the playback proxy;
+rejected/expired accounts and HTML login pages cannot create successful sessions.
+All credentials are synthetic. This does not certify a particular paid provider,
+DRM service or browser-based login flow.
+
+For an opt-in public corpus, run `python3 tools/iptv-playlist-corpus.py` before
+running `ProviderIPTVTests` through the package test runner. It captures nine
+public channel lists, with byte counts, hashes and independent HTTP-entry counts,
+under `.build/iptv-playlist-corpus`. The test replays those exact snapshots through
+account sign-in, channel enrollment and the guide loader, checking that channels
+are retained without inventing movie/TV libraries. It makes no external requests.
+The downloader fails explicitly for unavailable sources; ordinary runs skip only
+the corpus test when no snapshot manifest exists. Captured catalogues stay out of
+Git. These are import/routing checks, not a claim that every listed stream is
+online, playable in every country, or fast on every physical device.
 
 ## Developer test inputs and artwork
 

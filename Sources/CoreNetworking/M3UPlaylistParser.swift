@@ -512,7 +512,9 @@ public struct M3UPlaylistParser: Sendable {
     }
 
     private func supportedURL(_ text: String, relativeTo baseURL: URL?) -> URL? {
+        // Availability notices are not relative paths, even when Foundation can encode them as one.
         guard text.count <= 16_384,
+              !(text.hasPrefix("[") && text.hasSuffix("]")),
               let url = URL(string: text, relativeTo: baseURL)?.absoluteURL,
               let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme),

@@ -115,6 +115,34 @@ final class IPTVProviderTests: XCTestCase {
         XCTAssertEqual(parser.takeCatalogEntries().count, 1)
     }
 
+    func testBracketedPlaceholdersAreNotResolvedAgainstThePlaylistOrigin() throws {
+        let input = """
+        #EXTM3U
+        #EXTINF:-1,Unavailable
+        [NO PUBLIC STREAM]
+        #EXTINF:-1,Relative
+        ../channel.m3u8
+        #EXTINF:-1,Encoded filename
+        %5BChannel%5D.m3u8
+        #EXTINF:-1,IPv6
+        https://[::1]/channel.m3u8
+        #EXTINF:-1,Unsupported
+        rtsp://provider.example/channel
+        #EXTINF:-1,Missing address
+        |User-Agent=Fixture
+
+        """
+        let parser = M3UPlaylistParser(baseURL: URL(string: "https://provider.example/lists/channels.m3u8"))
+        let legacy = try parser.parse(input)
+        XCTAssertEqual(legacy.channels.map(\.name), ["Relative", "Encoded filename", "IPv6"])
+        XCTAssertEqual(legacy.skippedEntryCount, 3)
+        var stream = parser.makeCatalogStream()
+        try stream.append(Data(input.utf8))
+        let result = try stream.finish()
+        XCTAssertEqual(stream.takeCatalogEntries().map(\.channel.name), ["Relative", "Encoded filename", "IPv6"])
+        XCTAssertEqual(result.skippedEntryCount, 3)
+    }
+
     func testRedirectsRemoveHeadersAndRejectCopiedSecretsAndDowngrades() throws {
         let origin = try XCTUnwrap(URL(string: "https://provider.example/list?password=fixture-secret"))
         var original = URLRequest(url: origin)

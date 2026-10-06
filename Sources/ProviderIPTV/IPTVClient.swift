@@ -4,7 +4,7 @@ import CryptoKit
 import Foundation
 
 actor IPTVClient {
-    private static let playlistCatalogScope = "playlist-v2"
+    private static let playlistCatalogScope = "playlist-v3"
     let credential: IPTVCredential
     private let http: IPTVHTTP
     private let artworkSecrets: [String]

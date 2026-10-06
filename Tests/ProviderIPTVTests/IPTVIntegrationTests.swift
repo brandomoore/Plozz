@@ -169,6 +169,36 @@ final class IPTVIntegrationTests: XCTestCase {
         XCTAssertEqual(channels.count, 1)
     }
 
+    func testPreviousURLCatalogRefreshesToRemovePlaceholderChannels() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let credential = try IPTVCredential(mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list")))
+        do {
+            let old = try IPTVCatalog(
+                url: root.appendingPathComponent(credential.identity.uuidString + ".sqlite"), key: credential.catalogKey
+            )
+            try old.insert(IPTVRecord(
+                item: MediaItem(id: "live:placeholder", title: "Unavailable", kind: .video, libraryID: "live"),
+                streamURL: XCTUnwrap(URL(string: "https://provider.test/%5BNO%20PUBLIC%20STREAM%5D")), isLive: true
+            ))
+            try old.setState("playlist-v2", String(Date().timeIntervalSince1970))
+        }
+        IPTVFixture.state.handler = { _ in
+            (200, [:], Data("""
+            #EXTM3U
+            #EXTINF:-1,Unavailable
+            [NO PUBLIC STREAM]
+            #EXTINF:-1,News
+            https://provider.test/live/news.m3u8
+
+            """.utf8))
+        }
+        let client = try IPTVClient(credential: credential, directory: root, configuration: configuration())
+        let channels = try await client.liveChannels()
+        XCTAssertEqual(channels.map(\.name), ["News"])
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+    }
+
     func testGuideHeadersAreOriginScopedAndSmallResponsesAreReused() async throws {
         IPTVFixture.state.handler = { _ in (200, ["Cache-Control": "max-age=300"], Data("<tv/>".utf8)) }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -335,13 +365,15 @@ final class IPTVIntegrationTests: XCTestCase {
     }
 
     private func configuration() -> URLSessionConfiguration {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [IPTVFixture.self]
-        return configuration
+        IPTVFixture.configuration()
     }
 
     private static func xtream(_ request: URLRequest) throws -> IPTVFixture.Response {
         let components = try XCTUnwrap(request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) })
+        guard components.queryItems?.first(where: { $0.name == "username" })?.value == "fixture-user",
+              components.queryItems?.first(where: { $0.name == "password" })?.value == "fixture-password" else {
+            return (401, [:], Data())
+        }
         let action = components.queryItems?.first { $0.name == "action" }?.value
         let payload: String
         switch action {
@@ -362,9 +394,15 @@ final class IPTVIntegrationTests: XCTestCase {
     }
 }
 
-private final class IPTVFixture: URLProtocol, @unchecked Sendable {
+final class IPTVFixture: URLProtocol, @unchecked Sendable {
     typealias Response = (Int, [String: String], Data)
     static let state = State()
+
+    static func configuration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [IPTVFixture.self]
+        return configuration
+    }
 
     final class State: @unchecked Sendable {
         private let lock = NSLock()
