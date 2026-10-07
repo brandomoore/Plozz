@@ -774,19 +774,32 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     }
 
     /// Ordered explicit candidates followed by source-compatible legacy URL
-    /// fallbacks for the requested presentation role.
-    public func artworkReferences(for placement: ArtworkPlacement) -> [ArtworkReference] {
+    /// fallbacks. Library-first heroes restore the server-selected backdrop or
+    /// primary sidecar ahead of the planner's alternate-image recommendations.
+    public func artworkReferences(
+        for placement: ArtworkPlacement,
+        preferringLibrarySelection: Bool = false
+    ) -> [ArtworkReference] {
         var references = artworkSelections
             .first(where: { $0.placement == placement })?
             .references ?? []
+        let legacy = legacyArtworkURLs(for: placement).map(ArtworkReference.remote)
         if placement == .homeHero || placement == .detailBackdrop {
+            if preferringLibrarySelection {
+                // Home keeps the primary sidecar; Details may have been reordered
+                // for variety. Server URL fields retain the server-selected image.
+                let primaryLocal = artworkSelections.first { $0.placement == .homeHero }?
+                    .references.filter { if case .networkFile = $0 { true } else { false } } ?? []
+                let local = references.filter { if case .networkFile = $0 { true } else { false } }
+                references = primaryLocal + local + legacy + references
+            }
             references = references.filter { reference in
                 guard case .networkFile(let network) = reference else { return true }
                 guard let dimensions = network.dimensions else { return false }
                 return dimensions.aspectRatio <= 3
             }
         }
-        references.append(contentsOf: legacyArtworkURLs(for: placement).map(ArtworkReference.remote))
+        references.append(contentsOf: legacy)
         var seen = Set<ArtworkReference>()
         return references.filter { seen.insert($0).inserted }
     }

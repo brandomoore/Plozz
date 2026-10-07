@@ -62,4 +62,24 @@ final class HeroArtworkPlacementTests: XCTestCase {
             references.contains(.remote(URL(string: "https://example.test/poster.jpg")!))
         )
     }
+
+    func testTouchHeroesHonorLibrarySelectionWithoutChangingRecommendedVariety() throws {
+        let selected = try XCTUnwrap(URL(string: "https://example.test/selected.jpg"))
+        let alternative = try XCTUnwrap(URL(string: "https://example.test/alternative.jpg"))
+        var item = makeItem(hasLogo: true)
+        item.heroBackdropURL = selected
+        item.artworkSelections = [
+            .init(placement: .homeHero, references: [.remote(selected), .remote(alternative)]),
+            .init(placement: .detailBackdrop, references: [.remote(alternative), .remote(selected)])
+        ]
+        for style in [HeroArtworkStyle.landscape, .compactPortrait] {
+            let home = HeroPresentation(item: item, artworkStyle: style, surface: .home)
+            let detail = HeroPresentation(item: item, artworkStyle: style, surface: .detail)
+            XCTAssertEqual(home.artworkReferences.first, .remote(selected))
+            XCTAssertEqual(detail.artworkReferences.first, .remote(alternative))
+            XCTAssertEqual(home.artworkReferences(preferringLibrarySelection: true).first, .remote(selected))
+            XCTAssertEqual(detail.artworkReferences(preferringLibrarySelection: true).first, .remote(selected))
+            XCTAssertEqual(detail.artworkReferences(preferringLibrarySelection: false).first, .remote(alternative))
+        }
+    }
 }

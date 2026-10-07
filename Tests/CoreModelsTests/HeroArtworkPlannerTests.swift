@@ -156,6 +156,35 @@ final class HeroArtworkPlannerTests: XCTestCase {
         XCTAssertEqual(home, [ref("a"), ref("b"), ref("c")])
         XCTAssertEqual(detail, [ref("b"), ref("a"), ref("c")])
     }
+
+    func testLibrarySelectionSurvivesListingToDetailEnrichment() throws {
+        let selected = try XCTUnwrap(URL(string: "https://server.example/selected.jpg"))
+        let alternative = ref("alternative")
+        let listing = MediaItem(
+            id: "movie", title: "Movie", kind: .movie, heroBackdropURL: selected
+        )
+        var detail = listing
+        detail.artworkSelections = HeroArtworkPlanner.selections(for: [
+            .init(reference: .remote(selected), origin: .server, score: 1),
+            .init(reference: alternative, origin: .server)
+        ])
+
+        XCTAssertEqual(detail.artworkReferences(for: .detailBackdrop).first, alternative)
+        for item in [listing, detail] {
+            for placement in [ArtworkPlacement.homeHero, .detailBackdrop] {
+                XCTAssertEqual(
+                    item.artworkReferences(for: placement, preferringLibrarySelection: true).first,
+                    .remote(selected)
+                )
+            }
+        }
+        XCTAssertEqual(
+            detail.artworkReferences(for: .detailBackdrop, preferringLibrarySelection: true),
+            [.remote(selected), alternative],
+            "Other images stay available when the server-selected backdrop fails."
+        )
+        XCTAssertEqual(detail.artworkReferences(for: .detailBackdrop).first, alternative)
+    }
 }
 
 /// Coverage for the detail hero's legacy ladder.

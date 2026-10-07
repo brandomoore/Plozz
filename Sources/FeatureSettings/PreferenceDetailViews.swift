@@ -10,6 +10,7 @@ struct AppearanceDetailView: View {
     let librariesScope: ProfileLibrariesScope
     /// Keeps the selected Appearance feature stable while navigation shell changes.
     let settingsNavigation: SettingsNavigationModel
+    var canManageProviders = false
     @Bindable var theme: ThemeSettingsModel
     /// Circadian Mode (night-warming) settings, folded in as sections here — it's
     /// a display concern, so it no longer earns its own top-level row.
@@ -72,6 +73,25 @@ struct AppearanceDetailView: View {
                     description: "Scales card size, columns and spacing across the app.",
                 ) {
                     CompactDisplaySizePicker(selection: $density.density)
+                },
+                SettingsSplitRow(
+                    id: "artwork",
+                    title: "Artwork"
+                ) {
+                    VStack(alignment: .leading, spacing: 32) {
+                        ArtworkSettingsControls(cards: cardStyle)
+                        if canManageProviders {
+                            VStack(alignment: .leading, spacing: 12) {
+                                NavigationLink(value: SettingsRoute.metadata) {
+                                    Label("Online services", systemImage: "globe")
+                                }
+                                .accessibilityIdentifier("artwork-metadata-providers")
+                                Text("Shared by all profiles.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 },
                 SettingsSplitRow(
                     id: "cards",

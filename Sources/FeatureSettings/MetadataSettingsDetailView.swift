@@ -266,7 +266,7 @@ public struct MetadataSettingsDetailView: View {
                     title: orderModeTitle
                 )
 
-                Text("Artwork preferences are in Appearance > Cards and belong to each profile.")
+                Text("Artwork preferences are in Appearance > Artwork and belong to each profile.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

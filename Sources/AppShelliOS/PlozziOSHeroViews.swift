@@ -908,6 +908,7 @@ private struct PlozziOSHeroPictureLayout {
 private struct PlozziOSHeroBackdrop: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     let presentation: HeroPresentation
     let asyncFallbackURL: (@Sendable () async -> URL?)?
@@ -997,7 +998,7 @@ private struct PlozziOSHeroBackdrop: View {
 
     private func stillArtwork() -> some View {
         FallbackAsyncImage(
-            references: presentation.artworkReferences,
+            references: presentation.artworkReferences(preferringLibrarySelection: !artworkPolicy.prefersOnlineArtwork),
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             // Put a real picture up while the 2000px pass decodes, rather
@@ -1254,6 +1255,7 @@ struct PlozziOSStationaryHeroScrim: View {
 struct PlozziOSHomeWipeBackdrop: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(HeroTrailerController.self) private var trailerController
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @State private var artworkAppearanceID = UUID().uuidString
 
     let item: MediaItem
@@ -1304,7 +1306,7 @@ struct PlozziOSHomeWipeBackdrop: View {
         width: CGFloat
     ) -> some View {
         HomeHeroBackdrop(
-            references: presentation.artworkReferences,
+            references: presentation.artworkReferences(preferringLibrarySelection: !artworkPolicy.prefersOnlineArtwork),
             asyncFallbackURL: onlineArtworkFallback,
             slideID: item.id,
             forward: forward,
@@ -1441,6 +1443,7 @@ struct PlozziOSHomeStaticBackdrop: View {
 
 private struct PlozziOSSlidingHeroArtwork: View {
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     let presentation: HeroPresentation
     let asyncFallbackURL: (@Sendable () async -> URL?)?
@@ -1470,7 +1473,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
 
     private var artwork: some View {
         FallbackAsyncImage(
-            references: presentation.artworkReferences,
+            references: presentation.artworkReferences(preferringLibrarySelection: !artworkPolicy.prefersOnlineArtwork),
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
@@ -1488,7 +1491,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
 
     private func mirroredEdge(alignment: Alignment) -> some View {
         FallbackAsyncImage(
-            references: presentation.artworkReferences,
+            references: presentation.artworkReferences(preferringLibrarySelection: !artworkPolicy.prefersOnlineArtwork),
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
@@ -1508,6 +1511,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
 
 private struct PlozziOSHeroReflection: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     let presentation: HeroPresentation
     let asyncFallbackURL: (@Sendable () async -> URL?)?
@@ -1522,7 +1526,7 @@ private struct PlozziOSHeroReflection: View {
     var body: some View {
         ZStack {
             FallbackAsyncImage(
-                references: presentation.artworkReferences,
+                references: presentation.artworkReferences(preferringLibrarySelection: !artworkPolicy.prefersOnlineArtwork),
                 maxAspectRatio: 3,
                 variant: .heroBackdrop,
                 previewVariant: .heroPreview,

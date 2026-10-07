@@ -9,8 +9,16 @@ public enum ArtworkPreference: String, CaseIterable, Codable, Identifiable, Send
     public var displayName: LocalizedStringResource {
         switch self {
         case .recommended: "Recommended"
-        case .library: "Prefer library artwork"
+        case .library: "Prefer my library's artwork"
         case .online: "Prefer online artwork"
+        }
+    }
+
+    public var detail: LocalizedStringResource {
+        switch self {
+        case .recommended: "Movies and shows prefer images from online providers. Music prefers artwork from your library."
+        case .library: "Prefers the images supplied by your libraries."
+        case .online: "Prefers images Plozz finds through online services."
         }
     }
 }
@@ -36,6 +44,21 @@ public enum ArtworkArea: String, CaseIterable, Codable, Identifiable, Sendable {
         case .downloads: "Downloads"
         }
     }
+
+    public var detail: LocalizedStringResource? {
+        switch self {
+        case .home: "Backgrounds, logos, and Home rows."
+        case .continueWatching: "Online artwork favors images without text. Library artwork keeps your chosen images."
+        case .browse: "Libraries, collections, and playlists."
+        case .search, .watchlist: nil
+        case .details: "Backdrops, logos, and related titles."
+        case .episodes: "Episode thumbnails."
+        case .playback: "Player menus and Now Playing."
+        case .music: "Covers, artist images, and the music player."
+        case .topShelf: "Apple TV Home Screen."
+        case .downloads: "Applies when you queue new downloads. Existing downloads keep their artwork."
+        }
+    }
 }
 
 public enum ArtworkOverride: String, CaseIterable, Identifiable, Sendable {
@@ -45,9 +68,9 @@ public enum ArtworkOverride: String, CaseIterable, Identifiable, Sendable {
 
     public var displayName: LocalizedStringResource {
         switch self {
-        case .automatic: "Default"
-        case .library: "Library first"
-        case .online: "Online first"
+        case .automatic: "Use default"
+        case .library: ArtworkPreference.library.displayName
+        case .online: ArtworkPreference.online.displayName
         }
     }
 }
@@ -80,6 +103,10 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
 
     public func prefersTextlessArtwork(in area: ArtworkArea) -> Bool {
         area == .continueWatching && prefersOnlineArtwork(in: area)
+    }
+
+    public func inheritedPreference(in area: ArtworkArea) -> ArtworkPreference {
+        ArtworkSettings(preference: preference).prefersOnlineArtwork(in: area) ? .online : .library
     }
 
     public func override(for area: ArtworkArea) -> ArtworkOverride {

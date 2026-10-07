@@ -645,7 +645,8 @@ private struct PlozziOSSettingsSplitView: View {
                 cardStyle: appModel.settings.cardStyle,
                 density: appModel.settings.density,
                 watchIndicator: appModel.settings.watchIndicator,
-                navigation: appModel.settings.navigation
+                navigation: appModel.settings.navigation,
+                canManageProviders: !isParentalSealed
             )
         case .home:
             PlozziOSHomeSettingsView(
@@ -974,7 +975,8 @@ private struct PlozziOSSettingsCompactMenu: View {
                         cardStyle: appModel.settings.cardStyle,
                         density: appModel.settings.density,
                         watchIndicator: appModel.settings.watchIndicator,
-                        navigation: appModel.settings.navigation
+                        navigation: appModel.settings.navigation,
+                        canManageProviders: !isParentalSealed
                     )
                 } label: {
                     Label("Appearance", systemImage: "paintpalette")
@@ -1734,6 +1736,7 @@ struct PlozziOSAppearanceSettingsView: View {
     @Bindable var density: UIDensitySettingsModel
     @Bindable var watchIndicator: WatchStatusIndicatorSettingsModel
     @Bindable var navigation: NavigationStyleSettingsModel
+    var canManageProviders = false
     @Environment(AppLanguageSettingsModel.self) private var appLanguage
 
     private var navigationLibrariesScope: ProfileLibrariesScope {
@@ -1815,6 +1818,28 @@ struct PlozziOSAppearanceSettingsView: View {
                 }
             }
 
+            SettingsSectionGroup("Artwork") {
+                NavigationLink("Artwork") {
+                    List {
+                        SettingsSectionGroup {
+                            ArtworkSettingsControls(cards: cardStyle)
+                        }
+                        if canManageProviders {
+                            SettingsSectionGroup {
+                                NavigationLink("Online services") {
+                                    PlozziOSMetadataSettingsView(deps: appModel.makeMetadataSettingsDependencies())
+                                }
+                                .accessibilityIdentifier("artwork-metadata-providers")
+                            } footer: {
+                                Text("Shared by all profiles.")
+                            }
+                        }
+                    }
+                    .settingsPageSurface()
+                    .navigationTitle("Artwork")
+                }
+                .accessibilityIdentifier("appearance-artwork")
+            }
             SettingsSectionGroup("Cards") {
                 NavigationLink("Cards") {
                     CardAppearanceControls(cards: cardStyle, watchIndicator: watchIndicator)

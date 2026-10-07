@@ -14,14 +14,8 @@ import MetadataKit
 extension HomeHeroView {
     // MARK: - Backdrop
 
-    /// The ordered primary backdrop URLs for a slide — mirroring `DetailHeroView`:
-    /// the **server's own hero/backdrop art first** (for a Jellyfin episode the
-    /// series backdrop rides on `fallbackArtworkURL`; for Plex it's already in
-    /// `heroBackdropURL`), then the router-resolved art. The router is only a
-    /// *fallback* here (via `backdropFallback`), never the primary — resolving it
-    /// first is what made episode slides show a different, low-res image than the
-    /// detail page. Any resolved art is prepended (it's the server art for whole
-    /// titles, or the router hero only when the server gave none).
+    /// Remote candidates for warming. The renderer independently applies the
+    /// source preference before first paint, including online-first lookups.
     func primaryBackdropURLs(for item: MediaItem) -> [URL] {
         primaryBackdropReferences(for: item).compactMap {
             if case .remote(let url) = $0 { return url }
@@ -30,19 +24,24 @@ extension HomeHeroView {
     }
 
     /// Ordered references preserve direct-share artwork through the same UIKit wipe
-    /// as remote artwork. Local references lead; the router keeps its historic
-    /// precedence over legacy remote references.
+    /// as remote artwork. Library-first keeps the selected image ahead of any
+    /// previously resolved fallback; Recommended retains its existing ordering.
     func primaryBackdropReferences(for item: MediaItem) -> [ArtworkReference] {
-        let explicit = item.artworkReferences(for: .homeHero)
+        let prefersLibrary = !artworkPolicy.forArea(.home).prefersOnlineArtwork
+        let explicit = item.artworkReferences(
+            for: .homeHero, preferringLibrarySelection: prefersLibrary
+        )
         var references = explicit.filter {
             if case .networkFile = $0 { return true }
             return false
         }
-        references.append(contentsOf: resolvedBackdrop[item.id].map { [ArtworkReference.remote($0)] } ?? [])
+        let resolved = resolvedBackdrop[item.id].map { [ArtworkReference.remote($0)] } ?? []
+        if !prefersLibrary { references.append(contentsOf: resolved) }
         references.append(contentsOf: explicit.filter {
             if case .remote = $0 { return true }
             return false
         })
+        if prefersLibrary { references.append(contentsOf: resolved) }
         var seen = Set<ArtworkReference>()
         let ladder = references.filter { seen.insert($0).inserted }
         // Keyed on the router's answer as well as the item, so the line is emitted

@@ -42,6 +42,52 @@ final class ArtworkSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.overrides, [.search: .online])
     }
 
+    func testRemovingCustomizationsAppliesTheMainPreferenceToEveryView() {
+        for preference in [ArtworkPreference.library, .online] {
+            var settings = ArtworkSettings(
+                preference: preference,
+                overrides: [.browse: .library, .music: .online]
+            )
+            settings.resetOverrides()
+            XCTAssertEqual(settings.preference, preference)
+            for area in ArtworkArea.allCases {
+                XCTAssertEqual(settings.override(for: area), .automatic)
+                XCTAssertEqual(settings.prefersOnlineArtwork(in: area), preference == .online)
+            }
+        }
+    }
+
+    func testRecommendedWithBrowseCustomizedRetainsTheMusicDefault() {
+        var settings = ArtworkSettings(overrides: [.browse: .library])
+        XCTAssertFalse(settings.prefersOnlineArtwork(in: .browse))
+        XCTAssertFalse(settings.prefersOnlineArtwork(in: .music))
+        XCTAssertTrue(settings.prefersOnlineArtwork(in: .home))
+        settings.preference = .online
+        settings.preference = .recommended
+        XCTAssertEqual(settings.overrides, [.browse: .library])
+        XCTAssertFalse(settings.prefersOnlineArtwork(in: .music))
+        settings.resetOverrides()
+        XCTAssertEqual(settings.preference, .recommended)
+        XCTAssertTrue(settings.prefersOnlineArtwork(in: .browse))
+        XCTAssertFalse(settings.prefersOnlineArtwork(in: .music))
+    }
+
+    func testDisplayedInheritedSourceIgnoresOverridesAndTracksThePreset() {
+        var settings = ArtworkSettings()
+        settings.setOverride(.library, for: .browse)
+        settings.setOverride(.online, for: .music)
+        XCTAssertEqual(settings.inheritedPreference(in: .browse), .online)
+        XCTAssertEqual(settings.inheritedPreference(in: .music), .library)
+        settings.preference = .library
+        XCTAssertEqual(settings.inheritedPreference(in: .browse), .library)
+        XCTAssertEqual(settings.inheritedPreference(in: .music), .library)
+        XCTAssertTrue(settings.prefersOnlineArtwork(in: .music))
+        settings.preference = .online
+        XCTAssertFalse(settings.prefersOnlineArtwork(in: .browse))
+        settings.setOverride(.automatic, for: .browse)
+        XCTAssertTrue(settings.prefersOnlineArtwork(in: .browse))
+    }
+
     func testMigrationPreservesLibraryPreferenceWithoutChangingProviderSettings() throws {
         let name = "ArtworkSettingsTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

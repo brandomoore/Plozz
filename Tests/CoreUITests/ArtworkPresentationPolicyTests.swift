@@ -73,6 +73,34 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
         XCTAssertTrue(source.policy.prefersOnlineArtwork)
     }
 
+    func testBackdropSourcesRespectPerAreaLibraryOverrides() throws {
+        let selected = try XCTUnwrap(URL(string: "https://library.example.test/selected.jpg"))
+        let alternate = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://library.example.test/alternate.jpg")))
+        let item = MediaItem(
+            id: "series", title: "Series", kind: .series, heroBackdropURL: selected,
+            artworkSelections: [.init(placement: .detailBackdrop, references: [alternate, .remote(selected)])]
+        )
+        var settings = ArtworkSettings()
+        settings.setOverride(.library, for: .details)
+        let policy = ArtworkPresentationPolicy(area: .home, settings: settings)
+        XCTAssertEqual(
+            MediaArtworkSource(item: item, placement: .detailBackdrop, policy: policy.forArea(.details)).references.first,
+            .remote(selected)
+        )
+        XCTAssertEqual(
+            MediaArtworkSource(item: item, placement: .detailBackdrop, policy: policy.forArea(.playback)).references.first,
+            alternate
+        )
+        #if os(tvOS)
+        let detail = DetailBackdropArtworkSource(item: item, policy: policy)
+        let recommended = DetailBackdropArtworkSource(item: item, policy: .init())
+        XCTAssertEqual(detail.references.first, .remote(selected))
+        XCTAssertEqual(recommended.references.first, alternate)
+        XCTAssertNotEqual(detail.key, recommended.key)
+        XCTAssertNotEqual(detail.previewKey, recommended.previewKey)
+        #endif
+    }
+
     #if canImport(UIKit)
     func testLibraryFirstUsesSuppliedNetworkFileWithoutAnOnlineLookup() async throws {
         let reference = try NetworkArtworkReference(

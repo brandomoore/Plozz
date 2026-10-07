@@ -18,6 +18,7 @@ public struct HeroPresentation: Sendable, Equatable {
     public let kind: MediaItemKind
     public let title: String   // l10n:content — media title from the server
     public let artworkReferences: [ArtworkReference]
+    private let libraryArtworkReferences: [ArtworkReference]
     public let logoReferences: [ArtworkReference]
     public let metadataComponents: [String]
     public let metadataText: String?
@@ -50,6 +51,10 @@ public struct HeroPresentation: Sendable, Equatable {
             style: artworkStyle,
             surface: surface,
             drawsLogoOverArtwork: !logos.isEmpty
+        )
+        libraryArtworkReferences = Self.artworkReferences(
+            for: item, style: artworkStyle, surface: surface,
+            drawsLogoOverArtwork: !logos.isEmpty, preferringLibrarySelection: true
         )
         logoReferences = logos
         metadataComponents = item.metadataComponents()
@@ -96,7 +101,12 @@ public struct HeroPresentation: Sendable, Equatable {
         if item.kind == .episode, let parent = nonempty(item.parentTitle) {
             return parent
         }
+
         return nonempty(item.title) ?? item.title
+    }
+
+    public func artworkReferences(preferringLibrarySelection: Bool) -> [ArtworkReference] {
+        preferringLibrarySelection ? libraryArtworkReferences : artworkReferences
     }
 
     /// - Parameter drawsLogoOverArtwork: whether the hero will lay a title logo
@@ -110,7 +120,8 @@ public struct HeroPresentation: Sendable, Equatable {
         for item: MediaItem,
         style: HeroArtworkStyle,
         surface: HeroPresentationSurface,
-        drawsLogoOverArtwork: Bool = false
+        drawsLogoOverArtwork: Bool = false,
+        preferringLibrarySelection: Bool = false
     ) -> [ArtworkReference] {
         let landscapePlacement: ArtworkPlacement = surface == .home
             ? .homeHero
@@ -121,7 +132,9 @@ public struct HeroPresentation: Sendable, Equatable {
             : [landscapePlacement, .poster]
         var seen = Set<ArtworkReference>()
         return placements
-            .flatMap { item.artworkReferences(for: $0) }
+            .flatMap {
+                item.artworkReferences(for: $0, preferringLibrarySelection: preferringLibrarySelection)
+            }
             .filter { seen.insert($0).inserted }
     }
 

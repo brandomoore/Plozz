@@ -1231,6 +1231,7 @@ struct PlozziOSHomeView: View {
 }
 
 private struct PlozziOSHomeHeroCarousel: View {
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozziOSHeroContainerHeight) private var heroContainerHeight
@@ -1679,7 +1680,7 @@ private struct PlozziOSHomeHeroCarousel: View {
             item: item,
             artworkStyle: horizontalSizeClass == .compact ? .compactPortrait : .landscape,
             surface: .home
-        ).artworkReferences
+        ).artworkReferences(preferringLibrarySelection: !artworkPolicy.forArea(.home).prefersOnlineArtwork)
         return references.contains {
             ArtworkImageCache.shared.cachedImage(for: $0, variant: .heroBackdrop) != nil
         }
@@ -1950,7 +1951,7 @@ private struct PlozziOSHomeHeroCarousel: View {
             item: item,
             artworkStyle: style,
             surface: .home
-        ).artworkReferences
+        ).artworkReferences(preferringLibrarySelection: !artworkPolicy.forArea(.home).prefersOnlineArtwork)
     }
 
     /// Decodes the full-size artwork for the slides either side of this one.

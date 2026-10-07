@@ -28,7 +28,10 @@ struct DetailBackdropArtworkSource {
 
     init(item: MediaItem, policy: ArtworkPresentationPolicy) {
         self.init(
-            references: item.artworkReferences(for: .detailBackdrop),
+            references: item.artworkReferences(
+                for: .detailBackdrop,
+                preferringLibrarySelection: !policy.forArea(.details).prefersOnlineArtwork
+            ),
             pinIdentity: "detail:\(item.id)",
             settings: policy.forArea(.details).metadataSettings,
             fallback: DetailBackdropArtwork.fallback(

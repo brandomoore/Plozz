@@ -132,6 +132,7 @@ struct HomeHeroView: View {
     @Environment(\.plozzPinnedSidebarInteraction) private var pinnedSidebarInteraction
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.seasonRequestContextID) private var seasonRequestContextID
+    @Environment(\.plozzArtworkPolicy) var artworkPolicy
 
     /// The index of the slide currently fronted.
     /// Internal (not private) so the artwork extension in a sibling file can center

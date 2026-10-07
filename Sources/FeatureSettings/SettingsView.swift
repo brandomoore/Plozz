@@ -1040,6 +1040,7 @@ public struct SettingsView: View {
             AppearanceDetailView(
                 librariesScope: context.librariesScope,
                 settingsNavigation: navigation,
+                canManageProviders: metadataSettings != nil && !isParentalSealed,
                 theme: theme,
                 nightShift: nightShift,
                 spoilers: spoilers

@@ -3,24 +3,18 @@ import CoreModels
 import CoreUI
 import SwiftUI
 
-struct ArtworkSettingsControls: View {
-    @Bindable var cards: CardStyleSettingsModel
+public struct ArtworkSettingsControls: View {
+    @Bindable private var cards: CardStyleSettingsModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Picker("Artwork", selection: $cards.artwork.preference) {
-                ForEach(ArtworkPreference.allCases) { preference in
-                    Text(preference.displayName).tag(preference)
-                }
-            }
-            #if os(tvOS)
-            .pickerStyle(.segmented)
-            #endif
-            .accessibilityIdentifier("artwork-preference")
-            Text("Recommended favors clean backdrops behind titles and your library's music covers. Library first trusts your artwork as supplied. Missing artwork can fall back to the other source.")
-                .font(.footnote)
-                        .foregroundStyle(.secondary)
+    public init(cards: CardStyleSettingsModel) { self.cards = cards }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            Text("Choose the posters, backgrounds, and logos you see.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            ArtworkPresetPicker(settings: $cards.artwork)
             NavigationLink {
                 ArtworkCustomizationView(cards: cards)
             } label: {
@@ -33,12 +27,12 @@ struct ArtworkSettingsControls: View {
                         if !dynamicTypeSize.isAccessibilitySize { Spacer() }
                         Group {
                             if cards.artwork.overrides.isEmpty {
-                                Text("Default everywhere")
+                                Text("Using defaults")
                             } else {
                                 Text("\(cards.artwork.overrides.count) customized")
                             }
                         }
-                            .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary)
                     }
                     #if os(tvOS)
                     Image(systemName: "chevron.right").accessibilityHidden(true)
@@ -46,12 +40,43 @@ struct ArtworkSettingsControls: View {
                 }
             }
             .accessibilityIdentifier("artwork-customization")
+            if !cards.artwork.overrides.isEmpty {
+                ArtworkResetButton(settings: $cards.artwork)
+            }
+            NavigationLink("About artwork sources") {
+                ArtworkSourcesHelpView()
+            }
+            .accessibilityIdentifier("artwork-source-help")
         }
     }
 }
 
-private struct ArtworkCustomizationView: View {
+private struct ArtworkPresetPicker: View {
+    @Binding var settings: ArtworkSettings
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ArtworkChoiceGroup {
+                ForEach(ArtworkPreference.allCases) { preference in
+                    ArtworkChoiceRow(
+                        title: preference.displayName,
+                        isSelected: settings.preference == preference
+                    ) {
+                        settings.preference = preference
+                    }
+                    .accessibilityIdentifier("artwork-preset-\(preference.rawValue)")
+                }
+            }
+            Text(settings.preference.detail)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct ArtworkCustomizationView: View {
     @Bindable var cards: CardStyleSettingsModel
+    var selection: Binding<String?>? = nil
 
     private var areas: [ArtworkArea] {
         #if os(tvOS)
@@ -67,27 +92,28 @@ private struct ArtworkCustomizationView: View {
             title: "Artwork by view",
             rows: areas.map { area in
                 SettingsSplitRow(
-                    id: area.rawValue,
-                    title: area.displayName,
-                    description: "Choices apply to this profile across all libraries. Continue Watching prefers textless artwork unless you choose Library first."
+                    id: area.rawValue, title: area.displayName, description: area.detail
                 ) {
-                    ArtworkAreaPicker(area: area, settings: $cards.artwork)
-                        .pickerStyle(.segmented)
+                    ArtworkAreaChoices(area: area, settings: $cards.artwork)
                 }
             } + [
-                SettingsSplitRow(id: "reset", title: "Reset all to default") {
+                SettingsSplitRow(
+                    id: "reset", title: "Remove view customizations",
+                    description: "All views will follow your main artwork preference."
+                ) {
                     ArtworkResetButton(settings: $cards.artwork)
                 }
-            ]
+            ],
+            selection: selection
         )
         #else
         List {
-            SettingsSectionGroup {
-                ForEach(areas) { area in
-                    ArtworkAreaPicker(area: area, settings: $cards.artwork)
+            ForEach(areas) { area in
+                SettingsSectionGroup(area.displayName) {
+                    ArtworkAreaChoices(area: area, settings: $cards.artwork)
+                } footer: {
+                    if let detail = area.detail { Text(detail) }
                 }
-            } footer: {
-                Text("Choices apply to this profile across all libraries. Continue Watching prefers textless artwork unless you choose Library first.")
             }
             SettingsSectionGroup {
                 ArtworkResetButton(settings: $cards.artwork)
@@ -99,20 +125,76 @@ private struct ArtworkCustomizationView: View {
     }
 }
 
-private struct ArtworkAreaPicker: View {
+struct ArtworkAreaChoices: View {
     let area: ArtworkArea
     @Binding var settings: ArtworkSettings
 
     var body: some View {
-        Picker(area.displayName, selection: Binding(
-            get: { settings.override(for: area) },
-            set: { settings.setOverride($0, for: area) }
-        )) {
+        ArtworkChoiceGroup {
             ForEach(ArtworkOverride.allCases) { option in
-                Text(option.displayName).tag(option)
+                ArtworkChoiceRow(
+                    title: title(for: option),
+                    isSelected: settings.override(for: area) == option
+                ) {
+                    settings.setOverride(option, for: area)
+                }
+                .accessibilityIdentifier("artwork-view-\(area.rawValue)-\(option.rawValue)")
             }
         }
-        .accessibilityIdentifier("artwork-view-\(area.rawValue)")
+    }
+
+    private func title(for option: ArtworkOverride) -> LocalizedStringResource {
+        switch option {
+        case .automatic:
+            settings.inheritedPreference(in: area) == .online
+                ? "Use default: online preferred"
+                : "Use default: library preferred"
+        case .library, .online: option.displayName
+        }
+    }
+}
+
+private struct ArtworkChoiceGroup<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        #if os(tvOS)
+        SettingsCheckGroup {
+            VStack(alignment: .leading, spacing: 8, content: content)
+        }
+        #else
+        VStack(alignment: .leading, spacing: 20, content: content)
+        #endif
+    }
+}
+
+private struct ArtworkChoiceRow: View {
+    let title: LocalizedStringResource
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        #if os(tvOS)
+        SettingsCheckableRow(
+            title: Text(title), isChecked: isSelected,
+            flushLeading: false, action: action
+        )
+        #else
+        Button(action: action) {
+            HStack(spacing: 16) {
+                Text(title)
+                    .font(.body.weight(.medium))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "checkmark")
+                    .opacity(isSelected ? 1 : 0)
+                    .accessibilityHidden(true)
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        #endif
     }
 }
 
@@ -120,8 +202,64 @@ private struct ArtworkResetButton: View {
     @Binding var settings: ArtworkSettings
 
     var body: some View {
-        Button("Reset all to default") { settings.resetOverrides() }
+        Button("Remove view customizations") { settings.resetOverrides() }
             .disabled(settings.overrides.isEmpty)
+            .accessibilityIdentifier("artwork-remove-customizations")
+    }
+}
+
+struct ArtworkSourcesHelpView: View {
+    var selection: Binding<String?>? = nil
+
+    var body: some View {
+        #if os(tvOS)
+        SettingsSplitLayout(
+            title: "About artwork sources",
+            rows: ArtworkSourceHelpTopic.allCases.map { topic in
+                SettingsSplitRow(id: topic.rawValue, title: topic.title) {
+                    Text(topic.detail)
+                        .foregroundStyle(.secondary)
+                }
+            },
+            selection: selection
+        )
+        #else
+        List {
+            ForEach(ArtworkSourceHelpTopic.allCases) { topic in
+                SettingsSectionGroup(topic.title) {
+                    Text(topic.detail)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .settingsPageSurface()
+        .navigationTitle("About artwork sources")
+        #endif
+    }
+}
+
+enum ArtworkSourceHelpTopic: String, CaseIterable, Identifiable {
+    case library, online, preferences
+
+    var id: String { rawValue }
+
+    var title: LocalizedStringResource {
+        switch self {
+        case .library: "Your library's artwork"
+        case .online: "Online artwork"
+        case .preferences: "Your preferences"
+        }
+    }
+
+    var detail: LocalizedStringResource {
+        switch self {
+        case .library:
+            "Images supplied by Plex, Jellyfin, or Emby, and image files saved beside media on network shares. This includes the artwork you selected in your server."
+        case .online:
+            "Images Plozz finds separately through online services, such as TMDB or TheTVDB. They may be the same images your library uses. In Online services, Recommended lets Plozz choose services. Custom uses your saved order and turns off services you disable."
+        case .preferences:
+            "These choices apply to this profile. Missing images can fall back to another source. Changing the main preference keeps view customizations. Choose Use default for one view, or Remove view customizations for all."
+        }
     }
 }
 #endif

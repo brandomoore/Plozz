@@ -19,7 +19,7 @@ struct PlozziOSMetadataSettingsView: View {
 
     var body: some View {
         Form {
-            Text("Metadata providers and caches are shared by every profile on this device. Artwork preferences are in Appearance > Cards and belong to each profile.")
+            Text("Metadata providers and caches are shared by every profile on this device. Artwork preferences are in Appearance > Artwork and belong to each profile.")
                 .font(.footnote)
                 .plozzForeground(.secondary)
                 .listRowInsets(EdgeInsets())

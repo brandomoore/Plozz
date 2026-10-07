@@ -84,6 +84,28 @@ final class ArtworkReferenceTests: XCTestCase {
         XCTAssertTrue(decoded.artworkSelections.isEmpty)
     }
 
+    func testLibraryHeroUsesPrimarySidecarAheadOfAlternateAndEnrichedRemoteArtwork() throws {
+        let primary = ArtworkReference.networkFile(try networkReference(catalogArtworkID: "primary"))
+        let alternate = ArtworkReference.networkFile(try networkReference(catalogArtworkID: "alternate"))
+        let online = try XCTUnwrap(URL(string: "https://example.com/enriched.jpg"))
+        let item = MediaItem(
+            id: "share", title: "Share", kind: .movie, heroBackdropURL: online,
+            artworkSelections: [
+                .init(placement: .homeHero, references: [primary, alternate]),
+                .init(placement: .detailBackdrop, references: [alternate, primary])
+            ]
+        )
+        XCTAssertEqual(item.artworkReferences(for: .detailBackdrop).first, alternate)
+        XCTAssertEqual(
+            item.artworkReferences(for: .detailBackdrop, preferringLibrarySelection: true),
+            [primary, alternate, .remote(online)]
+        )
+        XCTAssertEqual(
+            item.artworkReferences(for: .homeHero, preferringLibrarySelection: true).first,
+            primary
+        )
+    }
+
     func testEpisodeThumbnailLegacyReferencesStayEpisodeScoped() throws {
         let poster = try XCTUnwrap(URL(string: "https://example.com/episode.jpg"))
         let backdrop = try XCTUnwrap(URL(string: "https://example.com/episode-backdrop.jpg"))

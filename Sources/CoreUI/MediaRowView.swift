@@ -1321,7 +1321,10 @@ public struct MediaRowView: View {
         // compete with that request by also warming a different library image.
         if item.kind == .movie || item.kind == .series { return }
         #endif
-        let references = item.artworkReferences(for: .detailBackdrop)
+        let references = item.artworkReferences(
+            for: .detailBackdrop,
+            preferringLibrarySelection: !presentationArtworkPolicy.forArea(.details).prefersOnlineArtwork
+        )
         guard let reference = references.first else { return }
         activity.prefetchedHeroIDs.insert(item.stablePresentationID)
         ArtworkImageCache.shared.prefetch(reference, variant: .heroPreview)

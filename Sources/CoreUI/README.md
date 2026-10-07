@@ -80,14 +80,25 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   the shared group surface, separators, or tvOS control styles.
 - **Async artwork** — `FallbackAsyncImage` and `ArtworkImageCache`: an
   on-disk + in-memory image cache shared with `MetadataKit`'s URL cache,
-  with profile-scoped source choices in Appearance > Cards. Recommended prefers
+  with profile-scoped source choices in Appearance > Artwork. Recommended prefers
   online title artwork and library music covers. Library-first and online-first
   presets support independent overrides for Home, Continue Watching, Browse,
   Search, Watchlist, Details, Episodes, Playback, Music, Top Shelf, and Downloads
-  where available. Missing artwork can fall back to the other source.
+  where available. Use default displays the inherited source and follows later
+  preset changes; explicit overrides remain pinned until reset. The main page
+  keeps three direct preferences, a customization count, and source explanations
+  in About artwork sources. Remove view customizations clears only the overrides,
+  preserving the main preference. Cards retains
+  card presentation controls, not app-wide artwork policy. Missing artwork can
+  fall back to the other source.
   Provider enablement/order remains household-wide; changing appearance never
   enables a provider. The old library-artwork choice migrates to each profile,
   and the new preference transfers/syncs with that profile.
+  Library-first heroes honor the server-selected backdrop or primary share
+  sidecar rather than choosing a different image for Details or avoiding artwork
+  on the focused card. Recommended and online-first keep that variety. The
+  choice applies equally to first paint, prewarming, mobile reflections, and
+  later visits; alternative images remain fallbacks if the selected one fails.
   Continue Watching's recommended textless lookup is separate from source
   preference: explicit library-first uses supplied artwork without checking it
   online. SMB selections retain local and online candidates in the shared

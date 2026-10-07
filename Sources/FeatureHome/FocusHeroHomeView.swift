@@ -981,6 +981,7 @@ private struct FocusHeroBackdropLayer: View {
     let navigationStyle: NavigationStyle
     let isFrontmost: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     var body: some View {
         // Two thirds of the screen, top right, at a backdrop's own shape: the
@@ -1012,7 +1013,9 @@ private struct FocusHeroBackdropLayer: View {
     private func references(for subject: FocusHeroSubject) -> [ArtworkReference] {
         switch subject {
         case .item(let item):
-            HomeHeroArtwork.backdropReferences(for: item, avoiding: model.shownArtwork)
+            HomeHeroArtwork.backdropReferences(
+                for: item, avoiding: model.shownArtwork, policy: artworkPolicy.forArea(.home)
+            )
         case .library(let library):
             [library.library.imageURL].compactMap { $0 }.map(ArtworkReference.remote)
         }
