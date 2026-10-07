@@ -4,6 +4,8 @@ import Foundation
 /// opens a tuner; playback is a separate, explicitly owned operation.
 public protocol ServerLiveTVProviding: Sendable {
     func liveTVAvailability() async throws -> ServerLiveTVAvailability
+    /// Explicit source refreshes must not reuse an adapter's still-fresh channel catalog.
+    func refreshLiveTVAvailability() async throws -> ServerLiveTVAvailability
     func liveTVChannels() async throws -> [ServerLiveTVChannel]
     /// A window of at most 48 hours and 2,000 provider-local channel IDs.
     /// Prefer visible channels: some servers expose only per-channel/day EPG
@@ -14,6 +16,12 @@ public protocol ServerLiveTVProviding: Sendable {
         to: Date
     ) async throws -> [ServerLiveTVProgramme]
     func openLiveTVChannel(id: String) async throws -> any LiveTVStreamLease
+}
+
+public extension ServerLiveTVProviding {
+    func refreshLiveTVAvailability() async throws -> ServerLiveTVAvailability {
+        try await liveTVAvailability()
+    }
 }
 
 public struct ServerLiveTVAvailability: Equatable, Sendable {

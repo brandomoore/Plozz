@@ -110,9 +110,10 @@ public final class LiveTVServerEnrollmentCoordinator {
                     $0.phase = .loaded
                     $0.availability = availability
                 }
-                guard availability.hasChannels,
-                      availability.status == .available
-                        || availability.status == .unsupportedPlaybackMode else { continue }
+                let hasPlayableCatalog = availability.hasChannels
+                    && (availability.status == .available || availability.status == .unsupportedPlaybackMode)
+                let waitingForIPTVChannels = choice.kind == .iptv && availability.status == .noChannels
+                guard hasPlayableCatalog || waitingForIPTVChannels else { continue }
                 var latest: LiveTVSourcesConfiguration
                 let currentSuppression: Set<String>
                 do {

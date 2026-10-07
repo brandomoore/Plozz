@@ -207,7 +207,7 @@ public struct M3UPlaylistParser: Sendable {
             if lineByteCount > 0 { try consumeBufferedLine() }
             if isHLS { throw LiveTVSourceImportError.streamManifest }
             if pending != nil { skippedEntryCount += 1; pending = nil }
-            guard entryCount > 0 else { throw LiveTVSourceImportError.emptyPlaylist }
+            guard hasPlaylistStart else { throw LiveTVSourceImportError.emptyPlaylist }
             return M3UPlaylistImport(
                 channels: channels, entryCount: entryCount, skippedEntryCount: skippedEntryCount,
                 declaredGuideURLs: declaredGuideURLs, originURL: parser.baseURL
@@ -223,7 +223,8 @@ public struct M3UPlaylistParser: Sendable {
             }
             guard lineByteCount <= M3UPlaylistParser.maximumLineBytes else {
                 if !hasPlaylistStart {
-                    if indexesCatalog, lineBuffer.starts(with: Data("#EXTM3U".utf8)) {
+                    if indexesCatalog, lineBuffer.starts(with: Data("#EXTM3U ".utf8))
+                        || lineBuffer.starts(with: Data("#EXTM3U\t".utf8)) {
                         // Optional guide declarations can exceed the line budget;
                         // they must not reject an otherwise valid channel list.
                         try consumeLine("#EXTM3U")
@@ -257,7 +258,8 @@ public struct M3UPlaylistParser: Sendable {
             var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             if !hasPlaylistStart, line.hasPrefix("\u{FEFF}") { line.removeFirst() }
             guard !line.isEmpty else { return }
-            if !hasPlaylistStart, line.hasPrefix("#EXTM3U") {
+            if !hasPlaylistStart, line == "#EXTM3U"
+                || line.hasPrefix("#EXTM3U ") || line.hasPrefix("#EXTM3U\t") {
                 hasPlaylistStart = true
                 let attributes = parser.parseAttributes(String(line.dropFirst("#EXTM3U".count)))
                 for key in ["url-tvg", "x-tvg-url"] {
@@ -312,7 +314,7 @@ public struct M3UPlaylistParser: Sendable {
                 // Without EXTINF, only an absolute HTTP URL establishes a channel.
                 // Arbitrary text must never become a relative URL from an error page.
                 guard parser.isAbsoluteHTTPAddress(line) else {
-                    if !hasPlaylistStart { throw LiveTVSourceImportError.invalidPlaylist }
+                    if !hasPlaylistStart || entryCount == 0 { throw LiveTVSourceImportError.invalidPlaylist }
                     return
                 }
                 try countEntry()

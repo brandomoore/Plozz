@@ -10,32 +10,116 @@ final class IPTVAuthenticationTests: XCTestCase {
         super.tearDown()
     }
 
-    func testEmptyRemoteAndLocalPlaylistsCannotCreateAnAccount() async throws {
+    func testValidEmptyRemoteAndLocalPlaylistsCanCreateAnAccount() async throws {
         let body = Data("# Playlist name: Fixture\n# Last update: today\n\n#EXTM3U\n".utf8)
         IPTVFixture.state.handler = { _ in (200, ["Content-Type": "text/plain"], body) }
         let root = temporaryDirectory()
         let address = try XCTUnwrap(URL(string: "https://provider.test/list"))
         let credential = try IPTVCredential(mode: .playlist, address: address)
-        do {
-            _ = try await IPTVProvider.signIn(
-                credential: credential, name: "Empty", deviceID: "fixture",
-                cacheDirectory: root, configuration: IPTVFixture.configuration()
-            )
-            XCTFail("An empty remote playlist must not create an account.")
-        } catch {
-            XCTAssertEqual(error as? LiveTVSourceImportError, .emptyPlaylist)
-        }
-        XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+        let remote = try await IPTVProvider.signIn(
+            credential: credential, name: "Empty", deviceID: "fixture",
+            cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        XCTAssertEqual(try IPTVCredential.decode(remote.accessToken).identity, credential.identity)
+        XCTAssertEqual(IPTVFixture.state.requests.count, 2)
         let file = root.appendingPathComponent("empty.m3u")
         try body.write(to: file)
-        do {
-            _ = try await IPTVProvider.importFile(
-                file, credential: IPTVCredential(mode: .file, address: address),
-                name: "Empty", deviceID: "fixture", cacheDirectory: root
+        let local = try await IPTVProvider.importFile(
+            file, credential: IPTVCredential(mode: .file, address: address),
+            name: "Empty", deviceID: "fixture", cacheDirectory: root
+        )
+        for session in [remote, local] {
+            let provider = try IPTVProvider(
+                context: .init(session: session, accountID: "account", credentialRevision: .init(),
+                               localMediaContext: .init(accountID: "account", profileID: "empty", profileNamespace: nil)),
+                cacheDirectory: root, configuration: IPTVFixture.configuration()
             )
-            XCTFail("An empty local playlist must not create an account.")
-        } catch {
-            XCTAssertEqual(error as? LiveTVSourceImportError, .emptyPlaylist)
+            let availability = try await provider.liveTVAvailability()
+            let libraries = try await provider.libraries()
+            XCTAssertEqual(availability.status, .noChannels)
+            XCTAssertEqual(availability.channelCount, 0)
+            XCTAssertTrue(libraries.isEmpty)
+            await provider.teardown()
+        }
+    }
+
+    func testEventPlaylistRefreshBypassesCacheAndKeepsTheAccountAcrossEmptyLiveEmpty() async throws {
+        let empty = Data("# Playlist awaiting events\n#EXTM3U\n".utf8)
+        IPTVFixture.state.handler = { _ in (200, [:], empty) }
+        let root = temporaryDirectory()
+        let credential = try IPTVCredential(mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list")))
+        let session = try await IPTVProvider.signIn(
+            credential: credential, name: "Events", deviceID: "fixture",
+            cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        let context = ProviderResolutionContext(
+            session: session, accountID: "account", credentialRevision: .init(),
+            localMediaContext: .init(accountID: "account", profileID: "events", profileNamespace: nil)
+        )
+        let provider = try IPTVProvider(
+            context: context, cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        let live: any ServerLiveTVProviding = provider
+        let initial = try await live.liveTVAvailability()
+        XCTAssertEqual(initial.status, .noChannels)
+        IPTVFixture.state.handler = { _ in
+            (200, [:], Data("#EXTM3U\n#EXTINF:-1,Live event\nhttps://provider.test/event.ts\n".utf8))
+        }
+        let cached = try await live.liveTVAvailability()
+        XCTAssertEqual(cached.status, .noChannels)
+        XCTAssertEqual(IPTVFixture.state.requests.count, 2)
+        let active = try await live.refreshLiveTVAvailability()
+        let channels = try await live.liveTVChannels()
+        XCTAssertEqual(active.status, .available)
+        XCTAssertEqual(channels.map(\.name), ["Live event"])
+        XCTAssertEqual(IPTVFixture.state.requests.count, 3)
+
+        for (status, body) in [(200, Data()), (200, Data("<html>Sign in</html>".utf8)), (401, Data())] {
+            IPTVFixture.state.handler = { _ in (status, [:], body) }
+            do {
+                _ = try await live.refreshLiveTVAvailability()
+                XCTFail("An unsuccessful refresh must not clear an existing catalog.")
+            } catch {
+                XCTAssertTrue(error is LiveTVSourceImportError || error is IPTVError)
+            }
+            let retained = try await live.liveTVChannels()
+            XCTAssertEqual(retained, channels)
+        }
+        IPTVFixture.state.handler = { _ in (200, [:], empty) }
+        let ended = try await live.refreshLiveTVAvailability()
+        let afterEvent = try await live.liveTVChannels()
+        XCTAssertEqual(ended.status, .noChannels)
+        XCTAssertTrue(afterEvent.isEmpty)
+        XCTAssertEqual(provider.session, session)
+        await provider.teardown()
+
+        let restored = try IPTVProvider(
+            context: context, cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        let requests = IPTVFixture.state.requests.count
+        let restoredAvailability = try await restored.liveTVAvailability()
+        XCTAssertEqual(restoredAvailability.status, .noChannels)
+        XCTAssertEqual(IPTVFixture.state.requests.count, requests)
+        await restored.teardown()
+    }
+
+    func testBlankAndUnusablePlaylistsStillCannotCreateAccounts() async throws {
+        for input in ["", "# Only a comment\n", "#EXTM3U\n#EXTINF:-1,Missing URL\n",
+                      "#EXTM3U\n#EXTINF:-1,Unsupported URL\nftp://provider.test/event"] {
+            IPTVFixture.state.handler = { _ in (200, [:], Data(input.utf8)) }
+            let credential = try IPTVCredential(
+                mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list"))
+            )
+            do {
+                _ = try await IPTVProvider.signIn(
+                    credential: credential, name: "Rejected", deviceID: "fixture",
+                    cacheDirectory: temporaryDirectory(), configuration: IPTVFixture.configuration()
+                )
+                XCTFail("Missing playlist syntax or unusable entries must not create an account.")
+            } catch {
+                if input.contains("#EXTINF") { XCTAssertEqual(error as? IPTVError, .empty) }
+                else { XCTAssertEqual(error as? LiveTVSourceImportError, .emptyPlaylist) }
+            }
         }
     }
 

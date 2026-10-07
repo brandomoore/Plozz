@@ -6,6 +6,23 @@ import XCTest
 
 @MainActor
 final class LiveTVServerEnrollmentTests: XCTestCase {
+    func testEmptyIPTVSourceEnrollsOnceWithoutEnrollingUnavailableServers() async throws {
+        let context = EnrollmentContext()
+        context.add("events", kind: .iptv, provider: EnrollmentProvider(result: .init(status: .noChannels)))
+        context.add("empty-server", provider: EnrollmentProvider(result: .init(status: .noChannels)))
+        context.add("denied", kind: .iptv, provider: EnrollmentProvider(result: .init(status: .permissionDenied)))
+        context.add("offline", kind: .iptv, provider: EnrollmentProvider(result: .init(status: .serviceUnavailable)))
+        let coordinator = LiveTVServerEnrollmentCoordinator()
+        let added = await context.refresh(coordinator)
+        XCTAssertEqual(added, [LiveTVServerEnrollmentCoordinator.sourceID(accountID: "events")])
+        XCTAssertEqual(context.configuration.servers.map(\.accountID), ["events"])
+        XCTAssertEqual(coordinator.statuses.first?.availability?.status, .noChannels)
+        XCTAssertNil(coordinator.statuses.first?.failure)
+        let second = await context.refresh(coordinator)
+        XCTAssertTrue(second.isEmpty)
+        XCTAssertEqual(context.saveCount, 1)
+    }
+
     func testAllAuthorizedBackendsEnrollWithoutURLsOrTuningAndKeepStableIDs() async throws {
         let context = EnrollmentContext()
         for kind in [LiveTVPrototypeSource.plex, .jellyfin, .emby, .iptv] {

@@ -46,12 +46,15 @@ session persistence.
   actions capture the row's ID before mutating its collection. Reading a bound
   row from inside `removeAll` can overlap the collection's exclusive write
   access and crash Swift's runtime.
-- **IPTV setup distinguishes empty playlists from invalid files.** Header-only,
-  comment-only, and blank playlists report that no channels or videos were
-  supplied and ask for an updated playlist. Invalid content such as a web page
-  asks for an M3U file or direct download link instead. Both URL and file imports
-  preserve the shared parser error without creating an account; diagnostics
-  classify empty content separately from malformed content.
+- **Valid empty IPTV playlists can be saved.** A playlist with an `#EXTM3U`
+  header needs no current entries: event providers can publish channels later.
+  URL and file imports retain these accounts, and authorized IPTV sources remain
+  visible with zero channels. Refresh fetches the URL again instead of reusing
+  the provider's 30-minute catalog cache; a successful empty response removes
+  ended events without removing the source. Failed downloads retain the previous
+  catalog. Blank/comment-only responses without a playlist header, invalid content
+  such as a web page, and playlists containing only unusable entries still fail
+  setup without creating an account. Imported files remain device-local snapshots.
 - **IPTV setup keeps optional configuration behind a disclosure.** Playlist
   authentication, guides, and request headers live under Advanced options;
   required Xtream credentials stay in Connection. Existing advanced settings
@@ -71,9 +74,10 @@ session persistence.
   other profiles' explicit selections are unchanged.
   Explicitly adding the same playlist again selects its existing account, without
   duplicating it; this also repairs accounts saved by older incomplete setup flows.
-  Settings enrolls newly authorized IPTV channels using the same guarded
-  source registration as Live TV, so a source appears without first visiting
-  the player. Removed or disabled sources stay removed or disabled.
+  Settings enrolls newly authorized IPTV sources, including empty event
+  playlists, using the same guarded source registration as Live TV, so a source
+  appears without first visiting the player. Removed or disabled sources stay
+  removed or disabled.
 - **In-app setup preserves its starting page.** tvOS keeps the signed-in
   navigation tree mounted underneath account setup, including Sources inside
   Live TV settings. Finishing or cancelling returns to that page. First-run

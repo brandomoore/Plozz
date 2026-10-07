@@ -228,6 +228,11 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         return ServerLiveTVAvailability(status: count > 0 ? .available : .noChannels, channelCount: count)
     }
 
+    public func refreshLiveTVAvailability() async throws -> ServerLiveTVAvailability {
+        try await client.ensureCatalog("live", force: true)
+        return try await liveTVAvailability()
+    }
+
     public func liveTVChannels() async throws -> [ServerLiveTVChannel] {
         try await client.liveChannels()
     }

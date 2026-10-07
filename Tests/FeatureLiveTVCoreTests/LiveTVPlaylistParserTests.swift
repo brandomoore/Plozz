@@ -5,14 +5,11 @@ import XCTest
 @testable import FeatureLiveTVCore
 
 final class LiveTVPlaylistParserTests: XCTestCase {
-    func testEmptyPlaylistsAreNotReportedAsUnsupportedFiles() throws {
+    func testEmptyResponsesWithoutAPlaylistHeaderStillFail() throws {
         for input in [
-            "", " \r\n\t", "# Playlist awaiting channels\n",
-            "#EXTM3U", "\u{FEFF}#EXTM3U\r\n",
-            "# Playlist name: Fixture\n# Last update: today\n\n#EXTM3U\n"
+            "", " \r\n\t", "# Playlist awaiting channels\n", "#EXTM3Uinvalid\n"
         ] {
-            let parser = LiveTVPlaylistParser()
-            XCTAssertThrowsError(try parser.parse(input)) {
+            XCTAssertThrowsError(try LiveTVPlaylistParser().parse(input)) {
                 XCTAssertEqual($0 as? LiveTVSourceImportError, .emptyPlaylist)
             }
             var stream = M3UPlaylistParser().makeCatalogStream()
@@ -20,7 +17,39 @@ final class LiveTVPlaylistParserTests: XCTestCase {
             XCTAssertThrowsError(try stream.finish()) {
                 XCTAssertEqual($0 as? LiveTVSourceImportError, .emptyPlaylist)
             }
+        }
+    }
+
+    func testValidEmptyEventPlaylistsAreAcceptedByBothParserModes() throws {
+        for input in [
+            "#EXTM3U", "\u{FEFF}#EXTM3U\r\n",
+            "# Playlist name: Fixture\n# Last update: today\n\n#EXTM3U\n"
+        ] {
+            let result = try LiveTVPlaylistParser().parse(input)
+            XCTAssertTrue(result.channels.isEmpty)
+            XCTAssertEqual(result.entryCount, 0)
+            XCTAssertEqual(result.skippedEntryCount, 0)
+            var stream = M3UPlaylistParser().makeCatalogStream()
+            for byte in input.utf8 { try stream.append(byte) }
+            XCTAssertEqual(try stream.finish().entryCount, 0)
             XCTAssertTrue(stream.takeCatalogEntries().isEmpty)
+        }
+        let result = try LiveTVPlaylistParser().parse("#EXTM3U url-tvg=\"https://example.test/guide.xml\"\n")
+        XCTAssertEqual(result.declaredGuideURLs.map(\.absoluteString), ["https://example.test/guide.xml"])
+    }
+
+    func testAHeaderCannotDisguiseInvalidContentAsAnEmptyPlaylist() throws {
+        for input in ["#EXTM3U\n<html>Sign in</html>", "#EXTM3U\n{\"error\":\"expired\"}"] {
+            XCTAssertThrowsError(try LiveTVPlaylistParser().parse(input)) {
+                XCTAssertEqual($0 as? LiveTVSourceImportError, .invalidPlaylist)
+            }
+            XCTAssertThrowsError(try {
+                var stream = M3UPlaylistParser().makeCatalogStream()
+                try stream.append(Data(input.utf8))
+                return try stream.finish()
+            }()) {
+                XCTAssertEqual($0 as? LiveTVSourceImportError, .invalidPlaylist)
+            }
         }
     }
 

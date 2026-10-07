@@ -71,6 +71,14 @@ through Files into the same disk-backed catalogue. File catalogues remain on
 the importing device; they are not copied by account sync. Use a playlist URL
 for a source that should refresh independently on multiple devices.
 
+Event playlists can be added before their streams go live. A valid `#EXTM3U`
+playlist with no entries is saved and remains in Sources with zero channels.
+Refreshing Live TV or Sources checks the provider again, bypassing the IPTV
+catalog's normal 30-minute cache. Newly published channels appear on refresh;
+a successful empty response clears ended events without deleting the source.
+Failed downloads preserve the previous catalog. Blank responses, web pages,
+and lists containing only unusable entries still fail validation.
+
 The first-run chooser selects a provider, not a playback destination. Its
 **IPTV** entry opens the playlist/provider connection form directly, just as
 account management does. **Live TV** is a destination inside the app: it can

@@ -85,6 +85,14 @@ final class IPTVLibrarySelectionHostedTests: XCTestCase {
     #endif
 
     func testEnrolledPlaylistAppearsOnTheAlreadyOpenSourcesScreen() async throws {
+        try await assertPlaylistAppears(channelCount: 1)
+    }
+
+    func testEmptyEventPlaylistAppearsOnTheAlreadyOpenSourcesScreen() async throws {
+        try await assertPlaylistAppears(channelCount: 0)
+    }
+
+    private func assertPlaylistAppears(channelCount: Int) async throws {
         let suite = "IPTVSourcesHostedTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
@@ -99,7 +107,7 @@ final class IPTVLibrarySelectionHostedTests: XCTestCase {
         let profile = profiles.activeProfile
         let secure = InMemorySecureStore()
         let store = LiveTVSourcesStore(secureStore: secure)
-        let provider = HostedIPTVSourceProvider()
+        let provider = HostedIPTVSourceProvider(channelCount: channelCount)
         let runtime = LiveTVSourcesRuntime(
             profileID: profile.id, store: store,
             approvals: LiveTVSourceApprovalStore(defaults: defaults, profileID: profile.id, namespace: nil),
@@ -253,14 +261,17 @@ private struct ReturningSourcesNavigationFixture: View {
 #endif
 
 private actor HostedIPTVSourceProvider: ServerLiveTVProviding {
+    let channelCount: Int
     private(set) var requested = false
     private var released = false
     private var continuation: CheckedContinuation<Void, Never>?
 
+    init(channelCount: Int) { self.channelCount = channelCount }
+
     func liveTVAvailability() async throws -> ServerLiveTVAvailability {
         requested = true
         if !released { await withCheckedContinuation { continuation = $0 } }
-        return .init(status: .available, channelCount: 1)
+        return .init(status: channelCount > 0 ? .available : .noChannels, channelCount: channelCount)
     }
 
     func release() {

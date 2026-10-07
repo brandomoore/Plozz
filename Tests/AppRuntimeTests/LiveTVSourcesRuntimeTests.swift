@@ -7,6 +7,38 @@ import XCTest
 
 @MainActor
 final class LiveTVSourcesRuntimeTests: XCTestCase {
+    func testEmptyEventSourceStaysRegisteredAsEventsAppearAndEnd() async throws {
+        let fixture = try SourcesRuntimeFixture()
+        defer { fixture.removeOwnedFiles() }
+        try fixture.addIPTVChoice()
+        await fixture.provider.setChannels([])
+        let runtime = fixture.runtime()
+        defer { runtime.invalidate() }
+
+        await runtime.restore()
+        let saved = try fixture.store.load()
+        XCTAssertEqual(saved.servers.map(\.accountID), ["iptv"])
+        XCTAssertTrue(runtime.catalog.catalog.channels.isEmpty)
+        XCTAssertNil(runtime.catalog.issue)
+
+        await runtime.catalog.refresh()
+        XCTAssertEqual(runtime.catalog.imports.serverSources.first?.availability?.status, .noChannels)
+        XCTAssertNil(runtime.catalog.imports.serverSources.first?.failure)
+        await fixture.provider.setChannels([.init(id: "event", name: "Live event")])
+        await runtime.catalog.refresh()
+        XCTAssertEqual(runtime.catalog.catalog.channels.map(\.name), ["Live event"])
+        XCTAssertEqual(runtime.catalog.imports.serverSources.first?.availability?.status, .available)
+
+        await fixture.provider.setChannels([])
+        await runtime.catalog.refresh()
+        XCTAssertTrue(runtime.catalog.catalog.channels.isEmpty)
+        XCTAssertEqual(runtime.catalog.imports.serverSources.first?.availability?.status, .noChannels)
+        XCTAssertEqual(try fixture.store.load(), saved)
+        XCTAssertNil(runtime.catalog.issue)
+        let refreshes = await fixture.provider.refreshes
+        XCTAssertEqual(refreshes, 3)
+    }
+
     func testSettingsRegistersIPTVWithoutFirstOpeningLiveTVOrRefreshingTheGuide() async throws {
         let fixture = try SourcesRuntimeFixture()
         defer { fixture.removeOwnedFiles() }
@@ -426,17 +458,26 @@ private final class SourcesRuntimeFixture {
 private actor SourcesRuntimeProvider: ServerLiveTVProviding {
     let gate: SourcesRuntimeLoadGate?
     private(set) var checks = 0
+    private(set) var refreshes = 0
+    private var channels: [ServerLiveTVChannel] = [.init(id: "channel", name: "IPTV channel")]
 
     init(gate: SourcesRuntimeLoadGate?) { self.gate = gate }
+
+    func setChannels(_ channels: [ServerLiveTVChannel]) { self.channels = channels }
 
     func liveTVAvailability() async throws -> ServerLiveTVAvailability {
         checks += 1
         await gate?.suspend()
-        return .init(status: .available, channelCount: 1)
+        return .init(status: channels.isEmpty ? .noChannels : .available, channelCount: channels.count)
+    }
+
+    func refreshLiveTVAvailability() async throws -> ServerLiveTVAvailability {
+        refreshes += 1
+        return try await liveTVAvailability()
     }
 
     func liveTVChannels() async throws -> [ServerLiveTVChannel] {
-        [.init(id: "channel", name: "IPTV channel")]
+        channels
     }
 
     func liveTVGuide(channelIDs: [String], from: Date, to: Date) async throws -> [ServerLiveTVProgramme] { [] }
