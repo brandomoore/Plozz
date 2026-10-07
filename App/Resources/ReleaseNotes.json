@@ -11,10 +11,10 @@
         {
           "category": "New",
           "items": [
-            "IPTV accounts with Xtream sign-in or authenticated playlist URLs, including live channels, movies, and shows supplied by your provider.",
-            "Trakt sign-in syncs per profile through iCloud.",
+            "Add IPTV services for live TV, movies, and shows.",
+            "Sync each profile's Trakt sign-in with iCloud.",
             {
-              "text": "Device-local playlist files can be added as IPTV accounts.",
+              "text": "Add IPTV libraries from playlist files on your device.",
               "platforms": ["iOS"]
             }
           ]
@@ -22,29 +22,29 @@
         {
           "category": "Updated",
           "items": [
-            "Navigation hides unused pages and opens Live TV by default for live-only setups.",
-            "More consistent cast, directors, writers, studios, and genres across library providers.",
-            "Silo ratings appear in Home and details using Silo's selected sources and order.",
-            "Clearer Live TV source setup, guide options, source status, and channel checks.",
-            "More responsive loading and browsing of large Live TV lineups.",
-            "Simpler iCloud settings and clearer progress and results for recovery actions.",
-            "Clearer PIN keys over artwork gradients.",
-            "Restored Live TV player card rounding and original channel-logo corners.",
-            "Clearer diagnostic recording indicator.",
+            "Fewer empty pages, with Live TV first for live-only setups.",
+            "More complete cast, crew, studio, and genre details.",
+            "Silo ratings now follow your Silo settings.",
+            "Easier Live TV setup, guide setup, and channel checks.",
+            "Faster loading and browsing of large channel lists.",
+            "Simpler iCloud settings and clearer reload and reset messages.",
+            "PIN buttons are easier to see.",
+            "Restored the Live TV player's card and logo corners.",
+            "Smaller, clearer recording indicator.",
             {
-              "text": "Episode labels stay visible, with consistent spacing and focus movement.",
+              "text": "Episode labels stay visible and move smoothly as you browse.",
               "platforms": ["tvOS"]
             },
             {
-              "text": "Settings opens over your current page, keeping its navigation and scroll position.",
+              "text": "Settings keeps your place when you close it.",
               "platforms": ["iOS"]
             },
             {
-              "text": "Consistent compact headings and spacing in Settings and Live TV setup.",
+              "text": "Cleaner Settings and Live TV setup pages.",
               "platforms": ["iOS"]
             },
             {
-              "text": "Browser-based Trakt sign-in.",
+              "text": "Easier Trakt sign-in using your browser.",
               "platforms": ["iOS"]
             }
           ]
@@ -52,26 +52,26 @@
         {
           "category": "Fixed",
           "items": [
-            "Plex smart and filtered collections appearing empty.",
-            "Queued watch-state updates reaching the wrong server user after switching accounts or server users.",
+            "Plex collections incorrectly appearing empty.",
+            "Watch history being saved to the wrong user.",
             {
-              "text": "The show-title link on episode pages not opening the show.",
+              "text": "Show-title links not opening the show.",
               "platforms": ["tvOS"]
             },
             {
-              "text": "Library controls overlapping navigation and artwork stopping short of the screen edge.",
+              "text": "Overlapping library controls and gaps around artwork.",
               "platforms": ["tvOS"]
             },
             {
-              "text": "Music disappearing after a temporary server connection failure.",
+              "text": "Music disappearing after a brief connection problem.",
               "platforms": ["tvOS"]
             },
             {
-              "text": "Incorrect music queue selection, next-track playback, and play reporting for repeated tracks and queue changes.",
+              "text": "Wrong song selection, playback, or play history in music queues.",
               "platforms": ["tvOS"]
             },
             {
-              "text": "Missing Jellyfin artist albums, incomplete or reordered playlists, and unsupported music formats failing to play.",
+              "text": "Missing Jellyfin albums, incomplete playlists, wrong song order, and playback failures.",
               "platforms": ["tvOS"]
             }
           ]
