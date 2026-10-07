@@ -998,7 +998,7 @@ private struct PlozziOSHeroBackdrop: View {
 
     private func stillArtwork() -> some View {
         FallbackAsyncImage(
-            references: presentation.artworkReferences(preferringLibrarySelection: !artworkPolicy.prefersOnlineArtwork),
+            references: presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area),
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             // Put a real picture up while the 2000px pass decodes, rather
@@ -1306,7 +1306,7 @@ struct PlozziOSHomeWipeBackdrop: View {
         width: CGFloat
     ) -> some View {
         HomeHeroBackdrop(
-            references: presentation.artworkReferences(preferringLibrarySelection: !artworkPolicy.prefersOnlineArtwork),
+            references: presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area),
             asyncFallbackURL: onlineArtworkFallback,
             slideID: item.id,
             forward: forward,
@@ -1473,7 +1473,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
 
     private var artwork: some View {
         FallbackAsyncImage(
-            references: presentation.artworkReferences(preferringLibrarySelection: !artworkPolicy.prefersOnlineArtwork),
+            references: presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area),
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
@@ -1491,7 +1491,7 @@ private struct PlozziOSSlidingHeroArtwork: View {
 
     private func mirroredEdge(alignment: Alignment) -> some View {
         FallbackAsyncImage(
-            references: presentation.artworkReferences(preferringLibrarySelection: !artworkPolicy.prefersOnlineArtwork),
+            references: presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area),
             maxAspectRatio: 3,
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
@@ -1526,7 +1526,7 @@ private struct PlozziOSHeroReflection: View {
     var body: some View {
         ZStack {
             FallbackAsyncImage(
-                references: presentation.artworkReferences(preferringLibrarySelection: !artworkPolicy.prefersOnlineArtwork),
+                references: presentation.artworkReferences(settings: artworkPolicy.settings, in: artworkPolicy.area),
                 maxAspectRatio: 3,
                 variant: .heroBackdrop,
                 previewVariant: .heroPreview,

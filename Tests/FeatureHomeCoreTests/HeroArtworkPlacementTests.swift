@@ -80,6 +80,34 @@ final class HeroArtworkPlacementTests: XCTestCase {
             XCTAssertEqual(home.artworkReferences(preferringLibrarySelection: true).first, .remote(selected))
             XCTAssertEqual(detail.artworkReferences(preferringLibrarySelection: true).first, .remote(selected))
             XCTAssertEqual(detail.artworkReferences(preferringLibrarySelection: false).first, .remote(alternative))
+            XCTAssertEqual(home.artworkReferences(preference: .recommended).first, .remote(selected))
+            XCTAssertEqual(detail.artworkReferences(preference: .recommended).first, .remote(alternative))
+            XCTAssertEqual(detail.artworkReferences(preference: .library).first, .remote(selected))
         }
+    }
+
+    func testRecommendedTouchDetailVariesFromTheActualLibraryHomeChoice() throws {
+        let selected = try XCTUnwrap(URL(string: "https://library.example.test/selected.jpg"))
+        let alternate = try XCTUnwrap(URL(string: "https://metadata.example.test/alternate.jpg"))
+        var item = makeItem(hasLogo: true)
+        item.heroBackdropURL = selected
+        item.backdropURL = selected
+        item.artworkSelections = [
+            .init(placement: .homeHero, references: [.remote(alternate), .remote(selected)]),
+            .init(placement: .detailBackdrop, references: [.remote(selected), .remote(alternate)])
+        ]
+        let home = HeroPresentation(item: item, artworkStyle: .landscape, surface: .home)
+        let detail = HeroPresentation(item: item, artworkStyle: .landscape, surface: .detail)
+        XCTAssertEqual(home.artworkReferences(preference: .recommended).first, .remote(selected))
+        XCTAssertEqual(detail.artworkReferences(preference: .recommended).first, .remote(alternate))
+        XCTAssertEqual(home.artworkReferences(preference: .library).first, .remote(selected))
+        XCTAssertEqual(detail.artworkReferences(preference: .library).first, .remote(selected))
+        let homeOverride = ArtworkSettings(overrides: [.home: .online])
+        XCTAssertEqual(home.artworkReferences(settings: homeOverride, in: .home).first, .remote(alternate))
+        XCTAssertEqual(detail.artworkReferences(settings: homeOverride, in: .details).first, .remote(selected))
+        XCTAssertEqual(
+            detail.artworkReferences(settings: homeOverride, in: .details).first,
+            homeOverride.artworkReferences(for: item, placement: .detailBackdrop, in: .details).first
+        )
     }
 }

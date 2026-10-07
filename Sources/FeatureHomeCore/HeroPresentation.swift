@@ -19,6 +19,8 @@ public struct HeroPresentation: Sendable, Equatable {
     public let title: String   // l10n:content — media title from the server
     public let artworkReferences: [ArtworkReference]
     private let libraryArtworkReferences: [ArtworkReference]
+    private let recommendedArtworkReferences: [ArtworkReference]
+    private let providerHomeArtworkReference: ArtworkReference?
     public let logoReferences: [ArtworkReference]
     public let metadataComponents: [String]
     public let metadataText: String?
@@ -56,6 +58,11 @@ public struct HeroPresentation: Sendable, Equatable {
             for: item, style: artworkStyle, surface: surface,
             drawsLogoOverArtwork: !logos.isEmpty, preferringLibrarySelection: true
         )
+        recommendedArtworkReferences = Self.artworkReferences(
+            for: item, style: artworkStyle, surface: surface,
+            drawsLogoOverArtwork: !logos.isEmpty, settings: .default
+        )
+        providerHomeArtworkReference = item.artworkReferences(for: .homeHero).first
         logoReferences = logos
         metadataComponents = item.metadataComponents()
         metadataText = metadataComponents.isEmpty
@@ -109,6 +116,23 @@ public struct HeroPresentation: Sendable, Equatable {
         preferringLibrarySelection ? libraryArtworkReferences : artworkReferences
     }
 
+    public func artworkReferences(preference: ArtworkPreference) -> [ArtworkReference] {
+        switch preference {
+        case .recommended: recommendedArtworkReferences
+        case .library: libraryArtworkReferences
+        case .online: artworkReferences
+        }
+    }
+
+    public func artworkReferences(settings: ArtworkSettings, in area: ArtworkArea) -> [ArtworkReference] {
+        let preference = settings.preference(in: area)
+        guard preference == .recommended, area == .details,
+              settings.prefersOnlineArtwork(in: .home), let home = providerHomeArtworkReference else {
+            return artworkReferences(preference: preference)
+        }
+        return artworkReferences.filter { $0 != home } + artworkReferences.filter { $0 == home }
+    }
+
     /// - Parameter drawsLogoOverArtwork: whether the hero will lay a title logo
     ///   on top of this artwork. A poster is the better shape for a portrait
     ///   phone, but a poster's whole job is to carry its own title treatment,
@@ -121,7 +145,8 @@ public struct HeroPresentation: Sendable, Equatable {
         style: HeroArtworkStyle,
         surface: HeroPresentationSurface,
         drawsLogoOverArtwork: Bool = false,
-        preferringLibrarySelection: Bool = false
+        preferringLibrarySelection: Bool = false,
+        settings: ArtworkSettings? = nil
     ) -> [ArtworkReference] {
         let landscapePlacement: ArtworkPlacement = surface == .home
             ? .homeHero
@@ -133,7 +158,8 @@ public struct HeroPresentation: Sendable, Equatable {
         var seen = Set<ArtworkReference>()
         return placements
             .flatMap {
-                item.artworkReferences(for: $0, preferringLibrarySelection: preferringLibrarySelection)
+                settings?.artworkReferences(for: item, placement: $0, in: surface == .home ? .home : .details)
+                    ?? item.artworkReferences(for: $0, preferringLibrarySelection: preferringLibrarySelection)
             }
             .filter { seen.insert($0).inserted }
     }

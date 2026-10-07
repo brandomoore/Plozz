@@ -50,12 +50,10 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                 XCTAssertTrue(text.contains("Choose the posters, backgrounds, and logos you see"), text)
                 XCTAssertTrue(text.contains("Recommended"), text)
                 XCTAssertTrue(text.contains("Prefer my library"), text)
-                XCTAssertTrue(text.contains("Prefer online artwork"), text)
-                XCTAssertTrue(text.contains("Movies and shows prefer images from metadata providers"), text)
-                XCTAssertTrue(text.contains("Music prefers artwork from your library"), text)
+                XCTAssertTrue(text.contains("Prefer artwork from metadata providers"), text)
                 XCTAssertTrue(text.contains("Customize by view"), text)
                 XCTAssertTrue(text.contains("Using defaults"), text)
-                XCTAssertTrue(text.contains("About artwork sources"), text)
+                XCTAssertFalse(text.contains("About artwork sources"), text)
                 XCTAssertFalse(text.contains("Remove view customizations"), text)
                 XCTAssertEqual(text.contains("Metadata Providers"), canManage, text)
                 XCTAssertEqual(text.contains("TMDB"), canManage, text)
@@ -79,20 +77,20 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         let cards = makeCards(defaults: defaults)
         try await withScreen(cards: cards, area: .browse) { window in
             let inherited = try await self.capture(window, name: "artwork-browse-use-preset")
-            XCTAssertTrue(inherited.contains("Use default: online preferred"), inherited)
+            XCTAssertTrue(inherited.contains("Use default: library preferred"), inherited)
             XCTAssertTrue(inherited.contains("Libraries, collections, and playlists"), inherited)
             XCTAssertFalse(inherited.contains("without text"), inherited)
             XCTAssertFalse(inherited.contains("Continue Watching"), inherited)
-            XCTAssertLessThan(inherited.split(whereSeparator: \.isWhitespace).count, 25, inherited)
+            XCTAssertLessThan(inherited.split(whereSeparator: \.isWhitespace).count, 30, inherited)
 
-            cards.artwork.setOverride(.library, for: .browse)
-            let overridden = try await self.capture(window, name: "artwork-browse-library-first")
-            XCTAssertTrue(overridden.contains("Use default: online preferred"), overridden)
-            XCTAssertEqual(cards.artwork.override(for: .browse), .library)
-            cards.artwork.preference = .library
+            cards.artwork.setOverride(.online, for: .browse)
+            let overridden = try await self.capture(window, name: "artwork-browse-provider-first")
+            XCTAssertTrue(overridden.contains("Use default: library preferred"), overridden)
+            XCTAssertEqual(cards.artwork.override(for: .browse), .online)
+            cards.artwork.preference = .online
             let changed = try await self.capture(window, name: "artwork-browse-changed-preset")
-            XCTAssertTrue(changed.contains("Use default: library preferred"), changed)
-            XCTAssertEqual(cards.artwork.override(for: .browse), .library)
+            XCTAssertTrue(changed.contains("Use default: metadata providers preferred"), changed)
+            XCTAssertEqual(cards.artwork.override(for: .browse), .online)
             XCTAssertEqual(ArtworkSettingsStore(defaults: defaults).load(), cards.artwork)
         }
     }
@@ -109,28 +107,65 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         }
     }
 
-    func testArtworkSourceHelpExplainsBothSourcesAndPreservedCustomizations() async throws {
-        for topic in ArtworkSourceHelpTopic.allCases {
-            try await withScreen(
-                content: ArtworkSourcesHelpView(selection: .constant(topic.rawValue))
-            ) { window in
-                let text = try await self.capture(window, name: "artwork-source-help-\(topic.rawValue)")
-                switch topic {
-                case .library:
-                    XCTAssertTrue(text.contains("Plex, Jellyfin, or Emby"), text)
-                    XCTAssertTrue(text.contains("network shares"), text)
-                case .online:
-                    XCTAssertTrue(text.contains("through metadata providers"), text)
-                    XCTAssertTrue(text.contains("In Metadata Providers"), text)
-                    XCTAssertTrue(text.contains("same images"), text)
-                    XCTAssertTrue(text.contains("Custom uses your saved order"), text)
-                case .preferences:
-                    XCTAssertTrue(text.contains("this profile"), text)
-                    XCTAssertTrue(text.contains("fall back"), text)
-                    XCTAssertTrue(text.contains("keeps view customizations"), text)
+    func testPresetExplanationsFollowNativeFocusWithoutChangingSelection() async throws {
+        let suite = "ArtworkFocusHosted.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cards = makeCards(defaults: defaults)
+        try await withScreen(content: NavigationStack {
+            SettingsSplitLayout(
+                title: "Appearance",
+                rows: [SettingsSplitRow(id: "artwork", title: "Artwork") {
+                    ArtworkSettingsControls(cards: cards)
+                }],
+                selection: .constant("artwork")
+            )
+        }) { window in
+            let snippets = [
+                "Library artwork, with textless Continue Watching",
+                "Your selected library images",
+                "Images from metadata providers such as TMDB"
+            ]
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let host = try XCTUnwrap(window.rootViewController as? ArtworkFocusRequesting)
+            for index in 0..<4 {
+                window.layoutIfNeeded()
+                let allItems = self.focusItems(in: window)
+                let items = allItems.filter { $0.frame.width > 700 }
+                    .sorted { $0.frame.minY < $1.frame.minY }
+                XCTAssertEqual(items.count, 4, allItems.map { "\($0.frame)" }.joined(separator: ", "))
+                let target = try XCTUnwrap(items.indices.contains(index) ? items[index] : nil)
+                host.artworkFocusTarget = target
+                system.requestFocusUpdate(to: try XCTUnwrap(window.rootViewController))
+                system.updateFocusIfNeeded()
+                host.artworkFocusTarget = nil
+                let text = try await self.capture(window, name: "artwork-preset-focus-\(index)")
+                XCTAssertTrue(system.focusedItem === target, "Inline help must retain native focus.")
+                for (snippetIndex, snippet) in snippets.enumerated() {
+                    XCTAssertEqual(text.contains(snippet), index == snippetIndex, text)
+                }
+                XCTAssertEqual(cards.artwork.preference, .recommended, "Focus must not select a preference.")
+                XCTAssertFalse(text.contains("About artwork sources"), text)
+            }
+        }
+    }
+
+    private func focusItems(in window: UIWindow) -> [any UIFocusItem] {
+        var containers: [any UIFocusItemContainer] = [window]
+        var seen = Set<ObjectIdentifier>()
+        var items: [ObjectIdentifier: any UIFocusItem] = [:]
+        while let container = containers.popLast() {
+            guard seen.insert(ObjectIdentifier(container)).inserted else { continue }
+            let frame = container.coordinateSpace.convert(window.bounds, from: window)
+            for item in container.focusItems(in: frame) {
+                if let child = item.focusItemContainer { containers.append(child) }
+                if let view = item as? UIView { containers.append(view) }
+                if item.canBecomeFocused, !(item is UIScrollView) {
+                    items[ObjectIdentifier(item)] = item
                 }
             }
         }
+        return Array(items.values)
     }
 
     private func makeCards(defaults: UserDefaults) -> CardStyleSettingsModel {
@@ -168,7 +203,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         window.overrideUserInterfaceStyle = .dark
-        let host = UIHostingController(rootView:
+        let host = ArtworkFocusHost(rootView:
             content
                 .environment(\.themePalette, .dark)
                 .environment(\.colorScheme, .dark)
@@ -181,6 +216,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
+
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
         let focusDeadline = ContinuousClock.now + .seconds(3)
         while system.focusedItem == nil, ContinuousClock.now < focusDeadline {
@@ -212,5 +248,19 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         request.regionOfInterest = CGRect(x: 0.40, y: 0, width: 0.60, height: 1)
         try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
         return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+    }
+}
+
+@MainActor
+private protocol ArtworkFocusRequesting: AnyObject {
+    var artworkFocusTarget: (any UIFocusEnvironment)? { get set }
+}
+
+@MainActor
+private final class ArtworkFocusHost<Content: View>: UIHostingController<Content>, ArtworkFocusRequesting {
+    weak var artworkFocusTarget: (any UIFocusEnvironment)?
+
+    override var preferredFocusEnvironments: [any UIFocusEnvironment] {
+        artworkFocusTarget.map { [$0] } ?? super.preferredFocusEnvironments
     }
 }

@@ -1197,10 +1197,7 @@ struct DetailHeroView: View, Equatable {
         // `HeroBackdropLayer` shares Home's static shading while preserving the
         // detail page's own dissolve and full-bleed treatment. Hero artwork is never spoiler-blurred;
         // episode spoiler masking remains limited to episode text and cards.
-        let ladder = backdrop.artworkReferences(
-            for: .detailBackdrop,
-            preferringLibrarySelection: !artworkPolicy.forArea(.details).prefersOnlineArtwork
-        )
+        let ladder = artworkPolicy.forArea(.details).references(for: backdrop, placement: .detailBackdrop)
         HeroArtDiagnostics.emitOnce(
             stage: "detail-draw",
             key: backdrop.id

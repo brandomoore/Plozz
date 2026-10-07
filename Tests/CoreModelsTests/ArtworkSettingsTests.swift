@@ -5,8 +5,10 @@ final class ArtworkSettingsTests: XCTestCase {
     func testRecommendedAndLibraryFirstKeepSourceSeparateFromPresentation() {
         let recommended = ArtworkSettings.default
         XCTAssertTrue(recommended.prefersTextlessArtwork(in: .continueWatching))
-        XCTAssertTrue(recommended.prefersOnlineArtwork(in: .browse))
-        XCTAssertFalse(recommended.prefersOnlineArtwork(in: .music))
+        for area in ArtworkArea.allCases {
+            XCTAssertEqual(recommended.prefersOnlineArtwork(in: area), area == .continueWatching)
+            XCTAssertEqual(recommended.inheritedPreference(in: area), area == .continueWatching ? .online : .library)
+        }
         let library = ArtworkSettings(preference: .library)
         for area in ArtworkArea.allCases {
             XCTAssertFalse(library.prefersOnlineArtwork(in: area))
@@ -61,14 +63,14 @@ final class ArtworkSettingsTests: XCTestCase {
         var settings = ArtworkSettings(overrides: [.browse: .library])
         XCTAssertFalse(settings.prefersOnlineArtwork(in: .browse))
         XCTAssertFalse(settings.prefersOnlineArtwork(in: .music))
-        XCTAssertTrue(settings.prefersOnlineArtwork(in: .home))
+        XCTAssertFalse(settings.prefersOnlineArtwork(in: .home))
         settings.preference = .online
         settings.preference = .recommended
         XCTAssertEqual(settings.overrides, [.browse: .library])
         XCTAssertFalse(settings.prefersOnlineArtwork(in: .music))
         settings.resetOverrides()
         XCTAssertEqual(settings.preference, .recommended)
-        XCTAssertTrue(settings.prefersOnlineArtwork(in: .browse))
+        XCTAssertFalse(settings.prefersOnlineArtwork(in: .browse))
         XCTAssertFalse(settings.prefersOnlineArtwork(in: .music))
     }
 
@@ -76,7 +78,7 @@ final class ArtworkSettingsTests: XCTestCase {
         var settings = ArtworkSettings()
         settings.setOverride(.library, for: .browse)
         settings.setOverride(.online, for: .music)
-        XCTAssertEqual(settings.inheritedPreference(in: .browse), .online)
+        XCTAssertEqual(settings.inheritedPreference(in: .browse), .library)
         XCTAssertEqual(settings.inheritedPreference(in: .music), .library)
         settings.preference = .library
         XCTAssertEqual(settings.inheritedPreference(in: .browse), .library)
@@ -103,6 +105,34 @@ final class ArtworkSettingsTests: XCTestCase {
         XCTAssertEqual(primary.load().preference, .online)
         XCTAssertEqual(other.load().preference, .library)
         XCTAssertEqual(defaults.data(forKey: "com.plozz.metadataProviderSettings"), data)
+    }
+
+    func testRecommendedVariesAvailableDetailsButLibraryKeepsTheSelectedBackdrop() throws {
+        let selected = try XCTUnwrap(URL(string: "https://library.example.test/selected.jpg"))
+        let alternate = try XCTUnwrap(URL(string: "https://metadata.example.test/alternate.jpg"))
+        let item = MediaItem(
+            id: "movie", title: "Movie", kind: .movie, heroBackdropURL: selected,
+            artworkSelections: [
+                .init(placement: .homeHero, references: [.remote(alternate), .remote(selected)]),
+                .init(placement: .detailBackdrop, references: [.remote(selected), .remote(alternate)])
+            ]
+        )
+        let recommended = ArtworkSettings.default
+        XCTAssertEqual(recommended.artworkReferences(for: item, placement: .homeHero, in: .home),
+                       [.remote(selected), .remote(alternate)])
+        XCTAssertEqual(recommended.artworkReferences(for: item, placement: .detailBackdrop, in: .details),
+                       [.remote(alternate), .remote(selected)])
+        var library = ArtworkSettings(preference: .library)
+        for area in [ArtworkArea.home, .details, .playback] {
+            XCTAssertEqual(library.artworkReferences(for: item, placement: .detailBackdrop, in: area).first,
+                           .remote(selected))
+        }
+        library.setOverride(.online, for: .details)
+        XCTAssertTrue(library.prefersOnlineArtwork(in: .details))
+        XCTAssertFalse(library.prefersOnlineArtwork(in: .browse))
+        let single = MediaItem(id: "single", title: "Single", kind: .movie, heroBackdropURL: selected)
+        XCTAssertEqual(recommended.artworkReferences(for: single, placement: .detailBackdrop, in: .details),
+                       [.remote(selected)], "A single available image stays usable on both screens.")
     }
 
     func testProfileTransferAndSyncedResetDoNotRepeatLegacyMigration() throws {

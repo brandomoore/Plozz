@@ -129,16 +129,11 @@ final class EpisodeArtworkPreparationTests: XCTestCase {
     }
 
     func testPreparedOnlineWinnerPaintsSynchronouslyWithoutStartingItsResolver() throws {
-        let settingsStore = MetadataProviderSettingsStore()
-        let originalSettings = settingsStore.load()
-        defer { settingsStore.save(originalSettings) }
-        var settings = originalSettings
-        settings.preferOnlineArtwork = true
-        settingsStore.save(settings)
+        let policy = ArtworkPresentationPolicy(area: .episodes, settings: .init(preference: .online))
         let library = URL(string: "https://art.example.test/\(UUID()).jpg")!
         let online = URL(string: "https://art.example.test/\(UUID()).jpg")!
         let episode = MediaItem(id: UUID().uuidString, title: "Episode", kind: .episode, posterURL: library)
-        let source = EpisodeArtworkSource(item: episode, spoilerSettings: .default)
+        let source = EpisodeArtworkSource(item: episode, spoilerSettings: .default, policy: policy)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         let red = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 9), format: format).image {
@@ -152,7 +147,7 @@ final class EpisodeArtworkPreparationTests: XCTestCase {
         let renderer = ImageRenderer(content:
             FallbackAsyncImage(
                 references: source.references, variant: .landscapeCard,
-                asyncFallbackURL: { nil }, pinIdentity: source.pinIdentity
+                artworkPolicy: policy, asyncFallbackURL: { nil }, pinIdentity: source.pinIdentity
             ) {
                 Color.blue
             }
@@ -201,12 +196,12 @@ final class EpisodeArtworkPreparationTests: XCTestCase {
 
     private func key(
         _ source: EpisodeArtworkSource,
-        settings: MetadataProviderSettings = MetadataProviderSettingsStore().load()
+        settings: MetadataProviderSettings? = nil
     ) -> String {
         ArtworkResolveKey.make(
             references: source.references, variant: .landscapeCard, maxAspectRatio: nil,
             pinIdentity: source.pinIdentity,
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings)
+            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings ?? source.policy.metadataSettings)
         )
     }
 

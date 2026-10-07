@@ -9,7 +9,7 @@ import UIKit
 @MainActor
 final class ArtworkPresentationPolicyTests: XCTestCase {
     func testAreaOverrideChangesSelectionWithoutChangingProviderPermissions() {
-        var settings = ArtworkSettings()
+        var settings = ArtworkSettings(preference: .online)
         settings.setOverride(.library, for: .continueWatching)
         let providers = MetadataProviderSettings(
             orderMode: .custom, enabledOrder: ["tvdb"], disabledOrder: ["tmdb"]
@@ -41,7 +41,10 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
 
     func testEpisodePreparationDoesNotReuseAnOppositeProfileChoice() {
         let item = MediaItem(id: "episode", title: "Episode", kind: .episode)
-        let online = EpisodeArtworkSource(item: item, spoilerSettings: .default)
+        let online = EpisodeArtworkSource(
+            item: item, spoilerSettings: .default,
+            policy: .init(area: .episodes, settings: .init(preference: .online))
+        )
         let library = EpisodeArtworkSource(
             item: item, spoilerSettings: .default,
             policy: .init(area: .episodes, settings: .init(preference: .library))
@@ -70,7 +73,13 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
         let source = MediaArtworkSource(item: item, placement: .poster, policy: .init(area: .browse))
         XCTAssertEqual(source.references, item.artworkReferences(for: .poster))
         XCTAssertNotNil(source.fallbackURL)
-        XCTAssertTrue(source.policy.prefersOnlineArtwork)
+        XCTAssertFalse(source.policy.prefersOnlineArtwork)
+        let providerFirst = MediaArtworkSource(
+            item: item, placement: .poster,
+            policy: .init(area: .browse, settings: .init(preference: .online))
+        )
+        XCTAssertTrue(providerFirst.policy.prefersOnlineArtwork)
+        XCTAssertNotEqual(source.policy.identity, providerFirst.policy.identity)
     }
 
     func testBackdropSourcesRespectPerAreaLibraryOverrides() throws {
@@ -89,7 +98,7 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
         )
         XCTAssertEqual(
             MediaArtworkSource(item: item, placement: .detailBackdrop, policy: policy.forArea(.playback)).references.first,
-            alternate
+            .remote(selected)
         )
         #if os(tvOS)
         let detail = DetailBackdropArtworkSource(item: item, policy: policy)
@@ -122,9 +131,9 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
         ArtworkImageCache.shared.configure(networkFileService: ArtworkNetworkFileService(loader: loader))
         defer { ArtworkImageCache.shared.configure(networkFileService: nil) }
         let online = PolicyOnlineProbe()
-        for preference in [ArtworkPreference.library, .online] {
+        for preference in [ArtworkPreference.recommended, .library, .online] {
             let policy = ArtworkPresentationPolicy(
-                area: .continueWatching, settings: .init(preference: preference)
+                area: .browse, settings: .init(preference: preference)
             )
             let result = await ArtworkFirstPaintResolver.resolve(
                 references: [.networkFile(reference)], variant: .landscapeCard,
@@ -133,8 +142,20 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
             )
             XCTAssertEqual(result?.reference, .networkFile(reference))
             let count = await online.requests
-            XCTAssertEqual(count, preference == .library ? 0 : 1)
+            XCTAssertEqual(count, preference == .online ? 1 : 0)
         }
+    }
+
+    func testLibraryFirstStillLooksUpMissingArtwork() async {
+        let online = PolicyOnlineProbe()
+        let result = await ArtworkFirstPaintResolver.resolve(
+            references: [], variant: .posterCard,
+            asyncOnlineURL: { await online.lookup() }, maximumOnlineWait: 0.5,
+            prefersOnlineArtwork: false
+        )
+        XCTAssertNil(result)
+        let count = await online.requests
+        XCTAssertEqual(count, 1)
     }
     #endif
 }

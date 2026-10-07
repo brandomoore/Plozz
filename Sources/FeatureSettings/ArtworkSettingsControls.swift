@@ -43,10 +43,6 @@ public struct ArtworkSettingsControls: View {
             if !cards.artwork.overrides.isEmpty {
                 ArtworkResetButton(settings: $cards.artwork)
             }
-            NavigationLink("About artwork sources") {
-                ArtworkSourcesHelpView()
-            }
-            .accessibilityIdentifier("artwork-source-help")
         }
     }
 }
@@ -60,6 +56,7 @@ private struct ArtworkPresetPicker: View {
                 ForEach(ArtworkPreference.allCases) { preference in
                     ArtworkChoiceRow(
                         title: preference.displayName,
+                        detail: preference.detail,
                         isSelected: settings.preference == preference
                     ) {
                         settings.preference = preference
@@ -67,9 +64,6 @@ private struct ArtworkPresetPicker: View {
                     .accessibilityIdentifier("artwork-preset-\(preference.rawValue)")
                 }
             }
-            Text(settings.preference.detail)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
         }
     }
 }
@@ -147,7 +141,7 @@ struct ArtworkAreaChoices: View {
         switch option {
         case .automatic:
             settings.inheritedPreference(in: area) == .online
-                ? "Use default: online preferred"
+                ? "Use default: metadata providers preferred"
                 : "Use default: library preferred"
         case .library, .online: option.displayName
         }
@@ -170,21 +164,34 @@ private struct ArtworkChoiceGroup<Content: View>: View {
 
 private struct ArtworkChoiceRow: View {
     let title: LocalizedStringResource
+    var detail: LocalizedStringResource? = nil
     let isSelected: Bool
     let action: () -> Void
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         #if os(tvOS)
         SettingsCheckableRow(
-            title: Text(title), isChecked: isSelected,
+            title: Text(title),
+            subtitle: isFocused ? detail.map { Text($0) } : nil,
+            titleLineLimit: nil, subtitleLineLimit: nil,
+            isChecked: isSelected,
             flushLeading: false, action: action
         )
+        .focused($isFocused)
         #else
         Button(action: action) {
             HStack(spacing: 16) {
-                Text(title)
-                    .font(.body.weight(.medium))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title)
+                        .font(.body.weight(.medium))
+                    if isSelected, let detail {
+                        Text(detail)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "checkmark")
                     .opacity(isSelected ? 1 : 0)
                     .accessibilityHidden(true)
@@ -208,58 +215,4 @@ private struct ArtworkResetButton: View {
     }
 }
 
-struct ArtworkSourcesHelpView: View {
-    var selection: Binding<String?>? = nil
-
-    var body: some View {
-        #if os(tvOS)
-        SettingsSplitLayout(
-            title: "About artwork sources",
-            rows: ArtworkSourceHelpTopic.allCases.map { topic in
-                SettingsSplitRow(id: topic.rawValue, title: topic.title) {
-                    Text(topic.detail)
-                        .foregroundStyle(.secondary)
-                }
-            },
-            selection: selection
-        )
-        #else
-        List {
-            ForEach(ArtworkSourceHelpTopic.allCases) { topic in
-                SettingsSectionGroup(topic.title) {
-                    Text(topic.detail)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .settingsPageSurface()
-        .navigationTitle("About artwork sources")
-        #endif
-    }
-}
-
-enum ArtworkSourceHelpTopic: String, CaseIterable, Identifiable {
-    case library, online, preferences
-
-    var id: String { rawValue }
-
-    var title: LocalizedStringResource {
-        switch self {
-        case .library: "Your library's artwork"
-        case .online: "Online artwork"
-        case .preferences: "Your preferences"
-        }
-    }
-
-    var detail: LocalizedStringResource {
-        switch self {
-        case .library:
-            "Images supplied by Plex, Jellyfin, or Emby, and image files saved beside media on network shares. This includes the artwork you selected in your server."
-        case .online:
-            "Images Plozz finds separately through metadata providers, such as TMDB or TheTVDB. They may be the same images your library uses. In Metadata Providers, Recommended lets Plozz choose providers. Custom uses your saved order and turns off providers you disable."
-        case .preferences:
-            "These choices apply to this profile. Missing images can fall back to another source. Changing the main preference keeps view customizations. Choose Use default for one view, or Remove view customizations for all."
-        }
-    }
-}
 #endif

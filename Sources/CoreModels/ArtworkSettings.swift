@@ -10,14 +10,14 @@ public enum ArtworkPreference: String, CaseIterable, Codable, Identifiable, Send
         switch self {
         case .recommended: "Recommended"
         case .library: "Prefer my library's artwork"
-        case .online: "Prefer online artwork"
+        case .online: "Prefer artwork from metadata providers"
         }
     }
 
     public var detail: LocalizedStringResource {
         switch self {
-        case .recommended: "Movies and shows prefer images from metadata providers. Music prefers artwork from your library."
-        case .library: "Prefers the images supplied by your libraries."
+        case .recommended: "Library artwork, with textless Continue Watching images and varied Details backgrounds when available."
+        case .library: "Your selected library images. Metadata providers fill in missing artwork."
         case .online: "Images from metadata providers such as TMDB and TheTVDB."
         }
     }
@@ -48,10 +48,10 @@ public enum ArtworkArea: String, CaseIterable, Codable, Identifiable, Sendable {
     public var detail: LocalizedStringResource? {
         switch self {
         case .home: "Backgrounds, logos, and Home rows."
-        case .continueWatching: "Online artwork favors images without text. Library artwork keeps your chosen images."
+        case .continueWatching: "Metadata providers favor images without text. Library artwork keeps your chosen images."
         case .browse: "Libraries, collections, and playlists."
         case .search, .watchlist: nil
-        case .details: "Backdrops, logos, and related titles."
+        case .details: "Backdrops, logos, and related titles. Recommended can use a different background from Home."
         case .episodes: "Episode thumbnails."
         case .playback: "Player menus and Now Playing."
         case .music: "Covers, artist images, and the music player."
@@ -97,8 +97,26 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
         switch preference(in: area) {
         case .library: false
         case .online: true
-        case .recommended: area != .music
+        case .recommended: area == .continueWatching
         }
+    }
+
+    public func artworkReferences(
+        for item: MediaItem, placement: ArtworkPlacement, in area: ArtworkArea
+    ) -> [ArtworkReference] {
+        let preference = preference(in: area)
+        let variesBackground = preference == .recommended
+            && area == .details && placement == .detailBackdrop
+        let references = item.artworkReferences(
+            for: placement,
+            preferringLibrarySelection: !prefersOnlineArtwork(in: area) && !variesBackground
+        )
+        guard variesBackground,
+              let home = artworkReferences(for: item, placement: .homeHero, in: .home).first else {
+            return references
+        }
+        // Vary artwork already supplied with the item; do not wait on another lookup.
+        return references.filter { $0 != home } + references.filter { $0 == home }
     }
 
     public func prefersTextlessArtwork(in area: ArtworkArea) -> Bool {

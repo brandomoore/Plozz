@@ -11,9 +11,7 @@ public struct MediaArtworkSource: Sendable {
     public init(item: MediaItem, placement: ArtworkPlacement, policy: ArtworkPresentationPolicy) {
         self.policy = policy
         itemIdentity = item.stablePresentationID
-        references = item.artworkReferences(
-            for: placement, preferringLibrarySelection: !policy.prefersOnlineArtwork
-        )
+        references = policy.references(for: item, placement: placement)
         guard ![.folder, .collection, .unknown].contains(item.kind) else {
             fallbackURL = nil
             return

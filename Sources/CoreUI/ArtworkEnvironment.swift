@@ -20,6 +20,10 @@ public struct ArtworkPresentationPolicy: Equatable, Sendable {
     public var prefersOnlineArtwork: Bool { settings.prefersOnlineArtwork(in: area) }
     public var prefersTextlessArtwork: Bool { settings.prefersTextlessArtwork(in: area) }
 
+    public func references(for item: MediaItem, placement: ArtworkPlacement) -> [ArtworkReference] {
+        settings.artworkReferences(for: item, placement: placement, in: area)
+    }
+
     public var metadataSettings: MetadataProviderSettings {
         var value = providers
         value.preferOnlineArtwork = prefersOnlineArtwork

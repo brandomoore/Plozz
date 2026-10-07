@@ -80,14 +80,18 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   the shared group surface, separators, or tvOS control styles.
 - **Async artwork** — `FallbackAsyncImage` and `ArtworkImageCache`: an
   on-disk + in-memory image cache shared with `MetadataKit`'s URL cache,
-  with profile-scoped source choices in Appearance > Artwork. Recommended prefers
-  online title artwork and library music covers. Library-first and online-first
+  with profile-scoped source choices in Appearance > Artwork. Recommended is
+  library-first except for textless Continue Watching artwork. Details can select
+  an already-available background different from Home without an extra metadata
+  lookup before display; ordinary Details cards remain library-first.
+  Library-first and metadata-provider-first
   presets support independent overrides for Home, Continue Watching, Browse,
   Search, Watchlist, Details, Episodes, Playback, Music, Top Shelf, and Downloads
   where available. Use default displays the inherited source and follows later
   preset changes; explicit overrides remain pinned until reset. The main page
-  keeps three direct preferences, a customization count, and source explanations
-  in About artwork sources. Remove view customizations clears only the overrides,
+  keeps three direct preferences and a customization count. An inline explanation
+  follows the focused option on TV and the selected option on touch; there is no
+  separate artwork-help page. Remove view customizations clears only the overrides,
   preserving the main preference. Cards retains
   card presentation controls, not app-wide artwork policy. Missing artwork can
   fall back to the other source.
@@ -96,7 +100,8 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   and the new preference transfers/syncs with that profile.
   Library-first heroes honor the server-selected backdrop or primary share
   sidecar rather than choosing a different image for Details or avoiding artwork
-  on the focused card. Recommended and online-first keep that variety. The
+  on the focused card. Recommended varies available Details backgrounds;
+  metadata-provider-first retains provider lookup and artwork variation. The
   choice applies equally to first paint, prewarming, mobile reflections, and
   later visits; alternative images remain fallbacks if the selected one fails.
   Continue Watching's recommended textless lookup is separate from source
