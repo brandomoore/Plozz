@@ -666,14 +666,17 @@ def main() -> int:
     parser.add_argument("--coverage", action="store_true",
                         help="Report per-language translation coverage and exit.")
     parser.add_argument("--clean", action="store_true",
-                        help="Wipe the localization DerivedData first.")
+                        help=argparse.SUPPRESS)
     parser.add_argument("--quiet", action="store_true", default=True,
                         help="Suppress xcodebuild output unless it fails.")
     parser.add_argument("--verbose", dest="quiet", action="store_false")
     args = parser.parse_args()
-    if args.reuse_if_unchanged and (args.platform or args.no_build or args.clean):
+    if args.clean:
+        parser.error("--clean is no longer supported; extraction data must be preserved")
+    if args.reuse_if_unchanged and (args.platform or args.no_build):
         parser.error("--reuse-if-unchanged requires the complete, non-clean extraction route")
 
+    exec_under_build_lease()
     if not CATALOG.exists():
         sys.exit(f"✗ Missing catalog: {CATALOG.relative_to(REPO)}")
 
@@ -719,8 +722,6 @@ def extract_and_sync(args: argparse.Namespace) -> int:
     reused = args.reuse_if_unchanged and receipt.matches(inputs)
     if not reused:
         receipt.invalidate()
-    if args.clean and DERIVED.exists():
-        shutil.rmtree(DERIVED)
     if reused:
         print("▸ Reusing verified ios+tvos extraction: inputs, toolchain, packages and output match.")
     elif not args.no_build:
@@ -827,5 +828,4 @@ def exec_under_build_lease() -> None:
 
 
 if __name__ == "__main__":
-    exec_under_build_lease()
     sys.exit(main())

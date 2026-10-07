@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 import contextlib
 import datetime as dt
 import fcntl
@@ -302,10 +303,27 @@ def reconcile(state: dict, now: dt.datetime) -> list[dict]:
     return results
 
 
-def register(repo: Path, roots: list[tuple[str, Path]]) -> list[dict]:
+def existing_parent(path: Path) -> dict:
+    parent = path.parent
+    while not parent.exists() and not parent.is_symlink():
+        if parent == parent.parent:
+            lease.fail("external build path has no existing parent")
+        parent = parent.parent
+    return policy.identity(directory(parent))
+
+
+def register(repo: Path, roots: list[tuple[str, Path]],
+             private_children: Sequence[tuple[Path, Path]] = ()) -> list[dict]:
     inherited_shared()
     owner = owner_snapshot(repo)
     now = cleanup.now_utc()
+    anchors = {
+        path: owner["worktree"] if repo in path.parents else (
+            policy.identity(lease.paths()["home"]) if kind == "release-evidence"
+            else existing_parent(path)
+        )
+        for kind, path in roots
+    }
     with registry() as state:
         if owner_snapshot(repo) != owner:
             lease.fail("worktree changed while waiting for metadata publication")
@@ -314,10 +332,9 @@ def register(repo: Path, roots: list[tuple[str, Path]]) -> list[dict]:
             if kind not in KINDS:
                 lease.fail(f"unknown generated root kind: {kind}")
             previously_missing = not path.exists() and not path.is_symlink()
-            anchor = owner["worktree"] if repo in path.parents else policy.identity(
-                lease.paths()["home"] if kind == "release-evidence" else path.parent
-            )
+            anchor = anchors[path]
             path = directory(path, create=True, anchor=anchor)
+            cleanup.validate_identity(anchor, "build storage anchor")
             if owner_snapshot(repo) != owner:
                 lease.fail("worktree changed while registering generated storage")
             if path == repo or path in repo.parents:
@@ -370,6 +387,20 @@ def register(repo: Path, roots: list[tuple[str, Path]]) -> list[dict]:
                 resource["owners"].append(owner)
             resource["observed_at"] = cleanup.utc(now)
             resource["retired_since"] = None
+        containers = {
+            Path(resource["identity"]["path"]): resource for resource in state["resources"]
+            if (resource["kind"], Path(resource["identity"]["path"])) in roots
+            and resource["kind"] != "release-evidence"
+        }
+        for container, child in private_children:
+            if container not in containers or container not in child.parents:
+                lease.fail("private writer path must descend from a nominated build container")
+            resource = containers[container]
+            directory(child, create=True, anchor=resource["identity"])
+            cleanup.validate_identity(resource["identity"], "private writer container")
+            cleanup.validate_identity(resource["parent"], "private writer container parent")
+        if owner_snapshot(repo) != owner:
+            lease.fail("worktree changed while preparing private writer paths")
         result = reconcile(state, now)
         for notice in result:
             if notice["status"].startswith(("blocked:", "retired:")):
@@ -495,6 +526,8 @@ def main() -> int:
     reg = commands.add_parser("register")
     reg.add_argument("--repo", type=Path, required=True)
     reg.add_argument("--root", nargs=2, action="append", metavar=("KIND", "PATH"), required=True)
+    reg.add_argument("--private-child", nargs=2, action="append", default=[],
+                     metavar=("CONTAINER", "PATH"))
     settings = commands.add_parser("workspace")
     settings.add_argument("--repo", type=Path, required=True)
     commands.add_parser("reconcile")
@@ -506,7 +539,10 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.command == "register":
-            result = register(args.repo, [(kind, Path(path)) for kind, path in args.root])
+            result = register(
+                args.repo, [(kind, Path(path)) for kind, path in args.root],
+                [(Path(container), Path(child)) for container, child in args.private_child],
+            )
         elif args.command == "workspace":
             workspace_settings(args.repo, args.repo / "Plozz.xcodeproj")
             result = {"derived_data": str(args.repo / ".build/xcode-gui")}

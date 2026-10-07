@@ -86,6 +86,9 @@ def swift_package_build_options(target)
     "PLOZZ_FASTLANE_CLONED_SOURCE_PACKAGES",
     File.join(REPO_ROOT, ".build", "package-workspaces", "fastlane")
   )
+  if ENV.key?("PLOZZ_FASTLANE_CLONED_SOURCE_PACKAGES")
+    package_root = File.join(package_root, Digest::SHA256.hexdigest(File.realpath(REPO_ROOT))[0, 24])
+  end
   package_cache = ENV.fetch(
     "PLOZZ_PACKAGE_CACHE_PATH",
     File.join(Dir.home, "Library", "Caches", "org.swift.swiftpm")
@@ -111,6 +114,8 @@ def swift_package_build_options(target)
 end
 
 def register_build_storage(options)
+  package_container = File.dirname(File.dirname(options.fetch(:cloned_source_packages_path)))
+  derived_container = File.dirname(File.dirname(options.fetch(:derived_data_path)))
   descriptors = %w[APPLE_BUILD_LEASE_PROOF_FD APPLE_BUILD_LEASE_LOCK_FD].to_h do |key|
     fd = Integer(ENV.fetch(key))
     [fd, fd]
@@ -118,9 +123,11 @@ def register_build_storage(options)
   success = system(
     "/usr/bin/python3", "-B", File.join(REPO_ROOT, "tools", "plozz-build-lifecycle.py"),
     "register", "--repo", REPO_ROOT,
-    "--root", "package-workspace", options.fetch(:cloned_source_packages_path),
-    "--root", "derived-data", options.fetch(:derived_data_path),
+    "--root", "package-workspace", package_container,
+    "--root", "derived-data", derived_container,
     "--root", "release-evidence", OUTPUT_DIR,
+    "--private-child", package_container, options.fetch(:cloned_source_packages_path),
+    "--private-child", derived_container, options.fetch(:derived_data_path),
     **descriptors, close_others: true, out: File::NULL
   )
   UI.user_error!("Build storage registration failed; release was not started.") unless success

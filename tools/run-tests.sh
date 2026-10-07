@@ -84,11 +84,10 @@ fi
 #
 # Two defenses, both here:
 #   1. A per-worktree DerivedData dir (PLOZZ_DERIVED_DATA) so this checkout never
-#      contends with another worktree's build DB, and so a wedge can be cleared
-#      by nuking just this dir — never the shared cache.
+#      contends with another worktree's build DB.
 #   2. A no-progress watchdog: if the build log stops growing for
-#      PLOZZ_HANG_SECS, the xcodebuild process tree is killed, this worktree's
-#      DerivedData is cleared, and the invocation is retried ONCE from clean.
+#      PLOZZ_HANG_SECS, only the owned process tree is stopped. Build data and
+#      result evidence remain intact; a timeout never triggers a clean rebuild.
 PLOZZ_DERIVED_DATA="${PLOZZ_DERIVED_DATA:-$PWD/.build/test-derived-data}"
 PLOZZ_TEST_RESULTS_DIR="${PLOZZ_TEST_RESULTS_DIR:-$PWD/.build/test-results}"
 PLOZZ_CLONED_SOURCE_PACKAGES="${PLOZZ_CLONED_SOURCE_PACKAGES:-$PLOZZ_DERIVED_DATA/SourcePackages}"
@@ -336,9 +335,8 @@ reported_bundles_count() {
 }
 
 # True when xcodebuild has printed its terminal verdict for this run, i.e. the
-# tests actually executed and produced an answer. Used to distinguish "wedged
-# before producing a result" (a from-clean rebuild may genuinely help) from
-# "answered, then stalled in teardown" (a rebuild cannot change the answer).
+# tests actually executed and produced an answer. Distinguishes a timeout before
+# results from stalled teardown, whose structured results still need checking.
 has_verdict() {
   grep -qE '^[[:space:]]*\*\* TEST[A-Z ]* (SUCCEEDED|FAILED) \*\*' "$1" 2>/dev/null
 }
@@ -448,32 +446,15 @@ _xcb_once() {
   return $status
 }
 
-# xcodebuild_test <log> <xcb-arg>...  -> returns xcodebuild's exit status. Self-
-# heals a wedged build once: on a watchdog kill, clears this worktree's
-# DerivedData and retries from clean.
+# xcodebuild_test <log> <xcb-arg>... preserves build data on every outcome.
 xcodebuild_test() {
   local log="$1"; shift
-  local attempt status
-  for attempt in 1 2; do
-    set +e
-    _xcb_once "$log" "$@"
-    status=$?
-    set -e
-    if [[ $status -eq 124 && $attempt -eq 1 ]]; then
-      # Only a wedge that produced NO verdict is worth a from-clean retry. If the
-      # tests already ran and reported, rebuilding cannot change the outcome — it
-      # just pays the full compile cost again to reprint the same failures.
-      if has_verdict "$log" || [[ $(reported_bundles_count "$log") -gt 0 ]]; then
-        echo "run-tests.sh: xcodebuild stalled after reporting results — not rebuilding an incomplete run." >&2
-        return 1
-      fi
-      echo "run-tests.sh: clearing DerivedData ($PLOZZ_DERIVED_DATA) and retrying the build once from clean." >&2
-      rm -rf "$PLOZZ_DERIVED_DATA"
-      continue
-    fi
-    [[ $status -eq 124 ]] && echo "run-tests.sh: FAILURE — xcodebuild wedged twice; the simulator/toolchain likely needs attention." >&2
-    return $status
-  done
+  local status=0
+  _xcb_once "$log" "$@" || status=$?
+  if [[ $status -eq 124 ]]; then
+    echo "run-tests.sh: FAILURE — xcodebuild timed out; preserving DerivedData and results without a clean retry." >&2
+  fi
+  return "$status"
 }
 
 # --- Decide the build strategy ------------------------------------------------

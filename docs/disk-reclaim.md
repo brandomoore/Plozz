@@ -40,6 +40,22 @@ writer in the same checkout; separate worktrees/writers have separate stores.
 Explicit storage overrides remain supported but are recorded as external;
 they do not get the containment benefit.
 
+Fastlane registers two stable checkout-level containers, not a new resource
+per invocation: `.build/package-workspaces/fastlane/` and
+`.build/fastlane-derived-data/`. Unique `<invocation>/<scheme>` directories
+beneath them keep mutable writers isolated. An explicit
+`PLOZZ_FASTLANE_CLONED_SOURCE_PACKAGES` prefix gets a checkout-path hash
+subdirectory before those private leaves. The registrar pins an existing
+physical ancestor before waiting for its metadata lock, then creates missing
+descendants through nofollow directory handles and rechecks the pinned identity.
+Symlink aliases and a replaced anchor are refused. Private child creation stays
+under the shared lease and does not add per-invocation registry history.
+
+Timeout recovery never deletes registered DerivedData or retries from clean.
+The TV deployment and localization scripts reject the former `--clean` option.
+An unexplained delete-and-recreate still fails identity validation; the
+registrar does not silently adopt a replacement root.
+
 The shared compressed SwiftPM cache is unchanged and never targeted. This is
 not permission to remove checkouts with edits, reset dependencies, or clear
 shared caches.
@@ -171,7 +187,8 @@ former apply modes fail before taking a lease or writing logs.
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
   tools.tests.test_plozz_build_lifecycle tools.tests.test_apple_build_cleanup \
-  tools.tests.test_apple_maintenance_policy tools.tests.test_package_storage
+  tools.tests.test_apple_maintenance_policy tools.tests.test_package_storage \
+  tools.tests.test_build_lifecycle_regressions
 tools/tests/test-apple-build-interlock.sh
 ```
 

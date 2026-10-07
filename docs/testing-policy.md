@@ -235,9 +235,9 @@ bundle finishes — unlike the final `** TEST FAILED **` banner, which is
 block-buffered and often only reaches the log once the process is killed. Once
 every expected bundle has reported, the script
 waits `PLOZZ_VERDICT_GRACE` (default 6s, polled every `PLOZZ_POLL_SECS`=2s) for a
-clean exit, then checks for a finalized `xcresult` before reaping teardown. A
-from-clean retry is now only attempted when the run produced **no** results at
-all — the case it was actually meant for.
+clean exit, then checks for a finalized `xcresult` before reaping teardown.
+Timeouts preserve DerivedData and retained results, and return failure without
+an automatic rebuild or cache reset, even when no results were produced.
 
 The poll interval matters as much as the grace: at the original 10s granularity a
 20s grace could take 30s to fire, so every *green* run paid up to half a minute
