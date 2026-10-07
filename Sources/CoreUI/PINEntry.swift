@@ -526,6 +526,7 @@ private struct PINKeyBody: View {
 
     @Environment(\.isFocused) private var isFocused
     @Environment(\.themePalette) private var palette
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
 
     /// A press is latched rather than read straight from
     /// `configuration.isPressed`.
@@ -575,6 +576,7 @@ private struct PINKeyBody: View {
                 cornerRadius: PINMetrics.keyDiameter / 2,
                 isFocused: isHighlighted
             )
+            .environment(\.plozzGradientCardSurface, gradientEnabled)
             .overlay {
                 // A capsule matches the key at both widths: the delete key is
                 // wider, but the corner radius is driven by the shared height.

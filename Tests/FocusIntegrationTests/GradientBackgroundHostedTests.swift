@@ -8,6 +8,55 @@ import XCTest
 
 @MainActor
 final class GradientBackgroundHostedTests: XCTestCase {
+    func testPINPadKeepsItsFocusAndSharedSurfaceAcrossThemeChanges() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: AnyView(EmptyView()))
+        host.safeAreaRegions = []
+        window.rootViewController = host
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+
+        for (name, palette) in [("dark", ThemePalette.dark), ("black", .pureBlack), ("light", .light)] {
+            for (gradient, reduced) in [(true, false), (false, false), (true, true)] {
+                host.rootView = AnyView(
+                    PINEntryScaffold(
+                        title: "Enter your PIN", name: Text(verbatim: "Fixture profile"),
+                        onSubmit: { _ in }, onCancel: {}
+                    ) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .resizable().scaledToFit().frame(width: PINLayout.badgeSize, height: PINLayout.badgeSize)
+                    }
+                    .environment(\.themePalette, palette)
+                    .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                    .environment(\.gradientBackgroundsEnabled, gradient)
+                    .environment(\.plozzReduceTransparency, reduced)
+                    .transaction { $0.disablesAnimations = true }
+                )
+                window.layoutIfNeeded()
+                window.setNeedsFocusUpdate()
+                window.updateFocusIfNeeded()
+                let deadline = ContinuousClock.now + .seconds(2)
+                while UIFocusSystem.focusSystem(for: window)?.focusedItem == nil, ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                let focused = try XCTUnwrap(UIFocusSystem.focusSystem(for: window)?.focusedItem)
+                XCTAssertTrue(focused.canBecomeFocused, "PIN entry must retain a native focus target.")
+                try await Task.sleep(for: .milliseconds(200))
+                let image = try capture(window)
+                let background = try pixel(image, at: CGPoint(x: 20, y: 20))
+                XCTAssertTrue(background.allSatisfy { palette.isLight ? $0 > 180 : $0 < 100 },
+                              "Capture the settled theme, not an in-flight palette crossfade.")
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "pin-surface-\(name)-gradient-\(gradient)-reduced-\(reduced)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
     func testFullscreenHeroTintDoesNotLeakIntoDetailOrShowcaseScopes() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)

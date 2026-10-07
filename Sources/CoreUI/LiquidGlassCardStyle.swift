@@ -18,6 +18,7 @@ public struct PlozzGlassCardModifier: ViewModifier {
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzNativeFocusSurface) private var nativeSurface
     @Environment(\.plozzRestingCardSurface) private var restingSurface
+    @Environment(\.plozzGradientCardSurface) private var gradientSurface
 
     public init(cornerRadius: CGFloat, isFocused: Bool, glassAtRest: Bool = true) {
         self.cornerRadius = cornerRadius
@@ -95,13 +96,21 @@ public struct PlozzGlassCardModifier: ViewModifier {
                 .clipShape(shape)
         } else {
             // Pre-Liquid-Glass fallback: opaque lift on focus, light translucent
-            // wash at rest.
+            // wash at rest. Gradient-backed controls share the same surface on
+            // older systems without changing the ordinary fallback.
+            let idleSurface = gradientSurface ? restingSurface : SurfaceStyle(
+                fill: Color.primary.opacity(0.07),
+                border: Color.primary.opacity(0.10)
+            )
             content
                 .background {
-                    shape.fill(isFocused ? palette.liftSurface : Color.primary.opacity(0.07))
+                    shape.fill(isFocused ? palette.liftSurface : idleSurface.fill)
                 }
                 .overlay {
-                    shape.strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+                    shape.strokeBorder(
+                        isFocused ? Color.primary.opacity(0.10) : (idleSurface.border ?? .clear),
+                        lineWidth: isFocused ? 1 : idleSurface.borderWidth
+                    )
                 }
                 .clipShape(shape)
         }
