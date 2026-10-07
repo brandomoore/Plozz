@@ -163,7 +163,7 @@ public final class SentryCrashReporter: CrashReporter {
     }
 
     private func configureSetupDiagnostics(_ context: CrashReportContext) {
-        let enabled = IPTVSetupDiagnostic.isEnabled(environment: context.environment, build: context.build)
+        let enabled = IPTVSetupDiagnostic.isEnabled(environment: context.environment)
         guard enabled != setupDiagnosticsActive else { return }
         setupDiagnosticsActive = enabled
         guard enabled else {

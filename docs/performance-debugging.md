@@ -65,11 +65,12 @@ crash-reporting consent and limited to one warning per category per reporter
 lifecycle. These measurements diagnose an unavailable input; a screenshot of the
 generic import error alone cannot establish which limit was reached.
 
-Temporary IPTV setup diagnostics are enabled for TestFlight builds **51 and 52**
-and local Debug verification, never App Store builds. Build 53 and later stop
-recording automatically; this is not a remote configuration switch. They reuse
-Share Crash Reports (including explicit opt-outs), not the manual Send Diagnostics
-action. A handled add/reconnect failure produces a warning with
+IPTV setup diagnostics are enabled for **all TestFlight builds**, including
+hotfixes, and local Debug verification, never App Store builds. There is no
+build-number allowlist or automatic build-based expiry; retire the investigation
+explicitly once the setup issues are resolved. This is not a remote configuration
+switch. They reuse Share Crash Reports (including explicit opt-outs), not the
+manual Send Diagnostics action. A handled add/reconnect failure produces a warning with
 `report.kind:iptv-setup`; a crash or button press is not required.
 
 Only explicit URL, file, and Xtream account setup and legacy source check/save
