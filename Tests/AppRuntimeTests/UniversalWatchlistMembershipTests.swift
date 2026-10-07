@@ -46,6 +46,46 @@ final class UniversalWatchlistMembershipTests: XCTestCase {
         XCTAssertFalse(host.isUniversalWatchlistPresentationReady)
     }
 
+    func testNavigationWaitsForCurrentProfileHydrationAndTracksTheLastItem() async throws {
+        let host = try await UniversalWatchlistHostDouble()
+        XCTAssertNil(host.navigationWatchlistHasItems)
+        host.universalWatchlistNativeViewLoaded = true
+        host.universalWatchlistProfileID = "\(host.profiles.activeProfileID)#0#accounts"
+        XCTAssertEqual(host.navigationWatchlistHasItems, false)
+
+        let added = await host.performUniversalWatchlist(adding: true, item: promotedSeries)
+        XCTAssertTrue(added)
+        XCTAssertEqual(host.navigationWatchlistHasItems, true)
+        let removed = await host.performUniversalWatchlist(adding: false, item: promotedSeries)
+        XCTAssertTrue(removed)
+        XCTAssertEqual(host.navigationWatchlistHasItems, false)
+
+        host.universalWatchlistProfileID = "another-profile#0#accounts"
+        XCTAssertNil(host.navigationWatchlistHasItems)
+    }
+
+    func testNavigationKeepsNativeWatchlistOnFailureButHonorsSuccessfulEmptyRefresh() async throws {
+        let host = try await UniversalWatchlistHostDouble()
+        let destination = WatchlistDestinationID(rawValue: "navigation-native")!
+        host.universalWatchlistNativeViewLoaded = true
+        host.universalWatchlistProfileID = "\(host.profiles.activeProfileID)#0#accounts"
+        host.universalWatchlistDestinationIDs = [destination]
+        host.universalWatchlistNativeView.applySuccess(
+            destinationID: destination,
+            entries: [NativeWatchlistEntry(aliasID: MediaAliasID(), kind: .movie, index: 0)!]
+        )
+        host.announceUniversalWatchlistDidChange()
+        XCTAssertEqual(host.navigationWatchlistHasItems, true)
+
+        host.universalWatchlistNativeView.applyFailure(destinationID: destination)
+        host.announceUniversalWatchlistDidChange()
+        XCTAssertEqual(host.navigationWatchlistHasItems, true)
+
+        host.universalWatchlistNativeView.applySuccess(destinationID: destination, entries: [])
+        host.announceUniversalWatchlistDidChange()
+        XCTAssertEqual(host.navigationWatchlistHasItems, false)
+    }
+
     func testEmptyNativeViewLoadStillNotifiesHomeThatCacheIsReady() async throws {
         let host = try await UniversalWatchlistHostDouble()
         let notification = expectation(

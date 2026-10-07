@@ -41,13 +41,33 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
     /// resolving, without erasing another platform's hidden-tab preferences.
     public var hiddenKeys: Set<String>
 
-    public init(order: [String] = [], hiddenKeys: Set<String> = []) {
+    /// Explicit Show choices, distinct from destinations that happen to be
+    /// useful today. Automatic visibility is never persisted in this set.
+    public var shownKeys: Set<String>
+
+    public init(order: [String] = [], hiddenKeys: Set<String> = [], shownKeys: Set<String> = []) {
         self.order = order
         self.hiddenKeys = hiddenKeys
+        self.shownKeys = shownKeys.subtracting(hiddenKeys)
     }
 
-    /// Every supported destination is on by default. Each shell supplies its
-    /// platform-specific default order when resolving this empty layout.
+    private enum CodingKeys: String, CodingKey {
+        case order, hiddenKeys, shownKeys
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        order = try values.decode([String].self, forKey: .order)
+        hiddenKeys = try values.decode(Set<String>.self, forKey: .hiddenKeys)
+        // A legacy whole-navigation arrangement is an explicit saved layout.
+        // An untouched/default payload or library-only order is not.
+        shownKeys = try values.decodeIfPresent(Set<String>.self, forKey: .shownKeys)
+            ?? Set(order.filter { Self.destinationKeys.contains($0) })
+        shownKeys.subtract(hiddenKeys)
+    }
+
+    /// No manual visibility choices. Shells supply content-aware visibility and
+    /// their platform-specific order when resolving this empty layout.
     public static let `default` = NavigationLibraryLayout()
 
     /// Whether an entry is shown in navigation.
@@ -63,9 +83,24 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
         }
         if visible {
             hiddenKeys.remove(key)
+            shownKeys.insert(key)
         } else {
             hiddenKeys.insert(key)
+            shownKeys.remove(key)
         }
+    }
+
+    /// A paint-only layout; automatic decisions never replace stored intent.
+    public func resolvingAutomaticVisibility(
+        hidden automaticHiddenKeys: Set<String>,
+        retainingWatchlist: Bool = false
+    ) -> Self {
+        var resolved = self
+        resolved.hiddenKeys.formUnion(automaticHiddenKeys.subtracting(shownKeys))
+        if retainingWatchlist, !hiddenKeys.contains(Self.watchlistKey) {
+            resolved.hiddenKeys.remove(Self.watchlistKey)
+        }
+        return resolved
     }
 
     /// Resolves the persisted order + hidden set against the live entry keys.
@@ -130,10 +165,13 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
     public mutating func apply(
         _ sections: OrderedVisibilityList.Sections<String>,
         available: [String],
-        requiredEnabled: Set<String> = [Self.settingsKey]
+        requiredEnabled: Set<String> = [Self.settingsKey],
+        automaticallyHiddenKeys: Set<String> = []
     ) {
         let available = deduplicated(available)
         let availableSet = Set(available)
+        let previous = resolvingAutomaticVisibility(hidden: automaticallyHiddenKeys)
+            .sections(available: available, requiredEnabled: requiredEnabled)
         var enabled = sections.enabled
         var disabled = sections.disabled
         if availableSet.contains(Self.settingsKey),
@@ -159,9 +197,16 @@ public struct NavigationLibraryLayout: Codable, Equatable, Sendable {
 
         var seen: Set<String> = []
         order = result.filter { seen.insert($0).inserted }
-        hiddenKeys = hiddenKeys
-            .subtracting(availableSet.subtracting(requiredEnabled))
-            .union(disabled)
+        let changed = Set(previous.enabled).symmetricDifference(Set(enabled))
+        for key in changed.intersection(availableSet).subtracting(requiredEnabled) {
+            if enabled.contains(key) {
+                hiddenKeys.remove(key)
+                shownKeys.insert(key)
+            } else {
+                hiddenKeys.insert(key)
+                shownKeys.remove(key)
+            }
+        }
     }
 
     /// Removes impossible persisted state while preserving every unknown key for

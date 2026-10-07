@@ -40,12 +40,14 @@ public enum AppAdmissionNavigation {
         liveTV: Destination,
         fallback: Destination,
         admission: AppAdmissionContext,
-        hasPendingLiveTVEntry: Bool
+        hasPendingLiveTVEntry: Bool,
+        prefersLiveTV: Bool = false
     ) -> Destination {
         if admission.explicitStandaloneChoice,
            hasPendingLiveTVEntry || (!admission.hasMediaAccounts && visible.contains(liveTV)) {
             return liveTV
         }
+        if prefersLiveTV, visible.contains(liveTV) { return liveTV }
         return visible.contains(current) ? current : (visible.first ?? fallback)
     }
 }

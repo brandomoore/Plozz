@@ -449,7 +449,7 @@ public struct RootView: View {
                         audioController: appState.audioController,
                         homeLayoutStore: HomeLayoutStore(namespace: appState.profilesModel.activeNamespace),
                         homeContentStore: HomeContentStore(namespace: appState.profilesModel.activeNamespace),
-                        navigationLibrariesSnapshotStore: NavigationLibrariesSnapshotStore(namespace: appState.profilesModel.activeNamespace),
+                        watchlistHasItems: { appState.navigationWatchlistHasItems },
                         mediaItemActionHandler: appState.mediaItemActionHandler,
                         enqueueWatchMutation: { appState.enqueueWatchMutation($0) },
                         completeLibraryChannelPlayback: makeLibraryChannelCompletionHandler(

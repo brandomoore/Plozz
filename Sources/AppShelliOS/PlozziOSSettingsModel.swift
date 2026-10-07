@@ -42,15 +42,10 @@ final class PlozziOSSettingsModel {
         watchIndicator = WatchStatusIndicatorSettingsModel(
             store: WatchStatusIndicatorSettingsStore(namespace: namespace)
         )
-        let navigationDefault = NavigationLibraryLayout(
-            hiddenKeys: [NavigationLibraryLayout.watchlistKey]
-        )
         navigation = NavigationStyleSettingsModel(
             store: NavigationStyleSettingsStore(namespace: namespace),
-            layoutStore: NavigationLibraryLayoutStore(
-                namespace: namespace,
-                defaultLayout: navigationDefault
-            )
+            layoutStore: NavigationLibraryLayoutStore(namespace: namespace),
+            librariesSnapshotStore: NavigationLibrariesSnapshotStore(namespace: namespace)
         )
         playback = PlaybackSettingsModel(
             store: PlaybackSettingsStore(namespace: namespace)

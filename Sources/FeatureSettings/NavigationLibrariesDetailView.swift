@@ -169,13 +169,13 @@ public struct NavigationLibrariesDetailView: View {
     #if os(iOS)
     private static let footnote = LocalizedStringResource(
         "navigationArrangement.footnote.iOS",
-        defaultValue: "Drag to reorder. Hold to hide or show.",
+        defaultValue: "Drag to reorder. Hold to hide or show. Unused pages hide automatically unless you show them.",
         comment: "Instructions for arranging iPhone and iPad navigation tabs."
     )
     #else
     private static let footnote = LocalizedStringResource(
         "navigationArrangement.footnote",
-        defaultValue: "Press and hold an item to hide, show, or move it. Hiding a shortcut doesn't remove its content. Settings always stays visible.",
+        defaultValue: "Press and hold an item to hide, show, or move it. Unused pages hide automatically unless you show them. Settings always stays visible.",
         comment: "Instructions and the always-visible Settings safety rule for navigation customization."
     )
     #endif
