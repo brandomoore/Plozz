@@ -66,10 +66,6 @@ private enum PrototypeSearchScope: Hashable {
     case channels, programs
 }
 
-private enum PrototypeEnrollmentCommitError: Error {
-    case authorizationChanged, configurationChanged
-}
-
 public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var model: LiveTVPrototypeModel
     @State private var preview: LiveTVPreviewController
@@ -1220,24 +1216,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
               !serverChoices.isEmpty else { return [] }
         return await enrollment.refresh(
             choices: serverChoices, resolver: serverProviderResolver,
-            configuration: { try sourceStore.load() },
+            store: sourceStore,
             suppressedAccountIDs: { try enrollmentSuppression.suppressedAccountIDs() },
-            apply: { updated in
-                guard isProfileAuthorized() else {
-                    throw PrototypeEnrollmentCommitError.authorizationChanged
-                }
-                let current = try sourceStore.load()
-                let suppressed = try enrollmentSuppression.suppressedAccountIDs()
-                guard updated.playlists == current.playlists,
-                      current.servers.allSatisfy({ updated.servers.contains($0) }),
-                      updated.servers.allSatisfy({ source in
-                          current.servers.contains(source) || !suppressed.contains(source.accountID)
-                      }) else {
-                    throw PrototypeEnrollmentCommitError.configurationChanged
-                }
-                try updated.validate()
-                try sourceStore.save(updated)
-            }
+            isAuthorized: isProfileAuthorized
         )
     }
 

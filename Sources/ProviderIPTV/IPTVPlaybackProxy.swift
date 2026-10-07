@@ -12,6 +12,7 @@ actor IPTVPlaybackProxy {
     private let origin: URL
     private let headers: [String: String]
     private let http: IPTVHTTP
+    private let diagnostic: PlaybackFailureAttempt?
     private let key = SymmetricKey(size: .bits256)
     private let token = UUID().uuidString
     private var port: UInt16?
@@ -21,7 +22,8 @@ actor IPTVPlaybackProxy {
 
     init(
         origin: URL, headers: [String: String], configuration: URLSessionConfiguration? = nil,
-        sensitiveValues: [String] = []
+        sensitiveValues: [String] = [], content: PlaybackFailureDiagnostic.Content = .live,
+        diagnostics: PlaybackFailureDiagnostics = .shared
     ) throws {
         self.origin = origin
         self.headers = headers
@@ -29,6 +31,7 @@ actor IPTVPlaybackProxy {
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
+        diagnostic = diagnostics.begin(layer: .iptvProxy, content: content)
     }
 
     func start() async throws -> URL {
@@ -98,7 +101,8 @@ actor IPTVPlaybackProxy {
         }
         let payload = encrypted.base64EncodedString().replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
-        guard let url = URL(string: "http://127.0.0.1:\(port)/\(token)/\(payload)") else {
+        let suffix = Self.mediaSuffix(for: url)
+        guard let url = URL(string: "http://127.0.0.1:\(port)/\(token)/\(payload)\(suffix)") else {
             throw IPTVError.invalidAddress
         }
         return url
@@ -109,12 +113,22 @@ actor IPTVPlaybackProxy {
         guard parts.count == 2, parts[0] == token, parts[1].utf8.count <= 24_000 else {
             throw IPTVError.authentication
         }
-        var text = parts[1].replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        let resource = parts[1].split(separator: ".", omittingEmptySubsequences: false)
+        guard (1...2).contains(resource.count) else { throw IPTVError.authentication }
+        var text = resource[0].replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         text += String(repeating: "=", count: (4 - text.count % 4) % 4)
         guard let data = Data(base64Encoded: text),
               let raw = String(data: try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: key), encoding: .utf8),
-              let url = URL(string: raw), LiveTVPlaylistSource.isSupportedURL(url) else { throw IPTVError.authentication }
+              let url = URL(string: raw), LiveTVPlaylistSource.isSupportedURL(url),
+              (resource.count == 2 ? "." + resource[1] : "") == Self.mediaSuffix(for: url) else {
+            throw IPTVError.authentication
+        }
         return url
+    }
+
+    private static func mediaSuffix(for url: URL) -> String {
+        let suffix = url.pathExtension.lowercased()
+        return ["m3u8", "ts", "m2ts", "mts"].contains(suffix) ? "." + suffix : ""
     }
 
     private func serve(_ connection: NWConnection) async {
@@ -125,6 +139,8 @@ actor IPTVPlaybackProxy {
         }
         defer { deadline.cancel() }
         var sentResponse = false
+        var diagnosticStage: PlaybackFailureDiagnostic.Stage?
+        let responseEvidence = IPTVPlaybackResponseEvidence()
         do {
             var head = Data()
             while head.range(of: Data("\r\n\r\n".utf8)) == nil {
@@ -148,12 +164,18 @@ actor IPTVPlaybackProxy {
                         .trimmingCharacters(in: .whitespaces)
                 }
             }
-            let (bytes, response) = try await http.bytes(url: url, headers: outgoing, method: String(request[0]))
+            diagnosticStage = .response
+            let (bytes, response) = try await http.bytes(
+                url: url, headers: outgoing, method: String(request[0]),
+                receivedResponse: { status, mimeType in responseEvidence.record(status: status, mimeType: mimeType) }
+            )
             defer { bytes.task.cancel() }
             if request[0] == "HEAD" {
+                diagnosticStage = nil
                 try await Self.send(connection, data: responseHead(response, chunked: false))
                 return
             }
+            diagnosticStage = .body
             var iterator = bytes.makeAsyncIterator()
             var prefix = Data()
             while prefix.count < 16, let byte = try await iterator.next() { prefix.append(byte) }
@@ -162,6 +184,7 @@ actor IPTVPlaybackProxy {
             let manifest = contentType.contains("mpegurl") || prefixText.hasPrefix("#EXTM3U")
                 || prefixText.hasPrefix("\u{FEFF}#EXTM3U")
             if manifest {
+                responseEvidence.detectHLS()
                 var body = prefix
                 while let byte = try await iterator.next() {
                     guard body.count < 8 * 1_024 * 1_024 else { throw IPTVError.oversizedRecord }
@@ -169,29 +192,45 @@ actor IPTVPlaybackProxy {
                     if body.count.isMultiple(of: 65_536) { try Task.checkCancellation() }
                 }
                 guard let text = String(data: body, encoding: .utf8) else { throw IPTVError.malformed }
+                diagnosticStage = .manifest
                 let rewritten = try rewrite(text, baseURL: response.url ?? url)
                 let data = Data(rewritten.utf8)
+                diagnosticStage = nil
                 try await Self.send(connection, data: Data(
                     "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.apple.mpegurl\r\nContent-Length: \(data.count)\r\nConnection: close\r\n\r\n".utf8
                 ))
                 sentResponse = true
                 try await Self.send(connection, data: data)
             } else {
+                diagnosticStage = nil
                 try await Self.send(connection, data: responseHead(response, chunked: true))
                 sentResponse = true
                 var chunk = prefix
+                diagnosticStage = .body
                 while let byte = try await iterator.next() {
                     chunk.append(byte)
                     if chunk.count == 65_536 {
                         try Task.checkCancellation()
+                        diagnosticStage = nil
                         try await Self.sendChunk(connection, data: chunk)
                         chunk.removeAll(keepingCapacity: true)
+                        diagnosticStage = .body
                     }
                 }
+                diagnosticStage = nil
                 if !chunk.isEmpty { try await Self.sendChunk(connection, data: chunk) }
                 try await Self.send(connection, data: Data("0\r\n\r\n".utf8))
             }
         } catch {
+            if !Task.isCancelled, !(error is CancellationError), let diagnosticStage {
+                let failure = (error as? IPTVError)?.setupFailure ?? .sanitized(error)
+                let evidence = responseEvidence.snapshot
+                diagnostic?.fail(
+                    stage: diagnosticStage, reason: failure.reason,
+                    domain: failure.networkCode == nil ? .none : .url, code: failure.networkCode,
+                    httpStatus: evidence.status, format: evidence.format
+                )
+            }
             if !Task.isCancelled { PlozzLog.playback.error("Authenticated IPTV delivery failed") }
             if !sentResponse {
                 do {
@@ -201,6 +240,25 @@ actor IPTVPlaybackProxy {
                 } catch { connection.cancel() }
             }
         }
+    }
+
+    private final class IPTVPlaybackResponseEvidence: @unchecked Sendable {
+        private let lock = NSLock()
+        private var status: Int?
+        private var format: PlaybackFailureDiagnostic.Format = .unknown
+
+        var snapshot: (status: Int?, format: PlaybackFailureDiagnostic.Format) {
+            lock.withLock { (status, format) }
+        }
+
+        func record(status: Int, mimeType: String?) {
+            lock.withLock {
+                self.status = status
+                format = .init(mimeType: mimeType)
+            }
+        }
+
+        func detectHLS() { lock.withLock { format = .hls } }
     }
 
     func rewrite(_ manifest: String, baseURL: URL) throws -> String {

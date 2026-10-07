@@ -440,6 +440,7 @@ targets:
     platform: tvOS
     sources:
       - path: Tests/FocusHost
+      - path: Tests/AuthPresentationSupport/IPTVSetupFixture.swift
       - path: Tests/FeatureLiveTVRemoteTests/NavigationRailFixture.swift
       - path: App/Resources/Assets.xcassets
       - path: App/Resources/CommunityAssets.xcassets
@@ -462,6 +463,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSPresentationHost
+      - path: Tests/AuthPresentationSupport/IPTVSetupFixture.swift
       - path: App/PlozziOS/Assets.xcassets
       - path: App/Resources/CommunityAssets.xcassets
       - path: App/Resources/ReleaseNotes.json
@@ -482,6 +484,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSPresentationTests
+      - path: Tests/ProviderIPTVTests/IPTVTestHTTPServer.swift
       - path: Tests/AppearancePresentationSupport
       - path: Tests/AuthPresentationSupport
       - path: Tests/SubtitlePresentationSupport
@@ -530,6 +533,7 @@ targets:
     platform: tvOS
     sources:
       - path: Tests/FocusIntegrationTests
+      - path: Tests/ProviderIPTVTests/IPTVTestHTTPServer.swift
       - path: Tests/FeatureLiveTVTests/LiveTVGuideFocusTests.swift
       - path: Tests/AppearancePresentationSupport
       - path: Tests/AuthPresentationSupport

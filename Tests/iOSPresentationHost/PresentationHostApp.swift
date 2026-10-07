@@ -1,6 +1,7 @@
 import SwiftUI
 import CoreModels
 import CoreUI
+import FeatureAuth
 import FeatureHomeCore
 @testable import AppShelliOS
 
@@ -62,12 +63,57 @@ struct PresentationHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if let interactionModel {
+            if ProcessInfo.processInfo.arguments.contains("--iptv-removal-fixture") {
+                IPTVRemovalFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--iptv-setup-fixture") {
+                IPTVSetupFixture()
+            } else if let interactionModel {
                 SettingsInteractionFixture(appModel: interactionModel)
             } else {
                 Color.black
             }
         }
+    }
+}
+
+private struct IPTVRemovalFixture: View {
+    private let session: UserSession
+
+    init() {
+        let arguments = ProcessInfo.processInfo.arguments
+        let playlistHeaders = arguments.contains("--playlist-headers")
+        let guideHeaders = arguments.contains("--guide-headers")
+        let address = URL(string: "https://playlist.example.test/channels.m3u")!
+        let guides = (1...4).map { URL(string: "https://guide.example.test/\($0).xml")! }
+        let headers = Dictionary(uniqueKeysWithValues: (1...3).map { ("X-Guide-\($0)", "fixture-\($0)") })
+        do {
+            let credential = try IPTVCredential(
+                mode: .playlist, address: address,
+                headers: playlistHeaders ? headers : [:], guideURL: guides[0],
+                additionalGuideURLs: playlistHeaders || guideHeaders ? [] : Array(guides.dropFirst()),
+                guideHeaders: guideHeaders ? headers : [:]
+            )
+            session = UserSession(
+                server: .init(id: "fixture", name: "Fixture playlist", baseURL: address, provider: .iptv),
+                userID: "fixture", userName: "IPTV", deviceID: "fixture",
+                accessToken: try credential.encoded()
+            )
+        } catch {
+            fatalError("Invalid IPTV removal fixture: \(error)")
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            IPTVSignInView(
+                deviceID: "fixture", reconnecting: session,
+                onAuthenticated: { _ in fatalError("The removal fixture must not connect.") },
+                onCancel: {}
+            )
+        }
+        .environment(\.locale, Locale(identifier: "en_US"))
+        .environment(\.themePalette, .dark)
+        .environment(\.plozzMetrics, .touch(density: .standard))
     }
 }
 

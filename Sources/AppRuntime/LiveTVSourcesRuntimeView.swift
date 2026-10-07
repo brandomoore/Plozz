@@ -98,6 +98,9 @@ private struct LiveTVSourcesRuntimeHost<Content: View>: View {
         .task {
             guard runtime == nil else { return }
             let expectedLock = profiles.activeProfile.effectiveLockRevision
+            let enrollmentSuppression = LiveTVServerEnrollmentSuppressionStore(
+                profileID: profileID, namespace: namespace
+            )
             let instance = LiveTVSourcesRuntime(
                 profileID: profileID,
                 store: LiveTVSourceStorage.approvalAwareStore(profileID: profileID, namespace: namespace),
@@ -121,7 +124,9 @@ private struct LiveTVSourcesRuntimeHost<Content: View>: View {
                     return LiveTVSourceApprovalContext(profiles: profiles)
                 },
                 accountAuthorizationID: { [accounts] in accounts.liveTVAuthorizationID },
-                serverProviderResolver: { [accounts] id in accounts.liveTVProviderResolver()(id) }
+                serverProviderResolver: { [accounts] id in accounts.liveTVProviderResolver()(id) },
+                serverChoices: { [accounts] in accounts.liveTVServerChoices },
+                suppressedAccountIDs: { try enrollmentSuppression.suppressedAccountIDs() }
             )
             if isPresented, scenePhase == .active { instance.activate() }
             runtime = instance

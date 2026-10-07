@@ -3,6 +3,17 @@ import XCTest
 @testable import EnginePlozzigen
 
 final class PlozzigenLiveOutputTests: XCTestCase {
+    func testRawTransportStreamsDoNotUseTheHLSOnlyNativeBypass() throws {
+        for suffix in ["ts", "m2ts", "mts", "TS"] {
+            let url = try XCTUnwrap(URL(string: "http://127.0.0.1/opaque.\(suffix)"))
+            let options = PlozzigenVideoEngine.liveLoadOptions(httpHeaders: [:], url: url)
+            XCTAssertTrue(options.isLive)
+            XCTAssertFalse(options.nativeRemoteHLS, suffix)
+        }
+        let hls = try XCTUnwrap(URL(string: "http://127.0.0.1/opaque.m3u8"))
+        XCTAssertTrue(PlozzigenVideoEngine.liveLoadOptions(httpHeaders: [:], url: hls).nativeRemoteHLS)
+    }
+
     func testOutputPoliciesLeavePanelModeInferenceToAether() {
         for var options in [
             LoadOptions(matchContentEnabled: true),

@@ -85,6 +85,27 @@ final class HomeAggregatorTests: XCTestCase {
         XCTAssertEqual(Set(libraries.map(\.key)).count, 3)
     }
 
+    func testLibrarySelectionSkipsOnlySuccessfullyDiscoveredChannelsOnlyIPTV() async {
+        let live = resolved("live", user: "IPTV", server: "Playlist", kind: .iptv,
+                            provider: AggregatorStub(libraries: []))
+        let vod = resolved("vod", user: "IPTV", server: "On demand", kind: .iptv,
+                           provider: AggregatorStub(libraries: [library("movies", "Movies")]))
+        let offline = resolved("offline", user: "IPTV", server: "Offline", kind: .iptv,
+                               provider: AggregatorStub.failing())
+        let emptyServer = resolved("empty", user: "Viewer", server: "Server", kind: .jellyfin,
+                                   provider: AggregatorStub(libraries: []))
+        let cases: [([ResolvedAccount], Bool)] = [
+            ([live], true), ([live, live], true), ([vod], false), ([live, vod], false),
+            ([offline], false), ([live, offline], false), ([emptyServer], false),
+            ([live, emptyServer], false), ([], false)
+        ]
+        for (accounts, expected) in cases {
+            let result = await HomeAggregator().libraryDiscovery(from: accounts)
+            XCTAssertEqual(result.canSkipSelection(for: accounts), expected,
+                           "Accounts: \(accounts.map(\.account.id))")
+        }
+    }
+
     func testContentNeverMergesSameTitleLibraryTilesAcrossAccounts() async {
         // The bug: two accounts each expose a "Movies" library (same kind+title).
         // Library TILES must NOT be merged across accounts — each must get its own

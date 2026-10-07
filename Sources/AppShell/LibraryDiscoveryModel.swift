@@ -12,8 +12,10 @@ import FeatureHome
 @Observable
 final class LibraryDiscoveryModel {
     private(set) var state: LoadState<[AggregatedLibrary]> = .idle
+    private(set) var canSkipSelection = false
 
     private let aggregator = HomeAggregator()
+    private var loadGeneration = UUID()
 
     /// Discovers libraries across `accounts`, resiliently, WITHOUT publishing any
     /// state, reporting which accounts were unreachable. The Settings path uses
@@ -34,9 +36,18 @@ final class LibraryDiscoveryModel {
     /// Discovers libraries across `accounts`, resiliently. Always reloads so the
     /// checklist reflects servers added/removed since it was last opened.
     func load(from accounts: [ResolvedAccount]) async {
+        let generation = UUID()
+        loadGeneration = generation
         state = .loading
-        let libraries = await libraries(from: accounts)
-        state = libraries.isEmpty ? .empty : .loaded(libraries)
+        canSkipSelection = false
+        let discovery = await libraryDiscovery(from: accounts)
+        guard !Task.isCancelled, generation == loadGeneration else { return }
+        canSkipSelection = discovery.canSkipSelection(for: accounts)
+        if discovery.libraries.isEmpty, !discovery.unreachableAccountIDs.isEmpty {
+            state = .failed(.serverUnreachable)
+        } else {
+            state = discovery.libraries.isEmpty ? .empty : .loaded(discovery.libraries)
+        }
     }
 }
 #endif

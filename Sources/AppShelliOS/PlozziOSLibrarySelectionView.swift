@@ -2,6 +2,7 @@
 import AppRuntime
 import CoreModels
 import CoreUI
+import FeatureHomeCore
 import SwiftUI
 
 struct PlozziOSLibrarySelectionView: View {
@@ -114,33 +115,14 @@ struct PlozziOSLibrarySelectionView: View {
         let generation = loadGeneration
         isLoading = true
         loadFailed = false
-        var loaded: [LibraryChoice] = []
-        for account in accounts {
-            do {
-                let accountLibraries = try await account.provider.libraries()
-                loaded.append(
-                    contentsOf: accountLibraries
-                        .filter { !$0.isMusic }
-                        .map {
-                            LibraryChoice(
-                                accountID: account.account.id,
-                                serverName: account.account.server.name,
-                                library: $0
-                            )
-                        }
-                )
-            } catch is CancellationError {
-                guard generation == loadGeneration else { return }
-                isLoading = false
-                return
-            } catch {
-                guard generation == loadGeneration else { return }
-                loadFailed = true
-            }
+        let discovery = await HomeAggregator().libraryDiscovery(from: accounts)
+        guard !Task.isCancelled, generation == loadGeneration else { return }
+        loadFailed = !discovery.unreachableAccountIDs.isEmpty
+        libraries = discovery.libraries.filter { !$0.library.isMusic }.map {
+            LibraryChoice(accountID: $0.accountID, serverName: $0.serverName, library: $0.library)
         }
-        guard generation == loadGeneration else { return }
-        libraries = loaded
         isLoading = false
+        if discovery.canSkipSelection(for: accounts) { onContinue() }
     }
 }
 

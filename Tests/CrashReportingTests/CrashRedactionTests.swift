@@ -5,6 +5,58 @@ import XCTest
 @testable import CrashReporting
 
 final class CrashRedactionTests: XCTestCase {
+    func testPlaybackFailuresRetainTypedEvidenceButScrubPrivatePayloads() throws {
+        let event = try playbackFailure(status: 403)
+        event.context?["playback_failure"]?["url"] = "https://private.test/token"
+        event.context?["playback_failure"]?["headers"] = ["Authorization": "private"]
+        event.tags?["private"] = "private channel"
+        event.message = SentryMessage(formatted: "private error")
+        event.fingerprint = ["private"]
+        let clean = try XCTUnwrap(CrashRedaction.scrub(event))
+        let data = try XCTUnwrap(clean.context?["playback_failure"])
+        XCTAssertEqual(data["httpStatus"] as? Int, 403)
+        XCTAssertEqual(data["stage"] as? String, "response")
+        XCTAssertEqual(data["reason"] as? String, "authentication")
+        XCTAssertNil(clean.tags?["private"])
+        XCTAssertFalse(try String(decoding: JSONSerialization.data(withJSONObject: data), as: UTF8.self).contains("private"))
+        XCTAssertEqual(clean.fingerprint?.first, "playback_failure")
+    }
+
+    func testPlaybackRedactionRejectsInvalidEnumsCountersAndCancellation() throws {
+        for (key, value) in [
+            ("layer", "private" as Any), ("content", "private" as Any), ("stage", "private" as Any),
+            ("reason", "cancelled" as Any), ("engineFailure", "private" as Any), ("domain", "private" as Any),
+            ("format", "private" as Any), ("code", Int.max as Any), ("httpStatus", true as Any),
+            ("httpStatus", 200.5 as Any), ("elapsedMilliseconds", -1 as Any)
+        ] {
+            let event = try playbackFailure(status: 403)
+            event.context?["playback_failure"]?[key] = value
+            XCTAssertNil(CrashRedaction.scrub(event), key)
+        }
+    }
+
+    func testPlaybackFailureReportsAreBoundedAndDeduplicated() throws {
+        let gate = PlaybackFailureReportGate()
+        for status in 400...410 {
+            let event = try playbackFailure(status: status)
+            let data = try XCTUnwrap(event.context?["playback_failure"])
+            let diagnostic = try JSONDecoder().decode(
+                PlaybackFailureDiagnostic.self, from: JSONSerialization.data(withJSONObject: data)
+            )
+            XCTAssertEqual(gate.accept(diagnostic), status < 410)
+            XCTAssertFalse(gate.accept(diagnostic))
+        }
+    }
+
+    private func playbackFailure(status: Int) throws -> Event {
+        let diagnostics = PlaybackFailureDiagnostics()
+        let buffer = CrashPlaybackBuffer()
+        diagnostics.start { buffer.append($0) }
+        let attempt = try XCTUnwrap(diagnostics.begin(layer: .iptvProxy, content: .live))
+        attempt.fail(stage: .response, reason: .authentication, httpStatus: status, format: .html)
+        return try XCTUnwrap(SentryCrashReporter.playbackEvent(XCTUnwrap(buffer.last)))
+    }
+
     func testSetupFailureSurvivesWithoutPrivateValuesOrUntrustedTags() throws {
         let diagnostic = try setupFailure(status: 403)
         let event = try XCTUnwrap(SentryCrashReporter.setupEvent(diagnostic))
@@ -34,6 +86,13 @@ final class CrashRedactionTests: XCTestCase {
         event.tags?["os.version"] = "https://private.test"
         XCTAssertNil(CrashRedaction.scrub(event)?.tags?["device.model"])
         XCTAssertNil(CrashRedaction.scrub(event)?.tags?["os.version"])
+    }
+
+    private final class CrashPlaybackBuffer: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: PlaybackFailureDiagnostic?
+        var last: PlaybackFailureDiagnostic? { lock.withLock { value } }
+        func append(_ value: PlaybackFailureDiagnostic) { lock.withLock { self.value = value } }
     }
 
     func testSetupRedactionRejectsInvalidEnumsAndNumericPayloads() throws {

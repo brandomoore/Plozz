@@ -9,7 +9,7 @@ final class ReleaseNotesTests: XCTestCase {
     ) -> ReleaseNotesRelease {
         ReleaseNotesRelease(
             id: String(format: "release/%03d", build), version: version,
-            build: build, releasedAt: releasedAt,
+            build: ReleaseBuildNumber(integerLiteral: build), releasedAt: releasedAt,
             sections: [ReleaseNotesSection(category: .new, items: ["Release \(build)"])],
             marketingVersion: marketingVersion
         )
@@ -37,6 +37,62 @@ final class ReleaseNotesTests: XCTestCase {
         XCTAssertEqual(model.pendingVersionGroups[0].sections[0].items.map(\.text), ["Release 46"])
         model.dismissStartupNotes()
         XCTAssertEqual(store.lastSeenReleaseID, "release/046")
+    }
+
+    func testDottedBuildsRoundTripAndAnnounceInNumericOrder() throws {
+        let values = ["52", "51.10", "51.2", "51.1", "51"]
+        let releases = try values.map { value in
+            let build = try XCTUnwrap(ReleaseBuildNumber(value))
+            return ReleaseNotesRelease(
+                id: build.releaseID, version: "2026.10.7", build: build, releasedAt: "2026-10-07",
+                sections: [.init(category: .fixed, items: ["Build \(value)"])],
+                marketingVersion: "2026.9.25")
+        }
+        let catalog = try ReleaseNotesCatalog(releases: releases)
+        let data = try JSONEncoder().encode(catalog)
+        XCTAssertEqual(try ReleaseNotesCatalog(data: data), catalog)
+        let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let entries = try XCTUnwrap(encoded["releases"] as? [[String: Any]])
+        XCTAssertEqual(entries[0]["build"] as? Int, 52)
+        XCTAssertEqual(entries[1]["build"] as? String, "51.10")
+        XCTAssertEqual(catalog.releases(after: "release/051", through: "release/051.10").map(\.id),
+                       ["release/051.10", "release/051.2", "release/051.1"])
+
+        let store = TestReleaseNotesStore(lastSeenReleaseID: "release/051")
+        let model = ReleaseNotesModel(catalog: catalog, currentReleaseID: "release/051.1", store: store)
+        model.prepareForStartup()
+        XCTAssertEqual(model.pendingReleases.map(\.id), ["release/051.1"])
+        model.dismissStartupNotes()
+        XCTAssertEqual(store.lastSeenReleaseID, "release/051.1")
+        let older = ReleaseNotesModel(catalog: catalog, currentReleaseID: "release/051", store: store)
+        older.prepareForStartup()
+        older.dismissStartupNotes()
+        XCTAssertEqual(store.lastSeenReleaseID, "release/051.1")
+        XCTAssertThrowsError(try ReleaseNotesCatalog(releases: releases.reversed()))
+    }
+
+    func testBuildNumberValidationAndEquivalentVersions() throws {
+        for invalid in ["", "0", "-1", "051", "51.01", "51.", ".1", "51..1", "51.1.1.1",
+                        "10000", "51.100", "51.1.100", "51.1b1", " 51.1", "51.١"] {
+            XCTAssertNil(ReleaseBuildNumber(invalid), invalid)
+        }
+        let short = try XCTUnwrap(ReleaseBuildNumber("51.1"))
+        let full = try XCTUnwrap(ReleaseBuildNumber("51.1.0"))
+        XCTAssertEqual(short, full)
+        XCTAssertEqual(Set([short, full]).count, 1)
+        XCTAssertEqual(short.releaseID, "release/051.1")
+        XCTAssertEqual(full.releaseID, "release/051.1.0")
+        let releases = [short, full].map { build in
+            ReleaseNotesRelease(
+                id: build.releaseID, version: "2026.10.7", build: build, releasedAt: "2026-10-07",
+                sections: [.init(category: .fixed, items: ["Hotfix"])], marketingVersion: "2026.9.25")
+        }
+        XCTAssertThrowsError(try ReleaseNotesCatalog(releases: releases)) {
+            XCTAssertEqual($0 as? ReleaseNotesCatalogError, .duplicateBuild(full))
+        }
+        for invalidJSON in ["true", "51.2", "\"0\"", "\"51.100\""] {
+            XCTAssertThrowsError(try JSONDecoder().decode(ReleaseBuildNumber.self, from: Data(invalidJSON.utf8)))
+        }
     }
 
     func testReleaseDateAndAppleVersionValidation() {

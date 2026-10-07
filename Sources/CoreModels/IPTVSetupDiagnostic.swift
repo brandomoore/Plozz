@@ -25,7 +25,7 @@ public struct IPTVSetupDiagnostic: Equatable, Sendable {
         }
     }
     public struct Failure: Equatable, Sendable {
-        public enum Reason: String, Sendable {
+        public enum Reason: String, Codable, Sendable {
             case invalidInput, authentication, expired, unsupported, malformed, empty, storage, tooLarge
             case fileUnavailable, network, timeout, offline, invalidResponse, notFound, rateLimited
             case redirectBlocked, guideInsteadOfPlaylist, accessDenied, sourceChanged, cancelled, other
@@ -54,14 +54,12 @@ public struct IPTVSetupDiagnostic: Equatable, Sendable {
     public let httpStatus: Int?
     public let response: Response?
 
-    public static func isEnabled(environment: String, build: String) -> Bool {
-        if environment == "debug" { return true }
-        // Temporary investigation following TestFlight 50; never enable in App Store builds.
-        return environment == "testflight" && ["51", "52"].contains(build)
+    public static func isEnabled(environment: String) -> Bool {
+        environment == "debug" || environment == "testflight"
     }
 }
 
-/// The reporter installs a sink only while consent and the temporary build window allow it.
+/// The reporter installs a sink only while consent and the release channel allow it.
 public final class IPTVSetupDiagnostics: @unchecked Sendable {
     public typealias Sink = @Sendable (IPTVSetupDiagnostic) -> Void
     @TaskLocal public static var current: IPTVSetupAttempt?

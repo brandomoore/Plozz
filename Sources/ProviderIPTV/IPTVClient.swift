@@ -4,7 +4,7 @@ import CryptoKit
 import Foundation
 
 actor IPTVClient {
-    private static let playlistCatalogScope = "playlist-v3"
+    private static let playlistCatalogScope = "playlist-v4"
     let credential: IPTVCredential
     private let http: IPTVHTTP
     private let artworkSecrets: [String]
@@ -62,7 +62,7 @@ actor IPTVClient {
             try parser.append(chunk)
             if parser.hasPlayableHLSTag { return }
             let result = try parser.finish()
-            guard !parser.takeCatalogEntries().isEmpty else {
+            guard result.entryCount == 0 || !parser.takeCatalogEntries().isEmpty else {
                 diagnostic?.record(entries: 0, skippedEntries: result.skippedEntryCount)
                 throw IPTVError.empty
             }
@@ -270,7 +270,8 @@ actor IPTVClient {
                 ), into: .incoming)
             }
             if guides.count > 32 { PlozzLog.networking.error("IPTV playlist declared more than 32 guides") }
-            guard try catalog.count(where: "kind != ?", values: [MediaItemKind.unknown.rawValue], in: .incoming) > 0 else {
+            if result.entryCount > 0,
+               try catalog.count(where: "kind != ?", values: [MediaItemKind.unknown.rawValue], in: .incoming) == 0 {
                 throw IPTVError.empty
             }
         } catch LiveTVSourceImportError.streamManifest {
@@ -471,8 +472,11 @@ actor IPTVClient {
         let data = try await object(url: endpoint(action: "get_simple_data_table", extra: [
             URLQueryItem(name: "stream_id", value: nativeID)
         ]))
-        guard data["epg_listings"] != nil else { throw IPTVError.malformed }
-        return data.array("epg_listings").compactMap {
+        if data.object("user_info").integer("auth") == 0 || data.integer("auth") == 0 {
+            throw IPTVError.authentication
+        }
+        guard case .array(let listings) = data["epg_listings"] else { throw IPTVError.malformed }
+        return listings.compactMap {
             IPTVMapping.programme($0.object, channelID: channelID, from: from, to: to)
         }
     }

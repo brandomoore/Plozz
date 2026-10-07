@@ -165,6 +165,9 @@ public struct LiveTVSourcesView: View {
         .onChange(of: model.mutationRevision) { _, _ in
             if refreshAfterMutation { refresh?() }
         }
+        .onChange(of: catalog?.imports.configuration) { _, _ in
+            model.reload()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .plozzLiveTVSourceApprovalsDidChange)) { notification in
             guard let catalog, notification.object as? String == catalog.profileID else { return }
             catalog.invalidate()

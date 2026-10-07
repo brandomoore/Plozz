@@ -99,6 +99,23 @@ public final class IPTVAuthViewModel {
         }
     }
 
+    public var hasAdvancedConfiguration: Bool {
+        (mode == .playlist && authentication != .none)
+            || (mode != .file && !headers.isEmpty)
+            || !guideAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !additionalGuides.isEmpty || !guideHeaders.isEmpty
+            || (mode != .xtream && !discoversPlaylistGuides)
+    }
+
+    public var usesHTTP: Bool {
+        let addresses = (mode == .file ? [] : [address])
+            + [guideAddress] + additionalGuides.map(\.address)
+        return addresses.contains { address in
+            let url = URL(string: address.trimmingCharacters(in: .whitespacesAndNewlines))
+            return url?.scheme?.lowercased() == "http"
+        }
+    }
+
     public var canConnect: Bool {
         if mode == .file { return !isConnecting && playlistFileURL != nil }
         return !isConnecting && !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

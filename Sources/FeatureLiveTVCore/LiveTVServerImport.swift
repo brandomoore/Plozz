@@ -82,7 +82,7 @@ extension LiveTVPrototypeImportModel {
                 $0.guidePhase = .idle
             }
             do {
-                let availability = try await context.provider.liveTVAvailability()
+                let availability = try await context.provider.refreshLiveTVAvailability()
                 try Task.checkCancellation()
                 guard acceptServerResult(
                     source, context: context, request: request, sourceRevision: sourceRevision, into: model

@@ -74,7 +74,16 @@ public final class LiveTVLibraryRuntime {
     @ObservationIgnored private var lastAutomaticAttempt: Date?
     @ObservationIgnored private var refreshID = UUID()
     @ObservationIgnored private var loadedRefreshRequest: Int?
+    @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var refreshTaskKey: RefreshKey?
+    @ObservationIgnored private var refreshTaskID = UUID()
     private var acceptedAuthorization: String?
+
+    private struct RefreshKey: Equatable {
+        let accounts: ObjectIdentifier?
+        let authorization: String
+        let request: Int
+    }
 
     public convenience init(profileID: String, profiles: ProfilesModel) {
         self.init(
@@ -194,6 +203,33 @@ public final class LiveTVLibraryRuntime {
     }
 
     public func refresh(accounts: AccountsProvidersModel?) async {
+        guard !Task.isCancelled else { return }
+        let key = RefreshKey(
+            accounts: accounts.map(ObjectIdentifier.init),
+            authorization: accounts?.liveTVAuthorizationID ?? "",
+            request: refreshRequest)
+        if refreshTaskKey == key, let refreshTask {
+            await refreshTask.value
+            return
+        }
+        refreshTask?.cancel()
+        let taskID = UUID()
+        // The guide and Sources share this work; either view disappearing must not revoke the other's catalog.
+        let task = Task { @MainActor [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            await self.performRefresh(accounts: accounts)
+        }
+        refreshTaskKey = key
+        refreshTaskID = taskID
+        refreshTask = task
+        await task.value
+        if refreshTaskID == taskID {
+            refreshTask = nil
+            refreshTaskKey = nil
+        }
+    }
+
+    private func performRefresh(accounts: AccountsProvidersModel?) async {
         if loadedRefreshRequest == refreshRequest,
            authority.accounts === accounts, authorizationID != nil, service.isLoaded { return }
         let started = Date()

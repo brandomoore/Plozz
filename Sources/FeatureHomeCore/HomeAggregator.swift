@@ -95,6 +95,11 @@ public struct HomeAggregator: Sendable {
             self.unreachableAccountIDs = unreachableAccountIDs
             self.failures = failures
         }
+
+        public func canSkipSelection(for accounts: [ResolvedAccount]) -> Bool {
+            libraries.isEmpty && unreachableAccountIDs.isEmpty && failures.isEmpty
+                && !accounts.isEmpty && accounts.allSatisfy { $0.account.server.provider == .iptv }
+        }
     }
 
     /// Like ``libraries(from:)`` but also reports which accounts were unreachable,

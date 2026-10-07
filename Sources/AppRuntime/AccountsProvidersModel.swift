@@ -344,6 +344,25 @@ public final class AccountsProvidersModel {
             .filter { known.contains($0) }
     }
 
+    /// Explicitly adding IPTV includes it in this viewer's selection, not just the household fallback.
+    public func includeIPTVAccountInActiveProfile(_ account: Account) throws {
+        guard account.server.provider == .iptv else { return }
+        let profileID = profilesModel.activeProfileID
+        guard !accountSelectionIsUnavailable else {
+            PlozzLog.auth.error("IPTV setup could not read the current profile's server selection")
+            throw ProfilesModel.AccountSelectionError.unavailable
+        }
+        guard var selected = profilesModel.storedActiveAccountIDs(for: profileID),
+              !selected.contains(account.id) else { return }
+        selected.append(account.id)
+        profilesModel.setActiveAccountIDs(selected, for: profileID)
+        guard !accountSelectionIsUnavailable,
+              Set(profilesModel.storedActiveAccountIDs(for: profileID) ?? []) == Set(selected) else {
+            PlozzLog.auth.error("IPTV setup could not save the current profile's server selection")
+            throw ProfilesModel.AccountSelectionError.unavailable
+        }
+    }
+
     /// Reloads accounts from the store and recomputes the active set for the
     /// active profile. Invalidates the provider cache first, then fires
     /// `onActiveAccountsChanged` so the media-share runtime can update its

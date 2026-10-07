@@ -6,12 +6,19 @@ Plozz has three distinct version values:
 | --- | --- | --- |
 | Public release `version` | `2026.9.29` | Release date shown in About and update history |
 | Apple `marketingVersion` | `2026.9.25` | `CFBundleShortVersionString` and App Store Connect's version series |
-| `build` | `45` | `CFBundleVersion`, assigned above the highest TestFlight build on either platform |
+| `build` | `51` or `"51.1"` | `CFBundleVersion`, selected above existing TestFlight builds on either platform |
 
 Keep the familiar date-and-build identity: **2026.9.29 (45)**. About retains
 its separate Version and Build fields; tester notes and GitHub release titles
 combine them. Never append a daily revision such as `.1` to the date.
 Multiple releases on the same day share the date and have different build numbers.
+
+Hotfix builds may append one or two numeric components, such as **51.1** or
+**51.1.1**. Store dotted builds as JSON strings; historical whole-number builds
+remain integers. Components sort numerically: `51 < 51.1 < 51.2 < 51.10 < 52`.
+Use no leading zeros in build values. The first component is 1–9999 and later
+components are 0–99. Trailing zero components are numerically equivalent, so
+`51.1` and `51.1.0` cannot identify separate releases.
 
 Keep Apple's existing version series unless deliberately starting a new one.
 Apple says later external-testing builds of the same version **might not** need
@@ -44,10 +51,13 @@ python3 tools/release-notes.py render --release-id release/045 --platform iOS
 ```
 
 The example ID/build above is illustrative, not an existing approved release.
-Establish the actual assigned build from App Store Connect before preparing it.
+Check existing builds in App Store Connect before selecting the next build.
 Each intended distribution gets its own entry, notes, and build number. Retries
 reuse that exact identity; Git pushes and local builds do not allocate releases.
 Do not add a new entry merely to compile or merge code.
+The distribution lane uses the selected catalog build verbatim and rejects
+collisions or older values on either platform within the Apple version series.
+An archive without a selected release defaults to the next whole-number build.
 
 Platform-specific notes use `{"text": "...", "platforms": ["tvOS"]}` or `["iOS"]`;
 plain strings apply to both. New-format rendered notes begin with the public
@@ -104,7 +114,10 @@ than claiming to be a newly distributed release.
 
 Before uploading, both distribution lanes check both exported IPAs' platform, identifier,
 Apple version/build, and public release version/ID. A mismatch stops both uploads.
-After delivery, tags remain `release/<zero-padded-build>`; GitHub release titles
+After delivery, tags pad the first build component and preserve hotfix suffixes:
+`release/051`, `release/051.1`, or `release/051.1.1`. Existing tags are never
+overwritten; changelogs compare with the preceding numeric release tag.
+GitHub release titles
 use the public date and build. Inspect `.build/testflight-uploads/` and both platforms'
 actual App Store Connect availability before reporting success. After partial
 success, never blindly rerun `beta`, increment the build, or reupload: reconcile
