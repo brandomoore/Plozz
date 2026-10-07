@@ -2022,9 +2022,12 @@ final class PlozziOSAppModel {
             )
         }
         do {
-            return try PlozziOSDownloadsModel(
+            return PlozziOSDownloadsModel(
                 profileID: namespace,
-                durableStore: durableStore,
+                registry: DownloadedMediaRegistry(store: try DurableDownloadedMediaStore(
+                    store: durableStore, profileID: namespace
+                )),
+                storage: PlatformDownloadStorageLocator(subdirectory: "PlozzDownloads/\(namespace)"),
                 networkFileResolver: mediaShareRuntime.networkFileResolver,
                 providerKind: { accountID in
                     accountsProviders.accounts.first {
@@ -2047,6 +2050,14 @@ final class PlozziOSAppModel {
                     )
                 },
                 startsActive: startsActive,
+                resolveArtworkItem: { record in
+                    guard let accountID = record.snapshot.sourceAccountID
+                        ?? record.managedHTTPSource?.accountID
+                        ?? record.directShareSource?.accountID,
+                          let itemID = record.snapshot.sourceItemID ?? record.managedHTTPSource?.itemID,
+                          let provider = accountsProviders.provider(forAccountID: accountID) else { return nil }
+                    return try await provider.item(id: itemID)
+                },
                 managedURLResolver: {
                     source,
                     updateSource,

@@ -464,6 +464,7 @@ targets:
     sources:
       - path: Tests/iOSPresentationHost
       - path: Tests/AuthPresentationSupport/IPTVSetupFixture.swift
+      - path: App/Resources/Localizable.xcstrings
       - path: App/PlozziOS/Assets.xcassets
       - path: App/Resources/CommunityAssets.xcassets
       - path: App/Resources/ReleaseNotes.json

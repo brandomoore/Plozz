@@ -168,6 +168,9 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   without a server connection, with local artwork and metadata for browsing.
   Native Silo downloads are supported too; they use the server's download
   permissions and preparation options, not a temporary playback link.
+  Missing artwork is repaired when the source is reachable on an allowed network,
+  without downloading the video again. Show tiles reflect their downloaded
+  episodes' live progress and are marked available offline once all are complete.
 - **Choose download quality separately** — streaming preferences don't change
   your saved download settings. Available renditions and background-transfer
   behavior depend on the provider. Apple TV does not offer offline downloads.
