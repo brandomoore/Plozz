@@ -140,6 +140,9 @@ public struct PlozzMetrics: Equatable, Sendable {
     public let cardTitleFontSize: CGFloat
     /// Point size for a media card's subtitle/metadata line, scaled with density.
     public let cardSubtitleFontSize: CGFloat
+    /// Poster captions use a smaller touch text style without shrinking landscape or TV captions.
+    public let posterTitleFontSize: CGFloat
+    public let posterSubtitleFontSize: CGFloat
     /// Artwork status-cue typography and insets. These scale with card density but
     /// retain explicit floors so compact poster walls never make the cue illegible.
     public let cardStatusCueFontSize: CGFloat
@@ -465,6 +468,13 @@ public struct PlozzMetrics: Equatable, Sendable {
         #endif
         self.cardTitleFontSize = (baseTitleFontSize * densityScale).rounded()
         self.cardSubtitleFontSize = (baseSubtitleFontSize * densityScale).rounded()
+        #if os(iOS)
+        self.posterTitleFontSize = (preferred(.footnote) * max(1, densityScale)).rounded()
+        self.posterSubtitleFontSize = (preferred(.caption1) * max(1, densityScale)).rounded()
+        #else
+        self.posterTitleFontSize = self.cardTitleFontSize
+        self.posterSubtitleFontSize = self.cardSubtitleFontSize
+        #endif
 
         // Resume chip. iOS/iPadOS derives from `.subheadline` so the chip sits with
         // the card's own typography, rather than inheriting tvOS point sizes (which

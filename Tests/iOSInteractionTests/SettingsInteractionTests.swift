@@ -182,7 +182,7 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Appearance"].exists)
     }
 
-    func testCardPreviewsAndPerViewMenusRemainIndependent() {
+    func testCardPreviewsAndPerViewChoicesRemainIndependent() {
         launch()
         app.buttons["appearance-cards"].tap()
         let labels = app.buttons["card-labels-on"]
@@ -190,26 +190,45 @@ final class SettingsInteractionTests: XCTestCase {
         labels.tap()
         XCTAssertTrue(labels.isSelected)
         XCTAssertTrue(app.navigationBars["Cards"].exists)
-        app.buttons["card-label-customization"].tap()
-        let home = app.buttons["card-label-view-home"]
+        let customization = app.buttons["card-label-customization"]
+        reveal(customization)
+        customization.tap()
+        let home = app.buttons["card-label-view-home-hide"]
         XCTAssertTrue(home.waitForExistence(timeout: 3))
         home.tap()
-        XCTAssertTrue(app.buttons["No labels"].waitForExistence(timeout: 3))
-        app.buttons["No labels"].tap()
-        XCTAssertTrue(home.staticTexts["No labels"].exists)
-        let browse = app.buttons["card-label-view-browse"]
-        let filmography = app.buttons["card-label-view-filmography"]
-        XCTAssertTrue(browse.staticTexts["Default · Labels"].exists)
+        XCTAssertTrue(home.isSelected)
+        let browse = app.buttons["card-label-view-browse-show"]
+        let browseDefault = app.buttons["card-label-view-browse-automatic"]
+        reveal(browseDefault)
+        XCTAssertTrue(browseDefault.label.contains("Use default: Labels"))
+        XCTAssertTrue(browseDefault.isSelected)
+        reveal(browse)
         browse.tap()
-        app.buttons["Labels"].tap()
-        XCTAssertTrue(browse.staticTexts["Labels"].exists)
-        XCTAssertTrue(home.staticTexts["No labels"].exists)
+        XCTAssertTrue(browse.isSelected)
+        XCTAssertFalse(browseDefault.isSelected)
+        let filmography = app.buttons["card-label-view-filmography-hide"]
         reveal(filmography)
-        XCTAssertTrue(filmography.staticTexts["Default · Labels"].exists)
         filmography.tap()
-        app.buttons["No labels"].tap()
-        XCTAssertTrue(filmography.staticTexts["No labels"].exists)
-        XCTAssertTrue(browse.staticTexts["Labels"].exists)
+        XCTAssertTrue(filmography.isSelected)
+        app.navigationBars.buttons.firstMatch.tap()
+        let recommended = app.buttons["card-labels-recommended"]
+        reveal(recommended, towardTop: true)
+        recommended.tap()
+        XCTAssertTrue(recommended.isSelected)
+        reveal(customization)
+        customization.tap()
+        reveal(home, towardTop: true)
+        XCTAssertTrue(home.isSelected)
+        reveal(browse)
+        XCTAssertTrue(browse.isSelected)
+        reveal(filmography)
+        XCTAssertTrue(filmography.isSelected)
+        let reset = app.buttons["card-label-remove-customizations"]
+        reveal(reset)
+        reset.tap()
+        XCTAssertFalse(reset.isEnabled)
+        reveal(browseDefault, towardTop: true)
+        XCTAssertTrue(browseDefault.isSelected)
         capture("independent-caption-overrides")
     }
 
@@ -426,14 +445,13 @@ final class SettingsInteractionTests: XCTestCase {
         app.launch()
     }
 
-    private func reveal(_ element: XCUIElement, settingsMenu: Bool = false) {
+    private func reveal(_ element: XCUIElement, settingsMenu: Bool = false, towardTop: Bool = false) {
         for _ in 0..<10 {
             if element.exists && element.isHittable { return }
-            if settingsMenu {
-                app.scrollViews.firstMatch.swipeUp()
-            } else {
-                app.collectionViews.element(boundBy: app.collectionViews.count - 1).swipeUp()
-            }
+            let scroll = settingsMenu
+                ? app.scrollViews.firstMatch
+                : app.collectionViews.element(boundBy: app.collectionViews.count - 1)
+            if towardTop { scroll.swipeDown() } else { scroll.swipeUp() }
         }
         XCTAssertTrue(element.isHittable, app.debugDescription)
     }

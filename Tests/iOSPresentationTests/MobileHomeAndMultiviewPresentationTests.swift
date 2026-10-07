@@ -13,6 +13,61 @@ import XCTest
 
 @MainActor
 final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
+    func testMobilePosterTitlesFitMoreTextAndScaleWithDynamicType() async throws {
+        let artwork = try await posterArtwork()
+        let title = "The Long Journey Home"
+        let regular = PlozzMetrics.touch(density: .standard)
+        XCTAssertEqual(regular.posterTitleFontSize, 13)
+        XCTAssertEqual(regular.posterSubtitleFontSize, 12)
+        let newFont = UIFont.systemFont(ofSize: regular.posterTitleFontSize, weight: .semibold)
+        let oldFont = UIFont.systemFont(ofSize: regular.cardTitleFontSize, weight: .semibold)
+        let newWidth = (title as NSString).size(withAttributes: [.font: newFont]).width
+        let oldWidth = (title as NSString).size(withAttributes: [.font: oldFont]).width
+        let availableWidth = ceil((newWidth + oldWidth) / 2)
+        XCTAssertLessThan(newWidth, availableWidth)
+        XCTAssertGreaterThan(oldWidth, availableWidth, "The same slot would truncate with the previous typography.")
+        try await withWindow { window, host in
+            for width in [CGFloat(390), 768] {
+                for style in [CardStyle.borderless, .framed] {
+                    var regularHeight: CGFloat = 0
+                    for typeSize in [DynamicTypeSize.large, .accessibility3] {
+                        let metrics = PlozzMetrics.touch(density: .standard, dynamicTypeSize: typeSize)
+                        let name = typeSize.isAccessibilitySize ? "Journey" : title
+                        let inset = metrics.posterCaptionInset
+                            + (style == .borderless ? metrics.borderlessCardSideMargin : metrics.cardInset)
+                        let cardWidth = typeSize.isAccessibilitySize ? min(width - 64, 260) : availableWidth + 2 * inset
+                        window.frame.size = CGSize(width: width, height: 850)
+                        host.rootView = AnyView(
+                            PosterCardView(
+                                item: MediaItem(id: "poster-type", title: name, kind: .movie, posterURL: artwork),
+                                enablesAsyncArtworkFallback: false, action: {}
+                            )
+                            .frame(width: cardWidth)
+                            .padding(22)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .background(Color.black)
+                            .environment(\.plozzMetrics, metrics)
+                            .environment(\.dynamicTypeSize, typeSize)
+                            .environment(\.plozzCardStyle, style)
+                            .environment(\.plozzCardCaptionSettings, .default)
+                            .environment(\.themePalette, .dark)
+                        )
+                        try await settle(window)
+                        let image = snapshot(window, name: "poster-type-\(Int(width))-\(style)-\(typeSize)")
+                        let frame = try textFrame(name, observations: text(image), size: image.size)
+                        XCTAssertLessThanOrEqual(frame.maxX, 22 + cardWidth)
+                        if typeSize.isAccessibilitySize {
+                            XCTAssertGreaterThan(frame.height, regularHeight * 1.5)
+                            XCTAssertGreaterThan(metrics.posterSubtitleFontSize, regular.posterSubtitleFontSize)
+                        } else {
+                            regularHeight = frame.height
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testEpisodePlaceholderNamesStayReadableUnderSpoilerAndUpcomingTreatments() async throws {
         try await withWindow { window, host in
             for mode in [SpoilerSettings.Mode.blur, .placeholder] {
@@ -339,6 +394,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                         }
                         .environment(\.themePalette, .dark)
                         .environment(\.colorScheme, .dark)
+                        .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
                         .environment(\.dynamicTypeSize, typeSize)
                         .environment(\.plozzMetrics, .touch(density: .standard))
                     )
@@ -349,20 +405,11 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     let observations = try text(image)
                     let copy = observations.map(\.candidate.string).joined(separator: " ")
                     if page {
-                        XCTAssertTrue(copy.contains("Browse"))
+                        XCTAssertTrue(copy.uppercased().contains("BROWSE"), copy)
                         if typeSize.isAccessibilitySize {
-                            let label = try textFrame("Default", observations: observations, size: image.size)
-                            let cg = try XCTUnwrap(image.cgImage)
-                            let pixels = try rgbaPixels(image)
-                            let y = Int(label.midY * image.scale)
-                            let outside = (y * cg.width + Int(2 * image.scale)) * 4
-                            let inside = (y * cg.width + Int((label.minX - 4) * image.scale)) * 4
-                            for channel in 0..<3 {
-                                XCTAssertEqual(
-                                    Double(pixels[inside + channel]), Double(pixels[outside + channel]), accuracy: 12,
-                                    "The summary must retain the page surface, not an opaque native List row."
-                                )
-                            }
+                            let label = try textFrame("default", observations: observations, size: image.size)
+                            XCTAssertGreaterThan(label.minX, 0)
+                            XCTAssertLessThan(label.maxX, image.size.width)
                         }
                     } else {
                         // Native labels may wrap at compact widths; both words
@@ -371,7 +418,12 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     }
                     XCTAssertTrue(copy.contains("No labels"))
                     if !page {
-                        XCTAssertTrue(copy.contains("Posters"))
+                        XCTAssertTrue(
+                            copy.contains("Recommended")
+                                || (typeSize.isAccessibilitySize && copy.contains("Recom-") && copy.contains("mended")),
+                            "The preset name may hyphenate at large text sizes but must not truncate: \(copy)"
+                        )
+                        XCTAssertTrue(copy.contains("Showcase"), copy)
                         XCTAssertTrue(copy.uppercased().contains("WATCHED") && copy.uppercased().contains("INDICATOR"))
                     }
                 }
@@ -533,9 +585,8 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     try await settle(window)
                     let rails = scrollViews(window).filter { $0.contentSize.width > $0.bounds.width + 10 }
                     XCTAssertEqual(rails.count, 2)
-                    if !captions {
-                        XCTAssertEqual(rails[0].bounds.height, rails[1].bounds.height, accuracy: 1)
-                    }
+                    XCTAssertEqual(rails[0].bounds.height, rails[1].bounds.height, accuracy: 1,
+                                   "Poster loading slots must match both visible and hidden caption geometry.")
                     let observations = try text(snapshot(window, name: "home-captions-\(captions)-\(style)"))
                     XCTAssertEqual(observations.contains { $0.candidate.string.contains("Title") }, captions)
                 }

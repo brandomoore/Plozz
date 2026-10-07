@@ -275,6 +275,7 @@ public struct PreviewCard<Swatch: View>: View {
     private let accent: Color
     private let compact: Bool
     private let swatchHeight: CGFloat?
+    private let titleLineLimit: Int?
     private let action: () -> Void
     private let swatch: () -> Swatch
 
@@ -285,6 +286,7 @@ public struct PreviewCard<Swatch: View>: View {
         accent: Color,
         compact: Bool = false,
         swatchHeight: CGFloat? = nil,
+        titleLineLimit: Int? = 1,
         action: @escaping () -> Void,
         @ViewBuilder swatch: @escaping () -> Swatch
     ) {
@@ -294,6 +296,7 @@ public struct PreviewCard<Swatch: View>: View {
         self.accent = accent
         self.compact = compact
         self.swatchHeight = swatchHeight
+        self.titleLineLimit = titleLineLimit
         self.action = action
         self.swatch = swatch
     }
@@ -307,8 +310,9 @@ public struct PreviewCard<Swatch: View>: View {
                 VStack(spacing: compact ? 2 : 6) {
                     Text(title)
                         .font(compact ? .headline : .title3.weight(.semibold))
-                        .lineLimit(1)
+                        .lineLimit(titleLineLimit)
                         .minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
                     if !compact, let detail {
                         Text(detail)
                             .font(.footnote)

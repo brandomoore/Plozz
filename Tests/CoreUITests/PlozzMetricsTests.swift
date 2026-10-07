@@ -58,6 +58,7 @@ final class PlozzMetricsTests: XCTestCase {
             environment.plozzCardCaptionView = view
             XCTAssertEqual(environment.plozzCardCaptionsHidden, view != .browse && view != .extras && view != .episodes)
         }
+
         environment.plozzCardCaptionsHidden = true
         environment.plozzCardCaptionView = .browse
         XCTAssertFalse(environment.plozzCardCaptionsHidden, "A destination must not inherit its source's forced visibility.")
@@ -65,6 +66,37 @@ final class PlozzMetricsTests: XCTestCase {
         environment.plozzCardCaptionView = .episodes
         XCTAssertFalse(environment.plozzCardCaptionsHidden, "Episode identity must survive source preferences and old hide overrides.")
     }
+
+    func testShowcaseOnlyChangesInheritedLabelsAndDoesNotLeakIntoDestinations() {
+        var environment = EnvironmentValues()
+        environment.plozzCardCaptionView = .home
+        XCTAssertFalse(environment.plozzCardCaptionsHidden)
+        environment.plozzCardCaptionIsShowcase = true
+        XCTAssertTrue(environment.plozzCardCaptionsHidden)
+        environment.plozzCardCaptionSettings.setOverride(.show, for: .home)
+        XCTAssertFalse(environment.plozzCardCaptionsHidden)
+        environment.plozzCardCaptionSettings.resetOverrides()
+        environment.plozzCardCaptionView = .browse
+        XCTAssertFalse(environment.plozzCardCaptionIsShowcase)
+        XCTAssertFalse(environment.plozzCardCaptionsHidden)
+    }
+
+    func testPosterTypographyKeepsTelevisionFontsAndMobileAccessibilityFloors() {
+        for density in UIDensity.allCases {
+            let standard = PlozzMetrics.touch(density: density)
+            let accessible = PlozzMetrics.touch(density: density, dynamicTypeSize: .accessibility3)
+            #if os(iOS)
+            XCTAssertGreaterThanOrEqual(standard.posterTitleFontSize, 13)
+            XCTAssertGreaterThanOrEqual(standard.posterSubtitleFontSize, 12)
+            XCTAssertGreaterThan(accessible.posterTitleFontSize, standard.posterTitleFontSize)
+            XCTAssertGreaterThan(accessible.posterSubtitleFontSize, standard.posterSubtitleFontSize)
+            #else
+            XCTAssertEqual(standard.posterTitleFontSize, standard.cardTitleFontSize)
+            XCTAssertEqual(accessible.posterSubtitleFontSize, accessible.cardSubtitleFontSize)
+            #endif
+        }
+    }
+
     func testStandardMatchesPlozzThemeConstants() {
         let m = PlozzMetrics(density: .standard)
         XCTAssertEqual(m.scale, 1.0)

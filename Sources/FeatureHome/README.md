@@ -19,8 +19,12 @@ fallback when the user's server has no attached trailer.
   after subtracting each card style's internal inset. Smaller mobile artwork uses
   proportionate corners and a 20pt minimum watched badge, without shrinking folder
   navigation badges. Continue Watching geometry and library grid columns are unchanged.
-- **Card labels** — Appearance > Cards owns a profile-scoped shared choice
-  (No labels by default), with Default / Labels / No labels exceptions by experience.
+- **Card labels** — Appearance > Cards owns a profile-scoped Recommended / Labels /
+  No labels choice, with Default / Labels / No labels exceptions by experience.
+  Recommended shows labels during ordinary browsing and hides them in Showcase.
+  Existing explicit global and per-view choices survive migration and preset changes.
+  Showcase is presentation context within Home or library Recommended, not a new
+  override scope; destination scopes clear that context and hosting boundaries forward it.
   Home, Recommended, Browse, Collections, Playlists, Search, Watchlist, related titles,
   extras, and filmography resolve the same policy on iOS and tvOS.
   Detail-page episodes always retain their identifying labels on both platforms,
@@ -36,6 +40,11 @@ fallback when the user's server has no attached trailer.
   `HeroSettings`; the card settings transfer with the profile. Native grids and
   loading placeholders remove the same caption space as loaded cards. Touch captions
   have a 4pt gap without TV focus travel; TV captions retain their focus clearance.
+  Mobile poster titles use native Dynamic Type footnote (13pt normally), with
+  caption1 subtitles (12pt). Compact density does not shrink them below those styles.
+  Framed, borderless, and loading cards share these tokens; landscape and TV type stay unchanged.
+  Mobile poster rails reserve the subtitle line even when metadata is absent, matching
+  loading placeholders and keeping adjacent captions and row heights aligned.
 - Mobile library provider icons align with the thumbnail's leading edge; the
   library name and server name share the adjacent text column.
 - **Mobile Home rhythm** — every loaded, placeholder, library, and failed row uses

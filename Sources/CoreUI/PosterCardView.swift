@@ -518,7 +518,8 @@ public struct PosterCardView: View {
                     subtitle: subtitleText,
                     horizontalInset: borderlessCaptionInset,
                     reservesSubtitleSpace: reservesSubtitleSpace,
-                    isFocused: isFocused
+                    isFocused: isFocused,
+                    usesPosterTypography: style == .poster
                 )
                 // Push the caption down on focus with a pure transform, never a layout
                 // change: the gap slot is always reserved at its focused size (see
@@ -638,6 +639,9 @@ public struct PosterCardView: View {
         }
     }
 
+    private var captionTitleFontSize: CGFloat { style == .poster ? metrics.posterTitleFontSize : metrics.cardTitleFontSize }
+    private var captionSubtitleFontSize: CGFloat { style == .poster ? metrics.posterSubtitleFontSize : metrics.cardSubtitleFontSize }
+
     /// The framed card's caption: title over subtitle, both single-line.
     ///
     /// The block spans the card's **full** content width and the lines carry
@@ -648,7 +652,7 @@ public struct PosterCardView: View {
         VStack(alignment: .leading, spacing: spacing) {
             PlozzMarqueeText(
                 text: primaryText,
-                font: .system(size: metrics.cardTitleFontSize, weight: .semibold),
+                font: .system(size: captionTitleFontSize, weight: .semibold),
                 color: titleColor,
                 inset: inset,
                 isFocused: isFocused
@@ -662,14 +666,14 @@ public struct PosterCardView: View {
         if let subtitleText {
             PlozzMarqueeText(
                 text: Text(subtitleText),
-                font: .system(size: metrics.cardSubtitleFontSize),
+                font: .system(size: captionSubtitleFontSize),
                 color: subtitleColor,
                 inset: inset,
                 isFocused: isFocused
             )
         } else if reservesSubtitleSpace {
             Text(verbatim: " ")
-                .font(.system(size: metrics.cardSubtitleFontSize))
+                .font(.system(size: captionSubtitleFontSize))
                 .hidden()
         }
     }

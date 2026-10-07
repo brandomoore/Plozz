@@ -364,6 +364,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
             )
             FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent)
                 .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
+                .environment(\.plozzCardCaptionIsShowcase, true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea(
@@ -1243,6 +1244,7 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
             target.plozzArtworkProviders = source.plozzArtworkProviders
             target.plozzArtworkArea = source.plozzArtworkArea
             target.plozzCardCaptionView = source.plozzCardCaptionView
+            target.plozzCardCaptionIsShowcase = source.plozzCardCaptionIsShowcase
             target.plozzCardCaptionsHidden = source.plozzCardCaptionsHidden
             target.plozzWatchStatusIndicator = source.plozzWatchStatusIndicator
             target.plozzSeerConnected = source.plozzSeerConnected

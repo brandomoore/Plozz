@@ -54,6 +54,10 @@ and the single place caption customization lives.
 
 ## Invariants
 
+- **Artwork and label customization.** Both use shared checkmarked per-view choices,
+  resolved inherited-default titles, customization counts, and the same reset action.
+  Labels retain visual presets: Recommended pairs labeled browsing with artwork-only
+  Showcase. Changing a preset never clears explicit per-view choices.
 - **Mobile Settings is a presentation action.** Its tab or More entry opens
   the drawer over the current page without selecting a replacement destination.
   Keep the active content stack and overflow navigation intact on dismissal;

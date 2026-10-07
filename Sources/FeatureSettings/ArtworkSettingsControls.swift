@@ -5,7 +5,6 @@ import SwiftUI
 
 public struct ArtworkSettingsControls: View {
     @Bindable private var cards: CardStyleSettingsModel
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     public init(cards: CardStyleSettingsModel) { self.cards = cards }
 
@@ -15,29 +14,8 @@ public struct ArtworkSettingsControls: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             ArtworkPresetPicker(settings: $cards.artwork)
-            NavigationLink {
+            ViewCustomizationLink(count: cards.artwork.overrides.count) {
                 ArtworkCustomizationView(cards: cards)
-            } label: {
-                HStack {
-                    let layout = dynamicTypeSize.isAccessibilitySize
-                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
-                        : AnyLayout(HStackLayout())
-                    layout {
-                        Text("Customize by view")
-                        if !dynamicTypeSize.isAccessibilitySize { Spacer() }
-                        Group {
-                            if cards.artwork.overrides.isEmpty {
-                                Text("Using defaults")
-                            } else {
-                                Text("\(cards.artwork.overrides.count) customized")
-                            }
-                        }
-                        .foregroundStyle(.secondary)
-                    }
-                    #if os(tvOS)
-                    Image(systemName: "chevron.right").accessibilityHidden(true)
-                    #endif
-                }
             }
             .accessibilityIdentifier("artwork-customization")
             if !cards.artwork.overrides.isEmpty {
@@ -52,9 +30,9 @@ private struct ArtworkPresetPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            ArtworkChoiceGroup {
+            ViewPreferenceChoiceGroup {
                 ForEach(ArtworkPreference.allCases) { preference in
-                    ArtworkChoiceRow(
+                    ViewPreferenceChoiceRow(
                         title: preference.displayName,
                         detail: preference.detail,
                         isSelected: settings.preference == preference
@@ -124,9 +102,9 @@ struct ArtworkAreaChoices: View {
     @Binding var settings: ArtworkSettings
 
     var body: some View {
-        ArtworkChoiceGroup {
+        ViewPreferenceChoiceGroup {
             ForEach(ArtworkOverride.allCases) { option in
-                ArtworkChoiceRow(
+                ViewPreferenceChoiceRow(
                     title: title(for: option),
                     isSelected: settings.override(for: area) == option
                 ) {
@@ -148,69 +126,11 @@ struct ArtworkAreaChoices: View {
     }
 }
 
-private struct ArtworkChoiceGroup<Content: View>: View {
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        #if os(tvOS)
-        SettingsCheckGroup {
-            VStack(alignment: .leading, spacing: 8, content: content)
-        }
-        #else
-        VStack(alignment: .leading, spacing: 20, content: content)
-        #endif
-    }
-}
-
-private struct ArtworkChoiceRow: View {
-    let title: LocalizedStringResource
-    var detail: LocalizedStringResource? = nil
-    let isSelected: Bool
-    let action: () -> Void
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        #if os(tvOS)
-        SettingsCheckableRow(
-            title: Text(title),
-            subtitle: isFocused ? detail.map { Text($0) } : nil,
-            titleLineLimit: nil, subtitleLineLimit: nil,
-            isChecked: isSelected,
-            flushLeading: false, action: action
-        )
-        .focused($isFocused)
-        #else
-        Button(action: action) {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title)
-                        .font(.body.weight(.medium))
-                    if isSelected, let detail {
-                        Text(detail)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "checkmark")
-                    .opacity(isSelected ? 1 : 0)
-                    .accessibilityHidden(true)
-            }
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        #endif
-    }
-}
-
 private struct ArtworkResetButton: View {
     @Binding var settings: ArtworkSettings
 
     var body: some View {
-        Button("Remove view customizations") { settings.resetOverrides() }
-            .disabled(settings.overrides.isEmpty)
+        ViewCustomizationResetButton(isEnabled: !settings.overrides.isEmpty) { settings.resetOverrides() }
             .accessibilityIdentifier("artwork-remove-customizations")
     }
 }

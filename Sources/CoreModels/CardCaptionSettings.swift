@@ -39,20 +39,48 @@ public enum CardCaptionOverride: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public enum CardCaptionPreference: String, CaseIterable, Codable, Identifiable, Sendable {
+    case recommended, show, hide
+
+    public var id: Self { self }
+
+    public var displayName: LocalizedStringResource {
+        switch self {
+        case .recommended: "Recommended"
+        case .show: "Labels"
+        case .hide: "No labels"
+        }
+    }
+}
+
 public struct CardCaptionSettings: Codable, Equatable, Sendable {
-    public var showsLabels: Bool
+    public var preference: CardCaptionPreference
     public private(set) var overrides: [CardCaptionView: Bool]
 
     public static let `default` = CardCaptionSettings()
 
-    public init(showsLabels: Bool = false, overrides: [CardCaptionView: Bool] = [:]) {
-        self.showsLabels = showsLabels
+    public var showsLabels: Bool {
+        get { preference != .hide }
+        set { preference = newValue ? .show : .hide }
+    }
+
+    public init(preference: CardCaptionPreference = .recommended, overrides: [CardCaptionView: Bool] = [:]) {
+        self.preference = preference
         self.overrides = overrides
     }
 
-    public func showsLabels(in view: CardCaptionView) -> Bool {
+    public init(showsLabels: Bool, overrides: [CardCaptionView: Bool] = [:]) {
+        preference = showsLabels ? .show : .hide
+        self.overrides = overrides
+    }
+
+    public func inheritedShowsLabels(isShowcase: Bool = false) -> Bool {
+        preference == .recommended ? !isShowcase : showsLabels
+    }
+
+    public func showsLabels(in view: CardCaptionView, isShowcase: Bool = false) -> Bool {
         // Episode stills alone do not identify an episode, even with a saved hide override.
-        view == .episodes || (overrides[view] ?? showsLabels)
+        view == .episodes || (overrides[view] ?? inheritedShowsLabels(isShowcase: isShowcase))
     }
 
     public func override(for view: CardCaptionView) -> CardCaptionOverride {
@@ -72,11 +100,17 @@ public struct CardCaptionSettings: Codable, Equatable, Sendable {
         overrides.removeAll()
     }
 
-    private enum CodingKeys: String, CodingKey { case showsLabels, overrides }
+    private enum CodingKeys: String, CodingKey { case preference, showsLabels, overrides }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        showsLabels = try container.decodeIfPresent(Bool.self, forKey: .showsLabels) ?? false
+        if let stored = try container.decodeIfPresent(CardCaptionPreference.self, forKey: .preference) {
+            preference = stored
+        } else if let legacy = try container.decodeIfPresent(Bool.self, forKey: .showsLabels) {
+            preference = legacy ? .show : .hide
+        } else {
+            preference = .recommended
+        }
         let stored = try container.decodeIfPresent([String: Bool].self, forKey: .overrides) ?? [:]
         overrides = Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in
             CardCaptionView(rawValue: key).map { ($0, value) }
@@ -85,6 +119,7 @@ public struct CardCaptionSettings: Codable, Equatable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(preference, forKey: .preference)
         try container.encode(showsLabels, forKey: .showsLabels)
         try container.encode(
             Dictionary(uniqueKeysWithValues: overrides.map { ($0.key.rawValue, $0.value) }),

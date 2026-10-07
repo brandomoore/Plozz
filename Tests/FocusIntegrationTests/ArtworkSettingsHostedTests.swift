@@ -9,6 +9,57 @@ import XCTest
 
 @MainActor
 final class ArtworkSettingsHostedTests: XCTestCase {
+    func testLabelPreviewsOfferRecommendedAndShareCustomizationControls() async throws {
+        let suite = "LabelPreviewHosted.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cards = makeCards(defaults: defaults)
+        let settings = Binding(get: { cards.captions }, set: { cards.captions = $0 })
+        try await withScreen(content: NavigationStack {
+            SettingsSplitLayout(
+                title: "Cards",
+                rows: [SettingsSplitRow(id: "labels", title: "Labels") {
+                    CardLabelControls(settings: settings, style: .borderless)
+                }],
+                selection: .constant("labels")
+            )
+        }) { window in
+            let initial = try await self.capture(window, name: "labels-recommended-preview")
+            for text in ["Recommended", "Labels", "No labels", "Showcase", "Customize by view", "Using defaults"] {
+                XCTAssertTrue(initial.contains(text), initial)
+            }
+            XCTAssertEqual(cards.captions.preference, .recommended)
+            cards.captions.setOverride(.hide, for: .browse)
+            let customized = try await self.capture(window, name: "labels-customized-preview")
+            XCTAssertTrue(customized.contains("1 customized"), customized)
+            XCTAssertTrue(customized.contains("Remove view customizations"), customized)
+        }
+    }
+
+    func testLabelViewChoicesUseResolvedDefaultsAndPreserveOverrides() async throws {
+        let suite = "LabelChoicesHosted.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cards = makeCards(defaults: defaults)
+        let settings = Binding(get: { cards.captions }, set: { cards.captions = $0 })
+        try await withScreen(content: CardCaptionCustomizationContent(
+            settings: settings, selection: .constant("browse")
+        )) { window in
+            let initial = try await self.capture(window, name: "labels-browse-inherited")
+            XCTAssertTrue(initial.contains("Use default: Labels"), initial)
+            XCTAssertTrue(initial.contains("No labels"), initial)
+            cards.captions.setOverride(.show, for: .browse)
+            cards.captions.preference = .hide
+            let changed = try await self.capture(window, name: "labels-browse-explicit")
+            XCTAssertTrue(changed.contains("Use default: No labels"), changed)
+            XCTAssertEqual(cards.captions.override(for: .browse), .show)
+            XCTAssertTrue(cards.captions.showsLabels(in: .browse))
+            XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults).load(), cards.captions)
+            cards.captions.resetOverrides()
+            XCTAssertFalse(cards.captions.showsLabels(in: .browse))
+        }
+    }
+
     func testAppearanceSeparatesArtworkAndGatesHouseholdProviderNavigation() async throws {
         let namespace = "ArtworkAppearanceHosted.\(UUID())"
         let models = ProfileSettingsModel(namespace: namespace)

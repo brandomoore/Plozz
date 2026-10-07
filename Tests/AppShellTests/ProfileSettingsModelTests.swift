@@ -157,7 +157,8 @@ final class ProfileSettingsModelTests: XCTestCase {
 
         model.rebuild(namespace: other)
         XCTAssertEqual(model.heroSettingsModel.settings.style, .carousel)
-        XCTAssertFalse(model.cardStyleModel.captions.showsLabels(in: .home))
+        XCTAssertTrue(model.cardStyleModel.captions.showsLabels(in: .home))
+        XCTAssertFalse(model.cardStyleModel.captions.showsLabels(in: .home, isShowcase: true))
         model.rebuild(namespace: primary)
         XCTAssertEqual(model.heroSettingsModel.settings.style, .followsFocus)
         XCTAssertTrue(model.cardStyleModel.captions.showsLabels(in: .home))

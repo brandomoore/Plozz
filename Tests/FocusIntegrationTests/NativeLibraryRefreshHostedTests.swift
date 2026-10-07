@@ -137,6 +137,11 @@ final class NativeLibraryRefreshHostedTests: XCTestCase {
         )
         await model.loadRecommendationsIfNeeded()
         XCTAssertEqual(model.contentMode, .recommended)
+        try await withLibrary(model: model) { root, _ in
+            XCTAssertNotNil(find(TVPosterView.self, in: root))
+            XCTAssertNil(find(SystemPosterCaption.CaptionView.self, in: root),
+                         "Recommended must hide labels in the actual Showcase, not ordinary library browsing.")
+        }
         for visible in [false, true] {
             let settings = CardCaptionSettings(
                 showsLabels: !visible, overrides: [.home: !visible, .recommended: visible]
