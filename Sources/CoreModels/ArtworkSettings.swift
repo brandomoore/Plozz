@@ -16,9 +16,9 @@ public enum ArtworkPreference: String, CaseIterable, Codable, Identifiable, Send
 
     public var detail: LocalizedStringResource {
         switch self {
-        case .recommended: "Library artwork, with textless Continue Watching images and varied Details backgrounds when available."
-        case .library: "Your selected library images. Metadata providers fill in missing artwork."
-        case .online: "Images from metadata providers such as TMDB and TheTVDB."
+        case .recommended: "Plozz chooses artwork to suit each part of the app."
+        case .library: "Always use local artwork from your libraries, only using metadata providers when none is provided locally"
+        case .online: "Always use metadata-provider artwork, unless unavailable—then use library artwork. Generally worse performance."
         }
     }
 }

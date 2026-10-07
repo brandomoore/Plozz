@@ -151,6 +151,11 @@ fallback when the user's server has no attached trailer.
   On tvOS, library tabs, Filter, and Sort move with the grid instead of staying
   over the posters. Their native controls remain mounted during query changes
   so returning to the top and changing filters or modes preserves focus.
+  The native grid's viewport spans the full screen vertically, with content
+  insets preserving the header and bottom spacing. Disabling clipping alone
+  does not prevent UIKit from hiding artwork at an inset viewport boundary;
+  partly visible posters must keep rendering until they leave the screen.
+  Offscreen rows still recycle normally.
   Sort/filter choices are remembered per library, account, mode, and profile.
   Genre/year options use each server's scoped facet endpoint; Jellyfin/Emby use
   `/Items/Filters`, whose response contains genre names and years. Empty successful

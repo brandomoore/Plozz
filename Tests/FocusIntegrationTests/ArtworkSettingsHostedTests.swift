@@ -122,9 +122,9 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             )
         }) { window in
             let snippets = [
-                "Library artwork, with textless Continue Watching",
-                "Your selected library images",
-                "Images from metadata providers such as TMDB"
+                "Plozz chooses artwork to suit each part",
+                "Always use local artwork from your libraries",
+                "Always use metadata-provider artwork"
             ]
             let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
             let host = try XCTUnwrap(window.rootViewController as? ArtworkFocusRequesting)
