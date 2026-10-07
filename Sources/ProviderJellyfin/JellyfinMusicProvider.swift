@@ -14,7 +14,7 @@ import CoreNetworking
 // To page artists/albums/playlists/genres across *all* of the user's music
 // libraries (which is what the grids want), callers pass an **empty**
 // `containerID` for a global, recursive query. A non-empty `containerID` scopes
-// the query: for `.album` it is treated as an **album-artist id** (the artist
+// the query: for `.album` it is treated as a **performing-artist id** (the artist
 // detail screen's "albums by this artist"); for `.track` it is the **album id**.
 extension JellyfinProvider: MusicProvider {
 
@@ -55,7 +55,7 @@ extension JellyfinProvider: MusicProvider {
             )
 
         case .album:
-            // A non-empty container is an album-artist scope (artist detail);
+            // Match the performing artists returned by /Artists, including compilations.
             // empty means "all albums in the library".
             let response: ItemsResponse
             if let parent {
@@ -68,7 +68,7 @@ extension JellyfinProvider: MusicProvider {
                     limit: page.limit,
                     sortBy: "ProductionYear,SortName",
                     sortOrder: "Descending",
-                    albumArtistID: parent
+                    artistID: parent
                 )
             } else {
                 response = try await client.musicItems(
@@ -341,24 +341,40 @@ extension JellyfinProvider: MusicProvider {
     }
 
     public func tracks(in containerID: String) async throws -> [MusicTrack] {
-        // Albums: tracks are direct children, ordered by disc then track number.
-        let albumChildren = try await client.musicItems(
-            userID: session.userID,
-            parentID: containerID,
-            includeItemTypes: ["Audio"],
-            recursive: false,
-            startIndex: 0,
-            limit: 500,
-            sortBy: "ParentIndexNumber,IndexNumber,SortName",
-            sortOrder: "Ascending"
-        )
-        if !albumChildren.Items.isEmpty {
-            return albumChildren.Items.map(mapTrack(_:))
+        let container = try await client.item(userID: session.userID, id: containerID)
+        let isPlaylist = container.Type == "Playlist"
+        var tracks: [MusicTrack] = []
+        var expectedTotal: Int?
+        let pageSize = 500
+        while true {
+            try Task.checkCancellation()
+            let page: ItemsResponse
+            if isPlaylist {
+                page = try await client.playlistItems(
+                    userID: session.userID, playlistID: containerID,
+                    start: tracks.count, limit: pageSize
+                )
+            } else {
+                page = try await client.musicItems(
+                    userID: session.userID, parentID: containerID,
+                    includeItemTypes: ["Audio"], recursive: false,
+                    startIndex: tracks.count, limit: pageSize,
+                    sortBy: "ParentIndexNumber,IndexNumber,SortName", sortOrder: "Ascending"
+                )
+            }
+            expectedTotal = page.TotalRecordCount ?? expectedTotal
+            if page.Items.isEmpty {
+                if let expectedTotal, tracks.count < expectedTotal { throw AppError.invalidResponse }
+                break
+            }
+            tracks.append(contentsOf: page.Items.map(mapTrack(_:)))
+            if let total = expectedTotal {
+                if tracks.count >= total { break }
+            } else if page.Items.count < pageSize {
+                break
+            }
         }
-        // Playlists: fall back to the playlist-items endpoint, which preserves
-        // playlist order.
-        let playlist = try await client.playlistItems(userID: session.userID, playlistID: containerID)
-        return playlist.Items.map(mapTrack(_:))
+        return tracks
     }
 
     // MARK: Playback
@@ -372,7 +388,7 @@ extension JellyfinProvider: MusicProvider {
         var quality: PlaybackQuality?
         if let dto = try? await client.item(userID: session.userID, id: trackID) {
             track = mapTrack(dto)
-            quality = Self.playbackQuality(from: dto)
+            quality = Self.playbackQuality(from: dto, maxBitrate: client.musicMaxStreamingBitrate)
         } else {
             track = MusicTrack(id: trackID, title: "")
         }
@@ -442,32 +458,22 @@ extension JellyfinProvider: MusicProvider {
         return lyrics.isEmpty ? nil : lyrics.taggingSource(source)
     }
 
-    /// Containers AVPlayer direct-plays on tvOS — must match the `Container`
-    /// allow-list `audioStreamURL` sends to Jellyfin's `/universal` endpoint.
-    /// When the source container is in this set the server streams the original
-    /// file untouched; otherwise it transcodes to an AAC HLS fallback.
-    private static let directPlayAudioContainers: Set<String> = ["mp3", "aac", "m4a", "flac", "alac", "wav", "m4b"]
-
     /// Derives `PlaybackQuality` from a track's `MediaSources`/`MediaStreams`,
     /// reproducing the same direct-play decision `audioStreamURL` relies on so we
     /// don't need a `PlaybackInfo` round-trip.
-    private static func playbackQuality(from dto: BaseItemDto) -> PlaybackQuality? {
+    private static func playbackQuality(from dto: BaseItemDto, maxBitrate: Int) -> PlaybackQuality? {
         let source = dto.MediaSources?.first
         let container = source?.Container?.lowercased()
         let audio = (source?.MediaStreams ?? dto.MediaStreams)?.first { $0.`Type` == "Audio" }
         guard container != nil || audio != nil else { return nil }
 
-        // The container token can be a comma list (e.g. "mp3,flac"); direct-play
-        // only when *every* listed container is playable.
-        let isDirectPlay: Bool = {
-            guard let container else { return false }
-            let tokens = container.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-            return !tokens.isEmpty && tokens.allSatisfy { directPlayAudioContainers.contains($0) }
-        }()
+        let isDirectPlay = JellyfinMusicDirectPlayProfile.supports(container: container, codec: audio?.Codec)
+            && (source?.Bitrate ?? audio?.BitRate ?? 0) <= maxBitrate
 
         if !isDirectPlay {
             return PlaybackQuality(isDirectPlay: false, transcodeCodec: "aac")
         }
+
         return PlaybackQuality(
             isDirectPlay: true,
             codec: audio?.Codec?.lowercased(),
@@ -550,4 +556,30 @@ extension JellyfinProvider: CapabilityReporting {
     /// music library is still detected at runtime via `musicLibraries()`, so the
     /// Music tab stays hidden for accounts without one.
     public var capabilities: ProviderCapability { [.video, .music, .remoteSubtitles, .libraryCollections, .videoPlaylists] }
+}
+
+/// Universal audio uses comma-separated container profiles with pipe-separated codecs.
+enum JellyfinMusicDirectPlayProfile {
+    private static let profiles: [(container: String, codecs: [String])] = [
+        ("mp3", ["mp3"]),
+        ("aac", ["aac"]),
+        ("m4a", ["aac", "alac"]),
+        ("m4b", ["aac", "alac"]),
+        ("flac", ["flac"]),
+        ("alac", ["alac"]),
+        ("wav", ["pcm_s16le", "pcm_s24le", "pcm_s32le", "pcm_f32le", "pcm_f64le", "pcm_u8"])
+    ]
+
+    static var universalContainers: String {
+        profiles.map { ([$0.container] + $0.codecs).joined(separator: "|") }.joined(separator: ",")
+    }
+
+    static func supports(container: String?, codec: String?) -> Bool {
+        guard let container, let codec else { return false }
+        let containers = container.lowercased().split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        return profiles.contains {
+            containers.contains($0.container) && $0.codecs.contains(codec.lowercased())
+        }
+    }
 }

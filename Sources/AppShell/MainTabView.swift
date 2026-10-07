@@ -476,6 +476,7 @@ struct MainTabView: View {
     @State private var resumePrompt: MediaItem?
     @State private var pendingPlaylistOrigin: VideoPlaylistPlaybackOrigin?
     @Environment(\.colorScheme) private var systemColorScheme
+    @Environment(\.scenePhase) private var scenePhase
 
     /// The selected root tab, persisted so it survives MainTabView being torn
     /// down and rebuilt — e.g. the add-server flow swaps the whole root out for
@@ -1830,6 +1831,7 @@ struct MainTabView: View {
             musicAvailability.seedFromCache(accounts: accounts, visibility: homeVisibility.visibility)
         }
         .task(id: musicProbeKey, priority: .utility) {
+            guard scenePhase == .active else { return }
             // Everything network-bound runs at LOW priority and out of the
             // critical launch window so the Home page (movies/TV) — the first
             // thing the user sees — always wins the launch network/CPU. The
@@ -1891,9 +1893,9 @@ struct MainTabView: View {
     /// enabled (disabled) state, not the Home-only "Show on Home" bit, so hiding a
     /// library from Home no longer re-probes Music while disabling it does.
     private var musicProbeKey: String {
-        let ids = accounts.map(\.account.id).sorted()
+        let ids = accounts.map { "\($0.account.id):\($0.account.credentialRevision.rawValue)" }.sorted()
         let disabled = homeVisibility.visibility.disabledKeys.sorted()
-        return (ids + ["|"] + disabled).joined(separator: ",")
+        return (ids + ["|", scenePhase == .active ? "active" : "inactive"] + disabled).joined(separator: ",")
     }
 }
 #endif

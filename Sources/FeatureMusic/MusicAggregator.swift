@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import CoreModels
+import CoreNetworking
 
 /// A signed-in account whose provider advertises (and actually exposes) music.
 public struct ResolvedMusicAccount: Sendable {
@@ -76,6 +77,7 @@ public final class MusicAvailabilityModel {
     public private(set) var didProbe = false
 
     private let store: MusicAvailabilityStoring
+    @ObservationIgnored private var probeRevision = 0
 
     public init(store: MusicAvailabilityStoring = MusicAvailabilityStore()) {
         self.store = store
@@ -97,57 +99,89 @@ public final class MusicAvailabilityModel {
     /// visibility so a library hidden while the app was closed never resurrects a
     /// phantom tab. The subsequent `probe` refreshes and corrects this.
     public func seedFromCache(accounts: [ResolvedAccount], visibility: HomeLibraryVisibility) {
-        guard !didProbe else { return }
         let stored = store.load()
-        let resolved = Self.resolve(accounts: accounts, rawLibraries: stored, visibility: visibility)
-        detectedAccounts = resolved.detected
-        visibleLibraryIDs = resolved.visible
+        apply(accounts: accounts, rawLibraries: stored, visibility: visibility)
         // Authoritative over the provisional value `init` set from the raw map:
         // the persisted libraries may no longer resolve against the signed-in
         // accounts, or may all be hidden. Correcting here — one render in —
         // keeps a stale cache from leaving an empty Music tab up until the
         // network probe returns.
-        hasMusic = !resolved.detected.isEmpty
     }
 
     /// Probes every account's `musicLibraries()` **in parallel**, persists the raw
     /// library map for the next launch's instant seed, then applies the current
-    /// visibility to decide the tab and its content scope. Resilient — an account
-    /// that errors is treated as having no music. Published state is only
-    /// reassigned when it actually changes, so a confirming relaunch (or a no-op
-    /// visibility re-evaluation) causes no tab flicker. Scales to ~10 accounts
-    /// without summing per-account latency.
+    /// visibility to decide the tab and its content scope. Failed accounts retain
+    /// their last known libraries; only successful empty responses remove them.
     public func probe(accounts: [ResolvedAccount], visibility: HomeLibraryVisibility) async {
-        let fetched = await withTaskGroup(of: (index: Int, libraryIDs: [String]).self) { group -> [(index: Int, libraryIDs: [String])] in
-            for (index, account) in accounts.enumerated() {
-                guard let music = account.provider as? MusicProvider else { continue }
-                group.addTask {
-                    let libraries = (try? await music.musicLibraries()) ?? []
-                    return (index, libraries.map(\.id))
+        await probe(accounts: accounts, visibility: visibility, retryDelays: [.seconds(2), .seconds(8)])
+    }
+
+    func probe(accounts: [ResolvedAccount], visibility: HomeLibraryVisibility, retryDelays: [Duration]) async {
+        probeRevision += 1
+        let revision = probeRevision
+        let eligible = accounts.filter { $0.provider is MusicProvider }
+        let accountIDs = Set(eligible.map(\.account.id))
+        var rawMap = store.load().filter { accountIDs.contains($0.key) }
+        apply(accounts: accounts, rawLibraries: rawMap, visibility: visibility)
+        var pending = eligible
+
+        for attempt in 0...retryDelays.count {
+            if attempt > 0 {
+                do { try await Task.sleep(for: retryDelays[attempt - 1]) }
+                catch { return }
+            }
+            guard !Task.isCancelled, revision == probeRevision else { return }
+            let fetched = await withTaskGroup(of: (String, [String]?, Bool).self) { group in
+                for account in pending {
+                    guard let music = account.provider as? MusicProvider else { continue }
+                    group.addTask {
+                        do {
+                            return (account.account.id, try await music.musicLibraries().map(\.id), false)
+                        } catch {
+                            if !Task.isCancelled {
+                                PlozzLog.discovery.error("Music library probe failed for account \(account.account.id); retaining cached availability")
+                            }
+                            let retry: Bool
+                            switch error {
+                            case AppError.serverUnreachable, AppError.invalidResponse, is URLError:
+                                retry = !Task.isCancelled
+                            default:
+                                retry = false
+                            }
+                            return (account.account.id, nil, retry)
+                        }
+                    }
+                }
+                var results: [(String, [String]?, Bool)] = []
+                for await result in group { results.append(result) }
+                return results
+            }
+            guard !Task.isCancelled, revision == probeRevision else { return }
+            var failed = Set<String>()
+            for (id, libraries, retry) in fetched {
+                if let libraries {
+                    rawMap[id] = libraries.isEmpty ? nil : libraries
+                } else if retry {
+                    failed.insert(id)
                 }
             }
-            var out: [(index: Int, libraryIDs: [String])] = []
-            for await result in group { out.append(result) }
-            return out
+            store.save(rawMap)
+            didProbe = true
+            apply(accounts: accounts, rawLibraries: rawMap, visibility: visibility)
+            pending = pending.filter { failed.contains($0.account.id) }
+            if pending.isEmpty { return }
         }
-        let rawByIndex = Dictionary(fetched.map { ($0.index, $0.libraryIDs) }, uniquingKeysWith: { $1 })
+    }
 
-        var rawMap: [String: [String]] = [:]
-        for (index, account) in accounts.enumerated() {
-            guard let raw = rawByIndex[index], !raw.isEmpty else { continue }
-            rawMap[account.account.id] = raw
-        }
-        store.save(rawMap)
-        didProbe = true
-
-        let resolved = Self.resolve(accounts: accounts, rawLibraries: rawMap, visibility: visibility)
+    private func apply(accounts: [ResolvedAccount], rawLibraries: [String: [String]], visibility: HomeLibraryVisibility) {
+        let resolved = Self.resolve(accounts: accounts, rawLibraries: rawLibraries, visibility: visibility)
         let changed = resolved.visible != visibleLibraryIDs
-            || Set(resolved.detected.map { $0.account.id }) != Set(detectedAccounts.map { $0.account.id })
+            || resolved.detected.map(\.account) != detectedAccounts.map(\.account)
         if changed {
             detectedAccounts = resolved.detected
             visibleLibraryIDs = resolved.visible
-            hasMusic = !resolved.detected.isEmpty
         }
+        if hasMusic != !resolved.detected.isEmpty { hasMusic = !resolved.detected.isEmpty }
     }
 
     /// Applies visibility to a raw `accountID → libraryIDs` map, yielding the

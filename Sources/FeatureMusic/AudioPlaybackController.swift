@@ -261,6 +261,8 @@ public final class AudioPlaybackController {
     /// (best-effort). Bound to the play session's provider; `nil` disables
     /// reporting (e.g. a provider that isn't a `MediaProvider`).
     private var reporter: PlaybackReporter?
+    @ObservationIgnored private let reports = MusicPlaybackReportQueue()
+    @ObservationIgnored private let scrobbles = MusicPlaybackReportQueue()
     /// A second, provider-INDEPENDENT reporter for the global Last.fm scrobbler.
     /// Last.fm is one account per user (not tied to Plex/Jellyfin), so it fans out
     /// from the same lifecycle events as `reporter` but is set once (by AppShell,
@@ -428,7 +430,7 @@ public final class AudioPlaybackController {
         let clampedStart = min(max(startIndex, 0), tracks.count - 1)
         // Tapping the song that's already playing shouldn't restart it — just
         // surface the full-screen player again (the Music tab observes the token).
-        if hasActivePlayback, currentTrack?.id == tracks[clampedStart].id {
+        if hasActivePlayback, currentTrack?.isSameQueueEntry(as: tracks[clampedStart]) == true {
             if !nowPlaying.isActive { resume() }
             playbackStartToken &+= 1
             return
@@ -437,6 +439,7 @@ public final class AudioPlaybackController {
         // in the new queue's reporter — otherwise a cross-account hand-off would
         // route its stop (and any scrobble) to the wrong server.
         reportStopIfNeeded(position: currentTime)
+        clearPreparedNext(removeFromPlayer: true)
         self.resolver = resolveStreamURL
         self.lyricsResolver = resolveLyrics
         self.lyricsRefresher = refreshLyrics
@@ -464,6 +467,7 @@ public final class AudioPlaybackController {
         // in the new queue's reporter — otherwise a cross-account hand-off would
         // route its stop (and any scrobble) to the wrong server.
         reportStopIfNeeded(position: currentTime)
+        clearPreparedNext(removeFromPlayer: true)
         self.resolver = resolveStreamURL
         self.lyricsResolver = resolveLyrics
         self.lyricsRefresher = refreshLyrics
@@ -1254,7 +1258,7 @@ public final class AudioPlaybackController {
     /// Fires a single best-effort report for `track` to its owning server. All
     /// state bookkeeping (which track is live, throttle timestamp) is handled by
     /// the callers below; this just logs and dispatches. The network report runs
-    /// on a detached task so a slow server never blocks the controller. Once a
+    /// asynchronously in lifecycle order so a slow server never blocks playback. Once a
     /// `.stop` has been delivered — the point where the server records the play —
     /// we bump `recentPlayReportToken` so the landing rail can refresh.
     private func fireReport(_ event: PlaybackEvent, for track: MusicTrack, position: TimeInterval) {
@@ -1262,6 +1266,8 @@ public final class AudioPlaybackController {
         // enough to warrant dispatching; Last.fm can be connected even when the
         // active provider isn't a reporting `MediaProvider`.
         guard reporter != nil || scrobbleObserver != nil else { return }
+        let reporter = reporter
+        let scrobbleObserver = scrobbleObserver
         // Prefer the duration the engine actually learned from the AVPlayerItem —
         // some servers omit it from track metadata, and the Plex scrobble decision
         // needs a real length (a missing/zero duration would suppress it entirely).
@@ -1269,10 +1275,19 @@ public final class AudioPlaybackController {
         MusicReportDiagnostics.emit(
             "dispatch \(event.rawValue) pos=\(Int(position))s id=\(track.id) '\(track.title)'"
         )
-        Task {
-            await reporter?(track, event, position, resolvedDuration)
-            await scrobbleObserver?(track, event, position, resolvedDuration)
-            if event == .stop { self.recentPlayReportToken &+= 1 }
+        if let reporter {
+            reports.enqueue(accountID: track.sourceAccountID, event: event) { [weak self] in
+                await reporter(track, event, position, resolvedDuration)
+                if event == .stop { self?.recentPlayReportToken &+= 1 }
+            }
+        }
+        if let scrobbleObserver {
+            // Last.fm is one shared sink: preserve playback order across accounts,
+            // independently of how quickly either provider acknowledges its reports.
+            scrobbles.enqueue(accountID: nil, event: event) { [weak self] in
+                await scrobbleObserver(track, event, position, resolvedDuration)
+                if reporter == nil, event == .stop { self?.recentPlayReportToken &+= 1 }
+            }
         }
     }
 
@@ -1856,5 +1871,39 @@ public final class AudioPlaybackController {
         NowPlayingSession.artwork(from: image)
     }
     #endif
+}
+
+/// Slow servers cannot accumulate obsolete heartbeats or delay another account.
+@MainActor
+final class MusicPlaybackReportQueue {
+    private struct Report {
+        let event: PlaybackEvent
+        let send: @MainActor () async -> Void
+    }
+
+    private final class Lane {
+        var pending: [Report] = []
+    }
+
+    private var lanes: [String: Lane] = [:]
+
+    func enqueue(accountID: String?, event: PlaybackEvent, send: @escaping @MainActor () async -> Void) {
+        let key = accountID ?? ""
+        let existing = lanes[key]
+        let lane = existing ?? Lane()
+        if event == .progress || event == .stop {
+            lane.pending.removeAll { $0.event == .progress }
+        }
+        lane.pending.append(Report(event: event, send: send))
+        guard existing == nil else { return }
+        lanes[key] = lane
+        Task { [weak self] in
+            while !lane.pending.isEmpty {
+                let report = lane.pending.removeFirst()
+                await report.send()
+            }
+            self?.lanes[key] = nil
+        }
+    }
 }
 #endif

@@ -41,6 +41,22 @@ final class MusicScaffoldTests: XCTestCase {
         XCTAssertEqual(decoded, album)
     }
 
+    func testPlaylistOccurrencePreservesMediaIdentityAndLegacyDecoding() throws {
+        let legacy = Data(#"{"id":"song","title":"Song"}"#.utf8)
+        var first = try JSONDecoder().decode(MusicTrack.self, from: legacy)
+        XCTAssertNil(first.playlistEntryID)
+        first.playlistEntryID = "list:0"
+        var repeated = first
+        repeated.playlistEntryID = "list:1"
+        XCTAssertEqual(first.id, repeated.id)
+        XCTAssertFalse(first.isSameQueueEntry(as: repeated))
+        XCTAssertTrue(first.isSameQueueEntry(as: first))
+        XCTAssertFalse(first.isSameQueueEntry(as: first.taggingSource("other")))
+        let decoded = try JSONDecoder().decode(MusicTrack.self, from: JSONEncoder().encode(repeated))
+        XCTAssertEqual(decoded, repeated)
+        XCTAssertEqual(decoded.taggingSource("account").playlistEntryID, "list:1")
+    }
+
     // MARK: MusicPage paging math
 
     func testMusicPageCountAndPaging() {
