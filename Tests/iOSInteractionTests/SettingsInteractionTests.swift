@@ -121,6 +121,47 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertFalse(app.buttons["Micro"].exists)
     }
 
+    func testMetadataArtworkLinkReturnsWithoutStackingDuplicatePages() {
+        openSettingsPage("Metadata Providers", verifyTitleLayout: false)
+        let hadBackButton = app.navigationBars.buttons["BackButton"].exists
+        for _ in 0..<2 {
+            let artwork = app.buttons["metadata-artwork-preferences"]
+            XCTAssertTrue(artwork.waitForExistence(timeout: 5), app.debugDescription)
+            reveal(artwork)
+            artwork.tap()
+            XCTAssertTrue(app.navigationBars["Artwork"].waitForExistence(timeout: 5), app.debugDescription)
+            let metadata = app.buttons["artwork-metadata-providers"]
+            reveal(metadata)
+            metadata.tap()
+            XCTAssertTrue(app.navigationBars["Metadata Providers"].waitForExistence(timeout: 5))
+        }
+        XCTAssertEqual(app.navigationBars.buttons["BackButton"].exists, hadBackButton)
+        if hadBackButton {
+            app.navigationBars.buttons["BackButton"].tap()
+            XCTAssertFalse(app.navigationBars["Artwork"].exists)
+            XCTAssertFalse(app.navigationBars["Metadata Providers"].exists)
+        }
+    }
+
+    func testArtworkMetadataLinkReturnsToTheSameProfilePreferences() {
+        openSettingsPage("Appearance", verifyTitleLayout: false)
+        app.buttons["appearance-artwork"].tap()
+        XCTAssertTrue(app.navigationBars["Artwork"].waitForExistence(timeout: 5))
+        let library = app.buttons["artwork-preset-library"]
+        library.tap()
+        let metadata = app.buttons["artwork-metadata-providers"]
+        reveal(metadata)
+        metadata.tap()
+        XCTAssertTrue(app.navigationBars["Metadata Providers"].waitForExistence(timeout: 5))
+        let artwork = app.buttons["metadata-artwork-preferences"]
+        reveal(artwork)
+        artwork.tap()
+        XCTAssertTrue(app.navigationBars["Artwork"].waitForExistence(timeout: 5))
+        XCTAssertTrue(library.isSelected)
+        app.navigationBars.buttons["BackButton"].tap()
+        XCTAssertTrue(app.navigationBars["Appearance"].waitForExistence(timeout: 5))
+    }
+
     func testThemeMenusAndToggleKeepSeparateActions() {
         launch()
         let appearance = button("Appearance")
@@ -316,7 +357,7 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Customize Home"].exists)
     }
 
-    private func openSettingsPage(_ title: String) {
+    private func openSettingsPage(_ title: String, verifyTitleLayout: Bool = true) {
         launch(settingsRoot: true)
         let usesAboutPage = app.windows.firstMatch.frame.width >= 600
             && ["Help & Diagnostics", "Attributions"].contains(title)
@@ -330,7 +371,7 @@ final class SettingsInteractionTests: XCTestCase {
         reveal(row, settingsMenu: !usesAboutPage)
         row.tap()
         XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 3), app.debugDescription)
-        assertInlineTitle(title)
+        if verifyTitleLayout { assertInlineTitle(title) }
     }
 
     private func assertInlineTitle(_ title: String) {

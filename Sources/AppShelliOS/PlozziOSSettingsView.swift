@@ -699,7 +699,7 @@ private struct PlozziOSSettingsSplitView: View {
         case .syncSetup:
             PlozziOSSyncSetupSettingsView(appModel: appModel)
         case .metadata:
-            PlozziOSMetadataSettingsView(deps: appModel.makeMetadataSettingsDependencies())
+            PlozziOSMetadataSettingsView(appModel: appModel, deps: appModel.makeMetadataSettingsDependencies())
         case .subtitles:
             PlozziOSSubtitleSettingsView(
                 behavior: appModel.settings.subtitleBehavior,
@@ -1279,7 +1279,7 @@ private struct PlozziOSSettingsCompactMenu: View {
         .onChange(of: appModel.profiles.activeProfileID) { _, _ in isParentalUnlocked = false }
         .onChange(of: appModel.profiles.parentalPIN) { _, _ in isParentalUnlocked = false }
         .navigationDestination(isPresented: $showMetadata) {
-            PlozziOSMetadataSettingsView(deps: appModel.makeMetadataSettingsDependencies())
+            PlozziOSMetadataSettingsView(appModel: appModel, deps: appModel.makeMetadataSettingsDependencies())
         }
         .alert("Sign out of all accounts?", isPresented: $confirmSignOutAll) {
             Button("Cancel", role: .cancel) {}
@@ -1820,23 +1820,10 @@ struct PlozziOSAppearanceSettingsView: View {
 
             SettingsSectionGroup("Artwork") {
                 NavigationLink("Artwork") {
-                    List {
-                        SettingsSectionGroup {
-                            ArtworkSettingsControls(cards: cardStyle)
-                        }
-                        if canManageProviders {
-                            SettingsSectionGroup {
-                                NavigationLink("Metadata Providers (TMDB, TheTVDB…)") {
-                                    PlozziOSMetadataSettingsView(deps: appModel.makeMetadataSettingsDependencies())
-                                }
-                                .accessibilityIdentifier("artwork-metadata-providers")
-                            } footer: {
-                                Text("Shared by all profiles.")
-                            }
-                        }
-                    }
-                    .settingsPageSurface()
-                    .navigationTitle("Artwork")
+                    PlozziOSArtworkSettingsView(
+                        appModel: appModel, cardStyle: cardStyle,
+                        canManageProviders: canManageProviders
+                    )
                 }
                 .accessibilityIdentifier("appearance-artwork")
             }
@@ -1871,6 +1858,52 @@ struct PlozziOSAppearanceSettingsView: View {
         .navigationTitle("Appearance")
     }
 
+}
+
+struct PlozziOSArtworkSettingsView: View {
+    let appModel: PlozziOSAppModel
+    @Bindable var cardStyle: CardStyleSettingsModel
+    let canManageProviders: Bool
+    var returnsToMetadata = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            SettingsSectionGroup {
+                ArtworkSettingsControls(cards: cardStyle)
+            }
+            if canManageProviders {
+                SettingsSectionGroup {
+                    if returnsToMetadata {
+                        Button {
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Text("Metadata Providers (TMDB, TheTVDB…)")
+                                Spacer()
+                                Image(systemName: "chevron.forward")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityIdentifier("artwork-metadata-providers")
+                    } else {
+                        NavigationLink("Metadata Providers (TMDB, TheTVDB…)") {
+                            PlozziOSMetadataSettingsView(
+                                appModel: appModel, deps: appModel.makeMetadataSettingsDependencies(),
+                                returnsToArtwork: true
+                            )
+                        }
+                        .accessibilityIdentifier("artwork-metadata-providers")
+                    }
+                } footer: {
+                    Text("Shared by all profiles.")
+                }
+            }
+        }
+        .settingsPageSurface()
+        .navigationTitle("Artwork")
+    }
 }
 
 private struct PlozziOSHomeSettingsView: View {

@@ -1100,7 +1100,7 @@ public struct SettingsView: View {
             IntegrationsDetailView(trakt: trakt, simkl: simkl, anilist: anilist, mal: mal, lastfm: lastfm, playback: playback, serverCount: activeProfileServerCount)
         case .metadata:
             if let metadataSettings {
-                MetadataSettingsDetailView(deps: metadataSettings)
+                MetadataSettingsDetailView(deps: metadataSettings, onOpenArtwork: navigation.openArtwork)
             }
         case .metadataDiagnostics:
             if let metadataSettings {

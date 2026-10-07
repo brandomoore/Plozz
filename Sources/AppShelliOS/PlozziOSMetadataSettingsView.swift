@@ -10,7 +10,10 @@ import SwiftUI
 /// household-wide models (provider order, cache budgets, TMDB key) through the
 /// shared `MetadataProviderListLogic`, so behaviour matches tvOS exactly.
 struct PlozziOSMetadataSettingsView: View {
+    let appModel: PlozziOSAppModel
     let deps: MetadataSettingsDependencies
+    var returnsToArtwork = false
+    @Environment(\.dismiss) private var dismiss
 
     @State private var showDiagnostics = false
 
@@ -19,7 +22,7 @@ struct PlozziOSMetadataSettingsView: View {
 
     var body: some View {
         Form {
-            Text("Metadata providers and caches are shared by every profile on this device. Artwork preferences are in Appearance > Artwork and belong to each profile.")
+            Text("Shared by all profiles.")
                 .font(.footnote)
                 .plozzForeground(.secondary)
                 .listRowInsets(EdgeInsets())
@@ -29,6 +32,30 @@ struct PlozziOSMetadataSettingsView: View {
             providersSection
             if providers.settings.orderMode == .custom {
                 prioritySection
+            }
+            SettingsSectionGroup {
+                if returnsToArtwork {
+                    Button {
+                        dismiss()
+                    } label: {
+                        HStack {
+                            Text("Artwork")
+                            Spacer()
+                            Image(systemName: "chevron.forward")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("metadata-artwork-preferences")
+                } else {
+                    NavigationLink("Artwork") {
+                        PlozziOSArtworkSettingsView(
+                            appModel: appModel, cardStyle: appModel.settings.cardStyle,
+                            canManageProviders: true, returnsToMetadata: true
+                        )
+                    }
+                    .accessibilityIdentifier("metadata-artwork-preferences")
+                }
             }
             tmdbSection
             diagnosticsSection

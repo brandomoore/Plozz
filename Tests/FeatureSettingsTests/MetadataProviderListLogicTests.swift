@@ -10,6 +10,31 @@ import XCTest
 final class MetadataProviderListLogicTests: XCTestCase {
     private let baseline: [MetadataSource] = [.tvdb, .tmdb, .anilist, .tvmaze]
 
+    @MainActor
+    func testArtworkLinkReturnsToTheExistingAppearancePage() {
+        let navigation = SettingsNavigationModel()
+        navigation.path = [.appearance, .metadata]
+        navigation.appearanceRowID = "theme"
+        navigation.openArtwork()
+        XCTAssertEqual(navigation.path, [.appearance])
+        XCTAssertEqual(navigation.appearanceRowID, "artwork")
+        navigation.openArtwork()
+        XCTAssertEqual(navigation.path, [.appearance])
+    }
+
+    @MainActor
+    func testArtworkAndMetadataLinksDoNotGrowRepeatedNavigationStacks() {
+        let navigation = SettingsNavigationModel()
+        navigation.path = [.metadata]
+        for _ in 0..<3 {
+            navigation.openArtwork()
+            XCTAssertEqual(navigation.path, [.metadata, .appearance])
+            XCTAssertEqual(navigation.appearanceRowID, "artwork")
+            navigation.openMetadataProviders()
+            XCTAssertEqual(navigation.path, [.metadata])
+        }
+    }
+
     private func sections(
         _ settings: MetadataProviderSettings,
         baselineDisabled: Set<MetadataSource> = []

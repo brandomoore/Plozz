@@ -165,9 +165,11 @@ public enum MetadataProviderListLogic {
 /// A household-wide concern (like Servers/Seerr), so it lives under "This Apple TV".
 public struct MetadataSettingsDetailView: View {
     let deps: MetadataSettingsDependencies
+    let onOpenArtwork: () -> Void
 
-    public init(deps: MetadataSettingsDependencies) {
+    public init(deps: MetadataSettingsDependencies, onOpenArtwork: @escaping () -> Void) {
         self.deps = deps
+        self.onOpenArtwork = onOpenArtwork
     }
 
     /// Whether a provider row is currently lifted for reordering. Owned by the
@@ -182,6 +184,8 @@ public struct MetadataSettingsDetailView: View {
             VStack(alignment: .leading, spacing: 28) {
                 SettingsPageHeader("Metadata Providers")
                 providersSection
+                artworkLink
+                    .disabled(isReordering)
                 tmdbKeySection
                     .disabled(isReordering)
                 diagnosticsLink
@@ -266,7 +270,7 @@ public struct MetadataSettingsDetailView: View {
                     title: orderModeTitle
                 )
 
-                Text("Artwork preferences are in Appearance > Artwork and belong to each profile.")
+                Text("Shared by all profiles.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -402,6 +406,22 @@ public struct MetadataSettingsDetailView: View {
         case .unreachable:
             Label("Couldn't reach TMDB to check the key. Try again in a moment.", systemImage: "wifi.exclamationmark")
                 .font(.callout.weight(.medium)).foregroundStyle(.orange)
+        }
+    }
+
+    private var artworkLink: some View {
+        SettingsPanel(contentPadding: .settingsPanelRowContent) {
+            Button(action: onOpenArtwork) {
+                SettingsRowLabel(icon: "photo", title: "Artwork") {
+                    EmptyView()
+                } trailing: {
+                    Image(systemName: "chevron.forward")
+                        .font(.caption.weight(.semibold))
+                        .settingsRowSecondary()
+                }
+            }
+            .buttonStyle(SettingsFocusButtonStyle())
+            .accessibilityIdentifier("metadata-artwork-preferences")
         }
     }
 

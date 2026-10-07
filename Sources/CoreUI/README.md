@@ -98,6 +98,8 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   Provider enablement/order is household-wide in Metadata Providers; changing
   appearance never enables a provider. The old library-artwork choice migrates to each profile,
   and the new preference transfers/syncs with that profile.
+  Metadata Providers links directly to the active profile's Artwork preferences.
+  Reciprocal links return to an existing page instead of stacking duplicate pages.
   Library-first heroes honor the server-selected backdrop or primary share
   sidecar rather than choosing a different image for Details or avoiding artwork
   on the focused card. Recommended varies available Details backgrounds;

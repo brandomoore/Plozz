@@ -155,6 +155,23 @@ public final class SettingsNavigationModel {
     var appearanceRowID: String?
 
     public init() {}
+
+    func openArtwork() {
+        appearanceRowID = "artwork"
+        reveal(.appearance)
+    }
+
+    func openMetadataProviders() {
+        reveal(.metadata)
+    }
+
+    private func reveal(_ route: SettingsRoute) {
+        if let index = path.lastIndex(of: route) {
+            path = Array(path.prefix(through: index))
+        } else {
+            path.append(route)
+        }
+    }
 }
 
 extension EdgeInsets {

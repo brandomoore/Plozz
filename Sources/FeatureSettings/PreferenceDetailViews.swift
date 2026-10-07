@@ -82,7 +82,7 @@ struct AppearanceDetailView: View {
                         ArtworkSettingsControls(cards: cardStyle)
                         if canManageProviders {
                             VStack(alignment: .leading, spacing: 12) {
-                                NavigationLink(value: SettingsRoute.metadata) {
+                                Button(action: settingsNavigation.openMetadataProviders) {
                                     Label("Metadata Providers (TMDB, TheTVDB…)", systemImage: "globe")
                                 }
                                 .accessibilityIdentifier("artwork-metadata-providers")
