@@ -104,12 +104,9 @@ struct PlozziOSSearchView: View {
 
     private func results(_ sections: [SearchSection]) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 28) {
+            LazyVStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionSpacing) {
                 ForEach(sections) { section in
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(section.title)
-                            .font(.title2.bold())
-
+                    PlozziOSMediaSection(title: Text(section.title)) {
                         LazyVGrid(
                             columns: appModel.settings.density.density.iOSPosterGridColumns(
                                 horizontalSizeClass: horizontalSizeClass
@@ -123,10 +120,11 @@ struct PlozziOSSearchView: View {
                                 )
                             }
                         }
+                        .padding(.horizontal, PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass))
                     }
                 }
             }
-            .padding()
+            .padding(.vertical)
         }
     }
 

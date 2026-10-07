@@ -55,31 +55,6 @@ struct PlozziOSPosterCard: View {
     }
 }
 
-enum PlozziOSMediaRailLayout {
-    /// Default edge-to-edge gap, matching the season episode rail.
-    /// Home supplies its own denser section rhythm.
-    static let visibleSpacing: CGFloat = 14
-
-    static func artworkAlignedInset(_ pageInset: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle) -> CGFloat {
-        pageInset - (cardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin)
-    }
-
-    /// Borderless cards reserve side margins inside their layout slots for focus
-    /// clearance. Subtract those margins so artwork still lands exactly
-    /// `visibleSpacing` apart instead of silently adding both margins to the gap.
-    static func stackSpacing(
-        metrics: PlozzMetrics, cardStyle: CardStyle,
-        visibleSpacing: CGFloat = PlozziOSMediaRailLayout.visibleSpacing
-    ) -> CGFloat {
-        switch cardStyle {
-        case .framed:
-            visibleSpacing
-        case .borderless:
-            max(0, visibleSpacing - metrics.borderlessCardSideMargin * 2)
-        }
-    }
-}
-
 extension UIDensity {
     var iOSPosterMinimumWidth: CGFloat {
         max(86, CGFloat(116 * scale))
