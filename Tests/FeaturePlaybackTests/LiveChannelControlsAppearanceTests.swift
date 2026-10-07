@@ -1,4 +1,6 @@
 #if DEBUG && canImport(SwiftUI) && canImport(UIKit)
+import CoreModels
+import CoreUI
 import SwiftUI
 import UIKit
 import XCTest
@@ -51,6 +53,73 @@ final class LiveChannelControlsAppearanceTests: XCTestCase {
         XCTAssertEqual(native.width, explicit.width)
         XCTAssertEqual(native.height, explicit.height)
         XCTAssertEqual(try rgbaPixels(native), try rgbaPixels(explicit))
+    }
+
+    func testOnNowKeepsPlayerInsetsAndConcentricArtworkAcrossBrowsingDensities() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        for (name, metrics, radius) in [
+            ("tv", PlayerCardMetrics.tv, CGFloat(18)),
+            ("horizontal-wide", .horizontalWide, 26),
+            ("horizontal-narrow", .horizontalNarrow, 8),
+            ("vertical-wide", .verticalWide, 12),
+            ("vertical-narrow", .verticalNarrow, 8)
+        ] {
+            for showsProgram in [false, true] {
+                let program = showsProgram ? LiveChannelProgramInfo(
+                    title: "Programme", start: now.addingTimeInterval(-900), end: now.addingTimeInterval(900)
+                ) : nil
+                let item = LiveChannelOnNowItem(channelID: "fixture", channelName: "", logoURL: nil, program: program)
+                let textHeight = showsProgram
+                    ? ((metrics.castNameSize + metrics.castRoleSize) * 1.25).rounded(.up) + 3
+                    : (metrics.castNameSize * 1.25).rounded(.up)
+                let artHeight = max(40, (metrics.cardHeight - metrics.contentPadding * 2 - textHeight - 10).rounded())
+                let artWidth = (artHeight * 16 / 9).rounded()
+                let maskRenderer = ImageRenderer(content:
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .fill(.white).frame(width: artWidth, height: artHeight)
+                )
+                maskRenderer.scale = 1
+                let mask = try XCTUnwrap(maskRenderer.cgImage)
+                let maskPixels = try rgbaPixels(mask)
+                var reference: [UInt8]?
+                for density in UIDensity.allCases {
+                    let renderer = ImageRenderer(content:
+                        LiveChannelOnNowCard(item: item, isCurrent: false, now: now, reservesDetailLine: showsProgram)
+                            .environment(\.playerCardMetrics, metrics)
+                            .environment(\.plozzMetrics, PlozzMetrics(density: density))
+                            .environment(\.themePalette, .dark)
+                            .environment(\.colorScheme, .dark)
+                    )
+                    renderer.scale = 1
+                    let image = try XCTUnwrap(renderer.cgImage)
+                    XCTAssertEqual(image.width, Int(artWidth + metrics.contentPadding * 2), name)
+                    XCTAssertEqual(image.height, Int(metrics.cardHeight), name)
+                    let pixels = try rgbaPixels(image)
+                    if let reference {
+                        XCTAssertTrue(pixels == reference, "Browsing density must not reshape player cards: \(name)")
+                    } else {
+                        reference = pixels
+                        let attachment = XCTAttachment(image: UIImage(cgImage: image))
+                        attachment.name = "on-now-\(name)-programme-\(showsProgram)"
+                        attachment.lifetime = .keepAlways
+                        add(attachment)
+                    }
+                    let inset = Int(metrics.contentPadding)
+                    XCTAssertEqual(pixels[((inset - 1) * image.width + image.width / 2) * 4 + 3], 0)
+                    for y in 0..<Int(radius + 2) {
+                        for x in 0..<Int(radius + 2) {
+                            for (mx, my) in [(x, y), (mask.width - x - 1, mask.height - y - 1)] {
+                                let expected = maskPixels[(my * mask.width + mx) * 4 + 3]
+                                guard expected == 0 || expected == 255 else { continue }
+                                let actual = pixels[((my + inset) * image.width + mx + inset) * 4 + 3]
+                                XCTAssertLessThanOrEqual(abs(Int(actual) - Int(expected)), 2,
+                                                        "Artwork and progress must share the original \(radius)pt corner: \(name), \(mx),\(my)")
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private func render(title: String, focused: Bool?) throws -> CGImage {

@@ -138,6 +138,7 @@ struct LiveChannelOverlay: View {
 
     var body: some View {
         layout
+        .environment(\.channelLogoPreservesSourceCorners, true)
         .animation(.easeInOut(duration: 0.2), value: openMenu)
         .animation(.easeInOut(duration: 0.3), value: styleEditing)
         .onChange(of: trackOptionsSource, initial: true) { _, source in syncTrackOptions(source) }
@@ -2064,7 +2065,7 @@ private struct LiveChannelTrackPanel: View {
 
 /// The On Now card: what else is airing, laid out like the Cast tab — a row of
 /// cards floating over the video, each the programme's art and its title.
-private struct LiveChannelOnNowPanel: View {
+struct LiveChannelOnNowPanel: View {
     let items: [LiveChannelOnNowItem]
     let currentChannelID: String
     @FocusState.Binding var focus: LiveChannelControl?
@@ -2072,7 +2073,6 @@ private struct LiveChannelOnNowPanel: View {
     let select: (LiveChannelOnNowItem) -> Void
 
     @Environment(\.playerCardMetrics) private var metrics
-    @Environment(\.plozzMetrics) private var cardMetrics
 
     var body: some View {
         if items.isEmpty {
@@ -2103,7 +2103,7 @@ private struct LiveChannelOnNowPanel: View {
                             reservesDetailLine: reservesDetailLine
                         )
                     }
-                    .buttonStyle(LiveChannelCardButtonStyle(cornerRadius: cardMetrics.landscapeCardCornerRadius))
+                    .buttonStyle(LiveChannelCardButtonStyle(cornerRadius: metrics.panelCornerRadius))
                     .disabled(!isCardOpen)
                     .focused($focus, equals: .onNowItem(item.id))
                     .accessibilityIdentifier("live-channel-on-now-\(item.channelID)")
@@ -2140,7 +2140,7 @@ private struct LiveChannelCardButtonStyle: ButtonStyle {
     }
 }
 
-private struct LiveChannelOnNowCard: View {
+struct LiveChannelOnNowCard: View {
     let item: LiveChannelOnNowItem
     let isCurrent: Bool
     let now: Date
@@ -2148,20 +2148,16 @@ private struct LiveChannelOnNowCard: View {
     let reservesDetailLine: Bool
 
     @Environment(\.playerCardMetrics) private var metrics
-    /// The app's media-card rule, as Home's landscape cards and the Up Next card
-    /// follow it: art inset by `cardInset` on every side with a concentric outer
-    /// corner, and the caption held further in so it clears that corner.
-    @Environment(\.plozzMetrics) private var cardMetrics
     @Environment(\.isFocused) private var focused
 
+    private static let spacing: CGFloat = 10
     #if os(tvOS)
     private static let progressHeight: CGFloat = 6
     #else
     private static let progressHeight: CGFloat = 4
     #endif
 
-    private var inset: CGFloat { cardMetrics.cardInset }
-    private var captionInset: CGFloat { cardMetrics.landscapeCaptionInset }
+    private var inset: CGFloat { metrics.contentPadding }
 
     /// Everything under the art, so the art takes exactly what is left of the
     /// card's fixed height.
@@ -2170,14 +2166,12 @@ private struct LiveChannelOnNowCard: View {
         return ((metrics.castNameSize + metrics.castRoleSize) * 1.25).rounded(.up) + 3
     }
 
-    /// The card's full height less the art's inset above it, the caption below,
-    /// and the caption's own inset from the bottom corners.
+    /// Player insets and corners stay independent of browsing-card density.
     private var artHeight: CGFloat {
-        let chrome = inset + cardMetrics.landscapeCaptionTopSpacing + textHeight + inset + captionInset
-        return max(40, (metrics.cardHeight - chrome).rounded())
+        max(40, (metrics.cardHeight - inset * 2 - textHeight - Self.spacing).rounded())
     }
 
-    private var artCornerRadius: CGFloat { PlozzTheme.Metrics.mediumMediaCornerRadius }
+    private var artCornerRadius: CGFloat { max(8, metrics.panelCornerRadius - inset) }
 
     private var artWidth: CGFloat { (artHeight * 16 / 9).rounded() }
 
@@ -2204,7 +2198,7 @@ private struct LiveChannelOnNowCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: Self.spacing) {
             artwork
                 .overlay { progressOverlay }
                 .overlay(alignment: .topLeading) { watchingBadge }
@@ -2218,11 +2212,8 @@ private struct LiveChannelOnNowCard: View {
                         .lineLimit(1)
                 }
             }
-            .padding(.horizontal, captionInset)
-            .padding(.top, cardMetrics.landscapeCaptionTopSpacing)
         }
-        .padding([.top, .horizontal], inset)
-        .padding(.bottom, inset + captionInset)
+        .padding(inset)
         .frame(width: artWidth + inset * 2, height: metrics.cardHeight, alignment: .topLeading)
     }
 

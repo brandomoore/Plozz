@@ -298,6 +298,61 @@ final class ChannelLogoArtworkTests: XCTestCase {
         XCTAssertLessThan(max(pixels[background], pixels[background + 1], pixels[background + 2]), 70)
     }
 
+    func testPlayerPreservesBoxedSourceCornersWithoutChangingGuideTilesOrLogoSize() throws {
+        for sourceSize in [
+            CGSize(width: 40, height: 40),
+            CGSize(width: 80, height: 40),
+            CGSize(width: 40, height: 80)
+        ] {
+            let url = try XCTUnwrap(URL(string: "https://example.invalid/\(UUID()).png"))
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.preferredRange = .standard
+            let logo = UIGraphicsImageRenderer(size: sourceSize, format: format).image { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(origin: .zero, size: sourceSize))
+            }
+            let prepared = PreparedLogo(image: logo, luminance: 0.2, red: 1, green: 0, blue: 0, coverage: 1)
+            HeroLogoMemo.store(
+                HeroLogoAnalysis.analyze(prepared, backgroundSample: nil),
+                for: HeroLogoMemo.key(for: [.remote(url)])
+            )
+            var rendered: [[UInt8]] = []
+            for preservesCorners in [false, true] {
+                let renderer = ImageRenderer(content:
+                    ChannelLogoArtwork(name: "", logoURL: url, size: CGSize(width: 200, height: 128), cornerRadius: 18)
+                        .environment(\.themePalette, .dark)
+                        .environment(\.channelLogoPreservesSourceCorners, preservesCorners)
+                )
+                renderer.scale = 1
+                let image = try XCTUnwrap(renderer.cgImage)
+                XCTAssertEqual(image.width, 200)
+                XCTAssertEqual(image.height, 128)
+                rendered.append(try rgbaPixels(image))
+                let attachment = XCTAttachment(image: UIImage(cgImage: image))
+                attachment.name = "boxed-logo-\(Int(sourceSize.width))x\(Int(sourceSize.height))-source-corners-\(preservesCorners)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+            let aspect = sourceSize.width / sourceSize.height
+            let height = min(112, 184 / aspect)
+            let width = height * aspect
+            let left = Int((200 - width) / 2)
+            let top = Int((128 - height) / 2)
+            for (x, y) in [(left + 1, top + 1), (199 - left - 1, 127 - top - 1)] {
+                let offset = (y * 200 + x) * 4
+                XCTAssertLessThan(rendered[0][offset], 100, "Guide tiles must retain their rounded source artwork.")
+                XCTAssertEqual(Array(rendered[1][offset..<(offset + 4)]), [255, 0, 0, 255],
+                               "Playback must not cut the corners off the boxed source logo.")
+            }
+            for (x, y) in [(100, top + 1), (100, 64), (100, 4), (0, 0)] {
+                let offset = (y * 200 + x) * 4
+                XCTAssertEqual(Array(rendered[0][offset..<(offset + 4)]), Array(rendered[1][offset..<(offset + 4)]),
+                               "Logo size, colour and the outer plate must not change.")
+            }
+        }
+    }
+
     private func rgbaPixels(_ image: CGImage) throws -> [UInt8] {
         var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
         try pixels.withUnsafeMutableBytes { bytes in

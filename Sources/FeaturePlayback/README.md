@@ -878,6 +878,13 @@ focusable (VOD's `entryFocusTarget`, made structural); open, Left/Right walks
 Info · On Now · Guide and focus alone switches the card. Do not put
 `onMoveCommand` on the timeline: it swallowed the Down press.
 
+On Now retains the player's original card geometry: the player panel radius and
+content inset, with artwork corners derived from their difference (minimum 8pt).
+Browsing-card density and mobile artwork-radius changes do not reshape these
+cards. Programme art, fallback logo plates and progress masks use the same inner
+corner. Boxed source logos keep their own corners inside Live TV playback,
+including its embedded guide; standalone guide and library styling is unchanged.
+
 Channels change only on the remote's Channel Up / Down buttons (`.pageUp` /
 `.pageDown`, see `LiveChannelRemotePresses`), never on Left/Right.
 

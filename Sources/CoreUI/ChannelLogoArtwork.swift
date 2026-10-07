@@ -170,11 +170,10 @@ struct ChannelLogoPlateContent: View {
     let cornerRadius: CGFloat
     let artworkInset: CGFloat
     var rendersInkLight = false
-    /// Draw the logo as a tile: nearly the plate's full height, its corners
-    /// rounded concentric with the plate's. A boxed logo at the usual ink
-    /// inset read as a small, sharp-cornered square in the middle of the plate.
+    /// Boxed logos fill more of the plate; playback preserves their source corners.
     var isTile = false
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.channelLogoPreservesSourceCorners) private var preservesSourceCorners
 
     /// A tile hugs the plate more closely than ink does.
     private var inset: CGFloat {
@@ -184,7 +183,9 @@ struct ChannelLogoPlateContent: View {
     /// Proportional to the tile itself, not concentric with the plate: a square
     /// tile sits well inside a wide plate, so its corners don't nest in the
     /// plate's, and the concentric remainder (a few points) barely read as round.
-    private var tileCornerRadius: CGFloat { max(4, (size.height - inset * 2) * 0.08) }
+    private var tileCornerRadius: CGFloat {
+        preservesSourceCorners ? 0 : max(4, (size.height - inset * 2) * 0.08)
+    }
 
     var body: some View {
         ZStack {
@@ -232,6 +233,18 @@ struct ChannelLogoPlateContent: View {
                 )
                 .allowsHitTesting(false)
         }
+    }
+}
+
+private struct ChannelLogoPreservesSourceCornersKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+public extension EnvironmentValues {
+    /// Live playback keeps boxed source logos unrounded without changing guide-page tiles.
+    var channelLogoPreservesSourceCorners: Bool {
+        get { self[ChannelLogoPreservesSourceCornersKey.self] }
+        set { self[ChannelLogoPreservesSourceCornersKey.self] = newValue }
     }
 }
 #endif
