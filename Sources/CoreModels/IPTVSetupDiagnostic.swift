@@ -25,7 +25,7 @@ public struct IPTVSetupDiagnostic: Equatable, Sendable {
         }
     }
     public struct Failure: Equatable, Sendable {
-        public enum Reason: String, Sendable {
+        public enum Reason: String, Codable, Sendable {
             case invalidInput, authentication, expired, unsupported, malformed, empty, storage, tooLarge
             case fileUnavailable, network, timeout, offline, invalidResponse, notFound, rateLimited
             case redirectBlocked, guideInsteadOfPlaylist, accessDenied, sourceChanged, cancelled, other

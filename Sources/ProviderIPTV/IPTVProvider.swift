@@ -341,7 +341,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
             resource: AuthenticatedHTTPResource(pathBase: .configuredBaseURL, path: "iptv/" + session),
             playSessionID: session
         )
-        try await playback.register(locator)
+        try await playback.register(locator, isLive: record.isLive)
         return locator
     }
 
@@ -378,6 +378,7 @@ private actor IPTVPlaybackSessions {
     }
     private struct Entry {
         let locator: AuthenticatedHTTPPlaybackLocator
+        let isLive: Bool
         var pending: Task<Delivery, Error>?
         var delivery: Delivery?
         var started = false
@@ -391,9 +392,9 @@ private actor IPTVPlaybackSessions {
         self.configuration = configuration
     }
 
-    func register(_ locator: AuthenticatedHTTPPlaybackLocator) throws {
+    func register(_ locator: AuthenticatedHTTPPlaybackLocator, isLive: Bool) throws {
         guard let id = locator.playSessionID, entries.count < 32 else { throw AppError.invalidResponse }
-        entries[id] = Entry(locator: locator)
+        entries[id] = Entry(locator: locator, isLive: isLive)
     }
 
     func resolve(_ locator: AuthenticatedHTTPPlaybackLocator) async throws -> URL {
@@ -404,12 +405,12 @@ private actor IPTVPlaybackSessions {
         let task: Task<Delivery, Error>
         if let pending = entry.pending { task = pending }
         else {
-            task = Task { [client, configuration] in
+            task = Task { [client, configuration, isLive = entry.isLive] in
                 let (url, headers) = try await client.delivery(locator.itemID)
                 let credential = await client.credential
                 let proxy = try IPTVPlaybackProxy(
                     origin: url, headers: headers, configuration: configuration,
-                    sensitiveValues: [credential.password]
+                    sensitiveValues: [credential.password], content: isLive ? .live : .onDemand
                 )
                 do { return try await Delivery(url: proxy.start(), proxy: proxy) }
                 catch { await proxy.stop(); throw error }

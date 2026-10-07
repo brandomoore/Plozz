@@ -484,6 +484,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSPresentationTests
+      - path: Tests/ProviderIPTVTests/IPTVTestHTTPServer.swift
       - path: Tests/AppearancePresentationSupport
       - path: Tests/AuthPresentationSupport
       - path: Tests/SubtitlePresentationSupport
@@ -532,6 +533,7 @@ targets:
     platform: tvOS
     sources:
       - path: Tests/FocusIntegrationTests
+      - path: Tests/ProviderIPTVTests/IPTVTestHTTPServer.swift
       - path: Tests/FeatureLiveTVTests/LiveTVGuideFocusTests.swift
       - path: Tests/AppearancePresentationSupport
       - path: Tests/AuthPresentationSupport

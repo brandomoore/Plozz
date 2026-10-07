@@ -3,6 +3,31 @@ import XCTest
 
 @MainActor
 final class IPTVSetupRemoteTests: XCTestCase {
+    func testNativeKeyboardCanReopenAcrossURLAndNameFields() {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--iptv-setup-fixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+        let address = app.textFields["Playlist URL"]
+        XCTAssertTrue(address.waitForExistence(timeout: 15), app.debugDescription)
+        focusDown(to: address)
+        for _ in 0..<3 {
+            for field in [address, app.textFields["Name (optional)"]] {
+                assertFocused(field)
+                XCUIRemote.shared.press(.select)
+                XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+                XCUIRemote.shared.press(.menu)
+                let dismissed = NSPredicate { _, _ in !app.keyboards.firstMatch.exists }
+                XCTAssertEqual(XCTWaiter.wait(
+                    for: [XCTNSPredicateExpectation(predicate: dismissed, object: nil)], timeout: 5
+                ), .completed, app.debugDescription)
+                assertFocused(field)
+                XCUIRemote.shared.press(field == address ? .down : .up)
+            }
+        }
+    }
+
     func testAdvancedDisclosureExpandsAndCollapsesWithoutMovingFocus() throws {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")

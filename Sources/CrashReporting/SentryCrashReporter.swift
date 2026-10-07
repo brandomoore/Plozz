@@ -13,6 +13,7 @@ import Sentry
 ///     and the last observed fixed screen category (never a route or content name).
 ///   • Fixed screen-category history and typed Live TV sync stages/error codes.
 ///   • Temporary, bounded IPTV setup stages, counts, and handled failure categories.
+///   • Bounded IPTV transport and live-engine failure categories and numeric codes.
 ///   • Numerical memory-pressure evidence when supplied by the SDK.
 /// What is NOT sent: user identity, IP, server URLs/hostnames, media titles,
 /// profile names, automatic network/UI breadcrumbs, or performance traces.
@@ -110,7 +111,10 @@ public final class SentryCrashReporter: CrashReporter {
         for observer in diagnosticObservers { NotificationCenter.default.removeObserver(observer) }
         diagnosticObservers.removeAll()
         playlistDiagnosticGate.reset()
-        if setupDiagnosticsActive { IPTVSetupDiagnostics.shared.stop() }
+        if setupDiagnosticsActive {
+            IPTVSetupDiagnostics.shared.stop()
+            PlaybackFailureDiagnostics.shared.stop()
+        }
         setupDiagnosticsActive = false
         SentrySDK.close()
         isActive = false
@@ -168,6 +172,7 @@ public final class SentryCrashReporter: CrashReporter {
         setupDiagnosticsActive = enabled
         guard enabled else {
             IPTVSetupDiagnostics.shared.stop()
+            PlaybackFailureDiagnostics.shared.stop()
             return
         }
         let gate = IPTVSetupReportGate()
@@ -179,6 +184,40 @@ public final class SentryCrashReporter: CrashReporter {
             guard gate.accept(diagnostic), let event = Self.setupEvent(diagnostic) else { return }
             SentrySDK.capture(event: event)
         }
+        let playbackGate = PlaybackFailureReportGate()
+        PlaybackFailureDiagnostics.shared.start { diagnostic in
+            guard SentrySDK.isEnabled, playbackGate.accept(diagnostic),
+                  let event = Self.playbackEvent(diagnostic) else { return }
+            SentrySDK.capture(event: event)
+        }
+    }
+
+    nonisolated static func playbackData(_ diagnostic: PlaybackFailureDiagnostic) -> [String: Any] {
+        var data: [String: Any] = [
+            "layer": diagnostic.layer.rawValue, "content": diagnostic.content.rawValue,
+            "stage": diagnostic.stage.rawValue, "reason": diagnostic.reason.rawValue,
+            "engineFailure": diagnostic.engineFailure.rawValue, "domain": diagnostic.domain.rawValue,
+            "format": diagnostic.format.rawValue, "elapsedMilliseconds": diagnostic.elapsedMilliseconds
+        ]
+        if let value = diagnostic.code { data["code"] = value }
+        if let value = diagnostic.httpStatus { data["httpStatus"] = value }
+        return data
+    }
+
+    nonisolated static func playbackFingerprint(_ diagnostic: PlaybackFailureDiagnostic) -> [String] {
+        [
+            "playback_failure", diagnostic.layer.rawValue, diagnostic.content.rawValue,
+            diagnostic.stage.rawValue, diagnostic.reason.rawValue, diagnostic.engineFailure.rawValue,
+            diagnostic.domain.rawValue, diagnostic.code.map(String.init) ?? "none",
+            diagnostic.httpStatus.map(String.init) ?? "none", diagnostic.format.rawValue
+        ]
+    }
+
+    nonisolated static func playbackEvent(_ diagnostic: PlaybackFailureDiagnostic) -> Event? {
+        let event = Event(level: .warning)
+        event.tags = ["report.kind": "playback-failure"]
+        event.context = ["playback_failure": playbackData(diagnostic)]
+        return CrashRedaction.scrub(event)
     }
 
     nonisolated static func setupData(_ diagnostic: IPTVSetupDiagnostic) -> [String: Any] {
@@ -234,6 +273,20 @@ final class IPTVSetupReportGate: @unchecked Sendable {
         ].joined(separator: ".")
         return lock.withLock {
             guard reported.count < Self.maximumReports else { return false }
+            return reported.insert(key).inserted
+        }
+    }
+}
+
+final class PlaybackFailureReportGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reported: Set<[String]> = []
+
+    func accept(_ diagnostic: PlaybackFailureDiagnostic) -> Bool {
+        guard diagnostic.isValid else { return false }
+        let key = SentryCrashReporter.playbackFingerprint(diagnostic)
+        return lock.withLock {
+            guard reported.count < IPTVSetupReportGate.maximumReports else { return false }
             return reported.insert(key).inserted
         }
     }

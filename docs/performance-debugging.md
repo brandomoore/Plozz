@@ -73,6 +73,20 @@ switch. They reuse Share Crash Reports (including explicit opt-outs), not the
 manual Send Diagnostics action. A handled add/reconnect failure produces a warning with
 `report.kind:iptv-setup`; a crash or button press is not required.
 
+Playback failures use the same Debug/TestFlight and Share Crash Reports gate,
+with `report.kind:playback-failure`. The IPTV proxy records the upstream HTTP
+status and MIME category before converting a failed request to a gateway
+response; the live engine records typed error kinds and numeric domain/code
+evidence. Reports distinguish response, body, manifest, load, playback and
+audio-session failures. Unknown format information stays unknown. URL/header
+values, media names, provider addresses and error descriptions are never included.
+Each playback attempt emits at most one failure; the reporter accepts at most
+10 distinct playback reports per enabled lifecycle, separately from setup
+reports. Success, cancellation and downstream client disconnects do not report
+proxy failures. Opting out invalidates retained attempts even if reporting is
+later re-enabled. These reports diagnose playback separately from catalogue
+imports; they do not establish that two users have the same underlying failure.
+
 Only explicit URL, file, and Xtream account setup and legacy source check/save
 attempts establish the task-local context. Ordinary catalogue refresh, guide
 polling, playback, and browsing do not. Each attempt emits at most 16 stage

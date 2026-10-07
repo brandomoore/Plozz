@@ -2,6 +2,41 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/052",
+      "version": "2026.10.7",
+      "marketingVersion": "2026.9.25",
+      "build": 52,
+      "releasedAt": "2026-10-07",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "Add IPTV event playlists before streams go live, then refresh to check for channels."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Simpler IPTV setup, with extra settings under Advanced options.",
+            "Support for more IPTV playlist formats, channel groups and stream settings.",
+            "Clearer messages for empty responses and invalid playlist links.",
+            "More useful IPTV bug reports in TestFlight when Share Crash Reports is enabled.",
+            {
+              "text": "Roomier buttons in IPTV setup.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Missing program listings from some IPTV providers.",
+            "Some live IPTV streams failing to start."
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/051.2",
       "version": "2026.10.7",
       "marketingVersion": "2026.9.25",

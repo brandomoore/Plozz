@@ -575,9 +575,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         intendsPause = false
         furthestObservedPosition = 0
 
-        var stage = "engine.load"
+        var stage: PlaybackFailureDiagnostic.Stage = .load
         do {
-            var options = Self.liveLoadOptions(httpHeaders: httpHeaders)
+            var options = Self.liveLoadOptions(httpHeaders: httpHeaders, url: url)
             Self.applyLiveOutputPolicy(outputPolicy, to: &options)
             try await engine.load(url: url, options: options)
             guard liveAttemptGate.accepts(liveGeneration) else { return }
@@ -585,11 +585,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                 reportLiveFailure(
                     message,
                     generation: liveGeneration,
-                    stage: "completion"
+                    stage: .load
                 )
                 return
             }
-            stage = "audio-session"
+            stage = .audioSession
             // Aether's load prologue awaits its detached category/multichannel
             // declaration. Activate only after that boundary: the bare
             // AetherPlayerView has no AVPlayerViewController to do it for us,
@@ -608,7 +608,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         } catch {
             guard liveAttemptGate.accepts(liveGeneration) else { return }
             let detail: String
-            if stage == "engine.load",
+            if stage == .load,
                case .error(let message) = engine.state {
                 detail = message
             } else {
@@ -617,7 +617,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             reportLiveFailure(
                 detail,
                 generation: liveGeneration,
-                stage: stage
+                stage: stage,
+                fallbackError: error
             )
         }
     }
@@ -700,7 +701,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     nonisolated static func liveLoadOptions(
-        httpHeaders: [String: String]
+        httpHeaders: [String: String], url: URL? = nil
     ) -> LoadOptions {
         // Aether 6.66 gives nativeRemoteHLS its AVPlayer-backed live window
         // without a host-selected DVR duration. Keep nil so an ingest reroute
@@ -710,7 +711,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             isLive: true,
             dvrWindowSeconds: nil,
             liveJoinProfile: .standard,
-            nativeRemoteHLS: true,
+            nativeRemoteHLS: !["ts", "m2ts", "mts"].contains(url?.pathExtension.lowercased() ?? ""),
             nativeRemoteHLSIngestFallback: true
         )
     }
@@ -754,8 +755,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         }
     }
 
+    private var liveFailureDiagnostic: PlaybackFailureAttempt?
+
     private func beginLiveAttempt() -> UInt64 {
         let generation = liveAttemptGate.begin()
+        liveFailureDiagnostic = PlaybackFailureDiagnostics.shared.begin(layer: .liveEngine, content: .live)
         liveSourceResetCancellable?.cancel()
         liveSourceResetCancellable = engine.liveSourceReset
             .receive(on: DispatchQueue.main)
@@ -771,6 +775,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     private func endLiveAttempt() {
         liveAttemptGate.invalidate()
+        liveFailureDiagnostic = nil
         liveSourceResetCancellable?.cancel()
         liveSourceResetCancellable = nil
     }
@@ -778,12 +783,14 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     private func reportLiveFailure(
         _ detail: String,
         generation: UInt64,
-        stage: String
+        stage: PlaybackFailureDiagnostic.Stage,
+        fallbackError: Error? = nil
     ) {
         guard liveAttemptGate.consumeFailure(for: generation) else { return }
         // A queued state publication may outlive its errorInfo. Never classify
         // an older message using a replacement session's failure.
         let info = engine.errorInfo.flatMap { $0.message == detail ? $0 : nil }
+        PlozzigenLiveFailure.record(info, attempt: liveFailureDiagnostic, stage: stage, fallbackError: fallbackError)
         let classification = PlozzigenLiveFailure.diagnostic(info)
         let redacted = HandoffDiagnostics.redactedDetail(detail)
         HandoffDiagnostics.emit(
@@ -1436,7 +1443,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                         self.reportLiveFailure(
                             msg,
                             generation: generation,
-                            stage: "state"
+                            stage: .playback
                         )
                         return
                     }

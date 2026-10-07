@@ -137,6 +137,14 @@ decoded by page; the guide still holds lightweight channel values for its full
 lineup. This is not a claim of unlimited device memory or measured performance
 on every older device.
 
+`IPTVScaleAndRecoveryTests` exercises an 800,005-entry, 50 MB HTTP playlist
+through sign-in, encrypted catalogue commit, session restoration and final-page
+queries. The fixture includes 2,000 live channels and 798,005 movies. It also
+checks interrupted downloads and truncated Xtream arrays beyond 2,000 rows:
+failed refreshes preserve the previous catalogue, and complete retries replace it.
+These are simulator integration checks, not a reproduction of an unavailable
+provider playlist or physical-device performance guarantees.
+
 The shared live-channel publication path normalizes each matching name once,
 rather than during every sort comparison, and collects language/country facets
 from distinct metadata values. It avoids full-lineup copies for absent overrides
@@ -151,6 +159,13 @@ Private URLs and authentication headers remain in Keychain credentials and
 encrypted catalogue records. Playback uses an account/revision/session-fenced
 locator and a provider-owned loopback proxy. It forwards authorized headers
 only to the original origin, rewrites HLS playlists and supports byte ranges.
+Opaque proxy paths preserve only verified `m3u8`, `ts`, `m2ts`, and `mts`
+suffixes, never original filenames. The suffix must agree with the encrypted
+upstream URL. Known raw transport-stream URLs use Aether's regular live-source
+path rather than its HLS-only native bypass; HLS retains native playback,
+including fragmented MP4. Hosted tests require a rendered frame and advancing
+time through the authenticated proxy on both platforms. Extensionless raw
+streams are not classified by this suffix-based correction.
 Ambient cookies and credential stores are disabled. HTTP remains unencrypted;
 use HTTPS when available. HLS/file playback does not establish DRM, DASH,
 browser-login, or remote AirPlay receiver support. Credential-protected artwork

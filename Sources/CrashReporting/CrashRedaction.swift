@@ -72,6 +72,23 @@ enum CrashRedaction {
             event.tags = tags
             if let status = data["http_status"] as? Int { event.tags?["setup.http_status"] = String(status) }
         }
+        if event.tags?["report.kind"] == "playback-failure" {
+            guard let raw = event.context?["playback_failure"],
+                  let bytes = try? JSONSerialization.data(withJSONObject: raw),
+                  let diagnostic = try? JSONDecoder().decode(PlaybackFailureDiagnostic.self, from: bytes),
+                  diagnostic.isValid else { return nil }
+            context["playback_failure"] = SentryCrashReporter.playbackData(diagnostic)
+            event.message = SentryMessage(formatted: "Playback failed")
+            event.fingerprint = SentryCrashReporter.playbackFingerprint(diagnostic)
+            var tags = coarseSetupTags(event.tags ?? [:])
+            tags.merge([
+                "report.kind": "playback-failure", "playback.layer": diagnostic.layer.rawValue,
+                "playback.content": diagnostic.content.rawValue, "playback.stage": diagnostic.stage.rawValue,
+                "playback.failure": diagnostic.reason.rawValue, "playback.engine_failure": diagnostic.engineFailure.rawValue
+            ]) { _, value in value }
+            if let status = diagnostic.httpStatus { tags["playback.http_status"] = String(status) }
+            event.tags = tags
+        }
         event.context = context.isEmpty ? nil : context
         event.extra = nil
 
