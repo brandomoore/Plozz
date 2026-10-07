@@ -458,7 +458,7 @@ class CopilotTests(unittest.TestCase):
             observed.update(kwargs)
             self.assertEqual(Path(command[1]).name, "run-bounded.py")
             self.assertEqual(command[2:5], ["180", "discord-copilot", "--"])
-            self.assertEqual(command[command.index("--model") + 1], "gpt-6-astra")
+            self.assertEqual(command[command.index("--model") + 1], "gpt-6.1-sol")
             self.assertEqual(command[command.index("--reasoning-effort") + 1], "high")
             self.assertIn("--no-custom-instructions", command)
             self.assertIn("--disable-builtin-mcps", command)

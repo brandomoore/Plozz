@@ -27,7 +27,7 @@ FORUMS = {
     "1556419473211400333": "enhancement",
 }
 GITHUB_BOT = "github-actions[bot]"
-MODEL = "gpt-6-astra"
+MODEL = "gpt-6.1-sol"
 EFFORT = "high"
 THUMBS_UP = "\U0001f44d"
 PUBLIC_NOTICE = "Posts and replies automatically sync to GitHub"

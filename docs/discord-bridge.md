@@ -63,8 +63,10 @@ the Copilot credential repository-write permissions. Tokens are never committed.
 Choose token expiration according to the account owner's maintenance and security
 requirements; a nonexpiring token must still be revoked if compromised.
 
-The public Copilot CLI package is version-pinned in the workflow. The selected
-model and reasoning effort are explicit in the script. The preflight must
+The public Copilot CLI package is version-pinned in the workflow. The script
+explicitly selects **GPT-6.1 Sol (`gpt-6.1-sol`)** with **high** reasoning effort.
+Newer Sol models require an explicit configuration update rather than an
+automatic model switch. The preflight must
 successfully verify that exact selection for the credential's account before
 activation. No provider/model fallback is configured.
 
