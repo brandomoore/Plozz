@@ -1239,13 +1239,10 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
             target.plozzMetrics = source.plozzMetrics
             target.plozzCardStyle = source.plozzCardStyle
             target.plozzCardFocusStyle = source.plozzCardFocusStyle
-            target.plozzCardCaptionSettings = source.plozzCardCaptionSettings
+            target.copyCardCaptionPresentation(from: source)
             target.plozzArtworkSettings = source.plozzArtworkSettings
             target.plozzArtworkProviders = source.plozzArtworkProviders
             target.plozzArtworkArea = source.plozzArtworkArea
-            target.plozzCardCaptionView = source.plozzCardCaptionView
-            target.plozzCardCaptionIsShowcase = source.plozzCardCaptionIsShowcase
-            target.plozzCardCaptionsHidden = source.plozzCardCaptionsHidden
             target.plozzWatchStatusIndicator = source.plozzWatchStatusIndicator
             target.plozzSeerConnected = source.plozzSeerConnected
             target.plozzReduceTransparency = source.plozzReduceTransparency

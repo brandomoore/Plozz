@@ -19,17 +19,18 @@ fallback when the user's server has no attached trailer.
   after subtracting each card style's internal inset. Smaller mobile artwork uses
   proportionate corners and a 20pt minimum watched badge, without shrinking folder
   navigation badges. Continue Watching geometry and library grid columns are unchanged.
-- **Card labels** — Appearance > Cards owns a profile-scoped Recommended / Labels /
-  No labels choice, with Default / Labels / No labels exceptions by experience.
-  Recommended shows labels during ordinary browsing and hides them in Showcase.
+- **Card labels** — Appearance > Cards owns profile-scoped Recommended,
+  Show labels everywhere, and Hide labels everywhere presets, with
+  Default / Labels / No labels exceptions by experience.
+  Recommended shows labels during ordinary browsing and on detail-page episodes;
+  it hides them in Showcase and on Continue Watching cards that carry a title on
+  their artwork. Manual presets apply to all media captions, including those cards.
   Existing explicit global and per-view choices survive migration and preset changes.
   Showcase is presentation context within Home or library Recommended, not a new
   override scope; destination scopes clear that context and hosting boundaries forward it.
   Home, Recommended, Browse, Collections, Playlists, Search, Watchlist, related titles,
-  extras, and filmography resolve the same policy on iOS and tvOS.
-  Detail-page episodes always retain their identifying labels on both platforms,
-  including when an older profile has a saved episode-specific No labels choice.
-  Episodes are not offered in label customization.
+  episodes, extras, and filmography resolve the same policy on iOS and tvOS.
+  Explicit episode overrides, including previously persisted ones, are honored.
   On TV, the episode title moves down on focus and back up on exit in every
   focus style, including System; the synopsis keeps its delayed reveal.
   Loading captions use the same motion without changing row geometry, and
@@ -43,7 +44,8 @@ fallback when the user's server has no attached trailer.
   Mobile poster titles use native Dynamic Type footnote (13pt normally), with
   caption1 subtitles (12pt). Compact density does not shrink them below those styles.
   Framed, borderless, and loading cards share these tokens; landscape and TV type stay unchanged.
-  Mobile poster rails reserve the subtitle line even when metadata is absent, matching
+  Mobile poster and series-artwork rails reserve the subtitle line when labels are
+  shown, even when metadata is absent, matching
   loading placeholders and keeping adjacent captions and row heights aligned.
 - Mobile library provider icons align with the thumbnail's leading edge; the
   library name and server name share the adjacent text column.
@@ -376,7 +378,7 @@ making their entire mask transparent would break that navigation. Showcase's
 backdrop uses wider leading and bottom gradients without lengthening its crossfade.
 Crossfade is the only Showcase backdrop transition. The retired slide preference
 is ignored when reading older settings without resetting the remaining choices.
-Showcase's optional titles under cards remain in Customize Home > Home Layout;
+Showcase's optional titles under cards follow Appearance > Cards;
 they do not control title visibility elsewhere in the app.
 
 With pinned navigation, the carousel extends its leading fade to the top edge,

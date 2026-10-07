@@ -153,14 +153,15 @@ final class MediaRowEpisodeEntryHostedTests: XCTestCase {
         return CGFloat(try XCTUnwrap(firstRow, "The episode title must remain rendered during focus changes."))
     }
 
-    func testDetailEpisodeLabelsRemainVisibleWithSavedHidePreferences() async throws {
+    func testDetailEpisodeLabelsHonorPresetsAndOverrides() async throws {
         let image = try await seedImage()
         let episode = MediaItem(
             id: "episode-label-fixture", title: "The Hidden Room", kind: .episode,
             episodeNumber: 4, posterURL: image
         )
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive })
+        let scene = try XCTUnwrap(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                .first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         defer {
@@ -169,32 +170,104 @@ final class MediaRowEpisodeEntryHostedTests: XCTestCase {
             previous?.makeKeyAndVisible()
         }
         for style in [CardFocusStyle.system, .highlight] {
-            let host = UIHostingController(rootView:
-                EpisodeColumnCard(item: episode, action: {})
-                    .environment(\.plozzCardCaptionView, .episodes)
-                    .environment(\.plozzCardCaptionSettings, CardCaptionSettings(
-                        showsLabels: false, overrides: [.episodes: false]
-                    ))
-                    .environment(\.plozzCardFocusStyle, style)
-                    .environment(\.themePalette, .dark)
-                    .preferredColorScheme(.dark)
-            )
-            window.rootViewController = host
-            window.makeKeyAndVisible()
-            window.layoutIfNeeded()
-            try await Task.sleep(for: .milliseconds(400))
-            let rendered = screenshot(window)
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["en-US"]
-            try VNImageRequestHandler(cgImage: XCTUnwrap(rendered.cgImage)).perform([request])
-            let copy = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-            XCTAssertTrue(copy.contains("The Hidden Room"), "\(style): \(copy)")
-            XCTAssertTrue(copy.contains("E4"), "\(style): the episode number must remain visible.")
-            let attachment = XCTAttachment(image: rendered)
-            attachment.name = "detail-episode-labels-\(style)"
-            attachment.lifetime = .keepAlways
-            add(attachment)
+            for (preference, override, visible) in [
+                (CardCaptionPreference.recommended, CardCaptionOverride.automatic, true),
+                (.show, .automatic, true), (.hide, .automatic, false),
+                (.hide, .show, true), (.show, .hide, false),
+            ] {
+                var settings = CardCaptionSettings(preference: preference)
+                settings.setOverride(override, for: .episodes)
+                let host = UIHostingController(
+                    rootView:
+                        EpisodeColumnCard(item: episode, action: {})
+                        .environment(\.plozzCardCaptionView, .episodes)
+                        .environment(\.plozzCardCaptionSettings, settings)
+                        .environment(\.plozzCardFocusStyle, style)
+                        .environment(\.themePalette, .dark)
+                        .preferredColorScheme(.dark)
+                )
+                window.rootViewController = host
+                window.makeKeyAndVisible()
+                window.layoutIfNeeded()
+                try await Task.sleep(for: .milliseconds(400))
+                let rendered = screenshot(window)
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: XCTUnwrap(rendered.cgImage)).perform([request])
+                let copy = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(
+                    separator: " ")
+                XCTAssertEqual(
+                    copy.contains("The Hidden Room"), visible, "\(style) / \(preference) / \(override): \(copy)")
+                XCTAssertEqual(
+                    copy.contains("E4"), visible, "\(style): the episode designation belongs to the caption.")
+                let attachment = XCTAttachment(image: rendered)
+                attachment.name = "detail-episode-labels-\(style)-\(preference)-\(override)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
+    func testContinueWatchingCaptionsHonorPresetsAndHomeOverrides() async throws {
+        let image = try await seedImage(variants: ArtworkImageVariant.allCases)
+        let item = MediaItem(
+            id: "series-caption-fixture", title: "Moonrise", kind: .movie,
+            backdropURL: image
+        )
+        let scene = try XCTUnwrap(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for style in [CardFocusStyle.system, .highlight] {
+            for cardStyle in CardStyle.allCases {
+                for (preference, override, visible) in [
+                    (CardCaptionPreference.recommended, CardCaptionOverride.automatic, false),
+                    (.show, .automatic, true), (.hide, .automatic, false),
+                    (.recommended, .show, true), (.show, .hide, false), (.hide, .show, true),
+                ] {
+                    var settings = CardCaptionSettings(preference: preference)
+                    settings.setOverride(override, for: .home)
+                    let host = UIHostingController(
+                        rootView:
+                            PosterCardView(
+                                item: item, style: .landscape, showsSeriesArtwork: true,
+                                enablesAsyncArtworkFallback: false, action: {}
+                            )
+                            .frame(width: 500)
+                            .environment(\.plozzCardCaptionView, .home)
+                            .environment(\.plozzCardCaptionSettings, settings)
+                            .environment(\.plozzCardFocusStyle, style)
+                            .environment(\.plozzCardStyle, cardStyle)
+                            .environment(\.themePalette, .dark)
+                            .preferredColorScheme(.dark)
+                    )
+                    window.rootViewController = host
+                    window.makeKeyAndVisible()
+                    window.layoutIfNeeded()
+                    try await Task.sleep(for: .milliseconds(500))
+                    let rendered = screenshot(window)
+                    let request = VNRecognizeTextRequest()
+                    request.recognitionLevel = .accurate
+                    request.recognitionLanguages = ["en-US"]
+                    try VNImageRequestHandler(cgImage: XCTUnwrap(rendered.cgImage)).perform([request])
+                    let titles = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                        .filter { $0.localizedCaseInsensitiveContains("Moonrise") }
+                    XCTAssertEqual(
+                        titles.count, visible ? 2 : 1,
+                        "\(style) / \(cardStyle) / \(preference) / \(override): \(titles)")
+                    let attachment = XCTAttachment(image: rendered)
+                    attachment.name = "series-caption-\(style)-\(cardStyle)-\(preference)-\(override)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+            }
         }
     }
 
@@ -572,7 +645,7 @@ final class MediaRowEpisodeEntryHostedTests: XCTestCase {
         XCTAssertTrue(condition(), "Native hosted episode entry did not reach the expected destination")
     }
 
-    private func seedImage() async throws -> URL {
+    private func seedImage(variants: [ArtworkImageVariant] = [.landscapeCard]) async throws -> URL {
         let url = URL(string: "https://episode-entry.example.test/\(UUID()).png")!
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -581,17 +654,19 @@ final class MediaRowEpisodeEntryHostedTests: XCTestCase {
             $0.fill(CGRect(x: 0, y: 0, width: 16, height: 9))
         }
         let data = try XCTUnwrap(image.pngData())
-        let requestURL = ArtworkImageVariant.landscapeCard.requestURL(for: url)
-        let response = try XCTUnwrap(HTTPURLResponse(
-            url: requestURL, statusCode: 200, httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
-        ))
         let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
-        cache.storeCachedResponse(CachedURLResponse(response: response, data: data),
-                                  for: URLRequest(url: requestURL))
-        let decoded = await ArtworkImageCache.shared.image(for: url, variant: .landscapeCard)
-        _ = try XCTUnwrap(decoded)
-        cache.removeCachedResponse(for: URLRequest(url: requestURL))
+        for variant in variants {
+            let requestURL = variant.requestURL(for: url)
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: requestURL, statusCode: 200, httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
+            ))
+            cache.storeCachedResponse(CachedURLResponse(response: response, data: data),
+                                      for: URLRequest(url: requestURL))
+            let decoded = await ArtworkImageCache.shared.image(for: url, variant: variant)
+            _ = try XCTUnwrap(decoded)
+            cache.removeCachedResponse(for: URLRequest(url: requestURL))
+        }
         return url
     }
 }

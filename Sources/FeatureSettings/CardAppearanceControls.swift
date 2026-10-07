@@ -91,12 +91,15 @@ private struct CardCaptionPicker: View {
                         isSelected: selection == preference,
                         accent: palette.accent,
                         compact: true,
-                        swatchHeight: preference == .recommended && dynamicTypeSize.isAccessibilitySize
-                            ? swatchHeight * 2 : swatchHeight,
-                        titleLineLimit: dynamicTypeSize.isAccessibilitySize ? nil : 1,
+                        swatchHeight: swatchHeight,
+                        titleLineLimit: nil,
                         action: { selection = preference }
                     ) {
-                        CardCaptionPreferenceSwatch(style: style, preference: preference)
+                        CardStyleSwatch(
+                            style: style,
+                            showsCaptions: preference != .hide,
+                            showsMixedCaptions: preference == .recommended
+                        )
                             .accessibilityHidden(true)
                     }
                     .accessibilityAddTraits(selection == preference ? .isSelected : [])
@@ -105,11 +108,15 @@ private struct CardCaptionPicker: View {
                 }
             }
             if selection == .recommended {
-                Text("Labels except in Showcase.")
+                Text("Plozz chooses where labels help.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Text("View customizations override this choice.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -119,31 +126,6 @@ private struct CardCaptionPicker: View {
         #else
         112
         #endif
-    }
-}
-
-private struct CardCaptionPreferenceSwatch: View {
-    let style: CardStyle
-    let preference: CardCaptionPreference
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    var body: some View {
-        if preference == .recommended {
-            let layout = dynamicTypeSize.isAccessibilitySize
-                ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
-            layout {
-                VStack(spacing: 4) {
-                    CardStyleSwatch(style: style, showsCaptions: true)
-                    Text("Home").font(.caption).fixedSize(horizontal: false, vertical: true)
-                }
-                VStack(spacing: 4) {
-                    CardStyleSwatch(style: style, showsCaptions: false)
-                    Text("Showcase").font(.caption).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        } else {
-            CardStyleSwatch(style: style, showsCaptions: preference == .show)
-        }
     }
 }
 
@@ -221,15 +203,10 @@ struct CardCaptionViewChoices: View {
     }
 
     private var defaultTitle: LocalizedStringResource {
-        #if os(tvOS)
-        if settings.preference == .recommended, view == .home {
-            return "Use default: Labels except in Showcase"
+        if settings.preference == .recommended, view == .home || view == .recommended {
+            return "Use default: Recommended"
         }
-        let isShowcase = view == .recommended
-        #else
-        let isShowcase = false
-        #endif
-        return settings.inheritedShowsLabels(isShowcase: isShowcase)
+        return settings.inheritedShowsLabels(in: view)
             ? "Use default: Labels" : "Use default: No labels"
     }
 }

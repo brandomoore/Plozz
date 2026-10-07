@@ -256,7 +256,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         }
     }
 
-    func testDetailEpisodeLabelsIgnoreGlobalAndSavedHidePreferences() async throws {
+    func testDetailEpisodeLabelsHonorPresetsAndOverrides() async throws {
         let app = PlozziOSAppModel()
         let artwork = try await posterArtwork()
         let episode = MediaItem(
@@ -266,29 +266,42 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         try await withWindow { window, host in
             for width in [CGFloat(390), 768] {
                 for style in [CardStyle.borderless, .framed] {
-                    window.frame.size = CGSize(width: width, height: 600)
-                    host.rootView = AnyView(
-                        PlozziOSInlineEpisodeEntry(episode: episode, episodes: [episode], onPlay: { _, _ in })
-                            .padding(22)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                            .background(Color.black)
-                            .environment(app)
-                            .environment(\.plozzCardCaptionSettings, CardCaptionSettings(
-                                showsLabels: false, overrides: [.episodes: false]
-                            ))
-                            .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
-                            .environment(\.plozzCardStyle, style)
-                            .environment(\.plozzMetrics, .touch(density: .standard))
-                            .environment(\.themePalette, .dark)
-                    )
-                    try await settle(window)
-                    let image = snapshot(window, name: "detail-episode-labels-\(Int(width))-\(style)")
-                    let observations = try text(image)
-                    let title = try textFrame("The Hidden Room", observations: observations, size: image.size)
-                    let number = try textFrame("EPISODE 4", observations: observations, size: image.size)
-                    let artworkBottom = try XCTUnwrap(posterRuns(image, axis: .vertical, at: 100).first).upperBound
-                    XCTAssertGreaterThan(number.minY, CGFloat(artworkBottom), "The identity must remain below the thumbnail.")
-                    XCTAssertGreaterThan(title.minY, number.maxY)
+                    for (preference, override, visible) in [
+                        (CardCaptionPreference.recommended, CardCaptionOverride.automatic, true),
+                        (.show, .automatic, true), (.hide, .automatic, false),
+                        (.hide, .show, true), (.show, .hide, false),
+                    ] {
+                        var settings = CardCaptionSettings(preference: preference)
+                        settings.setOverride(override, for: .episodes)
+                        window.frame.size = CGSize(width: width, height: 600)
+                        host.rootView = AnyView(
+                            PlozziOSInlineEpisodeEntry(episode: episode, episodes: [episode], onPlay: { _, _ in })
+                                .padding(22)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                .background(Color.black)
+                                .environment(app)
+                                .environment(\.plozzCardCaptionSettings, settings)
+                                .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
+                                .environment(\.plozzCardStyle, style)
+                                .environment(\.plozzMetrics, .touch(density: .standard))
+                                .environment(\.themePalette, .dark)
+                        )
+                        try await settle(window)
+                        let image = snapshot(
+                            window, name: "detail-episode-labels-\(Int(width))-\(style)-\(preference)-\(override)")
+                        let observations = try text(image)
+                        XCTAssertEqual(
+                            observations.contains { $0.candidate.string.contains("The Hidden Room") }, visible)
+                        XCTAssertEqual(observations.contains { $0.candidate.string.contains("EPISODE 4") }, visible)
+                        guard visible else { continue }
+                        let title = try textFrame("The Hidden Room", observations: observations, size: image.size)
+                        let number = try textFrame("EPISODE 4", observations: observations, size: image.size)
+                        let artworkBottom = try XCTUnwrap(posterRuns(image, axis: .vertical, at: 100).first)
+                            .upperBound
+                        XCTAssertGreaterThan(
+                            number.minY, CGFloat(artworkBottom), "The identity must remain below the thumbnail.")
+                        XCTAssertGreaterThan(title.minY, number.maxY)
+                    }
                 }
             }
         }
@@ -402,7 +415,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     let image = snapshot(
                         window, name: "card-settings-\(Int(width))-\(page)-\(typeSize)"
                     )
-                    let observations = try text(image)
+                    let observations = try text(image, maximumCandidates: 1)
                     let copy = observations.map(\.candidate.string).joined(separator: " ")
                     if page {
                         XCTAssertTrue(copy.uppercased().contains("BROWSE"), copy)
@@ -416,15 +429,16 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                         // must remain complete rather than truncated.
                         XCTAssertTrue(copy.contains("Customize") && copy.contains("by view"), copy)
                     }
-                    XCTAssertTrue(copy.contains("No labels"))
+                    if page { XCTAssertTrue(copy.contains("No labels"), copy) }
                     if !page {
                         XCTAssertTrue(
                             copy.contains("Recommended")
                                 || (typeSize.isAccessibilitySize && copy.contains("Recom-") && copy.contains("mended")),
                             "The preset name may hyphenate at large text sizes but must not truncate: \(copy)"
                         )
-                        XCTAssertTrue(copy.contains("Showcase"), copy)
-                        XCTAssertTrue(copy.uppercased().contains("WATCHED") && copy.uppercased().contains("INDICATOR"))
+                        XCTAssertTrue(copy.contains("Show labels everywhere"), copy)
+                        XCTAssertTrue(copy.contains("Hide labels everywhere"), copy)
+                        XCTAssertFalse(copy.contains("Showcase"), copy)
                     }
                 }
             }
@@ -604,6 +618,67 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         let large = PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
             in: 390, inset: 22, metrics: .touch(density: .extraLarge), cardStyle: .borderless)
         XCTAssertLessThan(small.posterWidth, large.posterWidth, "The profile's display-size choice remains effective.")
+    }
+
+    func testContinueWatchingCaptionsAndSkeletonHonorGlobalAndHomeChoices() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.settings.cardStyle.captions
+        defer { app.settings.cardStyle.captions = original }
+        let artwork = try await posterArtwork()
+        let items = (0..<8).map {
+            MediaItem(id: "series-caption-\($0)", title: "Moonrise", kind: .movie,
+                      backdropURL: artwork)
+        }
+        try await withWindow { window, host in
+            for style in [CardStyle.borderless, .framed] {
+                window.frame.size = CGSize(width: 390, height: 1000)
+                var artworkOnlyHeight: CGFloat?
+                for (preference, override, visible) in [
+                    (CardCaptionPreference.recommended, CardCaptionOverride.automatic, false),
+                    (.show, .automatic, true), (.hide, .automatic, false),
+                    (.recommended, .show, true), (.show, .hide, false), (.hide, .show, true)
+                ] {
+                    var settings = CardCaptionSettings(preference: preference)
+                    settings.setOverride(override, for: .home)
+                    app.settings.cardStyle.captions = settings
+                    host.rootView = AnyView(
+                        ScrollView {
+                            VStack {
+                                PlozziOSHomeMediaRail(
+                                    title: Text("Loaded"), items: items, style: .landscape,
+                                    appModel: app, showsSeriesArtwork: true
+                                )
+                                PlozziOSHomeSkeletonRail(
+                                    title: Text("Loading"), style: .landscape,
+                                    showsCaption: settings.showsLabels(in: .home, hasArtworkTitle: true),
+                                    showsSeriesArtwork: true
+                                )
+                            }
+                        }
+                        .environment(app)
+                        .environment(\.horizontalSizeClass, .compact)
+                        .environment(\.plozzCardStyle, style)
+                        .environment(\.plozzMetrics, .touch(density: .standard))
+                        .environment(\.themePalette, .dark)
+                    )
+                    try await settle(window)
+                    let rails = scrollViews(window).filter { $0.contentSize.width > $0.bounds.width + 10 }
+                    XCTAssertEqual(rails.count, 2)
+                    guard rails.count == 2 else { continue }
+                    XCTAssertEqual(rails[0].bounds.height, rails[1].bounds.height, accuracy: 1)
+                    if let artworkOnlyHeight {
+                        XCTAssertEqual(rails[0].bounds.height > artworkOnlyHeight + 10, visible)
+                    } else {
+                        artworkOnlyHeight = rails[0].bounds.height
+                    }
+                    let image = snapshot(window, name: "continue-watching-labels-\(style)-\(preference)-\(override)")
+                    let observations = try text(image, maximumCandidates: 1)
+                    let matching = observations.filter { $0.candidate.string.localizedCaseInsensitiveContains("Moonrise") }
+                    XCTAssertGreaterThanOrEqual(matching.count, visible ? 2 : 1,
+                                                "Explicit labels must contain the title, not an empty year qualifier.")
+                }
+            }
+        }
     }
 
     func testHomeHeadingTypographyAndArtworkSpacingFollowTheSameRhythm() async throws {
@@ -828,7 +903,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         let region: CGRect
     }
 
-    private func text(_ image: UIImage) throws -> [RecognizedLabel] {
+    private func text(_ image: UIImage, maximumCandidates: Int = 5) throws -> [RecognizedLabel] {
         // Wide iPad snapshots downsample small dock captions during full-image OCR.
         // Also recognize the native-resolution dock crop, retaining screen coordinates.
         let regions = [
@@ -847,7 +922,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                 x: region.minX / image.size.width, y: 1 - region.maxY / image.size.height,
                 width: region.width / image.size.width, height: region.height / image.size.height)
             return (request.results ?? []).flatMap { observation in
-                observation.topCandidates(5).map { RecognizedLabel(candidate: $0, region: normalized) }
+                observation.topCandidates(maximumCandidates).map { RecognizedLabel(candidate: $0, region: normalized) }
             }
         }
     }

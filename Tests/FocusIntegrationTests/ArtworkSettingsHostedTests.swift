@@ -25,9 +25,14 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             )
         }) { window in
             let initial = try await self.capture(window, name: "labels-recommended-preview")
-            for text in ["Recommended", "Labels", "No labels", "Showcase", "Customize by view", "Using defaults"] {
+            for text in [
+                "Recommended", "Show labels everywhere", "Hide labels everywhere",
+                "Plozz chooses where labels help.", "View customizations override this choice.",
+                "Customize by view", "Using defaults"
+            ] {
                 XCTAssertTrue(initial.contains(text), initial)
             }
+            XCTAssertFalse(initial.contains("Showcase"), initial)
             XCTAssertEqual(cards.captions.preference, .recommended)
             cards.captions.setOverride(.hide, for: .browse)
             let customized = try await self.capture(window, name: "labels-customized-preview")

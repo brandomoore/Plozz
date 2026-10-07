@@ -892,7 +892,6 @@ public struct MediaRowView: View {
         case .landscape:
             SkeletonCardView(
                 style: .landscape,
-                showsCaption: !captionsHidden && !showsSeriesArtwork,
                 showsSeriesArtwork: showsSeriesArtwork,
                 isFocused: isFocused, showsProgress: showsProgress, focus: focus
             )

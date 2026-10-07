@@ -37,19 +37,34 @@ final class CardCaptionSettingsTests: XCTestCase {
         XCTAssertTrue(settings.showsLabels(in: .home))
     }
 
-    func testEpisodeIdentitySurvivesSharedAndPersistedHideChoices() throws {
-        XCTAssertFalse(CardCaptionView.customizableCases.contains(.episodes))
-        XCTAssertEqual(Set(CardCaptionView.customizableCases), Set(CardCaptionView.allCases).subtracting([.episodes]))
-        for shared in [false, true] {
-            var settings = CardCaptionSettings(showsLabels: shared, overrides: [.episodes: false])
-            XCTAssertTrue(settings.showsLabels(in: .episodes))
-            let restored = try JSONDecoder().decode(CardCaptionSettings.self, from: JSONEncoder().encode(settings))
-            XCTAssertTrue(restored.showsLabels(in: .episodes))
-            settings.setOverride(.hide, for: .episodes)
-            XCTAssertTrue(settings.showsLabels(in: .episodes))
-            settings.resetOverrides()
-            XCTAssertTrue(settings.showsLabels(in: .episodes))
-            XCTAssertEqual(settings.showsLabels(in: .home), shared)
+    func testEveryCaptionScopeHonorsPresetsAndPersistentOverrides() throws {
+        XCTAssertEqual(CardCaptionView.customizableCases, CardCaptionView.allCases)
+        for view in CardCaptionView.allCases {
+            for preference in CardCaptionPreference.allCases {
+                for showcase in [false, true] {
+                    for artworkTitle in [false, true] {
+                        var settings = CardCaptionSettings(preference: preference)
+                        let inherited = preference == .show || (preference == .recommended
+                            && (view == .episodes || (!showcase && !artworkTitle)))
+                        for override in CardCaptionOverride.allCases {
+                            settings.setOverride(override, for: view)
+                            let restored = try JSONDecoder().decode(
+                                CardCaptionSettings.self, from: JSONEncoder().encode(settings)
+                            )
+                            XCTAssertEqual(
+                                restored.showsLabels(in: view, isShowcase: showcase, hasArtworkTitle: artworkTitle),
+                                override == .automatic ? inherited : override == .show,
+                                "\(view) / \(preference) / \(override) / \(showcase) / \(artworkTitle)"
+                            )
+                        }
+                        settings.resetOverrides()
+                        XCTAssertEqual(
+                            settings.showsLabels(in: view, isShowcase: showcase, hasArtworkTitle: artworkTitle),
+                            inherited
+                        )
+                    }
+                }
+            }
         }
     }
 

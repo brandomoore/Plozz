@@ -2296,7 +2296,11 @@ private struct PlozziOSHomeRowView: View {
                     style: row.kind == .libraries || row.style == .landscape ? .landscape : .poster,
                     cardCount: row.loadingPlaceholderCount > 0 ? row.loadingPlaceholderCount : 8,
                     showsCaption: row.kind == .libraries
-                        || appModel.settings.cardStyle.captions.showsLabels(in: .home),
+                        || appModel.settings.cardStyle.captions.showsLabels(
+                            in: .home,
+                            hasArtworkTitle: row.kind == .continueWatching
+                                && appModel.settings.homeVisibility.continueWatchingShowsSeriesArtwork
+                        ),
                     showsSeriesArtwork: row.kind == .continueWatching
                         && appModel.settings.homeVisibility.continueWatchingShowsSeriesArtwork
                 )
@@ -2456,7 +2460,7 @@ struct PlozziOSHomeMediaRail: View {
                                 item: nil,
                                 style: style,
                                 showsSeriesArtwork: showsSeriesArtwork,
-                                reservesSubtitleSpace: style == .poster
+                                reservesSubtitleSpace: style == .poster || showsSeriesArtwork
                             )
                             .frame(
                                 width: metrics.cardSlotWidth(
@@ -2711,7 +2715,7 @@ private struct PlozziOSHomeMediaCard: View {
             // artwork toggle below is turned off and the row hands itself back to
             // these settings.
             spoilerSettings: appModel.settings.spoilers.settings,
-            reservesSubtitleSpace: !isLandscape,
+            reservesSubtitleSpace: !isLandscape || showsSeriesArtwork,
             // The chip is requested explicitly rather than riding an implicit
             // "landscape means playable" rule, so presentation and behaviour stay
             // independently controlled.

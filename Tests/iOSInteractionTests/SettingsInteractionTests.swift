@@ -187,6 +187,8 @@ final class SettingsInteractionTests: XCTestCase {
         app.buttons["appearance-cards"].tap()
         let labels = app.buttons["card-labels-on"]
         XCTAssertTrue(labels.waitForExistence(timeout: 3))
+        XCTAssertTrue(labels.label.contains("Show labels everywhere"))
+        XCTAssertTrue(app.buttons["card-labels-off"].label.contains("Hide labels everywhere"))
         labels.tap()
         XCTAssertTrue(labels.isSelected)
         XCTAssertTrue(app.navigationBars["Cards"].exists)
@@ -206,6 +208,10 @@ final class SettingsInteractionTests: XCTestCase {
         browse.tap()
         XCTAssertTrue(browse.isSelected)
         XCTAssertFalse(browseDefault.isSelected)
+        let episodes = app.buttons["card-label-view-episodes-hide"]
+        reveal(episodes)
+        episodes.tap()
+        XCTAssertTrue(episodes.isSelected)
         let filmography = app.buttons["card-label-view-filmography-hide"]
         reveal(filmography)
         filmography.tap()
@@ -221,6 +227,8 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(home.isSelected)
         reveal(browse)
         XCTAssertTrue(browse.isSelected)
+        reveal(episodes)
+        XCTAssertTrue(episodes.isSelected)
         reveal(filmography)
         XCTAssertTrue(filmography.isSelected)
         let reset = app.buttons["card-label-remove-customizations"]

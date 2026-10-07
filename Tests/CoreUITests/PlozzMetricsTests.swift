@@ -56,7 +56,7 @@ final class PlozzMetricsTests: XCTestCase {
         )
         for view in CardCaptionView.allCases {
             environment.plozzCardCaptionView = view
-            XCTAssertEqual(environment.plozzCardCaptionsHidden, view != .browse && view != .extras && view != .episodes)
+            XCTAssertEqual(environment.plozzCardCaptionsHidden, view != .browse && view != .extras)
         }
 
         environment.plozzCardCaptionsHidden = true
@@ -64,7 +64,31 @@ final class PlozzMetricsTests: XCTestCase {
         XCTAssertFalse(environment.plozzCardCaptionsHidden, "A destination must not inherit its source's forced visibility.")
         environment.plozzCardCaptionsHidden = true
         environment.plozzCardCaptionView = .episodes
-        XCTAssertFalse(environment.plozzCardCaptionsHidden, "Episode identity must survive source preferences and old hide overrides.")
+        XCTAssertTrue(environment.plozzCardCaptionsHidden, "Episode captions honor the profile's explicit choice.")
+    }
+
+    func testCaptionHostingCopyPreservesContextWithoutForcingResolvedDefaults() {
+        var source = EnvironmentValues()
+        source.plozzCardCaptionView = .home
+        var target = EnvironmentValues()
+        target.plozzCardCaptionsHidden = true
+        target.copyCardCaptionPresentation(from: source)
+        XCTAssertFalse(target.plozzCardCaptionsHidden)
+        XCTAssertTrue(target.plozzCardCaptionsHiddenWithArtworkTitle)
+        source.plozzCardCaptionSettings.preference = .show
+        target.copyCardCaptionPresentation(from: source)
+        XCTAssertFalse(target.plozzCardCaptionsHiddenWithArtworkTitle)
+        source.plozzCardCaptionSettings.preference = .recommended
+        source.plozzCardCaptionIsShowcase = true
+        target.copyCardCaptionPresentation(from: source)
+        XCTAssertTrue(target.plozzCardCaptionsHidden)
+        source.plozzCardCaptionSettings.setOverride(.show, for: .home)
+        target.copyCardCaptionPresentation(from: source)
+        XCTAssertFalse(target.plozzCardCaptionsHiddenWithArtworkTitle)
+        source.plozzCardCaptionsHidden = true
+        target.copyCardCaptionPresentation(from: source)
+        XCTAssertTrue(target.plozzCardCaptionsHidden)
+        XCTAssertTrue(target.plozzCardCaptionsHiddenWithArtworkTitle)
     }
 
     func testShowcaseOnlyChangesInheritedLabelsAndDoesNotLeakIntoDestinations() {

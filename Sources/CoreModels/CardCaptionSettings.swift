@@ -6,7 +6,7 @@ public enum CardCaptionView: String, CaseIterable, Codable, Sendable {
     case related, episodes, extras, filmography
 
     public static var customizableCases: [Self] {
-        allCases.filter { $0 != .episodes }
+        allCases
     }
 
     public var displayName: LocalizedStringResource {
@@ -47,8 +47,8 @@ public enum CardCaptionPreference: String, CaseIterable, Codable, Identifiable, 
     public var displayName: LocalizedStringResource {
         switch self {
         case .recommended: "Recommended"
-        case .show: "Labels"
-        case .hide: "No labels"
+        case .show: "Show labels everywhere"
+        case .hide: "Hide labels everywhere"
         }
     }
 }
@@ -74,13 +74,21 @@ public struct CardCaptionSettings: Codable, Equatable, Sendable {
         self.overrides = overrides
     }
 
-    public func inheritedShowsLabels(isShowcase: Bool = false) -> Bool {
-        preference == .recommended ? !isShowcase : showsLabels
+    public func inheritedShowsLabels(
+        in view: CardCaptionView = .browse,
+        isShowcase: Bool = false,
+        hasArtworkTitle: Bool = false
+    ) -> Bool {
+        guard preference == .recommended else { return showsLabels }
+        return view == .episodes || !(isShowcase || hasArtworkTitle)
     }
 
-    public func showsLabels(in view: CardCaptionView, isShowcase: Bool = false) -> Bool {
-        // Episode stills alone do not identify an episode, even with a saved hide override.
-        view == .episodes || (overrides[view] ?? inheritedShowsLabels(isShowcase: isShowcase))
+    public func showsLabels(
+        in view: CardCaptionView, isShowcase: Bool = false, hasArtworkTitle: Bool = false
+    ) -> Bool {
+        overrides[view] ?? inheritedShowsLabels(
+            in: view, isShowcase: isShowcase, hasArtworkTitle: hasArtworkTitle
+        )
     }
 
     public func override(for view: CardCaptionView) -> CardCaptionOverride {

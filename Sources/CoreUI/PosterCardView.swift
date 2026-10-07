@@ -467,11 +467,6 @@ public struct PosterCardView: View {
                 .recordDetailTransitionArtwork(detailTransitionSource)
                 #endif
 
-            // Series-artwork cards say everything on the artwork itself — the show
-            // as its logo, the episode and time in the chip — so there is no
-            // caption under them at all. A card that is purely its art is the
-            // point of the treatment; a reserved-but-empty caption slot would just
-            // read as a rendering bug.
             if showsCaption {
                 captionBlock(inset: metrics.landscapeCaptionInset, spacing: 4)
                     .padding(.bottom, metrics.landscapeCaptionInset)
@@ -510,8 +505,6 @@ public struct PosterCardView: View {
     private var borderlessCard: some View {
         VStack(alignment: .leading, spacing: borderlessCaptionSpacing) {
             borderlessArtwork
-            // See `landscapeCard`: a series-artwork card carries its text on the
-            // artwork, so it has no caption.
             if showsCaption {
                 BorderlessCardCaption(
                     title: primaryText,
@@ -732,11 +725,6 @@ public struct PosterCardView: View {
     /// (content) media titles rendered verbatim — mixing them into one `String`
     /// first would hide the copy from the catalog.
     private var primaryText: Text {
-        // In series-artwork mode the artwork already carries the show's name — as
-        // its logo, or as the styled text that stands in for one — so repeating it
-        // here would say the same thing twice and leave the card silent about the
-        // thing it hasn't said yet: which episode this is.
-        if showsSeriesArtwork { return seriesArtworkCaption }
         if item.kind == .episode, let series = item.parentTitle, !series.isEmpty {
             return Text(verbatim: series)
         }
@@ -744,36 +732,11 @@ public struct PosterCardView: View {
         return Text(verbatim: item.title)
     }
 
-    /// The caption line for a card whose artwork carries the title.
-    ///
-    /// For an episode that is its place in the run — "S2 · E5". Note the guard on
-    /// both numbers: `MediaItem.subtitle` falls back to the *series* title when it
-    /// can't build a designation, which is exactly the string the logo is already
-    /// showing, so we drop to the episode's own title instead (masked when spoiler
-    /// protection is hiding episode text).
-    private var seriesArtworkCaption: Text {
-        if item.kind == .episode {
-            if item.seasonNumber != nil,
-               item.episodeNumber != nil,
-               let designation = item.subtitle, !designation.isEmpty {
-                return Text(verbatim: designation)
-            }
-            if hideText { return Text(spoilerSettings.maskedTitle(for: item)) }
-            return Text(verbatim: item.title)
-        }
-        // A movie or series is the show, so its own title is on the artwork; the
-        // caption carries the qualifier (a year) instead.
-        guard let subtitle = item.subtitle, !subtitle.isEmpty else {
-            return Text(verbatim: "")
-        }
-        return Text(verbatim: subtitle)
-    }
-
     /// Secondary line — subtitle facts plus card runtime/remaining when available.
     /// The runtime/"… left" is dropped when the resume chip is shown, since the
     /// chip already carries the time on the artwork (no need to repeat it here).
     private var subtitleText: String? {  // l10n:content — provider subtitle and preformatted runtime
-        item.posterCaptionSubtitle(showsSubtitle: !showsSeriesArtwork, showsRuntime: !showsResumeChip)
+        item.posterCaptionSubtitle(showsRuntime: !showsResumeChip)
     }
 
     // MARK: Resume chip
@@ -787,18 +750,21 @@ public struct PosterCardView: View {
     /// badge on a poster. They show the shared full-width progress bar instead
     /// (see ``MediaCardPlaybackIndicators``), which needs no runtime metadata — so
     /// every in-progress card looks the same whether or not its runtime is known.
-    @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
+    @Environment(\.plozzCardCaptionsHidden) private var ordinaryCaptionsHidden
+    @Environment(\.plozzCardCaptionsHiddenWithArtworkTitle) private var artworkTitleCaptionsHidden
 
-    /// Series-artwork cards carry their text on the art, and a surface can hide
-    /// captions outright when it names the title elsewhere.
-    private var showsCaption: Bool { !showsSeriesArtwork && !captionsHidden }
+    private var captionsHidden: Bool {
+        showsSeriesArtwork ? artworkTitleCaptionsHidden : ordinaryCaptionsHidden
+    }
+
+    private var showsCaption: Bool { !captionsHidden }
 
     private var placeholderTitle: Text? {
         captionsHidden && !showsSeriesArtwork ? primaryText : nil
     }
 
     /// Whether the resume chip names the episode, because no caption will.
-    private var chipCarriesEpisode: Bool { showsSeriesArtwork || captionsHidden }
+    private var chipCarriesEpisode: Bool { captionsHidden }
 
     private var showsResumeChip: Bool {
         (playsOnSelect || showsResumeChipOverride)
@@ -823,7 +789,7 @@ public struct PosterCardView: View {
                 // where it is the only thing naming the episode. `ResumeChipOverlay`
                 // already draws exactly this case (see its `hasBottomChrome`); this
                 // outer gate simply never let it through.
-                || (chipCarriesEpisode && item.seasonEpisodeLabel != nil))
+                || ((showsSeriesArtwork || captionsHidden) && item.seasonEpisodeLabel != nil))
     }
 
     /// The shared resume affordance — identical to the episode card's overlay.
@@ -834,9 +800,7 @@ public struct PosterCardView: View {
                 item: item,
                 downloadState: downloadState,
                 showsMenu: showsActionsMenu,
-                // Series-artwork cards carry the episode designation *in* the chip
-                // rather than in a caption under the card, so one glance covers
-                // which show (the logo), which episode, and how much is left.
+                // Keep episode identity on the artwork when captions are hidden.
                 detailText: chipCarriesEpisode ? item.seasonEpisodeLabel : nil,
                 showsPlayGlyphWhenIdle: showsSeriesArtwork,
                 // A Continue Watching card darkens over a much longer run,
@@ -1200,10 +1164,7 @@ public struct PosterCardView: View {
             await Self.settleTextlessAnswer(for: item)
             textlessAnswerRevision &+= 1
         }
-        // The show's name moved onto the artwork (as a logo, which carries no text
-        // for VoiceOver), and out of the caption — which now reads "S2 · E5". Name
-        // the artwork so the card still announces WHAT it is, not just where in it
-        // you are.
+        // Logos carry no text for VoiceOver; identify the artwork even when captions are hidden.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(seriesDisplayTitle)
     }
