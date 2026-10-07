@@ -255,8 +255,10 @@ always required; reaching the grace period alone never interrupts its writer.
 Large scale fixtures emit unbuffered checkpoints from completed work. The
 million-programme XMLTV test reports preparation phases and every 10,000 indexed
 programmes, so a slow, progressing import is not mistaken for a stalled build.
-Its million-entry workload, assertions, and the no-output watchdog remain intact.
-No timer emits artificial progress while an operation is stuck.
+The 800,005-entry IPTV HTTP import likewise reports every 10,000 staged entries
+through the real importer progress callback, followed by commit/query/reopen
+checkpoints. Both workloads, their assertions, and the no-output watchdog remain
+intact. No timer emits artificial progress while an operation is stuck.
 
 ### Simulator readiness and authoritative results
 

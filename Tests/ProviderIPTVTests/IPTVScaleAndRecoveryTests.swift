@@ -9,6 +9,17 @@ final class IPTVScaleAndRecoveryTests: XCTestCase {
     func testEightHundredThousandEntryHTTPImportPersistsAndReopensWithoutDownloadingAgain() async throws {
         let total = 800_005
         let live = 2_000
+        let clock = ContinuousClock.now
+        let report: @Sendable (String) -> Void = { message in
+            do {
+                try FileHandle.standardOutput.write(contentsOf: Data(
+                    "IPTV scale fixture [\(clock.duration(to: .now))]: \(message)\n".utf8
+                ))
+            } catch {
+                XCTFail("Could not record IPTV scale progress: \(error)")
+            }
+        }
+        report("Preparing \(total) playlist entries")
         let root = try temporaryDirectory()
         let playlist = root.appendingPathComponent("large.m3u")
         XCTAssertTrue(FileManager.default.createFile(atPath: playlist.path, contents: nil))
@@ -26,6 +37,8 @@ final class IPTVScaleAndRecoveryTests: XCTestCase {
             try file.write(contentsOf: data)
         }
         try file.synchronize()
+        let inputBytes = try XCTUnwrap(playlist.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        report("Prepared \(inputBytes) playlist bytes; starting HTTP import")
         let server = try IPTVTestHTTPServer { _ in
             .init(file: playlist, headers: ["Content-Type": "audio/x-mpegurl"])
         }
@@ -37,8 +50,14 @@ final class IPTVScaleAndRecoveryTests: XCTestCase {
         let started = Date()
         let session = try await IPTVProvider.signIn(
             credential: credential, name: "Scale fixture", deviceID: "fixture",
-            cacheDirectory: root.appendingPathComponent("catalog")
+            cacheDirectory: root.appendingPathComponent("catalog"),
+            progress: { progress in
+                guard case .playlist = progress.stage,
+                      progress.entries.isMultiple(of: 10_000) || progress.entries == total else { return }
+                report("Staged \(progress.entries) of \(total) playlist entries")
+            }
         )
+        report("Committed imported catalog; checking channels and pagination")
         let context = ProviderResolutionContext(
             session: try JSONDecoder().decode(UserSession.self, from: JSONEncoder().encode(session)),
             accountID: "scale", credentialRevision: .init(),
@@ -55,6 +74,7 @@ final class IPTVScaleAndRecoveryTests: XCTestCase {
         XCTAssertEqual(end.items.count, 5)
         XCTAssertFalse(end.hasMore)
         let count = await server.requestCount
+        report("Verified \(channels.count) channels and \(end.totalCount) movies; reopening catalog")
         let reopened = try IPTVProvider(context: context, cacheDirectory: root.appendingPathComponent("catalog"))
         addTeardownBlock { await reopened.teardown() }
         let restored = try await reopened.items(in: "movies", kind: .movie, page: .init(limit: 1))
@@ -63,7 +83,7 @@ final class IPTVScaleAndRecoveryTests: XCTestCase {
         XCTAssertEqual(requestsAfterReopening, count)
         var after = rusage()
         XCTAssertEqual(getrusage(RUSAGE_SELF, &after), 0)
-        let inputBytes = try XCTUnwrap(playlist.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        report("Verified reopened catalog without another download")
         print("IPTV_SCALE entries=\(total) live=\(live) bytes=\(inputBytes) elapsed_seconds=\(Date().timeIntervalSince(started)) process_peak_before_bytes=\(before.ru_maxrss) process_peak_after_bytes=\(after.ru_maxrss)")
     }
 
