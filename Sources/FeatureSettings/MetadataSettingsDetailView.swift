@@ -160,7 +160,7 @@ public enum MetadataProviderListLogic {
     }
 }
 
-/// The "Metadata" Settings page: provider enable/disable + ordering (over the
+/// The "Metadata Providers" Settings page: provider enable/disable + ordering (over the
 /// Info.plist baseline), TMDB credentials, and a focused diagnostics destination.
 /// A household-wide concern (like Servers/Seerr), so it lives under "This Apple TV".
 public struct MetadataSettingsDetailView: View {
@@ -180,7 +180,7 @@ public struct MetadataSettingsDetailView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                SettingsPageHeader("Metadata")
+                SettingsPageHeader("Metadata Providers")
                 providersSection
                 tmdbKeySection
                     .disabled(isReordering)
@@ -256,7 +256,7 @@ public struct MetadataSettingsDetailView: View {
     /// provider across the "Disabled" divider is what turns it off.
     private var providersSection: some View {
         SettingsPanel(
-            title: "Metadata Providers",
+            title: "Providers",
             contentPadding: .settingsPanelRowContent
         ) {
             VStack(alignment: .leading, spacing: 16) {

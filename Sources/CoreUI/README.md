@@ -91,8 +91,8 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   preserving the main preference. Cards retains
   card presentation controls, not app-wide artwork policy. Missing artwork can
   fall back to the other source.
-  Provider enablement/order remains household-wide; changing appearance never
-  enables a provider. The old library-artwork choice migrates to each profile,
+  Provider enablement/order is household-wide in Metadata Providers; changing
+  appearance never enables a provider. The old library-artwork choice migrates to each profile,
   and the new preference transfers/syncs with that profile.
   Library-first heroes honor the server-selected backdrop or primary share
   sidecar rather than choosing a different image for Details or avoiding artwork

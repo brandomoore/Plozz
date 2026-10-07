@@ -176,7 +176,7 @@ final class SettingsInteractionTests: XCTestCase {
         for title in [
             "Trackers", "Appearance", "Customize Home", "Live TV", "Detail Page",
             "Playback", "Subtitles", "Spoilers", "Circadian Mode",
-            "Profiles", "Servers", "Downloads", "Seerr", "Metadata", "Help & Diagnostics", "Attributions"
+            "Profiles", "Servers", "Downloads", "Seerr", "Metadata Providers", "Help & Diagnostics", "Attributions"
         ] {
             openSettingsPage(title)
             app.terminate()

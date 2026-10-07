@@ -752,7 +752,7 @@ public struct SettingsView: View {
                 // Metadata (artwork/details enrichment) is household-wide: one set
                 // of providers + caches serves every profile, so it lives here.
                 if metadataSettings != nil {
-                    navRow("Metadata", icon: "sparkles.rectangle.stack",
+                    navRow("Metadata Providers", icon: "sparkles.rectangle.stack",
                            value: nil,
                            route: .metadata)
                 }

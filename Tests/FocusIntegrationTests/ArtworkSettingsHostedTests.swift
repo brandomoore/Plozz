@@ -51,13 +51,16 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                 XCTAssertTrue(text.contains("Recommended"), text)
                 XCTAssertTrue(text.contains("Prefer my library"), text)
                 XCTAssertTrue(text.contains("Prefer online artwork"), text)
-                XCTAssertTrue(text.contains("Movies and shows prefer images from online providers"), text)
+                XCTAssertTrue(text.contains("Movies and shows prefer images from metadata providers"), text)
                 XCTAssertTrue(text.contains("Music prefers artwork from your library"), text)
                 XCTAssertTrue(text.contains("Customize by view"), text)
                 XCTAssertTrue(text.contains("Using defaults"), text)
                 XCTAssertTrue(text.contains("About artwork sources"), text)
                 XCTAssertFalse(text.contains("Remove view customizations"), text)
-                XCTAssertEqual(text.contains("Online services"), canManage, text)
+                XCTAssertEqual(text.contains("Metadata Providers"), canManage, text)
+                XCTAssertEqual(text.contains("TMDB"), canManage, text)
+                XCTAssertEqual(text.contains("TheTVDB"), canManage, text)
+                XCTAssertFalse(text.contains("Online services"), text)
                 if canManage {
                     models.cardStyleModel.artwork.setOverride(.library, for: .browse)
                     let customized = try await self.capture(window, name: "artwork-appearance-customized")
@@ -117,7 +120,8 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                     XCTAssertTrue(text.contains("Plex, Jellyfin, or Emby"), text)
                     XCTAssertTrue(text.contains("network shares"), text)
                 case .online:
-                    XCTAssertTrue(text.contains("through online services"), text)
+                    XCTAssertTrue(text.contains("through metadata providers"), text)
+                    XCTAssertTrue(text.contains("In Metadata Providers"), text)
                     XCTAssertTrue(text.contains("same images"), text)
                     XCTAssertTrue(text.contains("Custom uses your saved order"), text)
                 case .preferences:

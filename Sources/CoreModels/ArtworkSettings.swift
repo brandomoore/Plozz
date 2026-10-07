@@ -16,9 +16,9 @@ public enum ArtworkPreference: String, CaseIterable, Codable, Identifiable, Send
 
     public var detail: LocalizedStringResource {
         switch self {
-        case .recommended: "Movies and shows prefer images from online providers. Music prefers artwork from your library."
+        case .recommended: "Movies and shows prefer images from metadata providers. Music prefers artwork from your library."
         case .library: "Prefers the images supplied by your libraries."
-        case .online: "Prefers images Plozz finds through online services."
+        case .online: "Images from metadata providers such as TMDB and TheTVDB."
         }
     }
 }

@@ -432,7 +432,7 @@ private struct PlozziOSSettingsSplitView: View {
                             )
                             settingsRow(
                                 .metadata,
-                                title: "Metadata",
+                                title: "Metadata Providers",
                                 systemImage: "sparkles.rectangle.stack"
                             )
                         } footer: {
@@ -1169,7 +1169,7 @@ private struct PlozziOSSettingsCompactMenu: View {
                     Button {
                         showMetadata = true
                     } label: {
-                        Label("Metadata", systemImage: "sparkles.rectangle.stack")
+                        Label("Metadata Providers", systemImage: "sparkles.rectangle.stack")
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                     }
@@ -1826,7 +1826,7 @@ struct PlozziOSAppearanceSettingsView: View {
                         }
                         if canManageProviders {
                             SettingsSectionGroup {
-                                NavigationLink("Online services") {
+                                NavigationLink("Metadata Providers (TMDB, TheTVDB…)") {
                                     PlozziOSMetadataSettingsView(deps: appModel.makeMetadataSettingsDependencies())
                                 }
                                 .accessibilityIdentifier("artwork-metadata-providers")

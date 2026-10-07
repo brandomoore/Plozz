@@ -256,7 +256,7 @@ enum ArtworkSourceHelpTopic: String, CaseIterable, Identifiable {
         case .library:
             "Images supplied by Plex, Jellyfin, or Emby, and image files saved beside media on network shares. This includes the artwork you selected in your server."
         case .online:
-            "Images Plozz finds separately through online services, such as TMDB or TheTVDB. They may be the same images your library uses. In Online services, Recommended lets Plozz choose services. Custom uses your saved order and turns off services you disable."
+            "Images Plozz finds separately through metadata providers, such as TMDB or TheTVDB. They may be the same images your library uses. In Metadata Providers, Recommended lets Plozz choose providers. Custom uses your saved order and turns off providers you disable."
         case .preferences:
             "These choices apply to this profile. Missing images can fall back to another source. Changing the main preference keeps view customizations. Choose Use default for one view, or Remove view customizations for all."
         }

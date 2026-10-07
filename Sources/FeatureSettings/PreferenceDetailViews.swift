@@ -83,7 +83,7 @@ struct AppearanceDetailView: View {
                         if canManageProviders {
                             VStack(alignment: .leading, spacing: 12) {
                                 NavigationLink(value: SettingsRoute.metadata) {
-                                    Label("Online services", systemImage: "globe")
+                                    Label("Metadata Providers (TMDB, TheTVDB…)", systemImage: "globe")
                                 }
                                 .accessibilityIdentifier("artwork-metadata-providers")
                                 Text("Shared by all profiles.")

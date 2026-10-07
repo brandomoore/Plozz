@@ -34,7 +34,7 @@ struct PlozziOSMetadataSettingsView: View {
             diagnosticsSection
         }
         .settingsPageSurface()
-        .navigationTitle("Metadata")
+        .navigationTitle("Metadata Providers")
         .navigationDestination(isPresented: $showDiagnostics) {
             PlozziOSMetadataDiagnosticsView(deps: deps)
         }
