@@ -1,199 +1,186 @@
-# Disk reclaim safety
+# Plozz build-data lifecycle
 
-`tools/reclaim-disk.sh` removes selected rebuildable Apple build caches across
-Plozz, Mozz, and Twozz. `tools/prune-deriveddata.sh` is its DerivedData-only
-worker. Neither tool may run destructively while release/build ownership is
-uncertain.
+## Prevent orphaned output instead of periodically purging everything
 
-## Current rollout status: destructive cleanup disabled
+Generated projects use Xcode's **user workspace settings**
+`DerivedDataLocationStyle=WorkspaceRelativePath` and
+`DerivedDataCustomLocation=.build/xcode-gui`. These belong in
+`Plozz.xcodeproj/project.xcworkspace/xcuserdata/<user>.xcuserdatad/WorkspaceSettings.xcsettings`,
+not `xcshareddata`: Xcode ignores the latter for this user preference.
+`tools/generate-project.sh` writes them on full generation **and bake-only**
+runs, preserving other settings. The relative location follows a renamed or
+moved checkout. Native Xcode previews, indexing, GUI builds and their
+SourcePackages stay inside that checkout. Open the generated project, not a
+separately created workspace with different settings.
 
-Two existing activation gates must remain closed until every owner listed below is
-ported or administratively disabled:
+The key/value semantics also appear in
+[Geko's native workspace-settings model](https://github.com/geko-tech/geko/blob/6e0ed4650a8bc02db5afdb987c6629ab8c118e7b/Sources/GekoSupport/Models/XCWorkspaceSettingsPlist.swift).
+The fixture suite additionally runs **real `xcodebuild -showBuildSettings`**
+against a dependency-free generated project and checks the resulting build path;
+it does not compile the app or download packages.
 
-1. `~/.config/smart-disk-maintenance/SUSPENDED` must be absent.
-2. The exact rollout policy must exist at
-   `~/.config/smart-disk-maintenance/apple-build-interlock-v1/rollout-policy-v1`.
+| Writer | Disposable intermediates |
+| --- | --- |
+| Xcode GUI, previews and indexing | `.build/xcode-gui/` |
+| TV / iOS device wrappers | `.build/deploy-tv-derived-data/`, `.build/deploy-ios-derived-data/` |
+| Package / hosted focus / provider tests | Existing writer-private `.build/*derived-data/` roots |
+| Localization | `.build/l10n-deriveddata/` |
+| Screenshot / physical UI-test runners | Existing worktree-local `build/*-dd/` or `build/*-derived/` |
+| Fastlane | `.build/fastlane-derived-data/<invocation>/<scheme>/` |
+| Mutable package checkouts and binary extraction | Writer-private `.build/package-workspaces/` or the test writer's DerivedData |
+| CI | Existing lane-private `.build/ci/<lane>/` |
 
-The machine currently uses `SUSPENDED`. This repository does not remove it,
-create the rollout policy, enable a scheduler, or authorize cleanup.
+The central package helper registers package and DerivedData paths **after**
+the shared lease is acquired. Python and Ruby writers call the same registrar.
+Device settings lookup and build receive identical explicit DerivedData paths;
+they no longer default to the GUI/global store. Fastlane resolution, settings
+and archive retain invocation/platform-private package options, and use a
+matching private DerivedData path. Do not run concurrent copies of a fixed-path
+writer in the same checkout; separate worktrees/writers have separate stores.
+Explicit storage overrides remain supported but are recorded as external;
+they do not get the containment benefit.
 
-The legacy rollout file is intentionally all-or-nothing:
+The shared compressed SwiftPM cache is unchanged and never targeted. This is
+not permission to remove checkouts with edits, reset dependencies, or clear
+shared caches.
 
-```text
-protocol=1
-global-cleanup-entrypoints
-manual-xcode-writers-disabled-or-wrapped
-mozz-current-writers
-mozz-legacy-writers
-plozz-current-writers
-plozz-legacy-writers
-twozz-current-writers
-twozz-legacy-writers
-```
+## Release products are not disposable
 
-Each line means the named owner has confirmed every relevant writer uses this
-protocol before its first build-resource write, or cannot run during cleanup.
-Listing an owner without completing that work is not authorization. Missing,
-reordered, extra, unreadable, replaced, symlinked, or writable-by-other policy
-data denies cleanup. There is no environment or command-line bypass.
+New Fastlane archives, exported IPAs and dSYMs go to
+`~/Library/Developer/Plozz/Releases/<physical-checkout-path-sha256-prefix>/`
+instead of the worktree's `build/`. Upload/processing results and per-platform
+logs live in its `testflight-uploads/` subdirectory. Both platform archives,
+symbol upload, IPA validation and distribution use these same absolute paths.
+They retain their existing filenames. This intentionally changes their
+**default output location**, not the upload/distribution behavior.
 
-Only `plozz-current-writers` is implemented by this change. Remaining blockers:
+This durable root is registered with a permanent release-evidence hold and
+survives checkout removal. There is no automatic deletion or hold-release
+command for it. Existing archives/evidence in old worktrees are **not migrated**
+by this feature: preserve those before explicitly archiving such a worktree.
+The cleanup adapter refuses archives, IPAs, dSYMs (including compressed ones),
+xcresults, logs, credentials, sources and Git data even if nominated.
 
-- older Plozz worktrees containing pre-interlock scripts;
-- current and older Mozz writer entrypoints;
-- current and older Twozz writer entrypoints;
-- current and older Hozz writer entrypoints;
-- direct/manual Xcode, raw `xcodebuild`, and third-party build tools;
-- installed global cleanup entrypoints and reviewed owner evidence.
+## Automatic reconciliation, without pretending there is an archive callback
 
-The exact legacy file cannot express Hozz or time-bounded owner holds. Its wire
-format remains frozen for existing readers. **It is not sufficient authorization
-for global cleanup.** The separate [attested maintenance-window policy](apple-maintenance-windows.md)
-adds Hozz, current/legacy inventories, exact release-manifest scope, and explicit
-human approval. Its updater writes only the companion file under the conflicting
-policy lock; it never enables the legacy gate or removes suspension.
+There is no supported Copilot archive hook used here. An explicit archive that
+actually removes its worktree carries contained output away with it through
+the app's normal removal operation. Merely hiding/archiving a session while
+retaining its checkout does **not** make that checkout disposable.
 
-Until those owners are coordinated, keep `SUSPENDED`, keep broad schedules
-disabled, and do not create the rollout file. The interlock alone is not a claim
-that cross-app cleanup is ready.
+Every registration reconciles prior resources; project generation also
+attributes existing `Plozz-*` global DerivedData whose `info.plist` points to
+that exact current project. This is a bounded metadata/registry pass, **not a
+recursive disk scan**, package validation or deletion during a build.
+Contained records disappear from the registry once their owner and resource
+are physically gone and the Git registration is gone; only an aggregate count
+is retained. External records remain reviewable.
 
-## Shared/exclusive protocol
+The private state is
+`~/Library/Application Support/Plozz/BuildLifecycle/registry.json`.
+It records schema, epoch, exact resource and parent device/inode/path, kind,
+creation/observation times, release hold, all registered references and each
+owner's worktree, parent, common Git directory, registration directory and HEAD.
+Publication is locked, nofollow, mode 0600, atomic and fsynced. Bounds are 1,024
+resources, 128 owners per resource and 4 MiB total; exceeding them stops with an
+error rather than silently discarding provenance. Successful repeat builds
+update an existing entry instead of accumulating per-command history.
 
-The same-user host-wide namespace is:
+Retirement requires physical checkout absence **and** absence from
+`git worktree list --porcelain -z`, removal of its original registration, and
+unchanged physical common-directory and checkout-parent identities. A move,
+restored path, primary checkout, prunable registration, inaccessible mount,
+changed parent, shared living reference or malformed state remains protected.
+Pruning Git alone is not evidence of a user archive: these observations create
+a **candidate**, not deletion permission. There must then be seven days of
+continuously observed retirement before an external candidate can be proposed.
+A return or uncertain observation resets that interval.
 
-```text
-~/.config/smart-disk-maintenance/apple-build-interlock-v1/
-```
+Normal completed builds need no per-file owner attestation. Their durable
+ownership is reused; failed/crashed/queued lanes still retain the existing
+v1 lease holds. Missing PID, old mtime or a quiet process list never clears them.
 
-The path is physically resolved from the effective UID's account record, not
-caller `HOME`, so alternate environments or a symlinked home cannot create a
-second production lock domain or weaken protected-path comparisons.
-It is outside DerivedData, SwiftPM caches, worktrees, and every reclaim target.
-The protocol uses Darwin `flock` through the system Python standard library:
-
-- build, test, generation, localization, archive, upload, processing,
-  distribution, and tagging lanes hold a shared lease;
-- several shared leases may coexist;
-- cleanup requests an exclusive lease with `LOCK_NB` and refuses immediately
-  when any shared lease is active;
-- once exclusive ownership exists, a new cooperative build cannot start until
-  cleanup releases it.
-
-Shell and Fastlane callers retain the actual locked file descriptor and export
-its authenticated descriptor identity to descendants. Descendants inherit the
-same open file description, so a parent exit cannot release the kernel lock
-while a child still owns that descriptor. Nested entrypoints validate an
-unlinked proof descriptor plus exact lease id/token, record schema, lock inode,
-owner, and mode. Partial, forged, closed, replaced, or stale inherited state
-fails; it never falls back to a new lease.
-
-Every lease also publishes a durable JSON identity under `leases/`. Normal
-completion authenticates a release request, then a background finalizer waits
-for all inherited shared descriptors to close before removing that record.
-Signals, hard crashes, failed lanes, helper errors, malformed records, unknown
-files, or finalizer failure leave evidence behind. Exclusive cleanup refuses
-every remaining record and never infers safety from PID age, an empty process
-list, or a quiet machine.
-
-Inspect records without changing them:
-
-```bash
-/usr/bin/python3 tools/lib/apple_build_lease.py inspect
-```
-
-There is deliberately no automatic stale-record deletion. Investigate the
-record and its owner while cleanup remains suspended before resolving any exact
-fixture or production record.
-
-## Plozz writer coverage
-
-Current Plozz entrypoints acquire a shared lease before their first relevant
-write:
-
-- Fastlane `generate_project`, `build`, `beta`, and `release`; outer
-  `beta`/`release` ownership spans both platform archives, uploads, processing,
-  external distribution, and GitHub tagging;
-- `tools/generate-project.sh`;
-- `tools/deploy-tv.sh` and `tools/deploy-ios.sh`;
-- `tools/run-tests.sh` and `tools/test-fast.sh`;
-- `tools/l10n-sync.py`, `tools/l10n-guard.sh`, and
-  `tools/l10n-prune-stale-products.sh`;
-- `tools/capture-shots.sh`;
-- the direct CI simulator build through
-  `tools/with-apple-build-lease.sh`.
-
-The lease is independent of output naming and location. Worktree `.build`
-folders, per-worktree test/localization roots, and multiple Xcode DerivedData
-folders remain distinct real outputs; the lease does not merge, rename, or
-reinterpret them.
-
-Swift package resolution follows a separate storage policy:
-
-- the committed root `Package.resolved` is copied into the generated Xcode
-  workspace by `tools/generate-project.sh`;
-- every Xcode writer passes
-  `-onlyUsePackageVersionsFromResolvedFile` and `-skipPackageUpdates`;
-- the compressed SwiftPM repository/artifact cache remains shared through
-  `~/Library/Caches/org.swift.swiftpm`;
-- mutable checkouts and extracted binary artifacts use writer-specific paths
-  under `.build`, while sequential work inside one writer (both localization
-  platforms, both release archives, and CI build plus tests) reuses that
-  writer's path.
-
-Do not replace those writer-specific paths with one machine-wide mutable
-`SourcePackages` directory. Concurrent Xcode writers can corrupt or invalidate
-shared mutable package state. These settings prevent future redundant stores;
-they do not authorize deleting any existing DerivedData or `.build` root.
-
-## Defense in depth
-
-After cleanup acquires exclusive ownership, the previous checks still run:
-
-- a continuous Apple-build quiet interval;
-- process checks before each destructive phase and path;
-- `lsof` open-path inspection when enabled;
-- recent-mtime skips;
-- absolute/resolved cache-container and deletion-target validation;
-- hard refusal for the shared SwiftPM repository cache.
-
-These checks catch uncooperative or unexpected activity, but they do not replace
-the cooperative lease. Process sampling alone has a start-after-check race.
-
-The policy lock is held shared for the whole cleanup lane. Tooling that
-changes `SUSPENDED` or rollout policy must take the conflicting exclusive policy
-lock. Per-delete verification also confirms the marker is still absent and the
-opened policy/coordination files retain the same inode and content. Manual file
-changes that ignore this protocol remain a rollout blocker.
-
-Protected source, Git data, worktrees, archives, IPAs, release dSYMs/evidence,
-SDKs/toolchains, shared SwiftPM dependencies, simulator data, VMs, personal
-data, and Trash are not made eligible by this lease. Target selection and
-release-retention policy remain separate mandatory checks.
-
-`--dry-run` does not acquire exclusive ownership and deletes nothing.
-
-## Regression tests
-
-No app build or real cleanup is required:
+## Read-only inspection and exact cleanup
 
 ```bash
+python3 -B tools/plozz-build-lifecycle.py status
+python3 -B tools/plozz-build-lifecycle.py legacy
+
+# Metadata reconciliation only; no deletion, even under an approved window.
+tools/with-apple-build-lease.sh plozz/lifecycle -- \
+  python3 -B tools/plozz-build-lifecycle.py reconcile
+
+# A deliberately narrow unit below a registered, retired external DerivedData root.
+# Without --output the default is JSON on stdout.
+python3 -B tools/plozz-build-lifecycle.py propose \
+  --target /physical/retired-derived-data/Build/Intermediates.noindex/objects \
+  --output /private/review/manifest.json
+
+python3 -B tools/apple-build-cleanup.py validate --manifest /private/review/manifest.json
+```
+
+Legacy missing owners without historical registration are shown as
+**unattributed/protected**, never retroactively declared released. A path in an
+old `info.plist` alone cannot establish shared references or needed evidence.
+Previously unregistered nonempty external overrides are refused unless their
+native DerivedData attribution can be verified. Dependency workspaces,
+including uncommitted package edits, remain ineligible for external cleanup.
+Containment is what retires their large private copies with the worktree.
+
+The exact-manifest adapter is recovered from the reviewed cleanup lineage
+ending at `3a133ffa85ff8f84259127c050f4156bc838034a`, not replaced by a second
+destructive implementation. It only accepts recognized compiler outputs,
+at least **seven days untouched across the whole tree** (birth/ctime/mtime),
+bounded to 256 disjoint units and 4,096 total entries per approved manifest.
+It rejects source/Git/dependency trees, protected bundles, hardlinks, symlinks,
+unknown files, nested mounts, open inodes and changed identities. Manifests pin
+registry bytes/epoch and inode-aware trees. Parent/leaf/owner/policy checks
+repeat before each unlink. Interrupted work retains a fsynced partial journal;
+there is no automatic resumption or overwrite of a previous journal.
+
+For the adapter's new `retired-generated` target kind, the compatibility field
+`session_id` carries the resource epoch UUID, **not** a Copilot session identity.
+`release_record` pins the lifecycle registry; neither is a human attestation or
+a substitute for the separate exact-scope maintenance approval.
+
+**External automatic deletion is not enabled by this feature.** Production
+`SUSPENDED`, installed tools and schedules are untouched. The unchanged
+[v1 lease and attested maintenance-window contract](apple-maintenance-windows.md)
+remains mandatory. Only after separately approved activation, with a complete
+current writer inventory and exact approved manifest, may a maintenance owner run:
+
+```bash
+tools/with-apple-build-lease.sh --exclusive plozz/approved-maintenance -- \
+  python3 -B tools/apple-build-cleanup.py apply \
+  --manifest /private/review/manifest.json \
+  --window-id APPROVED-WINDOW-UUID --journal /private/review/unique-journal.jsonl
+```
+
+Never call this exclusive operation inside a build's shared lease. The registry
+is not an alternate approval, suspension bypass or stale-lease resolver.
+Retired resources use their historical owner's common Git repository for
+approved writer coverage; that repository and this entire executing bundle
+must be fingerprinted. Any new registration invalidates a pinned preview.
+
+Legacy `reclaim-disk.sh` and `prune-deriveddata.sh` no longer contain broad
+deletion logic. Their sole `--dry-run` operation reports attribution; all
+former apply modes fail before taking a lease or writing logs.
+
+## Fixture validation
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+  tools.tests.test_plozz_build_lifecycle tools.tests.test_apple_build_cleanup \
+  tools.tests.test_apple_maintenance_policy tools.tests.test_package_storage
 tools/tests/test-apple-build-interlock.sh
-tools/tests/test-disk-reclaim.sh
 ```
 
-Tests use temporary HOME/cache roots only. They cover concurrent readers,
-nonblocking exclusive refusal, writer-to-reader handoff, release-lane gaps,
-nested and exec inheritance, Ruby-to-child descriptor inheritance, children
-outliving parents, written identity, effective-UID and physical-home resolution,
-forged environments, signal/crash orphan evidence, malformed registry state,
-lock replacement, suspension/rollout gates, process checks, open paths, unsafe
-targets, test-root confinement, and fixture-only cleanup. Test mode requires its
-lock namespace and every destructive target to remain under the same private
-system-temporary HOME, and disables cleanup extras.
-
-## Scheduling
-
-Broad daily cleanup workflows and the optional LaunchAgent must remain disabled
-while `SUSPENDED` or rollout blockers exist. Enabling multiple schedulers adds
-no safety; every installed/manual scheduler must call the same exclusive-lease
-entrypoint after rollout approval.
+Fixtures use private temporary HOME/repos and separate lock namespaces, synthetic
+approval evidence and tiny compiler files, never production cleanup or app
+builds. Frozen-protocol tests cover competing writers/exclusive cleanup,
+full-lane gaps, nested inheritance, crash holds and stale/forged capabilities.
+Adapter tests cover nofollow TOCTOU, changed parents/trees, deadlines, open use,
+partial recovery and exact real companion authorization. Lifecycle tests cover
+real Git worktree removal, rename/restore/shared ownership, containment,
+retention, bounded state, source/package/evidence protection and native Xcode
+output-location semantics.

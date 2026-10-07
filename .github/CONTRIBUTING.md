@@ -154,7 +154,9 @@ The enclosing shared release lease stays held through both workers, descendant
 cleanup, and tagging. Workers inherit its descriptors and receive the current
 API key only through anonymous pipes. Each worker uses Fastlane's normal
 altool/Java transporter rather than the shell transporter's shared key directory.
-Results and separate platform logs remain under `.build/testflight-uploads/`.
+Archives, IPAs, dSYMs and separate platform logs survive worktree removal under
+`~/Library/Developer/Plozz/Releases/<checkout-path-hash>/`; upload evidence is in
+its `testflight-uploads/` subdirectory. See [build-data lifecycle](../docs/disk-reclaim.md).
 
 **Partial failure or cancellation:** both workers are reaped; a platform failure
 does not stop the other platform's processing. Cancellation terminates both owned

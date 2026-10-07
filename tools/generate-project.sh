@@ -105,6 +105,10 @@ if [ "$should_generate" = "1" ]; then
   printf '%s\n' "$generation_signature" > "$generation_signature_file"
 fi
 
+# Xcode GUI/indexing uses the native workspace location; command-line writers
+# supply their own private -derivedDataPath instead of sharing this store.
+/usr/bin/python3 -B tools/plozz-build-lifecycle.py workspace --repo "$PWD" >/dev/null
+
 # Xcode project builds read the workspace lock rather than the package-root lock.
 # Keep the generated copy byte-for-byte identical on both full generation and
 # bake-only runs so every entrypoint resolves the committed dependency graph.

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -50,6 +51,7 @@ module AppleBuildLease
 end
 def harness.asc_api_key; { key: "fixture" }; end
 def harness.select_release_xcode; end
+def harness.register_build_storage(options); end
 def harness.require_crash_reporting_dsn; end
 def harness.require_sentry_symbols
   @events << "symbol preflight"
@@ -467,10 +469,13 @@ puts JSON.generate(commands: harness.instance_variable_get(:@commands), error: e
 """
         result = self.ruby(source)
         self.assertIsNone(result["error"])
+        durable = Path.home() / "Library/Developer/Plozz/Releases" / hashlib.sha256(
+            str(ROOT.resolve()).encode()
+        ).hexdigest()[:24]
         self.assertEqual(result["commands"], [
             "cd .. && python3 tools/upload-sentry-symbols.py --check",
-            f"cd .. && python3 tools/upload-sentry-symbols.py {ROOT}/build/Plozz-tvOS.xcarchive",
-            f"cd .. && python3 tools/upload-sentry-symbols.py {ROOT}/build/Plozz-iOS.xcarchive",
+            f"cd .. && python3 tools/upload-sentry-symbols.py {durable}/Plozz-tvOS.xcarchive",
+            f"cd .. && python3 tools/upload-sentry-symbols.py {durable}/Plozz-iOS.xcarchive",
         ])
         failed = self.ruby(source, SCENARIO="symbol_preflight_failure")
         self.assertEqual(failed["error"], "symbol check failed")
@@ -499,7 +504,11 @@ begin
         second = self.ruby(FASTFILE_HARNESS, **env)["options"]
         paths = [options["cloned_source_packages_path"] for options in first + second]
         self.assertEqual(len(set(paths)), 4)
+        self.assertEqual(len({options["derived_data_path"] for options in first + second}), 4)
         for options in first:
+            self.assertTrue(options["derived_data_path"].startswith(str(ROOT / ".build/fastlane-derived-data") + "/"))
+            self.assertFalse(options["archive_path"].startswith(str(ROOT) + "/"))
+            self.assertEqual(Path(options["archive_path"]).parent, Path(options["output_directory"]))
             self.assertTrue(options["cloned_source_packages_path"].startswith(env["PLOZZ_FASTLANE_CLONED_SOURCE_PACKAGES"] + "/"))
             self.assertEqual(options["package_cache_path"], env["PLOZZ_PACKAGE_CACHE_PATH"])
             self.assertTrue(options["disable_package_automatic_updates"])
@@ -571,6 +580,8 @@ puts JSON.generate(commands: commands.map { |command| Shellwords.split(command) 
                 self.assertEqual(tokens.count(flag), 1)
             self.assertEqual(tokens[tokens.index("-clonedSourcePackagesDirPath") + 1], options["cloned_source_packages_path"])
             self.assertEqual(tokens[tokens.index("-packageCachePath") + 1], options["package_cache_path"])
+            self.assertEqual(tokens.count("-derivedDataPath"), 1)
+            self.assertEqual(tokens[tokens.index("-derivedDataPath") + 1], options["derived_data_path"])
 
     def test_missing_release_lease_fails_before_launching(self) -> None:
         source = r"""

@@ -127,6 +127,9 @@ def build_for_extraction(
     # a setdefault would silently leave the build broken.
     env["GIT_CONFIG_PARAMETERS"] = "'safe.bareRepository=all'"
 
+    from plozz_build_lifecycle import register
+    register(REPO, [("derived-data", DERIVED), ("package-workspace", CLONED_SOURCE_PACKAGES)])
+
     generate_args = ["--bake-only"] if (PROJECT / "project.pbxproj").exists() else []
     lease_fds = tuple(
         int(env[name])
@@ -179,6 +182,7 @@ def build_for_extraction(
             cmd, cwd=REPO, env=env, text=True,
             stdout=subprocess.PIPE if quiet else None,
             stderr=subprocess.STDOUT if quiet else None,
+            pass_fds=lease_fds,
         )
         if proc.returncode != 0:
             if quiet and proc.stdout:

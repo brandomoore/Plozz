@@ -92,7 +92,7 @@ fi
 PLOZZ_DERIVED_DATA="${PLOZZ_DERIVED_DATA:-$PWD/.build/test-derived-data}"
 PLOZZ_TEST_RESULTS_DIR="${PLOZZ_TEST_RESULTS_DIR:-$PWD/.build/test-results}"
 PLOZZ_CLONED_SOURCE_PACKAGES="${PLOZZ_CLONED_SOURCE_PACKAGES:-$PLOZZ_DERIVED_DATA/SourcePackages}"
-configure_plozz_package_resolution "$PLOZZ_CLONED_SOURCE_PACKAGES"
+configure_plozz_package_resolution "$PLOZZ_CLONED_SOURCE_PACKAGES" "$PLOZZ_DERIVED_DATA"
 PLOZZ_HANG_SECS="${PLOZZ_HANG_SECS:-180}"
 # How long to let xcodebuild wind down AFTER every test bundle has reported its
 # result. Surviving tests can report success after a crash/restart, so these

@@ -22,14 +22,19 @@
 require "json"
 require "shellwords"
 require "securerandom"
+require "digest"
 require File.expand_path("../tools/lib/apple_build_lease", __dir__)
 require_relative "testflight_pipeline"
 
 APP_IDENTIFIER = "com.thatcube.Plozz"
 APP_NAME       = "Plozz"
 XCODEPROJ      = "Plozz.xcodeproj"
-OUTPUT_DIR     = "build"
 REPO_ROOT      = File.expand_path("..", __dir__)
+# Release products and upload evidence must survive disposal of this checkout.
+OUTPUT_DIR     = File.join(
+  Dir.home, "Library", "Developer", "Plozz", "Releases",
+  Digest::SHA256.hexdigest(File.realpath(REPO_ROOT))[0, 24]
+)
 RELEASE_TARGETS = [
   {
     name: "tvOS",
@@ -89,7 +94,7 @@ def swift_package_build_options(target)
   # Gym passes these options to pre-resolution, build settings, and archive.
   # xcargs reaches only the archive/export commands; duplicating paths there
   # also makes Xcode 27 reject the archive command.
-  {
+  options = {
     cloned_source_packages_path: File.expand_path(
       File.join(package_root, @package_writer_id, target.fetch(:scheme)), REPO_ROOT
     ),
@@ -98,6 +103,27 @@ def swift_package_build_options(target)
     skip_package_repository_fetches: true,
     skip_package_dependencies_resolution: false
   }
+  options[:derived_data_path] = File.join(
+    REPO_ROOT, ".build", "fastlane-derived-data", @package_writer_id, target.fetch(:scheme)
+  )
+  register_build_storage(options)
+  options
+end
+
+def register_build_storage(options)
+  descriptors = %w[APPLE_BUILD_LEASE_PROOF_FD APPLE_BUILD_LEASE_LOCK_FD].to_h do |key|
+    fd = Integer(ENV.fetch(key))
+    [fd, fd]
+  end
+  success = system(
+    "/usr/bin/python3", "-B", File.join(REPO_ROOT, "tools", "plozz-build-lifecycle.py"),
+    "register", "--repo", REPO_ROOT,
+    "--root", "package-workspace", options.fetch(:cloned_source_packages_path),
+    "--root", "derived-data", options.fetch(:derived_data_path),
+    "--root", "release-evidence", OUTPUT_DIR,
+    **descriptors, close_others: true, out: File::NULL
+  )
+  UI.user_error!("Build storage registration failed; release was not started.") unless success
 end
 
 # App Store Connect rejects any build made with a BETA Xcode / SDK (altool error
@@ -216,7 +242,7 @@ end
 
 def upload_sentry_symbols
   RELEASE_TARGETS.each do |target|
-    archive = File.join(REPO_ROOT, target[:archive_path])
+    archive = target[:archive_path]
     sh("cd .. && python3 tools/upload-sentry-symbols.py #{archive.shellescape}")
   end
 end
@@ -400,7 +426,7 @@ def release_artifact_jobs(entry, notes_by_target)
       name: target[:name],
       app_identifier: APP_IDENTIFIER,
       platform: target[:platform],
-      ipa: File.join(REPO_ROOT, OUTPUT_DIR, target[:output_name]),
+      ipa: File.join(OUTPUT_DIR, target[:output_name]),
       version: marketing_version,
       release_version: entry.fetch("version"),
       release_id: entry.fetch("id"),
@@ -621,7 +647,7 @@ lane :beta do
     outcomes = PlozzTestflightPipeline.upload_all(
       jobs: jobs,
       api_key: api_key,
-      output_root: File.join(REPO_ROOT, ".build", "testflight-uploads")
+      output_root: File.join(OUTPUT_DIR, "testflight-uploads")
     )
     outcomes.each { |outcome| UI.success(PlozzTestflightPipeline.describe(outcome)) }
   rescue PlozzTestflightPipeline::Failure => e

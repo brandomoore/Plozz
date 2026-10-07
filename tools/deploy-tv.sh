@@ -110,7 +110,8 @@ source tools/lib/apple-build-lease.sh
 acquire_apple_build_shared_lease "plozz/deploy-tv"
 source tools/lib/swift-package-storage.sh
 PLOZZ_TV_CLONED_SOURCE_PACKAGES="${PLOZZ_TV_CLONED_SOURCE_PACKAGES:-$ROOT/.build/package-workspaces/deploy-tv}"
-configure_plozz_package_resolution "$PLOZZ_TV_CLONED_SOURCE_PACKAGES"
+configure_plozz_package_resolution "$PLOZZ_TV_CLONED_SOURCE_PACKAGES" \
+  "${PLOZZ_TV_DERIVED_DATA:-$ROOT/.build/deploy-tv-derived-data}"
 APPLE_BUILD_LEASE_SIGNALLED=0
 RESTORE_CANONICAL=0
 cleanup_deploy_tv() {
@@ -163,7 +164,7 @@ if [[ "$CLEAN" == "1" ]]; then
   echo "▸ Cleaning this worktree's DerivedData…"
   DD="$("${BOUNDED[@]}" "$SETTINGS_TIMEOUT" "clean-path build-settings lookup" -- \
         xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
-        "${PACKAGE_RESOLUTION_ARGS[@]}" -showBuildSettings 2>/dev/null \
+        "${PACKAGE_RESOLUTION_ARGS[@]}" "${BUILD_LOCATION_ARGS[@]}" -showBuildSettings 2>/dev/null \
         | awk -F' = ' '/ BUILD_DIR /{print $2; exit}')"
   [[ -n "${DD:-}" ]] && rm -rf "$(dirname "$(dirname "$DD")")"
 fi
@@ -220,7 +221,7 @@ fi
 PREBUILD_APP_PATH="$(
   "${BOUNDED[@]}" "$SETTINGS_TIMEOUT" "tvOS build-settings lookup" -- \
     xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIG" \
-    -destination "$DESTINATION" "${PACKAGE_RESOLUTION_ARGS[@]}" \
+    -destination "$DESTINATION" "${PACKAGE_RESOLUTION_ARGS[@]}" "${BUILD_LOCATION_ARGS[@]}" \
     "${BUILD_SETTING_OVERRIDES[@]}" \
     -showBuildSettings 2>/dev/null \
     | awk -F' = ' '/ CODESIGNING_FOLDER_PATH / { print $2; exit }'
@@ -236,6 +237,7 @@ set -o pipefail
   -configuration "$CONFIG" \
   -destination "$DESTINATION" \
   "${PACKAGE_RESOLUTION_ARGS[@]}" \
+  "${BUILD_LOCATION_ARGS[@]}" \
   "${BUILD_SETTING_OVERRIDES[@]}" \
   build \
   | { command -v xcbeautify >/dev/null 2>&1 && xcbeautify || cat; }
@@ -255,7 +257,7 @@ if [[ -z "$APP_PATH" ]]; then
   APP_PATH="$(
     "${BOUNDED[@]}" "$SETTINGS_TIMEOUT" "post-build tvOS app-path lookup" -- \
       xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIG" \
-      -destination "$DESTINATION" "${PACKAGE_RESOLUTION_ARGS[@]}" \
+      -destination "$DESTINATION" "${PACKAGE_RESOLUTION_ARGS[@]}" "${BUILD_LOCATION_ARGS[@]}" \
       "${BUILD_SETTING_OVERRIDES[@]}" \
       -showBuildSettings 2>/dev/null \
       | awk -F' = ' '/ CODESIGNING_FOLDER_PATH /{print $2; exit}'

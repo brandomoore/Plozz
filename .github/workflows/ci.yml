@@ -102,8 +102,11 @@ jobs:
 
       - name: Build (tvOS Simulator)
         run: |
+          source tools/lib/apple-build-lease.sh
+          acquire_apple_build_shared_lease plozz/ci-tvos-build
+          install_apple_build_lease_traps
           source tools/lib/swift-package-storage.sh
-          configure_plozz_package_resolution "$PLOZZ_CLONED_SOURCE_PACKAGES"
+          configure_plozz_package_resolution "$PLOZZ_CLONED_SOURCE_PACKAGES" "$PLOZZ_DERIVED_DATA"
           set +e
           tools/with-apple-build-lease.sh plozz/ci-tvos-build -- xcodebuild build \
             -project Plozz.xcodeproj \

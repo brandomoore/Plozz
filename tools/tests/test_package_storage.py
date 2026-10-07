@@ -30,18 +30,24 @@ class PackageStorageTests(unittest.TestCase):
         return (ROOT / path).read_text(encoding="utf-8")
 
     def test_shell_helper_emits_locked_writer_local_arguments(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="plozz-package-storage-", dir=ROOT / ".build") as temp:
-            home = Path(temp) / "home"
-            writer = Path(temp) / "writer"
-            cache = Path(temp) / "cache"
-            env = dict(os.environ, HOME=str(home), PLOZZ_PACKAGE_CACHE_PATH=str(cache))
+        from tools.tests.test_plozz_build_lifecycle import LifecycleTests
+        fixture = LifecycleTests()
+        fixture.setUp()
+        try:
+            writer = fixture.worktree / ".build/writer"
+            derived = fixture.worktree / ".build/derived"
+            cache = fixture.home / "cache"
+            env = dict(fixture.env, PLOZZ_PACKAGE_CACHE_PATH=str(cache))
             script = (
-                "source tools/lib/swift-package-storage.sh; "
-                f"configure_plozz_package_resolution {str(writer)!r}; "
-                "printf '%s\\n' \"${PACKAGE_RESOLUTION_ARGS[@]}\""
+                f"cd {str(fixture.worktree)!r}; "
+                f"source {str(ROOT / 'tools/lib/swift-package-storage.sh')!r}; "
+                f"configure_plozz_package_resolution {str(writer)!r} {str(derived)!r}; "
+                "printf '%s\\n' \"${PACKAGE_RESOLUTION_ARGS[@]}\"; "
+                "printf '%s\\n' '--build-location--' \"${BUILD_LOCATION_ARGS[@]}\""
             )
             result = subprocess.run(
-                ["/bin/bash", "-c", script],
+                [str(ROOT / "tools/with-apple-build-lease.sh"), "test/package-storage",
+                 "--", "/bin/bash", "-e", "-c", script],
                 cwd=ROOT,
                 env=env,
                 text=True,
@@ -57,8 +63,13 @@ class PackageStorageTests(unittest.TestCase):
                     str(cache),
                     "-onlyUsePackageVersionsFromResolvedFile",
                     "-skipPackageUpdates",
+                    "--build-location--",
+                    "-derivedDataPath",
+                    str(derived),
                 ],
             )
+        finally:
+            fixture.doCleanups()
 
     def test_generated_project_tracks_and_syncs_canonical_lock(self) -> None:
         source = self.source("tools/generate-project.sh")

@@ -89,7 +89,8 @@ source tools/lib/apple-build-lease.sh
 acquire_apple_build_shared_lease "plozz/deploy-ios"
 source tools/lib/swift-package-storage.sh
 PLOZZ_IOS_CLONED_SOURCE_PACKAGES="${PLOZZ_IOS_CLONED_SOURCE_PACKAGES:-$ROOT/.build/package-workspaces/deploy-ios}"
-configure_plozz_package_resolution "$PLOZZ_IOS_CLONED_SOURCE_PACKAGES"
+configure_plozz_package_resolution "$PLOZZ_IOS_CLONED_SOURCE_PACKAGES" \
+  "${PLOZZ_IOS_DERIVED_DATA:-$ROOT/.build/deploy-ios-derived-data}"
 APPLE_BUILD_LEASE_SIGNALLED=0
 RESTORE_CANONICAL=0
 cleanup_deploy_ios() {
@@ -233,6 +234,7 @@ PREBUILD_APP_PATH="$(
     -configuration "$CONFIG" \
     -destination "$BUILD_DESTINATION" \
     "${PACKAGE_RESOLUTION_ARGS[@]}" \
+    "${BUILD_LOCATION_ARGS[@]}" \
     ${BUILD_SETTING_OVERRIDES[@]+"${BUILD_SETTING_OVERRIDES[@]}"} \
     -showBuildSettings 2>/dev/null \
     | awk -F' = ' '/ CODESIGNING_FOLDER_PATH / { print $2; exit }'
@@ -250,6 +252,7 @@ if [[ "$NO_BUILD" != "1" ]]; then
     -configuration "$CONFIG" \
     -destination "$BUILD_DESTINATION" \
     "${PACKAGE_RESOLUTION_ARGS[@]}" \
+    "${BUILD_LOCATION_ARGS[@]}" \
     -allowProvisioningUpdates \
     ${AUTH_FLAGS[@]+"${AUTH_FLAGS[@]}"} \
     ${BUILD_SETTING_OVERRIDES[@]+"${BUILD_SETTING_OVERRIDES[@]}"} \
@@ -273,6 +276,7 @@ if [[ -z "$APP_PATH" ]]; then
       -configuration "$CONFIG" \
       -destination "$BUILD_DESTINATION" \
       "${PACKAGE_RESOLUTION_ARGS[@]}" \
+      "${BUILD_LOCATION_ARGS[@]}" \
       ${BUILD_SETTING_OVERRIDES[@]+"${BUILD_SETTING_OVERRIDES[@]}"} \
       -showBuildSettings 2>/dev/null \
       | awk -F' = ' '/ CODESIGNING_FOLDER_PATH / { print $2; exit }'

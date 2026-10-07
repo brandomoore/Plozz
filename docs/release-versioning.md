@@ -105,7 +105,8 @@ than claiming to be a newly distributed release.
 Before uploading, both distribution lanes check both exported IPAs' platform, identifier,
 Apple version/build, and public release version/ID. A mismatch stops both uploads.
 After delivery, tags remain `release/<zero-padded-build>`; GitHub release titles
-use the public date and build. Inspect `.build/testflight-uploads/` and both platforms'
+use the public date and build. Inspect the durable release root's
+`testflight-uploads/` directory (see [build-data lifecycle](disk-reclaim.md)) and both platforms'
 actual App Store Connect availability before reporting success. After partial
 success, never blindly rerun `beta`, increment the build, or reupload: reconcile
 the recorded per-platform outcomes first.

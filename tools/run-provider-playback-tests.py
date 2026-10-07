@@ -245,6 +245,12 @@ def main(argv=None):
     lease_fds = bounded.inherited_lease_fds()
     if not lease_fds:
         raise ConfigurationError("Authenticated build lease is required.")
+    sys.path.insert(0, str(ROOT / "tools/lib"))
+    from plozz_build_lifecycle import register
+    register(ROOT, [
+        ("derived-data", ROOT / ".build/provider-playback-derived-data"),
+        ("package-workspace", ROOT / ".build/package-workspaces/provider-playback-tests"),
+    ])
     providers = args.providers.split(",")
     if len(set(providers)) != len(providers) or not set(providers).issubset(SUPPORTED) or not providers:
         raise ConfigurationError("Choose jellyfin, plex, emby or silo. Local shares are excluded.")

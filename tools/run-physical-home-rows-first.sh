@@ -56,9 +56,8 @@ acquire_apple_build_lease shared physical-home-rows-first
 install_apple_build_lease_traps
 export GIT_CONFIG_PARAMETERS="'safe.bareRepository=all'"
 source tools/lib/swift-package-storage.sh
-configure_plozz_package_resolution "$PWD/.build/package-workspaces/physical-home-paging"
-
 DERIVED_DATA="$PWD/build/physical-home-paging-release-derived"
+configure_plozz_package_resolution "$PWD/.build/package-workspaces/physical-home-paging" "$DERIVED_DATA"
 OUT="$PWD/build/physical-home-rows-first/$(date -u +%Y%m%dT%H%M%SZ)-${MODE#--}-$$"
 mkdir -p "$OUT"
 COMMON=(

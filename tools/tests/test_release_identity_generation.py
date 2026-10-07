@@ -23,6 +23,9 @@ class ReleaseIdentityGenerationTests(unittest.TestCase):
                 (root / filename).write_text("fixture\n")
             for filename in ["generate-project.sh", "release-notes.py"]:
                 shutil.copyfile(ROOT / "tools" / filename, root / "tools" / filename)
+            (root / "tools/plozz-build-lifecycle.py").write_text(
+                "# Storage integration has separate real-lease fixture coverage.\n"
+            )
             (root / "tools/lib/apple-build-lease.sh").write_text(
                 "acquire_apple_build_shared_lease() { :; }\n"
                 "install_apple_build_lease_traps() { :; }\n"

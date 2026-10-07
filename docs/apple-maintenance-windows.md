@@ -1,9 +1,13 @@
 # Attested Apple maintenance windows
 
-This is preparation tooling, not authorization to reclaim storage. It does not
+This policy tooling is not authorization to reclaim storage. It does not
 remove `SUSPENDED`, write `rollout-policy-v1`, resolve lease records, change
 schedules, stop writers, or delete build resources. A feature merge does not
 enable global cleanup.
+
+[Plozz build-data lifecycle](disk-reclaim.md) owns worktree containment,
+registration/reconciliation and the exact-manifest adapter. Its minimum age is
+seven days. It does not change this v1 lease or activate a maintenance window.
 
 ## Compatibility and rollout
 
@@ -130,7 +134,7 @@ Manifest top-level contract:
 This illustrative placeholder is **not** a valid adapter deletion target. The
 adapter owns the target schema/validator: exact physical path and kind
 (`worktree-apple-build` or `xcode-derived-data`), owner worktree/session, root
-device/inode, release evidence, timestamps, whole-tree age of at least 72 hours,
+device/inode, release evidence, timestamps, whole-tree age of at least seven days,
 and an inode-aware tree digest. This companion checks the nonempty schema/scope
 and approval binding, not destructive eligibility. It must never be used alone
 as a deletion implementation.

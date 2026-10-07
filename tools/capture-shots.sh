@@ -185,7 +185,7 @@ acquire_apple_build_shared_lease "plozz/capture-shots"
 install_apple_build_lease_traps
 source tools/lib/swift-package-storage.sh
 PLOZZ_SHOTS_CLONED_SOURCE_PACKAGES="${PLOZZ_SHOTS_CLONED_SOURCE_PACKAGES:-$REPO_ROOT/.build/package-workspaces/capture-shots-$PLATFORM}"
-configure_plozz_package_resolution "$PLOZZ_SHOTS_CLONED_SOURCE_PACKAGES"
+configure_plozz_package_resolution "$PLOZZ_SHOTS_CLONED_SOURCE_PACKAGES" "$DERIVED"
 
 mkdir -p "$OUT"
 

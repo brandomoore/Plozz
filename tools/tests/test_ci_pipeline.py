@@ -191,7 +191,7 @@ class WorkflowTests(unittest.TestCase):
         for fragment in (
             'configure_plozz_package_resolution "$PLOZZ_CLONED_SOURCE_PACKAGES"',
             '"${PACKAGE_RESOLUTION_ARGS[@]}"',
-            '-derivedDataPath "$PLOZZ_DERIVED_DATA"',
+            'configure_plozz_package_resolution "$PLOZZ_CLONED_SOURCE_PACKAGES" "$PLOZZ_DERIVED_DATA"',
             "-scheme Plozz",
             "'generic/platform=tvOS Simulator'",
             "ARCHS=arm64",

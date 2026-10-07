@@ -8,7 +8,8 @@ source tools/lib/apple-build-lease.sh
 acquire_apple_build_shared_lease "plozz/focus-tests"
 install_apple_build_lease_traps
 source tools/lib/swift-package-storage.sh
-configure_plozz_package_resolution "${PLOZZ_FOCUS_PACKAGES:-${PLOZZ_CLONED_SOURCE_PACKAGES:-$PWD/.build/package-workspaces/focus-tests}}"
+configure_plozz_package_resolution "${PLOZZ_FOCUS_PACKAGES:-${PLOZZ_CLONED_SOURCE_PACKAGES:-$PWD/.build/package-workspaces/focus-tests}}" \
+  "${PLOZZ_FOCUS_DERIVED_DATA:-$PWD/.build/focus-shared-root-derived-data}"
 
 if [[ ! -f Plozz.xcodeproj/project.pbxproj ]]; then
   tools/generate-project.sh

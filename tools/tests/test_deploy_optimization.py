@@ -40,7 +40,8 @@ abandon_apple_build_lease() { :; }
 apple_build_lease_signal_exit() { exit "$1"; }
 """)
             (tools / "lib/swift-package-storage.sh").write_text(
-                'configure_plozz_package_resolution() { PACKAGE_RESOLUTION_ARGS=(-skipPackageUpdates); }\n'
+                'configure_plozz_package_resolution() { PACKAGE_RESOLUTION_ARGS=(-skipPackageUpdates); '
+                'BUILD_LOCATION_ARGS=(-derivedDataPath "$2"); }\n'
             )
             (tools / "run-bounded.py").write_text(
                 'import subprocess,sys\nsys.exit(subprocess.call(sys.argv[sys.argv.index("--")+1:]))\n'
@@ -93,6 +94,8 @@ else:
                 for args in commands:
                     self.assertIn("SWIFT_OPTIMIZATION_LEVEL=-O", args)
                     self.assertNotIn("SWIFT_OPTIMIZATION_LEVEL=-Onone", args)
+                    self.assertEqual(args.count("-derivedDataPath"), 1)
+                    self.assertIn("/.build/deploy-", args[args.index("-derivedDataPath") + 1])
                     self.assertEqual(args[args.index("-configuration") + 1], "Debug")
 
     def test_debugger_opt_out_reaches_settings_and_compiler(self):
