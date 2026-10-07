@@ -30,7 +30,7 @@ struct PlozziOSDiagnosticsSettingsView: View {
     }
 
     private var crashReportingFooter: LocalizedStringResource {
-        "Anonymous crash and freeze reports. No servers, logins, credentials, or viewing activity."
+        "Anonymous crash, freeze, and IPTV setup failure reports. No servers, logins, credentials, or viewing activity."
     }
 
     var body: some View {

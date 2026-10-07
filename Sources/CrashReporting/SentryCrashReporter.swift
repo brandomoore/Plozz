@@ -4,7 +4,7 @@ import Foundation
 import Sentry
 
 /// Sentry-backed crash reporter. Configured for **maximum privacy**: crash and
-/// hang captures and typed sync failures, with automatic UI/network telemetry disabled and a
+/// hang captures and typed sync/setup failures, with automatic UI/network telemetry disabled and a
 /// hard scrub of anything that could carry PII before it leaves the device.
 ///
 /// What is sent (only when the user has opted in AND a DSN is baked in):
@@ -12,6 +12,7 @@ import Sentry
 ///   • Coarse tags: app version/build, OS version, device model, provider kinds,
 ///     and the last observed fixed screen category (never a route or content name).
 ///   • Fixed screen-category history and typed Live TV sync stages/error codes.
+///   • Temporary, bounded IPTV setup stages, counts, and handled failure categories.
 ///   • Numerical memory-pressure evidence when supplied by the SDK.
 /// What is NOT sent: user identity, IP, server URLs/hostnames, media titles,
 /// profile names, automatic network/UI breadcrumbs, or performance traces.
@@ -20,6 +21,7 @@ public final class SentryCrashReporter: CrashReporter {
     private let dsn: String
     private var diagnosticObservers: [NSObjectProtocol] = []
     private let playlistDiagnosticGate = PlaylistDiagnosticGate()
+    private var setupDiagnosticsActive = false
     public private(set) var isActive = false
 
     public init(dsn: String) {
@@ -83,11 +85,13 @@ public final class SentryCrashReporter: CrashReporter {
         })
 
         isActive = true
+        configureSetupDiagnostics(context)
     }
 
     public func update(context: CrashReportContext) {
         guard isActive else { return }
         applyScope(context)
+        configureSetupDiagnostics(context)
     }
 
     public func setScreen(_ screen: CrashReportScreen) {
@@ -106,6 +110,8 @@ public final class SentryCrashReporter: CrashReporter {
         for observer in diagnosticObservers { NotificationCenter.default.removeObserver(observer) }
         diagnosticObservers.removeAll()
         playlistDiagnosticGate.reset()
+        if setupDiagnosticsActive { IPTVSetupDiagnostics.shared.stop() }
+        setupDiagnosticsActive = false
         SentrySDK.close()
         isActive = false
     }
@@ -156,6 +162,50 @@ public final class SentryCrashReporter: CrashReporter {
         return event
     }
 
+    private func configureSetupDiagnostics(_ context: CrashReportContext) {
+        let enabled = IPTVSetupDiagnostic.isEnabled(environment: context.environment, build: context.build)
+        guard enabled != setupDiagnosticsActive else { return }
+        setupDiagnosticsActive = enabled
+        guard enabled else {
+            IPTVSetupDiagnostics.shared.stop()
+            return
+        }
+        let gate = IPTVSetupReportGate()
+        IPTVSetupDiagnostics.shared.start { diagnostic in
+            guard SentrySDK.isEnabled else { return }
+            let breadcrumb = Breadcrumb(level: .info, category: "plozz.iptv_setup")
+            breadcrumb.data = Self.setupData(diagnostic)
+            SentrySDK.addBreadcrumb(breadcrumb)
+            guard gate.accept(diagnostic), let event = Self.setupEvent(diagnostic) else { return }
+            SentrySDK.capture(event: event)
+        }
+    }
+
+    nonisolated static func setupData(_ diagnostic: IPTVSetupDiagnostic) -> [String: Any] {
+        var data: [String: Any] = [
+            "source": diagnostic.source.rawValue, "authentication": diagnostic.authentication.rawValue,
+            "entry": diagnostic.entry.rawValue, "stage": diagnostic.stage.rawValue,
+            "outcome": diagnostic.outcome.rawValue, "elapsed_ms": diagnostic.elapsedMilliseconds,
+            "stage_ms": diagnostic.stageMilliseconds, "requests": diagnostic.requestCount
+        ]
+        data["entries"] = diagnostic.entries
+        data["playlist_bytes"] = diagnostic.playlistBytes
+        data["skipped_entries"] = diagnostic.skippedEntries
+        data["http_status"] = diagnostic.httpStatus
+        data["response"] = diagnostic.response?.rawValue
+        data["reason"] = diagnostic.failure?.reason.rawValue
+        data["network_code"] = diagnostic.failure?.networkCode
+        return data
+    }
+
+    nonisolated static func setupEvent(_ diagnostic: IPTVSetupDiagnostic) -> Event? {
+        let event = Event(level: .warning)
+        event.tags = ["report.kind": "iptv-setup"]
+        event.context = ["iptv_setup": setupData(diagnostic)]
+        // The same allowlist reconstructs the message, grouping, and tags at final upload.
+        return CrashRedaction.scrub(event)
+    }
+
     private func applyScope(_ context: CrashReportContext) {
         SentrySDK.configureScope { scope in
             scope.setTag(value: context.version, key: "app.version")
@@ -166,6 +216,25 @@ public final class SentryCrashReporter: CrashReporter {
                 ? "none"
                 : context.providers.joined(separator: "+")
             scope.setTag(value: providers, key: "providers")
+        }
+    }
+}
+
+final class IPTVSetupReportGate: @unchecked Sendable {
+    static let maximumReports = 10
+    private let lock = NSLock()
+    private var reported: Set<String> = []
+
+    func accept(_ diagnostic: IPTVSetupDiagnostic) -> Bool {
+        guard diagnostic.outcome == .failed, let failure = diagnostic.failure else { return false }
+        let key = [
+            diagnostic.source.rawValue, diagnostic.authentication.rawValue, diagnostic.entry.rawValue, diagnostic.stage.rawValue,
+            failure.reason.rawValue, diagnostic.httpStatus.map(String.init) ?? "none",
+            failure.networkCode.map(String.init) ?? "none"
+        ].joined(separator: ".")
+        return lock.withLock {
+            guard reported.count < Self.maximumReports else { return false }
+            return reported.insert(key).inserted
         }
     }
 }

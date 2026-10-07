@@ -343,10 +343,21 @@ struct PrototypeSheetContent: View {
                     }
                 }
             }
+            #if os(iOS)
+            .toolbarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
+                #if os(iOS)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close", systemImage: "xmark") { dismiss() }
+                        .labelStyle(.iconOnly)
+                        .accessibilityIdentifier("live-tv-close-sheet")
+                }
+                #else
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+                #endif
             }
             .background(palette.backgroundBase)
         }
@@ -477,6 +488,9 @@ struct PrototypeSelectionList<Option: Hashable, OptionLabel: View>: View {
             }
         }
         .navigationTitle(title)
+        #if os(iOS)
+        .toolbarTitleDisplayMode(.inline)
+        #endif
     }
 }
 

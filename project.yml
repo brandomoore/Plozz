@@ -222,7 +222,7 @@ targets:
           # Sync & Setup device pairing ("set up from another device"): the TV
           # advertises this service so a configured phone/tablet can find it and
           # transfer setup over the local network.
-          - _plozz-pair._tcp
+          - ${PLOZZ_PAIRING_SERVICE_TYPE}
         # Jellyfin servers are user-controlled and frequently plain HTTP — on the
         # LAN, behind a reverse proxy, or over Tailscale (the 100.64.0.0/10 CGNAT
         # range, which is NOT covered by NSAllowsLocalNetworking). Since the user
@@ -237,7 +237,7 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.thatcube.Plozz.deeplink
             CFBundleURLSchemes:
-              - plozz
+              - ${PLOZZ_URL_SCHEME}
     settings:
       base:
         # ${PLOZZ_ID_SUFFIX} is EMPTY for a normal (canonical) build → the real
@@ -384,7 +384,7 @@ targets:
           - _jellyfin._tcp
           - _smb._tcp
           # Sync & Setup device pairing ("set up another device") over the LAN.
-          - _plozz-pair._tcp
+          - ${PLOZZ_PAIRING_SERVICE_TYPE}
         NSCameraUsageDescription: "Plozz uses the camera to scan the setup code shown on your other device."
         OMDBAPIKey: "$(OMDB_API_KEY)"
         TMDBBearerToken: "$(TMDB_BEARER_TOKEN)"
@@ -403,7 +403,7 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.thatcube.Plozz.deeplink
             CFBundleURLSchemes:
-              - plozz
+              - ${PLOZZ_URL_SCHEME}
         TraktClientID: "$(TRAKT_CLIENT_ID)"
         SimklClientID: "$(SIMKL_CLIENT_ID)"
         AniListClientID: "$(ANILIST_CLIENT_ID)"

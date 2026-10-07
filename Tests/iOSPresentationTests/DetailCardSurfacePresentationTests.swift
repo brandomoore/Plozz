@@ -100,23 +100,27 @@ final class DetailCardSurfacePresentationTests: XCTestCase {
         for size in [CGSize(width: 390, height: 844), CGSize(width: 1024, height: 768)] {
             window.frame = CGRect(origin: .zero, size: size)
             for palette in [ThemePalette.dark, .pureBlack, .light] {
-                for gradientSurface in [true, false] {
-                    for button in [false, true] {
+                for (gradientEnabled, reduceTransparency) in [(true, false), (false, false), (true, true)] {
+                    let gradientSurface = gradientEnabled && !reduceTransparency
+                    for style in ["read-only", "button", "settings"] {
                         let label = Color.white.frame(width: 40, height: 40)
                             .frame(width: 240, height: 120)
                         host.rootView = AnyView(
                             ZStack {
                                 Color.blue
-                                if button {
+                                if style == "button" {
                                     Button {} label: { label }.plozzCardButton(cornerRadius: 20)
+                                } else if style == "settings" {
+                                    Button {} label: { label }.buttonStyle(SettingsCardButtonStyle())
                                 } else {
                                     label.plozzFocusableCard(cornerRadius: 20)
                                 }
                             }
+                            .plozzAdaptiveCardSurface()
                             .environment(\.themePalette, palette)
                             .environment(\.colorScheme, palette.isLight ? .light : .dark)
-                            .environment(\.plozzGradientCardSurface, gradientSurface)
-                            .environment(\.plozzReduceTransparency, !gradientSurface)
+                            .environment(\.gradientBackgroundsEnabled, gradientEnabled)
+                            .environment(\.plozzReduceTransparency, reduceTransparency)
                         )
                         window.layoutIfNeeded()
                         try await Task.sleep(for: .milliseconds(150))
@@ -134,7 +138,7 @@ final class DetailCardSurfacePresentationTests: XCTestCase {
                         for (rendered, reference) in zip(try pixel(actual, at: point),
                                                          try pixel(snapshot(window), at: point)) {
                             XCTAssertLessThanOrEqual(abs(rendered - reference), 2,
-                                                     "\(size), \(palette), gradient=\(gradientSurface), button=\(button)")
+                                                     "\(size), \(palette), gradient=\(gradientEnabled), reduceTransparency=\(reduceTransparency), style=\(style)")
                         }
                     }
                 }

@@ -289,6 +289,17 @@ public protocol UniversalWatchlistHost: AnyObject {
 }
 
 public extension UniversalWatchlistHost {
+    /// Read on watchlist publication, not on each navigation render. The union's
+    /// cached membership includes native lists and honors explicit removals.
+    var navigationWatchlistHasItems: Bool? {
+        guard runtimeFeatureFlags.isEnabled(.universalWatchlist) else {
+            // The legacy read path has no authoritative empty-list signal here.
+            return true
+        }
+        guard isUniversalWatchlistPresentationReady else { return nil }
+        return !universalWatchlistMembershipIDs.isEmpty
+    }
+
     var isUniversalWatchlistPresentationReady: Bool {
         universalWatchlistNativeViewLoaded
             && universalWatchlistProfileID?

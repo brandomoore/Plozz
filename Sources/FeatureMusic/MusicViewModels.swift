@@ -422,7 +422,11 @@ public final class PlaylistDetailViewModel {
         guard let provider else { state = .empty; return }
         state = .loading
         if let loaded = try? await provider.tracks(in: playlist.id) {
-            tracks = loaded.map { $0.taggingSource(accountID ?? "") }
+            tracks = loaded.enumerated().map { index, track in
+                var entry = track.taggingSource(accountID ?? "")
+                entry.playlistEntryID = "\(playlist.id):\(index)"
+                return entry
+            }
         }
         state = tracks.isEmpty ? .empty : .loaded(())
     }

@@ -49,6 +49,29 @@ enum CrashRedaction {
             }
             if !counts.isEmpty { context["playlist_import"] = counts }
         }
+        if event.tags?["report.kind"] == "iptv-setup" {
+            guard let raw = event.context?["iptv_setup"], let data = setupData(raw),
+                  data["outcome"] as? String == "failed",
+                  let source = data["source"] as? String,
+                  let stage = data["stage"] as? String,
+                  let authentication = data["authentication"] as? String,
+                  let entry = data["entry"] as? String,
+                  let reason = data["reason"] as? String else { return nil }
+            context["iptv_setup"] = data
+            event.message = SentryMessage(formatted: "IPTV setup failed")
+            event.fingerprint = [
+                "iptv_setup", source, stage, reason,
+                (data["http_status"] as? Int).map(String.init) ?? "none",
+                (data["network_code"] as? Int).map(String.init) ?? "none"
+            ]
+            var tags = coarseSetupTags(event.tags ?? [:])
+            tags.merge([
+                "report.kind": "iptv-setup", "setup.source": source, "setup.stage": stage,
+                "setup.failure": reason, "setup.authentication": authentication, "setup.entry": entry
+            ]) { _, value in value }
+            event.tags = tags
+            if let status = data["http_status"] as? Int { event.tags?["setup.http_status"] = String(status) }
+        }
         event.context = context.isEmpty ? nil : context
         event.extra = nil
 
@@ -61,6 +84,13 @@ enum CrashRedaction {
     /// Only our closed-vocabulary diagnostics survive, including SDK integrations
     /// enabled in future. Free-form messages/data are never forwarded.
     static func scrub(_ crumb: Breadcrumb) -> Breadcrumb? {
+        if crumb.category == "plozz.iptv_setup" {
+            guard let raw = crumb.data, let data = setupData(raw) else { return nil }
+            crumb.type = "default"
+            crumb.message = "IPTV setup"
+            crumb.data = data
+            return crumb
+        }
         if crumb.category == "plozz.screen",
            let message = crumb.message, let screen = CrashReportScreen(rawValue: message) {
             crumb.type = "navigation"
@@ -87,6 +117,62 @@ enum CrashRedaction {
         crumb.message = "Live TV sync"
         crumb.data = cleaned
         return crumb
+    }
+
+    private static func setupData(_ raw: [String: Any]) -> [String: Any]? {
+        guard let source = (raw["source"] as? String).flatMap(IPTVSetupDiagnostic.Source.init(rawValue:)),
+              let authentication = (raw["authentication"] as? String).flatMap(IPTVSetupDiagnostic.Authentication.init(rawValue:)),
+              let entry = (raw["entry"] as? String).flatMap(IPTVSetupDiagnostic.Entry.init(rawValue:)),
+              let stage = (raw["stage"] as? String).flatMap(IPTVSetupDiagnostic.Stage.init(rawValue:)),
+              let outcome = (raw["outcome"] as? String).flatMap(IPTVSetupDiagnostic.Outcome.init(rawValue:))
+        else { return nil }
+        var safe: [String: Any] = [
+            "source": source.rawValue, "authentication": authentication.rawValue, "entry": entry.rawValue,
+            "stage": stage.rawValue, "outcome": outcome.rawValue
+        ]
+        func copyInteger(_ key: String, range: ClosedRange<Int>) {
+            guard let value = raw[key] as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(),
+                  value.doubleValue.isFinite, value.doubleValue.rounded(.down) == value.doubleValue,
+                  value.doubleValue >= Double(range.lowerBound),
+                  value.doubleValue <= Double(range.upperBound) else { return }
+            safe[key] = value.intValue
+        }
+        for key in ["elapsed_ms", "stage_ms"] {
+            copyInteger(key, range: 0...IPTVSetupAttempt.maximumMilliseconds)
+        }
+        for key in ["entries", "playlist_bytes", "skipped_entries", "requests"] {
+            copyInteger(key, range: 0...IPTVSetupAttempt.maximumCount)
+        }
+        copyInteger("http_status", range: 100...599)
+        if let response = (raw["response"] as? String).flatMap(IPTVSetupDiagnostic.Response.init(rawValue:)) {
+            safe["response"] = response.rawValue
+        }
+        if outcome == .failed {
+            guard let reason = (raw["reason"] as? String).flatMap(IPTVSetupDiagnostic.Failure.Reason.init(rawValue:)),
+                  reason != .cancelled else { return nil }
+            safe["reason"] = reason.rawValue
+            copyInteger("network_code", range: -4_000 ... -1)
+        }
+        return safe
+    }
+
+    private static func coarseSetupTags(_ raw: [String: String]) -> [String: String] {
+        var safe: [String: String] = [:]
+        for key in ["app.version", "app.build", "os.version"] {
+            if let value = raw[key],
+               value.range(of: #"^[0-9]{1,8}(\.[0-9]{1,8}){0,2}$"#, options: .regularExpression) != nil {
+                safe[key] = value
+            }
+        }
+        if let model = raw["device.model"],
+           ["arm64", "x86_64"].contains(model)
+            || model.range(of: #"^(AppleTV|iPhone|iPad)[0-9]{1,3},[0-9]{1,3}$"#, options: .regularExpression) != nil {
+            safe["device.model"] = model
+        }
+        if let screen = raw["last_screen"].flatMap(CrashReportScreen.init(rawValue:)) {
+            safe["last_screen"] = screen.rawValue
+        }
+        return safe
     }
 }
 #endif

@@ -681,11 +681,6 @@ public final class LiveTVPrototypeImportModel {
             cachedPlaylists[status.id].map { (status.id, $0) }
         }
         let servers = serverSources.filter(\.source.isEnabled).compactMap { cachedServerCatalogs[$0.id] }
-        guard playlists.reduce(0, { $0 + $1.1.channels.count }) + servers.reduce(0, { $0 + $1.channels.count })
-            + generatedChannels.count
-            <= LiveTVPlaylistParser.maximumEntries else {
-            throw LiveTVSourceImportError.responseTooLarge
-        }
         let channels = playlists.flatMap { $0.1.channels } + servers.flatMap(\.channels) + generatedChannels
         guard Set(channels.map(\.id)).count == channels.count else { throw LiveTVPrototypeDataError.duplicateChannelID }
         let previousChannels = sourceChannels
@@ -984,6 +979,9 @@ public final class LiveTVPrototypeImportModel {
         guard catalogIsAuthorized(), !catalog.effectiveHiddenChannelIDs.contains(program.channelID),
               let channel = catalog.channel(id: program.channelID) else { return false }
         guard channel.source == .iptv else { return true }
+        if configuration.servers.contains(where: { $0.id == channel.configuredSourceID && $0.isEnabled }) {
+            return true
+        }
         guard let source = channel.playlistSourceID,
               configuration.playlists.contains(where: { $0.id == source && $0.isEnabled }),
               let guide = selectedSourceByChannel[channel.id] else { return false }

@@ -123,7 +123,7 @@ public struct LiveTVServerGuideWindowStatus: Identifiable, Equatable, Sendable {
     }
 }
 
-struct LiveTVServerCatalog {
+struct LiveTVServerCatalog: Sendable {
     let authorizationID: String
     let kind: LiveTVPrototypeSource
     let channels: [LiveTVPrototypeChannel]
@@ -134,30 +134,29 @@ struct LiveTVServerCatalog {
     init(
         source: LiveTVServerSource, context: LiveTVAuthorizedServerProvider, channels: [ServerLiveTVChannel]
     ) throws {
-        guard channels.count <= LiveTVPlaylistParser.maximumEntries,
-              Set(channels.map(\.id)).count == channels.count,
+        guard Set(channels.map(\.id)).count == channels.count,
               channels.allSatisfy({ !$0.id.isEmpty && !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
         else { throw LiveTVServerImportError.invalidCatalog }
         authorizationID = context.authorizationID
         kind = context.kind
-        self.channels = channels.enumerated().map { index, channel in
-            LiveTVPrototypeChannel(
-                id: Self.channelID(source: source, nativeID: channel.id),
+        var references: [String: LiveTVServerChannelReference] = [:]
+        references.reserveCapacity(channels.count)
+        self.channels = try channels.enumerated().map { index, channel in
+            if index.isMultiple(of: 1_000) { try Task.checkCancellation() }
+            let id = Self.channelID(source: source, nativeID: channel.id)
+            references[id] = LiveTVServerChannelReference(
+                sourceID: source.id, accountID: source.accountID,
+                authorizationID: context.authorizationID, channelID: channel.id
+            )
+            return LiveTVPrototypeChannel(
+                id: id,
                 number: Int(channel.number ?? "") ?? index + 1,
-                name: channel.name, category: channel.isRadio ? "Radio" : "Live TV",
+                name: channel.name, category: channel.groups.first ?? (channel.isRadio ? "Radio" : "Live TV"),
                 symbol: channel.isRadio ? "radio" : "tv", accent: index % 6, source: context.kind,
-                tagline: "", logoURL: channel.imageURL, configuredSourceID: source.id
+                tagline: "", logoURL: channel.imageURL, configuredSourceID: source.id, groups: channel.groups
             )
         }
-        references = Dictionary(uniqueKeysWithValues: channels.map { channel in
-            (
-                Self.channelID(source: source, nativeID: channel.id),
-                LiveTVServerChannelReference(
-                    sourceID: source.id, accountID: source.accountID,
-                    authorizationID: context.authorizationID, channelID: channel.id
-                )
-            )
-        })
+        self.references = references
         programs = []
         inlineGuideFailure = nil
         let current = channels.compactMap { channel -> ServerLiveTVProgramme? in

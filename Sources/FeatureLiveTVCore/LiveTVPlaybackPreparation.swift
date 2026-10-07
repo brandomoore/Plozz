@@ -484,7 +484,7 @@ public final class LiveTVPlaybackPreparation {
                 throw LiveTVPlaybackPreparationError.accountUnavailable
             }
             guard context.kind == channel.source,
-                  [.jellyfin, .emby, .plex].contains(context.kind),
+                  [.jellyfin, .emby, .plex, .iptv].contains(context.kind),
                   !context.authorizationID.isEmpty,
                   reference.authorizationID == context.authorizationID else {
                 throw LiveTVPlaybackPreparationError.authorizationChanged
@@ -622,6 +622,7 @@ public final class LiveTVPlaybackPreparation {
         case .jellyfin: .jellyfin
         case .emby: .emby
         case .plex: .plex
+        case .iptv: .iptv
         default: nil
         }
     }

@@ -34,6 +34,7 @@ struct PlozziOSDownloadsView: View {
             }
         }
         .navigationTitle("Downloads")
+        .toolbarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink {

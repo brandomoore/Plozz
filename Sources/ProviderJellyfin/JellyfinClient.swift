@@ -1394,6 +1394,8 @@ public struct JellyfinClient: Sendable {
 
     // MARK: Music
 
+    var musicMaxStreamingBitrate: Int { capabilityProfile.maxStreamingBitrate }
+
     /// One page of music items from a container, using an explicit Jellyfin
     /// `SortBy` (music needs multi-key sorts like `ParentIndexNumber,IndexNumber`
     /// for album track order that the video `SortField` enum can't express).
@@ -1406,7 +1408,7 @@ public struct JellyfinClient: Sendable {
         limit: Int,
         sortBy: String,
         sortOrder: String,
-        albumArtistID: String? = nil,
+        artistID: String? = nil,
         filters: [String] = []
     ) async throws -> ItemsResponse {
         var queryItems = [
@@ -1421,8 +1423,8 @@ public struct JellyfinClient: Sendable {
         if let parentID, !parentID.isEmpty {
             queryItems.append(URLQueryItem(name: "ParentId", value: parentID))
         }
-        if let albumArtistID, !albumArtistID.isEmpty {
-            queryItems.append(URLQueryItem(name: "AlbumArtistIds", value: albumArtistID))
+        if let artistID, !artistID.isEmpty {
+            queryItems.append(URLQueryItem(name: "ArtistIds", value: artistID))
         }
         if !filters.isEmpty {
             queryItems.append(URLQueryItem(name: "Filters", value: filters.joined(separator: ",")))
@@ -1517,11 +1519,10 @@ public struct JellyfinClient: Sendable {
                 name: "MaxStreamingBitrate",
                 value: String(capabilityProfile.maxStreamingBitrate)
             ),
-            // Containers AVPlayer can direct-play; anything else the server
-            // transcodes down the HLS/AAC fallback below.
+            // Bare containers would allow unsupported codecs (such as DTS in WAV).
             AuthenticatedHTTPQueryItem(
                 name: "Container",
-                value: "mp3,aac,m4a,flac,alac,wav,m4b"
+                value: JellyfinMusicDirectPlayProfile.universalContainers
             ),
             AuthenticatedHTTPQueryItem(name: "TranscodingContainer", value: "ts"),
             AuthenticatedHTTPQueryItem(name: "TranscodingProtocol", value: "hls"),

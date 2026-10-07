@@ -164,6 +164,7 @@ private struct StreamingCustomQualityEditor: View {
                 }
             }
             .navigationTitle("Custom quality")
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -254,6 +255,7 @@ struct PlozziOSStreamingQualitySheet: View {
                 }
             }
             .navigationTitle("Streaming quality")
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

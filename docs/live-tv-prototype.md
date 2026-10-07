@@ -21,7 +21,7 @@ tools/generate-project.sh
 ```
 
 Open `Plozz.xcodeproj` and run a **Plozz** build on Apple TV or
-**PlozziOS** on iPhone/iPad. Choose a media server or **Live TV / IPTV** during
+**PlozziOS** on iPhone/iPad. Choose and connect a media server or **IPTV** during
 first-run setup, then complete the ordinary profile and appearance steps.
 Standalone IPTV requires no media-server account. Select **Live TV** in
 navigation. Apple TV supports the top tabs, native sidebar and custom
@@ -61,8 +61,89 @@ remain Debug-only; neither is a production default or a source offered to users.
 
 ## Try
 
+### IPTV accounts and large catalogues
+
+**Sources > IPTV provider** and **Add Server > IPTV** use the same account
+setup on Apple TV, iPhone and iPad. Connections accept a personalized M3U URL,
+HTTP Basic credentials, a bearer token, custom request headers, or an Xtream
+server/username/password. On iPhone and iPad, **Playlist file (M3U)** imports
+through Files into the same disk-backed catalogue. File catalogues remain on
+the importing device; they are not copied by account sync. Use a playlist URL
+for a source that should refresh independently on multiple devices.
+
+The first-run chooser selects a provider, not a playback destination. Its
+**IPTV** entry opens the playlist/provider connection form directly, just as
+account management does. **Live TV** is a destination inside the app: it can
+show channels from a connected media server or an IPTV provider. Server users
+do not need to select IPTV to use their server's Live TV.
+
+The provider separates live channels, movies and recognizable series/episodes.
+Movies and series use ordinary paged libraries, Search, details, playback and
+profile-scoped Continue Watching. Live-only accounts do not create empty movie
+or TV libraries. Xtream categories become channel groups and item tags.
+M3U file extensions alone never classify an entry as a movie: channels can use
+MP4, WMV or other file URLs. An explicit live type takes precedence; otherwise
+VOD classification uses declared types, movie/series paths, episode metadata or
+a positive duration. Existing URL catalogues refresh once for revised mapping
+without resetting the account; previously imported files need reimporting to
+apply that mapping. Account-backed IPTV channels pass the same active-profile
+authorization checks during enrollment, loading and playback.
+Bracketed availability notices such as `[NO PUBLIC STREAM]` are skipped, not
+resolved into fake relative channel URLs. Valid relative addresses, encoded
+filenames and IPv6 streams remain supported.
+Explicit XMLTV guides are ordered, with separate first-guide-origin headers;
+Xtream otherwise uses its native guide API. Auto-discovered guide URLs on
+another origin require explicit configuration for URL-based playlists.
+
+Catalogue imports stream into encrypted SQLite staging, not a retained
+document or a giant array of media items. They have no legacy 128 MiB document
+or 100,000-entry cutoff. Individual lines/records, guide documents and playback
+manifests remain bounded; malformed data, unsupported protocols, exhausted
+storage and provider errors remain explicit failures. Movies and series are
+decoded by page; the guide still holds lightweight channel values for its full
+lineup. This is not a claim of unlimited device memory or measured performance
+on every older device.
+
+The shared live-channel publication path normalizes each matching name once,
+rather than during every sort comparison, and collects language/country facets
+from distinct metadata values. It avoids full-lineup copies for absent overrides
+and indexes only the visible recent/favorite shortcuts it needs. This preserves
+all channels, search relevance, ID tie-breaks and profile filters; it does not
+cap the lineup. `LiveTVLargePlaylistHostedTests` measures the synchronous
+publication of 10,000 and 100,000 channels in both sort orders with a one-second
+budget. That focused budget is not an end-to-end import, memory, frame-pacing,
+or older-hardware guarantee.
+
+Private URLs and authentication headers remain in Keychain credentials and
+encrypted catalogue records. Playback uses an account/revision/session-fenced
+locator and a provider-owned loopback proxy. It forwards authorized headers
+only to the original origin, rewrites HLS playlists and supports byte ranges.
+Ambient cookies and credential stores are disabled. HTTP remains unencrypted;
+use HTTPS when available. HLS/file playback does not establish DRM, DASH,
+browser-login, or remote AirPlay receiver support. Credential-protected artwork
+is not currently resolved; credential-bearing artwork URLs are not published
+into ordinary item caches.
+
+**Settings > Servers > account > Edit connection** reconnects an account without
+changing its account identity or losing profile watch state. New credentials
+use a fresh encrypted catalogue; the existing connection is replaced only
+after authentication/import and persistence succeed. A removed account,
+changed credential revision or switched profile invalidates an in-flight form.
+
+Existing legacy sources remain intact. Their details offer **Connect as IPTV
+account** for URL sources, preserving the name, URL, guide order and discovery
+choice. This is additive, not an automatic migration: disable the old source
+after connecting to avoid duplicate channels. Existing source approvals,
+favorites and manual guide mappings are not silently reassigned. Legacy source
+editors and encrypted imported-file archives retain their existing bounds and
+compatibility; new account/file imports use the disk-backed path.
+
 Source setup appears only after the initial source reload, server enrollment,
 and library-catalog restoration have established that there are no channels.
+On iPhone and iPad, onboarding reveals the same full-page background as the
+guide instead of painting an inset Settings-colored panel. Source icons use the
+theme accent; server-enrollment status sits below a divider as secondary context.
+Light, dark, black, and the gradient-background preference remain respected.
 Pending catalogs keep the page layout in place with non-focusable skeletons for
 the info artwork/text, category column, channel logos, and programme cells. They
 share the loaded guide's sizes/insets and Home's neutral fills/shimmer, including
@@ -113,18 +194,30 @@ pane. Setup and source pages reuse Plozz's shared settings groups, row labels,
 switches, focus/card styles and page heading.
 On iPhone/iPad, Sources and its grouped detail pages use a scroll-based settings
 surface rather than embedding multiple navigation links in one native List cell.
-Each tap pushes only its selected destination; one Back returns to the source
-page. This applies to both Settings and the Live TV toolbar's Sources entry.
+Saved sources appear first as compact icon/name/status rows. Each opens its own
+page for enabling, editing, checking and removing that source; guide policy and
+diagnostics sit behind named links rather than expanding every source inline.
+Each tap pushes only its selected destination, and Back returns one level.
+This applies to both Settings and the Live TV toolbar's Sources entry.
 When embedded in a native List, the iPhone/iPad Sources pane clears its row's
 background, separator, and extra insets, so the shared settings gradient and
 group keylines continue through the whole page rather than an opaque inner panel.
-Source choices appear before saved sources, with descriptions of playlist URLs,
+The mobile welcome screen uses compact, whole-row choices instead of tall cards
+with duplicate action footers. Source cards use the detail page's shared adaptive
+surface: a theme-aware gradient wash and edge, or an opaque surface when gradients
+or transparency are disabled. IPTV setup uses the same settings-page background
+as the other setup sheets. Short source descriptions keep Plex's guide-only limit
+explicit. Modal sheets have an icon-only Close control,
+distinct from the form's Add/Save action. Source choices cover playlist URLs,
 local files (iPhone/iPad), and connected media servers. Playlist fields keep their
 labels visible while editing and show example URLs instead of repeating labels
 as URL placeholders. Primary setup actions use full-width Settings rows with
 at least 64-point height on Apple TV and 44-point height on iPhone/iPad; removing
-a guide is a labeled action beside its URL on Apple TV and a full-width action
-below it on iPhone/iPad, rather than a small icon. Both playlist editors
+a guide is a labeled action beside its URL on Apple TV and an accessible
+44-point icon button beside the field on iPhone/iPad. New playlists start with
+no guide fields; Add guide reveals the first, then Add another guide reveals
+additional fields. Existing guides remain visible when editing. Guide mapping
+on mobile is offered only when explicit or discovered guides exist. Both playlist editors
 limit guide fields to 32 and retain explicit guide priority. Adding a URL still
 checks and saves in one action; canceling or failing validation writes nothing.
 Add/save/import and server-check actions use the app's filled primary pill,
@@ -306,7 +399,8 @@ is no prior in-memory history to migrate on the first updated launch.
   Channel-list entries can also point to HLS streams.
   Playlist downloads parse incrementally, with bounded line buffering rather
   than a retained raw response, full decoded string and split-line array.
-  Imports accept up to 100,000 entries and 128 MiB, with a 64 KiB line bound.
+  Legacy source imports accept up to 100,000 entries and 128 MiB, with a 64 KiB
+  line bound. New IPTV account imports use the disk-backed path described above.
   An exact 100,000-entry network fixture exceeds the previous 20 MiB ceiling
   without truncation. Parsed response caching has a separate 64 MiB budget;
   guide bodies retain their existing limits and cannot reuse playlist validators.
@@ -672,6 +766,26 @@ including when a native tab keeps its view alive. Ordinary playback tears down
 on background entry; explicit mobile PiP/AirPlay follows the authorization-gated
 continuation policy below.
 
+## IPTV compatibility checks
+
+`ProviderIPTVTests` includes controlled Basic, bearer, cookie, custom-header,
+signed-query and Xtream authentication cases. They exercise sign-in, catalogue
+import, provider restoration and actual requests through the playback proxy;
+rejected/expired accounts and HTML login pages cannot create successful sessions.
+All credentials are synthetic. This does not certify a particular paid provider,
+DRM service or browser-based login flow.
+
+For an opt-in public corpus, run `python3 tools/iptv-playlist-corpus.py` before
+running `ProviderIPTVTests` through the package test runner. It captures nine
+public channel lists, with byte counts, hashes and independent HTTP-entry counts,
+under `.build/iptv-playlist-corpus`. The test replays those exact snapshots through
+account sign-in, channel enrollment and the guide loader, checking that channels
+are retained without inventing movie/TV libraries. It makes no external requests.
+The downloader fails explicitly for unavailable sources; ordinary runs skip only
+the corpus test when no snapshot manifest exists. Captured catalogues stay out of
+Git. These are import/routing checks, not a claim that every listed stream is
+online, playable in every country, or fast on every physical device.
+
 ## Developer test inputs and artwork
 
 These public addresses are developer test inputs only. They are not offered
@@ -853,6 +967,16 @@ encrypted fields in an isolated zone; old clients cannot erase them.
 Parental approvals, history grants and channel health remain device-local.
 Server sign-in credentials retain their existing authorization flow.
 
+These generated-channel snapshots are different from IPTV catalogue/guide
+downloads: they carry immutable library-item inputs so devices agree on the
+generated schedule, not video files. Authenticated IPTV accounts use the normal
+account-descriptor and credential-transfer paths; their disk-backed catalogues
+and downloaded guides remain local. The imported files mentioned below belong
+to the older playlist-source transfer path, not the newer IPTV account catalogue.
+For genuinely empty onboarding and separate cloud-restoration tests, use the
+[cloud-enabled first-user cases](per-branch-builds.md#cloud-enabled-first-user-cases)
+rather than resetting the normal app or disabling sync.
+
 Imported files use immutable, bounded chunks and a manifest containing their
 byte count and checksum. A source is installed only after the complete file
 verifies, regardless of delivery order. Imported identities cannot replace
@@ -946,7 +1070,7 @@ results distinct. Only confidently missing streams can be automatically hidden;
 restoring a scan-hidden channel does not change a manual hide. Scanner network
 permissions do not grant the media engine a transport capability it lacks.
 
-Xtream-compatible login, DVB-I, DASH-specific integration, catch-up,
+DVB-I, DASH-specific integration, catch-up,
 programme-rating restrictions and recording management are outside this
 implementation. Source-configuration PIN protection is not a
 programme-content rating filter. Real tuner installations remain a validation

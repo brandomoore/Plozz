@@ -11,6 +11,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
     case plex
     case emby
     case silo
+    case iptv
     /// A local network media share (SMB today). Deliberately **second-class**:
     /// there's no server doing library management, metadata, or watch-state, so
     /// Plozz scans the files itself and synthesises everything a first-class
@@ -23,6 +24,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
         case .emby: return "Emby"
         case .plex: return "Plex"
         case .silo: return "Silo"
+        case .iptv: return "IPTV"
         case .mediaShare: return "Media Share"
         }
     }
@@ -43,7 +45,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
     public var metadataRichnessRank: Int {
         switch self {
         case .jellyfin, .emby, .plex, .silo: return 1
-        case .mediaShare: return 0
+        case .mediaShare, .iptv: return 0
         }
     }
 
@@ -76,7 +78,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable {
     public var playbackInfoIsIdempotent: Bool {
         switch self {
         case .plex, .mediaShare: return true
-        case .jellyfin, .emby, .silo: return false
+        case .jellyfin, .emby, .silo, .iptv: return false
         }
     }
 }

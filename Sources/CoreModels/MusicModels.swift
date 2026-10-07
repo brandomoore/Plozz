@@ -136,6 +136,9 @@ public struct MusicAlbum: Codable, Hashable, Identifiable, Sendable {
 /// A single playable audio track (Jellyfin `Audio`, Plex leaf `track`).
 public struct MusicTrack: Codable, Hashable, Identifiable, Sendable {
     public var id: String
+    /// Playlist occurrence identity, separate from the provider's playable `id`.
+    /// Assigned when a playlist is loaded so repeated songs remain distinct.
+    public var playlistEntryID: String?
     public var title: String  // l10n:content — track title from the server
     public var albumTitle: String?
     public var albumID: String?
@@ -181,6 +184,11 @@ public struct MusicTrack: Codable, Hashable, Identifiable, Sendable {
         var copy = self
         copy.sourceAccountID = accountID
         return copy
+    }
+
+    public func isSameQueueEntry(as other: MusicTrack) -> Bool {
+        id == other.id && sourceAccountID == other.sourceAccountID
+            && playlistEntryID == other.playlistEntryID
     }
 
     /// A human-friendly subtitle line, e.g. `Artist · Album`.

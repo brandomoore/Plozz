@@ -34,4 +34,20 @@ public extension EnvironmentValues {
         set { self[PlozzCardStyleKey.self] = newValue }
     }
 }
+
+private struct AdaptiveCardSurface: ViewModifier {
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
+    @Environment(\.plozzReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        content.environment(\.plozzGradientCardSurface, gradientEnabled && !reduceTransparency)
+    }
+}
+
+public extension View {
+    /// Shares detail cards' gradient wash, with opaque surfaces when transparency is disabled.
+    func plozzAdaptiveCardSurface() -> some View {
+        modifier(AdaptiveCardSurface())
+    }
+}
 #endif

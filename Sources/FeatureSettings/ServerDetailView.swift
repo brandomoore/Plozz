@@ -18,6 +18,7 @@ struct ServerDetailView: View {
     let context: SettingsContext
     let serverKey: String
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
 
     /// Account the user has asked to sign out, captured at button-tap so the
     /// confirmation alert can show its name + recompute "is this the last
@@ -187,6 +188,8 @@ struct ServerDetailView: View {
             return "Emby signs in per profile, each with its own credentials. Choose what shows on your Home under Profile › Your Libraries."
         case .silo:
             return "Each Silo connection uses the household profile selected during pairing. Its library access and watch history stay on Silo."
+        case .iptv:
+            return "Your provider supplies channels, movies, and series. Watch history stays separate for each Plozz profile on this device."
         case .mediaShare:
             if transport == .nfs {
                 return "This NFS export connects without a sign-in — anyone on this Apple TV can browse it. Choose what shows on your Home under Profile › Your Libraries."
@@ -280,6 +283,11 @@ struct ServerDetailView: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: 8)
+            if account.server.provider == .iptv, let providerSetupRouter {
+                Button("Edit connection", systemImage: "pencil") {
+                    providerSetupRouter.connectIPTV(account: account)
+                }
+            }
             if account.id == context.activeAccountID {
                 Label("Primary", systemImage: "star.fill")
                     .labelStyle(.iconOnly)

@@ -150,6 +150,7 @@ public final class LibraryChannelService {
     }
 
     public func load() async throws {
+        let started = Date()
         let stamp = generation
         try check(stamp)
         let previous = definitions
@@ -169,6 +170,8 @@ public final class LibraryChannelService {
             else { unavailable = true }
             try check(stamp)
         }
+        HandoffDiagnostics.emit(
+            "LIVE_TV event=librarySnapshotsReady snapshots=\(cached.count) items=\(retainedItemCount) elapsed=\(HandoffDiagnostics.ms(started))")
         let loadedDefinitions = loaded
         let cachedSnapshots = cached
         let scheduleTask = Task.detached(priority: .utility) {
@@ -187,6 +190,8 @@ public final class LibraryChannelService {
         } onCancel: {
             scheduleTask.cancel()
         }
+        HandoffDiagnostics.emit(
+            "LIVE_TV event=librarySchedulesReady channels=\(schedules.count) elapsed=\(HandoffDiagnostics.ms(started))")
         try check(stamp)
         guard definitions == previous, try store.load() == stored else {
             throw LibraryChannelError.publicationConflict

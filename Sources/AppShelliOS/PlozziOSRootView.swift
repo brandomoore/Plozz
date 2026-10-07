@@ -26,6 +26,8 @@ public struct PlozziOSRootView: View {
     @State private var heroTrailerController = HeroTrailerController()
     @State private var sidebarGeometry = PlozziOSSidebarGeometryModel()
     @State private var showingAddServer = false
+    @State private var providerSetupRouter = ManagedProviderSetupRouter()
+    @State private var iptvSetup: ManagedProviderSetupRouter.Request?
     @State private var addServerPresentationColorScheme: ColorScheme = .dark
     @State private var showingSettings = false
     /// Owned here rather than in the tab shell so `receivePairingURL` can see
@@ -62,12 +64,7 @@ public struct PlozziOSRootView: View {
     public var body: some View {
         Group {
             if !appModel.canEnterApp {
-                PlozziOSOnboardingView(
-                    appModel: appModel,
-                    onStandalonePlayback: PlozziOSAppModel.isStandalonePlaybackAvailable
-                        ? { _ = appModel.enterStandalonePlayback() }
-                        : nil
-                )
+                PlozziOSOnboardingView(appModel: appModel)
             } else if appModel.mustChooseProfile
                 || (appModel.requiresLaunchProfileSelection
                     && !appModel.didCompleteLaunchProfileSelection) {
@@ -108,6 +105,13 @@ public struct PlozziOSRootView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .environment(\.managedProviderSetupRouter, providerSetupRouter)
+        .onChange(of: providerSetupRouter.request?.id) { _, _ in
+            guard let request = providerSetupRouter.request else { return }
+            iptvSetup = request
+            providerSetupRouter.request = nil
+            showAddServer()
+        }
         // One opaque cover for profile PIN then Plex PIN. Separate presentations
         // briefly exposed the tab shell between them.
         .fullScreenCover(isPresented: profileAccessGateBinding) {
@@ -288,14 +292,17 @@ public struct PlozziOSRootView: View {
             isPresented: $showingAddServer,
             onDismiss: {
                 serverSetupSeed = nil
+                iptvSetup = nil
                 appModel.finishManagedServerPresentation()
                 consumeDeferredPairingURL()
             }
         ) {
             AddServerView(
                 appModel: appModel,
-                initialProvider: serverSetupSeed?.provider ?? .jellyfin,
-                initialAddress: serverSetupSeed?.candidateBaseURLs.first?.absoluteString ?? ""
+                initialProvider: iptvSetup == nil ? serverSetupSeed?.provider ?? .jellyfin : .iptv,
+                initialAddress: serverSetupSeed?.candidateBaseURLs.first?.absoluteString ?? "",
+                initialIPTVPlaylist: iptvSetup?.playlist, initialIPTVAccount: iptvSetup?.account,
+                initialIPTVMode: iptvSetup?.mode ?? .playlist
             )
                 .preferredColorScheme(addServerPresentationColorScheme)
                 .presentationSizing(.page)
@@ -729,7 +736,7 @@ private struct PlozziOSScreenshotTabRouter: View {
     }
 }
 
-private struct PlozziOSTabShell: View {
+struct PlozziOSTabShell: View {
     @Environment(\.themePalette) private var palette
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(PlozziOSSidebarGeometryModel.self)
@@ -742,6 +749,8 @@ private struct PlozziOSTabShell: View {
     @State private var moreDestination: PlozziOSDestination?
     @State private var lastContentDestination: PlozziOSDestination = .home
     @State private var retainsExplicitLiveTVEntry = false
+    @State private var retainsExplicitHomeEntry = false
+    @State private var hasChosenNavigationDestination = false
     @State private var sharedHomeViewModel: HomeViewModel
     /// The profile picker opened deliberately (from Settings) rather than at
     /// launch. Presented from the ROOT so the Parental PIN and profile-lock gates
@@ -793,7 +802,8 @@ private struct PlozziOSTabShell: View {
             liveTV: .liveTV,
             fallback: .settings,
             admission: appModel.admissionContext,
-            hasPendingLiveTVEntry: appModel.pendingStandaloneLiveTVEntry
+            hasPendingLiveTVEntry: appModel.pendingStandaloneLiveTVEntry,
+            prefersLiveTV: Self.navigationAvailability(appModel: appModel).prefersLiveTV
         )
         _selectedDestination = State(initialValue: initial)
         _lastContentDestination = State(initialValue: initial)
@@ -803,10 +813,18 @@ private struct PlozziOSTabShell: View {
     }
 
     private static func configuredDestinations(
-        appModel: PlozziOSAppModel
+        appModel: PlozziOSAppModel,
+        retainingWatchlist: Bool = false
     ) -> [PlozziOSDestination] {
-        appModel.settings.navigation
-            .librarySections(available: NavigationDestinationDefaults.iOS).enabled
+        let navigation = appModel.settings.navigation
+        return navigation.libraryLayout.resolvingAutomaticVisibility(
+            hidden: navigationAvailability(appModel: appModel).automaticallyHiddenKeys,
+            retainingWatchlist: retainingWatchlist
+        )
+            .sections(
+                available: NavigationDestinationDefaults.iOS,
+                requiredEnabled: navigation.requiredNavigationKeys
+            ).enabled
             .compactMap { key -> PlozziOSDestination? in
                 switch key {
                 case NavigationLibraryLayout.homeKey: return .home
@@ -820,8 +838,32 @@ private struct PlozziOSTabShell: View {
             }
     }
 
+    private static func navigationAvailability(appModel: PlozziOSAppModel) -> NavigationContentAvailability {
+        let navigation = appModel.settings.navigation
+        return NavigationContentAvailability(
+            accounts: appModel.accountsProviders.homeAccounts.map(\.account),
+            libraries: navigation.contentLibraries,
+            discoveredAccountIDs: navigation.discoveredAccountIDs,
+            disabledLibraryKeys: appModel.settings.homeVisibility.visibility.disabledKeys,
+            hasDiscoverySearch: appModel.seerService.isConfigured,
+            hasWatchlistItems: navigation.hasWatchlistItems
+        )
+    }
+
+    private func refreshWatchlistNavigation() {
+        if let hasItems = appModel.navigationWatchlistHasItems {
+            appModel.settings.navigation.hasWatchlistItems = hasItems
+        }
+    }
+
     private var tabDestinations: [PlozziOSDestination] {
-        let configured = Self.configuredDestinations(appModel: appModel)
+        var configured = Self.configuredDestinations(
+            appModel: appModel,
+            retainingWatchlist: selectedDestination == .watchlist && !isShowingMorePage
+        )
+        if retainsExplicitHomeEntry, !configured.contains(.home) {
+            configured.insert(.home, at: 0)
+        }
         return AppAdmissionNavigation.destinations(
             configured,
             liveTV: .liveTV,
@@ -860,8 +902,9 @@ private struct PlozziOSTabShell: View {
             set: { selection in
                 switch selection {
                 case .destination(let destination):
-                    selectDestination(destination)
+                    openDestination(destination)
                 case .more:
+                    hasChosenNavigationDestination = true
                     if isMoreSelected {
                         moreDestination = nil
                     } else if let moreDestination {
@@ -872,6 +915,15 @@ private struct PlozziOSTabShell: View {
                 }
             }
         )
+    }
+
+    private func openDestination(_ destination: PlozziOSDestination) {
+        hasChosenNavigationDestination = true
+        if destination == .settings {
+            showSettings()
+        } else {
+            selectDestination(destination)
+        }
     }
 
     private func selectDestination(_ destination: PlozziOSDestination) {
@@ -1033,7 +1085,7 @@ private struct PlozziOSTabShell: View {
         )
     }
 
-    var body: some View {
+    private var contentAwareTabs: some View {
         TabView(selection: destinationSelection) {
             ForEach(directTabDestinations) { destination in
                 if destination == .search && tabDestinations.last == .search {
@@ -1067,10 +1119,7 @@ private struct PlozziOSTabShell: View {
                     NavigationStack {
                         PlozziOSMorePage(
                             destinations: overflowDestinations,
-                            onSelect: { destination in
-                                if destination == .settings { showSettings() }
-                                else { selectDestination(destination) }
-                            },
+                            onSelect: openDestination,
                             onShowSettings: showSettings
                         )
                         .navigationDestination(item: $moreDestination) { destination in
@@ -1083,6 +1132,48 @@ private struct PlozziOSTabShell: View {
 
         .tabViewStyle(.tabBarOnly)
         .environment(sharedHomeViewModel)
+        .onAppear { refreshWatchlistNavigation() }
+        .onReceive(NotificationCenter.default.publisher(for: .universalWatchlistDidChange)) { _ in
+            refreshWatchlistNavigation()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .universalWatchlistCacheDidLoad)) { _ in
+            refreshWatchlistNavigation()
+        }
+        .onChange(of: Self.navigationAvailability(appModel: appModel), initial: true) { _, availability in
+            appModel.settings.navigation.automaticallyHiddenKeys = availability.automaticallyHiddenKeys
+        }
+        .task(id: homeContentIdentity, priority: .utility) {
+            await refreshNavigationLibraries()
+        }
+    }
+
+    private func refreshNavigationLibraries() async {
+        let navigation = appModel.settings.navigation
+        let accounts = appModel.accountsProviders.homeAccounts
+        let accountIDs = Set(accounts.map(\.account.id))
+        let resolvesInitialCatalogue = !accountIDs.isEmpty
+            && accounts.allSatisfy { $0.account.server.provider == .iptv }
+            && !navigation.discoveredAccountIDs.isSuperset(of: accountIDs)
+        let discovered = await HomeAggregator().libraryDiscovery(from: accounts)
+        guard !Task.isCancelled, appModel.settings.navigation === navigation else { return }
+        navigation.updateContentLibraries(
+            discovered.libraries,
+            accountIDs: accountIDs,
+            unreachableAccountIDs: discovered.unreachableAccountIDs
+        )
+        if resolvesInitialCatalogue, !hasChosenNavigationDestination,
+           navigation.discoveredAccountIDs.isSuperset(of: accountIDs) {
+            selectDestination(AppAdmissionNavigation.initialSelection(
+                current: .home, visible: tabDestinations, liveTV: .liveTV, fallback: .settings,
+                admission: appModel.admissionContext,
+                hasPendingLiveTVEntry: appModel.pendingStandaloneLiveTVEntry,
+                prefersLiveTV: Self.navigationAvailability(appModel: appModel).prefersLiveTV
+            ))
+        }
+    }
+
+    var body: some View {
+        contentAwareTabs
         .onChange(of: appModel.pendingStandaloneLiveTVEntry, initial: true) { _, _ in
             consumeStandaloneEntryIfNeeded()
         }
@@ -1112,6 +1203,7 @@ private struct PlozziOSTabShell: View {
             } else {
                 retainsExplicitLiveTVEntry = false
             }
+            if destination != .home { retainsExplicitHomeEntry = false }
         }
         .onChange(of: homeContentIdentity) {
             _, _ in
@@ -1133,7 +1225,7 @@ private struct PlozziOSTabShell: View {
                 director: appModel.screenshotDirector,
                 onSelect: { name in
                     guard let destination = PlozziOSDestination(rawValue: name) else { return }
-                    selectDestination(destination)
+                    openDestination(destination)
                 }
             )
             #if DEBUG
@@ -1142,6 +1234,7 @@ private struct PlozziOSTabShell: View {
             // owns the tab selection.
             .onAppear {
                 appModel.screenshotDirector.selectHomeTab = {
+                    retainsExplicitHomeEntry = true
                     selectDestination(.home)
                 }
             }
@@ -1358,6 +1451,7 @@ private struct PlozziOSTabShell: View {
     }
 
     private func showSettings() {
+        hasChosenNavigationDestination = true
         settingsPresentationColorScheme = settingsPalette.isLight ? .light : .dark
         showingSettings = true
     }
@@ -1497,7 +1591,7 @@ private struct PlozziOSWatchlistLandingView: View {
         }
         .navigationTitle("Watchlist")
         .environment(\.plozzCardCaptionView, .watchlist)
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 PlozziOSSettingsAvatarButton(action: onShowSettings)
@@ -1591,6 +1685,7 @@ private struct PlozziOSHomeLandingView: View {
                 }
             }
             .navigationTitle("Home")
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     PlozziOSSettingsAvatarButton(action: onShowSettings)

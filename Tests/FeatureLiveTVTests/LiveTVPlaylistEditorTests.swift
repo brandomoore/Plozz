@@ -1,10 +1,18 @@
 #if DEBUG && canImport(SwiftUI)
 import FeatureLiveTVCore
+import CoreModels
 import XCTest
 @testable import FeatureLiveTV
 
 @MainActor
 final class LiveTVPlaylistEditorTests: XCTestCase {
+    func testOptionalGuideStartsAbsentAndSavedGuidesRemainVisible() {
+        XCTAssertTrue(LiveTVPlaylistEditorModel().guideAddresses.isEmpty)
+        let guide = URL(string: "https://example.test/guide.xml")!
+        let model = LiveTVPlaylistEditorModel(guideURLs: [guide])
+        XCTAssertEqual(model.guideAddresses.map(\.address), [guide.absoluteString])
+    }
+
     func testCheckingPlaylistAllowsNoGuideAndKeepsCredentialsInTheURL() async throws {
         let loader = PlaylistEditorLoader(channels: [LiveTVPrototypeModel().channels[0]])
         let model = LiveTVPlaylistEditorModel(loader: loader)
@@ -33,7 +41,7 @@ final class LiveTVPlaylistEditorTests: XCTestCase {
             XCTAssertFalse(model.isChecking)
         }
         model.playlistAddress = "https://example.test/list"
-        model.guideAddresses[0].address = "not a guide URL"
+        model.guideAddresses.append(.init(address: "not a guide URL"))
         await model.check()
         XCTAssertEqual(model.issue, .invalidGuideAddress)
         let requests = await loader.playlistRequests
@@ -47,7 +55,7 @@ final class LiveTVPlaylistEditorTests: XCTestCase {
         )
         await model.check()
         model.name = "My channels"
-        model.guideAddresses[0].address = "https://example.test/guide.xml.gz"
+        model.guideAddresses.append(.init(address: "https://example.test/guide.xml.gz"))
         let review = try XCTUnwrap(model.currentReview)
         XCTAssertEqual(review.input.name, "My channels")
         XCTAssertEqual(review.input.guideURLs.count, 1)
@@ -61,14 +69,19 @@ final class LiveTVPlaylistEditorTests: XCTestCase {
     }
 
     func testEmptyPlaylistCannotBeSavedAsWorkingSetup() async {
+        let diagnostics = IPTVSetupDiagnostics()
+        let buffer = PlaylistSetupBuffer()
+        diagnostics.start { buffer.append($0) }
         let model = LiveTVPlaylistEditorModel(
             playlistURL: URL(string: "https://example.test/empty"),
+            setupDiagnostics: diagnostics,
             loader: PlaylistEditorLoader(channels: [])
         )
         await model.check()
         XCTAssertEqual(model.issue, .noChannels)
         XCTAssertNil(model.currentReview)
         XCTAssertFalse(model.save { _ in XCTFail("Empty playlist must not be saved") })
+        XCTAssertTrue(buffer.values.contains { $0.failure?.reason == .empty && $0.entries == 0 })
     }
 
     func testInvalidNameAndDuplicateGuidesFailBeforeDownloading() async {
@@ -110,7 +123,7 @@ final class LiveTVPlaylistEditorTests: XCTestCase {
     func testHTTPWarningCoversPlaylistAndGuideLinks() {
         let model = LiveTVPlaylistEditorModel(playlistURL: URL(string: "https://example.test/list"))
         XCTAssertFalse(model.usesUnencryptedAddresses)
-        model.guideAddresses[0].address = "http://example.test/guide.xml"
+        model.guideAddresses.append(.init(address: "http://example.test/guide.xml"))
         XCTAssertTrue(model.usesUnencryptedAddresses)
         model.guideAddresses[0].address = ""
         model.playlistAddress = "http://example.test/list"
@@ -119,22 +132,32 @@ final class LiveTVPlaylistEditorTests: XCTestCase {
 
     func testSaveFailureKeepsTheCheckedSourceAvailableForRetry() async {
         enum Failure: Error { case storage }
+        let diagnostics = IPTVSetupDiagnostics()
+        let buffer = PlaylistSetupBuffer()
+        diagnostics.start { buffer.append($0) }
         let model = LiveTVPlaylistEditorModel(
             playlistURL: URL(string: "https://example.test/list"),
+            setupDiagnostics: diagnostics,
             loader: PlaylistEditorLoader(channels: [LiveTVPrototypeModel().channels[0]])
         )
         await model.check()
         XCTAssertFalse(model.save { _ in throw Failure.storage })
         XCTAssertEqual(model.issue, .saveFailed)
+        XCTAssertEqual(buffer.values.last?.failure?.reason, .storage)
+        XCTAssertEqual(buffer.values.last?.stage, .persistence)
         XCTAssertNotNil(model.currentReview)
         XCTAssertTrue(model.save { _ in })
         XCTAssertNil(model.issue)
+        XCTAssertEqual(buffer.values.last?.outcome, .succeeded)
     }
 
     func testCancelledCheckCannotPublishAReadySource() async {
+        let diagnostics = IPTVSetupDiagnostics()
+        let buffer = PlaylistSetupBuffer()
+        diagnostics.start { buffer.append($0) }
         let loader = PlaylistEditorLoader(channels: [LiveTVPrototypeModel().channels[0]], pauses: true)
         let model = LiveTVPlaylistEditorModel(
-            playlistURL: URL(string: "https://example.test/list"), loader: loader
+            playlistURL: URL(string: "https://example.test/list"), setupDiagnostics: diagnostics, loader: loader
         )
         let task = Task { await model.check() }
         await loader.waitForRequest()
@@ -144,6 +167,15 @@ final class LiveTVPlaylistEditorTests: XCTestCase {
         XCTAssertFalse(model.isChecking)
         XCTAssertNil(model.currentReview)
         XCTAssertNil(model.issue)
+        XCTAssertEqual(buffer.values.last?.outcome, .cancelled)
+        XCTAssertFalse(buffer.values.contains { $0.outcome == .failed })
+    }
+
+    private final class PlaylistSetupBuffer: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [IPTVSetupDiagnostic] = []
+        var values: [IPTVSetupDiagnostic] { lock.withLock { storage } }
+        func append(_ value: IPTVSetupDiagnostic) { lock.withLock { storage.append(value) } }
     }
 
     func testChangedAddressCannotReuseAnInFlightCheck() async {

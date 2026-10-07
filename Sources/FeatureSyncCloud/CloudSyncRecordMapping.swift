@@ -81,6 +81,17 @@ public struct CloudSyncSchemaDescriptor: Sendable, Equatable {
         CKRecordZone.ID(zoneName: zoneName)
     }
 
+    public func scoped(to installation: AppInstallation) -> Self {
+        guard installation.firstRunCaseID != nil else { return self }
+        return Self(
+            recordType: recordType, encryptsValue: encryptsValue,
+            zoneName: installation.cloudZoneName(zoneName),
+            fieldKind: fieldKind, fieldValue: fieldValue, fieldEditedAt: fieldEditedAt,
+            legacyZoneNames: [], kindDerivation: kindDerivation,
+            maximumPayloadBytes: maximumPayloadBytes
+        )
+    }
+
     public var legacyZoneIDs: [CKRecordZone.ID] {
         legacyZoneNames.map { CKRecordZone.ID(zoneName: $0) }
     }

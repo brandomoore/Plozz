@@ -696,9 +696,7 @@ public actor LiveTVIndexedCache {
         let tokens = LiveTVProgramSearchMatcher(query).tokens
         guard !tokens.isEmpty else { return [] }
         guard range.duration > 0, range.duration <= 32 * 86_400, sourceIDs.count <= 3_200,
-              range.start.timeIntervalSince1970.isFinite, range.end.timeIntervalSince1970.isFinite,
-              (allowedChannelIDs?.count ?? 0) <= LiveTVPlaylistParser.maximumEntries,
-              (selectedSourceByChannel?.count ?? 0) <= LiveTVPlaylistParser.maximumEntries else {
+              range.start.timeIntervalSince1970.isFinite, range.end.timeIntervalSince1970.isFinite else {
             throw LiveTVCacheError.invalidRange
         }
         let match = tokens.map { "\"\($0.prefix(128))\"*" }.joined(separator: " AND ")

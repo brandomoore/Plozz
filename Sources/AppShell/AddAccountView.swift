@@ -7,23 +7,22 @@ import FeatureAuth
 import FeatureDiscovery
 import FeatureDiscoveryCore
 
-/// Entry point for adding an account, letting the user pick which backend to
-/// connect: **Jellyfin**, **Emby**, **Plex**, or a direct media share.
-/// (plex.tv PIN link). Selecting a provider pushes its own sign-in flow; both
-/// ultimately hand back through `AppState` and join the multi-account list.
+/// Chooses a provider and opens its connection flow before adding the account.
 struct AddAccountView: View {
     let deviceID: String
     let canReturnToApp: Bool
     let signedInServers: [SignedInServer]
     let onMediaBrowserServerSelected: (MediaServer) -> Void
     let onPlexAuthenticated: (UserSession) -> Void
+    let onIPTVAuthenticated: (UserSession) throws -> Void
     let onPlexAuthenticatedMany: ([UserSession]) -> Void
     let onShareConfigured: (ShareDraft) -> Void
     let onWebDAVShareConfigured: (WebDAVShareConfiguration) -> Void
     let onMediaShareConfigured: (MediaShareOnboardingResult) -> Void
     let onCancel: () -> Void
     var onSetUpFromAnotherDevice: (() -> Void)?
-    var onStandalonePlayback: (() -> Void)?
+    let initialIPTVPlaylist: LiveTVPlaylistSource?
+    let reconnectingIPTV: UserSession?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var choice: ProviderKind?
@@ -37,29 +36,33 @@ struct AddAccountView: View {
         deviceID: String,
         canReturnToApp: Bool,
         initialProvider: ProviderKind? = nil,
+        initialIPTVPlaylist: LiveTVPlaylistSource? = nil,
+        reconnectingIPTV: UserSession? = nil,
         signedInServers: [SignedInServer] = [],
         onMediaBrowserServerSelected: @escaping (MediaServer) -> Void,
         onPlexAuthenticated: @escaping (UserSession) -> Void,
+        onIPTVAuthenticated: ((UserSession) throws -> Void)? = nil,
         onPlexAuthenticatedMany: @escaping ([UserSession]) -> Void = { _ in },
         onShareConfigured: @escaping (ShareDraft) -> Void = { _ in },
         onWebDAVShareConfigured: @escaping (WebDAVShareConfiguration) -> Void = { _ in },
         onMediaShareConfigured: @escaping (MediaShareOnboardingResult) -> Void = { _ in },
         onCancel: @escaping () -> Void,
-        onSetUpFromAnotherDevice: (() -> Void)? = nil,
-        onStandalonePlayback: (() -> Void)? = nil
+        onSetUpFromAnotherDevice: (() -> Void)? = nil
     ) {
         self.deviceID = deviceID
+        self.initialIPTVPlaylist = initialIPTVPlaylist
+        self.reconnectingIPTV = reconnectingIPTV
         self.canReturnToApp = canReturnToApp
         self.signedInServers = signedInServers
         self.onMediaBrowserServerSelected = onMediaBrowserServerSelected
         self.onPlexAuthenticated = onPlexAuthenticated
+        self.onIPTVAuthenticated = onIPTVAuthenticated ?? onPlexAuthenticated
         self.onPlexAuthenticatedMany = onPlexAuthenticatedMany
         self.onShareConfigured = onShareConfigured
         self.onWebDAVShareConfigured = onWebDAVShareConfigured
         self.onMediaShareConfigured = onMediaShareConfigured
         self.onCancel = onCancel
         self.onSetUpFromAnotherDevice = onSetUpFromAnotherDevice
-        self.onStandalonePlayback = onStandalonePlayback
         // Seed the flow's starting screen. This also lets "Add Another Plex
         // Account" enter Plex linking directly instead of returning to the
         // provider chooser.
@@ -121,6 +124,16 @@ struct AddAccountView: View {
                 signedInServers: signedInServers.filter { $0.server.provider == .silo },
                 onBack: navigateBackToChooser
             ) { onMediaBrowserServerSelected($0) }
+        case .iptv:
+            IPTVSignInView(
+                deviceID: deviceID, address: initialIPTVPlaylist?.playlistURL.absoluteString ?? "",
+                name: initialIPTVPlaylist?.name ?? "",
+                guideAddress: initialIPTVPlaylist?.guideURLs.first?.absoluteString ?? "",
+                guideURLs: initialIPTVPlaylist?.guideURLs ?? [],
+                reconnecting: reconnectingIPTV,
+                discoversPlaylistGuides: initialIPTVPlaylist?.discoversPlaylistGuides ?? true,
+                onAuthenticated: onIPTVAuthenticated, onCancel: navigateBackToChooser
+            )
         case .mediaShare:
             AddMediaShareView(
                 isPageReady: pageIsReady,
@@ -139,8 +152,7 @@ struct AddAccountView: View {
             isPreparingPlex: isPreparingPlex,
             onBack: cancelPreparationOrReturn,
             onSelect: navigate(to:),
-            onSetUpFromAnotherDevice: onSetUpFromAnotherDevice,
-            onStandalonePlayback: onStandalonePlayback
+            onSetUpFromAnotherDevice: onSetUpFromAnotherDevice
         )
     }
 
@@ -158,6 +170,7 @@ struct AddAccountView: View {
         case .emby: "emby"
         case .plex: "plex"
         case .silo: "silo"
+        case .iptv: "iptv"
         case .mediaShare: "mediaShare"
         }
     }
@@ -220,8 +233,8 @@ private enum ProviderChooserFocus: Hashable {
     case emby
     case plex
     case silo
+    case iptv
     case mediaShare
-    case standalonePlayback
     case setUpFromAnotherDevice
 
     init(provider: ProviderKind) {
@@ -230,6 +243,7 @@ private enum ProviderChooserFocus: Hashable {
         case .emby: self = .emby
         case .plex: self = .plex
         case .silo: self = .silo
+        case .iptv: self = .iptv
         case .mediaShare: self = .mediaShare
         }
     }
@@ -242,7 +256,6 @@ private struct ProviderChooserView: View {
     let onBack: () -> Void
     let onSelect: (ProviderKind) -> Void
     var onSetUpFromAnotherDevice: (() -> Void)?
-    var onStandalonePlayback: (() -> Void)?
     @FocusState private var focusedControl: ProviderChooserFocus?
 
     var body: some View {
@@ -255,8 +268,7 @@ private struct ProviderChooserView: View {
                 ProviderChoiceGroup(
                     focusedControl: $focusedControl,
                     isPreparingPlex: isPreparingPlex,
-                    onSelect: onSelect,
-                    onStandalonePlayback: showsBranding ? onStandalonePlayback : nil
+                    onSelect: onSelect
                 )
                 .allowsHitTesting(!isPreparingPlex)
             }
@@ -298,8 +310,8 @@ private struct ProviderChooserView: View {
              (.some(.emby), .left),
              (.some(.plex), .left),
              (.some(.silo), .left),
-             (.some(.mediaShare), .left),
-             (.some(.standalonePlayback), .left):
+             (.some(.iptv), .left),
+             (.some(.mediaShare), .left):
             focusedControl = .back
         case (.some(.back), .right):
             focusedControl = .jellyfin
@@ -340,7 +352,6 @@ private struct ProviderChoiceGroup: View {
     let focusedControl: FocusState<ProviderChooserFocus?>.Binding
     let isPreparingPlex: Bool
     let onSelect: (ProviderKind) -> Void
-    var onStandalonePlayback: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -393,30 +404,9 @@ private struct ProviderChoiceGroup: View {
                 onSelect(.mediaShare)
             }
 
-            if let onStandalonePlayback {
-                Divider().padding(.horizontal, 1)
-                Button(action: onStandalonePlayback) {
-                    HStack(spacing: 24) {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
-                            .font(.system(size: 42))
-                            .frame(width: 64, height: 64)
-                        Text("Live TV / IPTV")
-                            .font(.system(size: 32, weight: .semibold))
-                        Spacer(minLength: 24)
-                        Image(systemName: "chevron.forward")
-                            .font(.system(size: 22, weight: .semibold))
-                            .settingsRowSecondary()
-                    }
-                    .padding(.horizontal, 24)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 108)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
-                .focused(focusedControl, equals: .standalonePlayback)
-                .disabled(isPreparingPlex)
-                .accessibilityHint("Use your own playlist without signing in to a media server.")
-                .padding(12)
+            Divider().padding(.horizontal, 1)
+            ProviderChoiceRow(provider: .iptv, height: 88, focusedControl: focusedControl) {
+                onSelect(.iptv)
             }
         }
         .frame(width: 720)

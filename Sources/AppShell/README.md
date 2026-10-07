@@ -77,6 +77,22 @@ and focus eligibility; lazy tab evaluations must not rebuild it per destination.
 Recompute from current account visibility and profile layout when the shell
 updates, rather than retaining a cache that could expose removed libraries.
 
+Home, Search, and Watchlist use shared, profile-scoped automatic visibility.
+Live-only IPTV opens Live TV; IPTV movies and series expose Home and Search.
+Search also remains available for configured Seerr discovery, and Plex keeps its
+Home discovery surface. Library metadata comes from the existing bounded
+navigation snapshot and library discovery, not a channel/title scan. Failed
+accounts retain their last-known libraries; removed accounts cannot contribute.
+
+An untouched Watchlist appears when the profile's hydrated local/native union
+has items. Removing its last item does not evict its open page: it hides after
+leaving, or on the next launch. Show and Hide are durable overrides; reordering
+another row never converts automatic visibility into a manual preference.
+Reset Navigation restores automatic defaults. Legacy hidden choices and
+explicit whole-navigation arrangements are retained on decoding; an untouched
+legacy default or library-only arrangement remains automatic. Runtime content
+facts and the temporary open-page exception are never synced as preferences.
+
 ## Pinned sidebar remote navigation
 
 At a visible pinned-navigation root, Back opens the menu on the current

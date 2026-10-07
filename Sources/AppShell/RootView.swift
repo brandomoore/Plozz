@@ -63,6 +63,7 @@ enum HomeRuntimeScope {
 /// Top-level view that renders one screen per `SessionState`.
 public struct RootView: View {
     @State private var appState: AppState
+    @State private var providerSetupRouter = ManagedProviderSetupRouter()
     @State private var showSyncReceive = false
     @State private var showSyncReceiveFromSettings = false
     @State private var showsMarkerPreview = false
@@ -448,7 +449,7 @@ public struct RootView: View {
                         audioController: appState.audioController,
                         homeLayoutStore: HomeLayoutStore(namespace: appState.profilesModel.activeNamespace),
                         homeContentStore: HomeContentStore(namespace: appState.profilesModel.activeNamespace),
-                        navigationLibrariesSnapshotStore: NavigationLibrariesSnapshotStore(namespace: appState.profilesModel.activeNamespace),
+                        watchlistHasItems: { appState.navigationWatchlistHasItems },
                         mediaItemActionHandler: appState.mediaItemActionHandler,
                         enqueueWatchMutation: { appState.enqueueWatchMutation($0) },
                         completeLibraryChannelPlayback: makeLibraryChannelCompletionHandler(
@@ -570,6 +571,12 @@ public struct RootView: View {
         }
         .background { AppBackground(palette: resolvedPalette) }
         .environment(\.themePalette, resolvedPalette)
+        .environment(\.managedProviderSetupRouter, providerSetupRouter)
+        .onChange(of: providerSetupRouter.request?.id) { _, _ in
+            guard let request = providerSetupRouter.request else { return }
+            providerSetupRouter.request = nil
+            appState.addAccount(provider: .iptv, playlist: request.playlist, iptvAccount: request.account)
+        }
         .environment(\.gradientBackgroundsEnabled, appState.profileSettings.themeModel.gradientEnabled)
         .environment(\.familyGuidanceProvider, appState.familyGuidance)
         .environment(\.detailHeaderSettings, appState.profileSettings.detailPageModel)
@@ -1114,9 +1121,25 @@ private struct OnboardingPageContent: View {
                 deviceID: appState.accountsProviders.deviceID,
                 canReturnToApp: canReturnToApp,
                 initialProvider: appState.pendingOnboardingProvider,
+                initialIPTVPlaylist: appState.pendingIPTVPlaylist,
+                reconnectingIPTV: appState.pendingIPTVAccount.map {
+                    $0.session(token: appState.accountsProviders.accountStore.token(for: $0.id) ?? "")
+                },
                 signedInServers: appState.signedInServers,
                 onMediaBrowserServerSelected: { server in appState.selectServer(server) },
                 onPlexAuthenticated: { session in appState.didAuthenticatePlex(session) },
+                onIPTVAuthenticated: { [profileID = appState.profilesModel.activeProfileID,
+                                       previous = appState.pendingIPTVAccount] session in
+                    guard appState.profilesModel.activeProfileID == profileID,
+                          previous.map({ original in
+                              appState.accountsProviders.accounts.contains {
+                                  $0.id == original.id && $0.credentialRevision == original.credentialRevision
+                              }
+                          }) != false,
+                          appState.didAuthenticate(session) else {
+                        throw IPTVAuthViewModel.CompletionError.persistence
+                    }
+                },
                 onPlexAuthenticatedMany: { sessions in appState.didAuthenticatePlexMany(sessions) },
                 onShareConfigured: { draft in
                     appState.didConfigureShare(
@@ -1173,10 +1196,7 @@ private struct OnboardingPageContent: View {
 
                 },
                 onCancel: { appState.cancelAuthentication() },
-                onSetUpFromAnotherDevice: onSetUpFromAnotherDevice,
-                onStandalonePlayback: AppState.isStandalonePlaybackAvailable && !canReturnToApp
-                    ? { _ = appState.enterStandalonePlayback() }
-                    : nil
+                onSetUpFromAnotherDevice: onSetUpFromAnotherDevice
             )
 
         case let .authenticating(server):

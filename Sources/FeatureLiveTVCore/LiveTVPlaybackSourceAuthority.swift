@@ -42,14 +42,14 @@ public final class LiveTVPlaybackSourceAuthority {
             }
             let latest = try sourceStore?.load() ?? configuration
             let allowed: Bool
-            if channel.source == .iptv {
-                allowed = try authorization(configuration: latest).allowsPlaylist(channel.configuredSourceID)
-            } else if let recorded = configuration.servers.first(where: {
+            if let recorded = configuration.servers.first(where: {
                 $0.id == channel.configuredSourceID && $0.isEnabled
             }) {
                 allowed = latest.servers.contains {
                     $0.id == recorded.id && $0.accountID == recorded.accountID && $0.isEnabled
                 }
+            } else if channel.source == .iptv {
+                allowed = try authorization(configuration: latest).allowsPlaylist(channel.configuredSourceID)
             } else {
                 allowed = false
             }

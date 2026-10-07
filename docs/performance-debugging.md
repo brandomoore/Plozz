@@ -65,6 +65,34 @@ crash-reporting consent and limited to one warning per category per reporter
 lifecycle. These measurements diagnose an unavailable input; a screenshot of the
 generic import error alone cannot establish which limit was reached.
 
+Temporary IPTV setup diagnostics are enabled for TestFlight builds **51 and 52**
+and local Debug verification, never App Store builds. Build 53 and later stop
+recording automatically; this is not a remote configuration switch. They reuse
+Share Crash Reports (including explicit opt-outs), not the manual Send Diagnostics
+action. A handled add/reconnect failure produces a warning with
+`report.kind:iptv-setup`; a crash or button press is not required.
+
+Only explicit URL, file, and Xtream account setup and legacy source check/save
+attempts establish the task-local context. Ordinary catalogue refresh, guide
+polling, playback, and browsing do not. Each attempt emits at most 16 stage
+breadcrumbs and one terminal breadcrumb. Only failed outcomes create issues:
+success and cancellation do not. A reporter lifecycle accepts at most 20 attempts
+and 10 distinct failure summaries, deduplicated by source/authentication kind, entry point,
+stage, reason, HTTP status, and network code. These are bounded samples, not
+population-wide success/failure rates.
+
+The closed payload contains source/authentication categories, add/edit entry
+point, phase, outcome, elapsed/phase milliseconds, available entry/skip counts,
+the most recently measured playlist input size, request count, final HTTP status,
+coarse response MIME category, and an allowlisted reason/numeric network code.
+Unavailable measurements stay absent. It never contains URLs, hostnames, account
+or profile IDs, filenames, header names/values, credentials, channel names, bodies,
+or arbitrary error descriptions. Counters are recorded at parser/library
+completion, never per channel; no extra requests, timers, disk logs, or tracing
+are added. Restarting reporting invalidates old attempts instead of replaying
+them. The final Sentry scrub revalidates every field and preserves only coarse
+app/OS/hardware/screen tags and the existing numeric memory evidence.
+
 Missing breadcrumbs in a shared issue or formatted summary are not proof that
 the original event contained none. Check the event and its debug images: an app
 image with `debug_status: missing` specifically means Sentry lacks its matching
@@ -754,7 +782,7 @@ before input. It does not navigate to the control for you.
 
 **Do not tell someone to reproduce while the recorder is merely starting.**
 Current local Debug builds show a non-focusable status badge on tvOS and iOS:
-preparing (wait), recording (ready), and finished/failed. The helper requires
+preparing (wait), **Recording** with a red dot (ready), and finished/failed. The helper requires
 the app's visible-status acknowledgement, the recorder's Darwin start
 notification, and five seconds without an early disconnect before authorizing
 input. Heartbeats maintain the badge; a missing heartbeat expires it after
@@ -769,6 +797,14 @@ resolving addresses; never reuse another process's ASLR mappings. Unmapped image
 and export failures are reported explicitly.
 Release builds have no receiver. `--no-indicator` is an explicit opt-out for
 an older/release build, not an automatic fallback when an acknowledgement fails.
+
+The bounded `playback-trace.log` journal also records `LIVE_TV` cold-load stages:
+library discovery, snapshot hydration, schedule construction, and guide-loading
+visibility. `libraryRestoreReady` precedes the automatic lineup refresh; a long
+`libraryRefreshEnd` does not by itself mean the guide was still loading.
+`NAVIGATION` records native top-tab selection requests and actual screen changes,
+using only built-in destination names, so a later tab snap-back can be checked
+without another launch or an Instruments recording.
 
 The default uses `Blank` + the `Time Profiler` instrument, device-wide, then
 counts samples only for the verified app PID. Both bundled and CPU-only

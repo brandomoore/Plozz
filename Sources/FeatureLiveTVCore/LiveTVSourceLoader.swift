@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import CoreModels
+import CoreNetworking
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -116,6 +117,7 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
         tooLargeError: LiveTVSourceImportError,
         parsesPlaylist: Bool = false
     ) async throws -> Response {
+        let diagnostic = parsesPlaylist ? IPTVSetupDiagnostics.current : nil
         guard let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme),
               url.host != nil,
@@ -127,6 +129,7 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
 
         let cached = responses[url].flatMap { ($0.playlist != nil) == parsesPlaylist ? $0 : nil }
         if let cached, cached.expires > Date() {
+            diagnostic?.record(playlistBytes: cached.byteCount)
             guard cached.byteCount <= maximumBytes else {
                 throw sizeFailure(tooLargeError, limit: .responseBodyBytes,
                                   observed: Int64(cached.byteCount), maximum: maximumBytes)
@@ -144,11 +147,13 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
                 request.setValue(cached.etag, forHTTPHeaderField: "If-None-Match")
                 request.setValue(cached.modified, forHTTPHeaderField: "If-Modified-Since")
             }
+            diagnostic?.willRequest()
             let (bytes, response) = try await session.bytes(for: request)
             defer { bytes.task.cancel() }
             guard let response = response as? HTTPURLResponse else {
                 throw LiveTVSourceImportError.invalidResponse
             }
+            diagnostic?.received(status: response.statusCode, response: .init(mimeType: response.mimeType))
             if response.statusCode == 304 {
                 guard let cached else { throw LiveTVSourceImportError.invalidResponse }
                 guard cached.byteCount <= maximumBytes else {
@@ -200,6 +205,7 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
                 ? LiveTVPlaylistParser(baseURL: response.url ?? url).makeStream() : nil
             var prefix = Data()
             var received = 0
+            defer { diagnostic?.record(playlistBytes: received) }
             for try await byte in bytes {
                 if Task.isCancelled {
                     throw LiveTVSourceImportError.cancelled
@@ -251,6 +257,7 @@ public actor LiveTVSourceLoader: LiveTVIndexedSourceLoading {
           } catch let error as LiveTVSourceImportError {
             throw error
           } catch {
+            diagnostic?.recordTransportFailure(.sanitized(error))
             lastFailure = .downloadFailed
             guard attempt < 2 else { throw lastFailure }
             try await Task.sleep(for: .seconds(1 << attempt))

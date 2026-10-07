@@ -11,6 +11,8 @@ import UIKit
 struct PlozziOSSettingsView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showingAddServer = false
+    @State private var providerSetupRouter = ManagedProviderSetupRouter()
+    @State private var iptvSetup: ManagedProviderSetupRouter.Request?
     /// A server we're signing an ADDITIONAL user into, so the Add Server sheet
     /// opens pre-filled with it instead of at the provider chooser.
     @State private var addUserServer: MediaServer?
@@ -61,6 +63,13 @@ struct PlozziOSSettingsView: View {
             }
         }
         .environment(appModel.profiles)
+        .environment(\.managedProviderSetupRouter, providerSetupRouter)
+        .onChange(of: providerSetupRouter.request?.id) { _, _ in
+            guard let request = providerSetupRouter.request else { return }
+            iptvSetup = request
+            providerSetupRouter.request = nil
+            showAddServer()
+        }
         .scrollContentBackground(.hidden)
         .background { SettingsPageBackground() }
         .transientStatusOverlay(
@@ -76,12 +85,15 @@ struct PlozziOSSettingsView: View {
             onDismiss: {
                 appModel.finishManagedServerPresentation()
                 addUserServer = nil
+                iptvSetup = nil
             }
         ) {
             AddServerView(
                 appModel: appModel,
-                initialProvider: addUserServer?.provider ?? .jellyfin,
-                initialAddress: addUserServer?.baseURL.absoluteString ?? ""
+                initialProvider: iptvSetup == nil ? addUserServer?.provider ?? .jellyfin : .iptv,
+                initialAddress: addUserServer?.baseURL.absoluteString ?? "",
+                initialIPTVPlaylist: iptvSetup?.playlist, initialIPTVAccount: iptvSetup?.account,
+                initialIPTVMode: iptvSetup?.mode ?? .playlist
             )
                 .preferredColorScheme(addServerPresentationColorScheme)
                 .presentationSizing(.page)
@@ -469,7 +481,7 @@ private struct PlozziOSSettingsSplitView: View {
             }
             .navigationTitle("Settings")
             .toolbar(removing: .sidebarToggle)
-            .settingsPageSurface()
+            .settingsPageSurface(titleDisplayMode: .inlineLarge, horizontalInset: 16)
         } detail: {
             NavigationStack {
                 ZStack {
@@ -482,6 +494,12 @@ private struct PlozziOSSettingsSplitView: View {
             }
             .id(selection)
             .toolbar(removing: .sidebarToggle)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close", systemImage: "xmark", action: onClose)
+                        .labelStyle(.iconOnly)
+                }
+            }
         }
         .navigationSplitViewStyle(.balanced)
         // Switching profiles re-seals: an unlock proves who is standing there
@@ -496,11 +514,6 @@ private struct PlozziOSSettingsSplitView: View {
         }
         .toolbar(removing: .sidebarToggle)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done", action: onClose)
-            }
-        }
         .alert("Sign out of all accounts?", isPresented: $confirmSignOutAll) {
             Button("Cancel", role: .cancel) {}
             Button("Sign Out", role: .destructive) {
@@ -1251,9 +1264,11 @@ private struct PlozziOSSettingsCompactMenu: View {
             }
         }
         .contentMargins(.top, 8, for: .scrollContent)
-        .settingsPageSurface()
+        .settingsPageSurface(
+            titleDisplayMode: isHeaderCollapsed ? .inline : .inlineLarge,
+            horizontalInset: 16
+        )
         .navigationTitle("Settings")
-        .toolbarTitleDisplayMode(isHeaderCollapsed ? .inline : .inlineLarge)
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top > 12
         } action: { _, collapsed in

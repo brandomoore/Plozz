@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class LiveTVPlaybackSourceAuthorityTests: XCTestCase {
     func testNativeSourceDisableRemovalAndAccountReplacementOverrideRetainedCatalog() throws {
-        for kind: LiveTVPrototypeSource in [.plex, .jellyfin, .emby] {
+        for kind: LiveTVPrototypeSource in [.plex, .jellyfin, .emby, .iptv] {
             let fixture = try fixture()
             let configuration = LiveTVSourcesConfiguration(servers: [
                 LiveTVServerSource(id: "server-source", name: "Server", accountID: "account")

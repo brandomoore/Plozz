@@ -15,7 +15,7 @@ public struct ManagedProviderPicker: View {
             ProviderBrandMark(provider: provider, size: 24, showsBackground: false)
                 .accessibilityHidden(true)
             Picker("Provider", selection: $provider) {
-                ForEach([ProviderKind.jellyfin, .emby, .plex, .silo], id: \.self) { kind in
+                ForEach([ProviderKind.jellyfin, .emby, .plex, .silo, .iptv], id: \.self) { kind in
                     Text(verbatim: kind.displayName).tag(kind)
                 }
             }

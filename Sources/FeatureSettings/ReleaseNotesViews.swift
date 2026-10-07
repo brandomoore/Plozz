@@ -129,6 +129,9 @@ public struct ReleaseNotesStartupView: View {
                 .padding(.top, 24)
             }
             .navigationTitle("What’s New in Plozz")
+            #if os(iOS)
+            .toolbarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {

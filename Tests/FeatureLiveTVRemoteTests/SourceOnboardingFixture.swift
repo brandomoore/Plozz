@@ -269,7 +269,9 @@ final class SourceSmokeStore: LiveTVSourcesStoring, @unchecked Sendable {
             self.configuration = LiveTVSourcesConfiguration(playlists: [
                 LiveTVPlaylistSource(
                     id: "fixture", name: "Fixture IPTV",
-                    playlistURL: URL(string: "https://example.invalid/fixture.m3u")!
+                    playlistURL: URL(string: "https://example.invalid/fixture.m3u")!,
+                    guideURLs: ProcessInfo.processInfo.arguments.contains("--source-guides")
+                        ? [URL(string: "https://example.invalid/guide.xml")!] : []
                 )
             ])
         }
@@ -279,6 +281,9 @@ final class SourceSmokeStore: LiveTVSourcesStoring, @unchecked Sendable {
     var writeCount: Int { lock.withLock { writes } }
     func load() throws -> LiveTVSourcesConfiguration { lock.withLock { configuration } }
     func save(_ value: LiveTVSourcesConfiguration) throws {
+        if ProcessInfo.processInfo.arguments.contains("--source-save-fails") {
+            throw LiveTVSourcesStoreError.saveFailed
+        }
         try value.validate()
         lock.withLock {
             configuration = value

@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import CoreUI
 import FeatureLiveTVCore
 import SwiftUI
@@ -60,21 +61,8 @@ struct LiveTVImportedPlaylistEditor: View {
                     .font(.caption)
             }
             .disabled(saving)
-            SettingsSectionGroup("Program guide") {
-                ForEach($guides) { $guide in
-                    LiveTVGuideAddressEditor(address: $guide.address) {
-                        guides.removeAll { $0.id == guide.id }
-                    }
-                }
-                Button { guides.append(.init()) } label: {
-                    LiveTVSetupActionLabel(title: "Add another guide", symbol: "plus")
-                }
-                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
-                .disabled(guides.count >= 32)
-            } footer: {
-                Text("List preferred guides first. Relative addresses require the provider's HTTP or HTTPS base URL.")
-            }
-            .disabled(saving)
+            LiveTVGuideFields(guides: $guides)
+                .disabled(saving)
             SettingsSectionGroup {
                 if saving { ProgressView("Importing playlist") }
                 Button { saveRequest = UUID() } label: {
@@ -87,6 +75,7 @@ struct LiveTVImportedPlaylistEditor: View {
             }
         }
         #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
         .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.data]) { result in
             do { fileURL = try result.get() }
             catch { issue = "The selected file couldn't be opened." }
@@ -100,11 +89,22 @@ struct LiveTVImportedPlaylistEditor: View {
 
     @MainActor
     private func save(request: UUID) async {
+        let attempt = IPTVSetupDiagnostics.shared.begin(
+            source: .playlistFile, authentication: .none, entry: original == nil ? .addSource : .editSource
+        )
+        await IPTVSetupDiagnostics.$current.withValue(attempt) {
+            await save(request: request, diagnostic: attempt)
+        }
+    }
+
+    @MainActor
+    private func save(request: UUID, diagnostic: IPTVSetupAttempt?) async {
         saving = true
         issue = nil
         defer { saving = false }
         var importedID: UUID?
         var committed = false
+        var persisting = false
         do {
             try sources.ensureCanMutate()
             let urls = try guides.compactMap { entry -> URL? in
@@ -132,19 +132,34 @@ struct LiveTVImportedPlaylistEditor: View {
                     throw LiveTVSourcesValidationError.invalidPlaylistURL
                 }
                 importedID = request
-                _ = try await imports.importPlaylistFile(at: fileURL, id: request, baseURL: baseURL)
+                diagnostic?.advance(to: .playlist)
+                let imported = try await imports.importPlaylistFile(at: fileURL, id: request, baseURL: baseURL)
+                diagnostic?.record(entries: imported.entryCount, skippedEntries: imported.skippedEntryCount)
                 try Task.checkCancellation()
                 source = LiveTVPlaylistSource(
                     id: request.uuidString.lowercased(), name: displayName.isEmpty ? "Imported playlist" : displayName,
                     playlistURL: locator, guideURLs: urls
                 )
             }
-            try sources.saveImportedPlaylist(source, replacing: original)
-            committed = true
-            didConfigurePlaylist()
-            if original == nil { didImportPlaylist(source.id) }
-            dismiss()
+            persisting = true
+            diagnostic?.advance(to: .persistence)
+            try IPTVSetupDiagnostics.$current.withValue(nil) {
+                try sources.saveImportedPlaylist(source, replacing: original)
+                committed = true
+                didConfigurePlaylist()
+                if original == nil { didImportPlaylist(source.id) }
+                diagnostic?.finish()
+                dismiss()
+            }
         } catch {
+            let failure: IPTVSetupDiagnostic.Failure
+            switch error {
+            case LiveTVSourceManagementModel.MutationError.accessDenied: failure = .init(.accessDenied)
+            case LiveTVSourceManagementModel.MutationError.changedSource: failure = .init(.sourceChanged)
+            case is LiveTVSourcesValidationError: failure = .init(.invalidInput)
+            default: failure = persisting ? .init(.storage) : .sanitized(error)
+            }
+            diagnostic?.finish(Task.isCancelled ? .init(.cancelled) : failure)
             if !Task.isCancelled {
                 issue = (error as? LiveTVSourceImportError)?.userDescription
                     ?? "The playlist couldn't be saved. Check its addresses and source-management permission."

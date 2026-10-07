@@ -77,15 +77,15 @@ public final class ManagedAuthenticatedHTTPResolver: AuthenticatedHTTPResourceRe
             URLQueryItem(name: $0.name, value: $0.value)
         }
         switch locator.provider {
-        case .silo:
+        case .silo, .iptv:
             guard let resolver = context.resourceResolver else {
-                throw MediaTransportError.authentication(reason: "inactive Silo playback grant")
+                throw MediaTransportError.authentication(reason: "inactive provider playback grant")
             }
             let url = try await resolver.resolveHTTPResource(locator)
             let latest = try contextProvider(locator)
             guard latest.provider == context.provider, latest.accountID == context.accountID,
                   latest.credentialRevision == context.credentialRevision else {
-                throw MediaTransportError.authentication(reason: "Silo playback identity changed")
+                throw MediaTransportError.authentication(reason: "provider playback identity changed")
             }
             return url
         case .jellyfin, .emby:

@@ -304,7 +304,8 @@ public final class ProfileSettingsModel {
             watchStatusIndicatorModel: watchStatusIndicatorModel ?? WatchStatusIndicatorSettingsModel(store: WatchStatusIndicatorSettingsStore(namespace: ns)),
             navigationStyleModel: navigationStyleModel ?? NavigationStyleSettingsModel(
                 store: NavigationStyleSettingsStore(namespace: ns),
-                layoutStore: NavigationLibraryLayoutStore(namespace: ns)
+                layoutStore: NavigationLibraryLayoutStore(namespace: ns),
+                librariesSnapshotStore: NavigationLibrariesSnapshotStore(namespace: ns)
             ),
             transparencyModel: transparencyModel ?? TransparencyPreferenceModel(store: TransparencyPreferenceStore(namespace: ns)),
             nightShiftModel: nightShiftModel ?? NightShiftSettingsModel(store: NightShiftSettingsStore(namespace: ns))

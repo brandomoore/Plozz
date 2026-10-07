@@ -33,9 +33,9 @@ final class LiveTVSourceNavigationSmokeTests: XCTestCase {
         guard select(app.buttons["fixture-live-tv-settings"], in: app) else { return }
         let addPlaylist = app.buttons["live-tv-add-playlist"]
         XCTAssertTrue(addPlaylist.waitForExistence(timeout: 5))
-        XCTAssertEqual(addPlaylist.label, "IPTV playlist (M3U or M3U8 URL)")
+        XCTAssertEqual(addPlaylist.label, "IPTV playlist")
         let server = app.buttons["live-tv-add-server"]
-        XCTAssertEqual(server.label, "Media server (Plex, Jellyfin, Emby)")
+        XCTAssertEqual(server.label, "Media server")
         for row in [addPlaylist, server] {
             XCTAssertEqual(row.staticTexts.count, 1)
             XCTAssertLessThan(row.staticTexts.firstMatch.frame.height, 55)
@@ -47,19 +47,20 @@ final class LiveTVSourceNavigationSmokeTests: XCTestCase {
         XCTAssertTrue(playlist.waitForExistence(timeout: 5))
         XCTAssertGreaterThanOrEqual(playlist.frame.height, 64)
         XCTAssertTrue(app.staticTexts["Playlist or live HLS URL"].exists)
-        XCTAssertEqual(app.textFields.matching(identifier: "XMLTV guide URL (optional)").count, 1)
+        XCTAssertEqual(app.textFields.matching(identifier: "XMLTV guide URL (optional)").count, 0)
+        XCTAssertFalse(app.buttons["live-tv-remove-guide"].exists)
         let addGuide = app.buttons["live-tv-add-guide"]
         guard focus(addGuide, in: app) else { return }
         XCTAssertGreaterThanOrEqual(addGuide.frame.height, 64)
         XCTAssertGreaterThan(addGuide.frame.width, 500)
         XCUIRemote.shared.press(.select)
-        XCTAssertEqual(app.textFields.matching(identifier: "XMLTV guide URL (optional)").count, 2)
+        XCTAssertEqual(app.textFields.matching(identifier: "XMLTV guide URL (optional)").count, 1)
         let remove = app.buttons.matching(identifier: "live-tv-remove-guide").firstMatch
         guard focus(remove, in: app) else { return }
         XCTAssertGreaterThanOrEqual(remove.frame.height, 64)
         XCTAssertGreaterThanOrEqual(remove.frame.width, 300)
         XCUIRemote.shared.press(.select)
-        XCTAssertEqual(app.textFields.matching(identifier: "XMLTV guide URL (optional)").count, 1)
+        XCTAssertEqual(app.textFields.matching(identifier: "XMLTV guide URL (optional)").count, 0)
         let save = app.buttons["live-tv-playlist-action"]
         guard select(save, in: app) else { return }
         XCTAssertTrue(app.staticTexts[

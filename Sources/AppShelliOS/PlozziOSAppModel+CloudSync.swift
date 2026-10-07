@@ -19,7 +19,7 @@ import UIKit
 // the Keychain). Gated on `SyncSetupFeatureFlag`; idempotent + loop-safe.
 extension PlozziOSAppModel {
 
-    private static let cloudContainerIdentifier = "iCloud.com.thatcube.Plozz"
+    private static let cloudContainerIdentifier = AppInstallation.current.cloudContainerIdentifier
 
     static var isRunningUnitTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil

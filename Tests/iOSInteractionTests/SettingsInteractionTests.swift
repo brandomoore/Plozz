@@ -19,6 +19,59 @@ final class SettingsInteractionTests: XCTestCase {
         super.tearDown()
     }
 
+    func testSettingsTabKeepsTheCurrentPageAndNavigationStack() {
+        launchNavigation()
+        let downloads = app.buttons["arrow.down.circle"].firstMatch
+        XCTAssertTrue(downloads.waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["gearshape"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["house"].firstMatch.isSelected)
+        app.buttons["Close"].tap()
+        downloads.tap()
+        XCTAssertTrue(app.buttons["Download Settings"].waitForExistence(timeout: 5))
+
+        for iteration in 0..<2 {
+            app.buttons["gearshape"].firstMatch.tap()
+            XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5), app.debugDescription)
+            capture("settings-over-downloads-\(iteration)")
+            XCTAssertTrue(downloads.isSelected, "Settings must not replace the selected content tab.")
+            app.buttons["Close"].tap()
+            XCTAssertTrue(app.buttons["Download Settings"].waitForExistence(timeout: 5))
+        }
+
+        app.buttons["Download Settings"].tap()
+        let back = app.navigationBars.buttons["BackButton"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
+        app.collectionViews.firstMatch.swipeUp()
+        let retainedRow = app.switches["Download Failed"]
+        XCTAssertTrue(retainedRow.isHittable)
+        let retainedY = retainedRow.frame.minY
+        app.buttons["gearshape"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5))
+        capture("settings-over-pushed-downloads")
+        XCTAssertTrue(downloads.isSelected)
+        app.buttons["Close"].tap()
+        XCTAssertTrue(back.waitForExistence(timeout: 5), "The pushed page must survive the drawer.")
+        XCTAssertEqual(retainedRow.frame.minY, retainedY, accuracy: 2, "Closing Settings must retain scroll position.")
+        back.tap()
+        XCTAssertTrue(app.buttons["Download Settings"].waitForExistence(timeout: 5))
+    }
+
+    func testSettingsFromMoreKeepsTheMorePage() throws {
+        launchNavigation(settingsInMore: true)
+        let more = app.tabBars.buttons["More"]
+        try XCTSkipUnless(more.waitForExistence(timeout: 5), "Regular-width iPad has direct tabs.")
+        more.tap()
+        XCTAssertTrue(app.navigationBars["More"].waitForExistence(timeout: 5))
+        button("Settings").tap()
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5))
+        capture("settings-over-more")
+        XCTAssertTrue(more.isSelected)
+        app.buttons["Close"].tap()
+        XCTAssertTrue(app.navigationBars["More"].waitForExistence(timeout: 5))
+        XCTAssertTrue(more.isSelected)
+    }
+
     func testCardsRowNavigatesWithoutOpeningDisplaySize() {
         launch()
         let cards = app.buttons["appearance-cards"]
@@ -48,6 +101,7 @@ final class SettingsInteractionTests: XCTestCase {
         openSettingsPage("Appearance")
         app.buttons["appearance-cards"].tap()
         XCTAssertTrue(app.navigationBars["Cards"].waitForExistence(timeout: 3), app.debugDescription)
+        assertInlineTitle("Cards")
         XCTAssertFalse(app.buttons["Micro"].exists)
     }
 
@@ -260,6 +314,27 @@ final class SettingsInteractionTests: XCTestCase {
         reveal(row, settingsMenu: !usesAboutPage)
         row.tap()
         XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 3), app.debugDescription)
+        assertInlineTitle(title)
+    }
+
+    private func assertInlineTitle(_ title: String) {
+        let bar = app.navigationBars[title]
+        let heading = bar.staticTexts[title].firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 3), app.debugDescription)
+        var titleRegion = bar.frame
+        let sidebar = app.navigationBars["Settings"]
+        // iPad reports a full-window bar, but centers its title in the detail column.
+        if sidebar.exists, sidebar.frame.width < bar.frame.width {
+            if sidebar.frame.minX <= bar.frame.minX {
+                titleRegion.origin.x = sidebar.frame.maxX
+                titleRegion.size.width = bar.frame.maxX - sidebar.frame.maxX
+            } else {
+                titleRegion.size.width = sidebar.frame.minX - bar.frame.minX
+            }
+        }
+        XCTAssertEqual(heading.frame.midX, titleRegion.midX, accuracy: 4, app.debugDescription)
+        XCTAssertLessThanOrEqual(bar.frame.height, 64, "Subpages must not reserve a large-title block.")
+        XCTAssertLessThanOrEqual(heading.frame.height, 32, "Subpages must use the native inline title font.")
     }
 
     private func button(_ title: String) -> XCUIElement {
@@ -277,6 +352,14 @@ final class SettingsInteractionTests: XCTestCase {
             settingsRoot ? "--settings-interaction-fixture" : "--appearance-interaction-fixture",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
         ]
+        app.launch()
+    }
+
+    private func launchNavigation(settingsInMore: Bool = false) {
+        app.launchArguments = [
+            "--navigation-interaction-fixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
+        ]
+        if settingsInMore { app.launchArguments.append("--settings-in-more") }
         app.launch()
     }
 

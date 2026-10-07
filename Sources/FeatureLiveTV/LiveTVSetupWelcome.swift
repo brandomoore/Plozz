@@ -16,23 +16,31 @@ struct LiveTVSetupWelcome: View {
     var body: some View {
         GeometryReader { geometry in
             let inset = geometry.size.width >= 900 ? PlozzTheme.Spacing.xxxLarge : PlozzTheme.Spacing.large
+            #if os(iOS)
+            let maximumWidth: CGFloat = 640
+            let choiceSpacing = PlozzTheme.Spacing.medium
+            let fitsRow = false
+            #else
+            let maximumWidth = PlozzTheme.Metrics.settingsContentMaxWidth
+            let choiceSpacing = PlozzTheme.Spacing.large
             let contentWidth = min(
-                PlozzTheme.Metrics.settingsContentMaxWidth, geometry.size.width - inset * 2)
+                maximumWidth, geometry.size.width - inset * 2)
             let choiceCount = createChannel == nil ? 2 : 3
             let fitsRow = contentWidth >= CGFloat(choiceCount) * 320
                 + CGFloat(choiceCount - 1) * PlozzTheme.Spacing.large
                 && !typeSize.isAccessibilitySize
+            #endif
             ScrollView {
                 VStack(alignment: .leading, spacing: PlozzTheme.Spacing.xLarge) {
                     LiveTVSetupIntroduction()
                     let layout = fitsRow
-                        ? AnyLayout(HStackLayout(alignment: .top, spacing: PlozzTheme.Spacing.large))
-                        : AnyLayout(VStackLayout(alignment: .leading, spacing: PlozzTheme.Spacing.large))
+                        ? AnyLayout(HStackLayout(alignment: .top, spacing: choiceSpacing))
+                        : AnyLayout(VStackLayout(alignment: .leading, spacing: choiceSpacing))
                     layout {
                         LiveTVSetupChoice(
-                            title: "IPTV playlist",
-                            detail: "Add channels with an M3U or M3U8 playlist URL.",
-                            actionTitle: "Add playlist",
+                            title: "IPTV provider",
+                            detail: "M3U playlists and Xtream accounts.",
+                            actionTitle: "Connect provider",
                             symbol: "list.bullet.rectangle",
                             action: addPlaylist
                         )
@@ -41,7 +49,7 @@ struct LiveTVSetupWelcome: View {
                             title: "Media server",
                             detail: LocalizedStringResource(
                                 "liveTV.setup.server.detail",
-                                defaultValue: "Watch Live TV from Jellyfin or Emby. Plex supports guide browsing only.",
+                                defaultValue: "Jellyfin or Emby. Plex guide only.",
                                 comment: "Media-server setup choice. Plex Live TV currently supplies guide listings, not live playback; this is separate from generated channels using a Plex media library."
                             ),
                             actionTitle: "Choose server",
@@ -52,10 +60,10 @@ struct LiveTVSetupWelcome: View {
                         if let createChannel {
                             LiveTVSetupChoice(
                                 title: "Plozz channels",
-                                detail: "Your authorized library becomes themed channels with automatic guides.",
+                                detail: "Turn your library into TV channels.",
                                 actionTitle: automaticChannels?.enabled == true
                                     ? "Manage channels" : "Enable channels",
-                                symbol: "calendar",
+                                symbol: "sparkles.tv",
                                 action: createChannel
                             )
                             .accessibilityIdentifier("live-tv-setup-library")
@@ -63,6 +71,7 @@ struct LiveTVSetupWelcome: View {
                                 ? Text("Manage Plozz channels") : Text("Enable Plozz channels"))
                         }
                     }
+                    .plozzAdaptiveCardSurface()
                     .fixedSize(horizontal: false, vertical: true)
                     if let automaticChannels, automaticChannels.needsEmptyState {
                         LiveTVAutomaticChannelsStatusView(state: automaticChannels)
@@ -82,13 +91,15 @@ struct LiveTVSetupWelcome: View {
                         LiveTVEnrollmentStatusRow(status: status)
                     }
                 }
-                .frame(maxWidth: PlozzTheme.Metrics.settingsContentMaxWidth, alignment: .leading)
+                .frame(maxWidth: maximumWidth, alignment: .leading)
                 .padding(inset)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
             .scrollIndicators(.hidden)
         }
+        #if os(tvOS)
         .background(palette.settingsBackground)
+        #endif
         .foregroundStyle(palette.primaryText)
         .accessibilityIdentifier("live-tv-source-welcome")
     }
@@ -96,10 +107,17 @@ struct LiveTVSetupWelcome: View {
 
 private struct LiveTVEnrollmentStatusRow: View {
     let status: LiveTVServerEnrollmentStatus
+    @Environment(\.themePalette) private var palette
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            #if os(iOS)
+            Label(status.choice.name, systemImage: "server.rack")
+                .font(.subheadline)
+                .foregroundStyle(palette.secondaryText)
+            #else
             Text(status.choice.name).font(.headline)
+            #endif
             if status.phase == .loading {
                 ProgressView("Checking Live TV access...")
             } else if let failure = status.failure {
@@ -108,6 +126,13 @@ private struct LiveTVEnrollmentStatusRow: View {
                 LiveTVServerAvailabilitySummary(availability: availability)
             }
         }
+        #if os(iOS)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 20)
+        .overlay(alignment: .top) {
+            Rectangle().fill(palette.separator).frame(height: 1)
+        }
+        #endif
     }
 }
 
@@ -118,11 +143,15 @@ private struct LiveTVSetupIntroduction: View {
         VStack(alignment: .leading, spacing: PlozzTheme.Spacing.medium) {
             Label("Live TV", systemImage: "antenna.radiowaves.left.and.right")
                 .font(.headline)
+                #if os(iOS)
+                .foregroundStyle(palette.accent)
+                #else
                 .foregroundStyle(palette.secondaryText)
+                #endif
             Text("Add your channels")
                 .font(.largeTitle.weight(.semibold))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Choose a source to start watching. You can add more later.")
+            Text("Choose a source to start watching.")
                 .font(.callout)
                 .foregroundStyle(palette.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -137,9 +166,35 @@ private struct LiveTVSetupChoice: View {
     let symbol: String
     let action: () -> Void
     @Environment(\.themePalette) private var palette
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         Button(action: action) {
+            #if os(iOS)
+            HStack(alignment: .top, spacing: 16) {
+                if !typeSize.isAccessibilitySize { sourceIcon }
+                VStack(alignment: .leading, spacing: 6) {
+                    if typeSize.isAccessibilitySize {
+                        HStack {
+                            sourceIcon
+                            Spacer()
+                            chevron
+                        }
+                        .padding(.bottom, 8)
+                    }
+                    Text(title).font(.headline)
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.secondaryText)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if !typeSize.isAccessibilitySize { chevron.padding(.top, 5) }
+            }
+            .foregroundStyle(palette.primaryText)
+            .multilineTextAlignment(.leading)
+            .padding(20)
+            #else
             VStack(alignment: .leading, spacing: PlozzTheme.Spacing.large) {
                 Image(systemName: symbol)
                     .resizable()
@@ -179,9 +234,26 @@ private struct LiveTVSetupChoice: View {
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(PlozzTheme.Spacing.large)
+            #endif
         }
         .buttonStyle(SettingsCardButtonStyle())
         .accessibilityLabel(actionTitle)
         .accessibilityHint(detail)
+    }
+
+    private var sourceIcon: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 22, weight: .regular))
+            .foregroundStyle(palette.accent)
+            .frame(width: 44, height: 44)
+            .background(palette.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            .accessibilityHidden(true)
+    }
+
+    private var chevron: some View {
+        Image(systemName: "chevron.forward")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(palette.secondaryText)
+            .accessibilityHidden(true)
     }
 }

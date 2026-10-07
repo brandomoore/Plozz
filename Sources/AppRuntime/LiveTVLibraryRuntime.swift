@@ -196,6 +196,8 @@ public final class LiveTVLibraryRuntime {
     public func refresh(accounts: AccountsProvidersModel?) async {
         if loadedRefreshRequest == refreshRequest,
            authority.accounts === accounts, authorizationID != nil, service.isLoaded { return }
+        let started = Date()
+        HandoffDiagnostics.emit("LIVE_TV event=libraryRefreshBegin")
         let requested = refreshRequest
         let stamp = UUID()
         let expected = accounts?.liveTVAuthorizationID ?? ""
@@ -216,6 +218,7 @@ public final class LiveTVLibraryRuntime {
             service.setContexts([])
         }
         defer {
+            HandoffDiagnostics.emit("LIVE_TV event=libraryRefreshEnd elapsed=\(HandoffDiagnostics.ms(started))")
             if refreshID == stamp {
                 if automaticChannelsEnabled { lastAutomaticAttempt = Date() }
                 isLoading = false
@@ -246,12 +249,15 @@ public final class LiveTVLibraryRuntime {
             let discovery = try await discoverContexts(
                 accounts: accounts, requiredAccountIDs: requiredAccounts, stamp: stamp, expected: expected,
                 reportsProgress: automaticChannelsEnabled)
+            HandoffDiagnostics.emit(
+                "LIVE_TV event=libraryDiscoveryReady contexts=\(discovery.contexts.count) elapsed=\(HandoffDiagnostics.ms(started))")
             try check(stamp, accounts: accounts, expected: expected)
             unavailableAccountIDs = discovery.unavailableAccountIDs
             automaticUnavailableSources = discovery.failures
             authority.expectedAccounts = expected
             service.updateContexts(discovery.contexts)
             try await service.load()
+            HandoffDiagnostics.emit("LIVE_TV event=libraryRestoreReady elapsed=\(HandoffDiagnostics.ms(started))")
             try check(stamp, accounts: accounts, expected: expected)
             acceptedAuthorization = retainsAuthorization ? previousAuthorization : expected + "|" + stamp.uuidString
             loadedRefreshRequest = requested

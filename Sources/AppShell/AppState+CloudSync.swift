@@ -44,7 +44,7 @@ public final class CloudSyncUIModel {
 // to the mirror, so the observation-driven re-publish it triggers is a no-op.
 extension AppState {
 
-    private static let cloudContainerIdentifier = "iCloud.com.thatcube.Plozz"
+    private static let cloudContainerIdentifier = AppInstallation.current.cloudContainerIdentifier
 
     /// A writable directory for the sync state, robust across platforms. Tries
     /// Application Support (iOS), then Caches (tvOS's reliably-writable area), then

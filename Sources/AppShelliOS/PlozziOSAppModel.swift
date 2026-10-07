@@ -569,7 +569,6 @@ final class PlozziOSAppModel {
         ArtworkImageCache.shared.configure(
             networkFileService: mediaShareRuntime.artworkNetworkFileService
         )
-        let registry = ManagedProviderRegistry.make(siloCredentials: accountStore as? any RotatingCredentialStoring)
         let durableLocalStateStore: DurableLocalStateStore?
         do {
             durableLocalStateStore = try DurableLocalStateStoreFactory.userIndependent()
@@ -579,6 +578,9 @@ final class PlozziOSAppModel {
                 "Local network-share library storage is unavailable: \(error.localizedDescription)"
             )
         }
+        let registry = ManagedProviderRegistry.make(
+            siloCredentials: accountStore as? any RotatingCredentialStoring, durableStore: durableLocalStateStore
+        )
         mediaShareRuntime.registerProvider(
             into: registry,
             durableLocalStateStore: durableLocalStateStore
@@ -2450,7 +2452,8 @@ final class PlozziOSAppModel {
         }
     }
 
-    func persist(_ sessions: [UserSession]) {
+    @discardableResult
+    func persist(_ sessions: [UserSession]) -> Bool {
         do {
             let existingIDs = Set(accountsProviders.accounts.map(\.id))
             let isFirstRun = existingIDs.isEmpty
@@ -2491,8 +2494,10 @@ final class PlozziOSAppModel {
                     beginsFirstRun: isFirstRun && !addedAccounts.isEmpty
                 )
             }
+            return true
         } catch {
             accountError = error.localizedDescription
+            return false
         }
     }
 
