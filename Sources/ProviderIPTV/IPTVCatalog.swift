@@ -12,6 +12,8 @@ struct IPTVRecord: Codable, Sendable {
     var streamID: String?
     var container: String?
     var guideID: String?
+    var guideName: String?
+    var guideCountry: String?
     var channelNumber: Int?
     var isLive = false
 }

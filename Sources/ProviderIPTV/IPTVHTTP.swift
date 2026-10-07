@@ -45,6 +45,7 @@ final class IPTVHTTP: Sendable {
             if response.statusCode == 401 || response.statusCode == 403 { throw IPTVError.authentication }
             if (300...399).contains(response.statusCode) { throw LiveTVSourceImportError.redirectBlocked }
             if response.statusCode == 404 { throw AppError.notFound }
+            if response.statusCode == 405 || response.statusCode == 501 { throw IPTVError.unsupported }
             if response.statusCode == 429 {
                 throw AppError.rateLimited(retryAfter: response.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init))
             }

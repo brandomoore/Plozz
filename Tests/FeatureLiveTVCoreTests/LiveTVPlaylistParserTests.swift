@@ -4,6 +4,113 @@ import XCTest
 @testable import FeatureLiveTVCore
 
 final class LiveTVPlaylistParserTests: XCTestCase {
+    func testPlainURLListsAndHeaderlessExtendedEntriesAreAccepted() throws {
+        let parser = LiveTVPlaylistParser(baseURL: URL(string: "https://example.test/lists/source"))
+        let plain = try parser.parse("""
+        # A basic M3U does not require EXTINF.
+        https://example.test/live/one?token=fixture-private
+        https://example.test/live/two
+        """)
+        XCTAssertEqual(plain.channels.map(\.name), ["Channel 1", "Channel 2"])
+        XCTAssertEqual(plain.entryCount, 2)
+        XCTAssertEqual(plain.skippedEntryCount, 0)
+        XCTAssertFalse(plain.channels.contains { $0.name.contains("fixture-private") })
+        let extended = try parser.parse("""
+        #EXTINF:-1 tvg-name="Guide station",
+        ../live/one
+        #EXTINF:-1,Named
+        ../live/two
+        """)
+        XCTAssertEqual(extended.channels.map(\.name), ["Guide station", "Named"])
+        XCTAssertEqual(extended.channels.first?.streamURL?.absoluteString, "https://example.test/live/one")
+        for invalid in ["<html>Sign in</html>\nhttps://example.test/live", "{\"error\":\"denied\"}", "stream.ts"] {
+            XCTAssertThrowsError(try parser.parse(invalid)) {
+                XCTAssertEqual($0 as? LiveTVSourceImportError, .invalidPlaylist)
+            }
+        }
+    }
+
+    func testUnnamedChannelIdentityDoesNotDependOnPlaylistOrder() throws {
+        let parser = LiveTVPlaylistParser()
+        let first = try parser.parse("https://example.test/one\nhttps://example.test/two").channels
+        let second = try parser.parse("https://example.test/two\nhttps://example.test/one").channels
+        XCTAssertEqual(
+            Dictionary(uniqueKeysWithValues: first.map { ($0.streamURL, $0.id) }),
+            Dictionary(uniqueKeysWithValues: second.map { ($0.streamURL, $0.id) })
+        )
+    }
+
+    func testEXTGRPGroupsPersistWithEntryOverridesAndCanBeCleared() throws {
+        let result = try LiveTVPlaylistParser().parse("""
+        #EXTM3U
+        #EXTGRP:News; Local
+        #EXTINF:-1,First
+        https://example.test/one
+        #EXTINF:-1 group-title="Sports",Override
+        https://example.test/two
+        #EXTINF:-1,Default
+        https://example.test/three
+        #EXTGRP:
+        https://example.test/four
+        """)
+        XCTAssertEqual(result.channels.map(\.groups), [["News", "Local"], ["Sports"], ["News", "Local"], []])
+    }
+
+    func testInlineRequestHeadersHaveBoundedValuesAndExplicitPrecedence() throws {
+        let result = try LiveTVPlaylistParser().parse("""
+        #EXTM3U
+        #EXTINF:-1 user-agent="Inline" referrer="https://example.test/watch",Inline
+        https://example.test/one
+        #EXTINF:-1 user-agent="Inline" referrer="https://example.test/watch",Override
+        #EXTVLCOPT:http-user-agent=Directive
+        https://example.test/two|User-Agent=Pipe
+        #EXTINF:-1 http-user-agent="Alias" http-referer="https://example.test/alias",Aliases
+        https://example.test/three
+        #EXTINF:-1 user-agent="\(String(repeating: "x", count: 4_097))" referrer="file:///private",Invalid
+        https://example.test/four
+        #EXTINF:-1,No headers
+        https://example.test/five
+        """)
+        XCTAssertEqual(result.channels[0].httpHeaders, ["User-Agent": "Inline", "Referer": "https://example.test/watch"])
+        XCTAssertEqual(result.channels[1].httpHeaders, ["User-Agent": "Pipe", "Referer": "https://example.test/watch"])
+        XCTAssertEqual(result.channels[2].httpHeaders, ["User-Agent": "Alias", "Referer": "https://example.test/alias"])
+        XCTAssertTrue(result.channels[3].httpHeaders.isEmpty)
+        XCTAssertTrue(result.channels[4].httpHeaders.isEmpty)
+    }
+
+    func testRequestDirectivesBeforePlainURLsApplyOnlyToTheNextEntry() throws {
+        let result = try LiveTVPlaylistParser().parse("""
+        #EXTVLCOPT:http-user-agent=Plain
+        https://example.test/one
+        https://example.test/two
+        """)
+        XCTAssertEqual(result.channels[0].httpHeaders, ["User-Agent": "Plain"])
+        XCTAssertTrue(result.channels[1].httpHeaders.isEmpty)
+    }
+
+    func testMalformedExtendedEntryIsNotRescuedAsAnUnnamedChannel() throws {
+        let result = try LiveTVPlaylistParser().parse("""
+        #EXTINF:-1 missing-comma
+        #EXTVLCOPT:http-user-agent=MustNotLeak
+        https://example.test/skipped
+        https://example.test/kept
+        """)
+        XCTAssertEqual(result.entryCount, 2)
+        XCTAssertEqual(result.skippedEntryCount, 1)
+        XCTAssertEqual(result.channels.map(\.streamURL?.path), ["/kept"])
+        XCTAssertTrue(result.channels[0].httpHeaders.isEmpty)
+    }
+
+    func testPlainURLListsStillEnforceEntryLimits() throws {
+        var stream = LiveTVPlaylistParser().makeStream()
+        for index in 0..<LiveTVPlaylistParser.maximumEntries {
+            try stream.append(Data("https://example.test/\(index)\n".utf8))
+        }
+        XCTAssertThrowsError(try stream.append(Data("https://example.test/overflow\n".utf8))) {
+            XCTAssertEqual($0 as? LiveTVSourceImportError, .responseTooLarge)
+        }
+    }
+
     func testIncrementalParsingPreservesSplitUnicodeHeadersAndRelativeAddresses() throws {
         let input = "\u{FEFF}#EXTM3U x-tvg-url=\"../guide.xml\"\r\n"
             + "#EXTINF:-1 tvg-id=\"station\",Caf\u{E9}\u{2028}"

@@ -105,8 +105,10 @@ enum IPTVMapping {
         let isMovie = !explicitlyLive && (
             contentType == "movie" || contentType == "vod" || path.contains("/movie/") || (entry.duration ?? 0) > 0
         )
-        let identity = digest([channel.guideID ?? "", channel.name, channel.groups.joined(separator: ";"),
-                               url.lastPathComponent].joined(separator: "\u{1F}"))
+        let identity = entry.hasExplicitName
+            ? digest([channel.guideID ?? "", channel.name, channel.groups.joined(separator: ";"),
+                      url.lastPathComponent].joined(separator: "\u{1F}"))
+            : digest(channel.id)
         if isSeries, let episode {
             let seriesID = "series:" + digest(episode.title + "\u{1F}" + channel.groups.joined(separator: ";"))
             let series = IPTVRecord(item: MediaItem(
@@ -130,7 +132,8 @@ enum IPTVMapping {
             libraryID: live ? "live" : "movies"
         )
         return [IPTVRecord(item: item, streamURL: url, headers: channel.httpHeaders,
-                           guideID: channel.guideID, channelNumber: channel.number, isLive: live)]
+                           guideID: channel.guideID, guideName: channel.guideName, guideCountry: channel.country,
+                           channelNumber: channel.number, isLive: live)]
     }
 
     private static func episodeIdentity(_ name: String, attributes: [String: String])

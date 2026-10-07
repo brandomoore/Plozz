@@ -91,8 +91,33 @@ authorization checks during enrollment, loading and playback.
 Bracketed availability notices such as `[NO PUBLIC STREAM]` are skipped, not
 resolved into fake relative channel URLs. Valid relative addresses, encoded
 filenames and IPv6 streams remain supported.
+Basic M3U files may contain absolute HTTP(S) URLs without `#EXTM3U` or
+`#EXTINF`; unnamed entries receive a localized channel label without exposing
+their URL credentials. Their identity does not depend on playlist order.
+Headerless `#EXTINF` entries still support relative URLs; arbitrary bare text
+does not become a relative stream. Malformed extended entries remain skipped,
+and HLS segments/renditions never become individual channels. `#EXTGRP` supplies
+persistent default groups until changed or cleared, while an entry's
+`group-title` overrides those defaults for that entry.
+
+Playlist `user-agent`/`referrer` attributes (including HTTP-prefixed aliases),
+`#EXTVLCOPT`, and URL pipe headers share the same bounded header validation.
+Precedence is entry attributes, then following VLC directives, then URL pipe
+headers; none leak to the next entry or into playlist-download requests.
+Kodi inputstream/DRM properties are not executable player configuration.
+Account catalogues retain `tvg-name` and country metadata for XMLTV matching,
+without relaxing the existing station/region checks or accepting name-only
+guesses. Existing URL accounts refresh once for the new mapping; imported files
+need reimporting to recover previously discarded metadata.
+
 Explicit XMLTV guides are ordered, with separate first-guide-origin headers;
-Xtream otherwise uses its native guide API. Auto-discovered guide URLs on
+Xtream otherwise uses its native guide API, falling back to its `xmltv.php`
+for channels with empty, malformed or unsupported API listings. Successful
+native listings are retained. Explicit guides bypass that fallback selection.
+An unavailable endpoint is not retried once per remaining channel in the batch.
+Authentication failures, rate limits, transport failures and ordinary server
+errors remain visible rather than triggering another request path; a failed
+XMLTV fallback also remains an error. Auto-discovered guide URLs on
 another origin require explicit configuration for URL-based playlists.
 
 Catalogue imports stream into encrypted SQLite staging, not a retained

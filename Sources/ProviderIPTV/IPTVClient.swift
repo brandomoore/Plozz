@@ -4,7 +4,7 @@ import CryptoKit
 import Foundation
 
 actor IPTVClient {
-    private static let playlistCatalogScope = "playlist-v3"
+    private static let playlistCatalogScope = "playlist-v4"
     let credential: IPTVCredential
     private let http: IPTVHTTP
     private let artworkSecrets: [String]
@@ -471,8 +471,11 @@ actor IPTVClient {
         let data = try await object(url: endpoint(action: "get_simple_data_table", extra: [
             URLQueryItem(name: "stream_id", value: nativeID)
         ]))
-        guard data["epg_listings"] != nil else { throw IPTVError.malformed }
-        return data.array("epg_listings").compactMap {
+        if data.object("user_info").integer("auth") == 0 || data.integer("auth") == 0 {
+            throw IPTVError.authentication
+        }
+        guard case .array(let listings) = data["epg_listings"] else { throw IPTVError.malformed }
+        return listings.compactMap {
             IPTVMapping.programme($0.object, channelID: channelID, from: from, to: to)
         }
     }

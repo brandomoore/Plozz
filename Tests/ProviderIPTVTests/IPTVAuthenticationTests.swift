@@ -70,6 +70,32 @@ final class IPTVAuthenticationTests: XCTestCase {
         }
     }
 
+    func testPlaylistHeaderVariantsReachTheActualMediaRequestWithoutLeakingIntoImport() async throws {
+        for entry in [
+            "#EXTINF:-1 user-agent=\"Fixture Player\" referrer=\"https://provider.test/watch\",Private channel\nhttps://cdn.test/channel.ts",
+            "#EXTINF:-1,Private channel\n#EXTVLCOPT:http-user-agent=Fixture Player\n#EXTVLCOPT:http-referrer=https://provider.test/watch\nhttps://cdn.test/channel.ts",
+            "#EXTINF:-1,Private channel\nhttps://cdn.test/channel.ts|User-Agent=Fixture%20Player&Referer=https%3A%2F%2Fprovider.test%2Fwatch"
+        ] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { request in
+                if request.url?.path == "/list" {
+                    XCTAssertNotEqual(request.value(forHTTPHeaderField: "User-Agent"), "Fixture Player")
+                    XCTAssertNil(request.value(forHTTPHeaderField: "Referer"))
+                    return (200, [:], Data("#EXTM3U\n\(entry)\n".utf8))
+                }
+                guard request.value(forHTTPHeaderField: "User-Agent") == "Fixture Player",
+                      request.value(forHTTPHeaderField: "Referer") == "https://provider.test/watch" else {
+                    return (403, [:], Data())
+                }
+                return (200, ["Content-Type": "video/mp2t"], Data("authorized-media".utf8))
+            }
+            try await checkPlayback(IPTVCredential(
+                mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list"))
+            ))
+            XCTAssertTrue(IPTVFixture.state.requests.contains { $0.url?.host == "cdn.test" })
+        }
+    }
+
     func testXtreamRejectsWrongDisabledAndExpiredAccountsBeforeCatalogRequests() async throws {
         let cases: [(String, IPTVError)] = [
             (#"{"auth":0,"status":"Active"}"#, .authentication),

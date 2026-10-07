@@ -129,6 +129,7 @@ public struct M3UPlaylistParser: Sendable {
         public let channel: M3UPlaylistChannel
         public let attributes: [String: String]
         public let duration: TimeInterval?
+        public let hasExplicitName: Bool
     }
 
     public struct Stream: Sendable {
@@ -139,12 +140,15 @@ public struct M3UPlaylistParser: Sendable {
         private var lineByteCount = 0
         private var previousByte: UInt8 = 0
         private var penultimateByte: UInt8 = 0
-        private var hasHeader = false
+        private var hasPlaylistStart = false
         private var isHLS = false
         public private(set) var hasPlayableHLSTag = false
         public private(set) var byteCount = 0
         private var channels: [M3UPlaylistChannel] = []
         private var pending: PendingEntry?
+        private var awaitingURL = false
+        private var pendingHeaders: [String: String] = [:]
+        private var defaultGroups: String?
         private var entryCount = 0
         private var skippedEntryCount = 0
         private var fallbackNumber = 0
@@ -200,7 +204,7 @@ public struct M3UPlaylistParser: Sendable {
             if lineByteCount > 0 { try consumeBufferedLine() }
             if isHLS { throw LiveTVSourceImportError.streamManifest }
             if pending != nil { skippedEntryCount += 1; pending = nil }
-            guard hasHeader, entryCount > 0 else { throw LiveTVSourceImportError.invalidPlaylist }
+            guard hasPlaylistStart, entryCount > 0 else { throw LiveTVSourceImportError.invalidPlaylist }
             return M3UPlaylistImport(
                 channels: channels, entryCount: entryCount, skippedEntryCount: skippedEntryCount,
                 declaredGuideURLs: declaredGuideURLs, originURL: parser.baseURL
@@ -215,7 +219,7 @@ public struct M3UPlaylistParser: Sendable {
                 penultimateByte = 0
             }
             guard lineByteCount <= M3UPlaylistParser.maximumLineBytes else {
-                if !hasHeader {
+                if !hasPlaylistStart {
                     if indexesCatalog, lineBuffer.starts(with: Data("#EXTM3U".utf8)) {
                         // Optional guide declarations can exceed the line budget;
                         // they must not reject an otherwise valid channel list.
@@ -229,8 +233,12 @@ public struct M3UPlaylistParser: Sendable {
                 if lineBuffer.starts(with: Data("#EXTINF:".utf8)) {
                     try countEntry()
                     skippedEntryCount += 1
+                    awaitingURL = true
+                } else {
+                    awaitingURL = false
                 }
                 if pending != nil { skippedEntryCount += 1; pending = nil }
+                pendingHeaders.removeAll()
                 return
             }
             guard let rawLine = String(data: lineBuffer, encoding: .utf8)
@@ -244,11 +252,10 @@ public struct M3UPlaylistParser: Sendable {
 
         private mutating func consumeLine(_ rawLine: String) throws {
             var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !hasHeader, line.hasPrefix("\u{FEFF}") { line.removeFirst() }
+            if !hasPlaylistStart, line.hasPrefix("\u{FEFF}") { line.removeFirst() }
             guard !line.isEmpty else { return }
-            if !hasHeader {
-                guard line.hasPrefix("#EXTM3U") else { throw LiveTVSourceImportError.invalidPlaylist }
-                hasHeader = true
+            if !hasPlaylistStart, line.hasPrefix("#EXTM3U") {
+                hasPlaylistStart = true
                 let attributes = parser.parseAttributes(String(line.dropFirst("#EXTM3U".count)))
                 for key in ["url-tvg", "x-tvg-url"] {
                     for address in (attributes[key] ?? "").split(separator: ",") {
@@ -267,23 +274,51 @@ public struct M3UPlaylistParser: Sendable {
                 catalogEntries.removeAll(keepingCapacity: false)
                 importedIDs.removeAll(keepingCapacity: false)
                 pending = nil
+                pendingHeaders.removeAll()
                 return
             }
             guard !isHLS else { return }
             if line.hasPrefix("#EXTINF:") {
+                hasPlaylistStart = true
                 if pending != nil { skippedEntryCount += 1 }
                 try countEntry()
                 pending = parser.parseEXTINF(line)
+                awaitingURL = true
+                if let entry = pending {
+                    pending?.headers = pendingHeaders.merging(entry.headers) { _, entryValue in entryValue }
+                }
+                pendingHeaders.removeAll()
                 if pending == nil { skippedEntryCount += 1 }
                 return
             }
-            if line.hasPrefix("#EXTVLCOPT:") {
-                guard var entry = pending, let header = parser.parseVLCOption(line) else { return }
-                entry.headers[header.name] = header.value
-                pending = entry
+            if line.hasPrefix("#EXTGRP:") {
+                defaultGroups = parser.clean(String(line.dropFirst("#EXTGRP:".count)))
                 return
             }
-            guard !line.hasPrefix("#"), var entry = pending else { return }
+            if line.hasPrefix("#EXTVLCOPT:") {
+                guard let header = parser.parseVLCOption(line) else { return }
+                if pending != nil {
+                    pending?.headers[header.name] = header.value
+                } else if !awaitingURL {
+                    pendingHeaders[header.name] = header.value
+                }
+                return
+            }
+            guard !line.hasPrefix("#") else { return }
+            if !awaitingURL {
+                // Without EXTINF, only an absolute HTTP URL establishes a channel.
+                // Arbitrary text must never become a relative URL from an error page.
+                guard parser.isAbsoluteHTTPAddress(line) else {
+                    if !hasPlaylistStart { throw LiveTVSourceImportError.invalidPlaylist }
+                    return
+                }
+                try countEntry()
+                pending = PendingEntry(name: "", attributes: [:], duration: nil, headers: pendingHeaders)
+                hasPlaylistStart = true
+            }
+            awaitingURL = false
+            pendingHeaders.removeAll()
+            guard var entry = pending else { return }
             pending = nil
             let pipe = line.firstIndex(of: "|")
             var address = pipe.map { String(line[..<$0]) } ?? line
@@ -308,7 +343,7 @@ public struct M3UPlaylistParser: Sendable {
             let tvgID = parser.clean(entry.attributes["tvg-id"])
             let logoURL = parser.clean(entry.attributes["tvg-logo"])
                 .flatMap { parser.supportedURL($0, relativeTo: parser.baseURL) }
-            let groups = parser.categoryNames(from: entry.attributes["group-title"])
+            let groups = parser.categoryNames(from: entry.attributes["group-title"] ?? defaultGroups)
             let groupDescription = groups.isEmpty ? "Other" : groups.joined(separator: " • ")
             let digestInput = [tvgID ?? "", entry.name, streamURL.absoluteString].joined(separator: "\u{1F}")
             let digest = SHA256.hash(data: Data(digestInput.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -316,7 +351,8 @@ public struct M3UPlaylistParser: Sendable {
             guard indexesCatalog || importedIDs.insert(channelID).inserted else { skippedEntryCount += 1; return }
             let channel = M3UPlaylistChannel(
                 id: channelID, number: parser.validChannelNumber(entry.attributes["tvg-chno"]) ?? fallbackNumber,
-                name: entry.name, category: groups.first ?? "Other", symbol: parser.symbol(for: groupDescription),
+                name: entry.name.isEmpty ? String(localized: "Channel \(fallbackNumber)") : entry.name, // l10n:content - fallback channel title stored in the imported catalogue.
+                category: groups.first ?? "Other", symbol: parser.symbol(for: groupDescription),
                 accent: parser.accent(for: digest), tagline: groupDescription,
                 logoURL: logoURL, streamURL: streamURL,
                 logoNeedsDarkBackground: logoURL.map(M3UPlaylistParser.darkLogoURLs.contains) ?? false,
@@ -326,7 +362,8 @@ public struct M3UPlaylistParser: Sendable {
             )
             if indexesCatalog {
                 catalogEntries.append(CatalogEntry(
-                    channel: channel, attributes: entry.attributes, duration: entry.duration
+                    channel: channel, attributes: entry.attributes, duration: entry.duration,
+                    hasExplicitName: !entry.name.isEmpty
                 ))
             } else {
                 channels.append(channel)
@@ -361,13 +398,25 @@ public struct M3UPlaylistParser: Sendable {
         guard let comma = firstUnquotedComma(in: payload) else { return nil }
         let metadata = payload[..<comma]
         let rawName = payload[payload.index(after: comma)...]
-        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name.count <= 1_024 else { return nil }
+        let attributes = parseAttributes(String(metadata))
+        let name = clean(String(rawName)) ?? clean(attributes["tvg-name"]) ?? ""
+        guard name.count <= 1_024 else { return nil }
+        var headers: [String: String] = [:]
+        for (key, name) in [
+            ("http-user-agent", "User-Agent"), ("user-agent", "User-Agent"),
+            ("http-referrer", "Referer"), ("http-referer", "Referer"),
+            ("referer", "Referer"), ("referrer", "Referer")
+        ] {
+            if let value = attributes[key], let header = header(named: name, value: value) {
+                headers[header.name] = header.value
+            }
+        }
         return PendingEntry(
             name: name,
-            attributes: parseAttributes(String(metadata)),
+            attributes: attributes,
             duration: metadata.split(whereSeparator: \.isWhitespace).first
-                .flatMap { Double($0) }.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+                .flatMap { Double($0) }.flatMap { $0.isFinite && $0 > 0 ? $0 : nil },
+            headers: headers
         )
     }
 
@@ -509,6 +558,14 @@ public struct M3UPlaylistParser: Sendable {
             do { try IPTVCredential.validate(headers: [name: value]); return (name, value) }
             catch { return nil }
         }
+    }
+
+    private func isAbsoluteHTTPAddress(_ line: String) -> Bool {
+        let address = line.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)[0]
+        guard let parts = URLComponents(string: String(address)),
+              let scheme = parts.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              let host = parts.host, !host.isEmpty else { return false }
+        return true
     }
 
     private func supportedURL(_ text: String, relativeTo baseURL: URL?) -> URL? {
