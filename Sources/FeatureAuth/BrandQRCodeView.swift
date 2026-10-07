@@ -1,5 +1,4 @@
 #if canImport(SwiftUI) && canImport(UIKit)
-import CoreImage.CIFilterBuiltins
 import CoreUI
 import SwiftUI
 import UIKit
@@ -66,43 +65,9 @@ public struct BrandQRCodeView: View {
 
     public var body: some View {
         let tint = moduleColor ?? palette.primaryText
-        Group {
-            if let image = QRCodeRenderer.makeQRCode(from: payload, tint: UIColor(tint)) {
-                Image(uiImage: image)
-                    .interpolation(.none)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                RoundedRectangle(cornerRadius: PlozzTheme.Metrics.Radius.control)
-                    .fill(Color.white.opacity(0.06))
-                    .overlay(ProgressView())
-            }
-        }
-        .frame(width: size, height: size)
-    }
-}
-
-/// Non-generic QR renderer (a generic type can't hold the cached `CIContext`).
-enum QRCodeRenderer {
-    private static let ciContext = CIContext()
-
-    static func makeQRCode(from string: String, tint: UIColor) -> UIImage? {
-        let generator = CIFilter.qrCodeGenerator()
-        generator.message = Data(string.utf8)
-        generator.correctionLevel = "M"
-        guard let base = generator.outputImage else { return nil }
-
-        // Map dark modules -> tint, light background -> transparent, so the code
-        // sits directly on the screen with no white container.
-        let colorize = CIFilter.falseColor()
-        colorize.inputImage = base
-        colorize.color0 = CIColor(color: tint)
-        colorize.color1 = CIColor(red: 0, green: 0, blue: 0, alpha: 0)
-        guard let output = colorize.outputImage else { return nil }
-
-        let scaled = output.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
-        guard let cgImage = ciContext.createCGImage(scaled, from: scaled.extent) else { return nil }
-        return UIImage(cgImage: cgImage)
+        QRCodeView(payload, transparentBackground: true)
+            .foregroundStyle(tint)
+            .frame(width: size, height: size)
     }
 }
 

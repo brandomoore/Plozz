@@ -51,6 +51,7 @@ public final class HomeHeroRuntimeState {
     @ObservationIgnored var retainedMisses: [String: Int] = [:]
     @ObservationIgnored var candidatePool: HeroFreshnessCandidatePool = .empty
     @ObservationIgnored var sourceEligibility: HeroSourceEligibility = .unrestricted
+    @ObservationIgnored let supportingSourceIndex = HeroSupportingSourceIndex()
     /// Live, in-session watched/unwatched intents replayed onto the hero until the
     /// durable snapshot catches up. Kept bounded via ``registerWatchMutation(_:)``.
     var watchMutations: [MediaItemMutation] = []
@@ -77,6 +78,7 @@ public final class HomeHeroRuntimeState {
         retainedMisses = [:]
         candidatePool = .empty
         sourceEligibility = .unrestricted
+        supportingSourceIndex.reset()
         externalRefreshRevision &+= 1
         scopeRevision &+= 1
     }
@@ -932,7 +934,8 @@ public struct HomeView: View {
             recentlyAdded: content.latest,
             randomLibraries: randomLibraries,
             supportingCandidates: supportingCandidates,
-            previous: heroRuntime.sourceEligibility
+            previous: heroRuntime.sourceEligibility,
+            supportingIndex: heroRuntime.supportingSourceIndex
         ) { item in
             guard let handler else { return nil }
             let subject = item.watchlistSubject

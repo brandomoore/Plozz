@@ -27,24 +27,37 @@ public struct HeroSourceEligibility: Sendable {
         randomLibraries: [HeroRandomLibrary] = [],
         supportingCandidates: HeroFreshnessCandidatePool = .empty
     ) {
-        self.settings = settings
         var exclusions: [Exclusion] = []
         if settings.isEnabled(.watchlist) {
             for item in removedFromWatchlist {
                 Self.addExclusion(HeroDedupe.tokens(for: item), representative: item, to: &exclusions)
             }
         }
+        self.init(
+            settings: settings, exclusions: exclusions, randomLibraries: randomLibraries
+        ) {
+            Self.tokens(in: Self.supportingRows(
+                settings: settings, continueWatching: continueWatching,
+                recentlyAdded: recentlyAdded, candidates: supportingCandidates
+            ))
+        }
+    }
+
+    private init(
+        settings: HeroSettings, exclusions: [Exclusion],
+        randomLibraries: [HeroRandomLibrary], supportingTokens: () -> Set<String>
+    ) {
+        self.settings = settings
         excludedWatchlistGroups = Array(exclusions.suffix(128))
         excludedWatchlistTokens = excludedWatchlistGroups.reduce(into: Set<String>()) { $0.formUnion($1.tokens) }
-        var supporting: [MediaItem] = []
-        if settings.isEnabled(.continueWatching) { supporting += continueWatching }
-        if settings.isEnabled(.recentlyAdded) { supporting += recentlyAdded }
-        for bucket in supportingCandidates.buckets
-        where bucket.source != .watchlist && settings.isEnabled(bucket.source) {
-            supporting += bucket.items
-        }
-        otherSourceTokens = Self.tokens(supporting)
         self.randomLibraries = settings.isEnabled(.randomFromLibrary) ? randomLibraries : []
+        // Supporting sources matter only for an explicit removal. Do not index
+        // entire Home rows on every render when there is nothing to exclude.
+        guard !excludedWatchlistTokens.isEmpty else {
+            otherSourceTokens = []
+            return
+        }
+        otherSourceTokens = supportingTokens()
     }
 
     /// `nil` membership means the durable membership authority is not ready.
@@ -59,39 +72,41 @@ public struct HeroSourceEligibility: Sendable {
         randomLibraries: [HeroRandomLibrary] = [],
         supportingCandidates: HeroFreshnessCandidatePool = .empty,
         previous: HeroSourceEligibility = .unrestricted,
+        supportingIndex: HeroSupportingSourceIndex? = nil,
         watchlistMembership: (MediaItem) -> Bool?
     ) -> HeroSourceEligibility {
         guard let settings, settings.isActive, settings.isEnabled(.watchlist) else {
+            supportingIndex?.reset()
             return .unrestricted
         }
         // Removed slides no longer appear among visible candidates. Keep their
         // bounded representatives queryable so a failed removal can roll back.
         let rechecked = previous.excludedWatchlistGroups.map(\.representative) + candidates
         let membership = rechecked.map {
-            (item: $0, tokens: HeroDedupe.tokens(for: $0), state: watchlistMembership($0))
+            (item: $0, state: watchlistMembership($0))
         }
         var groups = previous.excludedWatchlistGroups
-        for entry in membership where entry.state == true {
-            groups.removeAll { !$0.tokens.isDisjoint(with: entry.tokens) }
+        for entry in membership where entry.state == true && !groups.isEmpty {
+            let tokens = HeroDedupe.tokens(for: entry.item)
+            groups.removeAll { !$0.tokens.isDisjoint(with: tokens) }
         }
         // A pending removal on one edition outranks a stale positive answer for
         // another edition in the same pass.
         for entry in membership where entry.state == false {
-            Self.addExclusion(entry.tokens, representative: entry.item, to: &groups)
+            Self.addExclusion(HeroDedupe.tokens(for: entry.item), representative: entry.item, to: &groups)
         }
-        var result = HeroSourceEligibility(
+        if groups.isEmpty { supportingIndex?.reset() }
+        return HeroSourceEligibility(
             settings: settings,
-            removedFromWatchlist: [],
-            continueWatching: continueWatching,
-            recentlyAdded: recentlyAdded,
-            randomLibraries: randomLibraries,
-            supportingCandidates: supportingCandidates
-        )
-        result.excludedWatchlistGroups = Array(groups.suffix(128))
-        result.excludedWatchlistTokens = result.excludedWatchlistGroups.reduce(into: Set<String>()) {
-            $0.formUnion($1.tokens)
+            exclusions: groups,
+            randomLibraries: randomLibraries
+        ) {
+            let rows = Self.supportingRows(
+                settings: settings, continueWatching: continueWatching,
+                recentlyAdded: recentlyAdded, candidates: supportingCandidates
+            )
+            return supportingIndex?.tokens(in: rows) ?? Self.tokens(in: rows)
         }
-        return result
     }
 
     public func allows(_ item: MediaItem, from source: HeroSourceKind) -> Bool {
@@ -144,8 +159,24 @@ public struct HeroSourceEligibility: Sendable {
             && !HeroDedupe.tokens(for: item).isDisjoint(with: excludedWatchlistTokens)
     }
 
-    private static func tokens(_ items: [MediaItem]) -> Set<String> {
-        items.reduce(into: Set<String>()) { $0.formUnion(HeroDedupe.tokens(for: $1)) }
+    private static func supportingRows(
+        settings: HeroSettings, continueWatching: [MediaItem],
+        recentlyAdded: [MediaItem], candidates: HeroFreshnessCandidatePool
+    ) -> [[MediaItem]] {
+        var rows: [[MediaItem]] = []
+        if settings.isEnabled(.continueWatching) { rows.append(continueWatching) }
+        if settings.isEnabled(.recentlyAdded) { rows.append(recentlyAdded) }
+        for bucket in candidates.buckets
+        where bucket.source != .watchlist && settings.isEnabled(bucket.source) {
+            rows.append(bucket.items)
+        }
+        return rows
+    }
+
+    fileprivate static func tokens(in rows: [[MediaItem]]) -> Set<String> {
+        rows.reduce(into: Set<String>()) { tokens, row in
+            for item in row { tokens.formUnion(HeroDedupe.tokens(for: item)) }
+        }
     }
 
     private static func addExclusion(
@@ -164,5 +195,28 @@ public struct HeroSourceEligibility: Sendable {
         case .series, .season, .episode: return .series
         default: return nil
         }
+    }
+}
+
+/// Memoizes only supporting-source identities, never Watchlist membership.
+/// Unchanged arrays share their storage, so equality avoids re-tokenizing Home
+/// during layout. Full values, not item IDs/counts, invalidate ownership changes.
+@MainActor
+public final class HeroSupportingSourceIndex {
+    private var rows: [[MediaItem]]?
+    private var storedTokens: Set<String> = []
+
+    public init() {}
+
+    public func reset() {
+        rows = nil
+        storedTokens = []
+    }
+
+    func tokens(in rows: [[MediaItem]]) -> Set<String> {
+        if self.rows == rows { return storedTokens }
+        storedTokens = HeroSourceEligibility.tokens(in: rows)
+        self.rows = rows
+        return storedTokens
     }
 }

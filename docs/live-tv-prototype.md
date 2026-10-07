@@ -145,6 +145,12 @@ failed refreshes preserve the previous catalogue, and complete retries replace i
 These are simulator integration checks, not a reproduction of an unavailable
 provider playlist or physical-device performance guarantees.
 
+IPTV HTTP teardown closes request admission before invalidating its session.
+Requests still creating their native URLSession tasks are cancelled and drained
+first; delivered response bodies are cancelled by final invalidation. Late
+callers receive cancellation, not an Objective-C invalidated-session exception.
+Cancelling one caller does not close the session for other callers.
+
 The shared live-channel publication path normalizes each matching name once,
 rather than during every sort comparison, and collects language/country facets
 from distinct metadata values. It avoids full-lineup copies for absent overrides

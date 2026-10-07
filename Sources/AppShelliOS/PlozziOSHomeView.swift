@@ -112,6 +112,7 @@ struct PlozziOSHomeView: View {
     /// so a deleted or un-watchlisted one eventually leaves. See `HeroLiveMerge`.
     @State private var heroRetainedMisses: [String: Int] = [:]
     @State private var heroEligibility = HeroSourceEligibility.unrestricted
+    @State private var heroSupportingIndex = HeroSupportingSourceIndex()
     @State private var heroCandidatePool = HeroFreshnessCandidatePool.empty
     /// The Random source's retained draw, so a background recomputation reuses the
     /// titles already on screen instead of re-shuffling every library on every
@@ -991,6 +992,7 @@ struct PlozziOSHomeView: View {
 
     private func resetHeroScope() {
         heroEligibility = .unrestricted
+        heroSupportingIndex.reset()
         heroCandidatePool = .empty
         heroPinnedItemIDs = []
         heroRetainedMisses = [:]
@@ -1036,7 +1038,8 @@ struct PlozziOSHomeView: View {
             recentlyAdded: content.latest,
             randomLibraries: randomLibraries,
             supportingCandidates: supportingCandidates,
-            previous: heroEligibility
+            previous: heroEligibility,
+            supportingIndex: heroSupportingIndex
         ) { item in
             let subject = item.watchlistSubject
             if handler.isActivelyRemovingFromWatchlist(subject) { return false }

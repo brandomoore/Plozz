@@ -4,6 +4,72 @@ import XCTest
 @testable import FeatureHomeCore
 
 final class HeroWatchlistEligibilityTests: XCTestCase {
+    @MainActor
+    func testLargeSupportingRowsWithoutRemovals() {
+        let candidates = (0..<12).map { item("hero-\($0)", tmdb: String($0)) }
+        let supporting = (0..<10_000).map { item("library-\($0)", tmdb: String($0 + 100)) }
+        let configuration = settings([.watchlist, .recentlyAdded, .continueWatching])
+        let start = ContinuousClock.now
+        for _ in 0..<24 {
+            let eligibility = HeroSourceEligibility.capture(
+                settings: configuration, candidates: candidates,
+                continueWatching: supporting, recentlyAdded: supporting
+            ) { _ in true }
+            XCTAssertEqual(eligibility.filtering(candidates), candidates)
+        }
+        print("Hero eligibility: 24 captures, 20,000 supporting entries; elapsed: \(start.duration(to: .now))")
+    }
+
+    @MainActor
+    func testLargeSupportingRowsWithRemovalReuseTheirIdentityIndex() {
+        let candidate = item("removed", tmdb: "42")
+        let supporting = (0..<10_000).map { item("library-\($0)", tmdb: String($0 + 100)) }
+        let configuration = settings([.watchlist, .recentlyAdded, .continueWatching])
+        let index = HeroSupportingSourceIndex()
+        let start = ContinuousClock.now
+        for _ in 0..<24 {
+            let eligibility = HeroSourceEligibility.capture(
+                settings: configuration, candidates: [candidate],
+                continueWatching: supporting, recentlyAdded: supporting,
+                supportingIndex: index
+            ) { _ in false }
+            XCTAssertFalse(eligibility.allows(candidate))
+        }
+        print("Hero indexed removal: 24 captures, 20,000 supporting entries; elapsed: \(start.duration(to: .now))")
+    }
+
+    @MainActor
+    func testSupportingIndexTracksMetadataSettingsAndPoolChangesWithoutCachingMembership() {
+        let candidate = item("removed", tmdb: "42")
+        var support = item("other-source", tmdb: "42")
+        let index = HeroSupportingSourceIndex()
+        let configuration = settings([.watchlist, .recentlyAdded, .featured])
+        func capture(
+            settings: HeroSettings, rows: [MediaItem] = [],
+            pool: HeroFreshnessCandidatePool = .empty, membership: Bool?
+        ) -> HeroSourceEligibility {
+            HeroSourceEligibility.capture(
+                settings: settings, candidates: [candidate], recentlyAdded: rows,
+                supportingCandidates: pool, supportingIndex: index
+            ) { _ in membership }
+        }
+        XCTAssertTrue(capture(settings: configuration, rows: [support], membership: false).allows(candidate))
+        support.providerIDs = ["Tmdb": "43"]
+        XCTAssertFalse(capture(settings: configuration, rows: [support], membership: false).allows(candidate),
+                       "Unchanged item IDs/counts cannot conceal changed identity evidence.")
+        XCTAssertTrue(capture(settings: configuration, rows: [support], membership: true).allows(candidate))
+        XCTAssertFalse(capture(settings: configuration, rows: [support], membership: false).allows(candidate),
+                       "Current membership is re-read, never memoized.")
+        support.providerIDs = ["Tmdb": "42"]
+        let pool = HeroFreshnessCandidatePool(buckets: [.init(source: .featured, items: [support])])
+        XCTAssertTrue(capture(settings: configuration, pool: pool, membership: false).allows(candidate))
+        XCTAssertFalse(capture(settings: settings(), pool: pool, membership: false).allows(candidate),
+                       "Disabled sources must not preserve a removed title.")
+        XCTAssertFalse(capture(settings: configuration, membership: false).allows(candidate))
+        index.reset()
+        XCTAssertFalse(capture(settings: configuration, membership: false).allows(candidate))
+    }
+
     private func item(_ id: String, tmdb: String? = nil) -> MediaItem {
         MediaItem(
             id: id, title: id, kind: .movie,
