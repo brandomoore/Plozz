@@ -683,6 +683,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         let container = try await client.collectionMembers(
             ratingKey: collectionID, start: page.startIndex, size: page.limit
         )
+        try Self.validateCollectionPage(container, startIndex: page.startIndex)
         let items = (container.Metadata ?? []).map(map(metadata:))
         return MediaPage(
             items: items,
@@ -691,6 +692,16 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
                 ?? (page.startIndex + items.count
                     + (items.count == page.limit && !items.isEmpty ? 1 : 0))
         )
+    }
+
+    private static func validateCollectionPage(_ container: PlexMediaContainer, startIndex: Int) throws {
+        if container.Metadata?.isEmpty != false {
+            guard (container.size ?? 0) == 0,
+                  (container.totalSize ?? startIndex) <= startIndex,
+                  container.Directory?.isEmpty != false else {
+                throw AppError.invalidResponse
+            }
+        }
     }
 
     public func videoPlaylists(in libraryID: String, page: PageRequest) async throws -> MediaPage {
@@ -815,13 +826,7 @@ public struct PlexProvider: MediaProvider, AuthenticatedHTTPOriginProviding {
         let container = try await client.sectionCollections(
             sectionID: sectionID, start: page.startIndex, size: page.limit, sort: page.sort
         )
-        if container.Metadata?.isEmpty != false {
-            guard (container.size ?? 0) == 0,
-                  (container.totalSize ?? page.startIndex) <= page.startIndex,
-                  container.Directory?.isEmpty != false else {
-                throw AppError.invalidResponse
-            }
-        }
+        try Self.validateCollectionPage(container, startIndex: page.startIndex)
         let items = (container.Metadata ?? []).map(map(metadata:)).map { $0.taggingLibrary(sectionID) }
         let total = container.totalSize
             ?? (page.startIndex + items.count

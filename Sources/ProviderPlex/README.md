@@ -62,6 +62,12 @@ Collection membership
 uses `MediaProvider.collectionMembers(of:page:)`, backed by paged
 `/library/metadata/{ratingKey}/children`, with no type or sort override. That same
 endpoint serves static and smart collections and preserves their server order.
+Membership requests use `includeOptionalElements=Stream`, never the
+`includeElements=Stream` whitelist: smart-collection responses honoring that
+whitelist can retain their counts while omitting the members. Discovery and
+membership both reject nonempty envelopes with missing metadata rather than
+presenting them as empty collections. Genuine empty collections and exhausted
+pages remain valid.
 Both platforms browse members in the existing vertical library grid, fetching
 bounded pages on demand rather than loading a whole collection before first paint.
 Failures remain separate from empty results and expose retry.
