@@ -25,25 +25,26 @@
         {
           "category": "Updated",
           "items": [
-            "Fewer empty pages, with Live TV first for live-only setups.",
+            "Open straight to Live TV when you only have live channels.",
+            "Hide empty menu pages, such as Watchlist, unless you choose to keep them visible.",
             "More complete cast, crew, studio, and genre details.",
-            "Silo ratings now follow your Silo settings.",
-            "Easier Live TV setup, guide setup, and channel checks.",
+            "Show the ratings you selected in Silo, in your chosen order.",
+            "Clearer controls for adding Live TV sources, setting up guides, and checking channels.",
             "Faster loading and browsing of large channel lists.",
-            "Simpler iCloud settings and clearer reload and reset messages.",
+            "Simpler iCloud settings, with clearer messages when you reload or reset sync.",
             "PIN buttons are easier to see.",
-            "Restored the Live TV player's card and logo corners.",
-            "Smaller, clearer recording indicator.",
+            "Restored the original corners on channel cards and logos in the Live TV player.",
+            "Smaller, clearer status indicator when recording diagnostics for a bug report.",
             {
               "text": "Episode labels stay visible and move smoothly as you browse.",
               "platforms": ["tvOS"]
             },
             {
-              "text": "Settings keeps your place when you close it.",
+              "text": "Close Settings to return to the same page and scroll position.",
               "platforms": ["iOS"]
             },
             {
-              "text": "Cleaner Settings and Live TV setup pages.",
+              "text": "Smaller page titles and consistent spacing in Settings and Live TV setup.",
               "platforms": ["iOS"]
             },
             {
@@ -58,11 +59,11 @@
             "Plex collections incorrectly appearing empty.",
             "Watch history being saved to the wrong user.",
             {
-              "text": "Show-title links not opening the show.",
+              "text": "The show-title link on an episode page not opening the show.",
               "platforms": ["tvOS"]
             },
             {
-              "text": "Overlapping library controls and gaps around artwork.",
+              "text": "Library controls overlapping menus and artwork not reaching the screen edges.",
               "platforms": ["tvOS"]
             },
             {
@@ -70,7 +71,7 @@
               "platforms": ["tvOS"]
             },
             {
-              "text": "Wrong song selection, playback, or play history in music queues.",
+              "text": "Music queues selecting or playing the wrong song, or saving incorrect play history.",
               "platforms": ["tvOS"]
             },
             {
