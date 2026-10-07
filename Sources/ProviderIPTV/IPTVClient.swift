@@ -437,9 +437,9 @@ actor IPTVClient {
                   var components = URLComponents(url: try baseURL(), resolvingAgainstBaseURL: false) else {
                 throw IPTVError.malformed
             }
-            components.percentEncodedPath = components.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                .split(separator: "/").map(String.init).reduce("") { $0 + "/" + $1 }
-                + "/" + encoded.joined(separator: "/")
+            let basePath = components.percentEncodedPath.split(separator: "/").joined(separator: "/")
+            let streamPath = encoded.joined(separator: "/")
+            components.percentEncodedPath = basePath.isEmpty ? "/\(streamPath)" : "/\(basePath)/\(streamPath)"
             guard let result = components.url else { throw IPTVError.malformed }
             url = result
         } else { throw AppError.notFound }

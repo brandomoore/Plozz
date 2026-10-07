@@ -327,6 +327,65 @@ final class MetadataEnrichmentPipelineTests: XCTestCase {
 
     // MARK: present-field skipping
 
+    func testIDThreadingPreservesNamespaceAliasesAndMatchingEvidence() {
+        let query = makeQuery(ids: ["IMDb ID": "tt0111161"])
+            .offering(episodeHints: [], titleAlternates: ["Specific title"])
+        let threaded = query.mergingProviderIDs(["Imdb": "tt0109830", "Tmdb": "278"])
+        XCTAssertEqual(threaded.providerIDs, ["IMDb ID": "tt0111161", "Tmdb": "278"])
+        XCTAssertEqual(threaded.titleAlternates, ["Specific title"])
+    }
+
+    func testConflictingStrongIDsRejectTheWholeResponseButNotSlugsOrMissingIDs() async {
+        for (known, candidate, accepted): ([String: String], [String: String], Bool) in [
+            (["IMDb": "TT0111161"], ["Imdb": "tt0111161"], true),
+            (["IMDb ID": "tt0111161"], ["Imdb": "tt0109830"], false),
+            (["TheMovieDb": "278"], ["Tmdb": "13"], false),
+            (["TVDB": "007"], ["TheTVDB": "7"], true),
+            (["Tvdb": "a-show-slug"], ["Tvdb": "7"], true),
+            (["TvMaze": "12"], ["Tvmaze": "13"], false),
+            (["myanimelist": "1"], ["Mal": "2"], false),
+            (["AniList": "1"], ["anilistid": "2"], false),
+            (["AniDB": "1"], ["anidb": "2"], false),
+            (["Imdb": "not-an-imdb-id"], ["Imdb": "tt0111161"], true),
+            (["Imdb": "tt0111161"], ["Imdb": "invalid"], true),
+            (["Tmdb": "0"], ["Tmdb": "278"], true),
+            (["Imdb": "tt0111161"], ["Tmdb": "278"], true),
+            ([:], ["Imdb": "tt0111161"], true)
+        ] {
+            let provider = FakeEnrichmentProvider(
+                id: .tvdb, capabilities: [.canonicalText],
+                output: MetadataEnrichment(
+                    externalIDs: candidate.mapValues { sourced($0, .tvdb) },
+                    overview: sourced("Candidate overview", .tvdb)
+                )
+            )
+            let pipeline = MetadataEnrichmentPipeline(providers: [provider], config: makeConfig(order: [.tvdb]))
+            let result = await pipeline.enrich(makeQuery(ids: known), requesting: [.overview], tier: .foregroundFill)
+            XCTAssertEqual(!result.isEmpty, accepted, "\(known), \(candidate)")
+        }
+    }
+
+    func testChildIdentityValidationUsesShowIDsInsteadOfEpisodeIDs() async {
+        for kind: MediaItemKind in [.episode, .season] {
+            for imdb in ["tt1111111", "tt2222222"] {
+                let item = MediaItem(
+                    id: "child", title: "Child", kind: kind, parentTitle: "Show",
+                    providerIDs: ["Imdb": "tt2222222", "SeriesImdb": "tt1111111"]
+                )
+                let provider = FakeEnrichmentProvider(
+                    id: .tvdb, capabilities: [.canonicalText],
+                    output: MetadataEnrichment(
+                        externalIDs: ["Imdb": sourced(imdb, .tvdb)],
+                        overview: sourced("Show overview", .tvdb)
+                    )
+                )
+                let pipeline = MetadataEnrichmentPipeline(providers: [provider], config: makeConfig(order: [.tvdb]))
+                let result = await pipeline.enrich(MetadataQuery(item), requesting: [.overview], tier: .foregroundFill)
+                XCTAssertEqual(!result.isEmpty, imdb == "tt1111111")
+            }
+        }
+    }
+
     func testPresentFieldsAreNeitherRequestedNorOverwritten() async {
         let provider = FakeEnrichmentProvider(
             id: .tvdb,

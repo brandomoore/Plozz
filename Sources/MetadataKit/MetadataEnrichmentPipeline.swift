@@ -1,19 +1,29 @@
 import Foundation
 import CoreModels
+import CoreNetworking
 
 public extension MetadataQuery {
     /// A stable, whole-item cache identity for pipeline/provider result caching:
-    /// prefers a concrete external id and otherwise a normalized title+year.
+    /// includes the complete known identity, otherwise a normalized title+year.
     /// Child scope separates series, seasons and episodes, including unnumbered
     /// children. Distinct from ``cacheKey(for:)`` which is per-``ArtworkKind``.
     var enrichmentCacheKey: String {
-        var parts: [String] = [contentType.rawValue]
-        if let anilist = animeIDs.anilist { parts.append("anilist:\(anilist)") }
-        else if let mal = animeIDs.mal { parts.append("mal:\(mal)") }
-        else if let tmdb = providerIDs.providerID(.tmdb) ?? providerIDs.providerID(.seriesTmdb) { parts.append("tmdb:\(tmdb)") }
-        else if let tvdb = providerIDs.providerID(.tvdb) { parts.append("tvdb:\(tvdb)") }
-        else if let imdb = providerIDs.providerID(.imdb) { parts.append("imdb:\(imdb)") }
-        else { parts.append("t:\(title.lowercased())|y:\(year.map(String.init) ?? "")") }
+        var ids: [String] = []
+        if let anilist = animeIDs.anilist { ids.append("anime-anilist:\(anilist)") }
+        if let mal = animeIDs.mal { ids.append("anime-mal:\(mal)") }
+        if let anidb = animeIDs.anidb { ids.append("anime-anidb:\(anidb)") }
+        if let kitsu = animeIDs.kitsu { ids.append("anime-kitsu:\(kitsu.utf8.count):\(kitsu)") }
+        for namespace in ProviderIDNamespace.allCases {
+            guard let raw = providerIDs.providerID(namespace) else { continue }
+            let value = Self.normalizedIdentity(raw, namespace: namespace) ?? raw
+            ids.append("\(namespace.rawValue):\(value.utf8.count):\(value)")
+        }
+        var parts = [contentType.rawValue, kind.rawValue]
+        if ids.isEmpty {
+            parts.append("t:\(title.lowercased())|y:\(year.map(String.init) ?? "")")
+        } else {
+            parts.append(contentsOf: ids)
+        }
         switch kind {
         case .season:
             parts.append("s\(seasonNumber.map(String.init) ?? "?")")
@@ -32,7 +42,11 @@ public extension MetadataQuery {
     func mergingProviderIDs(_ additionalIDs: [String: String]) -> MetadataQuery {
         guard !additionalIDs.isEmpty else { return self }
         var merged = providerIDs
-        for (key, value) in additionalIDs where merged[key] == nil {
+        var additions = additionalIDs
+        additions.removeProviderIDs(in: Set(ProviderIDNamespace.allCases.filter {
+            providerIDs.providerID($0) != nil
+        }))
+        for (key, value) in additions where merged[key] == nil {
             merged[key] = value
         }
         guard merged.count != providerIDs.count else { return self }
@@ -45,8 +59,40 @@ public extension MetadataQuery {
             seasonNumber: seasonNumber,
             episodeNumber: episodeNumber,
             animeIDs: animeIDs,
-            providerIDs: merged
+            providerIDs: merged,
+            episodeHints: episodeHints,
+            titleAlternates: titleAlternates
         )
+    }
+
+    internal func hasConflictingIdentity(with candidate: [String: String]) -> Bool {
+        var known = seriesScoped.providerIDs
+        for (namespace, id): (ProviderIDNamespace, Int?) in [
+            (.aniList, animeIDs.anilist), (.myAnimeList, animeIDs.mal), (.aniDB, animeIDs.anidb)
+        ] where known.providerID(namespace) == nil {
+            if let id { known[namespace.canonicalKey] = String(id) }
+        }
+        for namespace in ProviderIDNamespace.allCases {
+            guard let mine = known.providerID(namespace).flatMap({ Self.normalizedIdentity($0, namespace: namespace) }),
+                  let theirs = candidate.providerID(namespace).flatMap({ Self.normalizedIdentity($0, namespace: namespace) }) else {
+                continue
+            }
+            if mine != theirs { return true }
+        }
+        return false
+    }
+
+    private static func normalizedIdentity(_ value: String, namespace: ProviderIDNamespace) -> String? {
+        switch namespace {
+        case .imdb, .seriesImdb:
+            return TVmazeClient.isIMDbID(value) ? value.lowercased() : nil
+        case .tmdb, .tvdb, .tvmaze, .aniList, .myAnimeList, .aniDB,
+             .seriesTmdb, .seriesTvdb, .seriesTvmaze, .seriesAniList, .seriesMal, .seriesAniDB:
+            guard let id = Int(value), id > 0 else { return nil }
+            return String(id)
+        default:
+            return nil
+        }
     }
 }
 
@@ -127,6 +173,10 @@ public actor MetadataEnrichmentPipeline {
             // fuzzy title search (no duplicate work).
             let threaded = query.mergingProviderIDs(result.externalIDs.mapValues(\.value))
             let enrichment = await provider.enrich(threaded, missing: round.fields)
+            guard !threaded.hasConflictingIdentity(with: enrichment.externalIDs.mapValues(\.value)) else {
+                PlozzLog.networking.error("Metadata enrichment rejected conflicting identity from \(round.source.rawValue); trying the next source.")
+                continue
+            }
             result.fillMissing(from: enrichment, skipping: present)
             remaining = requested.subtracting(present).subtracting(result.filledFields)
         }

@@ -3,6 +3,82 @@ import XCTest
 @testable import MetadataKit
 
 final class DetailMetadataConsistencyTests: XCTestCase {
+    func testConflictingCachedTitleMatchCannotRedirectAuthoritativeIMDbCredits() async throws {
+        try await verifyConflictingCachedTitleMatch(seedDownstreamCache: false)
+    }
+
+    func testAddedAuthoritativeIdentityCannotReuseEarlierWrongTMDbCredits() async throws {
+        try await verifyConflictingCachedTitleMatch(seedDownstreamCache: true)
+    }
+
+    private func verifyConflictingCachedTitleMatch(seedDownstreamCache: Bool) async throws {
+        let fixture = TMDbTVDBDiscoveryFixture { request, _ in
+            switch request.url!.path {
+            case "/3/find/tt0111161":
+                return .init(json: #"{"movie_results":[{"id":278}],"tv_results":[]}"#)
+            case "/3/movie/278/credits":
+                return .init(json: #"{"cast":[],"crew":[{"id":1,"name":"Correct director","job":"Director"}]}"#)
+            case "/3/movie/278":
+                return .init(json: #"{"genres":[{"name":"Drama"}]}"#)
+            case "/3/movie/13/credits":
+                return .init(json: #"{"cast":[],"crew":[{"id":2,"name":"Wrong director","job":"Director"}]}"#)
+            case "/3/movie/13":
+                return .init(json: #"{"genres":[{"name":"Wrong genre"}]}"#)
+            default:
+                XCTFail("Unexpected request: \(request.url!.path)")
+                return .init(json: "{}", status: 404)
+            }
+        }
+        let wrongMatch = FakeEnrichmentProvider(
+            id: .tvdb, capabilities: [.canonicalText, .externalIDs],
+            output: MetadataEnrichment(
+                externalIDs: [
+                    "Imdb": .init(value: "tt0109830", source: .tvdb),
+                    "Tmdb": .init(value: "13", source: .tvdb)
+                ],
+                genres: seedDownstreamCache ? nil : .init(value: ["Wrong genre"], source: .tvdb)
+            )
+        )
+        let cache = ProviderResultCache()
+        let pipeline = MetadataEnrichmentPipeline(
+            providers: [
+                CachedEnrichmentProvider(base: wrongMatch, cache: cache),
+                CachedEnrichmentProvider(
+                    base: TMDbEnrichmentProvider(provider: TMDbMetadataProvider(
+                        access: .directToken("test-token"), detailHTTP: fixture.http
+                    )),
+                    cache: cache
+                )
+            ],
+            config: MetadataEnrichmentConfig(order: [.tvdb, .tmdb], priority: MetadataPriorityPolicy(rules: []))
+        )
+        var ids = seedDownstreamCache ? ["AniList": "1"] : [:]
+        if seedDownstreamCache {
+            let earlierQuery = MetadataQuery(MediaItem(
+                id: "movie", title: "A curated title", kind: .movie, providerIDs: ids
+            ))
+            let earlier = await pipeline.enrich(
+                earlierQuery, requesting: [.genres, .directors], tier: .foregroundFill
+            )
+            XCTAssertEqual(earlier.directors?.value.first?.name, "Wrong director")
+        }
+        ids["IMDb ID"] = "tt0111161"
+        let query = DetailMetadataResolver.metadataQuery(for: MediaItem(
+            id: "movie", title: "A curated title", kind: .movie,
+            providerIDs: ids
+        ))
+        for _ in 0..<2 {
+            let result = await pipeline.enrich(query, requesting: [.genres, .directors], tier: .foregroundFill)
+            XCTAssertEqual(result.directors?.value.first?.name, "Correct director")
+            XCTAssertEqual(result.genres?.value, ["Drama"])
+            XCTAssertNotEqual(result.externalIDs["Tmdb"]?.value, "13")
+        }
+        XCTAssertEqual(wrongMatch.callCount, seedDownstreamCache ? 2 : 1,
+                       "Each distinct identity context must be fetched once, then exercise its cached response.")
+        let requests = await fixture.recorded()
+        XCTAssertEqual(requests.filter { $0.url?.path == "/3/movie/13/credits" }.count, seedDownstreamCache ? 1 : 0)
+    }
+
     func testChildMetadataUsesOnlyShowIDsWithoutLosingCreditScope() {
         let item = MediaItem(
             id: "episode", title: "Episode title", kind: .episode, parentTitle: "Show",

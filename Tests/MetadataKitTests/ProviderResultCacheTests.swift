@@ -104,6 +104,18 @@ final class ProviderResultCacheTests: XCTestCase {
         XCTAssertEqual(counting.calls, 2, "A wider request must not be served a narrower cached result")
     }
 
+    func testCacheIdentityIncludesEveryKnownNamespaceWithoutDependingOnAliases() {
+        func key(_ ids: [String: String]) -> String {
+            let query = MetadataQuery(MediaItem(id: "movie", title: "Item", kind: .movie, providerIDs: ids))
+            return CachedEnrichmentProvider.requestKey(query: query, missing: [.directors, .genres])
+        }
+        let original = key(["AniList": "1"])
+        let identified = key(["AniList": "1", "Imdb": "tt0111161"])
+        XCTAssertNotEqual(original, identified)
+        XCTAssertNotEqual(identified, key(["AniList": "1", "Imdb": "tt0109830", "Tmdb": "13"]))
+        XCTAssertEqual(identified, key(["IMDb ID": " TT0111161 ", "anilistid": "01"]))
+    }
+
     func testExpiryIsHonored() async {
         let clock = MutableClock(Date(timeIntervalSince1970: 1000))
         let cache = ProviderResultCache(negativeTTL: 10, now: { clock.value })

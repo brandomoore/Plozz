@@ -46,6 +46,12 @@ load-bearing.
   Child detail queries promote only explicit series IDs for show-level providers,
   retaining season/episode numbers for scoped credits; an episode's own ID or
   title never stands in for an unidentified show.
+  Before accepting fields or threading IDs, the pipeline rejects live or cached
+  responses that contradict a known, well-formed external ID. Namespace aliases
+  cannot override authoritative IDs; rejected matches fall through to the next
+  source without contributing metadata. Cache keys include the complete known
+  identity, so adding a stronger ID cannot reuse metadata resolved for an earlier,
+  less-identified query, even when a provider returns no IDs with its fields.
   TMDB transport failures report provider health, rather than caching an outage
   or revoked credential as an authoritative absence of credits.
   Artwork, playable identity, file/stream facts and Common Sense are not filled
