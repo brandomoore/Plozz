@@ -187,8 +187,8 @@ private struct IPTVAdvancedFields: View {
             IPTVAddressField(title: "Guide URL (optional)", value: $model.guideAddress)
             ForEach($model.additionalGuides) { $guide in
                 IPTVAddressField(title: "Additional guide URL", value: $guide.address)
-                Button("Remove guide", role: .destructive) {
-                    model.additionalGuides.removeAll { $0.id == guide.id }
+                Button("Remove guide", role: .destructive) { [id = guide.id] in
+                    model.additionalGuides.removeAll { $0.id == id }
                 }
             }
             Button("Add guide", systemImage: "plus", action: model.addGuide)
@@ -219,8 +219,8 @@ private struct IPTVHeaderFields: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     SecureField("Header value", text: $header.value)
-                    Button("Remove header", role: .destructive) {
-                        headers.removeAll { $0.id == header.id }
+                    Button("Remove header", role: .destructive) { [id = header.id] in
+                        headers.removeAll { $0.id == id }
                     }
                     .buttonStyle(.bordered)
                 }

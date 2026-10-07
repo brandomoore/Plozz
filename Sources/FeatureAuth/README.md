@@ -42,6 +42,10 @@ session persistence.
   Emby uses password, and Plex uses Link.
 - **Always cancellable.** Every flow must be Cancel-able from the remote
   without leaking polling tasks.
+- **IPTV editor removal captures row identity first.** Guide/header removal
+  actions capture the row's ID before mutating its collection. Reading a bound
+  row from inside `removeAll` can overlap the collection's exclusive write
+  access and crash Swift's runtime.
 - **Channels-only IPTV needs no library selection.** Successful discovery with
   no on-demand libraries continues onboarding on both platforms; failed
   discovery still offers recovery. Adding an IPTV account includes it in the
