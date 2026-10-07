@@ -558,7 +558,7 @@ private struct PlozziOSLibraryContentModeControl: View {
     }
 }
 
-private struct PlozziOSLibraryRecommendationRow: View {
+struct PlozziOSLibraryRecommendationRow: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var cardStyle
@@ -575,6 +575,8 @@ private struct PlozziOSLibraryRecommendationRow: View {
         VStack(alignment: .leading, spacing: 12) {
             section.displayName
                 .font(.title2.bold())
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .truncationMode(.tail)
                 .padding(.horizontal, inset)
                 .accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal) {

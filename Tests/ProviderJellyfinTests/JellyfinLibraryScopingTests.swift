@@ -43,9 +43,9 @@ final class JellyfinLibraryScopingTests: XCTestCase {
             let provider = JellyfinProvider(session: session, http: stub)
             let sections = try await provider.libraryHubs(libraryID: "LIB1", kind: .movie, limit: 10)
             XCTAssertEqual(sections.map(\.id), [categoryID, "HasLikedDirector:"])
-            XCTAssertEqual(sections.map(\.title), ["Because you watched A Favorite", "More from directors you like"])
+            XCTAssertEqual(sections.map(\.title), ["More like A Favorite", "More from directors you like"])
             let expectedTitles: [LocalizedStringResource] = [
-                "Because you watched \("A Favorite")", "More from directors you like"
+                "More like \("A Favorite")", "More from directors you like"
             ]
             XCTAssertEqual(sections.compactMap(\.localizedTitle), expectedTitles)
             XCTAssertEqual(sections.map { $0.items.map(\.id) }, [["m1"], ["m2"]])
@@ -68,6 +68,29 @@ final class JellyfinLibraryScopingTests: XCTestCase {
             XCTAssertEqual(refreshed.map(\.id), Array(sections.map(\.id).reversed()))
             let seriesHubs = try await provider.libraryHubs(libraryID: "LIB1", kind: .series, limit: 10)
             XCTAssertTrue(seriesHubs.isEmpty)
+        }
+    }
+
+    func testWatchedAndLikedRecommendationsUseConciseTitlesAndPreserveMissingSubjectFallback() async throws {
+        for type in ["SimilarToRecentlyPlayed", "SimilarToLikedItem"] {
+            let stub = StubHTTPClient()
+            stub.stub(pathSuffix: "/Movies/Recommendations", json: """
+            [{"Items":[{"Id":"m1","Type":"Movie"}],
+              "RecommendationType":"\(type)",
+              "BaselineItemName":"  Avatar Aang: The Last Airbender  ","CategoryId":42},
+             {"Items":[{"Id":"m2","Type":"Movie"}],
+              "RecommendationType":"\(type)","BaselineItemName":"  ","CategoryId":43},
+             {"Items":[{"Id":"m3","Type":"Movie"}],
+              "RecommendationType":"\(type)","CategoryId":44}]
+            """)
+            let sections = try await JellyfinProvider(session: makeSession(), http: stub)
+                .libraryHubs(libraryID: "LIB1", kind: .movie, limit: 10)
+            XCTAssertEqual(sections.map(\.title), [
+                "More like Avatar Aang: The Last Airbender", "Suggested movies", "Suggested movies"
+            ])
+            XCTAssertEqual(sections.compactMap(\.localizedTitle).map(\.key), [
+                "More like %@", "Suggested movies", "Suggested movies"
+            ])
         }
     }
 

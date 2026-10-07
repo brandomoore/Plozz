@@ -39,6 +39,10 @@ supported capability remains at parity.
 
 ## Library recommendations
 
+Watched- and liked-movie similarity rows share the concise localized heading
+`More like [movie title]`. The server title remains unchanged apart from trimming
+surrounding whitespace; absent or blank titles retain `Suggested movies`.
+
 `/Movies/Recommendations` category IDs are strings on Jellyfin and nullable
 64-bit integers on Emby. `MovieRecommendationDto` normalizes integers directly
 to decimal strings without floating-point conversion, preserving exact stable
