@@ -58,6 +58,10 @@ and the single place caption customization lives.
   the drawer over the current page without selecting a replacement destination.
   Keep the active content stack and overflow navigation intact on dismissal;
   destination normalization still retains the Settings-only recovery screen.
+  The native tab delegate must reject the Settings transition before UIKit
+  changes navigation insets; declining only the SwiftUI selection binding can
+  move a scrolled page. Forward other delegate callbacks and restore the prior
+  delegate when the action bridge is removed.
 - **Automatic iCloud sync.** The main sync page does not show a separate Live TV
   explanation panel. Recovery lives in Troubleshooting, with a warning above
   Reload and Reset explaining that neither is normally needed. Both platforms

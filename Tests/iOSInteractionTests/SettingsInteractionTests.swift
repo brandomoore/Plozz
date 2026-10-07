@@ -20,10 +20,24 @@ final class SettingsInteractionTests: XCTestCase {
     }
 
     func testSettingsTabKeepsTheCurrentPageAndNavigationStack() {
-        launchNavigation()
+        verifyNavigationRetention(directPresentation: false)
+    }
+
+    func testDirectSettingsPresentationKeepsTheCurrentPageAndNavigationStack() {
+        verifyNavigationRetention(directPresentation: true)
+    }
+
+    func testReorderedSettingsTabKeepsTheCurrentPageAndNavigationStack() {
+        verifyNavigationRetention(directPresentation: false, settingsFirst: true)
+    }
+
+    private func verifyNavigationRetention(directPresentation: Bool, settingsFirst: Bool = false) {
+        launchNavigation(directPresentation: directPresentation, settingsFirst: settingsFirst)
+        let settings = directPresentation
+            ? app.buttons["fixture-open-settings"] : app.buttons["gearshape"].firstMatch
         let downloads = app.buttons["arrow.down.circle"].firstMatch
         XCTAssertTrue(downloads.waitForExistence(timeout: 10), app.debugDescription)
-        app.buttons["gearshape"].firstMatch.tap()
+        settings.tap()
         XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["house"].firstMatch.isSelected)
         app.buttons["Close"].tap()
@@ -31,7 +45,7 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["Download Settings"].waitForExistence(timeout: 5))
 
         for iteration in 0..<2 {
-            app.buttons["gearshape"].firstMatch.tap()
+            settings.tap()
             XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5), app.debugDescription)
             capture("settings-over-downloads-\(iteration)")
             XCTAssertTrue(downloads.isSelected, "Settings must not replace the selected content tab.")
@@ -45,8 +59,9 @@ final class SettingsInteractionTests: XCTestCase {
         app.collectionViews.firstMatch.swipeUp()
         let retainedRow = app.switches["Download Failed"]
         XCTAssertTrue(retainedRow.isHittable)
+        capture("before-settings-over-pushed-downloads")
         let retainedY = retainedRow.frame.minY
-        app.buttons["gearshape"].firstMatch.tap()
+        settings.tap()
         XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5))
         capture("settings-over-pushed-downloads")
         XCTAssertTrue(downloads.isSelected)
@@ -60,7 +75,8 @@ final class SettingsInteractionTests: XCTestCase {
     func testSettingsFromMoreKeepsTheMorePage() throws {
         launchNavigation(settingsInMore: true)
         let more = app.tabBars.buttons["More"]
-        try XCTSkipUnless(more.waitForExistence(timeout: 5), "Regular-width iPad has direct tabs.")
+        try XCTSkipIf(app.windows.firstMatch.frame.width >= 600, "Regular-width iPad has direct tabs.")
+        XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
         more.tap()
         XCTAssertTrue(app.navigationBars["More"].waitForExistence(timeout: 5))
         button("Settings").tap()
@@ -355,11 +371,17 @@ final class SettingsInteractionTests: XCTestCase {
         app.launch()
     }
 
-    private func launchNavigation(settingsInMore: Bool = false) {
+    private func launchNavigation(
+        settingsInMore: Bool = false,
+        directPresentation: Bool = false,
+        settingsFirst: Bool = false
+    ) {
         app.launchArguments = [
             "--navigation-interaction-fixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
         ]
         if settingsInMore { app.launchArguments.append("--settings-in-more") }
+        if directPresentation { app.launchArguments.append("--settings-direct-presentation") }
+        if settingsFirst { app.launchArguments.append("--settings-first") }
         app.launch()
     }
 

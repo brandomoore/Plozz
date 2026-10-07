@@ -1131,6 +1131,13 @@ struct PlozziOSTabShell: View {
         }
 
         .tabViewStyle(.tabBarOnly)
+        .background {
+            PlozziOSSettingsTabAction(
+                tabIndex: directTabDestinations.firstIndex(of: .settings),
+                action: showSettings
+            )
+            .frame(width: 0, height: 0)
+        }
         .environment(sharedHomeViewModel)
         .onAppear { refreshWatchlistNavigation() }
         .onReceive(NotificationCenter.default.publisher(for: .universalWatchlistDidChange)) { _ in
@@ -1456,6 +1463,110 @@ struct PlozziOSTabShell: View {
         showingSettings = true
     }
 
+}
+
+// Reject the native transition before it changes navigation insets or scroll position.
+// Rejecting only the SwiftUI selection binding is too late for an action-only tab.
+private struct PlozziOSSettingsTabAction: UIViewControllerRepresentable {
+    let tabIndex: Int?
+    let action: () -> Void
+
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.tabIndex = tabIndex
+        controller.action = action
+        controller.install()
+    }
+
+    static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
+        controller.restore()
+        controller.action = nil
+    }
+
+    final class Controller: UIViewController, UITabBarControllerDelegate {
+        var tabIndex: Int?
+        var action: (() -> Void)?
+        private weak var owner: UITabBarController?
+        private weak var previousDelegate: (any UITabBarControllerDelegate)?
+
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            if parent == nil {
+                restore()
+            } else {
+                Task { @MainActor [weak self] in self?.install() }
+            }
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            install()
+        }
+
+        func install() {
+            guard tabIndex != nil else {
+                restore()
+                return
+            }
+            var ancestor = parent
+            while let container = ancestor {
+                if let tabs = findTabs(in: container) {
+                    if owner !== tabs {
+                        restore()
+                        owner = tabs
+                    }
+                    if tabs.delegate !== self {
+                        previousDelegate = tabs.delegate
+                        tabs.delegate = self
+                    }
+                    return
+                }
+                ancestor = container.parent
+            }
+        }
+
+        private func findTabs(in controller: UIViewController) -> UITabBarController? {
+            if let tabs = controller as? UITabBarController { return tabs }
+            for child in controller.children where child !== self {
+                if let tabs = findTabs(in: child) { return tabs }
+            }
+            return nil
+        }
+
+        func restore() {
+            if owner?.delegate === self { owner?.delegate = previousDelegate }
+            owner = nil
+            previousDelegate = nil
+        }
+
+        func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
+            if let tabIndex, tabBarController.tabs.indices.contains(tabIndex),
+               tabBarController.tabs[tabIndex] === tab {
+                action?()
+                return false
+            }
+            return previousDelegate?.tabBarController?(tabBarController, shouldSelectTab: tab) ?? true
+        }
+
+        func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
+            if let tabIndex, let controllers = tabBarController.viewControllers,
+               controllers.indices.contains(tabIndex), controllers[tabIndex] === viewController {
+                action?()
+                return false
+            }
+            return previousDelegate?.tabBarController?(tabBarController, shouldSelect: viewController) ?? true
+        }
+
+        override func responds(to selector: Selector!) -> Bool {
+            super.responds(to: selector) || previousDelegate?.responds(to: selector) == true
+        }
+
+        override func forwardingTarget(for selector: Selector!) -> Any? {
+            previousDelegate?.responds(to: selector) == true
+                ? previousDelegate : super.forwardingTarget(for: selector)
+        }
+    }
 }
 
 private struct PlozziOSDestinationView: View {

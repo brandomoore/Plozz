@@ -34,10 +34,24 @@ struct PresentationHostApp: App {
         model.settings.nightShift.settings = .default
         if ProcessInfo.processInfo.arguments.contains("--navigation-interaction-fixture") {
             let available = NavigationDestinationDefaults.iOS
-            let enabled = ProcessInfo.processInfo.arguments.contains("--settings-in-more")
-                ? available
-                : [NavigationLibraryLayout.homeKey, NavigationLibraryLayout.downloadsKey,
-                   NavigationLibraryLayout.settingsKey]
+            let enabled: [String]
+            if ProcessInfo.processInfo.arguments.contains("--settings-in-more") {
+                enabled = available
+            } else if ProcessInfo.processInfo.arguments.contains("--settings-first") {
+                enabled = [
+                    NavigationLibraryLayout.settingsKey, NavigationLibraryLayout.homeKey,
+                    NavigationLibraryLayout.downloadsKey, NavigationLibraryLayout.searchKey
+                ]
+            } else {
+                enabled = [
+                    NavigationLibraryLayout.homeKey, NavigationLibraryLayout.downloadsKey,
+                    NavigationLibraryLayout.settingsKey
+                ]
+            }
+            // Explicitly show fixture pages even when their empty content would hide them automatically.
+            model.settings.navigation.applyLibrarySections(
+                .init(enabled: [], disabled: available), available: available
+            )
             model.settings.navigation.applyLibrarySections(
                 .init(enabled: enabled, disabled: available.filter { !enabled.contains($0) }),
                 available: available
@@ -79,6 +93,12 @@ private struct SettingsInteractionFixture: View {
                 )
                 .environment(sidebarGeometry)
                 .environment(heroTrailers)
+                .overlay(alignment: .topTrailing) {
+                    if ProcessInfo.processInfo.arguments.contains("--settings-direct-presentation") {
+                        Button("Fixture Settings") { showingSettings = true }
+                            .accessibilityIdentifier("fixture-open-settings")
+                    }
+                }
             } else if ProcessInfo.processInfo.arguments.contains("--settings-interaction-fixture") {
                 PlozziOSSettingsView(appModel: appModel, onClose: {}, systemColorScheme: .dark)
             } else {
