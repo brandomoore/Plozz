@@ -83,40 +83,29 @@ private struct CardCaptionPicker: View {
         let layout = dynamicTypeSize.isAccessibilitySize || horizontalSizeClass == .compact
             ? AnyLayout(VStackLayout(spacing: 16))
             : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
-        VStack(alignment: .leading, spacing: 16) {
-            layout {
-                ForEach(CardCaptionPreference.allCases) { preference in
-                    PreviewCard(
-                        title: preference.displayName,
-                        isSelected: selection == preference,
-                        accent: palette.accent,
-                        compact: true,
-                        swatchHeight: swatchHeight,
-                        titleLineLimit: nil,
-                        action: { selection = preference }
-                    ) {
-                        CardStyleSwatch(
-                            style: style,
-                            showsCaptions: preference != .hide,
-                            showsMixedCaptions: preference == .recommended
-                        )
-                            .accessibilityHidden(true)
-                    }
-                    .accessibilityAddTraits(selection == preference ? .isSelected : [])
-                    .accessibilityIdentifier(preference == .recommended ? "card-labels-recommended"
-                                             : preference == .show ? "card-labels-on" : "card-labels-off")
+        layout {
+            ForEach(CardCaptionPreference.allCases) { preference in
+                PreviewCard(
+                    title: preference.displayName,
+                    isSelected: selection == preference,
+                    accent: palette.accent,
+                    compact: true,
+                    swatchHeight: swatchHeight,
+                    titleLineLimit: nil,
+                    titleSizeGroup: CardCaptionPreference.allCases.map(\.displayName),
+                    action: { selection = preference }
+                ) {
+                    CardStyleSwatch(
+                        style: style,
+                        showsCaptions: preference != .hide,
+                        showsMixedCaptions: preference == .recommended
+                    )
+                        .accessibilityHidden(true)
                 }
+                .accessibilityAddTraits(selection == preference ? .isSelected : [])
+                .accessibilityIdentifier(preference == .recommended ? "card-labels-recommended"
+                                         : preference == .show ? "card-labels-on" : "card-labels-off")
             }
-            if selection == .recommended {
-                Text("Plozz chooses where labels help.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Text("View customizations override this choice.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -151,12 +140,14 @@ struct CardCaptionCustomizationContent: View {
                 SettingsSplitRow(
                     id: view.rawValue,
                     title: view.displayName,
-                    description: "Choices apply across all libraries. Titles inside collections and playlists use Browse."
+                    description: "Choices apply across all libraries. Titles inside collections and playlists use Browse.",
+                    sectionStart: view == .recommended ? .heading(Text("Libraries"))
+                        : view == .search ? .heading(Text("Other views")) : nil
                 ) {
                     CardCaptionViewChoices(view: view, settings: $settings)
                 }
             } + [
-                SettingsSplitRow(id: "reset", title: "Remove view customizations") {
+                SettingsSplitRow(id: "reset", title: "Remove view customizations", sectionStart: .divider) {
                     ViewCustomizationResetButton(isEnabled: !settings.overrides.isEmpty) { settings.resetOverrides() }
                         .accessibilityIdentifier("card-label-remove-customizations")
                 }
@@ -192,7 +183,7 @@ struct CardCaptionViewChoices: View {
         ViewPreferenceChoiceGroup {
             ForEach(CardCaptionOverride.allCases) { option in
                 ViewPreferenceChoiceRow(
-                    title: option == .automatic ? defaultTitle : option.displayName,
+                    title: option == .automatic ? "Use default" : option.displayName,
                     isSelected: settings.override(for: view) == option
                 ) {
                     settings.setOverride(option, for: view)
@@ -202,12 +193,5 @@ struct CardCaptionViewChoices: View {
         }
     }
 
-    private var defaultTitle: LocalizedStringResource {
-        if settings.preference == .recommended, view == .home || view == .recommended {
-            return "Use default: Recommended"
-        }
-        return settings.inheritedShowsLabels(in: view)
-            ? "Use default: Labels" : "Use default: No labels"
-    }
 }
 #endif

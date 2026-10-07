@@ -26,13 +26,21 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         }) { window in
             let initial = try await self.capture(window, name: "labels-recommended-preview")
             for text in [
-                "Recommended", "Show labels everywhere", "Hide labels everywhere",
-                "Plozz chooses where labels help.", "View customizations override this choice.",
+                "App default", "Show labels everywhere", "Hide labels everywhere",
                 "Customize by view", "Using defaults"
             ] {
                 XCTAssertTrue(initial.contains(text), initial)
             }
             XCTAssertFalse(initial.contains("Showcase"), initial)
+            XCTAssertFalse(initial.contains("Plozz chooses"), initial)
+            XCTAssertFalse(initial.contains("customizations override"), initial)
+            let previews = self.focusItems(in: window).filter { $0.frame.height > 150 && $0.frame.width > 150 }
+            XCTAssertEqual(previews.count, 3)
+            let height = try XCTUnwrap(previews.first).frame.height
+            for preview in previews {
+                XCTAssertEqual(preview.frame.height, height, accuracy: height * 0.02,
+                               "Presets must share a height, allowing only native focus scaling.")
+            }
             XCTAssertEqual(cards.captions.preference, .recommended)
             cards.captions.setOverride(.hide, for: .browse)
             let customized = try await self.capture(window, name: "labels-customized-preview")
@@ -50,13 +58,17 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         try await withScreen(content: CardCaptionCustomizationContent(
             settings: settings, selection: .constant("browse")
         )) { window in
-            let initial = try await self.capture(window, name: "labels-browse-inherited")
-            XCTAssertTrue(initial.contains("Use default: Labels"), initial)
+            let initial = try await self.capture(window, name: "labels-browse-inherited", includeMaster: true)
+            XCTAssertTrue(initial.contains("Use default"), initial)
+            XCTAssertFalse(initial.contains("Use default:"), initial)
+            XCTAssertTrue(initial.contains("Libraries"), initial)
+            XCTAssertTrue(initial.contains("Other views"), initial)
             XCTAssertTrue(initial.contains("No labels"), initial)
             cards.captions.setOverride(.show, for: .browse)
             cards.captions.preference = .hide
             let changed = try await self.capture(window, name: "labels-browse-explicit")
-            XCTAssertTrue(changed.contains("Use default: No labels"), changed)
+            XCTAssertTrue(changed.contains("Use default"), changed)
+            XCTAssertFalse(changed.contains("Use default:"), changed)
             XCTAssertEqual(cards.captions.override(for: .browse), .show)
             XCTAssertTrue(cards.captions.showsLabels(in: .browse))
             XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults).load(), cards.captions)
@@ -286,7 +298,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         try await inspect(window)
     }
 
-    private func capture(_ window: UIWindow, name: String) async throws -> String {
+    private func capture(_ window: UIWindow, name: String, includeMaster: Bool = false) async throws -> String {
         try await Task.sleep(for: .milliseconds(250))
         window.layoutIfNeeded()
         let format = UIGraphicsImageRendererFormat()
@@ -301,7 +313,9 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["en-US"]
-        request.regionOfInterest = CGRect(x: 0.40, y: 0, width: 0.60, height: 1)
+        if !includeMaster {
+            request.regionOfInterest = CGRect(x: 0.40, y: 0, width: 0.60, height: 1)
+        }
         try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
         return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
     }

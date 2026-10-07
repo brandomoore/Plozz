@@ -19,10 +19,10 @@ fallback when the user's server has no attached trailer.
   after subtracting each card style's internal inset. Smaller mobile artwork uses
   proportionate corners and a 20pt minimum watched badge, without shrinking folder
   navigation badges. Continue Watching geometry and library grid columns are unchanged.
-- **Card labels** — Appearance > Cards owns profile-scoped Recommended,
+- **Card labels** — Appearance > Cards owns profile-scoped App default,
   Show labels everywhere, and Hide labels everywhere presets, with
-  Default / Labels / No labels exceptions by experience.
-  Recommended shows labels during ordinary browsing and on detail-page episodes;
+  Use default / Labels / No labels exceptions by experience.
+  App default shows labels during ordinary browsing and on detail-page episodes;
   it hides them in Showcase and on Continue Watching cards that carry a title on
   their artwork. Manual presets apply to all media captions, including those cards.
   Existing explicit global and per-view choices survive migration and preset changes.

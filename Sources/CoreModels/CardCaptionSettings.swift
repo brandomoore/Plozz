@@ -46,7 +46,7 @@ public enum CardCaptionPreference: String, CaseIterable, Codable, Identifiable, 
 
     public var displayName: LocalizedStringResource {
         switch self {
-        case .recommended: "Recommended"
+        case .recommended: "App default"
         case .show: "Show labels everywhere"
         case .hide: "Hide labels everywhere"
         }

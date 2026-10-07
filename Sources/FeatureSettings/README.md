@@ -55,10 +55,11 @@ and the single place caption customization lives.
 ## Invariants
 
 - **Artwork and label customization.** Both use shared checkmarked per-view choices,
-  resolved inherited-default titles, customization counts, and the same reset action.
-  Labels retain visual presets: Recommended uses a single split illustration with
+  customization counts and the same reset action. Labels use a plain "Use default"
+  inherited choice; their TV index groups the library tabs under "Libraries".
+  Labels retain equal-height visual presets: App default uses a single split illustration with
   caption bars on only one half. Show labels everywhere and Hide labels everywhere
-  govern all media captions; Recommended owns Showcase and title-artwork exceptions.
+  govern all media captions; App default owns Showcase and title-artwork exceptions.
   Explicit per-view choices, including Episodes, override any preset and survive
   preset changes. Library navigation names and on-artwork information are not captions.
 - **Mobile Settings is a presentation action.** Its tab or More entry opens

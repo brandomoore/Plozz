@@ -431,14 +431,12 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     }
                     if page { XCTAssertTrue(copy.contains("No labels"), copy) }
                     if !page {
-                        XCTAssertTrue(
-                            copy.contains("Recommended")
-                                || (typeSize.isAccessibilitySize && copy.contains("Recom-") && copy.contains("mended")),
-                            "The preset name may hyphenate at large text sizes but must not truncate: \(copy)"
-                        )
+                        XCTAssertTrue(copy.contains("App default"), copy)
                         XCTAssertTrue(copy.contains("Show labels everywhere"), copy)
                         XCTAssertTrue(copy.contains("Hide labels everywhere"), copy)
                         XCTAssertFalse(copy.contains("Showcase"), copy)
+                        XCTAssertFalse(copy.contains("Plozz chooses"), copy)
+                        XCTAssertFalse(copy.contains("override this choice"), copy)
                     }
                 }
             }

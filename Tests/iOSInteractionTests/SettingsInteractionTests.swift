@@ -187,8 +187,15 @@ final class SettingsInteractionTests: XCTestCase {
         app.buttons["appearance-cards"].tap()
         let labels = app.buttons["card-labels-on"]
         XCTAssertTrue(labels.waitForExistence(timeout: 3))
+        let appDefault = app.buttons["card-labels-recommended"]
+        let hidden = app.buttons["card-labels-off"]
+        XCTAssertEqual(appDefault.label, "App default")
         XCTAssertTrue(labels.label.contains("Show labels everywhere"))
-        XCTAssertTrue(app.buttons["card-labels-off"].label.contains("Hide labels everywhere"))
+        XCTAssertTrue(hidden.label.contains("Hide labels everywhere"))
+        XCTAssertEqual(appDefault.frame.height, labels.frame.height, accuracy: 1)
+        XCTAssertEqual(hidden.frame.height, labels.frame.height, accuracy: 1)
+        XCTAssertFalse(app.staticTexts["Plozz chooses where labels help."].exists)
+        XCTAssertFalse(app.staticTexts["View customizations override this choice."].exists)
         labels.tap()
         XCTAssertTrue(labels.isSelected)
         XCTAssertTrue(app.navigationBars["Cards"].exists)
@@ -202,7 +209,7 @@ final class SettingsInteractionTests: XCTestCase {
         let browse = app.buttons["card-label-view-browse-show"]
         let browseDefault = app.buttons["card-label-view-browse-automatic"]
         reveal(browseDefault)
-        XCTAssertTrue(browseDefault.label.contains("Use default: Labels"))
+        XCTAssertEqual(browseDefault.label, "Use default")
         XCTAssertTrue(browseDefault.isSelected)
         reveal(browse)
         browse.tap()
