@@ -46,6 +46,20 @@ so audio keeps playing as the user navigates the rest of the app.
   default.
 - **Dual-provider.** Browsing works against both Plex and Jellyfin via
   `MediaProvider` / `JellyfinMusicProvider`.
+- **Discovery failures are not empty libraries.** Retain cached availability for
+  failed active accounts, while immediately applying disabled/removed accounts.
+  Retry transient discovery failures twice (2s/8s); foreground activation and
+  credential changes trigger a fresh probe. Cancelled/superseded probes cannot
+  publish late results.
+- **Playlist occurrences are distinct.** Preserve authored order and repeated
+  songs. `MusicTrack.playlistEntryID` identifies a loaded occurrence for selection
+  and shuffle; `id` remains the provider media ID used for playback/reporting.
+- **Reporting owns its original sinks.** Capture provider and scrobble callbacks
+  before a queue handoff and deliver lifecycle events in order, asynchronously
+  from playback. Pending heartbeats coalesce and are discarded on stop; each
+  account has an independent reporting lane so an offline server cannot delay a
+  healthy one. Last.fm has its own globally ordered lane, independent of provider
+  delivery. A delayed stop must never target the incoming provider.
 
 ## Where to look first
 

@@ -37,6 +37,28 @@ supported capability remains at parity.
 - **Co-equal with `ProviderPlex`.** Any new `MediaProvider` capability must be
   implemented here whenever it's implemented for Plex (and vice versa).
 
+## Music
+
+Artist browse uses `/Artists` and artist album queries use `ArtistIds`, including
+performers on compilations whose album artist differs. Album metadata still
+retains its album artist.
+
+Track loading resolves the container type first. Playlists use
+`/Playlists/{id}/Items` directly, without album sorting or item-ID deduplication;
+both playlists and albums load bounded 500-item pages until complete. Any failed
+page fails the load rather than returning a playable partial playlist.
+
+The native audio player's universal request restricts **both container and
+codec** (`container|codec|codec,...`), independently of the video engine's broader
+capabilities. `JellyfinMusicDirectPlayProfile` owns the request and local quality
+prediction; unsupported pairs such as DTS-in-WAV request the AAC/HLS fallback.
+Quality remains a prediction of negotiation, not a measurement of server output.
+
+`JellyfinMusicProviderTests` covers performer relationships, playlist order,
+duplicates, pagination/failure, and matching request/quality profiles for Jellyfin
+and Emby. Universal-profile syntax is defined by released Jellyfin's
+[`UniversalAudioController`](https://github.com/jellyfin/jellyfin/blob/v10.11.0/Jellyfin.Api/Controllers/UniversalAudioController.cs).
+
 ## Watch-state writes
 
 Manual marking and playback completion both use the shared watch outbox.
