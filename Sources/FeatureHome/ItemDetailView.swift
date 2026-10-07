@@ -256,6 +256,7 @@ public struct ItemDetailView: View {
                 container(detail)
             }
         }
+        .environment(\.plozzArtworkArea, .details)
         .artworkGradientBackground(
             scope: ObjectIdentifier(viewModel), isVisible: isPageVisible && !hasChildOnTop
         )

@@ -143,6 +143,18 @@ final class VideoNowPlayingCoordinatorTests: XCTestCase {
         XCTAssertEqual(VideoNowPlayingCoordinator.artworkReferences(for: item), [.remote(series)])
     }
 
+    func testArtworkPolicyChangeDoesNotReclaimAnotherPlayersSystemControls() {
+        let host = NowPlayingHostSpy()
+        let publisher = VideoNowPlayingPublisherSpy()
+        let sut = makeCoordinator(host, publisher)
+        sut.begin(item: movie(), title: "Movie", subtitle: "", position: 0)
+        publisher.resign()
+        sut.artworkPolicyChanged()
+        XCTAssertFalse(publisher.isActive)
+        XCTAssertEqual(publisher.activations, 1)
+        sut.end()
+    }
+
     func testLateArtworkCannotRepublishAnEndedSession() async {
         let host = NowPlayingHostSpy()
         let publisher = VideoNowPlayingPublisherSpy()

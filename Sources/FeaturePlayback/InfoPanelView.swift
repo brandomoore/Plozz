@@ -374,7 +374,10 @@ struct InfoPanelView: View {
     }
 
     private func infoThumbnail(cornerRadius: CGFloat, height: CGFloat) -> some View {
-        PlayerInfoArtwork(urls: model.infoCard.artworkURLs, cornerRadius: cornerRadius, height: height)
+        PlayerInfoArtwork(
+            urls: model.infoCard.artworkURLs, item: model.infoCard.artworkItem,
+            policy: model.artworkPolicy, cornerRadius: cornerRadius, height: height
+        )
     }
 
     /// An icon-only Info-card action. At rest it shows just its glyph; while
@@ -421,16 +424,23 @@ struct InfoPanelView: View {
 
 private struct PlayerInfoArtwork: View {
     let urls: [URL]
+    let item: MediaItem?
+    let policy: ArtworkPresentationPolicy
     let cornerRadius: CGFloat
     let height: CGFloat
     @State private var policyRevision = 0
 
     var body: some View {
         let _ = policyRevision
+        let source = item.map { MediaArtworkSource(item: $0, placement: .detailBackdrop, policy: policy) }
         Color.clear
             .frame(width: height * 16.0 / 9.0, height: height)
             .overlay {
-                FallbackAsyncImage(urls: urls, variant: .landscapeCard) {
+                FallbackAsyncImage(
+                    references: source?.references ?? urls.map(ArtworkReference.remote),
+                    variant: .landscapeCard, artworkPolicy: policy,
+                    asyncFallbackURL: source?.fallbackURL, pinIdentity: item?.stablePresentationID
+                ) {
                     Rectangle().fill(Color.white.opacity(0.08))
                         .overlay(
                             Image(systemName: "photo")

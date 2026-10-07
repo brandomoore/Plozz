@@ -327,7 +327,8 @@ public actor ArtworkRouter {
 
     /// A large artist image for a music hero/background. Keyless (Deezer).
     public func artistImageURL(artist: String) async -> URL? {
-        let key = "music|artist|\(artist.lowercased())"
+        guard configuredMusicSources.contains(.deezer) else { return nil }
+        let key = "music|artist|\(artist.lowercased())|provider:deezer"
         if let hit = await cache.cached(key) { return hit }
         let url = await deezer.artistImageURL(artist: artist)
         await cache.store(url, for: key)
@@ -336,14 +337,28 @@ public actor ArtworkRouter {
 
     /// A large album cover, trying Deezer then MusicBrainz/Cover Art Archive.
     public func albumCoverURL(artist: String?, album: String) async -> URL? {
-        let key = "music|album|\((artist ?? "").lowercased())|\(album.lowercased())"
-        if let hit = await cache.cached(key) { return hit }
-        if let url = await deezer.albumCoverURL(artist: artist, album: album) {
+        for source in configuredMusicSources {
+            let key = "music|album|\((artist ?? "").lowercased())|\(album.lowercased())|provider:\(source.rawValue)"
+            if let hit = await cache.cached(key) {
+                if let hit { return hit }
+                continue
+            }
+            let url: URL?
+            switch source {
+            case .deezer: url = await deezer.albumCoverURL(artist: artist, album: album)
+            case .musicbrainz: url = await musicBrainz.albumCoverURL(artist: artist, album: album)
+            default: continue
+            }
             await cache.store(url, for: key)
-            return url
+            if let url { return url }
         }
-        let fallback = await musicBrainz.albumCoverURL(artist: artist, album: album)
-        await cache.store(fallback, for: key)
-        return fallback
+        return nil
+    }
+
+    private var configuredMusicSources: [MetadataSource] {
+        let config = enrichmentBaseline.merged(withUserOverrides: settingsStore.load())
+        return config.order.filter {
+            ($0 == .deezer || $0 == .musicbrainz) && config.isEnabled($0)
+        }
     }
 }

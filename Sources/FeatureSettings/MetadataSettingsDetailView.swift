@@ -224,13 +224,6 @@ public struct MetadataSettingsDetailView: View {
         )
     }
 
-    private var preferLocalArtworkBinding: Binding<Bool> {
-        Binding(
-            get: { !providers.settings.preferOnlineArtwork },
-            set: { providers.settings.preferOnlineArtwork = !$0 }
-        )
-    }
-
     private func setOrderMode(_ mode: MetadataProviderOrderMode) {
         providers.settings = MetadataProviderListLogic.settings(
             providers.settings,
@@ -273,9 +266,7 @@ public struct MetadataSettingsDetailView: View {
                     title: orderModeTitle
                 )
 
-                Toggle("Prefer artwork from your library", isOn: preferLocalArtworkBinding)
-                    .toggleStyle(SettingsSwitchToggleStyle())
-                Text("Use artwork from your media server or files before online providers.")
+                Text("Artwork preferences are in Appearance > Cards and belong to each profile.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

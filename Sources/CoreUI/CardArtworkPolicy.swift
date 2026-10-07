@@ -1,6 +1,7 @@
 #if canImport(SwiftUI)
 import CoreModels
 import Foundation
+import MetadataKit
 
 /// Presentation context that must not change a media item's provider or playback identity.
 public enum CardArtworkPolicy: Hashable, Sendable {
@@ -8,6 +9,14 @@ public enum CardArtworkPolicy: Hashable, Sendable {
     case extra
 
     var allowsOnlineFallback: Bool { self == .standard }
+
+    func posterFallback(for item: MediaItem) -> (@Sendable () async -> URL?)? {
+        guard allowsOnlineFallback, ![.folder, .collection, .unknown].contains(item.kind) else { return nil }
+        let subject = PosterCardView.seriesArtworkItem(for: item)
+        return {
+            await ArtworkRouter.shared.artworkURL(.poster, for: subject)
+        }
+    }
 
     func pinIdentity(for item: MediaItem) -> String {
         switch self {

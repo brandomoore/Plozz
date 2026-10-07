@@ -1,5 +1,6 @@
 #if os(iOS)
 import CoreModels
+import CoreUI
 import Foundation
 import MediaDownloads
 import MediaTransportCore
@@ -118,6 +119,8 @@ final class PlozziOSDownloadsModel {
     private let queue: DownloadQueue?
     private let storage: (any DownloadStorageLocating)?
     private let defaults: UserDefaults?
+    @ObservationIgnored
+    private var artworkSettings: @MainActor () -> ArtworkSettings = { .default }
     private let policyKey: String
     private let preferencesKey: String
     private let renditionCapabilitiesKey: String
@@ -161,6 +164,7 @@ final class PlozziOSDownloadsModel {
         providerKind: @escaping @MainActor (String) -> ProviderKind?,
         preferredAudioLanguages:
             @escaping @MainActor (MediaItem) -> [String],
+        artworkSettings: @escaping @MainActor () -> ArtworkSettings = { .default },
         startsActive: Bool = true,
         managedURLResolver:
             @escaping PlozziOSBackgroundHTTPDownloadEngine.URLResolver,
@@ -223,6 +227,7 @@ final class PlozziOSDownloadsModel {
         self.policy = policy
         self.providerKind = providerKind
         self.preferredAudioLanguages = preferredAudioLanguages
+        self.artworkSettings = artworkSettings
         self.allowsCellular = policy.allowsExpensiveNetwork
         self.pausesOnLowDataMode = policy.pausesOnConstrainedNetwork
         self.downloadQuality = policy.quality
@@ -927,16 +932,20 @@ final class PlozziOSDownloadsModel {
         for item: MediaItem,
         record: DownloadedMediaRecord
     ) {
-        guard record.snapshot.artworkFileName == nil,
-              let sourceURL = artworkSourceURL(for: item) else {
+        guard record.snapshot.artworkFileName == nil else {
             return
         }
+        let policy = ArtworkPresentationPolicy(
+            area: .downloads, settings: artworkSettings(),
+            providers: MetadataProviderSettingsStore().load()
+        )
         artworkTasks[record.identityKey]?.task.cancel()
         let taskID = UUID()
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.pinArtwork(
-                sourceURL: sourceURL,
+                item: item,
+                policy: policy,
                 identityKey: record.identityKey
             )
             self.artworkTaskFinished(
@@ -948,17 +957,21 @@ final class PlozziOSDownloadsModel {
     }
 
     private func pinArtwork(
-        sourceURL: URL,
+        item: MediaItem,
+        policy: ArtworkPresentationPolicy,
         identityKey: String
     ) async {
         guard let storage, let registry else { return }
         do {
-            let (data, response) = try await URLSession.shared.data(from: sourceURL)
+            let source = MediaArtworkSource(item: item, placement: .detailBackdrop, policy: policy)
+            guard let artwork = await source.resolve(variant: .landscapeCard),
+                  let data = artwork.image.jpegData(compressionQuality: 0.9) else {
+                PlozzLog.app.debug("No usable artwork was available for the download")
+                return
+            }
             guard !Task.isCancelled,
                   acceptsNewWork,
                   applicationIsActive,
-                  let response = response as? HTTPURLResponse,
-                  (200..<300).contains(response.statusCode),
                   !data.isEmpty,
                   data.count <= 15_000_000 else {
                 return
@@ -982,12 +995,14 @@ final class PlozziOSDownloadsModel {
                 fileName: fileName
             )
             if !attached {
-                try? FileManager.default.removeItem(at: folder)
+                try FileManager.default.removeItem(at: artworkURL)
                 return
             }
             await reload()
+        } catch is CancellationError {
+            return
         } catch {
-            // Artwork is optional; media download success remains authoritative.
+            PlozzLog.app.error("Unable to save downloaded artwork: \(String(describing: error))")
         }
     }
 
@@ -1003,13 +1018,6 @@ final class PlozziOSDownloadsModel {
     ) {
         guard artworkTasks[identityKey]?.id == taskID else { return }
         artworkTasks[identityKey] = nil
-    }
-
-    private func artworkSourceURL(for item: MediaItem) -> URL? {
-        item.backdropURL
-            ?? item.fallbackArtworkURL
-            ?? item.posterURL
-            ?? item.seriesPosterURL
     }
 
     private func accountScopedItemID(

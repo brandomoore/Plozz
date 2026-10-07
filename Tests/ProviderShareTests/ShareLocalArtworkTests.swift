@@ -410,7 +410,7 @@ final class ShareLocalArtworkTests: XCTestCase {
         XCTAssertEqual(projected.metadataProvenance[.posterURL]?.source, .localArtwork)
     }
 
-    func testOnlineArtworkPreferenceOverridesOnlyArtwork() throws {
+    func testSharedCatalogRetainsLocalAlternativesForProfileArtworkPreferences() throws {
         let onlineURL = try XCTUnwrap(URL(string: "https://example.invalid/online.jpg"))
         let localURL = try XCTUnwrap(URL(string: "https://example.invalid/local.jpg"))
         var item = MediaItem(id: "movie", title: "Movie", kind: .movie)
@@ -438,8 +438,8 @@ final class ShareLocalArtworkTests: XCTestCase {
             metadataConfig: MetadataEnrichmentConfig(preferOnlineArtwork: true)
         )
 
-        XCTAssertEqual(projected.artworkReferences(for: .poster), [.remote(onlineURL)])
-        XCTAssertEqual(projected.metadataProvenance[.posterURL]?.source, .tmdb)
+        XCTAssertEqual(projected.artworkReferences(for: .poster), [.remote(localURL), .remote(onlineURL)])
+        XCTAssertEqual(projected.metadataProvenance[.posterURL]?.source, .localArtwork)
         XCTAssertEqual(projected.overview, "Local overview")
         XCTAssertEqual(projected.metadataProvenance[.overview]?.source, .localNFO)
     }
@@ -462,10 +462,11 @@ final class ShareLocalArtworkTests: XCTestCase {
         )
 
         XCTAssertEqual(projected.artworkReferences(for: .poster).first, .remote(localURL))
+        XCTAssertNil(projected.posterURL)
         XCTAssertEqual(projected.metadataProvenance[.posterURL]?.source, .localArtwork)
     }
 
-    func testCatalogReadAppliesOnlineArtworkPreference() async throws {
+    func testCatalogReadKeepsLocalArtworkWithOnlineEnrichment() async throws {
         let fixture = ShareCatalogSQLiteFixture()
         defer { fixture.cleanup() }
         let store = ShareCatalogStore(
@@ -490,14 +491,15 @@ final class ShareLocalArtworkTests: XCTestCase {
 
         let loaded = await store.item(id: itemID)
         let item = try XCTUnwrap(loaded)
-        XCTAssertEqual(
-            item.artworkReferences(for: .poster),
-            [.remote(try XCTUnwrap(URL(string: "https://example.invalid/online.jpg")))]
-        )
+        XCTAssertEqual(item.artworkReferences(for: .poster).count, 2)
+        guard case .networkFile = item.artworkReferences(for: .poster).first else {
+            return XCTFail("The shared catalog must retain local artwork for library-first profiles")
+        }
+        XCTAssertEqual(item.artworkReferences(for: .poster).last, .remote(try XCTUnwrap(URL(string: "https://example.invalid/online.jpg"))))
         XCTAssertEqual(
             try fixture.integer("SELECT COUNT(*) FROM metadata_values WHERE source='localArtwork';"),
             1,
-            "preference changes projection, not the independently persisted local lane"
+            "Local artwork remains independently persisted"
         )
     }
 

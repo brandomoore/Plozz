@@ -2046,6 +2046,7 @@ final class PlozziOSAppModel {
                         deviceLanguage: LanguageMatch.deviceLanguageCode
                     )
                 },
+                artworkSettings: { settings.cardStyle.artwork },
                 startsActive: startsActive,
                 managedURLResolver: {
                     source,

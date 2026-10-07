@@ -1815,7 +1815,6 @@ struct CatalogReadQueries {
                     )
                 )
             }
-            guard !values.isEmpty else { return item }
             return ShareCatalogReadProjection.applyLocalArtwork(
                 item,
                 values,

@@ -414,7 +414,8 @@ final class NextEpisodeCoordinator {
             showName: showName,
             metaLine: metaLine,
             thumbnailURLs: thumbnailURLs,
-            blurThumbnail: blur
+            blurThumbnail: blur,
+            spoilerSettings: spoilerSettings
         )
     }
 

@@ -80,8 +80,28 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   the shared group surface, separators, or tvOS control styles.
 - **Async artwork** — `FallbackAsyncImage` and `ArtworkImageCache`: an
   on-disk + in-memory image cache shared with `MetadataKit`'s URL cache,
-  with an `asyncFallbackURL` slot so server art is always tried first and
-  the `MetadataKit` fallback only runs when needed.
+  with profile-scoped source choices in Appearance > Cards. Recommended prefers
+  online title artwork and library music covers. Library-first and online-first
+  presets support independent overrides for Home, Continue Watching, Browse,
+  Search, Watchlist, Details, Episodes, Playback, Music, Top Shelf, and Downloads
+  where available. Missing artwork can fall back to the other source.
+  Provider enablement/order remains household-wide; changing appearance never
+  enables a provider. The old library-artwork choice migrates to each profile,
+  and the new preference transfers/syncs with that profile.
+  Continue Watching's recommended textless lookup is separate from source
+  preference: explicit library-first uses supplied artwork without checking it
+  online. SMB selections retain local and online candidates in the shared
+  catalog, including typed network-file references and their access gate.
+  SwiftUI, native Browse cells, detached hosts, and prewarmers use the same
+  effective policy. Cache identities include source and provider policy; a
+  settings change replaces the image selection, not ordinary focus movement.
+  Dense cards retain their bounded 0.5-second online wait; focal artwork uses
+  2 seconds. A fallback is stable for that appearance, not a promise that an
+  online source has no image. Playback system art receives an explicit snapshot.
+  Top Shelf exports resolved images into its shared container. Downloads capture
+  the selected artwork when queued; existing offline artwork is not re-fetched
+  after a settings change. Clip-specific extra thumbnails, people, channel
+  branding, and spoiler protection retain their separate semantics.
   When card captions are hidden, folder and missing-art placeholders carry the
   existing spoiler-safe title inside the artwork slot. Loaded art remains
   label-free, visible captions are not duplicated, and loading/failure never

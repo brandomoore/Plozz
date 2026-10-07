@@ -228,10 +228,12 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
 
     public var body: some View {
         #if canImport(UIKit)
+        ArtworkPolicyReader(policy: nil) { policy in
         LoadedLogo(
             references: references,
             asyncFallbackURL: asyncFallbackURL,
-            prefersOnlineArtwork: MetadataProviderSettingsStore().load().preferOnlineArtwork,
+            prefersOnlineArtwork: policy.prefersOnlineArtwork,
+            providerPolicyIdentity: policy.identity,
             backgroundSample: backgroundSample,
             displayedArtworkID: displayedArtworkID,
             maxWidth: maxWidth,
@@ -244,6 +246,8 @@ public struct HeroLogoArtwork<TextFallback: View>: View {
             onResolve: onResolve,
             textFallback: textFallback
         )
+        .id(policy.identity)
+        }
         #else
         textFallback()
         #endif
@@ -266,6 +270,7 @@ enum HeroLogoMemo {
         let references: [String]
         let fallback: HeroLogoFallback.Identity?
         let prefersOnlineArtwork: Bool
+        let providerPolicyIdentity: String
     }
 
     private static var entries: [Key: ProcessedLogo] = [:]
@@ -277,12 +282,14 @@ enum HeroLogoMemo {
     static func key(
         for references: [ArtworkReference],
         fallback: HeroLogoFallback? = nil,
-        prefersOnlineArtwork: Bool = false
+        prefersOnlineArtwork: Bool = false,
+        providerPolicyIdentity: String = "default"
     ) -> Key {
         Key(
             references: references.map(\.privacySafeIdentity),
             fallback: fallback?.identity,
-            prefersOnlineArtwork: fallback != nil && prefersOnlineArtwork
+            prefersOnlineArtwork: fallback != nil && prefersOnlineArtwork,
+            providerPolicyIdentity: providerPolicyIdentity
         )
     }
 
@@ -305,6 +312,7 @@ private struct LoadedLogo<TextFallback: View>: View {
     let references: [ArtworkReference]
     let asyncFallbackURL: HeroLogoFallback?
     let prefersOnlineArtwork: Bool
+    let providerPolicyIdentity: String
     let backgroundSample: (@Sendable () async -> HeroBackgroundSample?)?
     let displayedArtworkID: String?
     let maxWidth: CGFloat
@@ -429,7 +437,8 @@ private struct LoadedLogo<TextFallback: View>: View {
     private var taskKey: HeroLogoMemo.Key {
         HeroLogoMemo.key(
             for: references, fallback: asyncFallbackURL,
-            prefersOnlineArtwork: prefersOnlineArtwork
+            prefersOnlineArtwork: prefersOnlineArtwork,
+            providerPolicyIdentity: providerPolicyIdentity
         )
     }
 
@@ -638,12 +647,14 @@ public enum HeroUIKitLogoRenderer {
         references: [ArtworkReference],
         asyncFallbackURL: (@Sendable () async -> URL?)? = nil,
         backgroundSample: (@Sendable () async -> HeroBackgroundSample?)? = nil,
-        priority: TaskPriority = .userInitiated
+        priority: TaskPriority = .userInitiated,
+        prefersOnlineArtwork: Bool = true
     ) async -> HeroUIKitLogo? {
         guard let prepared = await loadPreparedHeroLogo(
             references: references,
             asyncFallbackURL: asyncFallbackURL,
-            priority: priority
+            priority: priority,
+            prefersOnlineArtwork: prefersOnlineArtwork
         ) else { return nil }
         let processed = HeroLogoAnalysis.analyze(prepared, backgroundSample: await backgroundSample?())
         return HeroUIKitLogo(
@@ -660,13 +671,15 @@ public enum HeroUIKitLogoRenderer {
         primaryURL: URL?,
         asyncFallbackURL: (@Sendable () async -> URL?)? = nil,
         backgroundSample: (@Sendable () async -> HeroBackgroundSample?)? = nil,
-        priority: TaskPriority = .userInitiated
+        priority: TaskPriority = .userInitiated,
+        prefersOnlineArtwork: Bool = true
     ) async -> HeroUIKitLogo? {
         await render(
             references: primaryURL.map { [.remote($0)] } ?? [],
             asyncFallbackURL: asyncFallbackURL,
             backgroundSample: backgroundSample,
-            priority: priority
+            priority: priority,
+            prefersOnlineArtwork: prefersOnlineArtwork
         )
     }
 }
@@ -697,17 +710,16 @@ private func loadPreparedHeroLogo(
     references: [ArtworkReference],
     asyncFallbackURL: (@Sendable () async -> URL?)?,
     priority: TaskPriority,
-    prefersOnlineArtwork: Bool? = nil
+    prefersOnlineArtwork: Bool = false
 ) async -> PreparedLogo? {
     guard !Task.isCancelled else { return nil }
-    let prefersOnline = prefersOnlineArtwork ?? MetadataProviderSettingsStore().load().preferOnlineArtwork
     guard let firstPaint = await ArtworkFirstPaintResolver.resolve(
         references: references,
         variant: .original,
         maxAspectRatio: nil,
         asyncOnlineURL: asyncFallbackURL,
         maximumOnlineWait: ArtworkFirstPaintResolver.focalArtworkWait,
-        prefersOnlineArtwork: prefersOnline
+        prefersOnlineArtwork: prefersOnlineArtwork
     ), !Task.isCancelled else { return nil }
     if let prepared = await HeroLogoPipeline.shared.preparedLogo(
         for: firstPaint.reference,

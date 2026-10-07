@@ -8,12 +8,17 @@ public struct EpisodeArtworkSource: Sendable {
     public let references: [ArtworkReference]
     public let pinIdentity: String
     public let fallbackURL: @Sendable () async -> URL?
+    public let policy: ArtworkPresentationPolicy
     #if canImport(UIKit)
     public let requestIdentity: String
     private let prefersOnlineArtwork: Bool
     #endif
 
-    public init(item: MediaItem, spoilerSettings: SpoilerSettings) {
+    public init(
+        item: MediaItem, spoilerSettings: SpoilerSettings,
+        policy: ArtworkPresentationPolicy = .init(area: .episodes)
+    ) {
+        self.policy = policy
         let hidesStill = spoilerSettings.mode == .placeholder
             && spoilerSettings.shouldHideThumbnail(for: item)
         references = hidesStill
@@ -32,12 +37,11 @@ public struct EpisodeArtworkSource: Sendable {
                 ?? subject.fallbackArtworkURL
         }
         #if canImport(UIKit)
-        let settings = MetadataProviderSettingsStore().load()
-        prefersOnlineArtwork = settings.preferOnlineArtwork
+        prefersOnlineArtwork = policy.prefersOnlineArtwork
         requestIdentity = ArtworkResolveKey.make(
             references: references, variant: .landscapeCard, maxAspectRatio: nil,
             pinIdentity: pinIdentity,
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings)
+            providerPolicyIdentity: policy.identity
         )
         #endif
     }

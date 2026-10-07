@@ -41,6 +41,7 @@ public enum ProfileSettingsTransfer {
         "transparencyPreference",
         "com.plozz.cardStyle",
         CardCaptionSettingsStore.storageKey,
+        ArtworkSettingsStore.storageKey,
         "com.plozz.watchStatusIndicator",
         "com.plozz.nightShift",
         "com.plozz.playbackSettings",

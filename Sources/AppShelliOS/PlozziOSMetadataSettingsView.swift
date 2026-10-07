@@ -19,7 +19,7 @@ struct PlozziOSMetadataSettingsView: View {
 
     var body: some View {
         Form {
-            Text("Metadata providers, artwork, and caches are shared by every profile on this device.")
+            Text("Metadata providers and caches are shared by every profile on this device. Artwork preferences are in Appearance > Cards and belong to each profile.")
                 .font(.footnote)
                 .plozzForeground(.secondary)
                 .listRowInsets(EdgeInsets())
@@ -64,13 +64,6 @@ struct PlozziOSMetadataSettingsView: View {
         )
     }
 
-    private var preferLocalArtworkBinding: Binding<Bool> {
-        Binding(
-            get: { !providers.settings.preferOnlineArtwork },
-            set: { providers.settings.preferOnlineArtwork = !$0 }
-        )
-    }
-
     @ViewBuilder
     private var providersSection: some View {
         SettingsSectionGroup("Providers") {
@@ -79,10 +72,8 @@ struct PlozziOSMetadataSettingsView: View {
                     Text(orderModeTitle(mode)).tag(mode)
                 }
             }
-            Toggle("Prefer artwork from your library", isOn: preferLocalArtworkBinding)
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Use artwork from your media server or files before online providers.")
                 Text(providers.settings.orderMode == .recommended
                     ? "Plozz picks the best source for each field automatically."
                     : "Drag providers to set priority. Anything below the line is turned off.")

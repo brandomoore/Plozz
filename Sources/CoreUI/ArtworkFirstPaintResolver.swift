@@ -36,19 +36,19 @@ public enum ArtworkFirstPaintResolver {
         variant: ArtworkImageVariant,
         asyncOnlineURL: (@Sendable () async -> URL?)?,
         pinIdentity: String,
-        maximumOnlineWait: TimeInterval = denseArtworkWait
+        maximumOnlineWait: TimeInterval = denseArtworkWait,
+        policy: ArtworkPresentationPolicy = .init()
     ) async {
-        let settings = MetadataProviderSettingsStore().load()
         let key = ArtworkResolveKey.make(
             references: references, variant: variant, maxAspectRatio: nil,
             pinIdentity: pinIdentity,
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings)
+            providerPolicyIdentity: policy.identity
         )
         if ArtworkSeedMemo.prepared(for: key, variant: variant) != nil { return }
         guard let artwork = await resolve(
             references: references, variant: variant,
             asyncOnlineURL: asyncOnlineURL, maximumOnlineWait: maximumOnlineWait,
-            prefersOnlineArtwork: settings.preferOnlineArtwork, background: true
+            prefersOnlineArtwork: policy.prefersOnlineArtwork, background: true
         ), !Task.isCancelled else { return }
         ArtworkSeedMemo.store(artwork, for: key)
     }
@@ -59,7 +59,7 @@ public enum ArtworkFirstPaintResolver {
         maxAspectRatio: CGFloat? = nil,
         asyncOnlineURL: (@Sendable () async -> URL?)?,
         maximumOnlineWait: TimeInterval,
-        prefersOnlineArtwork: Bool? = nil,
+        prefersOnlineArtwork: Bool = true,
         sharedKey: String? = nil,
         background: Bool = false
     ) async -> FirstPaintArtwork? {
@@ -77,10 +77,7 @@ public enum ArtworkFirstPaintResolver {
                 )
             }
         }
-        let prefersOnline = prefersOnlineArtwork
-            ?? MetadataProviderSettingsStore().load().preferOnlineArtwork
-
-        guard prefersOnline, let asyncOnlineURL else {
+        guard prefersOnlineArtwork, let asyncOnlineURL else {
             if let local = await loadFirst(
                 references,
                 variant: variant,

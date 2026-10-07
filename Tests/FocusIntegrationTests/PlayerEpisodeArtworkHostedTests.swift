@@ -1,4 +1,5 @@
 import CoreModels
+import MetadataKit
 import Observation
 @testable import CoreUI
 @testable import FeaturePlayback
@@ -9,6 +10,20 @@ import XCTest
 
 @MainActor
 final class PlayerEpisodeArtworkHostedTests: XCTestCase {
+    private var savedProviders = MetadataProviderSettings.default
+
+    override func setUp() async throws {
+        try await super.setUp()
+        let store = MetadataProviderSettingsStore()
+        savedProviders = store.load()
+        store.save(.init(orderMode: .custom, disabledOrder: MetadataEnrichmentConfig.defaultBaseOrder.map(\.rawValue)))
+    }
+
+    override func tearDown() async throws {
+        MetadataProviderSettingsStore().save(savedProviders)
+        try await super.tearDown()
+    }
+
     func testNativeEpisodeArtworkIsIsolatedAcrossReuseAccountsAndPolicy() throws {
         let store = MetadataProviderSettingsStore()
         let original = store.load()

@@ -71,6 +71,11 @@ public struct PosterCardView: View {
     /// resting surface on focus (no glass lift, so no glowing frame) and reads as
     /// focused through movement and light instead — see `plozzCardFocusLift`.
     @Environment(\.plozzCardFocusStyle) private var focusStyle
+    @Environment(\.plozzArtworkPolicy) private var inheritedArtworkPolicy
+
+    private var presentationArtworkPolicy: ArtworkPresentationPolicy {
+        showsSeriesArtwork ? inheritedArtworkPolicy.forArea(.continueWatching) : inheritedArtworkPolicy
+    }
 
     public init(
         item: MediaItem,
@@ -183,6 +188,7 @@ public struct PosterCardView: View {
 
     public var body: some View {
         cardBody
+            .environment(\.plozzArtworkArea, presentationArtworkPolicy.area)
             .plozzChromeFocused(usesNativePoster ? false : isFocused)
             .mediaItemContextMenu(for: item)
             .modifier(PosterFocusBehavior(
@@ -1059,16 +1065,7 @@ public struct PosterCardView: View {
     /// by the *series* title). Inert when no TMDb token is configured.
     private var tmdbPosterFallback: (@Sendable () async -> URL?)? {
         guard style == .poster else { return nil }
-        switch item.kind {
-        case .folder, .collection, .unknown:
-            return nil
-        default:
-            break
-        }
-        let snapshot = item
-        return {
-            await ArtworkRouter.shared.artworkURL(.poster, for: snapshot)
-        }
+        return artworkPolicy.posterFallback(for: item)
     }
 
     /// Last-resort backdrop source for landscape cards whose provider thumbnail is
@@ -1187,7 +1184,9 @@ public struct PosterCardView: View {
         // Settles this show's source, then lets the body re-read it. A plain
         // synchronous read gives SwiftUI nothing to invalidate on, so without this
         // the answer would land in a dictionary no view was watching.
-        .task(id: TextlessBackdropStore.key(for: item)) {
+        .task(id: "\(TextlessBackdropStore.key(for: item))|\(presentationArtworkPolicy.identity)") {
+            textlessAnswerRevision = 0
+            guard presentationArtworkPolicy.prefersTextlessArtwork else { return }
             guard !TextlessBackdropStore.shared.hasAnswer(for: item) else { return }
             // Ask on the card's own behalf. The row warms its forward window, but
             // a card must not depend on having been prefetched — the first card of
@@ -1230,7 +1229,8 @@ public struct PosterCardView: View {
     /// read first so the body re-evaluates when the answer lands; it is also what
     /// records that the deadline passed.
     private var textlessAnswerReady: Bool {
-        textlessAnswerRevision > 0 || TextlessBackdropStore.shared.hasAnswer(for: item)
+        !presentationArtworkPolicy.prefersTextlessArtwork
+            || textlessAnswerRevision > 0 || TextlessBackdropStore.shared.hasAnswer(for: item)
     }
 
     private var seriesArtworkPicture: some View {
@@ -1270,7 +1270,9 @@ public struct PosterCardView: View {
     /// candidate is a slot that names itself, or no textless art exists anywhere
     /// for a show whose only art is titled promotional key art.
     private var suppressesSeriesLogo: Bool {
-        artworkAlreadyCarriesTitle || TextlessBackdropStore.shared.suppressesLogo(for: item)
+        artworkAlreadyCarriesTitle
+            || (presentationArtworkPolicy.prefersTextlessArtwork
+                && TextlessBackdropStore.shared.suppressesLogo(for: item))
     }
 
     /// For an episode this is the spoiler-safe series ladder (never the episode's
@@ -1284,7 +1286,7 @@ public struct PosterCardView: View {
     /// body, synchronously) is what keeps the switch invisible.
     private var seriesArtworkReferences: [ArtworkReference] {
         let ladder = item.kind == .episode ? placeholderArtworkReferences : artworkReferences
-        guard showsSeriesArtwork else { return ladder }
+        guard showsSeriesArtwork, presentationArtworkPolicy.prefersTextlessArtwork else { return ladder }
         return PosterCardPresentation.preferringTextless(
             TextlessBackdropStore.shared.backdrop(for: item),
             over: ladder
@@ -1740,12 +1742,14 @@ public extension PosterCardView {
     static func leadingLandscapeArtwork(
         for item: MediaItem,
         showsSeriesArtwork: Bool,
-        policy: CardArtworkPolicy = .standard
+        policy: CardArtworkPolicy = .standard,
+        prefersTextlessArtwork: Bool = true
     ) -> [ArtworkReference] {
         guard showsSeriesArtwork else { return policy.references(for: item, style: .landscape) }
         let ladder = item.kind == .episode
             ? item.seriesArtworkReferences(prefersPortrait: false)
             : policy.references(for: item, style: .landscape)
+        guard prefersTextlessArtwork else { return ladder }
         return PosterCardPresentation.preferringTextless(
             TextlessBackdropStore.shared.backdrop(for: item),
             over: ladder

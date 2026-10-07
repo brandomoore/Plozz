@@ -53,6 +53,7 @@ struct SeriesDetailView: View {
     let initialEpisode: MediaItem?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     #if os(tvOS)
     @Environment(\.detailEntranceSession) private var detailEntrance
     #endif
@@ -1324,7 +1325,10 @@ struct SeriesDetailView: View {
                        !(await viewModel.prepareForSpeculativeSeasonArtwork(
                            selectedSeasonID: { selectedSeasonID }
                        )) { return }
-                    let source = EpisodeArtworkSource(item: episode, spoilerSettings: spoilerSettings)
+                    let source = EpisodeArtworkSource(
+                        item: episode, spoilerSettings: spoilerSettings,
+                        policy: artworkPolicy.forArea(.episodes)
+                    )
                     await ArtworkSession.warmLimiter.run {
                         guard !Task.isCancelled else { return }
                         await source.prepare()

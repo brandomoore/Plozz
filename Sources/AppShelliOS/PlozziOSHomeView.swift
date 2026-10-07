@@ -2494,6 +2494,8 @@ struct PlozziOSHomeMediaRail: View {
         }
         .environment(\.plozzCardCaptionView, .home)
         .environment(\.plozzCardCaptionSettings, appModel.settings.cardStyle.captions)
+        .environment(\.plozzArtworkSettings, appModel.settings.cardStyle.artwork)
+        .environment(\.plozzArtworkProviders, appModel.metadataProviderSettingsModel.settings)
     }
 
     private func provider(for item: MediaItem) -> (any MediaProvider)? {
@@ -2582,7 +2584,8 @@ struct PlozziOSHomeMediaRail: View {
             if showsSeriesArtwork {
                 MediaArtworkPrefetchPolicy.warmSeriesPresentation(
                     for: candidate,
-                    variant: variant
+                    variant: variant,
+                    prefersTextlessArtwork: appModel.settings.cardStyle.artwork.prefersTextlessArtwork(in: .continueWatching)
                 )
             }
         }

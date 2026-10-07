@@ -161,7 +161,7 @@ public final class TextlessBackdropStore {
             // A cancelled resolve proves nothing about what exists, so it must not
             // be recorded as a conclusive miss — that would suppress a logo on the
             // strength of a scroll that happened to interrupt us.
-            guard !Task.isCancelled else { self?.forget(key); return }
+            guard !Task.isCancelled, key == Self.key(for: item) else { self?.forget(key); return }
             guard let url else { self?.record(.none, for: key); return }
             // Decode before publishing — see the type's note. `background: true`
             // keeps the decode off the main thread so a scrolling row never
@@ -174,6 +174,7 @@ public final class TextlessBackdropStore {
                 self?.forget(key)
                 return
             }
+            guard !Task.isCancelled, key == Self.key(for: item) else { self?.forget(key); return }
             self?.record(.available(url), for: key)
         }
         #endif
@@ -250,7 +251,8 @@ public final class TextlessBackdropStore {
     /// suppress a logo after the series metadata is corrected.
     static func key(for item: MediaItem) -> String {
         let subject = seriesItem(for: item)
-        return "series-art-v2|\(subject.stablePresentationID)|\(MetadataQuery(subject).cacheKey(for: .hero))"
+        let policy = MetadataProviderSettingsStore().load().artworkPolicyIdentity
+        return "series-art-v3|\(policy)|\(subject.stablePresentationID)|\(MetadataQuery(subject).cacheKey(for: .hero))"
     }
 
     private static func seriesItem(for item: MediaItem) -> MediaItem {

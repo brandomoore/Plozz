@@ -254,6 +254,8 @@ public struct PlozziOSRootView: View {
         )
         .mediaItemActionHandler(appModel.mediaItemActionHandler)
         .environment(\.plozzCardCaptionSettings, appModel.settings.cardStyle.captions)
+        .environment(\.plozzArtworkSettings, appModel.settings.cardStyle.artwork)
+        .environment(\.plozzArtworkProviders, appModel.metadataProviderSettingsModel.settings)
         .environment(
             \.plozzCardStyle,
             appModel.settings.cardStyle.style

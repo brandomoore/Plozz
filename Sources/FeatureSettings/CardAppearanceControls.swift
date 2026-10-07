@@ -16,6 +16,7 @@ public struct CardAppearanceControls: View {
     public var body: some View {
         #if os(tvOS)
         VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
+            SettingsDetailGroup(title: "Artwork") { ArtworkSettingsControls(cards: cards) }
             SettingsDetailGroup(title: "Labels") { labelControls }
             SettingsDetailGroup(title: "Watched Indicator") {
                 CompactWatchIndicatorPicker(selection: $watchIndicator.indicator, swatchHeight: 150)
@@ -35,6 +36,7 @@ public struct CardAppearanceControls: View {
         }
         #else
         List {
+            SettingsSectionGroup("Artwork") { ArtworkSettingsControls(cards: cards) }
             SettingsSectionGroup("Labels") { labelControls }
             SettingsSectionGroup("Watched Indicator") {
                 CompactWatchIndicatorPicker(selection: $watchIndicator.indicator, swatchHeight: 112)

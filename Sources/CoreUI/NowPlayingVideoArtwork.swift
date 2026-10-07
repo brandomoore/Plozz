@@ -18,15 +18,20 @@ public enum NowPlayingVideoArtwork {
     @MainActor
     public static func load(
         for item: MediaItem,
+        policy: ArtworkPresentationPolicy = .init(area: .playback),
         onUpdate: @escaping @MainActor (MPMediaItemArtwork) -> Void
     ) async {
+        let source = MediaArtworkSource(item: item, placement: .detailBackdrop, policy: policy)
+        guard let selected = await ArtworkFirstPaintResolver.resolve(
+            references: references(for: item), variant: .landscapeCard,
+            asyncOnlineURL: source.fallbackURL,
+            maximumOnlineWait: ArtworkFirstPaintResolver.focalArtworkWait,
+            prefersOnlineArtwork: policy.prefersOnlineArtwork
+        ), !Task.isCancelled else { return }
         await load(
             for: item,
-            textlessBackdrop: TextlessBackdropStore.shared.backdrop(for: item),
-            suppressesLogo: TextlessBackdropStore.shared.suppressesLogo(for: item),
-            imageLoader: { reference in
-                await ArtworkImageCache.shared.image(for: reference, variant: .landscapeCard)
-            },
+            selectedReferences: [selected.reference],
+            imageLoader: { _ in selected.image },
             logoLoader: { item in
                 let target = item.kind == .episode ? PosterCardView.seriesArtworkItem(for: item) : item
                 return await HeroUIKitLogoRenderer.render(
@@ -36,7 +41,8 @@ public enum NowPlayingVideoArtwork {
                             guard !Task.isCancelled else { return nil }
                             return await ArtworkRouter.shared.artworkURL(.logo, for: target)
                         }
-                    }
+                    },
+                    prefersOnlineArtwork: policy.prefersOnlineArtwork
                 )
             },
             onUpdate: onUpdate
@@ -48,11 +54,14 @@ public enum NowPlayingVideoArtwork {
         for item: MediaItem,
         textlessBackdrop: URL? = nil,
         suppressesLogo: Bool = false,
+        selectedReferences: [ArtworkReference]? = nil,
         imageLoader: @MainActor (ArtworkReference) async -> UIImage?,
         logoLoader: @MainActor (MediaItem) async -> HeroUIKitLogo?,
         onUpdate: @MainActor (MPMediaItemArtwork) -> Void
     ) async {
-        let candidates = PosterCardPresentation.preferringTextless(textlessBackdrop, over: references(for: item))
+        let candidates = PosterCardPresentation.preferringTextless(
+            textlessBackdrop, over: selectedReferences ?? references(for: item)
+        )
         let titled = PosterCardPresentation.titleBearingArtwork(for: item)
         for reference in candidates {
             guard !Task.isCancelled else { return }

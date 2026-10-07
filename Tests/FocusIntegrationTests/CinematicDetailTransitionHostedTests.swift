@@ -477,6 +477,8 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
                 },
                 height: 1080, scrimTone: .black, ignoresOverscan: false
             )
+            .environment(\.plozzArtworkSettings, artworkPolicy(settings).settings)
+            .environment(\.plozzArtworkProviders, settings)
             .environment(\.detailEntranceSession, session)
         )
         fixture.window.rootViewController = host
@@ -505,7 +507,8 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
             pinIdentity: "detail:\(item.id)",
             providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings)
         )
-        DetailTransitionNavigation.prepare(for: item, in: fixture.window, source: nil)
+        fixture.model.source.itemKey = item.stablePresentationID
+        DetailTransitionNavigation.prepare(for: item, in: fixture.window, source: fixture.model.source)
         DetailTransitionNavigation.preloadBackdrop(for: item)
         let cover = try XCTUnwrap(overlays(in: fixture.window).first)
         let task = try XCTUnwrap(DetailTransitionNavigation.backdropTask(matching: key))
@@ -559,7 +562,8 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         XCTAssertEqual(ArtworkSeedMemo.prepared(for: source.previewKey, variant: .heroPreview)?.reference, .remote(online))
         let fixture = try await makeFixture()
         defer { fixture.close() }
-        DetailTransitionNavigation.prepare(for: item, in: fixture.window, source: nil)
+        fixture.model.source.itemKey = item.stablePresentationID
+        DetailTransitionNavigation.prepare(for: item, in: fixture.window, source: fixture.model.source)
         let cover = try XCTUnwrap(overlays(in: fixture.window).first)
         XCTAssertTrue(cover.destination.image === preview, "The selected preferred image must exist in the first transition frame.")
         let session = TVDetailEntranceSession()
@@ -570,7 +574,10 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
                 references: source.references, asyncFallbackURL: fallback,
                 height: 1080, scrimTone: .black, ignoresOverscan: false,
                 pinIdentity: "detail:\(item.id)", backgroundVideo: { EmptyView() }
-            ).environment(\.detailEntranceSession, session)
+            )
+            .environment(\.plozzArtworkSettings, artworkPolicy(settings).settings)
+            .environment(\.plozzArtworkProviders, settings)
+            .environment(\.detailEntranceSession, session)
         )
         fixture.window.rootViewController = host
         host.view.layoutIfNeeded()
@@ -588,11 +595,13 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         defer { store.save(original) }
         let (url, _) = try await cachedPreview()
         let item = MediaItem(id: UUID().uuidString, title: "Show", kind: .series, backdropURL: url)
-        let source = DetailBackdropArtworkSource(item: item)
+        let source = DetailBackdropArtworkSource(item: item, policy: artworkPolicy(settings))
         let fixture = try await makeFixture()
         defer { fixture.close() }
         let host = UIHostingController(rootView:
             Color.clear.preloadDetailBackdropOnFocus(for: item, isFocused: true)
+                .environment(\.plozzArtworkSettings, artworkPolicy(settings).settings)
+                .environment(\.plozzArtworkProviders, settings)
         )
         let started = ContinuousClock.now
         fixture.window.rootViewController = host
@@ -631,7 +640,7 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         while await calls.value == 0, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
-        let request = try XCTUnwrap(DetailBackdropArtworkRequest(item: item))
+        let request = try XCTUnwrap(DetailBackdropArtworkRequest(item: item, policy: artworkPolicy(settings)))
         warmer.cancel()
         gate.continuation.yield(online)
         gate.continuation.finish()
@@ -647,6 +656,23 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
     private actor ArtworkLookupCount {
         var value = 0
         func record() { value += 1 }
+    }
+
+    private func artworkPolicy(_ settings: MetadataProviderSettings? = nil) -> ArtworkPresentationPolicy {
+        let settings = settings ?? MetadataProviderSettingsStore().load()
+        return .init(
+            area: .details,
+            settings: .init(preference: settings.preferOnlineArtwork ? .online : .library),
+            providers: settings
+        )
+    }
+
+    func testTransitionWithoutSourceDoesNotGuessProfileArtworkPolicy() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        DetailTransitionNavigation.prepare(for: fixture.model.item, in: fixture.window, source: nil)
+        let overlay = try XCTUnwrap(overlays(in: fixture.window).first)
+        XCTAssertNil(overlay.destination.image)
     }
 
     private func cachedPreview(decode: Bool = true) async throws -> (URL, UIImage) {
@@ -914,12 +940,13 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
-        let fixture = CinematicFixtureWindow(scene: scene)
+        let policy = artworkPolicy()
+        let fixture = CinematicFixtureWindow(scene: scene, policy: policy)
         let image = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 180)).image {
             UIColor.blue.setFill()
             $0.fill(CGRect(x: 0, y: 0, width: 320, height: 180))
         }
-        let source = DetailBackdropArtworkSource(item: fixture.model.item)
+        let source = DetailBackdropArtworkSource(item: fixture.model.item, policy: policy)
         ArtworkSeedMemo.store(
             FirstPaintArtwork(
                 image: image, reference: .remote(URL(string: "https://cinematic-fixture.example.test/blue.png")!),
@@ -997,11 +1024,15 @@ private final class CinematicFixtureWindow {
     let previousWindow: UIWindow?
     let model = CinematicFixtureModel()
 
-    init(scene: UIWindowScene) {
+    init(scene: UIWindowScene, policy: ArtworkPresentationPolicy = .init(area: .details)) {
         previousWindow = scene.windows.first(where: \.isKeyWindow)
         window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
-        let host = UIHostingController(rootView: CinematicFixtureRoot(model: model))
+        let host = UIHostingController(rootView:
+            CinematicFixtureRoot(model: model)
+                .environment(\.plozzArtworkSettings, policy.settings)
+                .environment(\.plozzArtworkProviders, policy.providers)
+        )
         window.rootViewController = host
         window.makeKeyAndVisible()
         host.view.layoutIfNeeded()

@@ -72,7 +72,7 @@ public struct HomeHeroBackdrop: View {
     let references: [ArtworkReference]
     /// Last-resort async art lookup (e.g. TMDb) when none of `urls` load.
     let asyncFallbackURL: (@Sendable () async -> URL?)?
-    let prefersOnlineArtwork: Bool
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     let sharedResolutionIdentity: String?
     /// Stable identity of the fronted slide (the item id). A *change* in this is
     /// what triggers a wipe — never a mere `urls` array rebuild for the same slide.
@@ -136,7 +136,6 @@ public struct HomeHeroBackdrop: View {
     ) {
         self.references = references
         self.asyncFallbackURL = asyncFallbackURL
-        self.prefersOnlineArtwork = MetadataProviderSettingsStore().load().preferOnlineArtwork
         self.sharedResolutionIdentity = sharedResolutionIdentity
         self.slideID = slideID
         self.forward = forward
@@ -271,14 +270,15 @@ public struct HomeHeroBackdrop: View {
         WipeImageView(
             references: references,
             asyncFallbackURL: asyncFallbackURL,
-            prefersOnlineArtwork: prefersOnlineArtwork,
-            sharedResolutionIdentity: sharedResolutionIdentity,
+            prefersOnlineArtwork: artworkPolicy.prefersOnlineArtwork,
+            sharedResolutionIdentity: sharedResolutionIdentity.map { "\($0)|\(artworkPolicy.identity)" },
             slideID: slideID,
             forward: forward,
             transition: transition,
             width: width,
             height: height
         )
+        .id(artworkPolicy.identity)
         #else
         Rectangle().fill(.tertiary)
         #endif

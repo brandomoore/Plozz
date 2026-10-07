@@ -196,17 +196,26 @@ enum ShareCatalogReadProjection {
         metadataConfig: MetadataEnrichmentConfig = MetadataEnrichmentConfig()
     ) -> MediaItem {
         var copy = item
+        if let source = copy.metadataProvenance[.posterURL]?.source,
+           metadataConfig.disabledSources.contains(source) {
+            copy.posterURL = nil
+            copy.seriesPosterURL = nil
+        }
+        if let source = copy.metadataProvenance[.backdropURL]?.source,
+           metadataConfig.disabledSources.contains(source) {
+            copy.backdropURL = nil
+            copy.heroBackdropURL = nil
+            copy.fallbackArtworkURL = nil
+        }
+        if let source = copy.metadataProvenance[.logoURL]?.source,
+           metadataConfig.disabledSources.contains(source) {
+            copy.logoURL = nil
+        }
         guard !selections.isEmpty else { return copy }
         var byPlacement = Dictionary(uniqueKeysWithValues: copy.artworkSelections.map { ($0.placement, $0) })
         for selection in selections where !selection.references.isEmpty {
-            if onlineArtworkOutranksLocal(
-                for: selection.placement,
-                in: copy,
-                config: metadataConfig
-            ) {
-                byPlacement.removeValue(forKey: selection.placement)
-                continue
-            }
+            // The catalog is household-shared. Retain local alternatives so each
+            // profile and artwork surface can choose its own source at presentation.
             byPlacement[selection.placement] = selection
             let field: MetadataField
             switch selection.placement {
@@ -222,91 +231,6 @@ enum ShareCatalogReadProjection {
         }
         copy.artworkSelections = byPlacement.values.sorted { $0.placement.rawValue < $1.placement.rawValue }
         return copy
-    }
-
-    private static func onlineArtworkOutranksLocal(
-        for placement: ArtworkPlacement,
-        in item: MediaItem,
-        config: MetadataEnrichmentConfig
-    ) -> Bool {
-        func outranks(
-            precedenceField: MetadataField,
-            provenanceField: MetadataField,
-            hasValue: Bool
-        ) -> Bool {
-            guard hasValue,
-                  let source = item.metadataProvenance[provenanceField]?.source,
-                  ![.localNFO, .server, .localArtwork, .embedded, .filename, .generated]
-                    .contains(source)
-            else { return false }
-            // Legacy enrichment rows predate exact provider provenance but are still
-            // known to be online. Preserve the preference for those cached records.
-            if source == .legacyUnknown { return config.preferOnlineArtwork }
-            let precedence = config.precedenceSources(
-                for: precedenceField,
-                query: MetadataQuery(item)
-            )
-            guard let onlineIndex = precedence.firstIndex(of: source),
-                  let localIndex = precedence.firstIndex(of: .localArtwork) else {
-                return false
-            }
-            return onlineIndex < localIndex
-        }
-
-        switch placement {
-        case .homeHero:
-            return outranks(
-                precedenceField: .homeHero,
-                provenanceField: .backdropURL,
-                hasValue: item.heroBackdropURL != nil || item.backdropURL != nil
-            )
-        case .detailBackdrop:
-            return outranks(
-                precedenceField: .detailBackdrop,
-                provenanceField: .backdropURL,
-                hasValue: item.heroBackdropURL != nil || item.backdropURL != nil
-            )
-        case .poster:
-            return outranks(
-                precedenceField: .posterURL,
-                provenanceField: .posterURL,
-                hasValue: item.posterURL != nil
-            )
-        case .seasonPoster:
-            return outranks(
-                precedenceField: .seasonPoster,
-                provenanceField: .posterURL,
-                hasValue: item.posterURL != nil
-            )
-        case .seriesPoster:
-            return outranks(
-                precedenceField: .posterURL,
-                provenanceField: .posterURL,
-                hasValue: item.seriesPosterURL != nil || item.posterURL != nil
-            )
-        case .logo:
-            return outranks(
-                precedenceField: .logoURL,
-                provenanceField: .logoURL,
-                hasValue: item.logoURL != nil
-            )
-        case .episodeThumbnail:
-            return outranks(
-                precedenceField: .episodeThumbnail,
-                provenanceField: .posterURL,
-                hasValue: item.posterURL != nil
-            ) || outranks(
-                precedenceField: .episodeThumbnail,
-                provenanceField: .backdropURL,
-                hasValue: item.backdropURL != nil
-            )
-        case .banner:
-            return false
-        case .seasonBanner:
-            return false
-        default:
-            return false
-        }
     }
 
     /// Merge an already-fetched enrichment record onto an item. Extracted from

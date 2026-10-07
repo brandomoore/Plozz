@@ -39,7 +39,13 @@ final class EpisodeArtworkPreparationTests: XCTestCase {
             item.artworkSelections = [
                 ArtworkSelection(placement: .episodeThumbnail, references: [.networkFile(reference)])
             ]
-            let source = EpisodeArtworkSource(item: item, spoilerSettings: .default)
+            let source = EpisodeArtworkSource(
+                item: item, spoilerSettings: .default,
+                policy: .init(
+                    area: .episodes, settings: .init(preference: online ? .online : .library),
+                    providers: store.load()
+                )
+            )
             XCTAssertNil(source.preparedArtwork)
             let resolved = await source.resolve()
             XCTAssertEqual(resolved?.reference, .networkFile(reference))

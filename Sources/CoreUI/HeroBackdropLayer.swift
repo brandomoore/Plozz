@@ -26,11 +26,11 @@ struct DetailBackdropArtworkSource {
     let key: String
     let previewKey: String
 
-    init(item: MediaItem) {
+    init(item: MediaItem, policy: ArtworkPresentationPolicy) {
         self.init(
             references: item.artworkReferences(for: .detailBackdrop),
             pinIdentity: "detail:\(item.id)",
-            settings: MetadataProviderSettingsStore().load(),
+            settings: policy.forArea(.details).metadataSettings,
             fallback: DetailBackdropArtwork.fallback(
                 for: item, isDiscoveryItem: TitleClassifier.isDiscoveryRouting(item, identitySources: item.sources)
             )
@@ -63,8 +63,8 @@ final class DetailBackdropArtworkRequest {
     let task: Task<FirstPaintArtwork?, Never>
     private let warmup: DetailBackdropWarmup?
 
-    init?(item: MediaItem) {
-        let source = DetailBackdropArtworkSource(item: item)
+    init?(item: MediaItem, policy: ArtworkPresentationPolicy) {
+        let source = DetailBackdropArtworkSource(item: item, policy: policy)
         guard !source.references.isEmpty else { return nil }
         key = source.key
         let warmup = DetailBackdropFocusPrewarmer.claim(matching: key)
@@ -175,10 +175,12 @@ enum DetailBackdropFocusPrewarmer {
 private struct DetailBackdropFocusWarmup: ViewModifier {
     let item: MediaItem?
     let isFocused: Bool
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     func body(content: Content) -> some View {
         let source = isFocused ? item.flatMap { item in
-            item.kind == .movie || item.kind == .series ? DetailBackdropArtworkSource(item: item) : nil
+            item.kind == .movie || item.kind == .series
+                ? DetailBackdropArtworkSource(item: item, policy: artworkPolicy) : nil
         } : nil
         content.task(id: source?.key) {
             guard let source else { return }
@@ -228,6 +230,7 @@ public extension View {
 /// `EmptyView` by default (today), so the image-only path is byte-for-byte the
 /// same as the detail hero's original backdrop.
 public struct HeroBackdropLayer<Video: View>: View {
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     #if os(tvOS)
     @Environment(\.detailEntranceSession) private var detailEntrance
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -332,6 +335,7 @@ public struct HeroBackdropLayer<Video: View>: View {
             // Put a real image up while the 2000px pass decodes. Home's hero has
             // always done this; the detail hero opened onto a scrim instead.
             previewVariant: .heroPreview,
+            artworkPolicy: artworkPolicy.forArea(.details),
             asyncFallbackURL: asyncFallbackURL,
             preferredArtworkWait: ArtworkFirstPaintResolver.focalArtworkWait,
             pinIdentity: pinIdentity,

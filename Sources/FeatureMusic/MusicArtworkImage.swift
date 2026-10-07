@@ -28,6 +28,7 @@ struct MusicArtworkImage: View {
     /// transparency. Falls back to `.secondary` when nil.
     var placeholderColor: Color? = nil
     @Environment(\.themePalette) private var palette
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     init(
         url: URL?,
@@ -56,6 +57,7 @@ struct MusicArtworkImage: View {
             FallbackAsyncImage(
                 urls: [url].compactMap { $0 },
                 variant: variant,
+                artworkPolicy: artworkPolicy.forArea(.music),
                 asyncFallbackURL: asyncFallbackURL,
                 pinIdentity: pinIdentity
             ) {

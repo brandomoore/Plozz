@@ -51,8 +51,7 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
     private let previewVariant: ArtworkImageVariant?
     private let asyncFallbackURL: (@Sendable () async -> URL?)?
     private let preferredArtworkWait: TimeInterval
-    private let prefersOnlineArtwork: Bool
-    private let providerPolicyIdentity: String
+    private let artworkPolicy: ArtworkPresentationPolicy?
     private let onResolveReference: ((ArtworkReference?) -> Void)?
     private let pinIdentity: String?
     private let sharedResolutionIdentity: String?
@@ -65,6 +64,7 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
         maxAspectRatio: CGFloat? = nil,
         variant: ArtworkImageVariant = .original,
         previewVariant: ArtworkImageVariant? = nil,
+        artworkPolicy: ArtworkPresentationPolicy? = nil,
         asyncFallbackURL: (@Sendable () async -> URL?)? = nil,
         preferredArtworkWait: TimeInterval = 0.5,
         onResolveReference: ((ArtworkReference?) -> Void)? = nil,
@@ -79,9 +79,7 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
         self.previewVariant = previewVariant
         self.asyncFallbackURL = asyncFallbackURL
         self.preferredArtworkWait = preferredArtworkWait
-        let settings = MetadataProviderSettingsStore().load()
-        self.prefersOnlineArtwork = settings.preferOnlineArtwork
-        self.providerPolicyIdentity = ArtworkResolveKey.policyIdentity(settings)
+        self.artworkPolicy = artworkPolicy
         self.onResolveReference = onResolveReference
         self.pinIdentity = pinIdentity
         self.sharedResolutionIdentity = sharedResolutionIdentity
@@ -91,22 +89,25 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
 
     public var body: some View {
         #if canImport(UIKit)
-        FilteredArtworkImage(
-            references: references,
-            maxAspectRatio: maxAspectRatio,
-            variant: variant,
-            previewVariant: previewVariant,
-            asyncFallbackURL: asyncFallbackURL,
-            preferredArtworkWait: preferredArtworkWait,
-            prefersOnlineArtwork: prefersOnlineArtwork,
-            providerPolicyIdentity: providerPolicyIdentity,
-            onResolveReference: onResolveReference,
-            pinIdentity: pinIdentity,
-            sharedResolutionIdentity: sharedResolutionIdentity,
-            showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
-            content: .image(content),
-            placeholder: placeholder
-        )
+        ArtworkPolicyReader(policy: artworkPolicy) { policy in
+            FilteredArtworkImage(
+                references: references,
+                maxAspectRatio: maxAspectRatio,
+                variant: variant,
+                previewVariant: previewVariant,
+                asyncFallbackURL: asyncFallbackURL,
+                preferredArtworkWait: preferredArtworkWait,
+                prefersOnlineArtwork: policy.prefersOnlineArtwork,
+                providerPolicyIdentity: policy.identity,
+                onResolveReference: onResolveReference,
+                pinIdentity: pinIdentity,
+                sharedResolutionIdentity: sharedResolutionIdentity,
+                showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
+                content: .image(content),
+                placeholder: placeholder
+            )
+            .id(policy.identity)
+        }
         #else
         SequentialAsyncImage(
             urls: references.compactMap {
@@ -131,23 +132,26 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
     #if canImport(UIKit)
     /// Reports the bitmap actually painted, including cached seeds and upgrades.
     public func reportingHeroArtwork(id: String?) -> some View {
-        FilteredArtworkImage(
-            references: references,
-            maxAspectRatio: maxAspectRatio,
-            variant: variant,
-            previewVariant: previewVariant,
-            asyncFallbackURL: asyncFallbackURL,
-            preferredArtworkWait: preferredArtworkWait,
-            prefersOnlineArtwork: prefersOnlineArtwork,
-            providerPolicyIdentity: providerPolicyIdentity,
-            onResolveReference: onResolveReference,
-            pinIdentity: pinIdentity,
-            sharedResolutionIdentity: sharedResolutionIdentity,
-            reportedHeroID: id,
-            showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
-            content: .image(content),
-            placeholder: placeholder
-        )
+        ArtworkPolicyReader(policy: artworkPolicy) { policy in
+            FilteredArtworkImage(
+                references: references,
+                maxAspectRatio: maxAspectRatio,
+                variant: variant,
+                previewVariant: previewVariant,
+                asyncFallbackURL: asyncFallbackURL,
+                preferredArtworkWait: preferredArtworkWait,
+                prefersOnlineArtwork: policy.prefersOnlineArtwork,
+                providerPolicyIdentity: policy.identity,
+                onResolveReference: onResolveReference,
+                pinIdentity: pinIdentity,
+                sharedResolutionIdentity: sharedResolutionIdentity,
+                reportedHeroID: id,
+                showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
+                content: .image(content),
+                placeholder: placeholder
+            )
+            .id(policy.identity)
+        }
     }
 
     /// Supplies the resolver's initial cached bitmap directly to native artwork,
@@ -155,22 +159,25 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
     func resolvedBitmap<ResolvedContent: View>(
         @ViewBuilder content: @escaping (UIImage?) -> ResolvedContent
     ) -> some View {
-        FilteredArtworkImage(
-            references: references,
-            maxAspectRatio: maxAspectRatio,
-            variant: variant,
-            previewVariant: previewVariant,
-            asyncFallbackURL: asyncFallbackURL,
-            preferredArtworkWait: preferredArtworkWait,
-            prefersOnlineArtwork: prefersOnlineArtwork,
-            providerPolicyIdentity: providerPolicyIdentity,
-            onResolveReference: onResolveReference,
-            pinIdentity: pinIdentity,
-            sharedResolutionIdentity: sharedResolutionIdentity,
-            showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
-            content: .bitmap(content),
-            placeholder: { EmptyView() }
-        )
+        ArtworkPolicyReader(policy: artworkPolicy) { policy in
+            FilteredArtworkImage(
+                references: references,
+                maxAspectRatio: maxAspectRatio,
+                variant: variant,
+                previewVariant: previewVariant,
+                asyncFallbackURL: asyncFallbackURL,
+                preferredArtworkWait: preferredArtworkWait,
+                prefersOnlineArtwork: policy.prefersOnlineArtwork,
+                providerPolicyIdentity: policy.identity,
+                onResolveReference: onResolveReference,
+                pinIdentity: pinIdentity,
+                sharedResolutionIdentity: sharedResolutionIdentity,
+                showsPlaceholderWhileLoading: showsPlaceholderWhileLoading,
+                content: .bitmap(content),
+                placeholder: { EmptyView() }
+            )
+            .id(policy.identity)
+        }
     }
     #endif
 }
@@ -201,6 +208,7 @@ extension FallbackAsyncImage where Content == ArtworkFillImage {
         maxAspectRatio: CGFloat? = nil,
         variant: ArtworkImageVariant = .original,
         previewVariant: ArtworkImageVariant? = nil,
+        artworkPolicy: ArtworkPresentationPolicy? = nil,
         asyncFallbackURL: (@Sendable () async -> URL?)? = nil,
         preferredArtworkWait: TimeInterval = 0.5,
         pinIdentity: String? = nil,
@@ -212,6 +220,7 @@ extension FallbackAsyncImage where Content == ArtworkFillImage {
             maxAspectRatio: maxAspectRatio,
             variant: variant,
             previewVariant: previewVariant,
+            artworkPolicy: artworkPolicy,
             asyncFallbackURL: asyncFallbackURL,
             preferredArtworkWait: preferredArtworkWait,
             onResolveReference: nil,
@@ -227,6 +236,7 @@ extension FallbackAsyncImage where Content == ArtworkFillImage {
         maxAspectRatio: CGFloat? = nil,
         variant: ArtworkImageVariant = .original,
         previewVariant: ArtworkImageVariant? = nil,
+        artworkPolicy: ArtworkPresentationPolicy? = nil,
         asyncFallbackURL: (@Sendable () async -> URL?)? = nil,
         preferredArtworkWait: TimeInterval = 0.5,
         pinIdentity: String? = nil,
@@ -238,6 +248,7 @@ extension FallbackAsyncImage where Content == ArtworkFillImage {
             maxAspectRatio: maxAspectRatio,
             variant: variant,
             previewVariant: previewVariant,
+            artworkPolicy: artworkPolicy,
             asyncFallbackURL: asyncFallbackURL,
             preferredArtworkWait: preferredArtworkWait,
             onResolveReference: nil,
@@ -312,12 +323,7 @@ private struct SequentialAsyncImage<Content: View, Placeholder: View>: View {
 /// and correct URLs; the collision existed only here, at the final image state.
 enum ArtworkResolveKey {
     static func policyIdentity(_ settings: MetadataProviderSettings) -> String {
-        [
-            settings.orderMode.rawValue,
-            settings.preferOnlineArtwork ? "online" : "library",
-            settings.enabledOrder.joined(separator: ","),
-            settings.disabledOrder.joined(separator: ","),
-        ].joined(separator: "|")
+        settings.artworkPolicyIdentity
     }
 
     static func make(

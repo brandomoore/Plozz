@@ -101,6 +101,7 @@ struct PlayerEpisodeNativeRow: UIViewRepresentable {
                 || self.environment.isEnabled != environment.isEnabled
                 || self.environment.accessibilityReduceMotion != environment.accessibilityReduceMotion
                 || self.environment.themePalette != environment.themePalette
+                || self.environment.plozzArtworkPolicy != environment.plozzArtworkPolicy
                 || configuration?.layout.cardWidth != value.layout.cardWidth
                 || configuration?.layout.imageHeight != value.layout.imageHeight
                 || configuration?.layout.metrics.castNameFont != value.layout.metrics.castNameFont
@@ -380,7 +381,10 @@ final class PlayerEpisodeNativeCell: UICollectionViewCell {
                 addSubview(caption)
             }
             updateCaption()
-            let source = EpisodeArtworkSource(item: entry.item, spoilerSettings: spoilerSettings)
+            let source = EpisodeArtworkSource(
+                item: entry.item, spoilerSettings: spoilerSettings,
+                policy: environment.plozzArtworkPolicy.forArea(.playback)
+            )
             if source.requestIdentity != artworkRequestIdentity {
                 imageTask?.cancel()
                 imageTask = nil

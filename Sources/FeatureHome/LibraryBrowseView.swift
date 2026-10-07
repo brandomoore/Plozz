@@ -75,6 +75,7 @@ public struct LibraryBrowseView: View {
     private let onSelectAtIndex: ((MediaItem, VideoPlaylistPlaybackOrigin?) -> Void)?
 
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.plozzArtworkSettings) private var artworkSettings
     /// Custom pinned-sidebar clearance. Native top/sidebar styles publish zero.
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
     @Environment(\.plozzNavigationStyle) private var navigationStyle
@@ -163,6 +164,7 @@ public struct LibraryBrowseView: View {
         // Browse is a full-screen sub-page: hide the top tab bar so it reads as a
         // dedicated destination with no navigation chrome pinned at the top.
         .environment(\.plozzCardCaptionView, viewModel.browseScope.cardCaptionView(for: viewModel.contentMode))
+        .environment(\.plozzArtworkArea, nil)
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .top, spacing: 0) {
             #if os(tvOS)
@@ -331,7 +333,8 @@ public struct LibraryBrowseView: View {
                 cardArtwork: section.style == .landscape
                     ? { PosterCardView.leadingLandscapeArtwork(
                         for: $0,
-                        showsSeriesArtwork: section.id == "continueWatching" && continueWatchingShowsSeriesArtwork
+                        showsSeriesArtwork: section.id == "continueWatching" && continueWatchingShowsSeriesArtwork,
+                        prefersTextlessArtwork: artworkSettings.prefersTextlessArtwork(in: .continueWatching)
                     ) } : nil
             )
         }

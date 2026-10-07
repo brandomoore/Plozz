@@ -124,6 +124,7 @@ public struct MediaRowView: View {
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
     @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
     @Environment(\.plozzCardStyle) private var cardStyle
+    @Environment(\.plozzArtworkPolicy) private var presentationArtworkPolicy
     @Environment(\.plozzRowTitleTightening) private var titleTightening
     /// Keeps branch-specific masking completely out of native navigation styles.
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
@@ -1055,7 +1056,10 @@ public struct MediaRowView: View {
             let candidate = items[i]
             if presentation == .episodeColumn {
                 if activity.prefetchedIDs.insert(candidate.stablePresentationID).inserted {
-                    let source = EpisodeArtworkSource(item: candidate, spoilerSettings: spoilerSettings)
+                    let source = EpisodeArtworkSource(
+                        item: candidate, spoilerSettings: spoilerSettings,
+                        policy: presentationArtworkPolicy.forArea(.episodes)
+                    )
                     activity.artworkPrefetchTasks.track(Task {
                         await ArtworkSession.warmLimiter.run {
                             guard !Task.isCancelled else { return }
@@ -1103,7 +1107,8 @@ public struct MediaRowView: View {
                     references: candidate.artworkReferences(for: .logo)
                 )
                 MediaArtworkPrefetchPolicy.warmSeriesPresentation(
-                    for: candidate, variant: variant, includeLogo: includeLogo
+                    for: candidate, variant: variant, includeLogo: includeLogo,
+                    prefersTextlessArtwork: presentationArtworkPolicy.forArea(.continueWatching).prefersTextlessArtwork
                 )
             }
         }
@@ -1503,14 +1508,17 @@ public enum MediaArtworkPrefetchPolicy {
     public static func warmSeriesPresentation(
         for item: MediaItem,
         variant: ArtworkImageVariant,
-        includeLogo: Bool = true
+        includeLogo: Bool = true,
+        prefersTextlessArtwork: Bool = true
     ) {
         if includeLogo {
             HeroLogoPipeline.shared.prefetch(
                 references: item.artworkReferences(for: .logo)
             )
         }
-        TextlessBackdropStore.shared.warm(for: item, variant: variant)
+        if prefersTextlessArtwork {
+            TextlessBackdropStore.shared.warm(for: item, variant: variant)
+        }
     }
 
     public static func candidates(

@@ -56,6 +56,7 @@ struct PlozziOSItemDetailView: View {
 
     var body: some View {
         detailBody
+            .environment(\.plozzArtworkArea, .details)
             // Each detail page installs its own router. A pushed destination —
             // whether from an inline `NavigationLink` or a
             // `navigationDestination` — does not inherit environment installed

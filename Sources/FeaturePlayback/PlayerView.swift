@@ -34,6 +34,7 @@ public struct PlayerView: View {
     /// around it (with a timeout so it can never strand on black).
     @State private var hdrTransition = HDRTransitionModel()
     @Environment(\.locale) private var locale
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     /// The app-root window veil (injected by `RootView`). On HDR/DV exit the player
@@ -132,6 +133,7 @@ public struct PlayerView: View {
             )
         }
         .task {
+            viewModel.updateArtworkPolicy(artworkPolicy)
             viewModel.controls.diagnosticsEnabled = showDiagnostics
             await viewModel.load()
             if needsStreamSampling { startSampling() }
@@ -140,6 +142,9 @@ public struct PlayerView: View {
         // Push the app's language in and keep it current: track menus name
         // languages in it, and an in-app language change has to reach them.
         .onAppear { viewModel.appLocale = locale }
+        .onChange(of: artworkPolicy) { _, policy in
+            viewModel.updateArtworkPolicy(policy)
+        }
         .onChange(of: locale) { _, newLocale in
             viewModel.appLocale = newLocale
             viewModel.refreshTrackMenusForLanguageChange()

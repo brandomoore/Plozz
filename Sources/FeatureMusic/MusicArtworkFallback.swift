@@ -1,17 +1,30 @@
 import Foundation
+import CoreModels
+import CoreUI
 import MetadataKit
 
 /// Bridges the music UI to MetadataKit's keyless artwork providers via
 /// ``ArtworkRouter``. Each factory returns a best-effort `@Sendable` closure that
-/// `FallbackAsyncImage` invokes **only when the server supplies no art**, so the
-/// user's own Jellyfin/Plex library art always wins and MetadataKit (Deezer
-/// artist hero + Cover Art Archive / Deezer album cover) merely fills gaps.
+/// `FallbackAsyncImage` orders according to the profile's Music artwork choice.
+/// Recommended keeps library covers first; online providers only fill gaps.
 ///
 /// Resolved URLs are memoized in the router's persistent ``MetadataDiskCache``
 /// and the decoded bytes in CoreUI's `ArtworkImageCache`, so there is a single
 /// caching path shared with the rest of the app. Returns `nil` (meaning "no
 /// fallback to attempt") when there is nothing meaningful to search by.
 enum MusicArtworkFallback {
+    #if canImport(UIKit)
+    static func resolveTrack(_ track: MusicTrack, policy: ArtworkPresentationPolicy) async -> FirstPaintArtwork? {
+        await ArtworkFirstPaintResolver.resolve(
+            references: track.artworkURL.map { [.remote($0)] } ?? [],
+            variant: .heroBackdrop,
+            asyncOnlineURL: trackCover(title: track.title, album: track.albumTitle, artist: track.artistName),
+            maximumOnlineWait: ArtworkFirstPaintResolver.denseArtworkWait,
+            prefersOnlineArtwork: policy.prefersOnlineArtwork
+        )
+    }
+    #endif
+
     /// Album cover (Deezer → Cover Art Archive), by album title disambiguated by
     /// artist. `nil` when the title is blank.
     static func albumCover(title: String, artist: String?) -> (@Sendable () async -> URL?)? {   // l10n:content — album/track name used for artwork lookup

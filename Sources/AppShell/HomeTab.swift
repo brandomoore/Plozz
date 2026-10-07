@@ -53,6 +53,7 @@ struct HomeTab: View {
     /// only to hand to the Top Shelf publisher: that snapshot crosses into
     /// another process, so its titles have to be resolved on this side.
     @Environment(\.locale) private var locale
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.mediaItemActionHandler) private var mediaItemActionHandler
     /// The rail's chrome model, present only under ``NavigationStyle/rail``. This
     /// stack reports its depth so the rail steps aside on a detail page.
@@ -233,10 +234,23 @@ struct HomeTab: View {
                 recentlyAppliedRecency: appliedWatchRecency,
                 mediaItemActionHandler: mediaItemActionHandler,
                 contentPublisher: { continueWatching, latest in
+                    let policy = ArtworkPresentationPolicy(
+                        area: .topShelf,
+                        settings: ArtworkSettingsStore(namespace: libraryPreferencesNamespace).load(),
+                        providers: MetadataProviderSettingsStore().load()
+                    )
                     await TopShelfPublisher.publish(
                         continueWatching: continueWatching,
                         latest: latest,
-                        locale: locale
+                        locale: locale,
+                        resolveArtwork: { item in
+                            let source = MediaArtworkSource(
+                                item: item, placement: item.kind == .episode ? .seriesPoster : .poster,
+                                policy: policy
+                            )
+                            return await source.resolve(variant: .posterCard, maxAspectRatio: 1)?
+                                .image.pngData()
+                        }
                     )
                 }
             )
@@ -453,6 +467,9 @@ struct HomeTab: View {
                 itemDetail(for: item, libraryOrigin: nil)
             }
             .onChange(of: pendingTitleRoute) { _, _ in consumePendingTitleRoute() }
+            .onChange(of: artworkPolicy.forArea(.topShelf).identity) { _, _ in
+                if case .home = root { sharedHomeViewModel.publishCurrentContent() }
+            }
             .onChange(of: isActiveTab, initial: true) { _, _ in consumePendingTitleRoute() }
             .onChange(of: pendingPersonRoute) { _, route in
                 // Raised by the in-player Cast card and pushed once the player

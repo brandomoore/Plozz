@@ -457,9 +457,9 @@ final class CatalogBrowseHydrationTests: XCTestCase {
         XCTAssertEqual(localFirst?.metadataProvenance[.posterURL]?.source, .localArtwork)
         XCTAssertEqual(
             onlineFirst?.artworkReferences(for: .poster),
-            [.remote(onlineURL)]
+            [.remote(localURL), .remote(onlineURL)]
         )
-        XCTAssertEqual(onlineFirst?.metadataProvenance[.posterURL]?.source, .tmdb)
+        XCTAssertEqual(onlineFirst?.metadataProvenance[.posterURL]?.source, .localArtwork)
     }
 
     func testBatchBoundsLargeInputAndOmitsUnknownIDs() {

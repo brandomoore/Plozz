@@ -2,6 +2,7 @@
 import CoreModels
 @testable import CoreUI
 @testable import FeatureHome
+import MetadataKit
 import Network
 import SwiftUI
 import TVUIKit
@@ -10,6 +11,71 @@ import XCTest
 
 @MainActor
 final class NativeLibraryCardHostedTests: XCTestCase {
+    private var savedProviders = MetadataProviderSettings.default
+
+    override func setUp() async throws {
+        try await super.setUp()
+        let store = MetadataProviderSettingsStore()
+        savedProviders = store.load()
+        store.save(.init(orderMode: .custom, disabledOrder: MetadataEnrichmentConfig.defaultBaseOrder.map(\.rawValue)))
+    }
+
+    override func tearDown() async throws {
+        MetadataProviderSettingsStore().save(savedProviders)
+        try await super.tearDown()
+    }
+
+    func testNativeBrowseChangesBetweenOnlineAndLibraryPixelsWithoutChangingTheItem() async throws {
+        let settings = MetadataProviderSettingsStore()
+        let previous = settings.load()
+        settings.save(.default)
+        defer { settings.save(previous) }
+        func data(_ color: UIColor) throws -> Data {
+            try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 100, height: 150)).image {
+                color.setFill()
+                $0.fill(CGRect(x: 0, y: 0, width: 100, height: 150))
+            }.pngData())
+        }
+        let server = try LibraryArtworkServer(images: ["library": data(.red), "online": data(.green)])
+        defer { server.stop() }
+        let port = try await server.start()
+        let token = UUID().uuidString
+        let library = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/library/\(token)"))
+        let online = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/online/\(token)"))
+        let item = MediaItem(id: token, title: token, kind: .movie, posterURL: library)
+        let query = MetadataQuery(item)
+        for provider in MetadataEnrichmentConfig.defaultBaseOrder {
+            await MetadataDiskCache.shared.store(
+                online, for: "\(query.cacheKey(for: .poster))|provider:\(provider.rawValue)"
+            )
+        }
+        _ = await ArtworkImageCache.shared.image(for: online, variant: .posterCard)
+        _ = await ArtworkImageCache.shared.image(for: library, variant: .posterCard)
+        let cell = NativeTVLibraryCell(frame: CGRect(x: 0, y: 0, width: 220, height: 400))
+        defer { cell.prepareForReuse() }
+        var environment = EnvironmentValues()
+        environment.plozzCardCaptionView = .browse
+        for preference in [ArtworkPreference.online, .library, .online] {
+            environment.plozzArtworkSettings = .init(preference: preference)
+            cell.configure(item: item, spoilerSettings: .default, environment: environment)
+            let deadline = ContinuousClock.now + .seconds(3)
+            var selected: UIImage?
+            while ContinuousClock.now < deadline {
+                cell.updateConfiguration(using: cell.configurationState)
+                let content = cell.contentView as? TVMediaItemContentView
+                selected = (content?.configuration as? TVMediaItemContentConfiguration)?.image
+                if let selected, selected.cgImage?.width ?? 0 >= 100 { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let image = try XCTUnwrap(selected)
+            XCTAssertGreaterThanOrEqual(image.cgImage?.width ?? 0, 100)
+            let pixel = try pixel(image, at: CGPoint(x: 10, y: 10))
+            XCTAssertGreaterThan(pixel[preference == .library ? 0 : 1], 180)
+            XCTAssertLessThan(pixel[preference == .library ? 1 : 0], 80)
+            XCTAssertEqual(cell.item?.id, token)
+        }
+    }
+
     func testArtlessNativeLibraryCellsPaintNamesOnlyWhenCaptionsAreHidden() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

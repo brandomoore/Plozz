@@ -4,6 +4,7 @@ import CoreModels
 @testable import AppShell
 @testable import FeatureHome
 import FeatureHomeCore
+import MetadataKit
 import SwiftUI
 import TVUIKit
 import UIKit
@@ -12,6 +13,20 @@ import XCTest
 
 @MainActor
 final class NativeLibraryRefreshHostedTests: XCTestCase {
+    private var savedProviders = MetadataProviderSettings.default
+
+    override func setUp() async throws {
+        try await super.setUp()
+        let store = MetadataProviderSettingsStore()
+        savedProviders = store.load()
+        store.save(.init(orderMode: .custom, disabledOrder: MetadataEnrichmentConfig.defaultBaseOrder.map(\.rawValue)))
+    }
+
+    override func tearDown() async throws {
+        MetadataProviderSettingsStore().save(savedProviders)
+        try await super.tearDown()
+    }
+
     func testLibraryHeaderClearanceAndFullBleedArtworkFollowNavigation() async throws {
         for style in [NavigationStyle.sidebar, .tabBar, .rail] {
             try await withNavigatedLibrary(style: style) { root, window, model in

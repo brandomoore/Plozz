@@ -34,7 +34,8 @@ final class PlozziOSSettingsModel {
         cardStyle = CardStyleSettingsModel(
             store: CardStyleSettingsStore(namespace: namespace),
             focusStore: CardFocusStyleSettingsStore(namespace: namespace),
-            captionStore: CardCaptionSettingsStore(namespace: namespace)
+            captionStore: CardCaptionSettingsStore(namespace: namespace),
+            artworkStore: ArtworkSettingsStore(namespace: namespace)
         )
         density = UIDensitySettingsModel(
             store: UIDensitySettingsStore(namespace: namespace)
