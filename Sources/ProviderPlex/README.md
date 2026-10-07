@@ -60,11 +60,16 @@ discovery, but new library lists never synthesize these shortcuts. Legacy
 
 Collection membership
 uses `MediaProvider.collectionMembers(of:page:)`, backed by paged
-`/library/metadata/{ratingKey}/children`, with no type or sort override. That same
+`/library/collections/{ratingKey}/children`, with no type or sort override. That same
 endpoint serves static and smart collections and preserves their server order.
+Do not substitute `/library/metadata/{ratingKey}/children`: a populated smart
+collection can return HTTP 200 with `size: 0`, `totalSize: 0`, and no `Metadata`
+through that alias. This was reproduced with a real Dolby Vision smart collection;
+its collection endpoint returned all 588 members across six bounded pages.
+Ordinary show/season children continue to use the metadata namespace.
 Membership requests use `includeOptionalElements=Stream`, never the
-`includeElements=Stream` whitelist: smart-collection responses honoring that
-whitelist can retain their counts while omitting the members. Discovery and
+`includeElements=Stream` whitelist, so optional stream enrichment does not
+filter out membership records. Discovery and
 membership both reject nonempty envelopes with missing metadata rather than
 presenting them as empty collections. Genuine empty collections and exhausted
 pages remain valid.
@@ -75,10 +80,10 @@ Failures remain separate from empty results and expose retry.
 Protocol references: [Plex's official API and response customization](https://developer.plex.tv/pms/)
 documents the dedicated collection endpoint and `MediaContainer.Metadata` JSON
 envelope. python-plexapi uses the alternative `/all?type=18` discovery query:
-[`LibrarySection.collections` / `search`](https://github.com/pkkid/python-plexapi/blob/master/plexapi/library.py),
-[`SEARCHTYPES`](https://github.com/pkkid/python-plexapi/blob/master/plexapi/utils.py),
-and [`Collection._items`](https://github.com/pkkid/python-plexapi/blob/master/plexapi/collection.py)
-documents the shared static/smart membership path.
+[`LibrarySection.collections` / `search`](https://github.com/pushingkarmaorg/python-plexapi/blob/master/plexapi/library.py),
+[`SEARCHTYPES`](https://github.com/pushingkarmaorg/python-plexapi/blob/master/plexapi/utils.py),
+and [`Collection._items`](https://github.com/pushingkarmaorg/python-plexapi/blob/master/plexapi/collection.py)
+uses the server-issued collection key's children path for static and smart membership.
 
 Tests: `PlexCollectionBrowsingTests` and shared `CollectionDetailBrowsingTests`.
 

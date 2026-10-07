@@ -95,9 +95,9 @@ final class PlexCollectionBrowsingTests: XCTestCase {
         http.stub(pathSuffix: "/library/sections/2/collections", json: """
         {"MediaContainer":{"size":2,"totalSize":70,"offset":60,
           "librarySectionID":2,"viewGroup":"collection","Metadata":[
-          {"ratingKey":"12","key":"/library/metadata/12/children",
+          {"ratingKey":"12","key":"/library/collections/12/children",
            "type":"collection","subtype":"movie","title":"Static","smart":0,"childCount":3},
-          {"ratingKey":"13","key":"/library/metadata/13/children",
+          {"ratingKey":"13","key":"/library/collections/13/children",
            "type":"collection","subtype":"movie","title":"Smart","smart":1,"childCount":5}
         ]}}
         """)
@@ -141,7 +141,7 @@ final class PlexCollectionBrowsingTests: XCTestCase {
     func testStaticAndSmartCollectionsUseMemberEndpointWithoutTypeOrSortFilter() async throws {
         for id in ["static", "smart"] {
             let http = StubHTTPClient()
-            http.stub(pathSuffix: "/library/metadata/\(id)/children", json: """
+            http.stub(pathSuffix: "/library/collections/\(id)/children", json: """
             {"MediaContainer":{"size":2,"totalSize":64,"Metadata":[
               {"ratingKey":"z","type":"movie","title":"Z","librarySectionID":2},
               {"ratingKey":"a","type":"show","title":"A","librarySectionID":2}
@@ -164,6 +164,29 @@ final class PlexCollectionBrowsingTests: XCTestCase {
         }
     }
 
+    func testSmartCollectionDoesNotAcceptEmptyMetadataChildrenAlias() async throws {
+        let http = StubHTTPClient()
+        // A real smart collection returns HTTP 200 with zero counts through
+        // the metadata alias, even though its collection endpoint has members.
+        http.stub(pathSuffix: "/library/metadata/13/children", json: """
+        {"MediaContainer":{"size":0,"totalSize":0,"offset":0,
+          "identifier":"com.plexapp.plugins.library","viewGroup":"movie"}}
+        """)
+        http.stub(pathSuffix: "/library/collections/13/children", json: """
+        {"MediaContainer":{"size":2,"totalSize":588,"offset":0,"Metadata":[
+          {"ratingKey":"z","type":"movie","title":"Z","librarySectionID":2},
+          {"ratingKey":"a","type":"movie","title":"A","librarySectionID":2}
+        ]}}
+        """)
+        let page = try await provider(http).collectionMembers(
+            of: "13", page: PageRequest(limit: 2)
+        )
+        XCTAssertEqual(page.items.map(\.id), ["z", "a"])
+        XCTAssertEqual(page.totalCount, 588)
+        XCTAssertTrue(page.hasMore)
+        XCTAssertEqual(http.sentPaths, ["/library/collections/13/children"])
+    }
+
     func testSmartCollectionMembersSurviveServerElementWhitelisting() async throws {
         let page = try await provider(CollectionWhitelistHTTPClient()).collectionMembers(
             of: "13", page: PageRequest()
@@ -182,7 +205,7 @@ final class PlexCollectionBrowsingTests: XCTestCase {
                 #"{"MediaContainer":{"size":0,"Directory":[{"key":"unexpected","title":"Unexpected"}]}}"#
             ] {
                 let http = StubHTTPClient()
-                http.stub(pathSuffix: "/library/metadata/13/children", json: json)
+                http.stub(pathSuffix: "/library/collections/13/children", json: json)
                 do {
                     _ = try await provider(http).collectionMembers(
                         of: "13", page: PageRequest(startIndex: start, limit: 2)
@@ -203,7 +226,7 @@ final class PlexCollectionBrowsingTests: XCTestCase {
                 "{\"MediaContainer\":{\"size\":0,\"totalSize\":\(start)}}"
             ] {
                 let http = StubHTTPClient()
-                http.stub(pathSuffix: "/library/metadata/13/children", json: json)
+                http.stub(pathSuffix: "/library/collections/13/children", json: json)
                 let page = try await provider(http).collectionMembers(
                     of: "13", page: PageRequest(startIndex: start)
                 )
@@ -227,7 +250,7 @@ final class PlexCollectionBrowsingTests: XCTestCase {
 
     func testDirectCollectionPagingDoesNotConfuseMemberIDWithSectionID() async throws {
         let http = StubHTTPClient()
-        http.stub(pathSuffix: "/library/metadata/12/children", json: """
+        http.stub(pathSuffix: "/library/collections/12/children", json: """
         {"MediaContainer":{"size":1,"totalSize":1,"Metadata":[
           {"ratingKey":"movie","type":"movie","title":"Member"}
         ]}}
@@ -241,7 +264,7 @@ final class PlexCollectionBrowsingTests: XCTestCase {
 
     func testMissingTotalDoesNotTruncateAFullMemberPage() async throws {
         let http = StubHTTPClient()
-        http.stub(pathSuffix: "/library/metadata/12/children", json: """
+        http.stub(pathSuffix: "/library/collections/12/children", json: """
         {"MediaContainer":{"size":1,"Metadata":[{"ratingKey":"a","type":"movie","title":"A"}]}}
         """)
         let page = try await provider(http).collectionMembers(
@@ -319,7 +342,7 @@ final class PlexCollectionBrowsingTests: XCTestCase {
         func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
             guard endpoint.path == "/library/sections/2/all"
                     || endpoint.path == "/library/sections/2/collections"
-                    || endpoint.path == "/library/metadata/13/children" else {
+                    || endpoint.path == "/library/collections/13/children" else {
                 throw AppError.notFound
             }
             let json: String
@@ -335,7 +358,7 @@ final class PlexCollectionBrowsingTests: XCTestCase {
             } else {
                 json = """
                 {"MediaContainer":{"identifier":"com.plexapp.plugins.library","size":1,"librarySectionID":2,
-                  "Metadata":[{"ratingKey":"12","key":"/library/metadata/12/children","type":"collection",
+                  "Metadata":[{"ratingKey":"12","key":"/library/collections/12/children","type":"collection",
                                "subtype":"movie","title":"Collection","smart":0,"childCount":3}]}}
                 """
             }
