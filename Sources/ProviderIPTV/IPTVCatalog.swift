@@ -219,7 +219,9 @@ public enum IPTVError: Error, LocalizedError, Sendable {
         }
     }
 
-    public var errorDescription: String? { String(localized: userDescription) }
+    public var errorDescription: String? {
+        String(localized: userDescription) // l10n:content - LocalizedError requires resolved text; recomputed on each access.
+    }
 
     public var userDescription: LocalizedStringResource {
         switch self {

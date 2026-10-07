@@ -63,7 +63,9 @@ enum IPTVMapping {
         let nativeID = series.streamID ?? series.item.id
         return IPTVRecord(
             item: MediaItem(
-                id: "season:\(nativeID):\(number)", title: String(localized: "Season \(number)"), kind: .season,
+                id: "season:\(nativeID):\(number)",
+                title: String(localized: "Season \(number)"), // l10n:content - serialized provider metadata title; resolved when writing the catalogue snapshot.
+                kind: .season,
                 parentTitle: series.item.title, seasonNumber: number, seriesID: series.item.id,
                 posterURL: series.item.posterURL, seriesPosterURL: series.item.posterURL,
                 libraryID: "series"

@@ -100,7 +100,7 @@ final class DiagnosticRecordingController {
             badge = label
         }
         if changed {
-            let text = String(localized: phase.text)
+            let text = String(localized: phase.text) // l10n:content - UIKit status boundary; resolved when the diagnostic phase changes.
             let indicator = phase == .recording ? "\u{25CF}  " : ""
             let status = NSMutableAttributedString(string: "  \(indicator)\(text)  ") // l10n:content — localized UIKit status label
             if phase == .recording {
