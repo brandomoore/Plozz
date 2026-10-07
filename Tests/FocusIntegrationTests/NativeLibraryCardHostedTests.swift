@@ -26,17 +26,118 @@ final class NativeLibraryCardHostedTests: XCTestCase {
     }
 
     func testNativeBrowseChangesBetweenOnlineAndLibraryPixelsWithoutChangingTheItem() async throws {
+        try await checkNativeBrowseArtwork(onlineDelay: 0)
+    }
+
+    func testNativeBrowseKeepsProviderPreferenceDuringSlowArtworkDownload() async throws {
+        try await checkNativeBrowseArtwork(onlineDelay: 1)
+    }
+
+    func testSwiftUIBrowseKeepsProviderPreferenceDuringQueuedLookup() async throws {
+        try await checkSwiftUIBrowseArtwork(cancelLookup: false)
+    }
+
+    func testLeavingSwiftUIBrowseDoesNotPaintCachedLibraryArtworkAfterCancellation() async throws {
+        try await checkSwiftUIBrowseArtwork(cancelLookup: true)
+    }
+
+    private func checkSwiftUIBrowseArtwork(cancelLookup: Bool) async throws {
+        let server = try LibraryArtworkServer(
+            images: ["library": artworkData(.red), "online": artworkData(.green)]
+        )
+        defer { server.stop() }
+        let port = try await server.start()
+        let token = UUID().uuidString
+        let library = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/library/\(token)"))
+        let online = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/online/\(token)"))
+        _ = await ArtworkImageCache.shared.image(for: library, variant: .posterCard)
+        _ = await ArtworkImageCache.shared.image(for: online, variant: .posterCard)
+        var painted: ArtworkReference?
+        let resolved = expectation(description: "Preferred poster painted")
+        resolved.isInverted = cancelLookup
+        let lookupStarted = expectation(description: "Provider lookup started")
+        let content = FallbackAsyncImage(
+            references: [.remote(library)], variant: .posterCard,
+            artworkPolicy: .init(area: .browse, settings: .init(preference: .online)),
+            asyncFallbackURL: {
+                lookupStarted.fulfill()
+                try? await Task.sleep(for: .seconds(1))
+                return online
+            },
+            onResolveReference: { reference in
+                if let reference, painted == nil {
+                    painted = reference
+                    resolved.fulfill()
+                }
+            },
+            pinIdentity: token
+        ) { image in
+            image.resizable()
+        } placeholder: {
+            Color.blue
+        }
+        .frame(width: 200, height: 300)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let host = UIHostingController(rootView: AnyView(content))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        await fulfillment(of: [lookupStarted], timeout: 3)
+        if cancelLookup {
+            host.rootView = AnyView(EmptyView())
+            await fulfillment(of: [resolved], timeout: 1.5)
+            XCTAssertNil(painted, "Cancelling the preferred lookup must not turn it into a library-artwork miss.")
+        } else {
+            await fulfillment(of: [resolved], timeout: 5)
+            XCTAssertEqual(painted, .remote(online), "A queued lookup must not pin the already-cached library image.")
+        }
+    }
+
+    func testMissingAndUnusableProviderPostersStillFallBackToLibrary() async throws {
+        let server = try LibraryArtworkServer(images: [
+            "library": artworkData(.red),
+            "wide": artworkData(.green, size: CGSize(width: 200, height: 100)),
+            "invalid": Data("not an image".utf8)
+        ])
+        defer { server.stop() }
+        let port = try await server.start()
+        let token = UUID().uuidString
+        let library = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/library/\(token)"))
+        for key in [nil, "missing", "wide", "invalid"] as [String?] {
+            let online = key.flatMap { URL(string: "http://127.0.0.1:\(port)/\($0)/\(token)") }
+            let result = await ArtworkFirstPaintResolver.resolve(
+                references: [.remote(library)], variant: .posterCard, maxAspectRatio: 0.9,
+                asyncOnlineURL: { online }, prefersOnlineArtwork: true
+            )
+            XCTAssertEqual(result?.reference, .remote(library))
+            XCTAssertTrue(try isRed(XCTUnwrap(result?.image), at: CGPoint(x: 10, y: 10)))
+        }
+    }
+
+    private func artworkData(_ color: UIColor, size: CGSize = CGSize(width: 100, height: 150)) throws -> Data {
+        try XCTUnwrap(UIGraphicsImageRenderer(size: size).image {
+            color.setFill()
+            $0.fill(CGRect(origin: .zero, size: size))
+        }.pngData())
+    }
+
+    private func checkNativeBrowseArtwork(onlineDelay: TimeInterval) async throws {
         let settings = MetadataProviderSettingsStore()
         let previous = settings.load()
         settings.save(.default)
         defer { settings.save(previous) }
-        func data(_ color: UIColor) throws -> Data {
-            try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 100, height: 150)).image {
-                color.setFill()
-                $0.fill(CGRect(x: 0, y: 0, width: 100, height: 150))
-            }.pngData())
-        }
-        let server = try LibraryArtworkServer(images: ["library": data(.red), "online": data(.green)])
+        let server = try LibraryArtworkServer(
+            images: ["library": artworkData(.red), "online": artworkData(.green)],
+            delays: ["online": onlineDelay]
+        )
         defer { server.stop() }
         let port = try await server.start()
         let token = UUID().uuidString
@@ -49,7 +150,9 @@ final class NativeLibraryCardHostedTests: XCTestCase {
                 online, for: "\(query.cacheKey(for: .poster))|provider:\(provider.rawValue)"
             )
         }
-        _ = await ArtworkImageCache.shared.image(for: online, variant: .posterCard)
+        if onlineDelay == 0 {
+            _ = await ArtworkImageCache.shared.image(for: online, variant: .posterCard)
+        }
         _ = await ArtworkImageCache.shared.image(for: library, variant: .posterCard)
         let cell = NativeTVLibraryCell(frame: CGRect(x: 0, y: 0, width: 220, height: 400))
         defer { cell.prepareForReuse() }
@@ -73,6 +176,10 @@ final class NativeLibraryCardHostedTests: XCTestCase {
             XCTAssertGreaterThan(pixel[preference == .library ? 0 : 1], 180)
             XCTAssertLessThan(pixel[preference == .library ? 1 : 0], 80)
             XCTAssertEqual(cell.item?.id, token)
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "browse-\(preference)-delay-\(onlineDelay)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
         }
     }
 
@@ -879,11 +986,13 @@ private final class LibraryFocusController: UIViewController {
 private final class LibraryArtworkServer: @unchecked Sendable {
     private let listener: NWListener
     private let images: [String: Data]
+    private let delays: [String: TimeInterval]
     private let queue = DispatchQueue(label: "NativeLibraryCardHostedTests.artwork")
     private var connections: [NWConnection] = []
 
-    init(images: [String: Data]) throws {
+    init(images: [String: Data], delays: [String: TimeInterval] = [:]) throws {
         self.images = images
+        self.delays = delays
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
@@ -942,7 +1051,9 @@ private final class LibraryArtworkServer: @unchecked Sendable {
             let image = images[key] ?? Data()
             let status = images[key] == nil ? "404 Not Found" : "200 OK"
             let response = Data("HTTP/1.1 \(status)\r\nContent-Type: image/png\r\nContent-Length: \(image.count)\r\nConnection: close\r\n\r\n".utf8) + image
-            connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
+            queue.asyncAfter(deadline: .now() + (delays[key] ?? 0)) {
+                connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
+            }
         }
     }
 }

@@ -316,7 +316,7 @@ final class ExtrasArtworkPolicyTests: XCTestCase {
     private func resolve(_ item: MediaItem, prefersOnline: Bool) async -> FirstPaintArtwork? {
         await ArtworkFirstPaintResolver.resolve(
             references: references(item), variant: .landscapeCard,
-            asyncOnlineURL: card(item).asyncArtworkFallback, maximumOnlineWait: 0,
+            asyncOnlineURL: card(item).asyncArtworkFallback,
             prefersOnlineArtwork: prefersOnline
         )
     }

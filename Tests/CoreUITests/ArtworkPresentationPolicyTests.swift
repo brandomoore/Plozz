@@ -8,6 +8,32 @@ import UIKit
 
 @MainActor
 final class ArtworkPresentationPolicyTests: XCTestCase {
+    #if canImport(UIKit)
+    func testCancellingPendingProviderLookupReturnsWithoutWaitingForItsAnswer() async throws {
+        let lookup = PolicyOnlineGate()
+        let returned = expectation(description: "Cancelled artwork returns promptly")
+        let task = Task {
+            let result = await ArtworkFirstPaintResolver.resolve(
+                references: [], variant: .posterCard,
+                asyncOnlineURL: { await lookup.lookup() }, prefersOnlineArtwork: true
+            )
+            returned.fulfill()
+            return result
+        }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while await lookup.requests == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let requests = await lookup.requests
+        XCTAssertEqual(requests, 1)
+        task.cancel()
+        await fulfillment(of: [returned], timeout: 1)
+        await lookup.finish()
+        let result = await task.value
+        XCTAssertNil(result)
+    }
+    #endif
+
     func testAreaOverrideChangesSelectionWithoutChangingProviderPermissions() {
         var settings = ArtworkSettings(preference: .online)
         settings.setOverride(.library, for: .continueWatching)
@@ -137,7 +163,7 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
             )
             let result = await ArtworkFirstPaintResolver.resolve(
                 references: [.networkFile(reference)], variant: .landscapeCard,
-                asyncOnlineURL: { await online.lookup() }, maximumOnlineWait: 2,
+                asyncOnlineURL: { await online.lookup() },
                 prefersOnlineArtwork: policy.prefersOnlineArtwork
             )
             XCTAssertEqual(result?.reference, .networkFile(reference))
@@ -150,7 +176,7 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
         let online = PolicyOnlineProbe()
         let result = await ArtworkFirstPaintResolver.resolve(
             references: [], variant: .posterCard,
-            asyncOnlineURL: { await online.lookup() }, maximumOnlineWait: 0.5,
+            asyncOnlineURL: { await online.lookup() },
             prefersOnlineArtwork: false
         )
         XCTAssertNil(result)
@@ -172,5 +198,20 @@ private actor PolicyOnlineProbe {
     func lookup() -> URL? {
         requests += 1
         return nil
+    }
+}
+
+private actor PolicyOnlineGate {
+    private(set) var requests = 0
+    private var continuation: CheckedContinuation<URL?, Never>?
+
+    func lookup() async -> URL? {
+        requests += 1
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func finish() {
+        continuation?.resume(returning: nil)
+        continuation = nil
     }
 }

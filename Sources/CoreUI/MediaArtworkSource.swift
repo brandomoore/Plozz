@@ -43,7 +43,6 @@ public struct MediaArtworkSource: Sendable {
             variant: variant,
             maxAspectRatio: maxAspectRatio,
             asyncOnlineURL: fallbackURL,
-            maximumOnlineWait: ArtworkFirstPaintResolver.focalArtworkWait,
             prefersOnlineArtwork: policy.prefersOnlineArtwork
         )
     }

@@ -30,7 +30,6 @@ public enum NowPlayingVideoArtwork {
             references: references(for: item, preferringLibrarySelection: !policy.prefersOnlineArtwork),
             variant: .landscapeCard,
             asyncOnlineURL: source.fallbackURL,
-            maximumOnlineWait: ArtworkFirstPaintResolver.focalArtworkWait,
             prefersOnlineArtwork: policy.prefersOnlineArtwork
         ), !Task.isCancelled else { return }
         await load(

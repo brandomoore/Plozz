@@ -94,7 +94,11 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   separate artwork-help page. Remove view customizations clears only the overrides,
   preserving the main preference. Cards retains
   card presentation controls, not app-wide artwork policy. Missing artwork can
-  fall back to the other source.
+  fall back to the other source. Provider-first waits for lookup and image decoding
+  to finish, including time queued behind other requests; a short first-paint
+  budget must not permanently select cached library artwork instead. Existing
+  network/image-load deadlines still bound failures, and cancellation releases
+  the view without painting a fallback for a cancelled request.
   Provider enablement/order is household-wide in Metadata Providers; changing
   appearance never enables a provider. The old library-artwork choice migrates to each profile,
   and the new preference transfers/syncs with that profile.

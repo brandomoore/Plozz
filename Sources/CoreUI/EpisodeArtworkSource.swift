@@ -58,7 +58,6 @@ public struct EpisodeArtworkSource: Sendable {
         guard let artwork = await ArtworkFirstPaintResolver.resolve(
             references: references, variant: .landscapeCard,
             asyncOnlineURL: fallbackURL,
-            maximumOnlineWait: ArtworkFirstPaintResolver.denseArtworkWait,
             prefersOnlineArtwork: prefersOnlineArtwork,
             sharedKey: background ? nil : requestIdentity, background: background
         ), !Task.isCancelled else { return nil }

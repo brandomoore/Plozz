@@ -50,7 +50,6 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
     private let variant: ArtworkImageVariant
     private let previewVariant: ArtworkImageVariant?
     private let asyncFallbackURL: (@Sendable () async -> URL?)?
-    private let preferredArtworkWait: TimeInterval
     private let artworkPolicy: ArtworkPresentationPolicy?
     private let onResolveReference: ((ArtworkReference?) -> Void)?
     private let pinIdentity: String?
@@ -66,7 +65,6 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
         previewVariant: ArtworkImageVariant? = nil,
         artworkPolicy: ArtworkPresentationPolicy? = nil,
         asyncFallbackURL: (@Sendable () async -> URL?)? = nil,
-        preferredArtworkWait: TimeInterval = 0.5,
         onResolveReference: ((ArtworkReference?) -> Void)? = nil,
         pinIdentity: String? = nil,
         sharedResolutionIdentity: String? = nil,
@@ -78,7 +76,6 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
         self.variant = variant
         self.previewVariant = previewVariant
         self.asyncFallbackURL = asyncFallbackURL
-        self.preferredArtworkWait = preferredArtworkWait
         self.artworkPolicy = artworkPolicy
         self.onResolveReference = onResolveReference
         self.pinIdentity = pinIdentity
@@ -96,7 +93,6 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
                 variant: variant,
                 previewVariant: previewVariant,
                 asyncFallbackURL: asyncFallbackURL,
-                preferredArtworkWait: preferredArtworkWait,
                 prefersOnlineArtwork: policy.prefersOnlineArtwork,
                 providerPolicyIdentity: policy.identity,
                 onResolveReference: onResolveReference,
@@ -139,7 +135,6 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
                 variant: variant,
                 previewVariant: previewVariant,
                 asyncFallbackURL: asyncFallbackURL,
-                preferredArtworkWait: preferredArtworkWait,
                 prefersOnlineArtwork: policy.prefersOnlineArtwork,
                 providerPolicyIdentity: policy.identity,
                 onResolveReference: onResolveReference,
@@ -166,7 +161,6 @@ public struct FallbackAsyncImage<Content: View, Placeholder: View>: View {
                 variant: variant,
                 previewVariant: previewVariant,
                 asyncFallbackURL: asyncFallbackURL,
-                preferredArtworkWait: preferredArtworkWait,
                 prefersOnlineArtwork: policy.prefersOnlineArtwork,
                 providerPolicyIdentity: policy.identity,
                 onResolveReference: onResolveReference,
@@ -210,7 +204,6 @@ extension FallbackAsyncImage where Content == ArtworkFillImage {
         previewVariant: ArtworkImageVariant? = nil,
         artworkPolicy: ArtworkPresentationPolicy? = nil,
         asyncFallbackURL: (@Sendable () async -> URL?)? = nil,
-        preferredArtworkWait: TimeInterval = 0.5,
         pinIdentity: String? = nil,
         sharedResolutionIdentity: String? = nil,
         @ViewBuilder placeholder: @escaping () -> Placeholder
@@ -222,7 +215,6 @@ extension FallbackAsyncImage where Content == ArtworkFillImage {
             previewVariant: previewVariant,
             artworkPolicy: artworkPolicy,
             asyncFallbackURL: asyncFallbackURL,
-            preferredArtworkWait: preferredArtworkWait,
             onResolveReference: nil,
             pinIdentity: pinIdentity,
             sharedResolutionIdentity: sharedResolutionIdentity,
@@ -238,7 +230,6 @@ extension FallbackAsyncImage where Content == ArtworkFillImage {
         previewVariant: ArtworkImageVariant? = nil,
         artworkPolicy: ArtworkPresentationPolicy? = nil,
         asyncFallbackURL: (@Sendable () async -> URL?)? = nil,
-        preferredArtworkWait: TimeInterval = 0.5,
         pinIdentity: String? = nil,
         sharedResolutionIdentity: String? = nil,
         @ViewBuilder placeholder: @escaping () -> Placeholder
@@ -250,7 +241,6 @@ extension FallbackAsyncImage where Content == ArtworkFillImage {
             previewVariant: previewVariant,
             artworkPolicy: artworkPolicy,
             asyncFallbackURL: asyncFallbackURL,
-            preferredArtworkWait: preferredArtworkWait,
             onResolveReference: nil,
             pinIdentity: pinIdentity,
             sharedResolutionIdentity: sharedResolutionIdentity,
@@ -438,7 +428,6 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
     /// small, and a second decode there would cost more than it saves.
     let previewVariant: ArtworkImageVariant?
     let asyncFallbackURL: (@Sendable () async -> URL?)?
-    let preferredArtworkWait: TimeInterval
     let prefersOnlineArtwork: Bool
     let providerPolicyIdentity: String
     /// Reports which candidate actually won, so a caller can react to WHICH art it
@@ -493,7 +482,6 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         variant: ArtworkImageVariant,
         previewVariant: ArtworkImageVariant? = nil,
         asyncFallbackURL: (@Sendable () async -> URL?)?,
-        preferredArtworkWait: TimeInterval,
         prefersOnlineArtwork: Bool,
         providerPolicyIdentity: String,
         onResolveReference: ((ArtworkReference?) -> Void)? = nil,
@@ -509,7 +497,6 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
         self.variant = variant
         self.previewVariant = previewVariant
         self.asyncFallbackURL = asyncFallbackURL
-        self.preferredArtworkWait = preferredArtworkWait
         self.prefersOnlineArtwork = prefersOnlineArtwork
         self.providerPolicyIdentity = providerPolicyIdentity
         self.onResolveReference = onResolveReference
@@ -762,7 +749,6 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                 variant: firstVariant,
                 maxAspectRatio: maxAspectRatio,
                 asyncOnlineURL: asyncFallbackURL,
-                maximumOnlineWait: preferredArtworkWait,
                 prefersOnlineArtwork: true,
                 sharedKey: sharedResolutionIdentity
             ) {
@@ -770,6 +756,7 @@ private struct FilteredArtworkImage<Content: View, Placeholder: View>: View {
                 return
             }
         }
+        guard !Task.isCancelled else { return }
         // Progressive first pass. Deliberately before the full loop below, and
         // deliberately only when there is nothing on screen: an image already up is
         // never replaced by a cheaper one, so this can only ever fill a gap.

@@ -126,7 +126,6 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
                                 }
                             }
                         },
-                        maximumOnlineWait: ArtworkFirstPaintResolver.denseArtworkWait,
                         prefersOnlineArtwork: policy.prefersOnlineArtwork
                     )
                     guard !Task.isCancelled, let self, self.imageRevision == revision else { return }

@@ -19,7 +19,6 @@ enum MusicArtworkFallback {
             references: track.artworkURL.map { [.remote($0)] } ?? [],
             variant: .heroBackdrop,
             asyncOnlineURL: trackCover(title: track.title, album: track.albumTitle, artist: track.artistName),
-            maximumOnlineWait: ArtworkFirstPaintResolver.denseArtworkWait,
             prefersOnlineArtwork: policy.prefersOnlineArtwork
         )
     }

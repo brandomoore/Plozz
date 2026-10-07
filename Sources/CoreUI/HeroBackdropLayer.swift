@@ -74,7 +74,6 @@ final class DetailBackdropArtworkRequest {
             await ArtworkFirstPaintResolver.resolve(
                 references: source.references, variant: .heroPreview, maxAspectRatio: 3,
                 asyncOnlineURL: fallback,
-                maximumOnlineWait: ArtworkFirstPaintResolver.focalArtworkWait,
                 prefersOnlineArtwork: source.settings.preferOnlineArtwork
             )
         }
@@ -126,7 +125,6 @@ fileprivate final class DetailBackdropWarmup {
             await ArtworkFirstPaintResolver.resolve(
                 references: source.references, variant: .heroPreview, maxAspectRatio: 3,
                 asyncOnlineURL: fallback,
-                maximumOnlineWait: ArtworkFirstPaintResolver.focalArtworkWait,
                 prefersOnlineArtwork: source.settings.preferOnlineArtwork,
                 background: true
             )
@@ -337,7 +335,6 @@ public struct HeroBackdropLayer<Video: View>: View {
             previewVariant: .heroPreview,
             artworkPolicy: artworkPolicy.forArea(.details),
             asyncFallbackURL: asyncFallbackURL,
-            preferredArtworkWait: ArtworkFirstPaintResolver.focalArtworkWait,
             pinIdentity: pinIdentity,
             content: ArtworkFillImage.init,
             placeholder: { ambientPlaceholder }

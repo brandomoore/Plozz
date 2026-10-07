@@ -21,13 +21,10 @@ public struct FirstPaintArtwork: @unchecked Sendable {
     }
 }
 
-/// Selects online-versus-library artwork without ever publishing a provisional
-/// image. A timed-out online task keeps running to warm shared caches, but its
-/// result is not returned after a library image wins this appearance.
+/// Resolves the preferred source before falling back, without publishing a
+/// provisional image. Queueing or downloading slowly is not a missing image;
+/// the underlying network and image-cache deadlines bound failed requests.
 public enum ArtworkFirstPaintResolver {
-    public static let denseArtworkWait: TimeInterval = 0.5
-    public static let focalArtworkWait: TimeInterval = 2
-
     /// Prepares the exact policy-qualified result FallbackAsyncImage can adopt
     /// synchronously, including an online winner absent from its library URLs.
     @MainActor
@@ -36,7 +33,6 @@ public enum ArtworkFirstPaintResolver {
         variant: ArtworkImageVariant,
         asyncOnlineURL: (@Sendable () async -> URL?)?,
         pinIdentity: String,
-        maximumOnlineWait: TimeInterval = denseArtworkWait,
         policy: ArtworkPresentationPolicy = .init()
     ) async {
         let key = ArtworkResolveKey.make(
@@ -47,7 +43,7 @@ public enum ArtworkFirstPaintResolver {
         if ArtworkSeedMemo.prepared(for: key, variant: variant) != nil { return }
         guard let artwork = await resolve(
             references: references, variant: variant,
-            asyncOnlineURL: asyncOnlineURL, maximumOnlineWait: maximumOnlineWait,
+            asyncOnlineURL: asyncOnlineURL,
             prefersOnlineArtwork: policy.prefersOnlineArtwork, background: true
         ), !Task.isCancelled else { return }
         ArtworkSeedMemo.store(artwork, for: key)
@@ -58,7 +54,6 @@ public enum ArtworkFirstPaintResolver {
         variant: ArtworkImageVariant,
         maxAspectRatio: CGFloat? = nil,
         asyncOnlineURL: (@Sendable () async -> URL?)?,
-        maximumOnlineWait: TimeInterval,
         prefersOnlineArtwork: Bool = true,
         sharedKey: String? = nil,
         background: Bool = false
@@ -70,7 +65,6 @@ public enum ArtworkFirstPaintResolver {
                     variant: variant,
                     maxAspectRatio: maxAspectRatio,
                     asyncOnlineURL: asyncOnlineURL,
-                    maximumOnlineWait: maximumOnlineWait,
                     prefersOnlineArtwork: prefersOnlineArtwork,
                     sharedKey: nil,
                     background: background
@@ -94,64 +88,37 @@ public enum ArtworkFirstPaintResolver {
             )
         }
 
-        // Speculation has no blank on-screen card to rescue. Resolve its preferred
-        // image first instead of racing a second download or pinning a provisional
-        // library fallback before the viewer has even opened the season.
-        if background {
-            if let online = await loadOnline(
-                asyncOnlineURL, variant: variant,
-                maxAspectRatio: maxAspectRatio, background: true
-            ) {
-                return online
-            }
-            return await loadFirst(
-                references, variant: variant,
-                maxAspectRatio: maxAspectRatio, background: true
-            )
-        }
-
+        let race = FirstPaintRace()
         let onlineTask = Task {
-            await loadOnline(
+            let artwork = await loadOnline(
                 asyncOnlineURL,
                 variant: variant,
                 maxAspectRatio: maxAspectRatio,
                 background: background
             )
-        }
-        let race = FirstPaintRace()
-        Task {
-            await race.submit(.resolved(await onlineTask.value))
-        }
-        Task {
-            let nanoseconds = UInt64(max(0, maximumOnlineWait) * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: nanoseconds)
-            await race.submit(.timedOut)
+            await race.submit(.resolved(artwork))
         }
 
         let outcome = await withTaskCancellationHandler {
             await race.value()
         } onCancel: {
+            onlineTask.cancel()
             Task { await race.submit(.cancelled) }
         }
+        guard !Task.isCancelled else { return nil }
         switch outcome {
         case .resolved(let artwork):
             if let artwork { return artwork }
-        case .timedOut:
-            break
         case .cancelled:
             return nil
         }
 
-        if let local = await loadFirst(
+        return await loadFirst(
             references,
             variant: variant,
             maxAspectRatio: maxAspectRatio,
             background: background
-        ) {
-            return local
-        }
-        guard !Task.isCancelled else { return nil }
-        return await onlineTask.value
+        )
     }
 
     private static func loadFirst(
@@ -166,7 +133,7 @@ public enum ArtworkFirstPaintResolver {
                 for: reference,
                 variant: variant,
                 background: background
-            ), isUsable(image, maxAspectRatio: maxAspectRatio) else {
+            ), !Task.isCancelled, isUsable(image, maxAspectRatio: maxAspectRatio) else {
                 continue
             }
             return FirstPaintArtwork(
@@ -193,7 +160,7 @@ public enum ArtworkFirstPaintResolver {
                   variant: variant,
                   background: background
               ),
-              isUsable(image, maxAspectRatio: maxAspectRatio) else {
+              !Task.isCancelled, isUsable(image, maxAspectRatio: maxAspectRatio) else {
             return nil
         }
         return FirstPaintArtwork(
@@ -215,7 +182,6 @@ public enum ArtworkFirstPaintResolver {
 
 private enum FirstPaintRaceResult: @unchecked Sendable {
     case resolved(FirstPaintArtwork?)
-    case timedOut
     case cancelled
 }
 

@@ -1007,7 +1007,6 @@ private struct PlozziOSHeroBackdrop: View {
             // and sharpens, instead of waiting out a full-size download.
             previewVariant: .heroPreview,
             asyncFallbackURL: asyncFallbackURL,
-            preferredArtworkWait: ArtworkFirstPaintResolver.focalArtworkWait,
             pinIdentity: "\(surfaceRole == .home ? "home" : "detail"):\(presentation.itemID)",
             sharedResolutionIdentity: sharedResolutionIdentity
         ) {
@@ -1478,7 +1477,6 @@ private struct PlozziOSSlidingHeroArtwork: View {
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
             asyncFallbackURL: asyncFallbackURL,
-            preferredArtworkWait: ArtworkFirstPaintResolver.focalArtworkWait,
             pinIdentity: "home:\(presentation.itemID)",
             sharedResolutionIdentity: sharedResolutionIdentity
         ) {
@@ -1496,7 +1494,6 @@ private struct PlozziOSSlidingHeroArtwork: View {
             variant: .heroBackdrop,
             previewVariant: .heroPreview,
             asyncFallbackURL: asyncFallbackURL,
-            preferredArtworkWait: ArtworkFirstPaintResolver.focalArtworkWait,
             pinIdentity: "home:\(presentation.itemID)",
             sharedResolutionIdentity: sharedResolutionIdentity
         ) {
@@ -1531,7 +1528,6 @@ private struct PlozziOSHeroReflection: View {
                 variant: .heroBackdrop,
                 previewVariant: .heroPreview,
                 asyncFallbackURL: asyncFallbackURL,
-                preferredArtworkWait: ArtworkFirstPaintResolver.focalArtworkWait,
                 pinIdentity: artworkPinIdentity,
                 sharedResolutionIdentity: sharedResolutionIdentity
             ) {

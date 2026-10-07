@@ -718,7 +718,6 @@ private func loadPreparedHeroLogo(
         variant: .original,
         maxAspectRatio: nil,
         asyncOnlineURL: asyncFallbackURL,
-        maximumOnlineWait: ArtworkFirstPaintResolver.focalArtworkWait,
         prefersOnlineArtwork: prefersOnlineArtwork
     ), !Task.isCancelled else { return nil }
     if let prepared = await HeroLogoPipeline.shared.preparedLogo(

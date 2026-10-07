@@ -697,7 +697,6 @@ private struct WipeImageView: UIViewRepresentable {
                         variant: .heroPreview,
                         maxAspectRatio: HeroBackdropArtworkPolicy.maxAspectRatio,
                         asyncOnlineURL: asyncFallbackURL,
-                        maximumOnlineWait: ArtworkFirstPaintResolver.focalArtworkWait,
                         prefersOnlineArtwork: prefersOnlineArtwork,
                         sharedKey: sharedResolutionIdentity
                     )
