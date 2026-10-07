@@ -5,6 +5,26 @@ import XCTest
 @testable import FeatureLiveTVCore
 
 final class LiveTVSourceLoaderTests: XCTestCase {
+    func testEmptyPlaylistFailureIsPreservedAndDoesNotPreventRetryingUpdatedContent() async throws {
+        let url = fixtureURL()
+        LoaderProtocol.state.register(url, [
+            .init(status: 200, body: Data("# Playlist awaiting channels\n#EXTM3U\n".utf8)),
+            .init(status: 200, body: playlist)
+        ])
+        defer { LoaderProtocol.state.remove(url) }
+        let loader = loader()
+        do {
+            _ = try await loader.loadPlaylist(from: url)
+            XCTFail("An empty playlist must not be treated as a successful import.")
+        } catch {
+            XCTAssertEqual(error as? LiveTVSourceImportError, .emptyPlaylist)
+        }
+        XCTAssertEqual(LoaderProtocol.state.requests(url).count, 1)
+        let updated = try await loader.loadPlaylist(from: url)
+        XCTAssertFalse(updated.channels.isEmpty)
+        XCTAssertEqual(LoaderProtocol.state.requests(url).count, 2)
+    }
+
     func testOneHundredThousandEntriesLargerThanTwentyMiBAreNotTruncated() async throws {
         let url = fixtureURL()
         var body = Data("#EXTM3U\n".utf8)

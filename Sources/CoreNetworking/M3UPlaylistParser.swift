@@ -32,6 +32,7 @@ public enum LiveTVSourceImportError: Error, Equatable, Sendable {
     case invalidResponse
     case responseTooLarge
     case invalidPlaylist
+    case emptyPlaylist
     case streamManifest
     case invalidGuide
     case guideTooLarge
@@ -52,7 +53,9 @@ public enum LiveTVSourceImportError: Error, Equatable, Sendable {
         case .responseTooLarge:
             "The Live TV playlist is too large to import safely."
         case .invalidPlaylist:
-            "The Live TV playlist isn't a supported M3U file."
+            "This isn't a valid M3U playlist. Use a playlist file or a direct playlist download link, not a web page."
+        case .emptyPlaylist:
+            "This playlist contains no channels or videos. Ask your provider for an updated playlist."
         case .streamManifest:
             "This link is a video stream, not a channel playlist. Use your provider's M3U channel-list link."
         case .invalidGuide:
@@ -204,7 +207,7 @@ public struct M3UPlaylistParser: Sendable {
             if lineByteCount > 0 { try consumeBufferedLine() }
             if isHLS { throw LiveTVSourceImportError.streamManifest }
             if pending != nil { skippedEntryCount += 1; pending = nil }
-            guard hasPlaylistStart, entryCount > 0 else { throw LiveTVSourceImportError.invalidPlaylist }
+            guard entryCount > 0 else { throw LiveTVSourceImportError.emptyPlaylist }
             return M3UPlaylistImport(
                 channels: channels, entryCount: entryCount, skippedEntryCount: skippedEntryCount,
                 declaredGuideURLs: declaredGuideURLs, originURL: parser.baseURL

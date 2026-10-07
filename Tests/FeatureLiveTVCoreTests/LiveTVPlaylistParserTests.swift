@@ -1,9 +1,41 @@
 import Foundation
 import CoreModels
+import CoreNetworking
 import XCTest
 @testable import FeatureLiveTVCore
 
 final class LiveTVPlaylistParserTests: XCTestCase {
+    func testEmptyPlaylistsAreNotReportedAsUnsupportedFiles() throws {
+        for input in [
+            "", " \r\n\t", "# Playlist awaiting channels\n",
+            "#EXTM3U", "\u{FEFF}#EXTM3U\r\n",
+            "# Playlist name: Fixture\n# Last update: today\n\n#EXTM3U\n"
+        ] {
+            let parser = LiveTVPlaylistParser()
+            XCTAssertThrowsError(try parser.parse(input)) {
+                XCTAssertEqual($0 as? LiveTVSourceImportError, .emptyPlaylist)
+            }
+            var stream = M3UPlaylistParser().makeCatalogStream()
+            for byte in input.utf8 { try stream.append(byte) }
+            XCTAssertThrowsError(try stream.finish()) {
+                XCTAssertEqual($0 as? LiveTVSourceImportError, .emptyPlaylist)
+            }
+            XCTAssertTrue(stream.takeCatalogEntries().isEmpty)
+        }
+    }
+
+    func testSkippedEntriesAreNotMisreportedAsAnEmptyPlaylist() throws {
+        let result = try LiveTVPlaylistParser().parse("""
+        #EXTM3U
+        #EXTINF:-1,Missing address
+        #EXTINF:-1,Unsupported address
+        ftp://example.test/live
+        """)
+        XCTAssertEqual(result.entryCount, 2)
+        XCTAssertEqual(result.skippedEntryCount, 2)
+        XCTAssertTrue(result.channels.isEmpty)
+    }
+
     func testPlainURLListsAndHeaderlessExtendedEntriesAreAccepted() throws {
         let parser = LiveTVPlaylistParser(baseURL: URL(string: "https://example.test/lists/source"))
         let plain = try parser.parse("""

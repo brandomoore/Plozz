@@ -18,6 +18,7 @@ final class IPTVSetupFailureTests: XCTestCase {
             (LiveTVSourceImportError.guideWithoutPlaylist, .init(.guideInsteadOfPlaylist)),
             (LiveTVSourceImportError.cacheFailed, .init(.storage)),
             (LiveTVSourceImportError.invalidPlaylist, .init(.malformed)),
+            (LiveTVSourceImportError.emptyPlaylist, .init(.empty)),
             (LiveTVSourceImportError.redirectBlocked, .init(.redirectBlocked)),
             (NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError), .init(.storage)),
             (NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError), .init(.fileUnavailable)),

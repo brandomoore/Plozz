@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import Foundation
 import ProviderIPTV
 @testable import FeatureAuthCore
@@ -6,6 +7,30 @@ import XCTest
 
 @MainActor
 final class IPTVAuthViewModelTests: XCTestCase {
+    func testPlaylistFailureCopyAndDiagnosticsRemainSpecificAndAllowRetry() async throws {
+        for (error, reason) in [
+            (LiveTVSourceImportError.emptyPlaylist, IPTVSetupDiagnostic.Failure.Reason.empty),
+            (.invalidPlaylist, .malformed)
+        ] {
+            let diagnostics = IPTVSetupDiagnostics()
+            let buffer = AuthSetupBuffer()
+            diagnostics.start { buffer.append($0) }
+            let model = IPTVAuthViewModel(
+                deviceID: "fixture", address: "https://provider.test/list", setupDiagnostics: diagnostics,
+                signIn: { _, _, _, _ in throw error },
+                onAuthenticated: { _ in XCTFail("An invalid playlist cannot create an account.") }
+            )
+            defer { model.cancel() }
+            model.connect()
+            let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+            while model.issue == nil, ContinuousClock.now < deadline { await Task.yield() }
+            XCTAssertEqual(model.issue, error.userDescription)
+            XCTAssertEqual(buffer.values.last?.failure?.reason, reason)
+            XCTAssertFalse(model.isConnecting)
+            XCTAssertTrue(model.canConnect)
+        }
+    }
+
     func testBasicPlaylistAndRequiredXtreamCredentialsAreNotAdvanced() {
         let model = IPTVAuthViewModel(deviceID: "fixture", onAuthenticated: { _ in })
         XCTAssertFalse(model.hasAdvancedConfiguration)

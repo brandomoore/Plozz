@@ -10,6 +10,35 @@ final class IPTVAuthenticationTests: XCTestCase {
         super.tearDown()
     }
 
+    func testEmptyRemoteAndLocalPlaylistsCannotCreateAnAccount() async throws {
+        let body = Data("# Playlist name: Fixture\n# Last update: today\n\n#EXTM3U\n".utf8)
+        IPTVFixture.state.handler = { _ in (200, ["Content-Type": "text/plain"], body) }
+        let root = temporaryDirectory()
+        let address = try XCTUnwrap(URL(string: "https://provider.test/list"))
+        let credential = try IPTVCredential(mode: .playlist, address: address)
+        do {
+            _ = try await IPTVProvider.signIn(
+                credential: credential, name: "Empty", deviceID: "fixture",
+                cacheDirectory: root, configuration: IPTVFixture.configuration()
+            )
+            XCTFail("An empty remote playlist must not create an account.")
+        } catch {
+            XCTAssertEqual(error as? LiveTVSourceImportError, .emptyPlaylist)
+        }
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+        let file = root.appendingPathComponent("empty.m3u")
+        try body.write(to: file)
+        do {
+            _ = try await IPTVProvider.importFile(
+                file, credential: IPTVCredential(mode: .file, address: address),
+                name: "Empty", deviceID: "fixture", cacheDirectory: root
+            )
+            XCTFail("An empty local playlist must not create an account.")
+        } catch {
+            XCTAssertEqual(error as? LiveTVSourceImportError, .emptyPlaylist)
+        }
+    }
+
     func testPlaylistAuthenticationReachesImportAndActualProxiedMediaRequests() async throws {
         let basic = "Basic " + Data("viewer:fixture-password".utf8).base64EncodedString()
         let cases: [(String, [String: String], Bool)] = [

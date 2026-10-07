@@ -46,6 +46,12 @@ session persistence.
   actions capture the row's ID before mutating its collection. Reading a bound
   row from inside `removeAll` can overlap the collection's exclusive write
   access and crash Swift's runtime.
+- **IPTV setup distinguishes empty playlists from invalid files.** Header-only,
+  comment-only, and blank playlists report that no channels or videos were
+  supplied and ask for an updated playlist. Invalid content such as a web page
+  asks for an M3U file or direct download link instead. Both URL and file imports
+  preserve the shared parser error without creating an account; diagnostics
+  classify empty content separately from malformed content.
 - **IPTV setup keeps optional configuration behind a disclosure.** Playlist
   authentication, guides, and request headers live under Advanced options;
   required Xtream credentials stay in Connection. Existing advanced settings
