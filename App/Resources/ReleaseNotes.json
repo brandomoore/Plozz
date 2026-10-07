@@ -11,12 +11,15 @@
         {
           "category": "New",
           "items": [
-            "Add IPTV services for live TV, movies, and shows.",
-            "Sync each profile's Trakt sign-in with iCloud.",
             {
-              "text": "Add IPTV libraries from playlist files on your device.",
+              "text": "Browse IPTV movies and shows in your libraries.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Browse IPTV movies and shows, including from playlist files on your device.",
               "platforms": ["iOS"]
-            }
+            },
+            "Sync each profile's Trakt sign-in with iCloud."
           ]
         },
         {
