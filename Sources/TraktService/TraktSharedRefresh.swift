@@ -30,6 +30,7 @@ public extension TraktSharedRefreshTransport {
 public enum TraktSharedRefreshError: Error, Equatable {
     case conflict
     case unavailable
+    case cloudFailure(code: Int)
     case accountChanged
     case invalidRecord
     case missingRecord
@@ -49,8 +50,14 @@ public enum TraktSharedRefreshError: Error, Equatable {
         case .unavailable:
             LocalizedStringResource(
                 "trakt.sync.unavailable",
-                defaultValue: "iCloud is unavailable. Your Trakt connection is saved; try again when iCloud is available.",
-                comment: "Shared Trakt authorization is retained while iCloud is unavailable."
+                defaultValue: "Plozz couldn't access iCloud for this Trakt connection. Try again shortly.",
+                comment: "Shared Trakt authorization could not be checked. May appear before sign-in, so do not claim a connection is saved."
+            )
+        case .cloudFailure(let code):
+            LocalizedStringResource(
+                "trakt.sync.cloudFailure",
+                defaultValue: "Plozz couldn't sync this Trakt connection with iCloud (error \(code)). Try again. If this continues, report the error to Plozz.",
+                comment: "CloudKit rejected a Trakt synchronization operation. The integer is a nonsecret CloudKit error code, not a Trakt sign-in error."
             )
         case .accountChanged:
             LocalizedStringResource(

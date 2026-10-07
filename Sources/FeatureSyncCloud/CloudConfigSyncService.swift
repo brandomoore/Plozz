@@ -258,6 +258,9 @@ public actor CloudConfigSyncService {
         )
     }()
     private var engine: CKSyncEngine?
+    private var failures = CloudSyncFailures()
+    private var explicitFetches = 0
+    private var explicitSends = 0
     /// Bumped every time the engine is rebuilt; events from an older engine are
     /// ignored (generation fencing).
     private var engineGeneration = 0
@@ -353,11 +356,34 @@ public actor CloudConfigSyncService {
     // MARK: Status helpers
 
     private func setStatus(_ phase: CloudSyncStatus.Phase, syncedNow: Bool = false, error: String? = nil) {
-        guard let status = config.status else { return }
-        Task { @MainActor in
-            if phase == .error { status.setError(error ?? "Couldn't sync", diagnostic: nil) }
-            else { status.setPhase(phase, syncedNow: syncedNow) }
+        failures.resolveUnneededSaves { id in
+            channels.first(where: { $0.schema.contains(id) })?.ledger.entries[id.recordName]?.dirty == true
         }
+        guard let status = config.status else { return }
+        let effectivePhase: CloudSyncStatus.Phase
+        if phase == .idle || phase == .syncing {
+            effectivePhase = failures.error != nil ? .error
+                : (phase == .idle && syncedNow ? failures.phase(hasPendingChanges: hasPendingChanges) : phase)
+        } else {
+            effectivePhase = phase
+        }
+        let message = error ?? failures.error?.localizedDescription
+        let diagnostic = failures.error.map(Self.describe)
+        Task { @MainActor in
+            if effectivePhase == .error {
+                status.setError(message ?? "Couldn't sync", diagnostic: diagnostic)
+            } else {
+                status.setPhase(effectivePhase, syncedNow: syncedNow && effectivePhase == .idle)
+            }
+        }
+    }
+
+    private var hasPendingChanges: Bool {
+        isFullResyncing
+            || explicitFetches > 0 || explicitSends > 0
+            || engine?.state.pendingRecordZoneChanges.isEmpty == false
+            || engine?.state.pendingDatabaseChanges.isEmpty == false
+            || channels.contains { $0.ledger.entries.values.contains { $0.dirty || $0.pendingDelete } }
     }
 
     private func setDiagnostic(_ detail: String) {
@@ -727,6 +753,7 @@ public actor CloudConfigSyncService {
                 setDiagnostic("reset: some changes remain pending")
                 return .failed
             }
+            if let error = failures.error { throw error }
             setStatus(.idle, syncedNow: true)
             PlozzLog.sync.info("CloudSync: reset + reseeded from this device")
             return .completed
@@ -832,6 +859,7 @@ public actor CloudConfigSyncService {
             // (they were deferred by the isFullResyncing gate).
             await publishLocalChanges()
             guard isActive, engine === self.engine else { return .interrupted }
+            if let error = failures.error { throw error }
             let total = channels.reduce(0) { $0 + $1.ledger.count }
             setStatus(.idle, syncedNow: true)
             PlozzLog.sync.info("CloudSync: redownload complete — \(total) record(s)")
@@ -906,11 +934,43 @@ public actor CloudConfigSyncService {
     // through here makes the trap unreachable no matter which path leaked the
     // context, and `.value` preserves the caller's ordering/awaiting semantics.
     private func fetchChangesDetached(_ engine: CKSyncEngine) async throws {
-        try await Task.detached(priority: .userInitiated) { try await engine.fetchChanges() }.value
+        explicitFetches += 1
+        defer {
+            explicitFetches -= 1
+            if isActive, engine === self.engine { setStatus(.idle, syncedNow: true) }
+        }
+        do {
+            try await Task.detached(priority: .userInitiated) { try await engine.fetchChanges() }.value
+        } catch {
+            guard isActive, engine === self.engine else { throw CancellationError() }
+            failures.record(error, for: .fetchDatabase)
+            setDiagnostic("fetch: \(Self.describe(error))")
+            setStatus(.error, error: error.localizedDescription)
+            throw error
+        }
+        guard isActive, engine === self.engine else { throw CancellationError() }
+        failures.record(nil, for: .fetchDatabase)
+        if let error = failures.fetchError { throw error }
     }
 
     private func sendChangesDetached(_ engine: CKSyncEngine) async throws {
-        try await Task.detached(priority: .userInitiated) { try await engine.sendChanges() }.value
+        explicitSends += 1
+        defer {
+            explicitSends -= 1
+            if isActive, engine === self.engine { setStatus(.idle, syncedNow: true) }
+        }
+        do {
+            try await Task.detached(priority: .userInitiated) { try await engine.sendChanges() }.value
+        } catch {
+            guard isActive, engine === self.engine else { throw CancellationError() }
+            failures.record(error, for: .sendChanges)
+            setDiagnostic("send: \(Self.describe(error))")
+            setStatus(.error, error: error.localizedDescription)
+            throw error
+        }
+        guard isActive, engine === self.engine else { throw CancellationError() }
+        failures.record(nil, for: .sendChanges)
+        if let error = failures.sendError { throw error }
     }
 
     /// Run an app-facing callback outside the delegate-callback context (see above),
@@ -1306,19 +1366,34 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
         case .sentRecordZoneChanges(let e):
             await handleSentRecordZoneChanges(e, syncEngine: syncEngine)
         case .sentDatabaseChanges(let e):
+            for zone in e.savedZones { failures.record(nil, for: .saveZone(zone.zoneID)) }
+            for id in e.deletedZoneIDs { failures.removeZone(id) }
             for failure in e.failedZoneSaves {
+                failures.record(failure.error, for: .saveZone(failure.zone.zoneID))
                 setDiagnostic("zone save failed: \(Self.ckCodeName(failure.error))")
             }
+            for (id, error) in e.failedZoneDeletes {
+                if error.code == .zoneNotFound || error.code == .unknownItem {
+                    failures.removeZone(id)
+                    continue
+                }
+                failures.record(error, for: .deleteZone(id))
+                setDiagnostic("zone delete failed: \(Self.ckCodeName(error))")
+            }
         case .fetchedDatabaseChanges(let e):
+            failures.record(nil, for: .fetchDatabase)
             handleFetchedDatabaseChanges(e)
         case .willFetchChanges, .willSendChanges:
             setStatus(.syncing)
         case .didFetchChanges:
-            markServerStateConfirmed()
+            if explicitFetches == 0, failures.fetchError == nil { markServerStateConfirmed() }
             setStatus(.idle, syncedNow: true)
         case .didSendChanges:
             setStatus(.idle, syncedNow: true)
-        case .willFetchRecordZoneChanges, .didFetchRecordZoneChanges:
+        case .didFetchRecordZoneChanges(let e):
+            failures.record(e.error, for: .fetchZone(e.zoneID))
+            if let error = e.error { setDiagnostic("zone fetch failed: \(Self.ckCodeName(error))") }
+        case .willFetchRecordZoneChanges:
             break
         @unknown default:
             PlozzLog.sync.info("CloudSync: unknown event")
@@ -1404,6 +1479,7 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
             // device's OWN local config (signed-in accounts, profiles, local media
             // aliases) is kept; it legitimately belongs to the device.
             PlozzLog.sync.info("CloudSync: accountChange switchAccounts — clearing ledgers + remote-derived state, suspending publish")
+            failures = CloudSyncFailures()
             for channel in channels { channel.ledger = SyncLedger() }
             suspendPublishUntilFetch = true
             persist()
@@ -1412,6 +1488,7 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
                 await outsideDelegateContext { await onAccountSwitch() }
             }
         case .signOut:
+            failures = CloudSyncFailures()
             for channel in channels { channel.ledger = SyncLedger() }
             suspendPublishUntilFetch = true
             persist()
@@ -1443,6 +1520,7 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
             }
             var deletedNames: [SyncRecordID] = []
             for del in event.deletions where del.recordID.zoneID.zoneName == channel.schema.zoneName {
+                failures.resolveRecord(del.recordID)
                 if Self.isDirectTrackerRecord(del.recordID.recordName, schema: channel.schema) {
                     directHints.updateValue(nil, forKey: del.recordID.recordName)
                     continue
@@ -1488,10 +1566,12 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
                 }
                 channel.ledger.applySendSuccess(recordName: record.recordName, savedValue: record.value,
                                         savedEditedAt: record.editedAt, systemFields: record.systemFields)
+                failures.record(nil, for: .saveRecord(saved.recordID))
             }
             for id in event.deletedRecordIDs where schema.contains(id) {
                 guard !Self.isDirectTrackerRecord(id.recordName, schema: schema) else { continue }
                 channel.ledger.applyDeleteSuccess(id.recordName)
+                failures.resolveRecord(id)
             }
 
             var applied: SyncLocalChanges = [:]
@@ -1503,6 +1583,7 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
                 guard schema.matches(record) else { continue }
                 let name = record.recordID.recordName
                 guard !Self.isDirectTrackerRecord(name, schema: schema) else { continue }
+                failures.record(failure.error, for: .saveRecord(record.recordID))
                 switch failure.error.code {
                 case .serverRecordChanged:
                     guard let serverRecord = failure.error.serverRecord,
@@ -1520,6 +1601,7 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
                     guard accepts([rec], for: channel) else { return }
                     if let (rn, val) = channel.ledger.applySendConflict(rec, now: nowMillis()) {
                         applied.updateValue(val, forKey: rn)   // server won → apply its value
+                        failures.record(nil, for: .saveRecord(record.recordID))
                     } else {
                         retry.append(.saveRecord(record.recordID))  // we won → retry with fresh tag
                     }
@@ -1540,8 +1622,14 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
             }
 
             for (id, error) in event.failedRecordDeletes where schema.contains(id) {
-                if error.code == .unknownItem { channel.ledger.applyDeleteSuccess(id.recordName) }  // already gone
-                else { retry.append(.deleteRecord(id)) }
+                if error.code == .unknownItem {
+                    channel.ledger.applyDeleteSuccess(id.recordName)
+                    failures.resolveRecord(id)
+                } else {
+                    failures.record(error, for: .deleteRecord(id))
+                    setDiagnostic("record delete failed: \(Self.ckCodeName(error))")
+                    retry.append(.deleteRecord(id))
+                }
             }
 
             guard persist() else { return }
@@ -1569,6 +1657,7 @@ extension CloudConfigSyncService: CKSyncEngineDelegate {
                 }
                 continue
             }
+            failures.removeZone(deletion.zoneID)
             channel.ledger = SyncLedger()
             didClear = true
         }

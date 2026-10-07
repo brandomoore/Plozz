@@ -4,6 +4,21 @@ import XCTest
 
 @MainActor
 final class CloudSyncReloadStatusTests: XCTestCase {
+    func testRepeatedFailuresKeepLatestDiagnosticWithoutAdvancingSuccessfulSyncTime() {
+        let status = CloudSyncStatus()
+        status.setPhase(.idle, syncedNow: true)
+        let successfulSync = status.lastSyncedAt
+        status.setPhase(.syncing)
+        status.setError("First failure", diagnostic: "zone save")
+        status.setError("Latest failure", diagnostic: "record save")
+        XCTAssertEqual(status.lastSyncedAt, successfulSync)
+        XCTAssertEqual(status.lastErrorMessage, "Latest failure")
+        XCTAssertEqual(status.lastDiagnostic, "record save")
+        status.setPhase(.idle, syncedNow: true)
+        XCTAssertNil(status.lastErrorMessage)
+        XCTAssertNil(status.lastDiagnostic)
+    }
+
     func testRecoveryStaysBusyThroughIntermediateEnginePhasesAndRejectsDuplicateRequests() async {
         let status = CloudSyncStatus()
         let gate = ReloadGate()
