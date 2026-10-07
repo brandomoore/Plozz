@@ -2,6 +2,21 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/051.2",
+      "version": "2026.10.7",
+      "marketingVersion": "2026.9.25",
+      "build": "51.2",
+      "releasedAt": "2026-10-07",
+      "sections": [
+        {
+          "category": "Fixed",
+          "items": [
+            "A crash when removing a program guide during IPTV setup."
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/051.1",
       "version": "2026.10.7",
       "marketingVersion": "2026.9.25",
