@@ -54,6 +54,9 @@ session persistence.
   Form controls share body typography and contained settings-row focus styling;
   only Connect and Cancel use the shared action-pill style. Section headings and
   essential helper text retain the shared settings typography.
+  Disclosure, menu, and add/remove actions use `SettingsFormButtonStyle`, which
+  places the shared TV row height and padding **inside** the focus fill. The
+  section's outer spacing cannot substitute for clearance around text and icons.
 - **Channels-only IPTV needs no library selection.** Successful discovery with
   no on-demand libraries continues onboarding on both platforms; failed
   discovery still offers recovery. Adding an IPTV account includes it in the

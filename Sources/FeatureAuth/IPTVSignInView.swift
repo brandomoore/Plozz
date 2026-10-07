@@ -102,7 +102,7 @@ private struct IPTVConnectionFields: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                .buttonStyle(SettingsFormButtonStyle())
                 .accessibilityIdentifier("iptv-advanced-options")
                 .accessibilityValue(showsAdvanced
                     ? Text("Expanded", comment: "Accessibility state of an expanded section of a form.")
@@ -149,7 +149,7 @@ private struct IPTVPlaylistAuthenticationFields: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+            .buttonStyle(SettingsFormButtonStyle())
             .accessibilityLabel("Authentication")
             .accessibilityValue(Text(model.authentication.title))
             .accessibilityIdentifier("iptv-authentication")
@@ -239,12 +239,12 @@ private struct IPTVAdvancedFields: View {
                 } label: {
                     Text("Remove guide").frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                .buttonStyle(SettingsFormButtonStyle())
             }
             Button(action: model.addGuide) {
                 Label("Add guide", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+            .buttonStyle(SettingsFormButtonStyle())
             .disabled(model.additionalGuides.count >= 31)
         }
         if model.mode != .file {
@@ -275,13 +275,13 @@ private struct IPTVHeaderFields: View {
                 } label: {
                     Text("Remove header").frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                .buttonStyle(SettingsFormButtonStyle())
             }
         }
         Button(action: add) {
             Label("Add header", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+        .buttonStyle(SettingsFormButtonStyle())
         .disabled(headers.count >= 32)
     }
 }

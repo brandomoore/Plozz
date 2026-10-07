@@ -91,6 +91,36 @@ public struct SettingsFocusButtonStyle: ButtonStyle {
     }
 }
 
+/// Full-width form actions use the same content height and interior padding as
+/// settings switches. Group spacing is outside the focus fill, not inside it.
+public struct SettingsFormButtonStyle: ButtonStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        SettingsFormButtonBody(configuration: configuration)
+    }
+}
+
+private struct SettingsFormButtonBody: View {
+    let configuration: ButtonStyle.Configuration
+    @Environment(\.isFocused) private var isFocused
+
+    var body: some View {
+        SettingsFocusRow(isFocused: isFocused, isPressed: configuration.isPressed, size: .contained) {
+            configuration.label
+                #if os(tvOS)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: SettingsRowMetrics.minHeight(.primary),
+                    alignment: .leading
+                )
+                .padding(.horizontal, SettingsRowMetrics.horizontalPadding)
+                .padding(.vertical, SettingsRowMetrics.verticalPadding(.primary))
+                #endif
+        }
+    }
+}
+
 /// Compact, theme-aware chip used for Back/Edit controls in floating glass
 /// panel headers. Player submenus and detail-page menus share this treatment.
 public struct PlozzPanelHeaderButtonStyle: ButtonStyle {
