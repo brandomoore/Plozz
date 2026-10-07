@@ -80,6 +80,20 @@ in-flight owner so an older cloud read cannot erase an unpublished successor.
 Install the coordinator before constructing Trakt services on both platforms,
 even when ordinary configuration sync is disabled.
 
+The private tracker record type (`PlozzTrackerTokensV1Record`) and its encrypted
+`value` field must be deployed to the container's **Production** schema before
+TestFlight/App Store builds can use this channel. A Development schema alone is
+not sufficient. Publishing the schema does not copy or reset users' records.
+An enabled iCloud switch is not evidence that a cloud write succeeded: ordinary
+sync retains individual zone/record failures until the affected operation
+recovers, and incomplete zone fetches cannot finalize a full reload.
+
+Connection errors do not claim credentials were saved before OAuth has run.
+CloudKit rejections expose their numeric error code; transport diagnostics log
+only the operation, error domain and code, never record names, account IDs,
+payloads or unrestricted CloudKit error descriptions. Retry still resumes the
+retained journal without another authorization or an uncoordinated refresh.
+
 There is no expiring lock that can replay an already-consumed token. If a
 response is irretrievably lost after Trakt consumes the grant, recovery requires
 reconnecting the profile once; the replacement is then shared with all devices.

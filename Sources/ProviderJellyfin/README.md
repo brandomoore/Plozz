@@ -37,6 +37,23 @@ supported capability remains at parity.
 - **Co-equal with `ProviderPlex`.** Any new `MediaProvider` capability must be
   implemented here whenever it's implemented for Plex (and vice versa).
 
+## Library recommendations
+
+Watched- and liked-movie similarity rows share the concise localized heading
+`More like [movie title]`. The server title remains unchanged apart from trimming
+surrounding whitespace; absent or blank titles retain `Suggested movies`.
+
+`/Movies/Recommendations` category IDs are strings on Jellyfin and nullable
+64-bit integers on Emby. `MovieRecommendationDto` normalizes integers directly
+to decimal strings without floating-point conversion, preserving exact stable
+row IDs across refreshes. Existing string IDs are unchanged; null or absent IDs
+retain the provider's recommendation-type/subject fallback. Malformed values
+still fail decoding rather than silently removing recommendations or errors.
+
+`JellyfinLibraryScopingTests` uses backend-specific recommendation fixtures and
+covers full Int64 boundaries, exact IDs above 2^53, malformed IDs, library scope,
+and stable category identity after rows are reordered.
+
 ## Music
 
 Artist browse uses `/Artists` and artist album queries use `ArtistIds`, including

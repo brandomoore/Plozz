@@ -480,7 +480,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
             dynamicTypeSize: dynamicTypeSize
         ) / 2
         return ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionSpacing) {
                 PlozziOSDetailHeroSection(
                     item: heroTarget,
                     backdropItem: detail.item,
@@ -3797,11 +3797,7 @@ private struct PlozziOSCastSection: View {
     let sourceAccountID: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Cast")
-                .font(.title2.bold())
-                .padding(.horizontal, pageInset)
-
+        PlozziOSMediaSection(title: Text("Cast"), horizontalInset: pageInset) {
             ScrollView(.horizontal) {
                 LazyHStack(
                     alignment: .top,

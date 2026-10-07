@@ -3,6 +3,7 @@ import CoreModels
 import CoreText
 import CoreUI
 import FeatureLiveTVCore
+import FeatureHomeCore
 import FeatureSettings
 import SwiftUI
 import UIKit
@@ -553,6 +554,93 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         let large = PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
             in: 390, inset: 22, metrics: .touch(density: .extraLarge), cardStyle: .borderless)
         XCTAssertLessThan(small.posterWidth, large.posterWidth, "The profile's display-size choice remains effective.")
+    }
+
+    func testLibraryRelatedAndExtrasShareHomeHeadingAndArtworkSpacing() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.settings.cardStyle.captions
+        defer { app.settings.cardStyle.captions = original }
+        app.settings.cardStyle.captions = CardCaptionSettings(showsLabels: false)
+        let artwork = try await posterArtwork()
+        let backdrop = try await posterArtwork(size: CGSize(width: 640, height: 360))
+        let items = (0..<8).map {
+            MediaItem(id: "shared-\($0)", title: "Title \($0)", kind: .movie, posterURL: artwork, backdropURL: backdrop)
+        }
+        let related = items.map {
+            RelatedEntry(related: RelatedTitle(title: $0.title, kind: .movie, source: .tmdb), libraryItem: $0)
+        }
+        for cardStyle in [CardStyle.borderless, .framed] {
+            try await withWindow { window, host in
+                for width in [CGFloat(390), 768] {
+                    for dynamicSize in [DynamicTypeSize.large, .accessibility2] {
+                        let sizeClass: UserInterfaceSizeClass = width < 600 ? .compact : .regular
+                        let inset = PlozziOSPageLayout.horizontalInset(for: sizeClass)
+                        let metrics = PlozzMetrics.touch(density: .standard, dynamicTypeSize: dynamicSize)
+                        let rows: [(String, AnyView)] = [
+                            ("Popular", AnyView(PlozziOSLibraryRecommendationRow(
+                                section: LibrarySection(id: "shared", title: "Popular", items: items),
+                                spoilerSettings: .default, showsSeriesArtwork: false, onSelect: { _ in }
+                            ))),
+                            ("Related", AnyView(PlozziOSRelatedSection(entries: related, inset: inset, onSelect: { _ in }))),
+                            ("Extras", AnyView(PlozziOSExtrasSection(
+                                state: .loaded(items.map { MediaExtra(item: $0, kind: .trailer) }),
+                                inset: inset, onSelect: { _ in }, onRetry: {}
+                            )))
+                        ]
+                        for (title, row) in rows {
+                            window.frame.size = CGSize(width: width, height: 1600)
+                            host.rootView = AnyView(
+                                PlozziOSHomeScrollView(heroActive: false) { EmptyView() } rows: {
+                                    PlozziOSHomeMediaRail(title: Text("Featured"), items: items, style: .poster, appModel: app)
+                                    row
+                                }
+                                .environment(app)
+                                .environment(\.horizontalSizeClass, sizeClass)
+                                .environment(\.dynamicTypeSize, dynamicSize)
+                                .environment(\.plozzCardStyle, cardStyle)
+                                .environment(\.plozzCardCaptionSettings, app.settings.cardStyle.captions)
+                                .environment(\.plozzMetrics, metrics)
+                                .environment(\.themePalette, .dark)
+                            )
+                            try await settle(window)
+                            let deadline = Date().addingTimeInterval(4)
+                            while Date() < deadline {
+                                if try posterRuns(snapshot(window), axis: .vertical, at: inset + 40).count == 2 { break }
+                                try await Task.sleep(for: .milliseconds(100))
+                            }
+                            let image = snapshot(window, name: "shared-rhythm-\(title)-\(Int(width))-\(cardStyle)-\(dynamicSize)")
+                            let artworkRows = try posterRuns(image, axis: .vertical, at: inset + 40)
+                            XCTAssertEqual(artworkRows.count, 2)
+                            guard artworkRows.count == 2 else { continue }
+                            let first = artworkRows[0], second = artworkRows[1]
+                            let heading = try brightTextBounds(image, from: CGFloat(first.upperBound), to: CGFloat(second.lowerBound))
+                            let category: UIContentSizeCategory = dynamicSize.isAccessibilitySize ? .accessibilityLarge : .large
+                            let descriptor = UIFontDescriptor.preferredFontDescriptor(
+                                withTextStyle: .title3, compatibleWith: UITraitCollection(preferredContentSizeCategory: category))
+                                .addingAttributes([.traits: [UIFontDescriptor.TraitKey.weight: UIFont.Weight.semibold.rawValue]])
+                            let font = UIFont(descriptor: descriptor, size: 0)
+                            let line = CTLineCreateWithAttributedString(
+                                NSAttributedString(string: title, attributes: [.font: font]) as CFAttributedString)
+                            let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+                            XCTAssertEqual(heading.width, ink.width, accuracy: 1.5)
+                            XCTAssertEqual(heading.height, ink.height, accuracy: 1.5)
+                            XCTAssertEqual(heading.minX, inset + ink.minX, accuracy: 1.5)
+                            XCTAssertEqual(CGFloat(second.lowerBound) - heading.maxY,
+                                           12 + font.lineHeight - font.ascender + ink.minY, accuracy: 3,
+                                           "Visible heading clearance accounts for the actual title's descenders.")
+                            XCTAssertEqual(heading.minY - CGFloat(first.upperBound),
+                                           32 + font.ascender - font.capHeight, accuracy: 3)
+                            let cards = try posterRuns(image, at: CGFloat(second.lowerBound + second.count / 2))
+                            XCTAssertGreaterThanOrEqual(cards.count, 2)
+                            if cards.count >= 2 {
+                                XCTAssertEqual(CGFloat(cards[1].lowerBound - cards[0].upperBound),
+                                               12 + (cardStyle == .framed ? 2 * metrics.cardInset : 0), accuracy: 1)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     func testHomeHeadingTypographyAndArtworkSpacingFollowTheSameRhythm() async throws {

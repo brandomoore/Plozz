@@ -69,7 +69,7 @@ public final class CloudSyncStatus {
 
     /// Debounces error display: a transient conflict that self-heals on the engine's
     /// own retry shouldn't flash a scary "Couldn't sync". The error is only shown if
-    /// it's still pending after a short grace period without a success/syncing update.
+    /// it's still pending after a short grace period without verified recovery.
     @ObservationIgnored private var pendingErrorTask: Task<Void, Never>?
 
     public init() {}
@@ -99,13 +99,15 @@ public final class CloudSyncStatus {
     /// Record an error, but only surface it after a grace period — so a blip that
     /// the engine immediately resolves (a following idle) never shows red.
     func setError(_ message: String, diagnostic: String?) {  // l10n:content — OS/CloudKit-supplied, already-localized error text
-        pendingErrorTask?.cancel()
+        lastErrorMessage = message
+        if let diagnostic { lastDiagnostic = diagnostic }
+        // Repeated completion/retry events must not postpone a persistent error.
+        guard phase != .error, pendingErrorTask == nil else { return }
         pendingErrorTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 3_500_000_000)
             guard !Task.isCancelled, let self else { return }
             self.phase = .error
-            self.lastErrorMessage = message
-            if let diagnostic { self.lastDiagnostic = diagnostic }
+            self.pendingErrorTask = nil
         }
     }
 

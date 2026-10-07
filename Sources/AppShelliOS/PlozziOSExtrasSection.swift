@@ -64,10 +64,10 @@ private struct PlozziOSExtrasRail: View {
     let onSelect: (MediaExtra) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Extras")
-                .font(.title3.weight(.bold))
-                .padding(.horizontal, inset)
+        PlozziOSMediaSection(
+            title: Text("Extras"), horizontalInset: inset,
+            artworkInset: cardStyle == .framed ? metrics.cardInset : 0
+        ) {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(
                     alignment: .top,
@@ -91,9 +91,13 @@ private struct PlozziOSExtrasRail: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, inset)
             }
-            .scrollClipDisabled()
+            .contentMargins(
+                .horizontal,
+                PlozziOSMediaRailLayout.artworkAlignedInset(inset, metrics: metrics, cardStyle: cardStyle),
+                for: .scrollContent
+            )
+            .plozziOSMediaRailClearance()
         }
     }
 }
@@ -106,10 +110,10 @@ private struct PlozziOSExtrasLoadingRail: View {
     let cardWidth: CGFloat
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Extras")
-                .font(.title3.weight(.bold))
-                .padding(.horizontal, inset)
+        PlozziOSMediaSection(
+            title: Text("Extras"), horizontalInset: inset,
+            artworkInset: cardStyle == .framed ? metrics.cardInset : 0
+        ) {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(
                     alignment: .top,
@@ -123,9 +127,13 @@ private struct PlozziOSExtrasLoadingRail: View {
                             .frame(width: cardWidth)
                     }
                 }
-                .padding(.horizontal, inset)
             }
-            .scrollClipDisabled()
+            .contentMargins(
+                .horizontal,
+                PlozziOSMediaRailLayout.artworkAlignedInset(inset, metrics: metrics, cardStyle: cardStyle),
+                for: .scrollContent
+            )
+            .plozziOSMediaRailClearance()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
@@ -138,16 +146,16 @@ private struct PlozziOSExtrasFailure: View {
     let onRetry: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Extras")
-                .font(.title3.weight(.bold))
-            Text(message)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Button("Try Again", action: onRetry)
-                .buttonStyle(.bordered)
+        PlozziOSMediaSection(title: Text("Extras"), horizontalInset: inset) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Button("Try Again", action: onRetry)
+                    .buttonStyle(.bordered)
+            }
+            .padding(.horizontal, inset)
         }
-        .padding(.horizontal, inset)
     }
 }
 #endif

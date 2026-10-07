@@ -92,12 +92,13 @@ public struct JellyfinProvider: MediaProvider, SeriesResumeProviding, SeriesIden
             let title: String
             let localizedTitle: LocalizedStringResource
             switch (recommendation.RecommendationType, subject) {
-            case ("SimilarToRecentlyPlayed", let subject?) where !subject.isEmpty:
-                title = "Because you watched \(subject)"
-                localizedTitle = "Because you watched \(subject)"
-            case ("SimilarToLikedItem", let subject?) where !subject.isEmpty:
-                title = "Because you liked \(subject)"
-                localizedTitle = "Because you liked \(subject)"
+            case ("SimilarToRecentlyPlayed", let subject?) where !subject.isEmpty,
+                 ("SimilarToLikedItem", let subject?) where !subject.isEmpty:
+                title = "More like \(subject)"
+                localizedTitle = LocalizedStringResource(
+                    "More like \(subject)",
+                    comment: "Concise heading for movies similar to another movie. The placeholder is the server-provided movie title; do not translate the title."
+                )
             case ("HasDirectorFromRecentlyPlayed", _), ("HasLikedDirector", _):
                 title = "More from directors you like"
                 localizedTitle = "More from directors you like"

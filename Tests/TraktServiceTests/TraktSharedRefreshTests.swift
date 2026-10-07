@@ -781,6 +781,20 @@ final class TraktSharedConnectionLifecycleTests: XCTestCase {
     }
 
     @MainActor
+    func testCloudSchemaRejectionBeforeOAuthIsRetryableWithoutAuthorization() async {
+        for flow in [Flow.browser, .device] {
+            await assertPreparationFailure(flow: flow, error: .cloudFailure(code: 12))
+        }
+    }
+
+    @MainActor
+    func testCloudSchemaRejectionRetainsAuthorizedGrantForPublicationRetry() async throws {
+        for flow in [Flow.browser, .device] {
+            try await assertPublicationRetry(flow: flow, error: .cloudFailure(code: 12))
+        }
+    }
+
+    @MainActor
     func testBrowserGrantCompletionCannotOverwriteSignOutAfterPreparation() async throws {
         try await assertGrantCannotUndoSignOut(flow: .browser)
     }
@@ -911,18 +925,19 @@ final class TraktSharedConnectionLifecycleTests: XCTestCase {
     }
 
     @MainActor
-    private func assertPreparationFailure(flow: Flow) async {
+    private func assertPreparationFailure(flow: Flow, error: TraktSharedRefreshError = .unavailable) async {
         let cloud = FakeTraktCloud()
-        await cloud.failNextRead()
+        await cloud.failNextRead(error)
         let device = SharedDevice(cloud: cloud)
         let http = SharedLifecycleHTTP()
         let service = makeService(device: device, http: http)
         let browser = SharedLifecycleBrowser()
         start(flow, service: service, browser: browser)
         await service.connectTask?.value
-        assertSyncError(service, .unavailable, canReconnect: false)
+        assertSyncError(service, error, canReconnect: false)
         XCTAssertEqual(browser.launches, 0)
         XCTAssertNil(device.store.load())
+        XCTAssertFalse(String(localized: TraktSharedRefreshError.unavailable.userMessage).contains("connection is saved"))
         let beforeRetry = await http.requests
         XCTAssertTrue(beforeRetry.isEmpty)
 
@@ -975,9 +990,9 @@ final class TraktSharedConnectionLifecycleTests: XCTestCase {
     }
 
     @MainActor
-    private func assertPublicationRetry(flow: Flow) async throws {
+    private func assertPublicationRetry(flow: Flow, error: TraktSharedRefreshError = .unavailable) async throws {
         let cloud = FakeTraktCloud()
-        await cloud.failNextConnection()
+        await cloud.failNextConnection(error)
         let device = SharedDevice(cloud: cloud)
         let http = SharedLifecycleHTTP()
         let service = makeService(device: device, http: http)
@@ -986,7 +1001,7 @@ final class TraktSharedConnectionLifecycleTests: XCTestCase {
         service.onConnectionAvailable = { connectionNotifications += 1 }
         start(flow, service: service, browser: browser)
         await service.connectTask?.value
-        assertSyncError(service, .unavailable, canReconnect: false)
+        assertSyncError(service, error, canReconnect: false)
         XCTAssertNil(device.store.load())
         XCTAssertEqual(connectionNotifications, 0)
         let retained = try JSONDecoder().decode(
@@ -1262,8 +1277,8 @@ private actor FakeTraktCloud: TraktSharedRefreshTransport {
     private var sequence = 0
     private var offline = false
     private var failSuccessor = false
-    private var failConnection = false
-    private var failRead = false
+    private var connectionError: TraktSharedRefreshError?
+    private var readError: TraktSharedRefreshError?
     private var loseClaimAcknowledgement = false
     private var loseSuccessorAcknowledgement = false
     private var pairClaims = false
@@ -1281,7 +1296,7 @@ private actor FakeTraktCloud: TraktSharedRefreshTransport {
     func read(scope: String, accountID: String) async throws -> TraktSharedRecord? {
         guard try self.accountID() == accountID else { throw TraktSharedRefreshError.accountChanged }
         readCount += 1
-        if failRead { failRead = false; throw TraktSharedRefreshError.unavailable }
+        if let readError { self.readError = nil; throw readError }
         let snapshot = records[scope]
         if let gate = nextReadGate {
             nextReadGate = nil
@@ -1313,9 +1328,9 @@ private actor FakeTraktCloud: TraktSharedRefreshTransport {
         }
         guard try self.accountID() == accountID else { throw TraktSharedRefreshError.accountChanged }
         guard records[scope]?.version == expected?.version else { throw TraktSharedRefreshError.conflict }
-        if failConnection, grant.phase == .ready, grant.generation == 0 {
-            failConnection = false
-            throw TraktSharedRefreshError.unavailable
+        if let connectionError, grant.phase == .ready, grant.generation == 0 {
+            self.connectionError = nil
+            throw connectionError
         }
         if failSuccessor, grant.phase == .ready, grant.generation > 0 {
             failSuccessor = false
@@ -1343,8 +1358,8 @@ private actor FakeTraktCloud: TraktSharedRefreshTransport {
     }
     func setLegacy(_ tokens: TraktTokens, scope: String) { legacy[scope] = tokens }
     func failNextSuccessor() { failSuccessor = true }
-    func failNextConnection() { failConnection = true }
-    func failNextRead() { failRead = true }
+    func failNextConnection(_ error: TraktSharedRefreshError = .unavailable) { connectionError = error }
+    func failNextRead(_ error: TraktSharedRefreshError = .unavailable) { readError = error }
     func loseNextClaimAcknowledgement() { loseClaimAcknowledgement = true }
     func loseNextSuccessorAcknowledgement() { loseSuccessorAcknowledgement = true }
     func synchronizeNextTwoClaims() { pairClaims = true }

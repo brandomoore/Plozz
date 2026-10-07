@@ -1,4 +1,5 @@
 import CloudKit
+import CoreNetworking
 import Foundation
 import Security
 import TraktService
@@ -100,15 +101,18 @@ public actor CloudTraktRefreshTransport: TraktSharedRefreshTransport {
 
     public func accountID() async throws -> String {
         guard Self.isAvailable(containerIdentifier: containerIdentifier) else {
+            PlozzLog.sync.error("Trakt iCloud capability check failed")
             throw TraktSharedRefreshError.unavailable
         }
         do {
-            guard try await container.accountStatus() == .available else {
+            let status = try await container.accountStatus()
+            guard status == .available else {
+                PlozzLog.sync.error("Trakt iCloud account is unavailable: status=\(status.rawValue)")
                 throw TraktSharedRefreshError.unavailable
             }
             return try await container.userRecordID().recordName
         } catch {
-            throw TraktSharedRefreshError.unavailable
+            throw Self.mapError(error, operation: "account")
         }
     }
 
@@ -130,7 +134,7 @@ public actor CloudTraktRefreshTransport: TraktSharedRefreshTransport {
         } catch let error as TraktSharedRefreshError {
             throw error
         } catch {
-            throw TraktSharedRefreshError.unavailable
+            throw Self.mapError(error, operation: "read")
         }
     }
 
@@ -157,7 +161,7 @@ public actor CloudTraktRefreshTransport: TraktSharedRefreshTransport {
         } catch let error as TraktSharedRefreshError {
             throw error
         } catch {
-            throw TraktSharedRefreshError.unavailable
+            throw Self.mapError(error, operation: "legacy read")
         }
     }
 
@@ -177,7 +181,7 @@ public actor CloudTraktRefreshTransport: TraktSharedRefreshTransport {
             // Saving an already-existing zone is idempotent. No new record type
             // or field is introduced here (production CK schema stays unchanged).
             do { _ = try await container.privateCloudDatabase.save(CKRecordZone(zoneID: schema.zoneID)) }
-            catch { throw TraktSharedRefreshError.unavailable }
+            catch { throw Self.mapError(error, operation: "zone save") }
             try await requireAccount(accountID)
             record = CKRecord(recordType: schema.recordType, recordID: id)
         }
@@ -199,7 +203,22 @@ public actor CloudTraktRefreshTransport: TraktSharedRefreshTransport {
         } catch let error as TraktSharedRefreshError {
             throw error
         } catch {
-            throw TraktSharedRefreshError.unavailable
+            throw Self.mapError(error, operation: "conditional save")
+        }
+    }
+
+    static func mapError(_ error: Error, operation: String) -> Error {
+        if error is CancellationError || error is TraktSharedRefreshError { return error }
+        let ns = error as NSError
+        // CloudKit descriptions/userInfo can contain record or account data.
+        PlozzLog.sync.error("Trakt iCloud \(operation) failed: domain=\(ns.domain) code=\(ns.code)")
+        guard let cloud = error as? CKError else { return TraktSharedRefreshError.unavailable }
+        switch cloud.code {
+        case .networkFailure, .networkUnavailable, .serviceUnavailable, .requestRateLimited,
+             .zoneBusy, .notAuthenticated, .accountTemporarilyUnavailable:
+            return TraktSharedRefreshError.unavailable
+        default:
+            return TraktSharedRefreshError.cloudFailure(code: cloud.code.rawValue)
         }
     }
 

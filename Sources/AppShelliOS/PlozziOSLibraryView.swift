@@ -320,7 +320,7 @@ struct PlozziOSLibraryGridView: View {
         case .empty:
             ContentUnavailableView("No recommendations in this library", systemImage: "sparkles")
         case .loaded(let sections):
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionSpacing) {
                 ForEach(sections) { section in
                     PlozziOSLibraryRecommendationRow(
                         section: section,
@@ -558,7 +558,7 @@ private struct PlozziOSLibraryContentModeControl: View {
     }
 }
 
-private struct PlozziOSLibraryRecommendationRow: View {
+struct PlozziOSLibraryRecommendationRow: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var cardStyle
@@ -572,11 +572,10 @@ private struct PlozziOSLibraryRecommendationRow: View {
     var body: some View {
         let inset = PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass)
         let style: PosterCardView.Style = section.style == .poster ? .poster : .landscape
-        VStack(alignment: .leading, spacing: 12) {
-            section.displayName
-                .font(.title2.bold())
-                .padding(.horizontal, inset)
-                .accessibilityAddTraits(.isHeader)
+        PlozziOSMediaSection(
+            title: section.displayName,
+            artworkInset: cardStyle == .framed ? metrics.cardInset : 0
+        ) {
             ScrollView(.horizontal) {
                 LazyHStack(
                     alignment: .top,
@@ -599,8 +598,7 @@ private struct PlozziOSLibraryRecommendationRow: View {
             .contentMargins(.horizontal,
                             PlozziOSMediaRailLayout.artworkAlignedInset(inset, metrics: metrics, cardStyle: cardStyle),
                             for: .scrollContent)
-            .contentMargins(.vertical, 10, for: .scrollContent)
-            .scrollIndicators(.hidden)
+            .plozziOSMediaRailClearance()
         }
     }
 
