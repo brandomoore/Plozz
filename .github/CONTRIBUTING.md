@@ -10,8 +10,10 @@ Everything starts with an issue. [**Open one**](https://github.com/thatcube/Ploz
 and pick a template:
 
 - **🐞 Bug report** — captures what makes a bug fixable: steps to reproduce,
-  expected vs actual, which backend is affected (Jellyfin / Plex / SMB), and your
-  Plozz, tvOS, and Apple TV versions.
+  expected vs actual, and your Plozz version/build and device/OS version.
+  Selecting the affected media source (Jellyfin, Emby, Plex, Silo, SMB, or IPTV)
+  is required. Select all that apply, or "Not applicable / not sure" for bugs
+  before setup or when you don't know the source.
 - **✨ Feature request** — a short form for problems worth solving.
 
 Please search [existing issues](https://github.com/thatcube/Plozz/issues) first,
