@@ -2453,7 +2453,7 @@ final class PlozziOSAppModel {
     }
 
     @discardableResult
-    func persist(_ sessions: [UserSession]) -> Bool {
+    func persist(_ sessions: [UserSession], activateIPTVAccount: Bool = false) -> Bool {
         do {
             let existingIDs = Set(accountsProviders.accounts.map(\.id))
             let isFirstRun = existingIDs.isEmpty
@@ -2464,6 +2464,9 @@ final class PlozziOSAppModel {
                 try accountStore.add(account, token: session.accessToken)
                 // A (re)added server clears any household-removal tombstone for it.
                 clearRemovalTombstone(for: account.id)
+                if !existingIDs.contains(account.id) || activateIPTVAccount {
+                    try accountsProviders.includeIPTVAccountInActiveProfile(account)
+                }
                 if !existingIDs.contains(account.id) {
                     addedAccounts.append(account)
                 }

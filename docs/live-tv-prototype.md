@@ -534,6 +534,11 @@ A failure in an unused server is not reported as a broken channel in the IPTV
 guide. Failures affecting configured Plozz channels and saved schedules remain
 visible, and editor-only discovery errors stay in the editor.
 
+The guide and Sources share one profile-authorized library refresh. Navigating
+away from either view does not cancel the other view's channel preparation or
+report an access change. A changed account authorization or explicit retry
+supersedes the old refresh; profile checks still reject late results.
+
 ### Automatic Plozz channels
 
 Enable **Plozz channels** once to prepare a lineup from the accessible movie and

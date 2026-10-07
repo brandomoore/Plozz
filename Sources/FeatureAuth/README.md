@@ -42,6 +42,22 @@ session persistence.
   Emby uses password, and Plex uses Link.
 - **Always cancellable.** Every flow must be Cancel-able from the remote
   without leaking polling tasks.
+- **Channels-only IPTV needs no library selection.** Successful discovery with
+  no on-demand libraries continues onboarding on both platforms; failed
+  discovery still offers recovery. Adding an IPTV account includes it in the
+  active profile's explicit server selection so Live TV can discover its channels.
+  Reconnecting an existing account preserves its enabled/disabled choice, and
+  other profiles' explicit selections are unchanged.
+  Explicitly adding the same playlist again selects its existing account, without
+  duplicating it; this also repairs accounts saved by older incomplete setup flows.
+  Settings enrolls newly authorized IPTV channels using the same guarded
+  source registration as Live TV, so a source appears without first visiting
+  the player. Removed or disabled sources stay removed or disabled.
+- **In-app setup preserves its starting page.** tvOS keeps the signed-in
+  navigation tree mounted underneath account setup, including Sources inside
+  Live TV settings. Finishing or cancelling returns to that page. First-run
+  setup remains separate, completes the profile/appearance steps, and uses the
+  shared startup policy to enter Live TV for channels-only IPTV.
 
 ## Automatically Sign In
 

@@ -32,6 +32,37 @@ public final class LiveTVServerEnrollmentCoordinator {
     public func refresh(
         choices: [LiveTVServerChoice],
         resolver: @escaping LiveTVServerProviderResolver,
+        store: any LiveTVSourcesStoring,
+        suppressedAccountIDs: @MainActor () throws -> Set<String>,
+        isAuthorized: @MainActor () -> Bool
+    ) async -> [String] {
+        guard isAuthorized() else { invalidate(); return [] }
+        return await refresh(
+            choices: choices, resolver: resolver, configuration: { try store.load() },
+            suppressedAccountIDs: suppressedAccountIDs,
+            apply: { updated in
+                guard isAuthorized() else { throw CommitError.authorizationChanged }
+                let current = try store.load()
+                let suppressed = try suppressedAccountIDs()
+                guard updated.playlists == current.playlists,
+                      current.servers.allSatisfy({ updated.servers.contains($0) }),
+                      updated.servers.allSatisfy({ source in
+                          current.servers.contains(source) || !suppressed.contains(source.accountID)
+                      }) else { throw CommitError.configurationChanged }
+                try updated.validate()
+                try store.save(updated)
+            }
+        )
+    }
+
+    private enum CommitError: Error {
+        case authorizationChanged, configurationChanged
+    }
+
+    @discardableResult
+    public func refresh(
+        choices: [LiveTVServerChoice],
+        resolver: @escaping LiveTVServerProviderResolver,
         configuration: @MainActor () throws -> LiveTVSourcesConfiguration,
         suppressedAccountIDs: @MainActor () throws -> Set<String>,
         apply: @MainActor (LiveTVSourcesConfiguration) throws -> Void

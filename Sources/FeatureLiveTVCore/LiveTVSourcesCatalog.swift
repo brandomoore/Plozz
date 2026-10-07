@@ -19,12 +19,14 @@ public struct LiveTVSourcesCatalogAuthority: Equatable, Sendable {
 public final class LiveTVSourcesCatalog {
     public enum Issue: Equatable {
         case configuration, authorization, catalog
+        case enrollment(LiveTVServerImportError)
 
         public var message: LocalizedStringResource {
             switch self {
             case .configuration: "Your saved Live TV sources couldn't be read."
             case .authorization: "Profile access changed. Reopen Sources to continue."
             case .catalog: "Channel and guide data couldn't be loaded. Retry to refresh it."
+            case .enrollment(let failure): failure.userDescription
             }
         }
     }
@@ -43,6 +45,7 @@ public final class LiveTVSourcesCatalog {
 
     @ObservationIgnored private let admission: LiveTVSourcesCatalogAdmission
     @ObservationIgnored private let clock: @MainActor () -> Date
+    @ObservationIgnored private let prepareSources: @MainActor () async -> LiveTVServerImportError?
     @ObservationIgnored private var revision = 0
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var refreshRequest = 0
@@ -58,6 +61,7 @@ public final class LiveTVSourcesCatalog {
         authority: @escaping @MainActor () throws -> LiveTVSourcesCatalogAuthority?,
         presentationIsAuthorized: @escaping @MainActor () -> Bool = { true },
         serverProviderResolver: @escaping LiveTVServerProviderResolver = { _ in nil },
+        prepareSources: @escaping @MainActor () async -> LiveTVServerImportError? = { nil },
         clock: @escaping @MainActor () -> Date = Date.init
     ) {
         let admission = LiveTVSourcesCatalogAdmission(
@@ -66,6 +70,7 @@ public final class LiveTVSourcesCatalog {
         )
         self.admission = admission
         self.clock = clock
+        self.prepareSources = prepareSources
         catalog = LiveTVPrototypeModel(now: clock(), channels: [], preferencesStore: preferencesStore)
         imports = LiveTVPrototypeImportModel(
             loader: loader, serverProviderResolver: serverProviderResolver, cache: cache,
@@ -75,7 +80,7 @@ public final class LiveTVSourcesCatalog {
 
     deinit { refreshTask?.cancel() }
 
-    /// Cache-only hydration binds mapping/identity controls without opening network requests.
+    /// Prepares newly authorized sources, then hydrates their cached catalog without a guide refresh.
     public func restore() async { await load(refresh: false) }
 
     public func refresh() async { await load(refresh: true) }
@@ -137,9 +142,19 @@ public final class LiveTVSourcesCatalog {
         issue = nil
         defer { if revision == request { isLoading = false } }
         do {
+            let enrollmentFailure = await prepareSources()
+            guard revision == request, !Task.isCancelled else { return }
+            guard let prepared = try admission.authority(),
+                  prepared.authorization.profileID == admission.profileID else {
+                invalidate()
+                issue = .authorization
+                return
+            }
+            try prepared.configuration.validate()
+            admission.snapshot = prepared
             catalog.synchronizeClock(to: clock())
             try imports.applyConfiguration(
-                authority.authorization.filtering(authority.configuration), into: catalog
+                prepared.authorization.filtering(prepared.configuration), into: catalog
             )
             if refresh {
                 await imports.reload(into: catalog)
@@ -153,7 +168,9 @@ public final class LiveTVSourcesCatalog {
                 if authorizationChanged { issue = .authorization }
                 return
             }
-            if imports.cacheFailure != nil || imports.playlistFailure != nil || imports.guideFailure != nil
+            if let enrollmentFailure {
+                issue = .enrollment(enrollmentFailure)
+            } else if imports.cacheFailure != nil || imports.playlistFailure != nil || imports.guideFailure != nil
                 || imports.serverSources.contains(where: { $0.failure != nil || $0.guideFailure != nil }) {
                 issue = .catalog
             }

@@ -2,6 +2,27 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/052",
+      "version": "2026.10.7",
+      "marketingVersion": "2026.9.25",
+      "build": 52,
+      "releasedAt": "2026-10-07",
+      "sections": [
+        {
+          "category": "Fixed",
+          "items": [
+            "IPTV playlists missing from Live TV and Sources.",
+            "Empty library screen when adding live-channel playlists.",
+            {
+              "text": "Adding a source returning you to the wrong Settings page.",
+              "platforms": ["tvOS"]
+            },
+            "Incorrect profile or server access warnings in Live TV."
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/051",
       "version": "2026.10.6",
       "marketingVersion": "2026.9.25",

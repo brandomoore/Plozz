@@ -118,6 +118,127 @@ final class LiveTVAutomaticChannelsRuntimeTests: XCTestCase {
         XCTAssertEqual(requests, 1, "Cancelled discovery must not restart or fetch items")
     }
 
+    func testLeavingOneHostDoesNotRevokeTheOtherHostsRestoredChannels() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        try fixture.settings.setEnabled(true)
+        let requested = expectation(description: "Automatic preparation started after restore")
+        let gate = DiscoveryGate()
+        await fixture.provider.requests.beforeNextItems {
+            requested.fulfill()
+            await gate.wait()
+        }
+        let runtime = fixture.runtime()
+        let sourcesHost = Task { await runtime.refresh(accounts: fixture.accounts) }
+        await fulfillment(of: [requested], timeout: 2)
+        XCTAssertNotNil(runtime.authorizationID)
+        XCTAssertTrue(runtime.service.isLoaded)
+
+        let joined = expectation(description: "Guide requested the same runtime")
+        let guideHost = Task {
+            joined.fulfill()
+            await runtime.refresh(accounts: fixture.accounts)
+        }
+        await fulfillment(of: [joined], timeout: 2)
+        sourcesHost.cancel()
+        await gate.resume()
+        await sourcesHost.value
+        await guideHost.value
+
+        XCTAssertNil(runtime.issue, "Leaving Sources is not a profile or server access change")
+        XCTAssertNil(runtime.automaticChannelsIssue)
+        XCTAssertNotNil(runtime.authorizationID)
+        XCTAssertGreaterThan(runtime.automaticChannelCount, 0)
+    }
+
+    func testConcurrentHostsShareInitialDiscoveryEvenWhenOneLeaves() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        try fixture.settings.setEnabled(true)
+        let requested = expectation(description: "Initial discovery started")
+        let gate = DiscoveryGate()
+        await fixture.provider.requests.beforeNextLibraries {
+            requested.fulfill()
+            await gate.wait()
+        }
+        let runtime = fixture.runtime()
+        let guideHost = Task { await runtime.refresh(accounts: fixture.accounts) }
+        await fulfillment(of: [requested], timeout: 2)
+        let joined = expectation(description: "Sources requested the same runtime")
+        let sourcesHost = Task {
+            joined.fulfill()
+            await runtime.refresh(accounts: fixture.accounts)
+        }
+        await fulfillment(of: [joined], timeout: 2)
+        let requestsBeforeRelease = await fixture.provider.requests.count
+        sourcesHost.cancel()
+        await gate.resume()
+        await guideHost.value
+        await sourcesHost.value
+
+        XCTAssertEqual(requestsBeforeRelease, 1, "Hosts must not replace each other's in-flight discovery")
+        XCTAssertNil(runtime.issue)
+        XCTAssertNotNil(runtime.authorizationID)
+        XCTAssertGreaterThan(runtime.automaticChannelCount, 0)
+    }
+
+    func testProfileChangeStillRejectsPreparationAfterItsHostLeaves() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        try fixture.settings.setEnabled(true)
+        let requested = expectation(description: "Preparation started")
+        let gate = DiscoveryGate()
+        await fixture.provider.requests.beforeNextItems {
+            requested.fulfill()
+            await gate.wait()
+        }
+        let runtime = fixture.runtime()
+        let refresh = Task { await runtime.refresh(accounts: fixture.accounts) }
+        await fulfillment(of: [requested], timeout: 2)
+        XCTAssertNotNil(runtime.authorizationID)
+
+        refresh.cancel()
+        let other = fixture.profiles.add(name: "Other")
+        fixture.profiles.select(other.id)
+        XCTAssertNil(runtime.authorizationID)
+        await gate.resume()
+        await refresh.value
+
+        XCTAssertNil(runtime.authorizationID)
+        XCTAssertTrue(try fixture.definitions.load().isEmpty, "Retired profile work must not publish a lineup")
+        XCTAssertFalse(runtime.isPreparingAutomaticChannels)
+    }
+
+    func testChangedCredentialsSupersedeRefreshWithoutLateAuthorityRevocation() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        try fixture.settings.setEnabled(true)
+        let requested = expectation(description: "Old credential preparation started")
+        let gate = DiscoveryGate()
+        await fixture.provider.requests.beforeNextItems {
+            requested.fulfill()
+            await gate.wait()
+        }
+        let runtime = fixture.runtime()
+        let oldRefresh = Task { await runtime.refresh(accounts: fixture.accounts) }
+        await fulfillment(of: [requested], timeout: 2)
+        let oldAuthorization = runtime.authorizationID
+        let revision = CredentialRevision()
+        fixture.accounts.credentialRevision = { _ in revision }
+        XCTAssertNil(runtime.authorizationID)
+
+        await runtime.refresh(accounts: fixture.accounts)
+        let currentAuthorization = runtime.authorizationID
+        await gate.resume()
+        await oldRefresh.value
+
+        XCTAssertNil(runtime.issue)
+        XCTAssertNotNil(currentAuthorization)
+        XCTAssertNotEqual(currentAuthorization, oldAuthorization)
+        XCTAssertEqual(runtime.authorizationID, currentAuthorization)
+        XCTAssertGreaterThan(runtime.automaticChannelCount, 0)
+    }
+
     func testEnabledDiscoveryFailureIsScopedAndRetryRecovers() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
@@ -334,10 +455,17 @@ private actor AutomaticRuntimeRequests {
     private(set) var empty = false
     private var unavailable = false
     private var libraryHook: (@Sendable () async -> Void)?
+    private var itemHook: (@Sendable () async -> Void)?
     func beforeNextLibraries(_ hook: @escaping @Sendable () async -> Void) { libraryHook = hook }
+    func beforeNextItems(_ hook: @escaping @Sendable () async -> Void) { itemHook = hook }
     func librariesRequested() async {
         let hook = libraryHook
         libraryHook = nil
+        await hook?()
+    }
+    func itemsRequested() async {
+        let hook = itemHook
+        itemHook = nil
         await hook?()
     }
     func setEmpty(_ value: Bool) { empty = value }
@@ -386,6 +514,7 @@ private struct AutomaticRuntimeProvider: LibraryChannelCatalogProviding, Library
 
     func libraryChannelItems(in libraryID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
         try await requests.record()
+        await requests.itemsRequested()
         let isEmpty = await requests.empty
         let items: [MediaItem] = kind == .movie && !isEmpty ? (0..<12).map { index in
             var item = MediaItem(id: "movie-\(index)", title: "Movie \(index)", kind: .movie, runtime: 3_600)
