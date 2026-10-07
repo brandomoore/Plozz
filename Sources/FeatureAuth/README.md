@@ -46,6 +46,14 @@ session persistence.
   actions capture the row's ID before mutating its collection. Reading a bound
   row from inside `removeAll` can overlap the collection's exclusive write
   access and crash Swift's runtime.
+- **IPTV setup keeps optional configuration behind a disclosure.** Playlist
+  authentication, guides, and request headers live under Advanced options;
+  required Xtream credentials stay in Connection. Existing advanced settings
+  start expanded, and collapsing never clears or disables them. The HTTP warning
+  appears only for an entered playlist/server or guide address using HTTP.
+  Form controls share body typography and contained settings-row focus styling;
+  only Connect and Cancel use the shared action-pill style. Section headings and
+  essential helper text retain the shared settings typography.
 - **Channels-only IPTV needs no library selection.** Successful discovery with
   no on-demand libraries continues onboarding on both platforms; failed
   discovery still offers recovery. Adding an IPTV account includes it in the

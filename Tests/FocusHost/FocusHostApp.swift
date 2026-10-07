@@ -8,7 +8,9 @@ import FeaturePlayback
 struct FocusHostApp: App {
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--skip-marker-preview") {
+            if ProcessInfo.processInfo.arguments.contains("--iptv-setup-fixture") {
+                IPTVSetupFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--skip-marker-preview") {
                 SkipMarkerPreviewFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--player-cast-focus-fixture") {
                 PlayerCastFocusFixture()

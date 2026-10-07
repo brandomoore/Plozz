@@ -45,10 +45,9 @@ final class IPTVRemovalInteractionTests: XCTestCase {
     private func verifyRemoval(arguments: [String], field: String, remove: String, add: String, values: [String]) {
         app.launchArguments = ["--iptv-removal-fixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"] + arguments
         app.launch()
-        let advanced = app.switches["Advanced options"]
+        let advanced = app.buttons["iptv-advanced-options"]
         XCTAssertTrue(advanced.waitForExistence(timeout: 10), app.debugDescription)
-        reveal(advanced)
-        advanced.tap()
+        XCTAssertEqual(advanced.value as? String, "Expanded")
         let fields = app.textFields.matching(identifier: field)
         let buttons = app.buttons.matching(identifier: remove)
         waitForCount(fields, 3)
@@ -87,7 +86,8 @@ final class IPTVRemovalInteractionTests: XCTestCase {
 
     private func reveal(_ element: XCUIElement) {
         for _ in 0..<12 {
-            if element.exists && element.isHittable { return }
+            let safeFrame = app.windows.firstMatch.frame.insetBy(dx: 0, dy: 90)
+            if element.exists && element.isHittable && safeFrame.contains(element.frame) { return }
             if element.exists && element.frame.midY < app.windows.firstMatch.frame.midY {
                 app.scrollViews.firstMatch.swipeDown()
             } else {

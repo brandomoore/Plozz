@@ -6,6 +6,64 @@ import XCTest
 
 @MainActor
 final class IPTVAuthViewModelTests: XCTestCase {
+    func testBasicPlaylistAndRequiredXtreamCredentialsAreNotAdvanced() {
+        let model = IPTVAuthViewModel(deviceID: "fixture", onAuthenticated: { _ in })
+        XCTAssertFalse(model.hasAdvancedConfiguration)
+        XCTAssertFalse(model.usesHTTP)
+        model.mode = .xtream
+        model.username = "fixture"
+        model.password = "fixture"
+        XCTAssertFalse(model.hasAdvancedConfiguration)
+    }
+
+    func testOptionalPlaylistConfigurationIsAdvanced() {
+        let model = IPTVAuthViewModel(deviceID: "fixture", onAuthenticated: { _ in })
+        model.authentication = .basic
+        XCTAssertTrue(model.hasAdvancedConfiguration)
+        model.authentication = .bearer
+        XCTAssertTrue(model.hasAdvancedConfiguration)
+        model.authentication = .none
+        model.discoversPlaylistGuides = false
+        XCTAssertTrue(model.hasAdvancedConfiguration)
+        model.discoversPlaylistGuides = true
+        model.guideAddress = "https://guide.example/guide.xml"
+        XCTAssertTrue(model.hasAdvancedConfiguration)
+        model.guideAddress = ""
+        model.addGuide()
+        XCTAssertTrue(model.hasAdvancedConfiguration)
+        model.additionalGuides = []
+        model.addHeader()
+        XCTAssertTrue(model.hasAdvancedConfiguration)
+        model.headers = []
+        model.addGuideHeader()
+        XCTAssertTrue(model.hasAdvancedConfiguration)
+        model.guideHeaders = []
+        XCTAssertFalse(model.hasAdvancedConfiguration)
+    }
+
+    func testHTTPWarningTracksOnlyAddressesUsedByTheSelectedMode() {
+        let model = IPTVAuthViewModel(deviceID: "fixture", onAuthenticated: { _ in })
+        for address in ["", "   ", "https://playlist.example/list", "playlist.example/list"] {
+            model.address = address
+            XCTAssertFalse(model.usesHTTP, address)
+        }
+        model.address = " \nHTTP://playlist.example/list\n "
+        XCTAssertTrue(model.usesHTTP)
+        model.mode = .xtream
+        XCTAssertTrue(model.usesHTTP)
+        model.mode = .file
+        XCTAssertFalse(model.usesHTTP, "A hidden server field is not used for file imports.")
+        model.guideAddress = "http://guide.example/guide.xml"
+        XCTAssertTrue(model.usesHTTP)
+        model.guideAddress = "https://guide.example/guide.xml"
+        XCTAssertFalse(model.usesHTTP)
+        model.addGuide()
+        model.additionalGuides[0].address = " HTTP://guide.example/extra.xml "
+        XCTAssertTrue(model.usesHTTP)
+        model.additionalGuides = []
+        XCTAssertFalse(model.usesHTTP)
+    }
+
     func testValidationAndHandledAuthenticationFailuresAreAutomaticallyRecorded() async throws {
         let diagnostics = IPTVSetupDiagnostics()
         let buffer = AuthSetupBuffer()
@@ -183,6 +241,7 @@ final class IPTVAuthViewModelTests: XCTestCase {
             onAuthenticated: { received = $0 }
         )
         XCTAssertEqual(try model.makeCredential().headers, credential.headers)
+        XCTAssertTrue(model.hasAdvancedConfiguration)
         XCTAssertEqual(try model.makeCredential().explicitGuideURLs, credential.explicitGuideURLs)
         XCTAssertEqual(try model.makeCredential().explicitGuideHeaders, credential.explicitGuideHeaders)
         model.address = "https://provider.example/new?token=updated"

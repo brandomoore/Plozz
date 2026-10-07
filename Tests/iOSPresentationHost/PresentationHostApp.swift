@@ -65,6 +65,8 @@ struct PresentationHostApp: App {
         WindowGroup {
             if ProcessInfo.processInfo.arguments.contains("--iptv-removal-fixture") {
                 IPTVRemovalFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--iptv-setup-fixture") {
+                IPTVSetupFixture()
             } else if let interactionModel {
                 SettingsInteractionFixture(appModel: interactionModel)
             } else {
