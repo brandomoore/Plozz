@@ -2,6 +2,83 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/051",
+      "version": "2026.10.6",
+      "marketingVersion": "2026.9.25",
+      "build": 51,
+      "releasedAt": "2026-10-06",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "IPTV accounts with Xtream sign-in or authenticated playlist URLs, including live channels, movies, and shows supplied by your provider.",
+            "Trakt sign-in syncs per profile through iCloud.",
+            {
+              "text": "Device-local playlist files can be added as IPTV accounts.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Navigation hides unused pages and opens Live TV by default for live-only setups.",
+            "More consistent cast, directors, writers, studios, and genres across library providers.",
+            "Silo ratings appear in Home and details using Silo's selected sources and order.",
+            "Clearer Live TV source setup, guide options, source status, and channel checks.",
+            "More responsive loading and browsing of large Live TV lineups.",
+            "Simpler iCloud settings and clearer progress and results for recovery actions.",
+            "Clearer PIN keys over artwork gradients.",
+            "Restored Live TV player card rounding and original channel-logo corners.",
+            "Clearer diagnostic recording indicator.",
+            {
+              "text": "Episode labels stay visible, with consistent spacing and focus movement.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Settings opens over your current page, keeping its navigation and scroll position.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Consistent compact headings and spacing in Settings and Live TV setup.",
+              "platforms": ["iOS"]
+            },
+            {
+              "text": "Browser-based Trakt sign-in.",
+              "platforms": ["iOS"]
+            }
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Plex smart and filtered collections appearing empty.",
+            "Queued watch-state updates reaching the wrong server user after switching accounts or server users.",
+            {
+              "text": "The show-title link on episode pages not opening the show.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Library controls overlapping navigation and artwork stopping short of the screen edge.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Music disappearing after a temporary server connection failure.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Incorrect music queue selection, next-track playback, and play reporting for repeated tracks and queue changes.",
+              "platforms": ["tvOS"]
+            },
+            {
+              "text": "Missing Jellyfin artist albums, incomplete or reordered playlists, and unsupported music formats failing to play.",
+              "platforms": ["tvOS"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/050",
       "version": "2026.10.5",
       "marketingVersion": "2026.9.25",
