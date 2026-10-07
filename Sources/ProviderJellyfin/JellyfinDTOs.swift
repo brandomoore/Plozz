@@ -71,6 +71,23 @@ struct MovieRecommendationDto: Decodable {
     let RecommendationType: String
     let BaselineItemName: String?
     let CategoryId: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case Items, RecommendationType, BaselineItemName, CategoryId
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        Items = try values.decodeIfPresent([BaseItemDto].self, forKey: .Items)
+        RecommendationType = try values.decode(String.self, forKey: .RecommendationType)
+        BaselineItemName = try values.decodeIfPresent(String.self, forKey: .BaselineItemName)
+        do {
+            CategoryId = try values.decodeIfPresent(String.self, forKey: .CategoryId)
+        } catch DecodingError.typeMismatch {
+            // Emby uses Int64 IDs; Jellyfin uses strings. Preserve exact row identity.
+            CategoryId = String(try values.decode(Int64.self, forKey: .CategoryId))
+        }
+    }
 }
 
 struct ThemeMediaResponse: Decodable {

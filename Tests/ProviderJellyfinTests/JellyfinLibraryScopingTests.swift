@@ -26,11 +26,13 @@ final class JellyfinLibraryScopingTests: XCTestCase {
 
     func testMovieRecommendationsUseLibraryScopeAndMapCategoriesForJellyfinAndEmby() async throws {
         for kind: ProviderKind in [.jellyfin, .emby] {
+            let categoryID = kind == .emby ? "9007199254740993" : "because-1"
+            let categoryJSON = kind == .emby ? categoryID : "\"\(categoryID)\""
             let stub = StubHTTPClient()
             stub.stub(pathSuffix: "/Movies/Recommendations", json: """
             [{"Items":[{"Id":"m1","Name":"Suggested Movie","Type":"Movie"}],
               "RecommendationType":"SimilarToRecentlyPlayed",
-              "BaselineItemName":"A Favorite","CategoryId":"because-1"},
+              "BaselineItemName":"A Favorite","CategoryId":\(categoryJSON)},
              {"Items":[{"Id":"m2","Name":"Another Movie","Type":"Movie"}],
               "RecommendationType":"HasLikedDirector"}]
             """)
@@ -40,7 +42,7 @@ final class JellyfinLibraryScopingTests: XCTestCase {
             )
             let provider = JellyfinProvider(session: session, http: stub)
             let sections = try await provider.libraryHubs(libraryID: "LIB1", kind: .movie, limit: 10)
-            XCTAssertEqual(sections.map(\.id), ["because-1", "HasLikedDirector:"])
+            XCTAssertEqual(sections.map(\.id), [categoryID, "HasLikedDirector:"])
             XCTAssertEqual(sections.map(\.title), ["Because you watched A Favorite", "More from directors you like"])
             let expectedTitles: [LocalizedStringResource] = [
                 "Because you watched \("A Favorite")", "More from directors you like"
@@ -56,13 +58,46 @@ final class JellyfinLibraryScopingTests: XCTestCase {
             let refreshedStub = StubHTTPClient()
             refreshedStub.stub(pathSuffix: "/Movies/Recommendations", json: """
             [{"Items":[{"Id":"m2","Name":"Another Movie","Type":"Movie"}],
-              "RecommendationType":"HasLikedDirector"}]
+              "RecommendationType":"HasLikedDirector"},
+             {"Items":[{"Id":"m1","Name":"Suggested Movie","Type":"Movie"}],
+              "RecommendationType":"SimilarToRecentlyPlayed",
+              "BaselineItemName":"A Favorite","CategoryId":\(categoryJSON)}]
             """)
             let refreshed = try await JellyfinProvider(session: session, http: refreshedStub)
                 .libraryHubs(libraryID: "LIB1", kind: .movie, limit: 10)
-            XCTAssertEqual(refreshed.first?.id, sections.last?.id)
+            XCTAssertEqual(refreshed.map(\.id), Array(sections.map(\.id).reversed()))
             let seriesHubs = try await provider.libraryHubs(libraryID: "LIB1", kind: .series, limit: 10)
             XCTAssertTrue(seriesHubs.isEmpty)
+        }
+    }
+
+    func testMovieRecommendationCategoryIDsPreserveStringsAndExactEmbyIntegers() throws {
+        let cases: [(json: String?, expected: String?)] = [
+            (#""56a9f068-c965-40ee-939b-38bc1a5f12e9""#, "56a9f068-c965-40ee-939b-38bc1a5f12e9"),
+            (#""00042""#, "00042"),
+            ("0", "0"),
+            ("42", "42"),
+            ("-42", "-42"),
+            ("9007199254740993", "9007199254740993"),
+            ("9223372036854775807", "9223372036854775807"),
+            ("-9223372036854775808", "-9223372036854775808"),
+            ("null", nil),
+            (nil, nil)
+        ]
+        for testCase in cases {
+            let category = testCase.json.map { #","CategoryId":\#($0)"# } ?? ""
+            let data = Data(#"[{"RecommendationType":"SimilarToRecentlyPlayed"\#(category)}]"#.utf8)
+            let decoded = try JSONDecoder().decode([MovieRecommendationDto].self, from: data)
+            XCTAssertEqual(decoded.first?.CategoryId, testCase.expected, testCase.json ?? "absent")
+        }
+    }
+
+    func testMovieRecommendationCategoryIDsRejectMalformedValues() {
+        for value in ["true", "false", "{}", "[]", "1.5", "9223372036854775808", "-9223372036854775809"] {
+            let data = Data(#"[{"RecommendationType":"SimilarToRecentlyPlayed","CategoryId":\#(value)}]"#.utf8)
+            XCTAssertThrowsError(try JSONDecoder().decode([MovieRecommendationDto].self, from: data), value) {
+                XCTAssertTrue($0 is DecodingError)
+            }
         }
     }
 
