@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "releases": [
     {
-      "id": "release/052",
+      "id": "release/051.1",
       "version": "2026.10.7",
       "marketingVersion": "2026.9.25",
-      "build": 52,
+      "build": "51.1",
       "releasedAt": "2026-10-07",
       "sections": [
         {

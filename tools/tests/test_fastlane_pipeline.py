@@ -404,6 +404,73 @@ puts JSON.generate(first: first, second: second,
         self.assertEqual(result["second"], result["first"])
         self.assertEqual(result["calls"], 1)
 
+    def test_real_build_selection_preserves_dotted_values_and_checks_all_pages(self) -> None:
+        source = FASTFILE_HARNESS.split("module AppleBuildLease")[0] + r"""
+module Spaceship
+  module ConnectAPI
+    class App
+      def self.find(*); Struct.new(:id).new("fixture-app"); end
+    end
+    def self.get_builds(**options)
+      raise "wrong Apple version filter" unless options[:filter]["preReleaseVersion.version"] == "2026.9.25"
+      build_type = Struct.new(:platform, :version)
+      page_type = Struct.new(:to_models)
+      pages = JSON.parse(ENV.fetch("BUILD_PAGES")).map do |rows|
+        page_type.new(rows.map { |row| build_type.new(*row) })
+      end
+      Struct.new(:all_pages).new(pages)
+    end
+  end
+end
+def harness.asc_api_key; {}; end
+def harness.marketing_version; "2026.9.25"; end
+def harness.release_notes_entry; { "build" => ENV.fetch("SELECTED_BUILD") }; end
+begin
+  selected = harness.next_build_number
+rescue => e
+  error = e.message
+end
+puts JSON.generate(selected: selected, error: error)
+"""
+        for pages, selected, expected in (
+            ([[["TV_OS", "51"], ["IOS", "51"]]], "51.1", "51.1"),
+            ([[["TV_OS", "51.9"]], [["IOS", "51.10"]]], "51.11", "51.11"),
+            ([[["TV_OS", "51.9"]], [["IOS", "51.10"]]], "51.2", None),
+            ([[["TV_OS", "51"], ["IOS", "51.1"]]], "51.1", None),
+            ([[["TV_OS", "51.1.0"]]], "51.1", None),
+            ([[["TV_OS", "51.1"]]], "51.1.1", "51.1.1"),
+            ([[["TV_OS", "51.1"]]], "51.100", None),
+        ):
+            with self.subTest(pages=pages, selected=selected):
+                result = self.ruby(source, BUILD_PAGES=json.dumps(pages),
+                                   PLOZZ_RELEASE_ID="release/selected", SELECTED_BUILD=selected)
+                self.assertEqual(result["selected"], expected)
+                self.assertEqual(result["error"] is None, expected is not None)
+        result = self.ruby(source, BUILD_PAGES=json.dumps([[["IOS", "51.10"]]]),
+                           PLOZZ_RELEASE_ID="", SELECTED_BUILD="")
+        self.assertEqual(result["selected"], "52")
+
+    def test_dotted_release_tags_do_not_overwrite_the_parent_release(self) -> None:
+        source = FASTFILE_HARNESS.split("module AppleBuildLease")[0] + r"""
+def harness.sh(command)
+  (@commands ||= []) << command
+  return "release/050\nrelease/051\nrelease/051.1\nrelease/051.10\n" if command.include?("git tag --list")
+  ""
+end
+def harness.marketing_version; "2026.9.25"; end
+harness.tag_github_release(ENV.fetch("BUILD"), "Approved notes", true, "2026.10.7")
+puts JSON.generate(commands: harness.instance_variable_get(:@commands))
+"""
+        for build, previous in (("51.1", "release/051"), ("51.2", "release/051.1"),
+                                ("52", "release/051.10")):
+            with self.subTest(build=build):
+                commands = self.ruby(source, BUILD=build)["commands"]
+                tag = "release/" + build.zfill(3) if "." not in build else "release/0" + build
+                self.assertTrue(any(f"tag -a {tag} " in command for command in commands))
+                self.assertTrue(any(f"{previous}..{tag}" in command for command in commands))
+                self.assertTrue(any(f"git push origin {tag}" in command for command in commands))
+                self.assertFalse(any(" -f " in command for command in commands))
+
     def test_empty_platform_fallback_retains_public_version(self) -> None:
         source = FASTFILE_HARNESS.split("module AppleBuildLease")[0] + r"""
 entry = { "version" => "2026.9.29", "marketingVersion" => "2026.9.25", "build" => 45,
