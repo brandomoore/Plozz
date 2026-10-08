@@ -77,7 +77,8 @@ The legacy default-off Home flag does not become a new override; a legacy opt-in
 still does. Unversioned Home-only off configurations matching the old automatic
 migration reset to App default, including its original boolean format. That
 ambiguous shape cannot distinguish an old default from an old manual Home-only
-choice. Explicit show/hide presets and other per-view customizations are preserved.
+choice. Explicit show/hide presets and other per-view customizations, including
+Mixed choices, are preserved.
 `homeDefaultVersion` travels in the label payload, so subsequent Home-only opt-outs
 survive reload, profile switching, and transfer.
 

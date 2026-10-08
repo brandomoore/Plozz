@@ -34,6 +34,61 @@ final class SettingsDetailNavigationHostedTests: XCTestCase {
         }
     }
 
+    func testSlideViewportPreservesVerticalSafeAreaWithoutHorizontalBleed() async throws {
+        try await withPages(verticalSafeArea: 40, horizontalInset: 80) { navigation, probes, window in
+            for isDetail in [false, true, false] {
+                if isDetail {
+                    navigation.push(animated: true)
+                } else if navigation.isPresented {
+                    navigation.focusArrived()
+                    navigation.pop(animated: true)
+                }
+                try await Task.sleep(for: .milliseconds(350))
+                window.layoutIfNeeded()
+                let frame = try XCTUnwrap(probes.frame(isDetail ? "detail" : "root", in: window))
+                XCTAssertGreaterThan(frame.minY, 8)
+                XCTAssertLessThan(frame.maxY + 8, window.bounds.maxY)
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1
+                let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                    XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                }
+                let attachment = XCTAttachment(image: image)
+                attachment.name = isDetail ? "detail-safe-area" : "root-safe-area"
+                attachment.lifetime = .keepAlways
+                self.add(attachment)
+                let expected = try self.pixel(image, at: CGPoint(x: frame.midX, y: frame.midY))
+                let background = try self.pixel(image, at: CGPoint(x: 8, y: frame.midY))
+                for y in [frame.minY - 8, frame.maxY + 8] {
+                    XCTAssertEqual(
+                        try self.pixel(image, at: CGPoint(x: frame.midX, y: y)), expected,
+                        "The slide mask must not cut off content at the vertical safe-area boundary."
+                    )
+                }
+                for x in [frame.minX - 8, frame.maxX + 8] {
+                    let outside = try self.pixel(image, at: CGPoint(x: x, y: frame.midY))
+                    XCTAssertEqual(outside, background,
+                                   "Pages must remain clipped horizontally to preserve the slide.")
+                }
+            }
+        }
+    }
+
+    private func pixel(_ image: UIImage, at point: CGPoint) throws -> [UInt8] {
+        let source = try XCTUnwrap(image.cgImage)
+        let crop = try XCTUnwrap(source.cropping(to: CGRect(x: point.x, y: point.y, width: 1, height: 1)))
+        var bytes = [UInt8](repeating: 0, count: 4)
+        try bytes.withUnsafeMutableBytes {
+            let context = try XCTUnwrap(CGContext(
+                data: $0.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        return bytes
+    }
+
     private func verifySlides(direction: LayoutDirection) async throws {
         try await withPages(direction: direction) { navigation, probes, window in
             let width = window.bounds.width
@@ -75,6 +130,8 @@ final class SettingsDetailNavigationHostedTests: XCTestCase {
 
     private func withPages(
         direction: LayoutDirection = .leftToRight,
+        verticalSafeArea: CGFloat = 0,
+        horizontalInset: CGFloat = 0,
         inspect: (SettingsDetailNavigation, PageMotionProbes, UIWindow) async throws -> Void
     ) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
@@ -89,15 +146,31 @@ final class SettingsDetailNavigationHostedTests: XCTestCase {
         window.frame = CGRect(x: 0, y: 0, width: 960, height: 540)
         let navigation = SettingsDetailNavigation()
         let probes = PageMotionProbes()
-        window.rootViewController = UIHostingController(rootView:
+        let host = UIHostingController(rootView:
             SettingsDetailPages(navigation: navigation) {
-                PageMotionProbe(id: "root", probes: probes).background(.blue)
+                PageMotionProbe(id: "root", probes: probes)
+                    .background {
+                        Color.blue
+                            .ignoresSafeArea(.container, edges: .vertical)
+                            .padding(.horizontal, -24)
+                    }
             } detail: {
-                PageMotionProbe(id: "detail", probes: probes).background(.orange)
+                PageMotionProbe(id: "detail", probes: probes)
+                    .background {
+                        Color.orange
+                            .ignoresSafeArea(.container, edges: .vertical)
+                            .padding(.horizontal, -24)
+                    }
             }
+            .padding(.horizontal, horizontalInset)
+            .background { Color.red.ignoresSafeArea() }
             .environment(\.layoutDirection, direction)
-            .ignoresSafeArea()
+            .ignoresSafeArea(edges: verticalSafeArea > 0 ? .horizontal : .all)
         )
+        host.additionalSafeAreaInsets = UIEdgeInsets(
+            top: verticalSafeArea, left: 0, bottom: verticalSafeArea, right: 0
+        )
+        window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
             window.isHidden = true

@@ -12,7 +12,7 @@ struct ViewPreferenceChoiceGroup<Content: View>: View {
             VStack(alignment: .leading, spacing: 8, content: content)
         }
         #else
-        VStack(alignment: .leading, spacing: 20, content: content)
+        SettingsSectionGroup(content: content)
         #endif
     }
 }
@@ -114,6 +114,7 @@ struct ViewCustomizationList<Content: View>: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(SettingsDetailNavigation.self) private var detailNavigation: SettingsDetailNavigation?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.themePalette) private var palette
     @FocusState private var focusedRow: String?
     @State private var hasEnteredList = false
     @Namespace private var focusScope
@@ -164,12 +165,115 @@ struct ViewCustomizationList<Content: View>: View {
         }
         .navigationTitle(Text(verbatim: ""))
         #else
-        List(content: content)
-            .settingsPageSurface()
-            .navigationTitle(Text(title))
+        List {
+            content()
+                .listRowBackground(palette.surface(.raised).fill)
+                .listRowSeparatorTint(palette.separator)
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background { palette.settingsBackground.ignoresSafeArea() }
+        .toolbarBackground(palette.settingsBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarTitleDisplayMode(.inline)
+        .navigationTitle(Text(title))
         #endif
     }
 }
+
+#if os(iOS)
+struct ViewCustomizationMenu<Selection: Hashable, Options: View>: View {
+    let id: String
+    let title: LocalizedStringResource
+    let value: LocalizedStringResource
+    var detail: LocalizedStringResource? = nil
+    @Binding var selection: Selection
+    @ViewBuilder var options: () -> Options
+
+    var body: some View {
+        ViewCustomizationMenuLabel(id: id, title: title) {
+            Menu {
+                Picker(selection: $selection) {
+                    options()
+                } label: {
+                    EmptyView()
+                }
+                .pickerStyle(.inline)
+            } label: {
+                ViewCustomizationMenuValue(value: value)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(Text(title))
+            .accessibilityValue(Text(value))
+            .accessibilityHint(Text(detail ?? "Select to change."))
+            .accessibilityIdentifier(id)
+        }
+    }
+}
+
+private struct ViewCustomizationMenuLabel<Control: View>: View {
+    let id: String
+    let title: LocalizedStringResource
+    @ViewBuilder var control: () -> Control
+    @Environment(\.themePalette) private var palette
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                stackedLabel
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 16) {
+                        Text(title)
+                            .accessibilityIdentifier("\(id)-title")
+                            .fixedSize()
+                        Spacer(minLength: 8)
+                        control().fixedSize()
+                    }
+                    stackedLabel
+                }
+            }
+        }
+        .font(.body)
+        .foregroundStyle(palette.primaryText)
+        .multilineTextAlignment(.leading)
+        .frame(minHeight: 44)
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var stackedLabel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .accessibilityIdentifier("\(id)-title")
+            control()
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct ViewCustomizationMenuValue: View {
+    let value: LocalizedStringResource
+    @Environment(\.themePalette) private var palette
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(value)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.caption2.weight(.semibold))
+                .accessibilityHidden(true)
+        }
+        .font(.subheadline)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(palette.fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+#endif
 
 struct ViewCustomizationRow: View {
     let id: String

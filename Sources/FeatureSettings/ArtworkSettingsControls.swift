@@ -5,6 +5,7 @@ import SwiftUI
 
 public struct ArtworkSettingsControls: View {
     @Bindable private var cards: CardStyleSettingsModel
+    @Environment(\.themePalette) private var palette
     private let continueWatchingShowsSeriesArtwork: Bool
 
     public init(cards: CardStyleSettingsModel, continueWatchingShowsSeriesArtwork: Bool = true) {
@@ -13,18 +14,38 @@ public struct ArtworkSettingsControls: View {
     }
 
     public var body: some View {
+        #if os(tvOS)
         VStack(alignment: .leading, spacing: 28) {
             Text("Choose the posters, backgrounds, and logos you see.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             ArtworkPresetPicker(settings: $cards.artwork)
-            ViewCustomizationLink(isCustomized: cards.artwork.selectedPreset == nil) {
-                ArtworkCustomizationView(
-                    cards: cards, continueWatchingShowsSeriesArtwork: continueWatchingShowsSeriesArtwork
-                )
-            }
-            .accessibilityIdentifier("artwork-customization")
+            customizationLink
         }
+        #else
+        Section {
+            ArtworkPresetPicker(settings: $cards.artwork)
+        } header: {
+            Text("Choose the posters, backgrounds, and logos you see.")
+                .font(.subheadline)
+                .foregroundStyle(palette.secondaryText)
+                .textCase(nil)
+                .accessibilityIdentifier("artwork-preset-heading")
+        }
+        SettingsSectionGroup {
+            customizationLink
+        }
+        .padding(.top, 16)
+        #endif
+    }
+
+    private var customizationLink: some View {
+        ViewCustomizationLink(isCustomized: cards.artwork.selectedPreset == nil) {
+            ArtworkCustomizationView(
+                cards: cards, continueWatchingShowsSeriesArtwork: continueWatchingShowsSeriesArtwork
+            )
+        }
+        .accessibilityIdentifier("artwork-customization")
     }
 }
 
@@ -32,18 +53,16 @@ private struct ArtworkPresetPicker: View {
     @Binding var settings: ArtworkSettings
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            ViewPreferenceChoiceGroup {
-                ForEach(ArtworkPreference.allCases) { preference in
-                    ViewPreferenceChoiceRow(
-                        title: preference.displayName,
-                        detail: preference.detail,
-                        isSelected: settings.selectedPreset == preference
-                    ) {
-                        settings.applyPreset(preference)
-                    }
-                    .accessibilityIdentifier("artwork-preset-\(preference.rawValue)")
+        ViewPreferenceChoiceGroup {
+            ForEach(ArtworkPreference.allCases) { preference in
+                ViewPreferenceChoiceRow(
+                    title: preference.displayName,
+                    detail: preference.detail,
+                    isSelected: settings.selectedPreset == preference
+                ) {
+                    settings.applyPreset(preference)
                 }
+                .accessibilityIdentifier("artwork-preset-\(preference.rawValue)")
             }
         }
     }
@@ -111,6 +130,22 @@ struct ArtworkAreaChoices: View {
     @Binding var settings: ArtworkSettings
 
     var body: some View {
+        #if os(iOS)
+        ViewCustomizationMenu(
+            id: "artwork-view-\(area.rawValue)",
+            title: area.displayName,
+            value: settings.customizationValue(in: area),
+            detail: settings.customizationDetail(in: area),
+            selection: Binding(
+                get: { settings.customization(in: area) },
+                set: { settings.setOverride($0, for: area) }
+            )
+        ) {
+            ForEach(area.customizationChoices) { choice in
+                Text(choice.displayName).tag(choice)
+            }
+        }
+        #else
         ViewCustomizationRow(
             id: "artwork-view-\(area.rawValue)",
             title: area.displayName,
@@ -119,13 +154,13 @@ struct ArtworkAreaChoices: View {
         ) {
             settings.toggleCustomization(in: area)
         }
+        #endif
     }
 }
 
 extension ArtworkSettings {
     func customizationValue(in area: ArtworkArea) -> LocalizedStringResource {
-        if preference(in: area) == .recommended, area == .details { return "Mixed" }
-        return prefersOnlineArtwork(in: area) ? "Metadata providers" : "Library"
+        customization(in: area).displayName
     }
 
     func customizationDetail(in area: ArtworkArea) -> LocalizedStringResource? {

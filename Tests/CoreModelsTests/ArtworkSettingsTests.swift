@@ -95,6 +95,35 @@ final class ArtworkSettingsTests: XCTestCase {
         }
     }
 
+    func testExplicitMixedDetailsPersistIndependentlyOfThePresetAndOtherScopes() throws {
+        let name = "ArtworkMixedTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = ArtworkSettingsStore(defaults: defaults)
+        for preset in ArtworkPreference.allCases {
+            var settings = ArtworkSettings(preference: preset)
+            settings.setOverride(.mixed, for: .details)
+            store.save(settings)
+            let entries = ProfileSettingsTransfer.capture(namespace: nil, defaults: defaults)
+            ProfileSettingsTransfer.apply(entries, namespace: "mixed", defaults: defaults)
+            let restored = ArtworkSettingsStore(defaults: defaults, namespace: "mixed").load()
+            XCTAssertEqual(restored, settings)
+            XCTAssertEqual(restored.customization(in: .details), .mixed)
+            XCTAssertEqual(restored.override(for: .details), .mixed)
+            XCTAssertNil(restored.selectedPreset)
+            for placement in [ArtworkPlacement.homeHero, .detailBackdrop, .logo] {
+                XCTAssertTrue(restored.prefersOnlineArtwork(in: .details, placement: placement))
+            }
+            XCTAssertFalse(restored.prefersOnlineArtwork(in: .details, placement: .poster))
+            for area in ArtworkArea.allCases where area != .details {
+                XCTAssertEqual(restored.preference(in: area), preset)
+                XCTAssertFalse(area.customizationChoices.contains(.mixed))
+            }
+            settings.applyPreset(preset)
+            XCTAssertEqual(settings, ArtworkSettings(preference: preset))
+        }
+    }
+
     func testOverridesInheritChangesWithoutBecomingPermanentDefaults() {
         var settings = ArtworkSettings()
         settings.setOverride(.library, for: .continueWatching)

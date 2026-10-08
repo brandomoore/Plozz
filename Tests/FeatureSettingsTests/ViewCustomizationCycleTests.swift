@@ -4,17 +4,16 @@ import CoreUI
 import XCTest
 
 final class ViewCustomizationCycleTests: XCTestCase {
-    func testArtworkTogglesOnlyItsOwnValueAndRemainsCustom() {
+    func testArtworkCyclesThroughExactlyItsSupportedChoicesAndRemainsCustom() {
         for preference in ArtworkPreference.allCases {
             for area in ArtworkArea.allCases {
                 var settings = ArtworkSettings(preference: preference)
-                let inherited = settings.prefersOnlineArtwork(in: area)
-                for _ in 0..<3 {
+                let choices = area.customizationChoices
+                XCTAssertEqual(choices, area == .details ? [.library, .online, .mixed] : [.library, .online])
+                let initial = choices.firstIndex(of: settings.customization(in: area))!
+                for step in 1...(choices.count * 3) {
                     settings.toggleCustomization(in: area)
-                    XCTAssertEqual(settings.prefersOnlineArtwork(in: area), !inherited)
-                    XCTAssertNotEqual(settings.override(for: area), .automatic)
-                    settings.toggleCustomization(in: area)
-                    XCTAssertEqual(settings.prefersOnlineArtwork(in: area), inherited)
+                    XCTAssertEqual(settings.customization(in: area), choices[(initial + step) % choices.count])
                     XCTAssertNotEqual(settings.override(for: area), .automatic)
                     XCTAssertNil(settings.selectedPreset, "Matching a preset value must not silently reselect it.")
                     XCTAssertEqual(settings.overrides.count, 1)
@@ -27,20 +26,19 @@ final class ViewCustomizationCycleTests: XCTestCase {
         }
     }
 
-    func testLabelsToggleOnlyTheirOwnValueAndRemainCustom() {
+    func testLabelsCycleThroughExactlyTheirSupportedChoicesAndRemainCustom() {
         for preference in CardCaptionPreference.allCases {
             for view in CardCaptionView.allCases {
                 var settings = CardCaptionSettings(preference: preference)
-                let inherited = settings.showsLabels(in: view)
-                for _ in 0..<3 {
+                let choices = view.customizationChoices
+                XCTAssertEqual(choices, [.home, .recommended].contains(view) ? [.show, .hide, .mixed] : [.show, .hide])
+                let initial = choices.firstIndex(of: settings.customization(in: view))!
+                for step in 1...(choices.count * 3) {
                     settings.toggleCustomization(in: view)
-                    XCTAssertEqual(settings.showsLabels(in: view), !inherited)
-                    XCTAssertNotEqual(settings.override(for: view), .automatic)
-                    settings.toggleCustomization(in: view)
-                    XCTAssertEqual(settings.showsLabels(in: view), inherited)
+                    XCTAssertEqual(settings.customization(in: view), choices[(initial + step) % choices.count])
                     XCTAssertNotEqual(settings.override(for: view), .automatic)
                     XCTAssertNil(settings.selectedPreset)
-                    XCTAssertEqual(settings.overrides.count, 1)
+                    XCTAssertEqual(settings.overrides.count + settings.mixedOverrides.count, 1)
                     XCTAssertEqual(settings.preference, preference)
                     for other in CardCaptionView.allCases where other != view {
                         for artworkTitle in [false, true] {
@@ -96,11 +94,15 @@ final class ViewCustomizationCycleTests: XCTestCase {
         }
         var customized = labels
         customized.toggleCustomization(in: .home)
-        XCTAssertEqual(String(localized: customized.customizationValue(in: .home)), "Off")
-        XCTAssertNil(customized.customizationDetail(in: .home))
-        customized.toggleCustomization(in: .home)
         XCTAssertEqual(String(localized: customized.customizationValue(in: .home)), "On")
+        XCTAssertNil(customized.customizationDetail(in: .home))
         XCTAssertTrue(customized.showsLabels(in: .home, isShowcase: true, hasArtworkTitle: true))
+        customized.toggleCustomization(in: .home)
+        XCTAssertEqual(String(localized: customized.customizationValue(in: .home)), "Off")
+        customized.toggleCustomization(in: .home)
+        XCTAssertEqual(String(localized: customized.customizationValue(in: .home)), "Mixed")
+        XCTAssertNotNil(customized.customizationDetail(in: .home))
+        XCTAssertFalse(customized.showsLabels(in: .home, isShowcase: true))
     }
 
     func testEveryArtworkScopeHasABoundedHighlightAndConciseHelp() throws {

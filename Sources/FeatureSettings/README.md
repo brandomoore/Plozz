@@ -61,13 +61,25 @@ and the single place caption customization lives.
   overrides; the backing preference retains unedited views' behavior, including
   mixed recommended rules. Settings remain in the existing profile store and sync
   payload; artwork's `scopeVersion` migrates earlier shared choices once.
-  Matching a preset's value manually stays Custom until a preset is chosen.
-  Rows have only a name and short value: Library / Providers, or On / Off. Select
-  toggles the value directly, without an inheritance step, menus, chevrons, or
-  per-row status. Mixed labels in Home and library Recommended retain their
-  Showcase/title-artwork rules until edited. Explanations appear outside the rows
-  when focused on TV, and as accessibility hints on both platforms. Accessibility
-  text sizes can stack the name and value instead of shrinking or clipping them.
+  Matching a preset's value manually stays Custom; choosing a preset replaces all
+  overrides. Rows show a name and short value: Library / Metadata providers, or
+  On / Off. Only title-detail artwork and Home/Recommended labels also offer
+  Mixed: metadata backgrounds/logos with library posters, or labels except in
+  Showcase/on series artwork, respectively. Mixed is an explicit, persisted
+  per-view choice independent of the backing preset. TV Select cycles the same
+  supported choices as the mobile menus, with focused explanatory artwork.
+  On iPhone/iPad, a chevron-marked value control opens a native checked menu:
+  opening or dismissing it never changes settings. It checks the effective
+  value, without an extra default/inheritance option. Presets reset the entire
+  configuration, including explicit Mixed choices. The mobile Artwork page
+  places its heading outside the three-preset group and customization in its
+  own group below.
+  Mobile customization pages use inset grouped rows on an opaque theme-aware
+  background, not the ambient gradient. Only the value opens the menu; the view
+  label stays in the row while the menu shows choices without a repeated title.
+  Accessibility hints retain explanations without repetitive row descriptions. Mixed labels in
+  Home and library Recommended retain their Showcase/title-artwork rules until
+  edited. Long values and accessibility text sizes stack instead of clipping.
   Both lists group library tabs under "Libraries". Artwork separates Home's
   Showcase/hero from other Home rows, and library Recommended's hero (TV only)
   from its rows. Browse, Collections, and Playlists have independent choices;
@@ -94,6 +106,10 @@ and the single place caption customization lives.
   Back restores the originating link after removal completes. Stale completions
   are invalidated when changing the selected sidebar page. Left remains available
   for sidebar navigation, RTL mirrors the motion, and Reduce Motion disables it.
+  The slide mask contains horizontal overflow but extends through the vertical
+  safe area, preserving native scroll rendering at the pane's top and bottom.
+  Do not clip the safe-area frame on both axes: it cuts preview cards off above
+  the panel's lower edge.
   Child content chooses its initial native focus target and calls
   `SettingsDetailNavigation.focusArrived()` when that control receives focus.
   Customization lists and their inset contextual cards occupy separate regions.
@@ -109,8 +125,8 @@ and the single place caption customization lives.
   are not promised a title-level source replacement. Keep the card and viewport
   stable as focus or values change, with no extra focus stop or content behind
   the card. A smooth 40-point bottom fade and matching scroll clearance keep focused
-  rows above the fade. Lists without help reserve no footer. Pane-level transition clipping
-  remains. Artwork values use "Library" and "Metadata providers", with "Mixed" for
+  rows above the fade. Lists without help reserve no footer. Horizontal pane-level
+  transition clipping remains. Artwork values use "Library" and "Metadata providers", with "Mixed" for
   Recommended title details (metadata-provider heroes and library-first related posters); narrow/mobile
   and accessibility layouts stack the complete value rather than abbreviating it.
 - **Profile Seerr setup uses page gutters, not artwork padding.** On iPhone/iPad,
