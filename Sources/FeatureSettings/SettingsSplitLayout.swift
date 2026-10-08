@@ -1,7 +1,6 @@
 #if canImport(SwiftUI)
 import SwiftUI
 import CoreUI
-import Observation
 
 /// Shared metrics for the Settings detail panes so spacing is consistent (and
 /// tunable in one place) across every feature form.
@@ -366,8 +365,12 @@ struct SettingsSplitLayout: View {
         Group {
             if let row = selectedRow {
                 if let subpage = row.subpage {
-                    SettingsNavigableDetail(row: row, subpage: subpage, navigation: detailNavigation)
-                        .id(row.id)
+                    SettingsDetailPages(navigation: detailNavigation) {
+                        SettingsDetailContent(row: row)
+                    } detail: {
+                        subpage.content()
+                    }
+                    .id(row.id)
                 } else {
                     SettingsDetailContent(row: row)
                 }
@@ -403,97 +406,6 @@ struct SettingsDetailSubpage {
 
     init<Content: View>(@ViewBuilder content: @escaping () -> Content) {
         self.content = { AnyView(content()) }
-    }
-}
-
-@MainActor
-@Observable
-final class SettingsDetailNavigation {
-    private(set) var isPresented = false
-    private(set) var awaitingFocus = false
-    private(set) var returnFocusGeneration = 0
-    private var transitionGeneration = 0
-
-    func push() {
-        transitionGeneration += 1
-        awaitingFocus = true
-        isPresented = true
-    }
-
-    func pop(animated: Bool) {
-        transitionGeneration += 1
-        let generation = transitionGeneration
-        awaitingFocus = true
-        withAnimation(animated ? .easeInOut(duration: 0.2) : nil, completionCriteria: .removed) {
-            isPresented = false
-        } completion: {
-            guard self.transitionGeneration == generation else { return }
-            self.returnFocusGeneration += 1
-        }
-    }
-
-    func focusArrived() { awaitingFocus = false }
-
-    func reset() {
-        transitionGeneration += 1
-        isPresented = false
-        awaitingFocus = false
-        returnFocusGeneration = 0
-    }
-}
-
-private struct SettingsNavigableDetail: View {
-    let row: SettingsSplitRow
-    let subpage: SettingsDetailSubpage
-    let navigation: SettingsDetailNavigation
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var rootFocusScope
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            SettingsDetailContent(row: row)
-                .tvOSFocusScope(rootFocusScope)
-                .environment(\.settingsDetailRootFocusScope, rootFocusScope)
-                .environment(\.settingsDetailRootEnabled, isEnabled)
-                .opacity(navigation.isPresented ? 0 : 1)
-                .environment(\.isEnabled, isEnabled && !navigation.isPresented && !navigation.awaitingFocus)
-                .allowsHitTesting(!navigation.isPresented)
-                .accessibilityHidden(navigation.isPresented)
-                // A fading-in root cannot receive the returning native focus yet.
-                .animation(nil, value: navigation.isPresented)
-            if navigation.isPresented {
-                subpage.content()
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                    #if os(tvOS)
-                    .onExitCommand {
-                        navigation.pop(animated: !reduceMotion)
-                    }
-                    #endif
-            }
-        }
-        .environment(navigation)
-        .clipped()
-    }
-}
-
-private struct SettingsDetailRootFocusScopeKey: EnvironmentKey {
-    static let defaultValue: Namespace.ID? = nil
-}
-
-private struct SettingsDetailRootEnabledKey: EnvironmentKey {
-    static let defaultValue = true
-}
-
-extension EnvironmentValues {
-    var settingsDetailRootEnabled: Bool {
-        get { self[SettingsDetailRootEnabledKey.self] }
-        set { self[SettingsDetailRootEnabledKey.self] = newValue }
-    }
-
-    var settingsDetailRootFocusScope: Namespace.ID? {
-        get { self[SettingsDetailRootFocusScopeKey.self] }
-        set { self[SettingsDetailRootFocusScopeKey.self] = newValue }
     }
 }
 

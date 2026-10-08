@@ -78,29 +78,29 @@ struct ArtworkAreaChoices: View {
         ViewCustomizationRow(
             id: "artwork-view-\(area.rawValue)",
             title: area.displayName,
-            value: settings.preference(in: area).summary,
-            isCustomized: settings.overrides[area] != nil,
-            choices: [ArtworkOverride.library, .online].map { option in
-                ViewCustomizationChoice(
-                    id: "artwork-view-\(area.rawValue)-\(option.rawValue)",
-                    title: option.displayName,
-                    isSelected: settings.overrides[area] == (option == .library ? .library : .online)
-                ) {
-                    settings.setOverride(option, for: area)
-                }
-            }
+            value: settings.customizationValue(in: area),
+            isCustomized: settings.overrides[area] != nil
         ) {
-            settings.setOverride(.automatic, for: area)
+            settings.cycleCustomization(in: area)
         }
     }
 }
 
-private extension ArtworkPreference {
-    var summary: LocalizedStringResource {
-        switch self {
-        case .recommended: "Recommended"
-        case .library: "Library artwork"
-        case .online: "Metadata providers"
+extension ArtworkSettings {
+    func customizationValue(in area: ArtworkArea) -> LocalizedStringResource {
+        if preference(in: area) == .recommended, area == .details {
+            return "Library artwork; alternate backgrounds"
+        }
+        return prefersOnlineArtwork(in: area) ? "Metadata providers" : "Library artwork"
+    }
+
+    mutating func cycleCustomization(in area: ArtworkArea) {
+        let inherited: ArtworkOverride = inheritedPreference(in: area) == .online ? .online : .library
+        let opposite: ArtworkOverride = inherited == .online ? .library : .online
+        switch override(for: area) {
+        case .automatic: setOverride(opposite, for: area)
+        case opposite: setOverride(inherited, for: area)
+        default: setOverride(.automatic, for: area)
         }
     }
 }

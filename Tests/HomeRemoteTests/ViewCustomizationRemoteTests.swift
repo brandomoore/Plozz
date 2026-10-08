@@ -7,7 +7,7 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testArtworkChildPageMenusResetAndBackPreserveSidebarAndFocus() throws {
+    func testArtworkCyclesSourcesAndInheritanceWithoutLeavingTheRow() throws {
         let app = launch()
         defer { app.terminate() }
         let sidebar = app.buttons["settings-master-artwork"]
@@ -24,28 +24,16 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         XCTAssertTrue(waitUntil { self.hasFocus(app.buttons["artwork-view-home"]) }, app.debugDescription)
         XCTAssertEqual(sidebar.frame, originalFrame)
         XCTAssertFalse(app.buttons["artwork-preset-online"].exists)
-        XCTAssertEqual(browse.value as? String, "Metadata providers")
+        XCTAssertEqual(browse.value as? String, "Metadata providers, following main setting")
         focus(browse, in: app)
         capture(app, "artwork-flat-child-page")
-        XCUIRemote.shared.press(.select)
-        let library = menuItem("artwork-view-browse-library", in: app)
-        XCTAssertTrue(library.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertFalse(menuItem("artwork-view-browse-reset", in: app).exists)
-        capture(app, "artwork-source-chooser")
-        XCUIRemote.shared.press(.menu)
-        XCTAssertTrue(waitUntil { self.hasFocus(browse) }, app.debugDescription)
-        XCTAssertEqual(browse.value as? String, "Metadata providers")
-
-        XCUIRemote.shared.press(.select)
-        focus(library, in: app, direction: .up)
-        XCUIRemote.shared.press(.select)
-        XCTAssertTrue(waitUntil { self.hasFocus(browse) && (browse.value as? String) == "Library artwork, customized" },
-                      app.debugDescription)
-        XCUIRemote.shared.press(.select)
-        let providers = menuItem("artwork-view-browse-online", in: app)
-        focus(providers, in: app)
-        XCUIRemote.shared.press(.select)
-        XCTAssertTrue(waitUntil { self.hasFocus(browse) && (browse.value as? String) == "Metadata providers, customized" })
+        for _ in 0..<2 {
+            cycle(browse, expecting: "Library artwork, customized")
+            cycle(browse, expecting: "Metadata providers, customized")
+            cycle(browse, expecting: "Metadata providers, following main setting")
+        }
+        cycle(browse, expecting: "Library artwork, customized")
+        cycle(browse, expecting: "Metadata providers, customized")
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(waitUntil { self.hasFocus(customize) }, app.debugDescription)
         XCTAssertTrue(customize.label.contains("1 customized"))
@@ -62,13 +50,9 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         XCTAssertEqual(sidebar.frame, originalFrame)
         XCUIRemote.shared.press(.right)
         focus(browse, in: app)
-        XCUIRemote.shared.press(.select)
-        let reset = menuItem("artwork-view-browse-reset", in: app)
-        focus(reset, in: app)
-        capture(app, "artwork-separated-customization-reset")
-        XCUIRemote.shared.press(.select)
-        XCTAssertTrue(waitUntil { self.hasFocus(browse) && (browse.value as? String) == "Library artwork" },
-                      app.debugDescription)
+        cycle(browse, expecting: "Library artwork, customized")
+        cycle(browse, expecting: "Library artwork, following main setting")
+        capture(app, "artwork-cycled-to-main-setting")
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(waitUntil {
             customize.exists && app.buttons["artwork-preset-online"].isEnabled
@@ -82,7 +66,7 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         XCTAssertTrue(browse.waitForExistence(timeout: 5), app.debugDescription)
     }
 
-    func testLabelChildPageUsesTheSameFlatChooserAndReturnPath() {
+    func testLabelsCycleValuesAndInheritanceWithoutLeavingTheRow() {
         let app = launch(labels: true)
         defer { app.terminate() }
         let sidebar = app.buttons["settings-master-cards"]
@@ -96,18 +80,16 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         let home = app.buttons["card-label-view-home"]
         XCTAssertTrue(home.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(sidebar.frame, originalFrame)
-        XCTAssertEqual(home.value as? String, "App default")
+        let inherited = "Labels except Showcase and series artwork, following main setting"
+        XCTAssertEqual(home.value as? String, inherited)
         XCTAssertTrue(waitUntil { self.hasFocus(home) }, app.debugDescription)
-        XCUIRemote.shared.press(.select)
-        let hidden = menuItem("card-label-view-home-hide", in: app)
-        focus(hidden, in: app)
-        XCUIRemote.shared.press(.select)
-        XCTAssertTrue(waitUntil { self.hasFocus(home) && (home.value as? String) == "No labels, customized" })
+        cycle(home, expecting: "No labels, customized")
         capture(app, "labels-flat-child-page")
-        XCUIRemote.shared.press(.select)
-        focus(menuItem("card-label-view-home-reset", in: app), in: app)
-        XCUIRemote.shared.press(.select)
-        XCTAssertTrue(waitUntil { self.hasFocus(home) && (home.value as? String) == "App default" })
+        cycle(home, expecting: "Labels, customized")
+        cycle(home, expecting: inherited)
+        cycle(home, expecting: "No labels, customized")
+        cycle(home, expecting: "Labels, customized")
+        cycle(home, expecting: inherited)
         focus(app.buttons["view-customization-back"], in: app, direction: .up)
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(waitUntil {
@@ -169,8 +151,10 @@ final class ViewCustomizationRemoteTests: XCTestCase {
             .allElementsBoundByIndex.contains(where: \.hasFocus))
     }
 
-    private func menuItem(_ id: String, in app: XCUIApplication) -> XCUIElement {
-        app.cells.containing(.any, identifier: id).firstMatch
+    private func cycle(_ row: XCUIElement, expecting value: String) {
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(waitUntil { self.hasFocus(row) && (row.value as? String) == value },
+                      "Repeated Select must update the same focused row to \(value)")
     }
 
     private func waitUntil(_ condition: @escaping () -> Bool) -> Bool {

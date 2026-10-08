@@ -60,10 +60,12 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             settings: settings
         )) { window in
             let initial = try await self.capture(window, name: "labels-browse-inherited", includeMaster: true)
-            XCTAssertTrue(initial.contains("App default"), initial)
+            XCTAssertTrue(initial.contains("Labels"), initial)
+            XCTAssertTrue(initial.contains("Main setting"), initial)
+            XCTAssertFalse(initial.contains("App default"), initial)
             XCTAssertFalse(initial.contains("Use default"), initial)
-            XCTAssertTrue(initial.contains("Libraries"), initial)
-            XCTAssertTrue(initial.contains("Other views"), initial)
+            XCTAssertTrue(initial.uppercased().contains("LIBRARIES"), initial)
+            XCTAssertTrue(initial.uppercased().contains("OTHER VIEWS"), initial)
             XCTAssertFalse(initial.contains("No labels"), initial)
             cards.captions.setOverride(.show, for: .browse)
             cards.captions.preference = .hide
@@ -146,7 +148,9 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         let cards = makeCards(defaults: defaults)
         try await withScreen(cards: cards, area: .browse) { window in
             let inherited = try await self.capture(window, name: "artwork-browse-use-preset")
-            XCTAssertTrue(inherited.contains("Recommended"), inherited)
+            XCTAssertTrue(inherited.contains("Library artwork"), inherited)
+            XCTAssertTrue(inherited.contains("Main setting"), inherited)
+            XCTAssertFalse(inherited.contains("Recommended"), inherited)
             XCTAssertFalse(inherited.contains("Use default"), inherited)
             XCTAssertFalse(inherited.contains("without text"), inherited)
             XCTAssertFalse(inherited.contains("Continue Watching"), inherited)
@@ -166,14 +170,16 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         }
     }
 
-    func testContinueWatchingShowsTheMainPolicyRatherThanAnExplicitSource() async throws {
+    func testContinueWatchingShowsItsResolvedSourceAndInheritedStatus() async throws {
         let suite = "ArtworkContinueWatchingHosted.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let cards = makeCards(defaults: defaults)
         try await withScreen(cards: cards, area: .continueWatching) { window in
             let text = try await self.capture(window, name: "artwork-continue-watching")
-            XCTAssertTrue(text.contains("Recommended"), text)
+            XCTAssertTrue(text.contains("Metadata providers"), text)
+            XCTAssertTrue(text.contains("Main setting"), text)
+            XCTAssertFalse(text.contains("Recommended"), text)
             XCTAssertFalse(text.contains("Custom"), text)
             XCTAssertTrue(cards.artwork.prefersTextlessArtwork(in: .continueWatching))
         }

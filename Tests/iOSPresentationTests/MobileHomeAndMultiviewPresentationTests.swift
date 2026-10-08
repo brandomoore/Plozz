@@ -420,7 +420,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     if page {
                         XCTAssertTrue(copy.uppercased().contains("BROWSE"), copy)
                         if typeSize.isAccessibilitySize {
-                            let label = try textFrame("default", observations: observations, size: image.size)
+                            let label = try textFrame("Labels", observations: observations, size: image.size)
                             XCTAssertGreaterThan(label.minX, 0)
                             XCTAssertLessThan(label.maxX, image.size.width)
                         }
@@ -430,7 +430,9 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                         XCTAssertTrue(copy.contains("Customize") && copy.contains("by view"), copy)
                     }
                     if page {
-                        XCTAssertTrue(copy.contains("App default"), copy)
+                        XCTAssertTrue(copy.contains("Labels"), copy)
+                        XCTAssertTrue(copy.contains("Main setting"), copy)
+                        XCTAssertFalse(copy.contains("App default"), copy)
                         XCTAssertFalse(copy.contains("Use default"), copy)
                         XCTAssertFalse(copy.contains("No labels"), copy)
                     }

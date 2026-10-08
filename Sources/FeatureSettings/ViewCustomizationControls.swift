@@ -62,62 +62,10 @@ struct ViewPreferenceChoiceRow: View {
 struct ViewCustomizationLink<Destination: View>: View {
     let count: Int
     @ViewBuilder var destination: () -> Destination
-    @Environment(SettingsDetailNavigation.self) private var detailNavigation: SettingsDetailNavigation?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.settingsDetailRootFocusScope) private var rootFocusScope
-    @Environment(\.settingsDetailRootEnabled) private var rootEnabled
-    #if os(tvOS)
-    @Environment(\.resetFocus) private var resetFocus
-    #endif
-    @FocusState private var isFocused: Bool
 
     var body: some View {
-        Group {
-            if let detailNavigation {
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                        detailNavigation.push()
-                    }
-                } label: {
-                    ViewCustomizationLinkLabel(count: count)
-                }
-                .focused($isFocused)
-                .modifier(SettingsDetailReturnFocus())
-                .environment(\.isEnabled, rootEnabled && !detailNavigation.isPresented)
-            } else {
-                NavigationLink(destination: destination) {
-                    ViewCustomizationLinkLabel(count: count)
-                }
-                .focused($isFocused)
-            }
-        }
-        .onChange(of: isFocused) { _, focused in
-            if focused { detailNavigation?.focusArrived() }
-        }
-        .task(id: detailNavigation?.returnFocusGeneration) {
-            guard let detailNavigation, detailNavigation.returnFocusGeneration > 0 else { return }
-            isFocused = false
-            await Task.yield()
-            if !Task.isCancelled, !detailNavigation.isPresented {
-                isFocused = true
-                #if os(tvOS)
-                if let rootFocusScope { resetFocus(in: rootFocusScope) }
-                #endif
-            }
-        }
-    }
-}
-
-private struct SettingsDetailReturnFocus: ViewModifier {
-    @Environment(SettingsDetailNavigation.self) private var navigation: SettingsDetailNavigation?
-    @Environment(\.settingsDetailRootFocusScope) private var scope
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if let scope {
-            content.tvOSPrefersDefaultFocus(navigation?.awaitingFocus == true, in: scope)
-        } else {
-            content
+        SettingsDetailLink(destination: destination) {
+            ViewCustomizationLinkLabel(count: count)
         }
     }
 }
@@ -199,55 +147,27 @@ struct ViewCustomizationList<Content: View>: View {
     }
 }
 
-struct ViewCustomizationChoice: Identifiable {
-    let id: String
-    let title: LocalizedStringResource
-    let isSelected: Bool
-    let action: () -> Void
-}
-
 struct ViewCustomizationRow: View {
     let id: String
     let title: LocalizedStringResource
     let value: LocalizedStringResource
     let isCustomized: Bool
-    let choices: [ViewCustomizationChoice]
-    let reset: () -> Void
+    let cycle: () -> Void
 
     var body: some View {
-        Menu {
-            Section {
-                ForEach(choices) { choice in
-                    Button(action: choice.action) {
-                        if choice.isSelected {
-                            Label {
-                                Text(choice.title)
-                            } icon: {
-                                Image(systemName: "checkmark")
-                            }
-                        } else {
-                            Text(choice.title)
-                        }
-                    }
-                    .accessibilityIdentifier(choice.id)
-                }
-            }
-            if isCustomized {
-                Section {
-                    Button("Remove customization", action: reset)
-                        .accessibilityIdentifier("\(id)-reset")
-                }
-            }
-        } label: {
+        Button(action: cycle) {
             ViewCustomizationRowLabel(title: title, value: value, isCustomized: isCustomized)
         }
         #if os(tvOS)
         .buttonStyle(SettingsFocusButtonStyle())
         #else
-        .tint(.primary)
+        .buttonStyle(.plain)
         #endif
         .accessibilityLabel(Text(title))
-        .accessibilityValue(isCustomized ? Text("\(Text(value)), customized") : Text(value))
+        .accessibilityValue(isCustomized
+            ? Text("\(Text(value)), customized")
+            : Text("\(Text(value)), following main setting"))
+        .accessibilityHint(Text("Select to cycle through choices."))
         .accessibilityIdentifier(id)
         .modifier(ViewCustomizationRowFocus(id: id))
     }
@@ -290,18 +210,21 @@ private struct ViewCustomizationRowLabel: View {
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
                 : AnyLayout(HStackLayout(spacing: 20))
             layout {
-                Text(title).font(.body.weight(.medium))
+                Text(title)
+                    .font(.body.weight(.medium))
+                    .multilineTextAlignment(.leading)
                 if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 12) }
                 VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing, spacing: 4) {
                     Text(value)
                         .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
-                    if isCustomized { Text("Custom").font(.caption) }
+                    if isCustomized {
+                        Text("Custom").font(.caption)
+                    } else {
+                        Text("Main setting").font(.caption)
+                    }
                 }
                 .settingsRowSecondary()
             }
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .accessibilityHidden(true)
         }
         .frame(minHeight: 44)
         #if os(tvOS)

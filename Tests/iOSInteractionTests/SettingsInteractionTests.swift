@@ -205,16 +205,17 @@ final class SettingsInteractionTests: XCTestCase {
         customization.tap()
         let home = app.buttons["card-label-view-home"]
         XCTAssertTrue(home.waitForExistence(timeout: 3))
-        XCTAssertEqual(home.value as? String, "Labels")
-        chooseCustomization("No labels", for: home)
+        XCTAssertEqual(home.value as? String, "Labels, following main setting")
+        cycleCustomization(home, expecting: "No labels, customized")
         XCTAssertEqual(home.value as? String, "No labels, customized")
         let browse = app.buttons["card-label-view-browse"]
-        chooseCustomization("Labels", for: browse)
+        cycleCustomization(browse, expecting: "No labels, customized")
+        cycleCustomization(browse, expecting: "Labels, customized")
         XCTAssertEqual(browse.value as? String, "Labels, customized")
         let episodes = app.buttons["card-label-view-episodes"]
-        chooseCustomization("No labels", for: episodes)
+        cycleCustomization(episodes, expecting: "No labels, customized")
         let filmography = app.buttons["card-label-view-filmography"]
-        chooseCustomization("No labels", for: filmography)
+        cycleCustomization(filmography, expecting: "No labels, customized")
         app.navigationBars.buttons.firstMatch.tap()
         let recommended = app.buttons["card-labels-recommended"]
         reveal(recommended, towardTop: true)
@@ -231,15 +232,15 @@ final class SettingsInteractionTests: XCTestCase {
         reveal(filmography)
         XCTAssertEqual(filmography.value as? String, "No labels, customized")
         reveal(home, towardTop: true)
-        chooseCustomization("Remove customization", for: home)
-        XCTAssertEqual(home.value as? String, "App default")
+        cycleCustomization(home, expecting: "Labels, customized")
+        cycleCustomization(home, expecting: "Labels except Showcase and series artwork, following main setting")
         XCTAssertEqual(browse.value as? String, "Labels, customized")
         let reset = app.buttons["card-label-remove-customizations"]
         reveal(reset)
         reset.tap()
         XCTAssertFalse(reset.exists)
         reveal(browse, towardTop: true)
-        XCTAssertEqual(browse.value as? String, "App default")
+        XCTAssertEqual(browse.value as? String, "Labels, following main setting")
         capture("independent-caption-overrides")
     }
 
@@ -255,19 +256,18 @@ final class SettingsInteractionTests: XCTestCase {
         customize.tap()
         let browse = app.buttons["artwork-view-browse"]
         XCTAssertTrue(browse.waitForExistence(timeout: 3))
-        XCTAssertEqual(browse.value as? String, "Metadata providers")
-        browse.tap()
-        XCTAssertTrue(app.buttons["Prefer my library's artwork"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.buttons["Remove customization"].exists)
-        capture("artwork-source-chooser")
-        app.navigationBars["Artwork by view"].tap()
-        XCTAssertEqual(browse.value as? String, "Metadata providers")
-        chooseCustomization("Prefer my library's artwork", for: browse)
-        XCTAssertEqual(browse.value as? String, "Library artwork, customized")
-        chooseCustomization("Prefer artwork from metadata providers", for: browse)
-        XCTAssertEqual(browse.value as? String, "Metadata providers, customized")
+        XCTAssertEqual(browse.value as? String, "Metadata providers, following main setting")
+        for _ in 0..<2 {
+            cycleCustomization(browse, expecting: "Library artwork, customized")
+            cycleCustomization(browse, expecting: "Metadata providers, customized")
+            cycleCustomization(browse, expecting: "Metadata providers, following main setting")
+        }
+        cycleCustomization(browse, expecting: "Library artwork, customized")
+        cycleCustomization(browse, expecting: "Metadata providers, customized")
         let downloads = app.buttons["artwork-view-downloads"]
-        chooseCustomization("Prefer my library's artwork", for: downloads)
+        reveal(downloads, fullyVisible: true)
+        XCTAssertEqual(downloads.value as? String, "Metadata providers, following main setting")
+        cycleCustomization(downloads, expecting: "Library artwork, customized")
         app.navigationBars.buttons.firstMatch.tap()
         let library = app.buttons["artwork-preset-library"]
         reveal(library, towardTop: true)
@@ -275,20 +275,18 @@ final class SettingsInteractionTests: XCTestCase {
         reveal(customize)
         customize.tap()
         XCTAssertEqual(browse.value as? String, "Metadata providers, customized")
-        chooseCustomization("Remove customization", for: browse)
-        XCTAssertEqual(browse.value as? String, "Library artwork")
+        cycleCustomization(browse, expecting: "Library artwork, customized")
+        cycleCustomization(browse, expecting: "Library artwork, following main setting")
         reveal(downloads)
         XCTAssertEqual(downloads.value as? String, "Library artwork, customized")
         capture("artwork-flat-customizations")
     }
 
-    private func chooseCustomization(_ choice: String, for row: XCUIElement) {
+    private func cycleCustomization(_ row: XCUIElement, expecting value: String) {
         reveal(row, fullyVisible: true)
         row.tap()
-        let option = app.buttons[choice]
-        XCTAssertTrue(option.waitForExistence(timeout: 3), app.debugDescription)
-        option.tap()
-        XCTAssertTrue(row.waitForExistence(timeout: 3))
+        XCTAssertTrue(row.waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertEqual(row.value as? String, value, app.debugDescription)
     }
 
     func testSettingsSectionsOpenTheirOwnDestinations() {

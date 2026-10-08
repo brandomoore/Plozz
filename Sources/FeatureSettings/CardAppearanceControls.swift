@@ -179,28 +179,27 @@ struct CardCaptionViewChoices: View {
         ViewCustomizationRow(
             id: "card-label-view-\(view.rawValue)",
             title: view.displayName,
-            value: summary,
-            isCustomized: settings.overrides[view] != nil,
-            choices: [CardCaptionOverride.show, .hide].map { option in
-                ViewCustomizationChoice(
-                    id: "card-label-view-\(view.rawValue)-\(option.rawValue)",
-                    title: option.displayName,
-                    isSelected: settings.override(for: view) == option
-                ) {
-                    settings.setOverride(option, for: view)
-                }
-            }
-        ) { settings.setOverride(.automatic, for: view) }
+            value: settings.customizationValue(in: view),
+            isCustomized: settings.overrides[view] != nil
+        ) { settings.cycleCustomization(in: view) }
+    }
+}
+
+extension CardCaptionSettings {
+    func customizationValue(in view: CardCaptionView) -> LocalizedStringResource {
+        if preference == .recommended, overrides[view] == nil, view == .home {
+            return "Labels except Showcase and series artwork"
+        }
+        return showsLabels(in: view) ? CardCaptionOverride.show.displayName : CardCaptionOverride.hide.displayName
     }
 
-    private var summary: LocalizedStringResource {
-        if let showsLabels = settings.overrides[view] {
-            return showsLabels ? CardCaptionOverride.show.displayName : CardCaptionOverride.hide.displayName
-        }
-        switch settings.preference {
-        case .recommended: return settings.preference.displayName
-        case .show: return CardCaptionOverride.show.displayName
-        case .hide: return CardCaptionOverride.hide.displayName
+    mutating func cycleCustomization(in view: CardCaptionView) {
+        let inherited: CardCaptionOverride = inheritedShowsLabels(in: view) ? .show : .hide
+        let opposite: CardCaptionOverride = inherited == .show ? .hide : .show
+        switch override(for: view) {
+        case .automatic: setOverride(opposite, for: view)
+        case opposite: setOverride(inherited, for: view)
+        default: setOverride(.automatic, for: view)
         }
     }
 }

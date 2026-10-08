@@ -21,8 +21,8 @@ fallback when the user's server has no attached trailer.
   navigation badges. Continue Watching geometry and library grid columns are unchanged.
 - **Card labels** — Appearance > Cards owns profile-scoped App default,
   Show labels everywhere, and Hide labels everywhere presets, with
-  Labels / No labels exceptions selected from a flat list of experiences.
-  Remove customization makes a view follow the main preference again.
+  Labels / No labels exceptions cycled directly in a flat list of experiences.
+  Keep selecting a row to cycle back to following the main preference.
   App default shows labels during ordinary browsing and on detail-page episodes;
   it hides them in Showcase and on Continue Watching cards that carry a title on
   their artwork. Manual presets apply to all media captions, including those cards.

@@ -54,11 +54,14 @@ and the single place caption customization lives.
 
 ## Invariants
 
-- **Artwork and label customization.** Both use a flat list of views and native
-  two-choice menus. Choosing a source or label mode immediately customizes that
-  view, even when it matches the main preference. A separate "Remove customization"
-  menu action resumes following the main preference; inheritance is not a third
-  choice. Rows show the current policy and mark explicit choices "Custom".
+- **Artwork and label customization.** Both use a flat list of click-to-cycle rows,
+  without menus or navigation chevrons. Repeated Select/tap cycles from following
+  the main preference to the opposite value, then the matching explicit value,
+  then back to following the main preference. The matching explicit value remains
+  a customization when the main preference changes. Rows show concrete source or
+  label behavior, including the default Home caption exceptions and alternate
+  Details backgrounds, rather than "Recommended" or "App default". The secondary
+  "Main setting"/"Custom" status distinguishes inheritance from an explicit choice.
   "Customize by view" only shows a count when customizations exist. The label list
   groups library tabs under "Libraries" on both platforms.
   Labels retain equal-height visual presets: App default uses a single split illustration with
@@ -66,13 +69,20 @@ and the single place caption customization lives.
   govern all media captions; App default owns Showcase and title-artwork exceptions.
   Explicit per-view choices, including Episodes, override any preset and survive
   preset changes. Library navigation names and on-artwork information are not captions.
-- **Scoped TV detail navigation.** Artwork and Cards opt into a right-pane subpage;
-  the Appearance sidebar stays in place. The root remains mounted to preserve its
-  state and scroll position, but is hidden and disabled while the subpage is open.
-  Entry transfers native focus to the first row; Back restores the originating
-  link after the outgoing transition is removed. Stale transition completions are
-  invalidated when changing the selected sidebar page. Left remains available for
-  sidebar navigation, and Reduce Motion suppresses the transition animation.
+- **Scoped TV detail navigation.** `SettingsDetailPages` and `SettingsDetailLink`
+  in `SettingsDetailNavigation.swift` are reusable across settings, independent of
+  artwork and labels. A `SettingsSplitRow` opts in with `SettingsDetailSubpage`;
+  use `SettingsDetailLink` inside its root content to open that child. Outside a
+  scoped pane, the link uses ordinary navigation. Both pages slide by the pane's
+  full width: the root leaves toward the leading edge as the child enters from
+  the trailing edge, and Back reverses both motions. The root stays mounted to
+  preserve state and scroll position; it becomes ineligible for input while away.
+  The sidebar stays stationary. Entry transfers native focus to the first row;
+  Back restores the originating link after removal completes. Stale completions
+  are invalidated when changing the selected sidebar page. Left remains available
+  for sidebar navigation, RTL mirrors the motion, and Reduce Motion disables it.
+  Child content chooses its initial native focus target and calls
+  `SettingsDetailNavigation.focusArrived()` when that control receives focus.
 - **Mobile Settings is a presentation action.** Its tab or More entry opens
   the drawer over the current page without selecting a replacement destination.
   Keep the active content stack and overflow navigation intact on dismissal;
