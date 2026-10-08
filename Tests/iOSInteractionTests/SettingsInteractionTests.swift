@@ -1,4 +1,5 @@
 import XCTest
+import Vision
 
 @MainActor
 final class SettingsInteractionTests: XCTestCase {
@@ -320,7 +321,7 @@ final class SettingsInteractionTests: XCTestCase {
         capture("artwork-restored-preset")
     }
 
-    func testArtworkMenusWaitForAChoiceAndRestoreOnlyTheirOwnDefault() {
+    func testArtworkMenusWaitForAChoiceAndRestoreOnlyTheirOwnDefault() throws {
         launch()
         app.buttons["appearance-artwork"].tap()
         let recommended = app.buttons["artwork-preset-recommended"]
@@ -331,6 +332,7 @@ final class SettingsInteractionTests: XCTestCase {
         let browse = app.buttons["artwork-view-browse"]
         reveal(browse, fullyVisible: true)
         XCTAssertEqual(browse.value as? String, "Library")
+        let titleFrame = app.staticTexts["artwork-view-browse-title"].frame
         let dismissMenu = app.navigationBars["Artwork by view"]
             .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         browse.tap()
@@ -339,6 +341,7 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(automatic.isSelected, "The menu must check the inherited choice, not a guessed source.")
         XCTAssertTrue(app.buttons["Library"].exists)
         XCTAssertTrue(app.buttons["Metadata providers"].exists)
+        try assertMenuKeepsRowTitle("Browse", in: titleFrame)
         capture("artwork-choice-menu")
         dismissMenu.tap()
         XCTAssertTrue(browse.waitForExistence(timeout: 3))
@@ -363,9 +366,47 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(recommended.isSelected, "Removing the final override must restore the original preset.")
     }
 
+    func testLabelMenuKeepsItsTitleInTheRowWithoutRepeatingIt() throws {
+        launch()
+        app.buttons["appearance-cards"].tap()
+        let customization = app.buttons["card-label-customization"]
+        reveal(customization)
+        customization.tap()
+        let home = app.buttons["card-label-view-home"]
+        XCTAssertTrue(home.waitForExistence(timeout: 3))
+        let titleFrame = app.staticTexts["card-label-view-home-title"].frame
+        home.tap()
+        XCTAssertTrue(app.buttons["Use default"].waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertTrue(app.buttons["Labels"].exists)
+        XCTAssertTrue(app.buttons["No labels"].exists)
+        try assertMenuKeepsRowTitle("Home rows", in: titleFrame)
+        capture("label-choice-menu")
+        app.buttons["No labels"].tap()
+        XCTAssertEqual(home.value as? String, "Off")
+    }
+
+    private func assertMenuKeepsRowTitle(_ title: String, in frame: CGRect) throws {
+        XCTAssertFalse(frame.isEmpty)
+        let image = app.screenshot().image
+        let cgImage = try XCTUnwrap(image.cgImage)
+        let scale = CGFloat(cgImage.width) / image.size.width
+        let crop = try XCTUnwrap(cgImage.cropping(to: CGRect(
+            x: (frame.minX - 2) * scale, y: (frame.minY - 2) * scale,
+            width: (frame.width + 4) * scale, height: (frame.height + 4) * scale
+        )))
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        try VNImageRequestHandler(cgImage: crop).perform([request])
+        let copy = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+        XCTAssertEqual(copy, title, "Opening a value menu must leave the original row title visible.")
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(
+            format: "label == %@ AND identifier == ''", title
+        )).count, 0, "The native menu must not repeat the row title as a header.")
+    }
+
     private func selectCustomization(_ row: XCUIElement, option: String? = nil, expecting value: String) {
         reveal(row, fullyVisible: true)
-        XCTAssertGreaterThanOrEqual(row.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44 - 0.001)
         row.tap()
         let title = option ?? (value == "On" ? "Labels" : value == "Off" ? "No labels" : value)
         let choice = app.buttons[title]

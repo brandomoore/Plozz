@@ -68,8 +68,9 @@ and the single place caption customization lives.
   opening or dismissing it never changes settings. "Use default" removes only
   that row's override; removing the final override restores the original preset.
   Mobile customization pages use inset grouped rows on an opaque theme-aware
-  background, not the ambient gradient. Menus identify the view being edited;
-  accessibility hints retain explanations without repetitive row descriptions. Mixed labels in
+  background, not the ambient gradient. Only the value opens the menu; the view
+  label stays in the row while the menu shows choices without a repeated title.
+  Accessibility hints retain explanations without repetitive row descriptions. Mixed labels in
   Home and library Recommended retain their Showcase/title-artwork rules until
   edited. Long values and accessibility text sizes stack instead of clipping.
   Both lists group library tabs under "Libraries". Artwork separates Home's

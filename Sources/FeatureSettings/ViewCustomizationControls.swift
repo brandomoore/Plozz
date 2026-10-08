@@ -191,28 +191,32 @@ struct ViewCustomizationMenu<Selection: Hashable, Options: View>: View {
     @ViewBuilder var options: () -> Options
 
     var body: some View {
-        Menu {
-            Text(title)
-            Picker(selection: $selection) {
-                options()
+        ViewCustomizationMenuLabel(id: id, title: title) {
+            Menu {
+                Picker(selection: $selection) {
+                    options()
+                } label: {
+                    EmptyView()
+                }
+                .pickerStyle(.inline)
             } label: {
-                Text(title)
+                ViewCustomizationMenuValue(value: value)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
             }
-            .pickerStyle(.inline)
-        } label: {
-            ViewCustomizationMenuLabel(title: title, value: value)
+            .buttonStyle(.borderless)
+            .accessibilityLabel(Text(title))
+            .accessibilityValue(Text(value))
+            .accessibilityHint(Text(detail ?? "Select to change."))
+            .accessibilityIdentifier(id)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(title))
-        .accessibilityValue(Text(value))
-        .accessibilityHint(Text(detail ?? "Select to change."))
-        .accessibilityIdentifier(id)
     }
 }
 
-private struct ViewCustomizationMenuLabel: View {
+private struct ViewCustomizationMenuLabel<Control: View>: View {
+    let id: String
     let title: LocalizedStringResource
-    let value: LocalizedStringResource
+    @ViewBuilder var control: () -> Control
     @Environment(\.themePalette) private var palette
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -223,9 +227,11 @@ private struct ViewCustomizationMenuLabel: View {
             } else {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 16) {
-                        Text(title).fixedSize()
+                        Text(title)
+                            .accessibilityIdentifier("\(id)-title")
+                            .fixedSize()
                         Spacer(minLength: 8)
-                        ViewCustomizationMenuValue(value: value).fixedSize()
+                        control().fixedSize()
                     }
                     stackedLabel
                 }
@@ -236,13 +242,14 @@ private struct ViewCustomizationMenuLabel: View {
         .multilineTextAlignment(.leading)
         .frame(minHeight: 44)
         .padding(.vertical, 4)
-        .contentShape(Rectangle())
+        .accessibilityElement(children: .contain)
     }
 
     private var stackedLabel: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-            ViewCustomizationMenuValue(value: value)
+                .accessibilityIdentifier("\(id)-title")
+            control()
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
