@@ -475,6 +475,7 @@ struct MainTabView: View {
     @State private var resumePrompt: MediaItem?
     @State private var pendingPlaylistOrigin: VideoPlaylistPlaybackOrigin?
     @Environment(\.colorScheme) private var systemColorScheme
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.scenePhase) private var scenePhase
 
     /// The selected root tab, persisted so it survives MainTabView being torn
@@ -1825,6 +1826,9 @@ struct MainTabView: View {
             \.themeMusicAuthenticatedHTTPResolver,
             authenticatedHTTPResolver
         )
+        .onChange(of: artworkPolicy.forArea(.music), initial: true) { _, policy in
+            audioController.updateArtworkPolicy(policy)
+        }
         .onChange(of: audioController.hasActivePlayback, initial: true) { _, active in
             themeMusicController.setBlocked(
                 active || heroTrailerController.isPlaying || isLiveTVDestinationActive

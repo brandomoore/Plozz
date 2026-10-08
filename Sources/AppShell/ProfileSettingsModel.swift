@@ -299,7 +299,8 @@ public final class ProfileSettingsModel {
             cardStyleModel: cardStyleModel ?? CardStyleSettingsModel(
                 store: CardStyleSettingsStore(namespace: ns),
                 focusStore: CardFocusStyleSettingsStore(namespace: ns),
-                captionStore: CardCaptionSettingsStore(namespace: ns)
+                captionStore: CardCaptionSettingsStore(namespace: ns),
+                artworkStore: ArtworkSettingsStore(namespace: ns)
             ),
             watchStatusIndicatorModel: watchStatusIndicatorModel ?? WatchStatusIndicatorSettingsModel(store: WatchStatusIndicatorSettingsStore(namespace: ns)),
             navigationStyleModel: navigationStyleModel ?? NavigationStyleSettingsModel(

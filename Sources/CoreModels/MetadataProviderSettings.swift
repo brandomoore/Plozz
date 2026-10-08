@@ -99,6 +99,15 @@ public struct MetadataProviderSettings: Codable, Equatable, Sendable {
     /// The build-default (empty) override — Recommended with no saved custom list.
     public static let `default` = MetadataProviderSettings()
 
+    public var artworkPolicyIdentity: String {
+        [
+            orderMode.rawValue,
+            preferOnlineArtwork ? "online" : "library",
+            enabledOrder.joined(separator: ","),
+            disabledOrder.joined(separator: ","),
+        ].joined(separator: "|")
+    }
+
     private enum CodingKeys: String, CodingKey {
         // Current schema.
         case orderMode, preferOnlineArtwork, enabledOrder, disabledOrder

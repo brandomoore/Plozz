@@ -46,6 +46,7 @@ struct HeroForegroundRepresentable: UIViewRepresentable {
         context.coordinator.locale = context.environment.locale
         context.coordinator.logoFallbacks = logoFallbacks
         context.coordinator.logoReferences = logoReferences
+        context.coordinator.updateArtworkPolicy(context.environment.plozzArtworkPolicy)
         context.coordinator.configure(width: width, height: height)
         context.coordinator.prepare(neighbours)
         context.coordinator.apply(model, metadataVisible: metadataVisible, backgroundSample: backgroundSample)
@@ -61,6 +62,7 @@ struct HeroForegroundRepresentable: UIViewRepresentable {
         context.coordinator.locale = context.environment.locale
         context.coordinator.logoFallbacks = logoFallbacks
         context.coordinator.logoReferences = logoReferences
+        context.coordinator.updateArtworkPolicy(context.environment.plozzArtworkPolicy)
         context.coordinator.configure(width: width, height: height)
         context.coordinator.prepare(neighbours)
         context.coordinator.apply(model, metadataVisible: metadataVisible, backgroundSample: backgroundSample)
@@ -110,6 +112,16 @@ final class HeroForegroundCoordinator {
     /// case — to resolve the real (series, for an episode) logo on demand.
     var logoFallbacks: [String: @Sendable () async -> URL?] = [:]
     var logoReferences: [String: [ArtworkReference]] = [:]
+    private var artworkPolicy = ArtworkPresentationPolicy(area: .home)
+
+    func updateArtworkPolicy(_ policy: ArtworkPresentationPolicy) {
+        guard artworkPolicy != policy else { return }
+        artworkPolicy = policy
+        cancelLoads()
+        warmedLogos.removeAll()
+        appliedModel = nil
+        generation &+= 1
+    }
 
     func configure(width: CGFloat, height: CGFloat) {
         guard width != configuredWidth || height != configuredHeight else { return }
@@ -192,14 +204,16 @@ final class HeroForegroundCoordinator {
             ?? []
         let fallback = logoFallbacks[id]
         guard !references.isEmpty || fallback != nil else { return }
+        let policy = artworkPolicy
         loadTasks[id] = Task { [weak self] in
             let logo = await HeroUIKitLogoRenderer.render(
                 references: references,
                 asyncFallbackURL: fallback,
-                priority: .userInitiated
+                priority: .userInitiated,
+                prefersOnlineArtwork: policy.prefersOnlineArtwork
             )
             await MainActor.run {
-                guard let self else { return }
+                guard !Task.isCancelled, let self, self.artworkPolicy == policy else { return }
                 self.loadTasks[id] = nil
                 guard let logo else { return }
                 self.warmedLogos[id] = logo

@@ -25,13 +25,13 @@ public struct SkeletonCardView: View {
     public enum Style { case poster, landscape }
 
     private let style: Style
-    /// Mirrors `PosterCardView`'s series-artwork mode, which draws no caption at
-    /// all. The skeleton is deliberately pixel-1:1 with the loaded card, so it has
-    /// to drop the caption too — otherwise Continue Watching visibly shrinks the
-    /// moment real cards replace the placeholders.
+    /// An explicit resolved preference takes precedence over inherited presentation defaults.
     private let captionOverride: Bool?
     @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
-    private var showsCaption: Bool { (captionOverride ?? !captionsHidden) && !showsSeriesArtwork }
+    @Environment(\.plozzCardCaptionsHiddenWithArtworkTitle) private var artworkTitleCaptionsHidden
+    private var showsCaption: Bool {
+        captionOverride ?? !(showsSeriesArtwork ? artworkTitleCaptionsHidden : captionsHidden)
+    }
     /// Mirrors `PosterCardView`'s series-artwork shape: taller than 16:9 (it
     /// reserves a band for its chrome) and narrower to compensate. Kept explicit
     /// rather than inferred from `showsCaption` so the placeholder and the real
@@ -376,8 +376,8 @@ public struct SkeletonCardView: View {
     /// on load) while giving the placeholders soft, fully-rounded edges.
     private func textLines(contentWidth: CGFloat, spacing: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: spacing) {
-            capsuleLine(font: .system(size: metrics.cardTitleFontSize, weight: .semibold), width: max(contentWidth * 0.7, 1), height: (16 * metrics.scale).rounded())
-            capsuleLine(font: .system(size: metrics.cardSubtitleFontSize), width: max(contentWidth * 0.45, 1), height: (13 * metrics.scale).rounded())
+            capsuleLine(font: .system(size: style == .poster ? metrics.posterTitleFontSize : metrics.cardTitleFontSize, weight: .semibold), width: max(contentWidth * 0.7, 1), height: (16 * metrics.scale).rounded())
+            capsuleLine(font: .system(size: style == .poster ? metrics.posterSubtitleFontSize : metrics.cardSubtitleFontSize), width: max(contentWidth * 0.45, 1), height: (13 * metrics.scale).rounded())
         }
     }
 

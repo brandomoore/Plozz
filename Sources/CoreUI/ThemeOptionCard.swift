@@ -275,6 +275,8 @@ public struct PreviewCard<Swatch: View>: View {
     private let accent: Color
     private let compact: Bool
     private let swatchHeight: CGFloat?
+    private let titleLineLimit: Int?
+    private let titleSizeGroup: [LocalizedStringResource]
     private let action: () -> Void
     private let swatch: () -> Swatch
 
@@ -285,6 +287,8 @@ public struct PreviewCard<Swatch: View>: View {
         accent: Color,
         compact: Bool = false,
         swatchHeight: CGFloat? = nil,
+        titleLineLimit: Int? = 1,
+        titleSizeGroup: [LocalizedStringResource] = [],
         action: @escaping () -> Void,
         @ViewBuilder swatch: @escaping () -> Swatch
     ) {
@@ -294,6 +298,8 @@ public struct PreviewCard<Swatch: View>: View {
         self.accent = accent
         self.compact = compact
         self.swatchHeight = swatchHeight
+        self.titleLineLimit = titleLineLimit
+        self.titleSizeGroup = titleSizeGroup
         self.action = action
         self.swatch = swatch
     }
@@ -305,10 +311,19 @@ public struct PreviewCard<Swatch: View>: View {
                     .frame(height: swatchHeight ?? (compact ? 124 : 200))
 
                 VStack(spacing: compact ? 2 : 6) {
-                    Text(title)
-                        .font(compact ? .headline : .title3.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                    ZStack(alignment: .top) {
+                        // Keep related titles the same height without fixed line counts.
+                        ForEach(titleSizeGroup.indices, id: \.self) { index in
+                            Text(titleSizeGroup[index])
+                                .hidden()
+                                .accessibilityHidden(true)
+                        }
+                        Text(title)
+                    }
+                    .font(compact ? .headline : .title3.weight(.semibold))
+                    .lineLimit(titleLineLimit)
+                    .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
                     if !compact, let detail {
                         Text(detail)
                             .font(.footnote)

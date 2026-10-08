@@ -10,6 +10,7 @@ struct AppearanceDetailView: View {
     let librariesScope: ProfileLibrariesScope
     /// Keeps the selected Appearance feature stable while navigation shell changes.
     let settingsNavigation: SettingsNavigationModel
+    var canManageProviders = false
     @Bindable var theme: ThemeSettingsModel
     /// Circadian Mode (night-warming) settings, folded in as sections here — it's
     /// a display concern, so it no longer earns its own top-level row.
@@ -74,9 +75,38 @@ struct AppearanceDetailView: View {
                     CompactDisplaySizePicker(selection: $density.density)
                 },
                 SettingsSplitRow(
+                    id: "artwork",
+                    title: "Artwork",
+                    subpage: SettingsDetailSubpage {
+                        ArtworkCustomizationView(
+                            cards: cardStyle,
+                            continueWatchingShowsSeriesArtwork: librariesScope.homeVisibility.continueWatchingShowsSeriesArtwork
+                        )
+                    }
+                ) {
+                    VStack(alignment: .leading, spacing: 32) {
+                        ArtworkSettingsControls(
+                            cards: cardStyle,
+                            continueWatchingShowsSeriesArtwork: librariesScope.homeVisibility.continueWatchingShowsSeriesArtwork
+                        )
+                        if canManageProviders {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Button(action: settingsNavigation.openMetadataProviders) {
+                                    Label("Metadata Providers (TMDB, TheTVDB…)", systemImage: "globe")
+                                }
+                                .accessibilityIdentifier("artwork-metadata-providers")
+                                Text("Shared by all profiles.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                },
+                SettingsSplitRow(
                     id: "cards",
                     title: "Cards",
                     description: "How media cards look across the app.",
+                    subpage: SettingsDetailSubpage { CardCaptionCustomizationView(cards: cardStyle) }
                 ) {
                     cardsControls
                 },

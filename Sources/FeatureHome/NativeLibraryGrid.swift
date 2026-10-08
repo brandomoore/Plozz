@@ -276,7 +276,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
             lastFocusedIndex = nil
             requestedFocusIndex = nil
             collection.reloadData()
-            collection.setContentOffset(.zero, animated: false)
+            collection.setContentOffset(CGPoint(x: 0, y: -collection.contentInset.top), animated: false)
         } else {
             if previousCount != total {
                 if let lastFocusedIndex, lastFocusedIndex.item >= total {
@@ -302,7 +302,7 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        collection.frame = view.bounds
+        layoutViewport()
         guard view.bounds.width > 0 else { return }
         let metrics = environment.plozzMetrics
         let columns = max(1, metrics.libraryPosterColumns.count)
@@ -331,6 +331,26 @@ final class NativeLibraryGridController: UIViewController, UICollectionViewDataS
         }
         headerHost.view.frame = CGRect(origin: .zero, size: headerSize)
         scheduleViewportReport()
+    }
+
+    private func layoutViewport() {
+        var frame = view.bounds
+        if let focusOwner, view.window != nil, focusOwner.view.window === view.window {
+            let visible = view.convert(focusOwner.view.bounds, from: focusOwner.view)
+            let top = min(frame.minY, visible.minY)
+            let bottom = max(frame.maxY, visible.maxY)
+            frame = CGRect(x: frame.minX, y: top, width: frame.width, height: bottom - top)
+        }
+        let insets = UIEdgeInsets(
+            top: view.bounds.minY - frame.minY, left: 0,
+            bottom: frame.maxY - view.bounds.maxY, right: 0)
+        guard collection.frame != frame || collection.contentInset != insets else { return }
+        let offset = collection.contentOffset.y + collection.contentInset.top
+        // UIKit culls artwork at the viewport edge even with clipping disabled.
+        // Use the full presentation bounds; insets retain the header's initial space.
+        collection.frame = frame
+        collection.contentInset = insets
+        collection.contentOffset = CGPoint(x: collection.contentOffset.x, y: offset - insets.top)
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {

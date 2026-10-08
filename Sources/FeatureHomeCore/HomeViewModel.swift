@@ -912,6 +912,17 @@ public final class HomeViewModel {
         // Apply the same Home-visibility filter so a hidden library's items don't
         // leak into Top Shelf. `content.latest` is the global Recently Added feed
         // in both merged and unmerged mode, so Top Shelf is identical either way.
+        publishCurrentContent()
+    }
+
+    public func publishCurrentContent() {
+        let content: Content
+        switch state {
+        case .loaded(let loaded): content = loaded
+        case .empty: content = Content()
+        default: return
+        }
+        let visibility = currentVisibility()
         let isLibraryVisible: (String) -> Bool = { visibility.isVisible($0) }
         let continueWatching = content.continueWatching.filter { $0.isVisibleOnHome(isLibraryVisible: isLibraryVisible) }
         let latest = content.latest.filter { $0.isVisibleOnHome(isLibraryVisible: isLibraryVisible) }

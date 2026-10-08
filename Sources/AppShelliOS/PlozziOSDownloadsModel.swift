@@ -3,6 +3,7 @@ import CoreModels
 import CoreUI
 import Foundation
 import MediaDownloads
+import MetadataKit
 import MediaTransportCore
 import Observation
 import ProviderSilo
@@ -122,6 +123,8 @@ final class PlozziOSDownloadsModel {
     private let queue: DownloadQueue?
     private let storage: (any DownloadStorageLocating)?
     private let defaults: UserDefaults?
+    @ObservationIgnored
+    private var artworkSettings: @MainActor () -> ArtworkSettings = { .default }
     private let policyKey: String
     private let preferencesKey: String
     private let renditionCapabilitiesKey: String
@@ -150,7 +153,7 @@ final class PlozziOSDownloadsModel {
     private let providerKind: @MainActor (String) -> ProviderKind?
     private let preferredAudioLanguages: @MainActor (MediaItem) -> [String]
     private let resolveArtworkItem: @MainActor (DownloadedMediaRecord) async throws -> MediaItem?
-    private let loadArtwork: @Sendable (MediaItem) async throws -> Data
+    private let loadArtwork: @Sendable (MediaItem, ArtworkPresentationPolicy) async throws -> Data
     @ObservationIgnored
     private var verifiedArtwork: Set<String> = []
     @ObservationIgnored
@@ -183,11 +186,12 @@ final class PlozziOSDownloadsModel {
         providerKind: @escaping @MainActor (String) -> ProviderKind?,
         preferredAudioLanguages:
             @escaping @MainActor (MediaItem) -> [String],
+        artworkSettings: @escaping @MainActor () -> ArtworkSettings = { .default },
         startsActive: Bool = true,
         activityScheduler: (any PlozziOSDownloadActivityScheduling)? = PlozziOSDownloadActivity.systemScheduler(),
         notificationClient: any PlozziOSDownloadNotificationClient = PlozziOSSystemDownloadNotificationClient(),
         resolveArtworkItem: @escaping @MainActor (DownloadedMediaRecord) async throws -> MediaItem? = { _ in nil },
-        loadArtwork: @escaping @Sendable (MediaItem) async throws -> Data = { try await PlozziOSDownloadArtwork.load(for: $0) },
+        loadArtwork: (@Sendable (MediaItem) async throws -> Data)? = nil,
         managedURLResolver:
             @escaping PlozziOSBackgroundHTTPDownloadEngine.URLResolver,
         managedRemoval: (@Sendable (ManagedHTTPDownloadSource) async throws -> Void)? = nil,
@@ -241,8 +245,12 @@ final class PlozziOSDownloadsModel {
         self.policy = policy
         self.providerKind = providerKind
         self.preferredAudioLanguages = preferredAudioLanguages
+        self.artworkSettings = artworkSettings
         self.resolveArtworkItem = resolveArtworkItem
-        self.loadArtwork = loadArtwork
+        self.loadArtwork = { item, policy in
+            if let loadArtwork { return try await loadArtwork(item) }
+            return try await PlozziOSDownloadArtwork.load(for: item, policy: policy)
+        }
         self.allowsCellular = policy.allowsExpensiveNetwork
         self.pausesOnLowDataMode = policy.pausesOnConstrainedNetwork
         self.downloadQuality = policy.quality
@@ -343,7 +351,7 @@ final class PlozziOSDownloadsModel {
         self.providerKind = { _ in nil }
         self.preferredAudioLanguages = { _ in [] }
         self.resolveArtworkItem = { _ in nil }
-        self.loadArtwork = { try await PlozziOSDownloadArtwork.load(for: $0) }
+        self.loadArtwork = { try await PlozziOSDownloadArtwork.load(for: $0, policy: $1) }
         self.allowsCellular = false
         self.pausesOnLowDataMode = true
         self.downloadQuality = .original
@@ -995,6 +1003,22 @@ final class PlozziOSDownloadsModel {
         }
     }
 
+    /// Capture another supplied image before giving up on a new download.
+    /// This does not change detail-page backdrop selection or existing files.
+    static func artworkReferences(
+        for item: MediaItem, policy: ArtworkPresentationPolicy
+    ) -> [ArtworkReference] {
+        PlozziOSDownloadArtwork.references(for: item, policy: policy)
+    }
+
+    static func artworkPlacements(for item: MediaItem) -> [ArtworkPlacement] {
+        PlozziOSDownloadArtwork.placements(for: item)
+    }
+
+    static func artworkLookup(for item: MediaItem, router: ArtworkRouter = .shared) async -> URL? {
+        await PlozziOSDownloadArtwork.lookup(for: item, router: router)
+    }
+
     private func pinArtworkIfAvailable(
         for item: MediaItem? = nil,
         record: DownloadedMediaRecord
@@ -1006,11 +1030,15 @@ final class PlozziOSDownloadsModel {
               !verifiedArtwork.contains(record.identityKey) || artworkURL(for: record) == nil else {
             return
         }
+        let artworkPolicy = ArtworkPresentationPolicy(
+            area: .downloads, settings: artworkSettings(),
+            providers: MetadataProviderSettingsStore().load()
+        )
         let taskID = UUID()
         let task = Task { @MainActor [weak self] in
             _ = await ArtworkSession.warmLimiter.runUnlessCancelled { [weak self] in
                 guard let self else { return }
-                await self.pinArtwork(initialItem: item, record: record)
+                await self.pinArtwork(initialItem: item, record: record, artworkPolicy: artworkPolicy)
             }
             self?.artworkTaskFinished(
                 identityKey: record.identityKey,
@@ -1022,7 +1050,8 @@ final class PlozziOSDownloadsModel {
 
     private func pinArtwork(
         initialItem: MediaItem?,
-        record: DownloadedMediaRecord
+        record: DownloadedMediaRecord,
+        artworkPolicy: ArtworkPresentationPolicy
     ) async {
         guard let storage, let registry else { return }
         let identityKey = record.identityKey
@@ -1038,19 +1067,18 @@ final class PlozziOSDownloadsModel {
             let data: Data
             if let initialItem {
                 do {
-                    data = try await loadArtwork(initialItem)
+                    data = try await loadArtwork(initialItem, artworkPolicy)
                 } catch {
                     try Task.checkCancellation()
                     guard let refreshed = try await resolveArtworkItem(record),
-                          PlozziOSDownloadArtwork.references(for: refreshed)
-                            != PlozziOSDownloadArtwork.references(for: initialItem) else { throw error }
-                    data = try await loadArtwork(refreshed)
+                          refreshed != initialItem else { throw error }
+                    data = try await loadArtwork(refreshed, artworkPolicy)
                 }
             } else {
                 guard let item = try await resolveArtworkItem(record) else {
                     throw PlozziOSDownloadArtwork.Failure.unavailable
                 }
-                data = try await loadArtwork(item)
+                data = try await loadArtwork(item, artworkPolicy)
             }
             let valid = await Task.detached(priority: .utility) {
                 PlozziOSDownloadArtwork.isValid(data)

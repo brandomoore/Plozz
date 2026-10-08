@@ -17,6 +17,8 @@ import CoreUI
 struct SettingsCheckableRow: View {
     let title: Text
     var subtitle: Text? = nil
+    var titleLineLimit: Int? = 1
+    var subtitleLineLimit: Int? = 2
     var icon: String? = nil
     let isChecked: Bool
     /// When false the row is dimmed and pulled out of the focus order (can't be
@@ -58,12 +60,12 @@ struct SettingsCheckableRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     title
                         .font(titleFont)
-                        .lineLimit(1)
+                        .lineLimit(titleLineLimit)
                     if let subtitle {
                         subtitle
                             .font(.footnote)
                             .settingsRowSecondary()
-                            .lineLimit(2)
+                            .lineLimit(subtitleLineLimit)
                     }
                 }
                 Spacer(minLength: rowSpacing)

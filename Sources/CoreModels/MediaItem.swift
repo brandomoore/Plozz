@@ -144,6 +144,43 @@ public struct MediaItemSourceIdentity: Hashable, Sendable {
     }
 }
 
+/// Metadata-only identity borrowed from a structurally recognized catalog title.
+/// It contains neither artwork URLs nor a playable provider route.
+public struct ArtworkLookupSubject: Codable, Hashable, Sendable {
+    public let id: String
+    public let kind: MediaItemKind
+    public let title: String // l10n:content - catalog media title, not application copy
+    public let parentTitle: String?
+    public let productionYear: Int?
+    public let seasonNumber: Int?
+    public let episodeNumber: Int?
+    public let seriesID: String?
+    public let providerIDs: [String: String]
+    public let genres: [String]
+    public let tags: [String]
+    public let allowsTitleBasedMetadataMatching: Bool
+
+    public init?(catalog item: MediaItem) {
+        guard [.movie, .video, .series, .season, .episode].contains(item.kind) else { return nil }
+        id = item.id
+        kind = item.kind
+        title = item.title
+        parentTitle = item.parentTitle
+        productionYear = item.productionYear
+        seasonNumber = item.seasonNumber
+        episodeNumber = item.episodeNumber
+        seriesID = item.seriesID
+        providerIDs = item.providerIDs
+        genres = item.genres
+        tags = item.tags
+        allowsTitleBasedMetadataMatching = item.allowsTitleBasedMetadataMatching
+    }
+
+    fileprivate var isSupported: Bool {
+        [.movie, .video, .series, .season, .episode].contains(kind)
+    }
+}
+
 /// A provider-agnostic media item.
 ///
 /// Providers map their native item shapes onto this type so feature code never
@@ -156,6 +193,9 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// Provider-owned folder route for inspecting this title's original files.
     /// Addressed on `sourceAccountID`, independently of playback source selection.
     public var fileBrowserContainerID: String?
+    /// Catalog-qualified metadata identity for artwork on a physical folder.
+    /// This never changes the folder's navigation or playback identity.
+    public var artworkLookupSubject: ArtworkLookupSubject?
     public var stablePresentationID: String {
         if let watchlistAliasID {
             return "watchlist:\(watchlistAliasID)"
@@ -350,6 +390,10 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// resource be re-signed by its actual account after persistence strips
     /// credentials, even when playback has been retargeted elsewhere.
     public var artworkSourceAccountIDsByURL: [String: String]
+
+    /// URL-specific attribution when artwork shares a field or comes from another
+    /// copy of a title. Neither case may inherit unrelated field provenance.
+    public var artworkMetadataSourcesByURL: [String: MetadataSource] = [:]
 
     /// The sole artwork account when every known URL shares one, otherwise nil.
     public var artworkSourceAccountID: String? {
@@ -608,7 +652,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// in sync with the custom `init(from:)` below.
     private enum CodingKeys: String, CodingKey {
         case id, watchlistAliasID, title, kind, overview, parentTitle, seasonNumber, episodeNumber, episodeNumberEnd
-        case fileBrowserContainerID
+        case fileBrowserContainerID, artworkLookupSubject
         case originalTitle
         case productionYear, releaseDate, officialRating, genres, people, studios, tags, taglines
         case librarySortValues
@@ -623,7 +667,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         case artworkSelections, mediaInfo
         case availability, locallyValidatedPlayableSource
         case downloadProgress
-        case sourceAccountID, artworkSourceAccountIDsByURL
+        case sourceAccountID, artworkSourceAccountIDsByURL, artworkMetadataSourcesByURL
         case additionalSourceAccountIDs, versions, edition, isMergedTitle, isFavorite
         case sources, lastPlayedAt, libraryID
         case scheduledAirDate, scheduledAirDateHasTime, showsScheduledReleaseTime
@@ -739,9 +783,14 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         downloadProgress = try container.decodeIfPresent(Double.self, forKey: .downloadProgress)
         mediaInfo = try container.decodeIfPresent(MediaSourceMetadata.self, forKey: .mediaInfo)
         sourceAccountID = try container.decodeIfPresent(String.self, forKey: .sourceAccountID)
+        artworkLookupSubject = try container.decodeIfPresent(ArtworkLookupSubject.self, forKey: .artworkLookupSubject)
         artworkSourceAccountIDsByURL = try container.decodeIfPresent(
             [String: String].self,
             forKey: .artworkSourceAccountIDsByURL
+        ) ?? [:]
+        artworkMetadataSourcesByURL = try container.decodeIfPresent(
+            [String: MetadataSource].self,
+            forKey: .artworkMetadataSourcesByURL
         ) ?? [:]
         additionalSourceAccountIDs = try container.decodeIfPresent([String].self, forKey: .additionalSourceAccountIDs) ?? []
         scheduledAirDate = try container.decodeIfPresent(Date.self, forKey: .scheduledAirDate)
@@ -773,22 +822,65 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         }
     }
 
-    /// Ordered explicit candidates followed by source-compatible legacy URL
-    /// fallbacks for the requested presentation role.
-    public func artworkReferences(for placement: ArtworkPlacement) -> [ArtworkReference] {
+    /// Library candidates only. Persisted external URLs resolve through the
+    /// metadata provider chain, rather than masquerading as server artwork.
+    /// Library-first heroes restore the server-selected backdrop or primary sidecar.
+    public func artworkReferences(
+        for placement: ArtworkPlacement,
+        preferringLibrarySelection: Bool = false
+    ) -> [ArtworkReference] {
         var references = artworkSelections
             .first(where: { $0.placement == placement })?
             .references ?? []
+        let legacy = legacyArtworkURLs(for: placement)
+            .filter { metadataArtworkSource(for: $0) == nil }
+            .map(ArtworkReference.remote)
+        references = libraryArtworkReferences(references)
         if placement == .homeHero || placement == .detailBackdrop {
+            if preferringLibrarySelection {
+                // Home keeps the primary sidecar; Details may have been reordered
+                // for variety. Server URL fields retain the server-selected image.
+                let primaryLocal = artworkSelections.first { $0.placement == .homeHero }?
+                    .references.filter { if case .networkFile = $0 { true } else { false } } ?? []
+                let local = references.filter { if case .networkFile = $0 { true } else { false } }
+                references = primaryLocal + local + legacy + references
+            }
             references = references.filter { reference in
                 guard case .networkFile(let network) = reference else { return true }
                 guard let dimensions = network.dimensions else { return false }
                 return dimensions.aspectRatio <= 3
             }
         }
-        references.append(contentsOf: legacyArtworkURLs(for: placement).map(ArtworkReference.remote))
+        references.append(contentsOf: legacy)
         var seen = Set<ArtworkReference>()
         return references.filter { seen.insert($0).inserted }
+    }
+
+    public var artworkLookupItem: MediaItem {
+        guard kind == .folder, let subject = artworkLookupSubject, subject.isSupported else { return self }
+        var copy = self
+        copy.artworkLookupSubject = nil
+        copy.id = subject.id
+        copy.kind = subject.kind
+        copy.title = subject.title
+        copy.parentTitle = subject.parentTitle
+        copy.productionYear = subject.productionYear
+        copy.seasonNumber = subject.seasonNumber
+        copy.episodeNumber = subject.episodeNumber
+        copy.seriesID = subject.seriesID
+        copy.providerIDs = subject.providerIDs
+        copy.genres = subject.genres
+        copy.tags = subject.tags
+        copy.allowsTitleBasedMetadataMatching = subject.allowsTitleBasedMetadataMatching
+        return copy
+    }
+
+    public var supportsExternalArtworkLookup: Bool {
+        switch kind {
+        case .folder: artworkLookupSubject?.isSupported == true
+        case .collection, .unknown: false
+        default: true
+        }
     }
 
     /// Series-only artwork for episode cards and system playback surfaces.
@@ -801,10 +893,64 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         let urls = prefersPortrait
             ? [seriesPosterURL, fallbackArtworkURL]
             : [fallbackArtworkURL, seriesPosterURL]
-        let remote = urls.compactMap { $0.map(ArtworkReference.remote) }
-        let ordered = prefersPortrait ? local + remote : remote + local
+        let remote = urls.compactMap(libraryArtworkURL).map(ArtworkReference.remote)
+        // A share's URL fields can contain external enrichment. Its actual
+        // sidecar must precede those URLs, even on landscape, series-only surfaces.
+        let sidecars = local.filter { if case .networkFile = $0 { true } else { false } }
+        let ordered = prefersPortrait ? local + remote : sidecars + remote + local
         var seen = Set<ArtworkReference>()
-        return ordered.filter { seen.insert($0).inserted }
+        return libraryArtworkReferences(ordered).filter { seen.insert($0).inserted }
+    }
+
+    public func libraryArtworkURL(_ url: URL?) -> URL? {
+        guard let url, metadataArtworkSource(for: url) == nil else { return nil }
+        return url
+    }
+
+    public func libraryArtworkReferences(_ references: [ArtworkReference]) -> [ArtworkReference] {
+        references.filter {
+            guard case .remote(let url) = $0 else { return true }
+            return metadataArtworkSource(for: url) == nil
+        }
+    }
+
+    /// Cached external candidates retain their source so disabling or reordering
+    /// providers applies even when the share catalog already holds an image.
+    public func metadataArtworkURLs(for placement: ArtworkPlacement) -> [SourcedValue<URL>] {
+        let explicit: [URL] = artworkSelections.first { $0.placement == placement }?.references.compactMap {
+            if case .remote(let url) = $0 { return url }
+            return nil
+        } ?? []
+        var seen = Set<URL>()
+        return (explicit + legacyArtworkURLs(for: placement)).filter { seen.insert($0).inserted }.compactMap { url in
+            metadataArtworkSource(for: url).map { SourcedValue(value: url, source: $0) }
+        }
+    }
+
+    public func artworkMetadataSource(for url: URL) -> MetadataSource? {
+        if let source = artworkMetadataSourcesByURL[SyncURLSanitizer.sanitize(url).absoluteString] {
+            return source
+        }
+        let fields: [(URL?, MetadataField)] = [
+            (posterURL, .posterURL), (seriesPosterURL, .posterURL),
+            (backdropURL, .backdropURL), (heroBackdropURL, .backdropURL),
+            (fallbackArtworkURL, .backdropURL), (logoURL, .logoURL)
+        ]
+        return fields.compactMap { candidate, field -> MetadataSource? in
+            candidate == url ? metadataProvenance[field]?.source : nil
+        }.first
+    }
+
+    public mutating func recordArtworkMetadataSource(_ source: MetadataSource, for url: URL) {
+        artworkMetadataSourcesByURL[SyncURLSanitizer.sanitize(url).absoluteString] = source
+    }
+
+    private func metadataArtworkSource(for url: URL) -> MetadataSource? {
+        let librarySources: Set<MetadataSource> = [
+            .server, .localNFO, .localArtwork, .embedded, .filename, .generated
+        ]
+        guard let source = artworkMetadataSource(for: url), !librarySources.contains(source) else { return nil }
+        return source
     }
 
     private func legacyArtworkURLs(for placement: ArtworkPlacement) -> [URL] {

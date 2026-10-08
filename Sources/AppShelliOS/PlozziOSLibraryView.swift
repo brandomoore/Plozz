@@ -243,6 +243,7 @@ struct PlozziOSLibraryGridView: View {
         }
         .navigationTitle(title)
         .environment(\.plozzCardCaptionView, viewModel.browseScope.cardCaptionView(for: viewModel.contentMode))
+        .environment(\.plozzArtworkArea, nil)
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $selectedRecommendedItem) { item in
             PlozziOSItemDetailView(
@@ -329,6 +330,7 @@ struct PlozziOSLibraryGridView: View {
                             && settings.homeVisibility.continueWatchingShowsSeriesArtwork,
                         onSelect: { selectedRecommendedItem = $0 }
                     )
+                    .environment(\.plozzArtworkArea, section.id == "continueWatching" ? .continueWatching : .recommended)
                 }
             }
         case .failed(let error):

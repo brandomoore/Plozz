@@ -81,6 +81,7 @@ struct DetailHeroView: View, Equatable {
     @Environment(HeroTrailerController.self) private var heroTrailerController
     @Environment(HeroBackgroundSettingsModel.self) private var heroBackground
     @Environment(\.detailHeaderSettings) private var detailHeaderSettings
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     #if os(tvOS)
     @Environment(\.detailEntranceSession) private var detailEntrance
     #endif
@@ -1196,7 +1197,7 @@ struct DetailHeroView: View, Equatable {
         // `HeroBackdropLayer` shares Home's static shading while preserving the
         // detail page's own dissolve and full-bleed treatment. Hero artwork is never spoiler-blurred;
         // episode spoiler masking remains limited to episode text and cards.
-        let ladder = backdrop.artworkReferences(for: .detailBackdrop)
+        let ladder = artworkPolicy.forArea(.details).references(for: backdrop, placement: .detailBackdrop)
         HeroArtDiagnostics.emitOnce(
             stage: "detail-draw",
             key: backdrop.id

@@ -208,6 +208,13 @@ public final class PlayerViewModel {
     /// scrub state; the SwiftUI overlay reads.
     public let controls = PlayerControlsModel()
 
+    public func updateArtworkPolicy(_ policy: ArtworkPresentationPolicy) {
+        let policy = policy.forArea(.playback)
+        guard controls.artworkPolicy != policy else { return }
+        controls.artworkPolicy = policy
+        nowPlaying?.artworkPolicyChanged()
+    }
+
     /// Drives Plozz's **owned** subtitle overlay during playback. The view model
     /// parses a selected text sidecar into cues, loads them here, and suppresses
     /// the engine's own subtitle draw — so our renderer (full styling, HDR
@@ -2335,6 +2342,7 @@ public final class PlayerViewModel {
         controls.infoCard.isTranscoding = request.deliveryMode == .transcode
         controls.infoCard.badges = controls.infoCard.isTranscoding ? [] : request.item.technicalBadges
         controls.infoCard.artworkURLs = [request.item.backdropURL, request.item.heroBackdropURL, request.item.fallbackArtworkURL, request.item.posterURL].compactMap { $0 }
+        controls.infoCard.artworkItem = request.item
         controls.infoCard.runtimeLabel = request.item.runtime?.runtimeBadgeText ?? ""
         controls.hasTrickplay = request.scrubPreview?.isUsable ?? false
         controls.duration = request.item.runtime ?? 0

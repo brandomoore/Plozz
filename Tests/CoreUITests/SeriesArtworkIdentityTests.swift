@@ -48,6 +48,29 @@ final class SeriesArtworkIdentityTests: XCTestCase {
         XCTAssertEqual(series.providerID(.tvmaze), "series-tvmaze")
     }
 
+    func testSeriesArtworkCarriesSourcedSeriesFallbacksButNeverTheEpisodeStill() throws {
+        var child = episode(ids: ["Tmdb": "child-id", "SeriesTmdb": "show-id"])
+        child.posterURL = URL(string: "https://library.example.test/episode.jpg")
+        child.backdropURL = URL(string: "https://library.example.test/episode-backdrop.jpg")
+        child.seriesPosterURL = URL(string: "https://art.example.test/show-poster.jpg")
+        child.fallbackArtworkURL = URL(string: "https://art.example.test/show-backdrop.jpg")
+        child.metadataProvenance[.posterURL] = MetadataAttribution(source: .tmdb)
+        child.metadataProvenance[.backdropURL] = MetadataAttribution(source: .tvdb)
+        child = child.taggingSource("share-account")
+        let series = PosterCardView.seriesArtworkItem(for: child)
+        XCTAssertEqual(series.posterURL, child.seriesPosterURL)
+        XCTAssertEqual(series.backdropURL, child.fallbackArtworkURL)
+        XCTAssertFalse(series.metadataArtworkURLs(for: .poster).contains { $0.value == child.posterURL })
+        XCTAssertFalse(series.metadataArtworkURLs(for: .homeHero).contains { $0.value == child.backdropURL })
+        XCTAssertEqual(series.metadataArtworkURLs(for: .poster).first?.source, .tmdb)
+        XCTAssertEqual(series.metadataArtworkURLs(for: .homeHero).first?.source, .tvdb)
+        XCTAssertTrue(series.artworkReferences(for: .poster).isEmpty)
+        XCTAssertNil(series.libraryArtworkURL(series.fallbackArtworkURL))
+        XCTAssertEqual(series.artworkSourceAccountID(for: try XCTUnwrap(child.seriesPosterURL)), "share-account")
+        XCTAssertEqual(series.providerID(.tmdb), "show-id")
+        XCTAssertEqual(child.providerID(.tmdb), "child-id")
+    }
+
     func testShowScopedAnimeIDsSurviveEpisodeArtworkConversion() {
         let child = episode(ids: ["AniList": "21", "MAL": "20", "AniDB": "5", "Kitsu": "12"])
         let series = PosterCardView.seriesArtworkItem(for: child)

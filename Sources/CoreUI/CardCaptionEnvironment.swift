@@ -14,6 +14,10 @@ private struct PlozzCardCaptionViewKey: EnvironmentKey {
     static let defaultValue = CardCaptionView.browse
 }
 
+private struct PlozzCardCaptionShowcaseKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 public extension EnvironmentValues {
     var plozzCardCaptionSettings: CardCaptionSettings {
         get { self[PlozzCardCaptionSettingsKey.self] }
@@ -25,17 +29,41 @@ public extension EnvironmentValues {
         set {
             self[PlozzCardCaptionViewKey.self] = newValue
             self[PlozzCardCaptionsHiddenKey.self] = nil
+            self[PlozzCardCaptionShowcaseKey.self] = false
         }
+    }
+
+    var plozzCardCaptionIsShowcase: Bool {
+        get { self[PlozzCardCaptionShowcaseKey.self] }
+        set { self[PlozzCardCaptionShowcaseKey.self] = newValue }
     }
 
     /// Explicit values are reserved for non-media navigation tiles and fixtures.
     /// Media surfaces resolve their shared default and per-view exception here.
     var plozzCardCaptionsHidden: Bool {
         get {
-            self[PlozzCardCaptionsHiddenKey.self]
-                ?? !plozzCardCaptionSettings.showsLabels(in: plozzCardCaptionView)
+            hidesCardCaptions(hasArtworkTitle: false)
         }
         set { self[PlozzCardCaptionsHiddenKey.self] = newValue }
+    }
+
+    var plozzCardCaptionsHiddenWithArtworkTitle: Bool {
+        hidesCardCaptions(hasArtworkTitle: true)
+    }
+
+    mutating func copyCardCaptionPresentation(from source: EnvironmentValues) {
+        self[PlozzCardCaptionSettingsKey.self] = source[PlozzCardCaptionSettingsKey.self]
+        self[PlozzCardCaptionViewKey.self] = source[PlozzCardCaptionViewKey.self]
+        self[PlozzCardCaptionShowcaseKey.self] = source[PlozzCardCaptionShowcaseKey.self]
+        self[PlozzCardCaptionsHiddenKey.self] = source[PlozzCardCaptionsHiddenKey.self]
+    }
+
+    private func hidesCardCaptions(hasArtworkTitle: Bool) -> Bool {
+        self[PlozzCardCaptionsHiddenKey.self]
+            ?? !plozzCardCaptionSettings.showsLabels(
+                in: plozzCardCaptionView, isShowcase: plozzCardCaptionIsShowcase,
+                hasArtworkTitle: hasArtworkTitle
+            )
     }
 
     /// How much closer a row's title sits to its cards than usual. Set by a

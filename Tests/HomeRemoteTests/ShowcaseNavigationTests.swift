@@ -503,6 +503,40 @@ final class ShowcaseNavigationTests: XCTestCase {
         try measureNavigation(vertical: false)
     }
 
+    func testPendingArtworkNeverGatesHorizontalOrVerticalNavigation() throws {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--production-home-fixture", "--pinned-home", "--immersive-home", "--held-home-artwork"
+        ]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Production Home ready"].waitForExistence(timeout: 30))
+        try enterMediaRow(in: app)
+        let started = app.staticTexts["home-held-artwork-started"]
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in (Int(started.label) ?? 0) > 0 }, object: nil
+        )], timeout: 5), .completed)
+        let initial = focusedCard(in: app).label
+        for _ in 0..<3 { XCUIRemote.shared.press(.right) }
+        waitForStableCard(in: app)
+        let moved = focusedCard(in: app).label
+        XCTAssertNotEqual(moved, initial)
+        let heading = app.staticTexts["Continue Watching"]
+        let headingY = heading.frame.minY
+        XCUIRemote.shared.press(.down)
+        waitForStableCard(in: app)
+        XCTAssertNotEqual(focusedCard(in: app).label, moved)
+        XCTAssertLessThan(heading.frame.minY, headingY - 20)
+        XCUIRemote.shared.press(.up)
+        waitForStableCard(in: app)
+        XCTAssertEqual(heading.frame.minY, headingY, accuracy: 0.5)
+        XCUIRemote.shared.press(.left)
+        waitForStableCard(in: app)
+        XCTAssertNotEqual(focusedCard(in: app).label, moved)
+        XCTAssertEqual(app.staticTexts["home-held-artwork-completed"].label, "0",
+                       "All navigation must complete while the actual artwork loader is still held.")
+    }
+
     func testVerticalNavigationHitches() throws {
         try measureNavigation(vertical: true)
     }

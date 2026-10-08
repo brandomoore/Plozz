@@ -90,8 +90,70 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   the shared group surface, separators, or tvOS control styles.
 - **Async artwork** — `FallbackAsyncImage` and `ArtworkImageCache`: an
   on-disk + in-memory image cache shared with `MetadataKit`'s URL cache,
-  with an `asyncFallbackURL` slot so server art is always tried first and
-  the `MetadataKit` fallback only runs when needed.
+  with profile-scoped source choices in Appearance > Artwork. Recommended uses
+  metadata providers first for Home and library Showcase heroes, movie/show detail
+  backgrounds and logos, and textless Continue Watching artwork. Ordinary rows,
+  related-title posters, and episode thumbnails remain library-first. Detail hero
+  placement is carried through resolution, cache identity, prewarming, and mobile
+  reflections without changing the surrounding page's card policy.
+  Shared hero/reflection first-paint results are qualified by source and provider
+  policy so changing those settings cannot reuse a previous provider's winner.
+  Library-first and metadata-provider-first
+  presets initialize source choices for Home, Continue Watching, Browse,
+  Search, Watchlist, Details, Episodes, Playback, Music, Top Shelf, and Downloads
+  where available. Editing a view enters Custom mode; choosing any preset
+  replaces the whole configuration. The shared editing and presentation contract
+  lives in [FeatureSettings](../FeatureSettings/README.md#invariants). Cards retains
+  card presentation controls, not app-wide artwork policy. Missing artwork can
+  fall back to the other source. Provider-first waits for lookup and image decoding
+  to finish, including time queued behind other requests; a short first-paint
+  budget must not permanently select cached library artwork instead. Existing
+  network/image-load deadlines still bound failures, and cancellation releases
+  the view without painting a fallback for a cancelled request.
+  Provider enablement/order is household-wide in Metadata Providers; changing
+  appearance never enables a provider. The old library-artwork choice migrates to each profile,
+  and the new preference transfers/syncs with that profile.
+  Metadata Providers links directly to the active profile's Artwork preferences.
+  Reciprocal links return to an existing page instead of stacking duplicate pages.
+  Library-first heroes honor the server-selected backdrop or primary share
+  sidecar rather than choosing a different image for Details or avoiding artwork
+  on the focused card. Recommended retains varied library Details backgrounds as fallbacks;
+  metadata-provider-first retains provider lookup and artwork variation. The
+  choice applies equally to first paint, prewarming, mobile reflections, and
+  later visits; alternative images remain fallbacks if the selected one fails.
+  Continue Watching's recommended textless lookup is separate from source
+  preference: explicit library-first uses supplied artwork without checking it
+  online. A selected textless backdrop has priority over both ordinary provider
+  and library images, including synchronous cache seeding. If that image fails,
+  the normal source preference still orders the fallbacks. When textless artwork
+  is unavailable, Recommended keeps a library background ahead of a metadata
+  poster with baked-in lettering; episodes use only their series background.
+  An explicit metadata-provider choice still gives providers priority. Missing
+  or unreadable library backgrounds retain the metadata-poster fallback.
+  Native tvOS and SwiftUI cards both settle cold textless lookups before
+  selecting a background;
+  the native poster and its focus owner remain mounted while waiting.
+  `ContinueWatchingArtworkSource` is shared by rendering and lookahead on TV and
+  mobile. It prepares the selected backdrop and processed logo, including
+  metadata-provider fallbacks and SMB references, in the existing bounded caches.
+  `ArtworkPrefetchWindow` retains only the current nine-card window, cancels work
+  that leaves it, and reuses overlapping completed requests. Source or policy
+  changes replace those requests; leaving the row cancels them. Background
+  metadata has a separate one-request gate and image decoding uses the background
+  lane. Neither focus callbacks nor touch scrolling await any preparation.
+  Textless lookups coalesce per title; cancelling speculative work cannot cancel
+  a visible consumer or turn an unfinished lookup into a cached miss.
+  SMB selections retain local and online candidates in the shared
+  catalog, including typed network-file references and their access gate.
+  SwiftUI, native Browse cells, detached hosts, and prewarmers use the same
+  effective policy. Cache identities include source and provider policy; a
+  settings change replaces the image selection, not ordinary focus movement.
+  A fallback is stable for that appearance, not a promise that an online source
+  has no image. Playback system art receives an explicit snapshot.
+  Top Shelf exports resolved images into its shared container. Downloads capture
+  the selected artwork when queued; existing offline artwork is not re-fetched
+  after a settings change. Clip-specific extra thumbnails, people, channel
+  branding, and spoiler protection retain their separate semantics.
   When card captions are hidden, folder and missing-art placeholders carry the
   existing spoiler-safe title inside the artwork slot. Loaded art remains
   label-free, visible captions are not duplicated, and loading/failure never
@@ -131,6 +193,11 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   independent of the page theme; coloured logos retain their palette. Home/detail
   and Spotlight heroes still adapt monochrome ink to their own background, so
   Light keeps dark hero logos.
+  Continue Watching cards and focus-driven hero titles keep their text fallback
+  invisible during logo lookup and decoding, preserving its layout space.
+  Text appears only after resolution finds no usable logo (or there are no logo
+  sources); cached logos still paint immediately. Completion is request-scoped,
+  so a cancelled or missing logo for one title cannot reveal text for the next.
 - **Series artwork identity** — episode-backed cards normalize through
   `MetadataQuery.seriesScoped` before creating a series artwork subject. Child
   IDs and Plex episode GUIDs must not become show IDs. Explicit series IDs,

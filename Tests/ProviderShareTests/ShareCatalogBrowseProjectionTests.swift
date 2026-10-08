@@ -551,14 +551,18 @@ final class ShareCatalogBrowseProjectionTests: XCTestCase {
     }
 
     func testRecognizedShowWithUnclassifiedContentKeepsPosterWithoutHidingFiles() async throws {
-        let store = ShareCatalogStore(accountKey: "extra-poster", directory: try catalogDirectory())
+        let directory = try catalogDirectory()
+        let store = ShareCatalogStore(
+            accountKey: "extra-poster", directory: directory,
+            metadataConfig: { .init(order: [.tvdb], usesGlobalOrder: true) }
+        )
         let root = "TV Shows/Animanimals"
         let path = "\(root)/Season 01/E01.mkv"
         await store.upsert([
             episode(path, series: "Animanimals", season: 1, number: 1, metadataRoot: root)
         ], scanID: 1)
-        var metadata = EnrichmentRecord()
-        metadata.posterURL = URL(string: "https://example.com/animanimals.jpg")
+        let posterURL = try XCTUnwrap(URL(string: "https://example.com/animanimals.jpg"))
+        let metadata = EnrichmentRecord.sourced(posterURL: .init(value: posterURL, source: .tvdb))
         let saved = await store.saveEnrichment(
             itemID: ShareCatalogID.series("animanimals"), metadata, version: 18
         )
@@ -574,6 +578,35 @@ final class ShareCatalogBrowseProjectionTests: XCTestCase {
         XCTAssertEqual(projected[1].id, "d:\(root)")
         XCTAssertEqual(projected[1].kind, .folder)
         XCTAssertEqual(projected[1].posterURL, metadata.posterURL)
+        XCTAssertEqual(projected[1].artworkMetadataSource(for: posterURL), .tvdb)
+        XCTAssertTrue(projected[1].artworkReferences(for: .poster).isEmpty,
+                      "A recognized folder must not relabel external art as a library selection.")
+        XCTAssertEqual(projected[1].metadataArtworkURLs(for: .poster), [.init(value: posterURL, source: .tvdb)])
+        XCTAssertEqual(projected[1].artworkLookupSubject?.id, ShareCatalogID.series("animanimals"))
+        XCTAssertEqual(projected[1].artworkLookupSubject?.kind, .series)
+        XCTAssertEqual(projected[1].artworkLookupItem.title, "Animanimals")
+
+        let disabledStore = ShareCatalogStore(
+            accountKey: "extra-poster", directory: directory,
+            metadataConfig: { .init(disabledSources: [.tvdb], order: [.tvdb], usesGlobalOrder: true) }
+        )
+        let disabled = await disabledStore.browseItems([folder(root)])
+        XCTAssertEqual(disabled.first?.id, folder(root).id)
+        XCTAssertEqual(disabled.first?.kind, .folder)
+        XCTAssertNil(disabled.first?.posterURL, "Disabled artwork cannot decorate the folder.")
+        XCTAssertEqual(disabled.first?.artworkLookupSubject, projected[1].artworkLookupSubject,
+                       "The recognized identity can still query other enabled providers.")
+
+        let savedLegacy = await store.saveEnrichment(
+            itemID: ShareCatalogID.series("animanimals"),
+            .init(posterURL: posterURL), version: 19
+        )
+        XCTAssertTrue(savedLegacy)
+        let legacy = await store.browseItems([folder(root)])
+        XCTAssertEqual(legacy.first?.id, folder(root).id)
+        XCTAssertEqual(legacy.first?.kind, .folder)
+        XCTAssertNil(legacy.first?.posterURL, "Unattributed legacy artwork must not bypass provider policy.")
+        XCTAssertTrue(legacy.first?.metadataArtworkURLs(for: .poster).isEmpty == true)
     }
 
     func testUnpromotedSeasonRetainsExplicitArtworkAndItsSource() async throws {
@@ -605,6 +638,19 @@ final class ShareCatalogBrowseProjectionTests: XCTestCase {
         XCTAssertEqual(decorated.kind, .folder)
         XCTAssertEqual(decorated.artworkReferences(for: .poster), [.remote(url)])
         XCTAssertEqual(decorated.artworkSourceAccountID(for: url), "art-owner")
+        XCTAssertEqual(decorated.artworkLookupSubject?.kind, .season)
+
+        season.recordArtworkMetadataSource(.tvdb, for: url)
+        let externalProjection = ShareCatalogBrowseProjection(connection: connection)
+            .project([folder(root)], resolve: { ids in
+                Dictionary(uniqueKeysWithValues: ids.map { ($0, season) })
+            })
+        let external = try XCTUnwrap(externalProjection.first)
+        XCTAssertEqual(external.id, decorated.id)
+        XCTAssertEqual(external.kind, .folder)
+        XCTAssertTrue(external.artworkReferences(for: .poster).isEmpty)
+        XCTAssertEqual(external.metadataArtworkURLs(for: .poster), [.init(value: url, source: .tvdb)])
+        XCTAssertEqual(external.artworkSourceAccountID(for: url), "art-owner")
     }
 
     func testProjectionHydratesEachLogicalTargetOnceInOneBatch() async throws {
@@ -722,7 +768,16 @@ final class ShareCatalogBrowseProjectionTests: XCTestCase {
 
         let projected = await store.browseItems([folder(showRoot)])
 
-        XCTAssertEqual(projected, [folder(showRoot)])
+        let live = folder(showRoot)
+        var expected = live
+        let seriesID = ShareCatalogID.series("animanimals")
+        expected.artworkLookupSubject = try XCTUnwrap(ArtworkLookupSubject(catalog: MediaItem(
+            id: seriesID, title: "Animanimals", kind: .series, seriesID: seriesID
+        )))
+        XCTAssertEqual(projected, [expected])
+        XCTAssertEqual(projected.first?.id, live.id)
+        XCTAssertEqual(projected.first?.kind, .folder)
+        XCTAssertEqual(projected.first?.fileBrowserContainerID, live.fileBrowserContainerID)
     }
 
     private final class BrowseSQLWork {

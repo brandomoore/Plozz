@@ -7,6 +7,7 @@ import CoreUI
 
 @MainActor
 protocol VideoNowPlayingHost: AnyObject {
+    var nowPlayingArtworkPolicy: ArtworkPresentationPolicy { get }
     var nowPlayingPlayer: AVPlayer? { get }
     var nowPlayingCanPlay: Bool { get }
     var nowPlayingTime: TimeInterval { get }
@@ -28,6 +29,14 @@ protocol VideoNowPlayingHost: AnyObject {
     func nowPlayingStop()
 }
 
+extension VideoNowPlayingHost {
+    var nowPlayingArtworkPolicy: ArtworkPresentationPolicy { .init(area: .playback) }
+}
+
+extension PlayerViewModel {
+    var nowPlayingArtworkPolicy: ArtworkPresentationPolicy { controls.artworkPolicy }
+}
+
 /// System transport follows the shared player lifecycle, not the visibility of
 /// either platform's overlay. Artwork and clock tasks never retain the player.
 @MainActor
@@ -38,7 +47,7 @@ final class VideoNowPlayingCoordinator {
 
     private weak var host: (any VideoNowPlayingHost)?
     private let publisher: any NowPlayingPublishing
-    private let artworkLoader: ArtworkLoader
+    private let artworkLoader: ArtworkLoader?
     private let startsClock: Bool
     private var clockTask: Task<Void, Never>?
     private var artworkTask: Task<Void, Never>?
@@ -54,7 +63,7 @@ final class VideoNowPlayingCoordinator {
         host: any VideoNowPlayingHost,
         publisher: any NowPlayingPublishing,
         startsClock: Bool = true,
-        artworkLoader: @escaping ArtworkLoader = VideoNowPlayingCoordinator.loadArtwork
+        artworkLoader: ArtworkLoader? = nil
     ) {
         self.host = host
         self.publisher = publisher
@@ -92,7 +101,10 @@ final class VideoNowPlayingCoordinator {
         refresh()
         if !artworkIsComplete, artworkTask == nil {
             let generation = artworkGeneration
-            let loader = artworkLoader
+            let policy = host?.nowPlayingArtworkPolicy ?? .init(area: .playback)
+            let loader: ArtworkLoader = artworkLoader ?? { item, update in
+                await NowPlayingVideoArtwork.load(for: item, policy: policy, onUpdate: update)
+            }
             artworkTask = Task { [weak self] in
                 await loader(item) { [weak self] image in
                     guard !Task.isCancelled, let self,
@@ -163,6 +175,13 @@ final class VideoNowPlayingCoordinator {
         publisher.invalidate()
     }
 
+    func artworkPolicyChanged() {
+        cancelArtwork()
+        artwork = nil
+        artworkIsComplete = false
+        if publisher.isActive { activate() }
+    }
+
     private func resign() {
         clockTask?.cancel()
         clockTask = nil
@@ -218,13 +237,6 @@ final class VideoNowPlayingCoordinator {
 
     static func artworkReferences(for item: MediaItem) -> [ArtworkReference] {
         NowPlayingVideoArtwork.references(for: item)
-    }
-
-    private static func loadArtwork(
-        _ item: MediaItem,
-        onUpdate: @escaping @MainActor (MPMediaItemArtwork) -> Void
-    ) async {
-        await NowPlayingVideoArtwork.load(for: item, onUpdate: onUpdate)
     }
 
     deinit {

@@ -44,6 +44,7 @@ public struct EpisodeColumnCard: View, Equatable {
     @Environment(\.plozzCardFocusStyle) private var focusStyle
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     private let metrics = PlozzMetrics.standard
 
@@ -208,7 +209,9 @@ public struct EpisodeColumnCard: View, Equatable {
 
     #if os(tvOS)
     private var nativeEpisodeArtwork: some View {
-        let source = EpisodeArtworkSource(item: item, spoilerSettings: spoilerSettings)
+        let source = EpisodeArtworkSource(
+            item: item, spoilerSettings: spoilerSettings, policy: artworkPolicy.forArea(.episodes)
+        )
         let treatment: NativePosterImageTreatment = presentation.isUpcoming
             ? .upcoming(palette.cardSurface)
             : (presentation.artworkTreatment == .blurred ? .blurred : .original)
@@ -227,6 +230,7 @@ public struct EpisodeColumnCard: View, Equatable {
         .background {
             FallbackAsyncImage(
                 references: source.references, variant: .landscapeCard,
+                artworkPolicy: source.policy,
                 asyncFallbackURL: source.fallbackURL, pinIdentity: source.pinIdentity,
                 content: { _ in Color.clear }, placeholder: { Color.clear }
             )
@@ -238,10 +242,13 @@ public struct EpisodeColumnCard: View, Equatable {
     #endif
 
     private var realArtwork: some View {
-        let source = EpisodeArtworkSource(item: item, spoilerSettings: spoilerSettings)
+        let source = EpisodeArtworkSource(
+            item: item, spoilerSettings: spoilerSettings, policy: artworkPolicy.forArea(.episodes)
+        )
         return FallbackAsyncImage(
             references: source.references,
             variant: .landscapeCard,
+            artworkPolicy: source.policy,
             asyncFallbackURL: source.fallbackURL,
             pinIdentity: source.pinIdentity,
             content: { image in

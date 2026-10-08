@@ -25,13 +25,26 @@ fallback when the user's server has no attached trailer.
   after subtracting each card style's internal inset. Smaller mobile artwork uses
   proportionate corners and a 20pt minimum watched badge, without shrinking folder
   navigation badges. Continue Watching geometry and library grid columns are unchanged.
-- **Card labels** — Appearance > Cards owns a profile-scoped shared choice
-  (No labels by default), with Default / Labels / No labels exceptions by experience.
+- **Showcase artwork lookahead** — A separate observer warms the policy-selected
+  preview and logo for up to five nearby titles plus the leading title of either
+  adjacent row. It shares the bounded background queue and artwork caches with
+  Continue Watching, without observing focus in the view that builds the rows.
+  Changing focus, rows, source references, or provider settings replaces only
+  obsolete preparation; leaving Home cancels it. The native navigation and
+  row/hero motion never await artwork or metadata.
+- **Card labels** — Appearance > Cards owns profile-scoped App default,
+  Show labels everywhere, and Hide labels everywhere presets, with
+  On / Off values edited directly in a flat list of experiences. Editing enters
+  Custom mode; selecting any preset replaces all per-view choices.
+  App default shows labels during ordinary browsing and on detail-page episodes;
+  it hides them in Showcase and on Continue Watching cards that carry a title on
+  their artwork. Manual presets apply to all media captions, including those cards.
+  Existing explicit global and per-view choices survive migration.
+  Showcase is presentation context within Home or library Recommended, not a new
+  override scope; destination scopes clear that context and hosting boundaries forward it.
   Home, Recommended, Browse, Collections, Playlists, Search, Watchlist, related titles,
-  extras, and filmography resolve the same policy on iOS and tvOS.
-  Detail-page episodes always retain their identifying labels on both platforms,
-  including when an older profile has a saved episode-specific No labels choice.
-  Episodes are not offered in label customization.
+  episodes, extras, and filmography resolve the same policy on iOS and tvOS.
+  Explicit episode overrides, including previously persisted ones, are honored.
   On TV, the episode title moves down on focus and back up on exit in every
   focus style, including System; the synopsis keeps its delayed reveal.
   Loading captions use the same motion without changing row geometry, and
@@ -42,6 +55,12 @@ fallback when the user's server has no attached trailer.
   `HeroSettings`; the card settings transfer with the profile. Native grids and
   loading placeholders remove the same caption space as loaded cards. Touch captions
   have a 4pt gap without TV focus travel; TV captions retain their focus clearance.
+  Mobile poster titles use native Dynamic Type footnote (13pt normally), with
+  caption1 subtitles (12pt). Compact density does not shrink them below those styles.
+  Framed, borderless, and loading cards share these tokens; landscape and TV type stay unchanged.
+  Mobile poster and series-artwork rails reserve the subtitle line when labels are
+  shown, even when metadata is absent, matching
+  loading placeholders and keeping adjacent captions and row heights aligned.
 - Mobile library provider icons align with the thumbnail's leading edge; the
   library name and server name share the adjacent text column.
 - **Shared mobile row rhythm** — Home, library recommendations, search groups,
@@ -138,6 +157,8 @@ fallback when the user's server has no attached trailer.
   Showcase preserves the Home-sized details footprint under that header,
   keeping the same metadata-to-heading clearance as Home. A cold logo is adopted
   when it finishes for the still-current title, without requiring a focus round trip.
+  Its title slot stays visually empty while the logo resolves; text appears only
+  after no usable logo is found, never as a temporary title before the wordmark.
   Showcase gates lower rows only until the first row actually receives native
   focus, so an already-ready Discover row cannot win cold-start entry while
   Continue Watching is still realizing. Once entered, normal navigation and
@@ -160,6 +181,11 @@ fallback when the user's server has no attached trailer.
   On tvOS, library tabs, Filter, and Sort move with the grid instead of staying
   over the posters. Their native controls remain mounted during query changes
   so returning to the top and changing filters or modes preserves focus.
+  The native grid's viewport spans the full screen vertically, with content
+  insets preserving the header and bottom spacing. Disabling clipping alone
+  does not prevent UIKit from hiding artwork at an inset viewport boundary;
+  partly visible posters must keep rendering until they leave the screen.
+  Offscreen rows still recycle normally.
   Sort/filter choices are remembered per library, account, mode, and profile.
   Genre/year options use each server's scoped facet endpoint; Jellyfin/Emby use
   `/Items/Filters`, whose response contains genre names and years. Empty successful
@@ -371,7 +397,7 @@ making their entire mask transparent would break that navigation. Showcase's
 backdrop uses wider leading and bottom gradients without lengthening its crossfade.
 Crossfade is the only Showcase backdrop transition. The retired slide preference
 is ignored when reading older settings without resetting the remaining choices.
-Showcase's optional titles under cards remain in Customize Home > Home Layout;
+Showcase's optional titles under cards follow Appearance > Cards;
 they do not control title visibility elsewhere in the app.
 
 With pinned navigation, the carousel extends its leading fade to the top edge,

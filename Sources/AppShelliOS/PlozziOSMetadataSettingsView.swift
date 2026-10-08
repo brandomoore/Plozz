@@ -10,7 +10,10 @@ import SwiftUI
 /// household-wide models (provider order, cache budgets, TMDB key) through the
 /// shared `MetadataProviderListLogic`, so behaviour matches tvOS exactly.
 struct PlozziOSMetadataSettingsView: View {
+    let appModel: PlozziOSAppModel
     let deps: MetadataSettingsDependencies
+    var returnsToArtwork = false
+    @Environment(\.dismiss) private var dismiss
 
     @State private var showDiagnostics = false
 
@@ -19,7 +22,7 @@ struct PlozziOSMetadataSettingsView: View {
 
     var body: some View {
         Form {
-            Text("Metadata providers, artwork, and caches are shared by every profile on this device.")
+            Text("Shared by all profiles.")
                 .font(.footnote)
                 .plozzForeground(.secondary)
                 .listRowInsets(EdgeInsets())
@@ -30,11 +33,35 @@ struct PlozziOSMetadataSettingsView: View {
             if providers.settings.orderMode == .custom {
                 prioritySection
             }
+            SettingsSectionGroup {
+                if returnsToArtwork {
+                    Button {
+                        dismiss()
+                    } label: {
+                        HStack {
+                            Text("Artwork")
+                            Spacer()
+                            Image(systemName: "chevron.forward")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("metadata-artwork-preferences")
+                } else {
+                    NavigationLink("Artwork") {
+                        PlozziOSArtworkSettingsView(
+                            appModel: appModel, cardStyle: appModel.settings.cardStyle,
+                            canManageProviders: true, returnsToMetadata: true
+                        )
+                    }
+                    .accessibilityIdentifier("metadata-artwork-preferences")
+                }
+            }
             tmdbSection
             diagnosticsSection
         }
         .settingsPageSurface()
-        .navigationTitle("Metadata")
+        .navigationTitle("Metadata Providers")
         .navigationDestination(isPresented: $showDiagnostics) {
             PlozziOSMetadataDiagnosticsView(deps: deps)
         }
@@ -64,13 +91,6 @@ struct PlozziOSMetadataSettingsView: View {
         )
     }
 
-    private var preferLocalArtworkBinding: Binding<Bool> {
-        Binding(
-            get: { !providers.settings.preferOnlineArtwork },
-            set: { providers.settings.preferOnlineArtwork = !$0 }
-        )
-    }
-
     @ViewBuilder
     private var providersSection: some View {
         SettingsSectionGroup("Providers") {
@@ -79,10 +99,8 @@ struct PlozziOSMetadataSettingsView: View {
                     Text(orderModeTitle(mode)).tag(mode)
                 }
             }
-            Toggle("Prefer artwork from your library", isOn: preferLocalArtworkBinding)
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Use artwork from your media server or files before online providers.")
                 Text(providers.settings.orderMode == .recommended
                     ? "Plozz picks the best source for each field automatically."
                     : "Drag providers to set priority. Anything below the line is turned off.")

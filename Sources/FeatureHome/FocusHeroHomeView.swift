@@ -6,6 +6,7 @@ import CoreNetworking
 import CoreUI
 import FeatureHomeCore
 import HeroUI
+import MetadataKit
 
 /// One row of the Home that follows focus, as the hero needs to know it.
 struct FocusHeroRow: Identifiable {
@@ -83,7 +84,7 @@ enum FocusHeroLayout {
     /// row is short, and the description needs its lines more than the logo needs
     /// the extra size.
     static let logoBox = CGSize(width: 440, height: 124)
-    static let logoPresentationPolicy = HeroLogoPresentationPolicy.whenReady
+    static let logoPresentationPolicy = HeroLogoPresentationPolicy.whenResolved
     /// How much closer a row's title sits to its cards than on the classic Home.
     static let rowTitleTightening: CGFloat = 22
     /// With the top tab bar the column starts below it: nothing scrolls here, so
@@ -344,6 +345,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
 
     @State private var model = FocusHeroModel()
     @State private var metadata = FocusHeroMetadata()
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     // Reads nothing from `model`: this body builds the rows, and must not run
     // again when the pinned row or the hero title changes.
@@ -354,6 +356,7 @@ struct FocusHeroHomeView<RowContent: View>: View {
                 navigationStyle: navigationStyle,
                 isFrontmost: isFrontmost
             )
+            .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
             FocusHeroColumn(
                 model: model,
                 metadata: metadata,
@@ -362,8 +365,12 @@ struct FocusHeroHomeView<RowContent: View>: View {
                 spoilerSettings: spoilerSettings,
                 navigationStyle: navigationStyle
             )
+            .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
             FocusHeroScrollingRows(rows: rows, model: model, rowContent: rowContent)
                 .environment(\.plozzRowTitleTightening, FocusHeroLayout.rowTitleTightening)
+                .environment(\.plozzCardCaptionIsShowcase, true)
+            FocusHeroArtworkPrefetch(rows: rows, model: model, metadata: metadata, isFrontmost: isFrontmost)
+                .environment(\.plozzArtworkArea, artworkPolicy.heroPolicy.area)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea(
@@ -376,6 +383,58 @@ struct FocusHeroHomeView<RowContent: View>: View {
         .task(id: rows.map { $0.items.map(FocusHeroMetadata.Key.init) }) {
             guard let enrich else { return }
             await metadata.prefetch(rows.map { Array($0.items.prefix(16)) }, using: enrich)
+        }
+    }
+}
+
+private struct FocusHeroArtworkPrefetch: View {
+    let rows: [FocusHeroRow]
+    let model: FocusHeroModel
+    let metadata: FocusHeroMetadata
+    let isFrontmost: Bool
+    @Environment(\.plozzArtworkPolicy) private var policy
+    @State private var window = ArtworkPrefetchWindow()
+
+    var body: some View {
+        let requests = requests
+        Color.clear
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .task(id: requests.map(\.id)) { window.update(requests) }
+            .onDisappear { window.cancelAll() }
+    }
+
+    private var requests: [ArtworkPrefetchWindow.Request] {
+        guard isFrontmost, !rows.isEmpty else { return [] }
+        let rowIndex = model.activeIndex(in: rows)
+        let row = rows[rowIndex]
+        let index = row.items.firstIndex {
+            $0.stablePresentationID == model.subject?.item?.stablePresentationID
+        } ?? 0
+        var targets = [index, index + 1, index - 1, index + 2, index - 2].filter {
+            row.items.indices.contains($0)
+        }.map {
+            (row.items[$0], row)
+        }
+        for adjacent in [rowIndex + 1, rowIndex - 1] where rows.indices.contains(adjacent) {
+            if let item = rows[adjacent].leadItem { targets.append((item, rows[adjacent])) }
+        }
+        return targets.map { item, row in
+            let logoItem = metadata.item(for: item)
+            let references = HomeHeroArtwork.backdropReferences(
+                for: item, avoiding: row.shownArtwork(for: item), policy: policy
+            )
+            let identity = [
+                item.stablePresentationID, policy.identity,
+                MetadataQuery(item).cacheKey(for: .hero),
+                MetadataQuery(logoItem).cacheKey(for: .logo),
+                references.map(\.privacySafeIdentity).joined(separator: "\n"),
+                logoItem.artworkReferences(for: .logo).map(\.privacySafeIdentity).joined(separator: "\n"),
+            ].joined(separator: "|")
+            return .init(id: identity) {
+                await HomeHeroArtwork.prepare(item: item, logoItem: logoItem, references: references, policy: policy)
+            }
         }
     }
 }
@@ -981,6 +1040,7 @@ private struct FocusHeroBackdropLayer: View {
     let navigationStyle: NavigationStyle
     let isFrontmost: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     var body: some View {
         // Two thirds of the screen, top right, at a backdrop's own shape: the
@@ -1012,7 +1072,9 @@ private struct FocusHeroBackdropLayer: View {
     private func references(for subject: FocusHeroSubject) -> [ArtworkReference] {
         switch subject {
         case .item(let item):
-            HomeHeroArtwork.backdropReferences(for: item, avoiding: model.shownArtwork)
+            HomeHeroArtwork.backdropReferences(
+                for: item, avoiding: model.shownArtwork, policy: artworkPolicy
+            )
         case .library(let library):
             [library.library.imageURL].compactMap { $0 }.map(ArtworkReference.remote)
         }
@@ -1235,9 +1297,10 @@ private struct FocusHeroMotionSurface<Content: View>: UIViewControllerRepresenta
             target.plozzMetrics = source.plozzMetrics
             target.plozzCardStyle = source.plozzCardStyle
             target.plozzCardFocusStyle = source.plozzCardFocusStyle
-            target.plozzCardCaptionSettings = source.plozzCardCaptionSettings
-            target.plozzCardCaptionView = source.plozzCardCaptionView
-            target.plozzCardCaptionsHidden = source.plozzCardCaptionsHidden
+            target.copyCardCaptionPresentation(from: source)
+            target.plozzArtworkSettings = source.plozzArtworkSettings
+            target.plozzArtworkProviders = source.plozzArtworkProviders
+            target.plozzArtworkArea = source.plozzArtworkArea
             target.plozzWatchStatusIndicator = source.plozzWatchStatusIndicator
             target.plozzSeerConnected = source.plozzSeerConnected
             target.plozzReduceTransparency = source.plozzReduceTransparency

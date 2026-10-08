@@ -7,6 +7,60 @@ import XCTest
 
 @MainActor
 final class EpisodeArtworkPreparationTests: XCTestCase {
+    func testContinueWatchingPreparesNetworkShareArtworkWithoutURLConversion() async throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 160, height: 90)).image {
+            UIColor.green.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 160, height: 90))
+        }
+        let loader = EpisodeArtworkLoader(data: try XCTUnwrap(image.pngData()))
+        ArtworkImageCache.shared.configure(networkFileService: ArtworkNetworkFileService(loader: loader))
+        defer { ArtworkImageCache.shared.configure(networkFileService: nil) }
+        let reference = ArtworkReference.networkFile(try NetworkArtworkReference(
+            accountID: UUID().uuidString, credentialRevision: CredentialRevision(),
+            catalogArtworkID: UUID().uuidString,
+            representation: RemoteFileRepresentation(
+                size: 1_024,
+                identity: RemoteFileIdentity(kind: .modificationTime, modifiedAt: .distantPast),
+                consistency: .changeDetecting
+            ),
+            sourceRevision: UUID().uuidString, dimensions: ArtworkDimensions(width: 160, height: 90)
+        ))
+        var item = MediaItem(id: UUID().uuidString, title: "Share movie", kind: .movie)
+        item.artworkSelections = [.init(placement: .detailBackdrop, references: [reference])]
+        let policy = ArtworkPresentationPolicy(area: .continueWatching, settings: .init(preference: .library))
+        let source = ContinueWatchingArtworkSource(
+            item: item, style: .landscape, policy: policy, enablesAsyncArtworkFallback: false
+        )
+        XCTAssertEqual(source.references(textlessBackdrop: nil).first, reference)
+        await source.prepare()
+        let key = ArtworkResolveKey.make(
+            references: source.references(textlessBackdrop: nil), variant: .landscapeCard,
+            maxAspectRatio: nil, pinIdentity: source.pinIdentity, providerPolicyIdentity: policy.identity
+        )
+        let prepared = try XCTUnwrap(ArtworkSeedMemo.prepared(for: key, variant: .landscapeCard))
+        XCTAssertEqual(prepared.reference, reference)
+        XCTAssertGreaterThan(try centerPixel(prepared.image)[1], 240)
+    }
+
+    func testContinueWatchingPreparationIdentityTracksSettingsAndSourceChanges() {
+        let item = MediaItem(id: "same", title: "Movie", kind: .movie)
+        func identity(_ item: MediaItem, _ preference: ArtworkPreference = .recommended) -> String {
+            ContinueWatchingArtworkSource(
+                item: item, style: .landscape,
+                policy: .init(settings: .init(preference: preference))
+            ).identity
+        }
+        XCTAssertNotEqual(identity(item), identity(item, .online))
+        XCTAssertNotEqual(identity(item), identity(item, .library))
+        XCTAssertNotEqual(identity(item.taggingSource("one")), identity(item.taggingSource("two")))
+        var changed = item
+        changed.logoURL = URL(string: "https://example.test/new-logo.png")
+        XCTAssertNotEqual(identity(item), identity(changed))
+        changed = item
+        changed.title = "Corrected movie"
+        XCTAssertNotEqual(identity(item), identity(changed))
+    }
+
     func testEpisodeResolutionKeepsServerArtworkWhenOnlineSourcesAreUnavailable() async throws {
         let store = MetadataProviderSettingsStore()
         let original = store.load()
@@ -39,7 +93,13 @@ final class EpisodeArtworkPreparationTests: XCTestCase {
             item.artworkSelections = [
                 ArtworkSelection(placement: .episodeThumbnail, references: [.networkFile(reference)])
             ]
-            let source = EpisodeArtworkSource(item: item, spoilerSettings: .default)
+            let source = EpisodeArtworkSource(
+                item: item, spoilerSettings: .default,
+                policy: .init(
+                    area: .episodes, settings: .init(preference: online ? .online : .library),
+                    providers: store.load()
+                )
+            )
             XCTAssertNil(source.preparedArtwork)
             let resolved = await source.resolve()
             XCTAssertEqual(resolved?.reference, .networkFile(reference))
@@ -123,16 +183,11 @@ final class EpisodeArtworkPreparationTests: XCTestCase {
     }
 
     func testPreparedOnlineWinnerPaintsSynchronouslyWithoutStartingItsResolver() throws {
-        let settingsStore = MetadataProviderSettingsStore()
-        let originalSettings = settingsStore.load()
-        defer { settingsStore.save(originalSettings) }
-        var settings = originalSettings
-        settings.preferOnlineArtwork = true
-        settingsStore.save(settings)
+        let policy = ArtworkPresentationPolicy(area: .episodes, settings: .init(preference: .online))
         let library = URL(string: "https://art.example.test/\(UUID()).jpg")!
         let online = URL(string: "https://art.example.test/\(UUID()).jpg")!
         let episode = MediaItem(id: UUID().uuidString, title: "Episode", kind: .episode, posterURL: library)
-        let source = EpisodeArtworkSource(item: episode, spoilerSettings: .default)
+        let source = EpisodeArtworkSource(item: episode, spoilerSettings: .default, policy: policy)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         let red = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 9), format: format).image {
@@ -146,7 +201,7 @@ final class EpisodeArtworkPreparationTests: XCTestCase {
         let renderer = ImageRenderer(content:
             FallbackAsyncImage(
                 references: source.references, variant: .landscapeCard,
-                asyncFallbackURL: { nil }, pinIdentity: source.pinIdentity
+                artworkPolicy: policy, asyncFallbackURL: { nil }, pinIdentity: source.pinIdentity
             ) {
                 Color.blue
             }
@@ -195,12 +250,12 @@ final class EpisodeArtworkPreparationTests: XCTestCase {
 
     private func key(
         _ source: EpisodeArtworkSource,
-        settings: MetadataProviderSettings = MetadataProviderSettingsStore().load()
+        settings: MetadataProviderSettings? = nil
     ) -> String {
         ArtworkResolveKey.make(
             references: source.references, variant: .landscapeCard, maxAspectRatio: nil,
             pinIdentity: source.pinIdentity,
-            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings)
+            providerPolicyIdentity: ArtworkResolveKey.policyIdentity(settings ?? source.policy.metadataSettings)
         )
     }
 

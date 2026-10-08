@@ -3,6 +3,7 @@ import XCTest
 import UIKit
 import Observation
 import CoreModels
+import CoreUI
 @testable import FeatureHome
 
 /// Locks the Immersive Home's pin and hero rules: which row is pinned, which
@@ -344,7 +345,8 @@ final class FocusHeroModelTests: XCTestCase {
         XCTAssertEqual(metadata.item(for: item).genres, ["Drama"])
     }
 
-    func testTheHeroSkipsThePictureTheFocusedCardShows() {
+    func testProviderFirstHeroSkipsThePictureTheFocusedCardShows() {
+        let policy = ArtworkPresentationPolicy(area: .home, settings: .init(preference: .online))
         let main = ArtworkReference.remote(URL(string: "https://example.com/main.jpg")!)
         let second = ArtworkReference.remote(URL(string: "https://example.com/second.jpg")!)
         let item = MediaItem(
@@ -353,9 +355,9 @@ final class FocusHeroModelTests: XCTestCase {
             kind: .series,
             artworkSelections: [ArtworkSelection(placement: .homeHero, references: [main, second])]
         )
-        XCTAssertEqual(HomeHeroArtwork.backdropReferences(for: item, avoiding: [main]).prefix(2), [second, main])
+        XCTAssertEqual(HomeHeroArtwork.backdropReferences(for: item, avoiding: [main], policy: policy).prefix(2), [second, main])
         XCTAssertEqual(
-            HomeHeroArtwork.backdropReferences(for: item, avoiding: []).prefix(2), [main, second],
+            HomeHeroArtwork.backdropReferences(for: item, avoiding: [], policy: policy).prefix(2), [main, second],
             "A poster row's card shows no backdrop, so the hero keeps its first choice"
         )
 
@@ -366,8 +368,32 @@ final class FocusHeroModelTests: XCTestCase {
             artworkSelections: [ArtworkSelection(placement: .homeHero, references: [main])]
         )
         XCTAssertEqual(
-            HomeHeroArtwork.backdropReferences(for: single, avoiding: [main]).first, main,
+            HomeHeroArtwork.backdropReferences(for: single, avoiding: [main], policy: policy).first, main,
             "With only one picture the hero keeps it"
+        )
+    }
+
+    func testLibraryFirstHeroDoesNotAvoidTheServerArtworkOnTheFocusedCard() throws {
+        let selected = try XCTUnwrap(URL(string: "https://example.test/selected.jpg"))
+        let other = ArtworkReference.remote(try XCTUnwrap(URL(string: "https://example.test/other.jpg")))
+        let item = MediaItem(
+            id: "series", title: "Series", kind: .series, heroBackdropURL: selected,
+            artworkSelections: [.init(placement: .homeHero, references: [.remote(selected), other])]
+        )
+        let library = ArtworkPresentationPolicy(area: .home, settings: .init(preference: .library))
+        XCTAssertEqual(
+            HomeHeroArtwork.backdropReferences(for: item, avoiding: [.remote(selected)], policy: library).first,
+            .remote(selected)
+        )
+        XCTAssertEqual(
+            HomeHeroArtwork.backdropReferences(for: item, avoiding: [.remote(selected)]).first,
+            other,
+            "Recommended heroes are metadata-first and retain artwork variation."
+        )
+        let online = ArtworkPresentationPolicy(area: .home, settings: .init(preference: .online))
+        XCTAssertEqual(
+            HomeHeroArtwork.backdropReferences(for: item, avoiding: [.remote(selected)], policy: online).first,
+            other
         )
     }
 }

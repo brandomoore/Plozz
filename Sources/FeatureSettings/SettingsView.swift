@@ -752,7 +752,7 @@ public struct SettingsView: View {
                 // Metadata (artwork/details enrichment) is household-wide: one set
                 // of providers + caches serves every profile, so it lives here.
                 if metadataSettings != nil {
-                    navRow("Metadata", icon: "sparkles.rectangle.stack",
+                    navRow("Metadata Providers", icon: "sparkles.rectangle.stack",
                            value: nil,
                            route: .metadata)
                 }
@@ -1040,6 +1040,7 @@ public struct SettingsView: View {
             AppearanceDetailView(
                 librariesScope: context.librariesScope,
                 settingsNavigation: navigation,
+                canManageProviders: metadataSettings != nil && !isParentalSealed,
                 theme: theme,
                 nightShift: nightShift,
                 spoilers: spoilers
@@ -1099,7 +1100,7 @@ public struct SettingsView: View {
             IntegrationsDetailView(trakt: trakt, simkl: simkl, anilist: anilist, mal: mal, lastfm: lastfm, playback: playback, serverCount: activeProfileServerCount)
         case .metadata:
             if let metadataSettings {
-                MetadataSettingsDetailView(deps: metadataSettings)
+                MetadataSettingsDetailView(deps: metadataSettings, onOpenArtwork: navigation.openArtwork)
             }
         case .metadataDiagnostics:
             if let metadataSettings {

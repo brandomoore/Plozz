@@ -6,6 +6,7 @@ import UIKit
 public struct LibraryCardArtwork: View {
     private let library: AggregatedLibrary
     private let source: LibraryArtworkSource?
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
 
     public init(library: AggregatedLibrary, source: LibraryArtworkSource? = nil) {
         self.library = library
@@ -21,8 +22,8 @@ public struct LibraryCardArtwork: View {
                     LibraryArtworkFallback(provider: library.providerKind)
                 }
             } else {
-                LibraryCollageArtwork(source: source, provider: library.providerKind)
-                    .id(source?.cacheIdentity ?? library.key)
+                LibraryCollageArtwork(source: source, provider: library.providerKind, policy: artworkPolicy)
+                    .id((source?.cacheIdentity ?? library.key) + "|" + artworkPolicy.identity)
             }
         }
     }
@@ -31,16 +32,18 @@ public struct LibraryCardArtwork: View {
 private struct LibraryCollageArtwork: View {
     let source: LibraryArtworkSource?
     let provider: ProviderKind
+    let policy: ArtworkPresentationPolicy
     @State private var image: UIImage?
     @State private var resolved: Bool
     #if os(tvOS)
     @Environment(\.artworkResolutionState) private var resolution
     #endif
 
-    init(source: LibraryArtworkSource?, provider: ProviderKind) {
+    init(source: LibraryArtworkSource?, provider: ProviderKind, policy: ArtworkPresentationPolicy) {
         self.source = source
         self.provider = provider
-        let cached = source.flatMap { LibraryCollageCache.shared.cachedImage(for: $0) }
+        self.policy = policy
+        let cached = source.flatMap { LibraryCollageCache.shared.cachedImage(for: $0, policy: policy) }
         _image = State(initialValue: cached)
         _resolved = State(initialValue: cached != nil)
     }
@@ -61,9 +64,9 @@ private struct LibraryCollageArtwork: View {
             resolution?.isResolved = value
         }
         #endif
-        .task(id: source?.cacheIdentity) {
+        .task(id: source.map { LibraryCollageCache.identity(for: $0, policy: policy) }) {
             guard image == nil, let source else { return }
-            let loaded = await LibraryCollageCache.shared.image(for: source)
+            let loaded = await LibraryCollageCache.shared.image(for: source, policy: policy)
             guard !Task.isCancelled else { return }
             image = loaded
             resolved = true

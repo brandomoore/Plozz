@@ -7,6 +7,370 @@ import XCTest
 
 @MainActor
 final class AppearanceConsistencyHostedTests: XCTestCase {
+    func testPolicySelectedPrefetchedLogoPaintsBeforeAnyViewHasLoadedIt() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let library = try await servedLogo(color: .blue)
+        let online = try await servedLogo(color: .red)
+        defer {
+            for url in [library, online] {
+                ArtworkSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: url))
+            }
+        }
+        for preference in [ArtworkPreference.recommended, .library, .online] {
+            let item = MediaItem(id: UUID().uuidString, title: "Prefetched title", kind: .series)
+            let fallback = HeroLogoFallback(for: item) { online }
+            let policy = ArtworkPresentationPolicy(
+                area: .continueWatching, settings: .init(preference: preference)
+            )
+            let key = HeroLogoMemo.key(
+                for: [.remote(library)], fallback: fallback,
+                prefersOnlineArtwork: policy.prefersOnlineArtwork,
+                providerPolicyIdentity: policy.forPlacement(.logo).identity
+            )
+            XCTAssertNil(HeroLogoMemo.value(for: key))
+            await HeroLogoPreloader.prepare(references: [.remote(library)], fallback: fallback, policy: policy)
+            let prepared = try XCTUnwrap(HeroLogoMemo.value(for: key))
+            if preference == .library {
+                XCTAssertGreaterThan(prepared.blue, prepared.red)
+            } else {
+                XCTAssertGreaterThan(prepared.red, prepared.blue)
+            }
+            let renderer = ImageRenderer(content:
+                HeroLogoArtwork(
+                    references: [.remote(library)], asyncFallbackURL: fallback,
+                    maxWidth: 300, maxHeight: 120, constrainsToBounds: true,
+                    presentationPolicy: .whenResolved
+                ) { Color.green }
+                .environment(\.plozzArtworkArea, .continueWatching)
+                .environment(\.plozzArtworkSettings, policy.settings)
+                .frame(width: 300, height: 120)
+                .background(.black)
+            )
+            let pixels = try rgba(XCTUnwrap(renderer.uiImage))
+            let selected = countPixels(pixels) {
+                preference == .library ? $2 > 100 && $0 < 30 && $1 < 30 : $0 > 100 && $1 < 30 && $2 < 30
+            }
+            XCTAssertGreaterThan(selected, 100, "The exact selected logo must render without running a view task.")
+        }
+    }
+
+    func testCancelledLogoPreparationDoesNotSeedAMissOrAnotherPolicy() async throws {
+        let lookup = PendingLogoLookup()
+        defer { lookup.finish(nil) }
+        let item = MediaItem(id: UUID().uuidString, title: "Cancelled prefetch", kind: .series)
+        let fallback = HeroLogoFallback(for: item) { await lookup.resolve() }
+        let policy = ArtworkPresentationPolicy(area: .continueWatching)
+        let task = Task { await HeroLogoPreloader.prepare(references: [], fallback: fallback, policy: policy) }
+        try await waitUntil { lookup.calls == 1 }
+        task.cancel()
+        lookup.finish(nil)
+        await task.value
+        let key = HeroLogoMemo.key(
+            for: [], fallback: fallback, prefersOnlineArtwork: true, providerPolicyIdentity: policy.identity
+        )
+        XCTAssertNil(HeroLogoMemo.value(for: key))
+    }
+
+    func testPrefetchedLogoDoesNotRepeatMetadataLookupOnAppearance() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let logo = try await servedLogo(color: .red)
+        let lookup = PendingLogoLookup()
+        defer {
+            lookup.finish(nil)
+            ArtworkSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: logo))
+        }
+        let fallback = HeroLogoFallback(
+            for: MediaItem(id: UUID().uuidString, title: "Prewarmed logo", kind: .series)
+        ) { await lookup.resolve() }
+        let task = Task {
+            await HeroLogoPreloader.prepare(
+                references: [], fallback: fallback, policy: .init(area: .continueWatching)
+            )
+        }
+        try await waitUntil { lookup.calls == 1 }
+        lookup.finish(logo)
+        await task.value
+        fixture.host.rootView = AnyView(PendingLogoFixture(model: PendingLogoModel(fallback: fallback), isCard: true))
+        try await waitUntil { (try? self.logoPixelCounts(fixture.window).logo) ?? 0 > 100 }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(lookup.calls, 1, "Appearance must reuse the prepared policy winner, not ask for it again.")
+    }
+
+    func testBrowsingLogoWaitsForResolutionBeforeShowingText() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let logo = try seedLogo(monochrome: false, color: .red)
+        defer { ArtworkSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: logo)) }
+
+        for isCard in [false, true] {
+            for animationsDisabled in [false, true] {
+                let missing = PendingLogoLookup()
+                let available = PendingLogoLookup()
+                defer {
+                    missing.finish(nil)
+                    available.finish(nil)
+                }
+                let model = PendingLogoModel(fallback: HeroLogoFallback(
+                    for: MediaItem(id: UUID().uuidString, title: "Missing logo", kind: .series)
+                ) { await missing.resolve() })
+                let content = PendingLogoFixture(model: model, isCard: isCard)
+                    .transaction { $0.disablesAnimations = animationsDisabled }
+                fixture.host.rootView = AnyView(content)
+                try await waitUntil { missing.calls > 0 }
+                XCTAssertEqual(try logoPixelCounts(fixture.window).text, 0,
+                               "Do not show text during the initial lookup.")
+
+                missing.finish(nil)
+                try await waitUntil { (try? self.logoPixelCounts(fixture.window).text) ?? 0 > 100 }
+                XCTAssertEqual(try logoPixelCounts(fixture.window).logo, 0)
+
+                model.fallback = HeroLogoFallback(
+                    for: MediaItem(id: UUID().uuidString, title: "Available logo", kind: .series)
+                ) { await available.resolve() }
+                try await waitUntil { available.calls > 0 }
+                XCTAssertEqual(try logoPixelCounts(fixture.window).text, 0,
+                               "The previous title's missing-logo result must not reveal the new title.")
+                available.finish(logo)
+                try await waitUntil { (try? self.logoPixelCounts(fixture.window).logo) ?? 0 > 100 }
+                XCTAssertEqual(try logoPixelCounts(fixture.window).text, 0,
+                               "A usable logo must never transition through the text fallback.")
+
+                fixture.host.rootView = AnyView(content.id(UUID()))
+                fixture.window.layoutIfNeeded()
+                XCTAssertGreaterThan(try logoPixelCounts(fixture.window).logo, 100,
+                                     "A cached logo must render immediately on a fresh view.")
+                XCTAssertEqual(try logoPixelCounts(fixture.window).text, 0)
+                attach(try capture(fixture.window), name: "resolved-logo-card-\(isCard)-animations-disabled-\(animationsDisabled)")
+
+                model.fallback = nil
+                try await waitUntil { (try? self.logoPixelCounts(fixture.window).text) ?? 0 > 100 }
+                XCTAssertEqual(try logoPixelCounts(fixture.window).logo, 0,
+                               "A title with no logo sources must use text, not a stale image.")
+            }
+        }
+    }
+
+    func testCancelledLogoMissCannotRevealTextForTheNextPendingTitle() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        for isCard in [false, true] {
+            let previous = PendingLogoLookup()
+            let current = PendingLogoLookup()
+            defer {
+                previous.finish(nil)
+                current.finish(nil)
+            }
+            let model = PendingLogoModel(fallback: HeroLogoFallback(
+                for: MediaItem(id: UUID().uuidString, title: "Previous title", kind: .series)
+            ) { await previous.resolve() })
+            fixture.host.rootView = AnyView(PendingLogoFixture(model: model, isCard: isCard))
+            try await waitUntil { previous.calls > 0 }
+            model.fallback = HeroLogoFallback(
+                for: MediaItem(id: UUID().uuidString, title: "Current title", kind: .series)
+            ) { await current.resolve() }
+            try await waitUntil { current.calls > 0 }
+            previous.finish(nil)
+            try await waitUntil { previous.completed }
+            XCTAssertEqual(try logoPixelCounts(fixture.window).text, 0)
+            current.finish(nil)
+            try await waitUntil { (try? self.logoPixelCounts(fixture.window).text) ?? 0 > 100 }
+        }
+    }
+
+    @MainActor
+    @Observable
+    fileprivate final class PendingLogoModel {
+        var fallback: HeroLogoFallback?
+
+        init(fallback: HeroLogoFallback?) {
+            self.fallback = fallback
+        }
+    }
+
+    private struct PendingLogoFixture: View {
+        let model: PendingLogoModel
+        let isCard: Bool
+
+        var body: some View {
+            Color.black.overlay {
+                if isCard {
+                    ContinueWatchingSeriesLogo(
+                        title: Text(verbatim: "Fallback title"), logoReferences: [],
+                        artworkReferences: [], artworkVariant: .landscapeCard,
+                        asyncFallbackURL: model.fallback
+                    )
+                    .frame(width: 300, height: 190)
+                } else {
+                    HeroLogoArtwork(
+                        references: [], asyncFallbackURL: model.fallback,
+                        maxWidth: 300, maxHeight: 120, constrainsToBounds: true,
+                        presentationPolicy: .whenResolved
+                    ) {
+                        Text(verbatim: "Fallback title").foregroundStyle(.white)
+                    }
+                }
+            }
+            .environment(\.plozzArtworkArea, .continueWatching)
+            .ignoresSafeArea()
+        }
+    }
+
+    @MainActor
+    private final class PendingLogoLookup {
+        var calls = 0
+        var completed = false
+        private var continuation: CheckedContinuation<URL?, Never>?
+
+        func resolve() async -> URL? {
+            calls += 1
+            let result = await withCheckedContinuation { continuation = $0 }
+            completed = true
+            return result
+        }
+
+        func finish(_ result: URL?) {
+            continuation?.resume(returning: result)
+            continuation = nil
+        }
+    }
+
+    private func logoPixelCounts(_ window: UIWindow) throws -> (text: Int, logo: Int) {
+        let pixels = try rgba(capture(window))
+        return (
+            countPixels(pixels) { $0 > 200 && $1 > 200 && $2 > 200 },
+            countPixels(pixels) { $0 > 100 && $1 < 30 && $2 < 30 }
+        )
+    }
+
+    func testSharedHeroAppearanceReevaluatesChangedProviderPolicy() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let library = try seedArtwork(color: .red)
+        let metadata = try seedArtwork(color: .blue)
+        let appearanceID = UUID().uuidString
+        for providerEnabled in [true, false, true] {
+            let providers = MetadataProviderSettings(
+                orderMode: .custom,
+                enabledOrder: providerEnabled ? ["tmdb"] : [],
+                disabledOrder: providerEnabled ? [] : ["tmdb"]
+            )
+            let policy = ArtworkPresentationPolicy(
+                area: .details, providers: providers, placement: .detailBackdrop
+            )
+            let online = providerEnabled ? metadata : nil
+            fixture.host.rootView = AnyView(
+                VStack(spacing: 0) {
+                    ForEach(0..<2) { index in
+                        FallbackAsyncImage(
+                            references: [.remote(library)], variant: .heroBackdrop,
+                            artworkPolicy: policy, asyncFallbackURL: { online },
+                            pinIdentity: "\(appearanceID)-\(index)",
+                            sharedResolutionIdentity: appearanceID
+                        ) { Color.clear }
+                        .frame(height: 160)
+                    }
+                }
+                .frame(width: 300, height: 320)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(.black)
+            )
+            try await waitUntil("shared hero provider enabled=\(providerEnabled)") {
+                guard let image = try? self.capture(fixture.window) else { return false }
+                return [50.0, 220.0].allSatisfy { y in
+                    guard let pixel = try? self.pixel(
+                        image, x: 50 / fixture.window.bounds.width, y: y / fixture.window.bounds.height
+                    ) else { return false }
+                    return pixel[providerEnabled ? 2 : 0] > 100 && pixel[providerEnabled ? 0 : 2] < 20
+                }
+            }
+        }
+    }
+
+    func testRecommendedDetailHeroesUseMetadataWithoutChangingRelatedCards() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let library = try seedArtwork(color: .red)
+        let metadata = try seedArtwork(color: .blue)
+        for settings in [
+            ArtworkSettings.default, .init(preference: .library),
+            .init(overrides: [.details: .library]), .init(preference: .online)
+        ] {
+            for hasMetadata in [true, false] {
+                let online = hasMetadata ? metadata : nil
+                let heroOnline = settings.preference(in: .details) != .library && hasMetadata
+                let cardsOnline = settings.preference(in: .details) == .online && hasMetadata
+                fixture.host.rootView = AnyView(
+                    VStack(spacing: 0) {
+                        HeroBackdropLayer(
+                            references: [.remote(library)], asyncFallbackURL: { online },
+                            height: 160, scrimTone: .clear, ignoresOverscan: false,
+                            pinIdentity: UUID().uuidString
+                        ) { EmptyView() }
+                        FallbackAsyncImage(
+                            references: [.remote(library)], variant: .posterCard,
+                            asyncFallbackURL: { online }, pinIdentity: UUID().uuidString
+                        ) { Color.clear }
+                        .frame(height: 160)
+                    }
+                    .frame(width: 300, height: 320)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .background(.black)
+                    .environment(\.plozzArtworkArea, .details)
+                    .environment(\.plozzArtworkSettings, settings)
+                    .id(UUID())
+                )
+                try await waitUntil("hero settings=\(settings) metadata=\(hasMetadata)") {
+                    guard let image = try? self.capture(fixture.window),
+                          let hero = try? self.pixel(image, x: 50 / fixture.window.bounds.width, y: 50 / fixture.window.bounds.height),
+                          let card = try? self.pixel(image, x: 50 / fixture.window.bounds.width, y: 220 / fixture.window.bounds.height)
+                    else { return false }
+                    return hero[heroOnline ? 2 : 0] > 100 && hero[heroOnline ? 0 : 2] < 20
+                        && card[cardsOnline ? 2 : 0] > 100 && card[cardsOnline ? 0 : 2] < 20
+                }
+            }
+        }
+    }
+
+    func testHeroLogosUseRecommendedSourcesAndRetainLibraryOverrides() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let library = try seedLogo(monochrome: false, color: .red)
+        let metadata = try seedLogo(monochrome: false, color: .blue)
+        defer {
+            for url in [library, metadata] {
+                ArtworkSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: url))
+            }
+        }
+        for area in [ArtworkArea.home, .recommendedHero, .details, .homeRows, .browse] {
+            for useLibrary in [false, true] {
+                let settings = ArtworkSettings(overrides: useLibrary ? [area: .library] : [:])
+                let expectsMetadata = !useLibrary && [.home, .recommendedHero, .details].contains(area)
+                let item = MediaItem(id: UUID().uuidString, title: "Hero logo", kind: .movie)
+                fixture.host.rootView = AnyView(
+                    HeroLogoArtwork(
+                        references: [.remote(library)],
+                        asyncFallbackURL: HeroLogoFallback(for: item) { metadata },
+                        maxWidth: 200, maxHeight: 120
+                    ) { Color.clear }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.black)
+                    .environment(\.plozzArtworkArea, area)
+                    .environment(\.plozzArtworkSettings, settings)
+                    .id(item.id)
+                )
+                try await waitUntil("logo area=\(area) library=\(useLibrary)") {
+                    guard let image = try? self.capture(fixture.window),
+                          let bytes = try? self.rgba(image) else { return false }
+                    return self.countPixels(bytes) { red, green, blue in
+                        green < 30 && (expectsMetadata ? blue > 100 && red < 30 : red > 100 && blue < 30)
+                    } > 500
+                }
+            }
+        }
+    }
+
     #if os(iOS)
     func testSettingsScrollEdgesSpanTheNavigationBarWhileRowsStayInset() async throws {
         let fixture = try await makeFixture()
@@ -254,21 +618,50 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
         }
     }
 
-    private func seedLogo(monochrome: Bool) throws -> URL {
-        let url = try XCTUnwrap(URL(string: "https://appearance-fixture.example.test/\(UUID()).png"))
+    private func seedLogo(monochrome: Bool, color: UIColor? = nil) throws -> URL {
+        try seedImage(logoImage(monochrome: monochrome, color: color))
+    }
+
+    private func servedLogo(color: UIColor) async throws -> URL {
+        let bytes = try XCTUnwrap(logoImage(monochrome: false, color: color).pngData())
+        let server = try IPTVTestHTTPServer { _ in
+            .init(data: bytes, headers: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"])
+        }
+        addTeardownBlock { await server.stop() }
+        return try await server.start().appendingPathComponent("\(UUID()).png")
+    }
+
+    private func logoImage(monochrome: Bool, color: UIColor? = nil) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
         format.preferredRange = .standard
         let image = UIGraphicsImageRenderer(size: CGSize(width: 180, height: 100), format: format).image { context in
-            (monochrome ? UIColor.white : UIColor.red).setFill()
+            (monochrome ? UIColor.white : color ?? UIColor.red).setFill()
             context.fill(CGRect(x: 20, y: 15, width: 25, height: 70))
             context.fill(CGRect(x: 20, y: 60, width: 140, height: 25))
             if !monochrome {
-                UIColor.blue.setFill()
+                (color ?? UIColor.blue).setFill()
                 context.fill(CGRect(x: 120, y: 15, width: 40, height: 30))
             }
         }
+        return image
+    }
+
+    private func seedArtwork(color: UIColor) throws -> URL {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 180, height: 100)).image {
+            color.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 180, height: 100))
+        }
+        let url = try seedImage(image)
+        addTeardownBlock {
+            ArtworkSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: url))
+        }
+        return url
+    }
+
+    private func seedImage(_ image: UIImage) throws -> URL {
+        let url = try XCTUnwrap(URL(string: "https://appearance-fixture.example.test/\(UUID()).png"))
         let response = try XCTUnwrap(HTTPURLResponse(
             url: url, statusCode: 200, httpVersion: nil,
             headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=3600"]
@@ -352,9 +745,9 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
         add(attachment)
     }
 
-    private func waitUntil(_ condition: () -> Bool) async throws {
+    private func waitUntil(_ context: String = "", _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !condition(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
-        XCTAssertTrue(condition(), "Appearance fixture did not finish resolving.")
+        XCTAssertTrue(condition(), "Appearance fixture did not finish resolving. \(context)")
     }
 }

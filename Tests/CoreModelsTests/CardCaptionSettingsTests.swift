@@ -2,29 +2,90 @@ import XCTest
 @testable import CoreModels
 
 final class CardCaptionSettingsTests: XCTestCase {
-    func testFreshProfilesKeepEpisodeLabelsAndPostersAreFirst() {
+    func testCustomStateAndPresetReplacementSurviveProfileStorageAndTransfer() throws {
+        try withDefaults { defaults in
+            let source = CardCaptionSettingsStore(defaults: defaults)
+            var settings = CardCaptionSettings.default
+            settings.toggleCustomization(in: .home)
+            settings.toggleCustomization(in: .home)
+            source.save(settings)
+            XCTAssertNil(source.load().selectedPreset)
+            let entries = ProfileSettingsTransfer.capture(namespace: nil, defaults: defaults)
+            ProfileSettingsTransfer.apply(entries, namespace: "other", defaults: defaults)
+            let other = CardCaptionSettingsStore(defaults: defaults, namespace: "other")
+            XCTAssertEqual(other.load(), settings)
+            settings.applyPreset(.recommended)
+            other.save(settings)
+            XCTAssertEqual(other.load(), .default)
+            XCTAssertFalse(other.load().showsLabels(in: .home, isShowcase: true))
+            XCTAssertTrue(source.load().showsLabels(in: .home, isShowcase: true))
+            XCTAssertNil(source.load().selectedPreset)
+        }
+    }
+
+    func testRecommendedShowsBrowsingLabelsButNotShowcaseLabels() {
         XCTAssertEqual(CardStyle.allCases.first, .default)
         let settings = CardCaptionSettings.default
+        XCTAssertEqual(settings.preference, .recommended)
         XCTAssertTrue(settings.overrides.isEmpty)
         for view in CardCaptionView.allCases {
-            XCTAssertEqual(settings.showsLabels(in: view), view == .episodes)
+            XCTAssertTrue(settings.showsLabels(in: view))
+            XCTAssertEqual(settings.showsLabels(in: view, isShowcase: true), view == .episodes)
             XCTAssertEqual(settings.override(for: view), .automatic)
         }
     }
 
-    func testEpisodeIdentitySurvivesSharedAndPersistedHideChoices() throws {
-        XCTAssertFalse(CardCaptionView.customizableCases.contains(.episodes))
-        XCTAssertEqual(Set(CardCaptionView.customizableCases), Set(CardCaptionView.allCases).subtracting([.episodes]))
-        for shared in [false, true] {
-            var settings = CardCaptionSettings(showsLabels: shared, overrides: [.episodes: false])
-            XCTAssertTrue(settings.showsLabels(in: .episodes))
-            let restored = try JSONDecoder().decode(CardCaptionSettings.self, from: JSONEncoder().encode(settings))
-            XCTAssertTrue(restored.showsLabels(in: .episodes))
-            settings.setOverride(.hide, for: .episodes)
-            XCTAssertTrue(settings.showsLabels(in: .episodes))
-            settings.resetOverrides()
-            XCTAssertTrue(settings.showsLabels(in: .episodes))
-            XCTAssertEqual(settings.showsLabels(in: .home), shared)
+    func testLegacyChoicesAndRecommendedRoundTripWithoutLosingOverrides() throws {
+        for choice in [false, true] {
+            let data = try JSONSerialization.data(withJSONObject: [
+                "showsLabels": choice, "overrides": ["home": !choice]
+            ])
+            let legacy = try JSONDecoder().decode(CardCaptionSettings.self, from: data)
+            XCTAssertEqual(legacy.preference, choice ? .show : .hide)
+            XCTAssertEqual(legacy.showsLabels(in: .home, isShowcase: true), !choice)
+            XCTAssertEqual(legacy.showsLabels(in: .browse), choice)
+        }
+        var settings = CardCaptionSettings()
+        settings.setOverride(.show, for: .home)
+        settings.setOverride(.hide, for: .browse)
+        XCTAssertTrue(settings.showsLabels(in: .home, isShowcase: true), "Explicit choices override Recommended.")
+        XCTAssertFalse(settings.showsLabels(in: .browse))
+        let restored = try JSONDecoder().decode(CardCaptionSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(restored, settings)
+        XCTAssertEqual(restored.preference, .recommended)
+        settings.resetOverrides()
+        XCTAssertFalse(settings.showsLabels(in: .home, isShowcase: true))
+        XCTAssertTrue(settings.showsLabels(in: .home))
+    }
+
+    func testEveryCaptionScopeHonorsPresetsAndPersistentOverrides() throws {
+        XCTAssertEqual(CardCaptionView.customizableCases, CardCaptionView.allCases)
+        for view in CardCaptionView.allCases {
+            for preference in CardCaptionPreference.allCases {
+                for showcase in [false, true] {
+                    for artworkTitle in [false, true] {
+                        var settings = CardCaptionSettings(preference: preference)
+                        let inherited = preference == .show || (preference == .recommended
+                            && (view == .episodes || (!showcase && !artworkTitle)))
+                        for override in CardCaptionOverride.allCases {
+                            settings.setOverride(override, for: view)
+                            let restored = try JSONDecoder().decode(
+                                CardCaptionSettings.self, from: JSONEncoder().encode(settings)
+                            )
+                            XCTAssertEqual(
+                                restored.showsLabels(in: view, isShowcase: showcase, hasArtworkTitle: artworkTitle),
+                                override == .automatic ? inherited : override == .show,
+                                "\(view) / \(preference) / \(override) / \(showcase) / \(artworkTitle)"
+                            )
+                        }
+                        settings.resetOverrides()
+                        XCTAssertEqual(
+                            settings.showsLabels(in: view, isShowcase: showcase, hasArtworkTitle: artworkTitle),
+                            inherited
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -74,6 +135,38 @@ final class CardCaptionSettingsTests: XCTestCase {
         }
     }
 
+    func testSyncedResetBeforeFirstLoadDoesNotResurrectLegacyHomeLabels() throws {
+        try withDefaults { defaults in
+            var legacy = HeroSettings.default
+            legacy.showsCardCaptions = false
+            let source = CardCaptionSettingsStore(defaults: defaults, namespace: "source")
+            source.save(.init(showsLabels: false, overrides: [.browse: true]))
+            let snapshot = ProfileSettingsTransfer.capture(namespace: "source", defaults: defaults)
+            let blob = try XCTUnwrap(snapshot[CardCaptionSettingsStore.storageKey])
+            for namespace in ["inactive", "never-received"] {
+                HeroSettingsStore(defaults: defaults, namespace: namespace).save(legacy)
+                if namespace == "inactive" {
+                    ProfileSettingsTransfer.applyOne(
+                        baseKey: CardCaptionSettingsStore.storageKey, blob: blob,
+                        namespace: namespace, defaults: defaults
+                    )
+                }
+                ProfileSettingsTransfer.removeOne(
+                    baseKey: CardCaptionSettingsStore.storageKey, namespace: namespace, defaults: defaults
+                )
+                let store = CardCaptionSettingsStore(defaults: defaults, namespace: namespace)
+                XCTAssertEqual(store.load(), .default)
+                XCTAssertEqual(store.load(), .default)
+                XCTAssertFalse(ProfileSettingsTransfer.capture(namespace: namespace, defaults: defaults).keys
+                    .contains { $0.hasSuffix(".migrated") })
+            }
+            HeroSettingsStore(defaults: defaults, namespace: "fresh").save(legacy)
+            XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults, namespace: "fresh").load().overrides,
+                           [.home: false])
+            XCTAssertEqual(source.load().overrides, [.browse: true])
+        }
+    }
+
     @MainActor
     func testModelPersistsAndRebuildsEachProfileIndependently() throws {
         try withDefaults { defaults in
@@ -91,7 +184,8 @@ final class CardCaptionSettingsTests: XCTestCase {
             other.captions.setOverride(.show, for: .browse)
             XCTAssertEqual(model(nil).captions, primary.captions)
             XCTAssertEqual(model("other").captions, other.captions)
-            XCTAssertFalse(model("fresh").captions.showsLabels)
+            XCTAssertEqual(model("fresh").captions.preference, .recommended)
+            XCTAssertTrue(model("fresh").captions.showsLabels)
         }
     }
 

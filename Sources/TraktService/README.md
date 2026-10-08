@@ -80,6 +80,15 @@ in-flight owner so an older cloud read cannot erase an unpublished successor.
 Install the coordinator before constructing Trakt services on both platforms,
 even when ordinary configuration sync is disabled.
 
+CloudKit availability does not depend on an App Store receipt. TestFlight's
+iPhone/iPad sandbox installs can have no receipt before an in-app purchase,
+which this free integration never requires. An embedded provisioning profile
+remains authoritative; a missing or unreadable entitlement fails closed.
+When Apple removes that profile for distribution, only the canonical app and
+container on a physical device use the profileless fallback. Test hosts,
+profileless simulators, and unentitled branded builds cannot construct CloudKit.
+See Apple's [receipt availability documentation](https://developer.apple.com/documentation/foundation/bundle/appstorereceipturl).
+
 The private tracker record type (`PlozzTrackerTokensV1Record`) and its encrypted
 `value` field must be deployed to the container's **Production** schema before
 TestFlight/App Store builds can use this channel. A Development schema alone is
