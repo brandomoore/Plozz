@@ -252,7 +252,9 @@ and Plozz does not supply channels or an IPTV subscription.
   subtitle preferences with the active Plozz profile. Apple TV system-user
   support and Plex Home/Silo server-profile selection keep the right identity
   in view. Server-side access and watch history still belong to the server user
-  you choose; device-wide settings remain device-wide.
+  you choose; device-wide settings remain device-wide. The iPhone/iPad picker
+  uses a compact, theme-aware grid with a subtle staggered entrance, skipped
+  with Reduce Motion. Larger households scroll, and accessible text wraps.
 - **Set up another device** — use nearby-device setup, a QR code, or a pairing
   code to import an existing setup. iCloud sync carries profiles, settings, and
   server details; Silo asks you to approve each receiving device independently.

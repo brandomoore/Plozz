@@ -394,6 +394,14 @@ use synthetic received data, not pairing services or stored household credential
 Package-only UIKit snapshots cannot replace this gate:
 without an application scene, `drawHierarchy` returns an empty image.
 
+`ProfilePickerPresentationTests` covers compact/adaptive avatar sizing, small
+and large households, themes/gradients, landscape, iPad, accessible names and RTL.
+Hosted animation frames check the stagger and settled scale; Reduce Motion
+reveals every tile immediately. `ProfilePickerInteractionTests` exercises
+selection, cancellation, reopening, Edit/Done, long-press editing, separate
+adult/kids creation entry points, and launch/restricted management visibility.
+Its fixture disables sync and uses only synthetic host-sandbox profiles.
+
 `DownloadActivityLifecycleTests` and `DownloadNotificationDeliveryTests` cover
 continued-processing admission, expiration, profile retirement, real-progress
 finalization, and durable notification replay without requesting notification

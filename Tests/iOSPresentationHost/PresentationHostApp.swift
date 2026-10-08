@@ -63,7 +63,9 @@ struct PresentationHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--downloads-interaction-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--profile-picker-fixture") {
+                ProfilePickerInteractionFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--downloads-interaction-fixture") {
                 DownloadsInteractionFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--iptv-removal-fixture") {
                 IPTVRemovalFixture()
