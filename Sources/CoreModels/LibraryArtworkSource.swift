@@ -2,6 +2,11 @@ import Foundation
 
 /// A library-scoped, bounded source for a missing library cover.
 public struct LibraryArtworkSource: Sendable {
+    public struct Candidate: Sendable {
+        public let item: MediaItem
+        public let references: [ArtworkReference]
+    }
+
     public let accountID: String
     public let credentialRevision: String
     public let cacheIdentity: String
@@ -20,7 +25,13 @@ public struct LibraryArtworkSource: Sendable {
         ].map { "\($0.utf8.count):\($0)" }.joined()
     }
 
+    /// Library-only compatibility view; renderers need `artworkCandidates` to
+    /// retain each external candidate's lookup identity and provenance.
     public func candidates() async throws -> [[ArtworkReference]] {
+        try await artworkCandidates().map(\.references).filter { !$0.isEmpty }
+    }
+
+    public func artworkCandidates() async throws -> [Candidate] {
         guard library.imageURL == nil else { return [] }
         try Task.checkCancellation()
         let items: [MediaItem]
@@ -40,13 +51,19 @@ public struct LibraryArtworkSource: Sendable {
         return Self.selectCandidates(from: items)
     }
 
-    static func selectCandidates(from items: [MediaItem]) -> [[ArtworkReference]] {
+    static func selectCandidates(from items: [MediaItem]) -> [Candidate] {
         var seen = Set<ArtworkReference>()
-        var result: [[ArtworkReference]] = []
+        var result: [Candidate] = []
         for item in items {
-            let references = Array(item.artworkReferences(for: .poster).prefix(2))
-            guard let first = references.first, seen.insert(first).inserted else { continue }
-            result.append(references)
+            let lookup = item.artworkLookupItem
+            let placement: ArtworkPlacement = lookup.kind == .episode ? .seriesPoster
+                : lookup.kind == .season ? .seasonPoster : .poster
+            let references = Array(item.artworkReferences(for: placement).prefix(2))
+            let external = item.supportsExternalArtworkLookup
+                ? lookup.metadataArtworkURLs(for: placement).first?.value : nil
+            guard let identity = references.first ?? external.map(ArtworkReference.remote),
+                  seen.insert(identity).inserted else { continue }
+            result.append(Candidate(item: item, references: references))
             if result.count == 6 { break }
         }
         return result

@@ -94,9 +94,10 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
             } ?? []
         let policy = environment.plozzArtworkPolicy
         let fallback = item.flatMap { CardArtworkPolicy.standard.posterFallback(for: $0) }
+        let identity = item.map { CardArtworkPolicy.standard.pinIdentity(for: $0) }
         if references != artworkReferences || artworkPolicyIdentity != policy.identity
-            || artworkItemIdentity != item?.stablePresentationID {
-            artworkItemIdentity = item?.stablePresentationID
+            || artworkItemIdentity != identity {
+            artworkItemIdentity = identity
             imageTask?.cancel()
             artworkReferences = references
             artworkPolicyIdentity = policy.identity

@@ -1,4 +1,5 @@
 import CoreModels
+import CoreUI
 @testable import FeatureSettings
 import XCTest
 
@@ -101,12 +102,19 @@ final class ViewCustomizationCycleTests: XCTestCase {
     }
 
     func testEveryArtworkScopeHasABoundedHighlightAndConciseHelp() throws {
-        let bounds = CGRect(x: 0, y: 0, width: 180, height: 112)
+        let bounds = CGRect(origin: .zero, size: ArtworkScopeDiagram.screen)
         for area in ArtworkArea.allCases {
-            let regions = ArtworkScopeDiagram.regions(for: area)
-            XCTAssertFalse(regions.isEmpty, area.rawValue)
-            XCTAssertTrue(regions.contains { $0.artwork && $0.highlighted }, area.rawValue)
-            XCTAssertTrue(regions.allSatisfy { bounds.contains($0.frame) }, area.rawValue)
+            for navigation in NavigationStyle.allCases {
+                for kind in ArtworkScopeDiagram.DetailKind.allCases {
+                    let regions = ArtworkScopeDiagram.regions(
+                        for: area, navigationStyle: navigation, detailKind: kind
+                    )
+                    XCTAssertFalse(regions.isEmpty, area.rawValue)
+                    XCTAssertTrue(regions.contains { $0.artwork && $0.highlighted }, area.rawValue)
+                    XCTAssertTrue(regions.allSatisfy { bounds.contains($0.frame) }, area.rawValue)
+                    XCTAssertTrue(regions.filter(\.highlighted).allSatisfy(\.artwork), area.rawValue)
+                }
+            }
             let detail = String(localized: try XCTUnwrap(ArtworkSettings.default.customizationDetail(in: area)))
             XCTAssertFalse(detail.contains("own choice"), detail)
             XCTAssertFalse(detail.contains("separate choices"), detail)
@@ -114,11 +122,90 @@ final class ViewCustomizationCycleTests: XCTestCase {
         }
         let hero = ArtworkScopeDiagram.regions(for: .home).filter(\.highlighted)
         let rows = ArtworkScopeDiagram.regions(for: .homeRows).filter(\.highlighted)
-        XCTAssertTrue(hero.allSatisfy { $0.frame.maxY < 78 })
-        XCTAssertTrue(rows.allSatisfy { $0.frame.minY >= 78 })
+        XCTAssertEqual(Set(hero.map(\.kind)), [.backdrop, .logo])
+        XCTAssertTrue(rows.allSatisfy { $0.kind == .poster })
         let player = ArtworkScopeDiagram.regions(for: .playback).filter(\.highlighted)
-        XCTAssertTrue(player.allSatisfy { $0.frame.minY >= 68 },
+        XCTAssertTrue(player.allSatisfy { $0.kind == .thumbnail && $0.frame.minY >= 105 },
                       "The diagram must highlight player artwork, never the video itself.")
+    }
+
+    func testTitleDetailsSeparateMovieAndShowLayoutsFromEpisodeArtwork() {
+        let movie = ArtworkScopeDiagram.regions(for: .details, detailKind: .movie)
+        let show = ArtworkScopeDiagram.regions(for: .details, detailKind: .series)
+        let episodes = ArtworkScopeDiagram.regions(for: .episodes)
+        XCTAssertFalse(movie.contains { $0.kind == .episode || $0.kind == .poster },
+                       "A resting movie hero has neither an episode rail nor visible Related posters.")
+        XCTAssertEqual(movie.first?.frame, CGRect(origin: .zero, size: ArtworkScopeDiagram.screen))
+        XCTAssertTrue(show.contains { $0.kind == .episode })
+        XCTAssertTrue(show.filter { $0.kind == .episode }.allSatisfy { !$0.highlighted })
+        XCTAssertTrue(show.filter(\.highlighted).allSatisfy { $0.kind == .backdrop || $0.kind == .logo })
+        XCTAssertTrue(episodes.filter(\.highlighted).allSatisfy { $0.kind == .episode })
+        for regions in [movie, show, episodes] {
+            XCTAssertFalse(regions.contains { $0.kind == .navigation })
+        }
+    }
+
+    func testNavigationChromeMatchesTheSelectedModeAndPushedPageExceptions() {
+        let sidebar = ArtworkScopeDiagram.regions(for: .home, navigationStyle: .sidebar)
+            .filter { $0.kind == .navigation }
+        let rail = ArtworkScopeDiagram.regions(for: .home, navigationStyle: .rail)
+            .filter { $0.kind == .navigation }
+        let tabs = ArtworkScopeDiagram.regions(for: .home, navigationStyle: .tabBar)
+            .filter { $0.kind == .navigation }
+        XCTAssertEqual(sidebar.count, 1, "The native sidebar is a trigger, not a permanently pinned rail.")
+        XCTAssertGreaterThan(rail.count, 1)
+        XCTAssertEqual(tabs.count, 1)
+        XCTAssertGreaterThan(tabs[0].frame.width, tabs[0].frame.height * 5)
+        XCTAssertFalse(ArtworkScopeDiagram.regions(for: .browse, navigationStyle: .tabBar)
+            .contains { $0.kind == .navigation })
+        XCTAssertEqual(ArtworkScopeDiagram.regions(for: .search, navigationStyle: .rail)
+            .filter { $0.kind == .navigation }.count, 1)
+    }
+
+    func testIllustrationsPreservePosterThumbnailAndAlbumAspectRatios() {
+        for area in ArtworkArea.allCases {
+            for region in ArtworkScopeDiagram.regions(for: area) where region.artwork {
+                let expected: CGFloat?
+                switch region.kind {
+                case .poster: expected = 2.0 / 3
+                case .thumbnail, .episode: expected = 16.0 / 9
+                case .seriesCard: expected = ContinueWatchingCardShape.aspectRatio
+                case .cover: expected = 1
+                default: expected = nil
+                }
+                if let expected {
+                    XCTAssertEqual(region.frame.width / region.frame.height, expected, accuracy: 0.001,
+                                   "\(area): \(region.kind)")
+                }
+            }
+        }
+        XCTAssertTrue(ArtworkScopeDiagram.regions(for: .topShelf).filter(\.highlighted)
+            .allSatisfy { $0.kind == .poster })
+        XCTAssertTrue(ArtworkScopeDiagram.regions(for: .downloads).filter(\.highlighted)
+            .allSatisfy { $0.kind == .thumbnail })
+    }
+
+    func testHomePreviewsFollowHeroAndContinueWatchingPresentation() {
+        var settings = HeroSettings.default
+        settings.style = .followsFocus
+        let showcase = ArtworkScopeDiagram.regions(for: .home, heroSettings: settings)
+        XCTAssertEqual(showcase.first?.frame.width, 192)
+        settings.style = .carousel
+        let carousel = ArtworkScopeDiagram.regions(for: .home, heroSettings: settings)
+        XCTAssertEqual(carousel.first?.frame, CGRect(origin: .zero, size: ArtworkScopeDiagram.screen))
+        XCTAssertFalse(carousel.contains { $0.kind == .poster })
+        settings.isEnabled = false
+        let inactive = ArtworkScopeDiagram.regions(for: .home, heroSettings: settings)
+        XCTAssertFalse(inactive.contains(where: \.highlighted))
+        XCTAssertFalse(inactive.contains { $0.kind == .backdrop || $0.kind == .logo })
+        for seriesArtwork in [true, false] {
+            let watching = ArtworkScopeDiagram.regions(
+                for: .continueWatching, heroSettings: settings,
+                continueWatchingShowsSeriesArtwork: seriesArtwork
+            ).filter(\.highlighted)
+            XCTAssertEqual(watching.count, 3)
+            XCTAssertTrue(watching.allSatisfy { $0.kind == (seriesArtwork ? .seriesCard : .thumbnail) })
+        }
     }
 
     func testLabelHelpMatchesTheConfiguredStyleAndVisibility() {

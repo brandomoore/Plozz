@@ -258,13 +258,6 @@ struct HomeHeroView: View {
     /// Changes only when the curated hero identity set changes. Drives the
     /// low-resolution all-slide preview warm without restarting it on every page.
     @State private var artworkSetToken = 0
-    /// Best resolved hero backdrop URL per item id. For episode/season slides
-    /// this is the **series-level** hero art (correct show, high-res — matching
-    /// the detail page), resolved via ``ArtworkRouter`` and preloaded for the
-    /// current slide and its neighbours so a page never animates a placeholder.
-    /// Internal (not private) so the artwork extension in a sibling file can read
-    /// and populate the resolved-art cache; still owned only by this view.
-    @State var resolvedBackdrop: [String: URL] = [:]
 
     /// Pending "resume auto-advance" work, scheduled after each remote input and
     /// cancelled/rescheduled by the next one, so the carousel only starts counting
@@ -599,7 +592,7 @@ struct HomeHeroView: View {
         // `count` alone would leave `index` pointing at a *different* show —
         // fronted with no slide and stale art (the "wrong image / instant appear"
         // bug). Key on identity: preserve the fronted item if it survived the
-        // swap, else clamp, then prune resolved art and re-resolve.
+        // swap, else clamp, then restart artwork warming.
         .onChange(of: items.map(\.id)) { oldIDs, newIDs in
             guard oldIDs != newIDs else { return }
             artworkSetToken &+= 1
@@ -615,7 +608,6 @@ struct HomeHeroView: View {
             }
             HeroFocusDiagnostics.emit("items SET-SWAP count \(oldIDs.count)->\(newIDs.count) index \(oldIdx)->\(index) frontedSurvived=\(frontedSurvived) | \(hfState())")
             let present = Set(newIDs)
-            resolvedBackdrop = resolvedBackdrop.filter { present.contains($0.key) }
             trailerSourceCache = trailerSourceCache.filter { present.contains($0.key) }
             noFastTrailerIDs.formIntersection(present)
             // Clamp the logical selection to the fronted slide's button count so it
@@ -694,14 +686,16 @@ struct HomeHeroView: View {
         // Keep only the fronted slide's current warm pass alive. Rapid paging
         // cancels the old five-slide window before it can keep downloading and
         // decoding artwork the user has already skipped.
-        .task(id: ArtworkResolutionKey(slideToken: slideToken, index: index)) {
+        .task(id: ArtworkResolutionKey(
+            slideToken: slideToken, index: index, policyIdentity: artworkPolicy.heroPolicy.identity
+        )) {
             await resolveArtwork(around: index)
         }
         // A cheap 768px preview for every configured hero slide makes even a
         // 20-item fly-through immediate. This task survives page changes; all work
         // stays behind the shared background limiter and full hero art still has
         // foreground priority.
-        .task(id: artworkSetToken) {
+        .task(id: ArtworkPrewarmKey(setToken: artworkSetToken, policyIdentity: artworkPolicy.heroPolicy.identity)) {
             await warmHeroPreviews()
         }
         // Every schedule already on disk, published before a single request — a
@@ -723,7 +717,7 @@ struct HomeHeroView: View {
         // network fetch plus decode/analysis. Warm them in likely paging order so
         // each slide arrives with its final identity instead of replacing a settled
         // text title. The shared limiter keeps this behind foreground artwork.
-        .task(id: artworkSetToken) {
+        .task(id: ArtworkPrewarmKey(setToken: artworkSetToken, policyIdentity: artworkPolicy.heroPolicy.identity)) {
             await warmHeroLogos()
         }
         // Fast/local trailers only: resolution and the three-second still-image
@@ -2527,6 +2521,12 @@ struct HomeHeroView: View {
     private struct ArtworkResolutionKey: Equatable {
         let slideToken: Int
         let index: Int
+        let policyIdentity: String
+    }
+
+    private struct ArtworkPrewarmKey: Equatable {
+        let setToken: Int
+        let policyIdentity: String
     }
 }
 

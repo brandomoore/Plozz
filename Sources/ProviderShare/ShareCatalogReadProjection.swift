@@ -196,21 +196,18 @@ enum ShareCatalogReadProjection {
         metadataConfig: MetadataEnrichmentConfig = MetadataEnrichmentConfig()
     ) -> MediaItem {
         var copy = item
-        if let source = copy.metadataProvenance[.posterURL]?.source,
-           metadataConfig.disabledSources.contains(source) {
-            copy.posterURL = nil
-            copy.seriesPosterURL = nil
+        func permitted(_ url: URL?) -> URL? {
+            guard let url else { return nil }
+            if let source = item.artworkMetadataSource(for: url),
+               metadataConfig.disabledSources.contains(source) { return nil }
+            return url
         }
-        if let source = copy.metadataProvenance[.backdropURL]?.source,
-           metadataConfig.disabledSources.contains(source) {
-            copy.backdropURL = nil
-            copy.heroBackdropURL = nil
-            copy.fallbackArtworkURL = nil
-        }
-        if let source = copy.metadataProvenance[.logoURL]?.source,
-           metadataConfig.disabledSources.contains(source) {
-            copy.logoURL = nil
-        }
+        copy.posterURL = permitted(item.posterURL)
+        copy.seriesPosterURL = permitted(item.seriesPosterURL)
+        copy.backdropURL = permitted(item.backdropURL)
+        copy.heroBackdropURL = permitted(item.heroBackdropURL)
+        copy.fallbackArtworkURL = permitted(item.fallbackArtworkURL)
+        copy.logoURL = permitted(item.logoURL)
         guard !selections.isEmpty else { return copy }
         var byPlacement = Dictionary(uniqueKeysWithValues: copy.artworkSelections.map { ($0.placement, $0) })
         for selection in selections where !selection.references.isEmpty {
@@ -227,7 +224,17 @@ enum ShareCatalogReadProjection {
             case .banner, .seasonBanner: continue
             default: continue
             }
-            copy.metadataProvenance[field] = MetadataAttribution(source: .localArtwork, sourceURL: nil)
+            // The URL fields still contain the external image. Do not relabel
+            // those URLs as local merely because a sidecar is also available.
+            let hasURL: Bool
+            switch field {
+            case .posterURL: hasURL = copy.posterURL != nil || copy.seriesPosterURL != nil
+            case .logoURL: hasURL = copy.logoURL != nil
+            default: hasURL = false
+            }
+            if !hasURL {
+                copy.metadataProvenance[field] = MetadataAttribution(source: .localArtwork, sourceURL: nil)
+            }
         }
         copy.artworkSelections = byPlacement.values.sorted { $0.placement.rawValue < $1.placement.rawValue }
         return copy
@@ -237,12 +244,25 @@ enum ShareCatalogReadProjection {
     /// `withEnrichment` so the JOINed grid queries can reuse the exact same merge.
     static func applyEnrichment(_ item: MediaItem, _ rec: EnrichmentRecord) -> MediaItem {
         var copy = item
+        for url in [
+            item.posterURL, item.seriesPosterURL, item.backdropURL,
+            item.heroBackdropURL, item.fallbackArtworkURL, item.logoURL
+        ].compactMap({ $0 }) {
+            copy.recordArtworkMetadataSource(item.artworkMetadataSource(for: url) ?? .server, for: url)
+        }
         if copy.metadataProvenance[.title] == nil {
             copy.metadataProvenance[.title] = MetadataAttribution(source: .filename)
         }
-        func adopt(_ field: MetadataField) {
+        func adopt(_ field: MetadataField, artworkURL: URL? = nil) {
             if let attribution = rec.provenance[field] {
                 copy.metadataProvenance[field] = attribution
+            } else if [.posterURL, .backdropURL, .logoURL].contains(field) {
+                copy.metadataProvenance[field] = MetadataAttribution(source: .legacyUnknown)
+            }
+            if let artworkURL {
+                copy.recordArtworkMetadataSource(
+                    rec.provenance[field]?.source ?? .legacyUnknown, for: artworkURL
+                )
             }
         }
         // Merge ids (don't clobber any already present).
@@ -277,19 +297,19 @@ enum ShareCatalogReadProjection {
         }
         if copy.posterURL == nil, let poster = rec.posterURL {
             copy.posterURL = poster
-            adopt(.posterURL)
+            adopt(.posterURL, artworkURL: poster)
         }
         if copy.backdropURL == nil, let backdrop = rec.backdropURL {
             copy.backdropURL = backdrop
-            adopt(.backdropURL)
+            adopt(.backdropURL, artworkURL: backdrop)
         }
         if copy.heroBackdropURL == nil, let backdrop = rec.backdropURL {
             copy.heroBackdropURL = backdrop
-            adopt(.backdropURL)
+            adopt(.backdropURL, artworkURL: backdrop)
         }
         if copy.logoURL == nil, let logo = rec.logoURL {
             copy.logoURL = logo
-            adopt(.logoURL)
+            adopt(.logoURL, artworkURL: logo)
         }
         // Display-title upgrade (series/movies only, never episodes): overlay the
         // resolved canonical name when it's IDENTICAL, MORE SPECIFIC (current is a
@@ -314,7 +334,7 @@ enum ShareCatalogReadProjection {
         if item.kind == .episode {
             if copy.seriesPosterURL == nil, let poster = rec.posterURL {
                 copy.seriesPosterURL = poster
-                adopt(.posterURL)
+                adopt(.posterURL, artworkURL: poster)
             }
             copy.posterURL = item.posterURL // keep episode's own (none yet) — series art via fallback field
             // …and actually populate that fallback field. `rec` is the SERIES'
@@ -324,7 +344,7 @@ enum ShareCatalogReadProjection {
             // so without it every hidden episode on a share rendered blank.
             if copy.fallbackArtworkURL == nil, let backdrop = rec.backdropURL {
                 copy.fallbackArtworkURL = backdrop
-                adopt(.backdropURL)
+                adopt(.backdropURL, artworkURL: backdrop)
             }
         }
         return copy

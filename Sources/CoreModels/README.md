@@ -42,6 +42,39 @@ language every other module speaks.
 | UI state | `LoadState`, `AppError` |
 | Subtitles | `SubtitleBehavior`, `SubtitleStyle` (rendered by `FeaturePlayback`) |
 
+## Artwork and profile presentation
+
+`MediaItem.artworkReferences` supplies library artwork: server URLs and local
+sidecars. Known external URLs stay on the item with their provenance, but are
+offered separately by `metadataArtworkURLs`. `ArtworkRouter` considers these
+cached candidates only at their enabled provider's current rank. Unattributed
+legacy enrichment is not a library fallback. Local selections must not relabel
+an external URL's provenance, and neither artwork preference nor provider order
+changes playback identity or server authentication.
+
+`seriesArtworkReferences` excludes episode stills and tries genuine series
+sidecars before remote series fallbacks, including on landscape surfaces.
+Online-first presentation remains the shared renderer's responsibility.
+
+Multi-role consumers pair their library-reference ladder with
+`ArtworkRouter.artworkURL(for:placements:)` (or the ordered `MediaArtworkSource`
+initializer). Only an explicit `.episodeThumbnail` placement queries episode
+stills; series-only surfaces retain `seriesArtworkReferences` and use
+`[.detailBackdrop, .seriesPoster]` for external lookup. A missing backdrop can
+therefore fall through to a source-qualified poster without bypassing provider
+order or enablement.
+
+Recognized physical folders carry an optional `ArtworkLookupSubject` from the
+catalog. It supplies artwork query identity only: the folder's ID, kind, title,
+provider route, and artwork-account ownership remain unchanged. Unqualified
+folders never use title-based artwork lookup. Collage candidates retain their
+items alongside library references, and collage caches include current
+presentation/provider policy before reusing a composed image.
+
+Synced artwork/label-setting deletions consume their one-time legacy migration
+even for profiles not yet loaded on this device. Migration markers remain
+device-local and never enter profile transfer snapshots.
+
 ## Watch-state replay identity
 
 New shell watch intents carry `WatchMutationServerScope`: the originating Plozz

@@ -8,6 +8,12 @@ import UIKit
 /// A backdrop and title logo, without the Continue Watching card's playback
 /// chrome. Posters and sources already known to carry a title stay untouched.
 public enum NowPlayingVideoArtwork {
+    static func artworkLookup(for item: MediaItem, router: ArtworkRouter = .shared) async -> URL? {
+        await router.artworkURL(
+            for: item, placements: [.detailBackdrop, item.kind == .episode ? .seriesPoster : .poster]
+        )
+    }
+
     public static func references(
         for item: MediaItem, preferringLibrarySelection: Bool = false
     ) -> [ArtworkReference] {
@@ -25,11 +31,16 @@ public enum NowPlayingVideoArtwork {
         policy: ArtworkPresentationPolicy = .init(area: .playback),
         onUpdate: @escaping @MainActor (MPMediaItemArtwork) -> Void
     ) async {
-        let source = MediaArtworkSource(item: item, placement: .detailBackdrop, policy: policy)
+        let policy = policy.forArea(.playback)
         guard let selected = await ArtworkFirstPaintResolver.resolve(
             references: references(for: item, preferringLibrarySelection: !policy.prefersOnlineArtwork),
             variant: .landscapeCard,
-            asyncOnlineURL: source.fallbackURL,
+            asyncOnlineURL: {
+                await ArtworkSession.artworkResolveLimiter.run {
+                    guard !Task.isCancelled else { return nil }
+                    return await artworkLookup(for: item)
+                }
+            },
             prefersOnlineArtwork: policy.prefersOnlineArtwork
         ), !Task.isCancelled else { return }
         await load(

@@ -1,6 +1,7 @@
 import Foundation
 import SQLite3
 import CoreModels
+import MetadataKit
 
 /// Catalog-backed projection for one live share-directory listing.
 ///
@@ -475,19 +476,61 @@ struct ShareCatalogBrowseProjection {
     /// Appearance is not proof of complete contents. Keep the raw folder identity
     /// and action so pending scans and unclassified extras stay fully browsable.
     private static func decoratingFolder(_ live: MediaItem, with catalog: MediaItem) -> MediaItem {
-        let posterReferences = catalog.artworkReferences(
-            for: catalog.kind == .season ? .seasonPoster : .poster
-        )
-        guard !posterReferences.isEmpty else { return live }
-        var item = live
-        item.posterURL = live.posterURL ?? catalog.posterURL
-        item.backdropURL = live.backdropURL ?? catalog.backdropURL
-        item.fallbackArtworkURL = live.fallbackArtworkURL ?? catalog.fallbackArtworkURL
-        item.productionYear = live.productionYear ?? catalog.productionYear
-        if item.artworkSelections.isEmpty {
-            item.artworkSelections = catalog.artworkSelections.filter { $0.placement != .poster }
-            item.artworkSelections.append(.init(placement: .poster, references: posterReferences))
+        let placement: ArtworkPlacement = catalog.kind == .season ? .seasonPoster : .poster
+        let posterReferences = catalog.artworkReferences(for: placement)
+        guard let subject = ArtworkLookupSubject(catalog: catalog) else { return live }
+        func eligible(_ url: URL?) -> URL? {
+            guard let url else { return nil }
+            return catalog.libraryArtworkURL(url) != nil
+                || catalog.artworkMetadataSource(for: url).map(MetadataEnrichmentConfig.defaultBaseOrder.contains) == true
+                ? url : nil
         }
+        var item = live
+        item.artworkLookupSubject = subject
+        item.posterURL = live.posterURL ?? eligible(catalog.posterURL)
+        item.seriesPosterURL = live.seriesPosterURL ?? eligible(catalog.seriesPosterURL)
+        item.backdropURL = live.backdropURL ?? eligible(catalog.backdropURL)
+        item.heroBackdropURL = live.heroBackdropURL ?? eligible(catalog.heroBackdropURL)
+        item.fallbackArtworkURL = live.fallbackArtworkURL ?? eligible(catalog.fallbackArtworkURL)
+        item.logoURL = live.logoURL ?? eligible(catalog.logoURL)
+        item.productionYear = live.productionYear ?? catalog.productionYear
+        var catalogSelections = catalog.artworkSelections.filter { $0.placement != .poster }
+        let selectedPosters = catalog.artworkSelections.first { $0.placement == placement }?.references ?? []
+        let posters = selectedPosters + posterReferences
+        if !posters.isEmpty {
+            catalogSelections.append(.init(placement: .poster, references: posters))
+        }
+        for selection in catalogSelections {
+            if let index = item.artworkSelections.firstIndex(where: { $0.placement == selection.placement }) {
+                var seen = Set<ArtworkReference>()
+                item.artworkSelections[index] = .init(
+                    placement: selection.placement,
+                    references: (item.artworkSelections[index].references + selection.references)
+                        .filter { seen.insert($0).inserted }
+                )
+            } else {
+                var seen = Set<ArtworkReference>()
+                item.artworkSelections.append(.init(
+                    placement: selection.placement,
+                    references: selection.references.filter { seen.insert($0).inserted }
+                ))
+            }
+        }
+        // The catalog resolver already applied provider enablement. Preserve its
+        // attribution without recasting external artwork as a library selection.
+        let liveURLs = [
+            live.posterURL, live.seriesPosterURL, live.backdropURL,
+            live.heroBackdropURL, live.fallbackArtworkURL, live.logoURL
+        ]
+        for url in [
+            item.posterURL, item.seriesPosterURL, item.backdropURL,
+            item.heroBackdropURL, item.fallbackArtworkURL, item.logoURL
+        ].compactMap({ $0 }) {
+            let source = liveURLs.contains(url)
+                ? live.artworkMetadataSource(for: url) : catalog.artworkMetadataSource(for: url)
+            item.recordArtworkMetadataSource(source ?? .server, for: url)
+        }
+        item.artworkMetadataSourcesByURL.merge(catalog.artworkMetadataSourcesByURL) { live, _ in live }
         item.artworkSourceAccountIDsByURL.merge(catalog.artworkSourceAccountIDsByURL) { live, _ in live }
         return item
     }

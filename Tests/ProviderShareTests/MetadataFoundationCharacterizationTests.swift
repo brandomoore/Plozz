@@ -5,6 +5,16 @@ import MetadataKit
 @testable import ProviderShare
 import XCTest
 
+private final class CapabilityPipelineBuildProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    var count: Int { lock.lock(); defer { lock.unlock() }; return calls }
+    func makePipeline() -> MetadataEnrichmentPipeline {
+        lock.lock(); calls += 1; lock.unlock()
+        return MetadataEnrichmentPipeline(providers: [], config: .init())
+    }
+}
+
 final class MetadataFoundationCharacterizationTests: XCTestCase {
     func testFreshCatalogUsesSchemaVersionFourAcrossReopen() async throws {
         let fixture = ShareCatalogSQLiteFixture()
@@ -193,6 +203,25 @@ final class MetadataFoundationCharacterizationTests: XCTestCase {
         // A single resolver covers both configs; TheTVDB participation is data
         // (inert when unconfigured), not a separate resolver class.
         XCTAssertTrue(configuredFactory.makeExternalResolver() is PipelineShareResolver)
+    }
+
+    func testDefaultFactoryDefersCapabilityPipelineCreationUntilEachResolution() async {
+        let calls = CapabilityPipelineBuildProbe()
+        let clients = ShareExternalMetadataClients(
+            ids: FakeShareExternalIDs(), artwork: FakeShareArtwork(), overview: FakeShareOverview(),
+            tvdbConfig: { TVDBConfig(apiKey: nil) },
+            makeTVDBClient: { _ in FakeTVDBMetadata() },
+            makePipeline: { calls.makePipeline() }
+        )
+        let resolver = DefaultShareMetadataPipelineFactory(clients: clients).makeExternalResolver()
+        XCTAssertEqual(calls.count, 0)
+        for index in 1...2 {
+            _ = await resolver.resolve(.init(
+                itemID: "item-\(index)", title: "Item \(index)", year: nil,
+                isMovie: true, isAnime: false
+            ))
+            XCTAssertEqual(calls.count, index, "The retained worker must read current configuration per item.")
+        }
     }
 
     func testCoordinatorUsesOnePipelinePerAccountGeneration() async {

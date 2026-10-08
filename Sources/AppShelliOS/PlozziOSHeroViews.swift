@@ -11,6 +11,36 @@ import Observation
 import SwiftUI
 import UIKit
 
+/// Mirrors HeroPresentation's placement order while keeping provider candidates behind live routing.
+enum PlozziOSHeroArtworkFallback {
+    static func resolve(
+        for item: MediaItem,
+        presentation: HeroPresentation,
+        style: HeroArtworkStyle,
+        surfaceRole: HeroTrailerSurfaceRole,
+        router: ArtworkRouter = .shared
+    ) async -> URL? {
+        await router.artworkURL(
+            for: item,
+            placements: placements(
+                style: style, surfaceRole: surfaceRole,
+                drawsLogoOverArtwork: !presentation.logoReferences.isEmpty
+            )
+        )
+    }
+
+    static func placements(
+        style: HeroArtworkStyle,
+        surfaceRole: HeroTrailerSurfaceRole,
+        drawsLogoOverArtwork: Bool
+    ) -> [ArtworkPlacement] {
+        let backdrop: ArtworkPlacement = surfaceRole == .home ? .homeHero : .detailBackdrop
+        return style == .compactPortrait && !drawsLogoOverArtwork
+            ? [.poster, backdrop]
+            : [backdrop, .poster]
+    }
+}
+
 enum PlozziOSHeroMetrics {
     static let compactDetailActionSpacing: CGFloat = 20
     static let detailContentTopInset: CGFloat = 24
@@ -580,10 +610,9 @@ struct PlozziOSHeroStage<Foreground: View>: View {
             + (pullDistance > 0 ? 2 : 0)
         let artworkItem = item
         let artworkPlacement: ArtworkPlacement = surfaceRole == .home ? .homeHero : .detailBackdrop
-        let onlineArtworkFallback: @Sendable () async -> URL? = {
-            await ArtworkRouter.shared.heroArtworkURL(
-                for: artworkItem,
-                placement: artworkPlacement
+        let onlineArtworkFallback: @Sendable () async -> URL? = { [presentation, style, surfaceRole] in
+            await PlozziOSHeroArtworkFallback.resolve(
+                for: artworkItem, presentation: presentation, style: style, surfaceRole: surfaceRole
             )
         }
         let background = Group {
@@ -1269,10 +1298,9 @@ struct PlozziOSHomeWipeBackdrop: View {
             surface: .home
         )
         let artworkItem = item
-        let onlineArtworkFallback: @Sendable () async -> URL? = {
-            await ArtworkRouter.shared.heroArtworkURL(
-                for: artworkItem,
-                placement: .homeHero
+        let onlineArtworkFallback: @Sendable () async -> URL? = { [style] in
+            await PlozziOSHeroArtworkFallback.resolve(
+                for: artworkItem, presentation: presentation, style: style, surfaceRole: .home
             )
         }
         PlozziOSReflectedHeroStage(height: height) { usableWidth in
@@ -1355,10 +1383,9 @@ struct PlozziOSHomeStaticBackdrop: View {
             surface: .home
         )
         let artworkItem = item
-        let onlineArtworkFallback: @Sendable () async -> URL? = {
-            await ArtworkRouter.shared.heroArtworkURL(
-                for: artworkItem,
-                placement: .homeHero
+        let onlineArtworkFallback: @Sendable () async -> URL? = { [style] in
+            await PlozziOSHeroArtworkFallback.resolve(
+                for: artworkItem, presentation: presentation, style: style, surfaceRole: .home
             )
         }
         PlozziOSReflectedHeroStage(

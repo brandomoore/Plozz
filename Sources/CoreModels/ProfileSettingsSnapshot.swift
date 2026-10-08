@@ -149,6 +149,12 @@ public enum ProfileSettingsTransfer {
         baseKey: String, namespace: String?, defaults: UserDefaults = .standard
     ) {
         guard transferableBaseKeys.contains(baseKey) else { return }
-        defaults.removeObject(forKey: SettingsKey.scoped(baseKey, namespace: namespace))
+        let key = SettingsKey.scoped(baseKey, namespace: namespace)
+        if baseKey == ArtworkSettingsStore.storageKey || baseKey == CardCaptionSettingsStore.storageKey {
+            // An inactive profile may never have loaded these stores. A synced
+            // reset is authoritative, not permission to import legacy settings again.
+            defaults.set(true, forKey: key + ".migrated")
+        }
+        defaults.removeObject(forKey: key)
     }
 }

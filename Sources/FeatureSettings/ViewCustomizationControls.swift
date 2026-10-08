@@ -120,6 +120,7 @@ struct ViewCustomizationList<Content: View>: View {
 
     var body: some View {
         #if os(tvOS)
+        let help = focusedHelp(focusedRow ?? initialRowID)
         VStack(spacing: 20) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
@@ -152,8 +153,10 @@ struct ViewCustomizationList<Content: View>: View {
                 .padding(.bottom, 24)
                 .padding(.horizontal, 48)
             }
+            .contentMargins(.bottom, help == nil ? 0 : 40, for: .scrollContent)
+            .verticalEdgeFadeMask(topFade: 0, bottomFade: help == nil ? 0 : 40, horizontalOverhang: 20)
             .accessibilityIdentifier("view-customization-scroll")
-            if let help = focusedHelp(focusedRow ?? initialRowID) {
+            if let help {
                 ViewCustomizationHelpCard(help: help)
                     .padding(.horizontal, 48)
                     .padding(.bottom, 24)

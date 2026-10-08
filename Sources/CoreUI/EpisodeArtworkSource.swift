@@ -16,25 +16,24 @@ public struct EpisodeArtworkSource: Sendable {
 
     public init(
         item: MediaItem, spoilerSettings: SpoilerSettings,
-        policy: ArtworkPresentationPolicy = .init(area: .episodes)
+        policy: ArtworkPresentationPolicy = .init(area: .episodes),
+        router: ArtworkRouter = .shared
     ) {
         self.policy = policy
         let hidesStill = spoilerSettings.mode == .placeholder
             && spoilerSettings.shouldHideThumbnail(for: item)
-        references = hidesStill
-            ? item.seriesArtworkReferences()
-            : item.artworkReferences(for: .episodeThumbnail)
+        var seen = Set<ArtworkReference>()
+        let seriesReferences = item.seriesArtworkReferences()
+        references = (hidesStill ? seriesReferences : item.artworkReferences(for: .episodeThumbnail) + seriesReferences)
+            .filter { seen.insert($0).inserted }
         // Posterless episode and spoiler-safe show art otherwise have the same
         // empty reference list. Their prepared images must never share a key.
         pinIdentity = "\(item.stablePresentationID)|\(hidesStill ? "series-artwork" : "episode-artwork")"
-        let subject = hidesStill ? PosterCardView.seriesArtworkItem(for: item) : item
+        let placements: [ArtworkPlacement] = hidesStill
+            ? [.detailBackdrop, .seriesPoster] : [.episodeThumbnail, .detailBackdrop, .seriesPoster]
         fallbackURL = {
-            if !hidesStill,
-               let still = await ArtworkRouter.shared.artworkURL(.thumbnail, for: subject) {
-                return still
-            }
-            return await ArtworkRouter.shared.artworkURL(.hero, for: subject)
-                ?? subject.fallbackArtworkURL
+            await router.artworkURL(for: item, placements: placements)
+                ?? item.libraryArtworkURL(item.fallbackArtworkURL)
         }
         #if canImport(UIKit)
         prefersOnlineArtwork = policy.prefersOnlineArtwork

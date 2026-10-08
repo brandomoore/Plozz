@@ -56,7 +56,8 @@ public enum ArtworkFirstPaintResolver {
         asyncOnlineURL: (@Sendable () async -> URL?)?,
         prefersOnlineArtwork: Bool = true,
         sharedKey: String? = nil,
-        background: Bool = false
+        background: Bool = false,
+        imageLoader: (@Sendable (ArtworkReference) async -> UIImage?)? = nil
     ) async -> FirstPaintArtwork? {
         if let sharedKey {
             return await FirstPaintTaskMemo.shared.value(for: sharedKey) {
@@ -67,7 +68,8 @@ public enum ArtworkFirstPaintResolver {
                     asyncOnlineURL: asyncOnlineURL,
                     prefersOnlineArtwork: prefersOnlineArtwork,
                     sharedKey: nil,
-                    background: background
+                    background: background,
+                    imageLoader: imageLoader
                 )
             }
         }
@@ -76,7 +78,8 @@ public enum ArtworkFirstPaintResolver {
                 references,
                 variant: variant,
                 maxAspectRatio: maxAspectRatio,
-                background: background
+                background: background,
+                imageLoader: imageLoader
             ) {
                 return local
             }
@@ -84,7 +87,8 @@ public enum ArtworkFirstPaintResolver {
                 asyncOnlineURL,
                 variant: variant,
                 maxAspectRatio: maxAspectRatio,
-                background: background
+                background: background,
+                imageLoader: imageLoader
             )
         }
 
@@ -94,7 +98,8 @@ public enum ArtworkFirstPaintResolver {
                 asyncOnlineURL,
                 variant: variant,
                 maxAspectRatio: maxAspectRatio,
-                background: background
+                background: background,
+                imageLoader: imageLoader
             )
             await race.submit(.resolved(artwork))
         }
@@ -117,7 +122,8 @@ public enum ArtworkFirstPaintResolver {
             references,
             variant: variant,
             maxAspectRatio: maxAspectRatio,
-            background: background
+            background: background,
+            imageLoader: imageLoader
         )
     }
 
@@ -125,14 +131,13 @@ public enum ArtworkFirstPaintResolver {
         _ references: [ArtworkReference],
         variant: ArtworkImageVariant,
         maxAspectRatio: CGFloat?,
-        background: Bool
+        background: Bool,
+        imageLoader: (@Sendable (ArtworkReference) async -> UIImage?)?
     ) async -> FirstPaintArtwork? {
         for reference in references {
             guard !Task.isCancelled else { return nil }
-            guard let image = await ArtworkImageCache.shared.image(
-                for: reference,
-                variant: variant,
-                background: background
+            guard let image = await loadImage(
+                reference, variant: variant, background: background, imageLoader: imageLoader
             ), !Task.isCancelled, isUsable(image, maxAspectRatio: maxAspectRatio) else {
                 continue
             }
@@ -149,16 +154,15 @@ public enum ArtworkFirstPaintResolver {
         _ resolver: (@Sendable () async -> URL?)?,
         variant: ArtworkImageVariant,
         maxAspectRatio: CGFloat?,
-        background: Bool
+        background: Bool,
+        imageLoader: (@Sendable (ArtworkReference) async -> UIImage?)?
     ) async -> FirstPaintArtwork? {
         guard !Task.isCancelled,
               let resolver,
               let url = await resolver(),
               !Task.isCancelled,
-              let image = await ArtworkImageCache.shared.image(
-                  for: url,
-                  variant: variant,
-                  background: background
+              let image = await loadImage(
+                  .remote(url), variant: variant, background: background, imageLoader: imageLoader
               ),
               !Task.isCancelled, isUsable(image, maxAspectRatio: maxAspectRatio) else {
             return nil
@@ -168,6 +172,14 @@ public enum ArtworkFirstPaintResolver {
             reference: .remote(url),
             variant: variant
         )
+    }
+
+    private static func loadImage(
+        _ reference: ArtworkReference, variant: ArtworkImageVariant, background: Bool,
+        imageLoader: (@Sendable (ArtworkReference) async -> UIImage?)?
+    ) async -> UIImage? {
+        if let imageLoader { return await imageLoader(reference) }
+        return await ArtworkImageCache.shared.image(for: reference, variant: variant, background: background)
     }
 
     private static func isUsable(

@@ -47,8 +47,10 @@ final class ViewCustomizationRemoteTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(help.frame.minX - viewport.frame.minX, 46)
             XCTAssertGreaterThanOrEqual(viewport.frame.maxX - help.frame.maxX, 46)
             XCTAssertTrue(waitUntil {
-                row.frame.minY >= viewport.frame.minY && row.frame.maxY <= viewport.frame.maxY
+                row.frame.minY >= viewport.frame.minY && row.frame.maxY <= viewport.frame.maxY - 40
             }, "The complete focused row must remain above contextual help: \(row.frame), \(help.frame)")
+            if area == "details" { capture(app, "artwork-movie-series-scopes") }
+            if area == "episodes" { capture(app, "artwork-episode-scope") }
             if area == "music" { capture(app, "artwork-music-fully-visible") }
         }
         XCUIRemote.shared.press(.down)
@@ -129,6 +131,30 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         capture(app, "artwork-return-focus")
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(browse.waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    func testArtworkDiagramsKeepTheirLargerCardUnderEachNavigationMode() {
+        for navigation in ["rail", "tabs"] {
+            let app = launch(previewNavigation: navigation)
+            defer { app.terminate() }
+            let sidebar = app.buttons["settings-master-artwork"]
+            XCTAssertTrue(sidebar.waitForExistence(timeout: 10))
+            XCTAssertTrue(waitUntil { sidebar.hasFocus })
+            XCUIRemote.shared.press(.right)
+            focus(app.buttons["artwork-customization"], in: app)
+            XCUIRemote.shared.press(.select)
+            XCTAssertTrue(waitUntil { self.hasFocus(app.buttons["artwork-view-home"]) })
+            let help = app.descendants(matching: .any)["view-customization-help"]
+            XCTAssertGreaterThanOrEqual(help.frame.height, 220)
+            let frame = help.frame
+            capture(app, "artwork-home-\(navigation)")
+            focus(app.buttons["artwork-view-browse"], in: app)
+            XCTAssertEqual(help.frame, frame)
+            capture(app, "artwork-browse-\(navigation)")
+            focus(app.buttons["artwork-view-continueWatching"], in: app)
+            XCTAssertEqual(help.frame, frame)
+            capture(app, "artwork-continue-watching-\(navigation)")
+        }
     }
 
     func testLabelsToggleValuesAndReselectingDefaultRestoresMixedBehavior() {
@@ -215,10 +241,14 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         XCTAssertFalse(home.exists)
     }
 
-    private func launch(labels: Bool = false) -> XCUIApplication {
+    private func launch(labels: Bool = false, previewNavigation: String? = nil) -> XCUIApplication {
         let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
         app.launchArguments = ["--view-customization-fixture"]
         if labels { app.launchArguments.append("--labels") }
+        if let previewNavigation {
+            app.launchArguments.append("--preview-\(previewNavigation)")
+            app.launchArguments.append(previewNavigation == "rail" ? "--preview-showcase" : "--preview-episode-stills")
+        }
         app.launch()
         return app
     }

@@ -5,11 +5,90 @@ import MediaPlayer
 import UIKit
 import XCTest
 @testable import CoreUI
+@testable import MetadataKit
 
 @MainActor
 final class NowPlayingVideoArtworkTests: XCTestCase {
     private let backdrop = URL(string: "https://example.test/backdrop.jpg")!
     private let poster = URL(string: "https://example.test/poster.jpg")!
+
+    func testExternalPosterOnlyLookupHonorsProviderOrderAndDisablement() async {
+        let saved = URL(string: "https://metadata.example.test/saved.jpg")!
+        let tmdb = URL(string: "https://metadata.example.test/tmdb.jpg")!
+        let tvdb = URL(string: "https://metadata.example.test/tvdb.jpg")!
+        var item = MediaItem(id: "movie", title: "Movie", kind: .movie, posterURL: saved)
+        item.metadataProvenance[.posterURL] = MetadataAttribution(source: .tmdb)
+        let cache = MetadataDiskCache(directory: nil)
+        let settings = SystemArtworkProviderSettings()
+        let router = ArtworkRouter(
+            cache: cache, enrichmentBaseline: .init(order: [.tmdb, .tvdb], priority: .init(rules: [])),
+            settingsStore: settings
+        )
+        for source in [MetadataSource.tmdb, .tvdb] {
+            for kind in [ArtworkKind.hero, .poster] {
+                await cache.store(
+                    kind == .poster ? (source == .tmdb ? tmdb : tvdb) : nil,
+                    for: ArtworkRouter.providerCacheKey(query: MetadataQuery(item), kind: kind, source: source)
+                )
+            }
+        }
+        XCTAssertTrue(NowPlayingVideoArtwork.references(for: item).isEmpty)
+        for (value, expected) in [
+            (MetadataProviderSettings(orderMode: .custom, enabledOrder: ["tmdb", "tvdb"]), Optional(tmdb)),
+            (.init(orderMode: .custom, enabledOrder: ["tvdb", "tmdb"]), Optional(tvdb)),
+            (.init(orderMode: .custom, enabledOrder: ["tvdb"], disabledOrder: ["tmdb"]), Optional(tvdb)),
+            (.init(orderMode: .custom, disabledOrder: ["tmdb", "tvdb"]), nil)
+        ] {
+            settings.save(value)
+            let result = await NowPlayingVideoArtwork.artworkLookup(for: item, router: router)
+            XCTAssertEqual(result, expected)
+        }
+        XCTAssertEqual(item.posterURL, saved)
+    }
+
+    func testEpisodeExternalLookupUsesOnlySeriesHeroAndPoster() async {
+        let spoiler = URL(string: "https://metadata.example.test/episode.jpg")!
+        let safe = URL(string: "https://metadata.example.test/series.jpg")!
+        let retainedSeries = URL(string: "https://metadata.example.test/retained-series.jpg")!
+        var item = MediaItem(
+            id: "episode", title: "Episode", kind: .episode, parentTitle: "Series",
+            seriesID: "series", posterURL: spoiler,
+            providerIDs: ["Tmdb": "episode-tmdb", "SeriesTmdb": "series-tmdb"]
+        )
+        item.metadataProvenance[.posterURL] = MetadataAttribution(source: .tmdb)
+        item.seriesPosterURL = retainedSeries
+        item.recordArtworkMetadataSource(.tmdb, for: retainedSeries)
+        let series = ArtworkRouter.seriesArtworkItem(for: item)
+        let cache = MetadataDiskCache(directory: nil)
+        let settings = SystemArtworkProviderSettings()
+        settings.save(.init(orderMode: .custom, enabledOrder: ["tmdb"]))
+        let router = ArtworkRouter(
+            cache: cache, enrichmentBaseline: .init(order: [.tmdb], priority: .init(rules: [])),
+            settingsStore: settings
+        )
+        for kind in [ArtworkKind.hero, .thumbnail, .poster] {
+            await cache.store(spoiler, for: ArtworkRouter.providerCacheKey(
+                query: MetadataQuery(item), kind: kind, source: .tmdb
+            ))
+            await cache.store(kind == .poster ? safe : nil, for: ArtworkRouter.providerCacheKey(
+                query: MetadataQuery(series), kind: kind, source: .tmdb
+            ))
+        }
+        let result = await NowPlayingVideoArtwork.artworkLookup(for: item, router: router)
+        XCTAssertEqual(result, safe)
+        XCTAssertTrue(NowPlayingVideoArtwork.references(for: item).isEmpty)
+        await cache.store(nil, for: ArtworkRouter.providerCacheKey(
+            query: MetadataQuery(series), kind: .poster, source: .tmdb
+        ))
+        let retainedResult = await NowPlayingVideoArtwork.artworkLookup(for: item, router: router)
+        XCTAssertEqual(retainedResult, retainedSeries)
+        settings.save(.init(orderMode: .custom, disabledOrder: ["tmdb"]))
+        let disabledResult = await NowPlayingVideoArtwork.artworkLookup(for: item, router: router)
+        XCTAssertNil(disabledResult)
+        XCTAssertEqual(item.providerID(.tmdb), "episode-tmdb")
+        XCTAssertEqual(item.posterURL, spoiler)
+        XCTAssertEqual(item.seriesPosterURL, retainedSeries)
+    }
 
     func testBackdropPublishesBeforeLogoAndComposesAtRequestedSizes() async throws {
         let background = image(.blue, size: CGSize(width: 320, height: 180))
@@ -317,5 +396,12 @@ final class NowPlayingVideoArtworkTests: XCTestCase {
         context.draw(try XCTUnwrap(image.cgImage), in: CGRect(origin: .zero, size: image.size))
         return Array(rgba.prefix(3))
     }
+}
+
+private final class SystemArtworkProviderSettings: MetadataProviderSettingsStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var settings = MetadataProviderSettings.default
+    func load() -> MetadataProviderSettings { lock.withLock { settings } }
+    func save(_ settings: MetadataProviderSettings) { lock.withLock { self.settings = settings } }
 }
 #endif

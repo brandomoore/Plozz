@@ -3045,7 +3045,7 @@ private struct PlozziOSEpisodeDownloadRow: View {
     }
 }
 
-private struct PlozziOSDownloadThumbnail: View {
+struct PlozziOSDownloadThumbnail: View {
     @Environment(PlozziOSAppModel.self) private var appModel
 
     enum Style {
@@ -3093,6 +3093,7 @@ private struct PlozziOSDownloadThumbnail: View {
                     .blur(radius: spoilers.shouldHideThumbnail(for: item) ? 10 : 0)
                 }
             }
+            .environment(\.plozzArtworkArea, .episodes)
         }
     }
 }
@@ -3330,7 +3331,7 @@ private struct PlozziOSSeasonDownloadPrompt: Identifiable {
     }
 }
 
-private struct PlozziOSInlineEpisodeRail: View {
+struct PlozziOSInlineEpisodeRail: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var scrollPositionID: String?
     let episodes: [MediaItem]?

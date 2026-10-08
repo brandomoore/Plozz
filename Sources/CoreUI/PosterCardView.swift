@@ -870,7 +870,7 @@ public struct PosterCardView: View {
 
     @ViewBuilder
     private var folderArtwork: some View {
-        if artworkReferences.isEmpty {
+        if artworkReferences.isEmpty && asyncArtworkFallback == nil {
             folderPlaceholderArtwork
         } else {
             realArtwork
@@ -939,36 +939,7 @@ public struct PosterCardView: View {
     /// Shoko/AniDB usually ship no per-episode image, so TMDb supplies it.
     var asyncArtworkFallback: (@Sendable () async -> URL?)? {
         guard enablesAsyncArtworkFallback else { return nil }
-        // The inner resolver (the actual network lookup) for this card's style.
-        let inner: (@Sendable () async -> URL?)?
-        if style == .poster {
-            inner = tmdbPosterFallback
-        } else if item.kind == .episode,
-                  item.seasonNumber != nil,
-                  item.episodeNumber != nil {
-            let snapshot = item
-            let seriesItem = Self.seriesArtworkItem(for: item)
-            let serverSeriesBackdrop = item.fallbackArtworkURL
-            inner = {
-                // 1) Real per-episode still first (TMDb stills, then TVmaze for
-                //    western TV). Anime via Shoko/AniDB usually ship none.
-                if let still = await ArtworkRouter.shared.artworkURL(.thumbnail, for: snapshot) {
-                    return still
-                }
-                // 2) Series-level wide hero so an episode card is never blank: a
-                //    high-res TMDb backdrop when configured, otherwise the keyless
-                //    AniList banner for anime. The same banner on every episode of
-                //    a show is acceptable; a blank card is not.
-                if let seriesHero = await ArtworkRouter.shared.artworkURL(.hero, for: seriesItem) {
-                    return seriesHero
-                }
-                // 3) Last resort: the server's own series backdrop, if present.
-                return serverSeriesBackdrop
-            }
-        } else {
-            inner = tmdbBackdropFallback
-        }
-        guard let inner else { return nil }
+        guard let inner = artworkPolicy.artworkFallback(for: item, style: style) else { return nil }
         // Bound concurrent grid-card resolutions so a large un-enriched library
         // (SMB) can't flood the metadata network + ArtworkRouter actor while
         // scrolling. Skip the network call entirely if this card scrolled away
@@ -990,35 +961,7 @@ public struct PosterCardView: View {
     /// Internal rather than private so `EpisodeColumnCard` can resolve spoiler-safe
     /// series art through the same synthesized item.
     static func seriesArtworkItem(for episode: MediaItem) -> MediaItem {
-        guard episode.kind == .episode || episode.kind == .season else { return episode }
-        let query = MetadataQuery(episode).seriesScoped
-        let hasSeriesTitle = episode.parentTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        var ids = query.providerIDs
-        ids.removeProviderID(.plexGuid)
-        // Anime providers already use show-level IDs on episodes. Preserve the
-        // shared query's anime identity unless an explicit series ID supersedes it.
-        let animeIDs: [(ProviderIDNamespace, Int?)] = [
-            (.aniList, query.animeIDs.anilist),
-            (.myAnimeList, query.animeIDs.mal),
-            (.aniDB, query.animeIDs.anidb)
-        ]
-        for (namespace, value) in animeIDs where ids.providerID(namespace) == nil {
-            if let value { ids[namespace.canonicalKey] = String(value) }
-        }
-        var series = MediaItem(
-            id: episode.seriesID ?? episode.id,
-            title: episode.parentTitle ?? episode.title,
-            kind: .series,
-            genres: episode.genres,
-            tags: episode.tags,
-            seriesID: episode.seriesID,
-            fallbackArtworkURL: episode.fallbackArtworkURL,
-            logoURL: episode.logoURL,
-            providerIDs: ids,
-            allowsTitleBasedMetadataMatching: episode.allowsTitleBasedMetadataMatching && hasSeriesTitle
-        )
-        series.sourceAccountID = episode.sourceAccountID
-        return series
+        ArtworkRouter.seriesArtworkItem(for: episode)
     }
 
     /// Poster cards reject any source image wider than ~0.9:1 (a real poster is
@@ -1026,32 +969,6 @@ public struct PosterCardView: View {
     /// placeholder. Landscape/backdrop art has no guard.
     private var posterAspectGuard: CGFloat? {
         style == .poster ? 0.9 : nil
-    }
-
-    /// Last-resort poster source for poster cards whose provider art is missing
-    /// or junk: look the title up on TMDb (movies by title+year; series/episodes
-    /// by the *series* title). Inert when no TMDb token is configured.
-    private var tmdbPosterFallback: (@Sendable () async -> URL?)? {
-        guard style == .poster else { return nil }
-        return artworkPolicy.posterFallback(for: item)
-    }
-
-    /// Last-resort backdrop source for landscape cards whose provider thumbnail is
-    /// missing (common for anime episodes via Shoko/AniDB): look the show up on
-    /// TMDb and use a wide fanart image. Episodes/seasons query by the *series*
-    /// title; movies/series by their own. Inert without a TMDb token.
-    private var tmdbBackdropFallback: (@Sendable () async -> URL?)? {
-        guard style == .landscape else { return nil }
-        switch item.kind {
-        case .folder, .collection, .unknown:
-            return nil
-        default:
-            break
-        }
-        let snapshot = item
-        return {
-            await ArtworkRouter.shared.artworkURL(.hero, for: snapshot)
-        }
     }
 
     /// Spoiler-safe art for `.placeholder` mode: only ever **series-level** art,
@@ -1094,12 +1011,13 @@ public struct PosterCardView: View {
     /// `.thumbnail`, which resolves the episode's own still.
     private var placeholderArtworkFallback: (@Sendable () async -> URL?)? {
         guard enablesAsyncArtworkFallback else { return nil }
-        let seriesItem = Self.seriesArtworkItem(for: item)
-        let kind: ArtworkKind = style == .poster ? .poster : .hero
+        let snapshot = item
+        let placements: [ArtworkPlacement] = style == .poster
+            ? [.seriesPoster] : [.detailBackdrop, .seriesPoster]
         return {
             await ArtworkSession.artworkResolveLimiter.run {
                 if Task.isCancelled { return nil }
-                return await ArtworkRouter.shared.artworkURL(kind, for: seriesItem)
+                return await ArtworkRouter.shared.artworkURL(for: snapshot, placements: placements)
             }
         }
     }
@@ -1663,10 +1581,8 @@ public extension MediaItem {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    /// Ordered real-image candidates a `PosterCardView` of `style` will try before
-    /// any async (TMDb) fallback. Rails use this to prefetch each card's artwork
-    /// into `ArtworkImageCache` ahead of scroll, so a card already has its decoded
-    /// thumbnail the moment it appears.
+    /// Library-image candidates for bounded card prefetch. Display resolution
+    /// may use additional fallbacks after these preferred candidates fail.
     func artworkCandidates(
         for style: PosterCardView.Style,
         artworkPolicy: CardArtworkPolicy = .standard
@@ -1683,18 +1599,16 @@ public extension MediaItem {
             // episode that means the *series* poster, never the episode's own
             // 16:9 still (which would render as a wide card).
             if kind == .episode {
-                return [seriesPosterURL, posterURL, fallbackArtworkURL].compactMap { $0 }
+                return [seriesPosterURL, posterURL, fallbackArtworkURL].compactMap(libraryArtworkURL)
             }
-            return [posterURL, fallbackArtworkURL].compactMap { $0 }
+            return [posterURL, fallbackArtworkURL].compactMap(libraryArtworkURL)
         case .landscape:
             if kind == .episode {
-                // An episode's thumbnail is its own Primary (then Backdrop) image.
-                // The series backdrop is deliberately *not* a direct fallback (it
-                // would paint the same image on every episode); the async TMDb
-                // fallback supplies a real per-episode still instead.
-                return [posterURL, backdropURL].compactMap { $0 }
+                // Keep speculative prefetch on the episode's own images. Its
+                // display ladder may use show artwork only as a late fallback.
+                return [posterURL, backdropURL].compactMap(libraryArtworkURL)
             }
-            return [backdropURL, posterURL, fallbackArtworkURL].compactMap { $0 }
+            return [backdropURL, posterURL, fallbackArtworkURL].compactMap(libraryArtworkURL)
         }
     }
 }

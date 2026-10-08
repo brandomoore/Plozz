@@ -4,6 +4,7 @@ import CoreModels
 @testable import FeatureHome
 import MetadataKit
 import Network
+import Observation
 import SwiftUI
 import TVUIKit
 import UIKit
@@ -39,6 +40,160 @@ final class NativeLibraryCardHostedTests: XCTestCase {
 
     func testLeavingSwiftUIBrowseDoesNotPaintCachedLibraryArtworkAfterCancellation() async throws {
         try await checkSwiftUIBrowseArtwork(cancelLookup: true)
+    }
+
+    func testCustomFocusLibraryBrowseHonorsConflictingArtworkPreferences() async throws {
+        let server = try LibraryArtworkServer(images: [
+            "library": artworkData(.red), "online": artworkData(.green)
+        ])
+        defer { server.stop() }
+        let port = try await server.start()
+        for focusStyle in [CardFocusStyle.highlight, .outlined] {
+            let token = UUID().uuidString
+            let library = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/library/\(token)"))
+            let online = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/online/\(token)"))
+            let item = MediaItem(id: token, title: token, kind: .movie, posterURL: library)
+            _ = await ArtworkImageCache.shared.image(for: library, variant: .posterCard)
+            _ = await ArtworkImageCache.shared.image(for: online, variant: .posterCard)
+            try await withCustomFocusBrowse(item: item, online: online, focusStyle: focusStyle) { window, model, preferences in
+                for preference in [ArtworkPreference.online, .library, .online] {
+                    preferences.artwork = .init(
+                        preference: preference == .online ? .library : .online,
+                        overrides: [.browse: preference]
+                    )
+                    try await self.assertBrowseArtwork(
+                        in: window, isOnline: preference == .online,
+                        name: "real-browse-\(focusStyle)-\(preference)"
+                    )
+                    XCTAssertEqual(model.item(at: 0), item, "Changing artwork preference must not replace the title.")
+                    XCTAssertNil(self.descendant(NativeTVLibraryCell.self, in: window),
+                                 "This regression must exercise LibraryGridCell, not the native grid.")
+                }
+            }
+        }
+    }
+
+    func testCustomFocusLibraryBrowseFallsBackForMissingOrFailedArtwork() async throws {
+        let server = try LibraryArtworkServer(images: [
+            "library": artworkData(.red), "online": artworkData(.green),
+            "invalid": Data("not an image".utf8)
+        ])
+        defer { server.stop() }
+        let port = try await server.start()
+        let cases: [(name: String, library: String?, online: String, preference: ArtworkPreference, isOnline: Bool)] = [
+            ("missing-library", nil, "online", .library, true),
+            ("failed-library", "missing", "online", .library, true),
+            ("failed-online", "library", "missing", .online, false),
+            ("invalid-online", "library", "invalid", .online, false)
+        ]
+        for focusStyle in [CardFocusStyle.highlight, .outlined] {
+            for fixture in cases {
+                let token = UUID().uuidString
+                let library = try fixture.library.map {
+                    try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/\($0)/\(token)"))
+                }
+                let online = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/\(fixture.online)/\(token)"))
+                let item = MediaItem(id: token, title: token, kind: .movie, posterURL: library)
+                try await withCustomFocusBrowse(
+                    item: item, online: online, focusStyle: focusStyle,
+                    artwork: .init(
+                        preference: fixture.preference == .online ? .library : .online,
+                        overrides: [.browse: fixture.preference]
+                    )
+                ) { window, _, _ in
+                    try await self.assertBrowseArtwork(
+                        in: window, isOnline: fixture.isOnline,
+                        name: "real-browse-\(focusStyle)-\(fixture.name)"
+                    )
+                    if fixture.preference == .online {
+                        XCTAssertGreaterThan(server.requestCount(for: online.path), 0,
+                                             "The real grid must attempt the preferred provider image before falling back.")
+                    }
+                }
+            }
+        }
+    }
+
+    private func withCustomFocusBrowse(
+        item: MediaItem,
+        online: URL,
+        focusStyle: CardFocusStyle,
+        artwork: ArtworkSettings = .init(preference: .library, overrides: [.browse: .online]),
+        body: (UIWindow, LibraryBrowseViewModel, BrowseArtworkHostedPreferences) async throws -> Void
+    ) async throws {
+        let providerSettings = MetadataProviderSettingsStore()
+        let previousProviders = providerSettings.load()
+        providerSettings.save(.default)
+        defer { providerSettings.save(previousProviders) }
+        let query = MetadataQuery(item)
+        for provider in MetadataEnrichmentConfig.defaultBaseOrder {
+            await MetadataDiskCache.shared.store(
+                online, for: "\(query.cacheKey(for: .poster))|provider:\(provider.rawValue)"
+            )
+        }
+        let suite = "CustomFocusBrowseArtwork.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = LibraryBrowseViewModel(
+            provider: BrowseArtworkHostedProvider(mediaItem: item),
+            containerID: "library", containerKind: .movie,
+            defaults: defaults, initialContentMode: .titles
+        )
+        await model.loadFirstPage()
+        let preferences = BrowseArtworkHostedPreferences(artwork: artwork)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let host = UIHostingController(rootView: BrowseArtworkHostedPage(
+            model: model, focusStyle: focusStyle, preferences: preferences
+        ))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKeyAndVisible()
+        }
+        try await body(window, model, preferences)
+    }
+
+    private func assertBrowseArtwork(in window: UIWindow, isOnline: Bool, name: String) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        var selectedPixels = 0
+        var rejectedPixels = 0
+        var image: UIImage?
+        repeat {
+            try await Task.sleep(for: .milliseconds(100))
+            window.layoutIfNeeded()
+            let rendered = snapshot(window)
+            image = rendered
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.preferredRange = .standard
+            let sample = UIGraphicsImageRenderer(size: CGSize(width: 192, height: 108), format: format).image { _ in
+                rendered.draw(in: CGRect(x: 0, y: 0, width: 192, height: 108))
+            }
+            let pixels = try rgba(XCTUnwrap(sample.cgImage))
+            let red = stride(from: 0, to: pixels.count, by: 4).filter {
+                pixels[$0] > 180 && pixels[$0 + 1] < 80 && pixels[$0 + 2] < 80
+            }.count
+            let green = stride(from: 0, to: pixels.count, by: 4).filter {
+                pixels[$0 + 1] > 180 && pixels[$0] < 80 && pixels[$0 + 2] < 80
+            }.count
+            selectedPixels = isOnline ? green : red
+            rejectedPixels = isOnline ? red : green
+            if selectedPixels > 100 && rejectedPixels < 20 { break }
+        } while ContinuousClock.now < deadline
+        XCTAssertGreaterThan(selectedPixels, 100, "\(name): the real grid must paint the expected poster.")
+        XCTAssertLessThan(rejectedPixels, 20, "\(name): do not retain the opposite source's poster.")
+        if let image {
+            let attachment = XCTAttachment(image: image)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
     }
 
     private func checkSwiftUIBrowseArtwork(cancelLookup: Bool) async throws {
@@ -947,6 +1102,60 @@ private struct LibraryCardFrameProbe: UIViewRepresentable {
 
 private final class LibraryCardSlotView: UIView {}
 
+@MainActor
+@Observable
+private final class BrowseArtworkHostedPreferences {
+    var artwork: ArtworkSettings
+
+    init(artwork: ArtworkSettings) {
+        self.artwork = artwork
+    }
+}
+
+private struct BrowseArtworkHostedPage: View {
+    let model: LibraryBrowseViewModel
+    let focusStyle: CardFocusStyle
+    let preferences: BrowseArtworkHostedPreferences
+
+    var body: some View {
+        LibraryBrowseView(viewModel: model, title: Text("Library"), onSelect: { _ in })
+            .environment(\.plozzCardFocusStyle, focusStyle)
+            .environment(\.plozzCardStyle, .borderless)
+            .environment(\.plozzMetrics, PlozzMetrics(density: .standard))
+            .environment(\.plozzCardCaptionSettings, .init(preference: .hide))
+            .environment(\.plozzArtworkSettings, preferences.artwork)
+            .environment(\.plozzArtworkProviders, .default)
+            .environment(\.plozzArtworkArea, .home)
+            .environment(\.themePalette, .dark)
+            .environment(\.colorScheme, .dark)
+            .background(Color.black)
+    }
+}
+
+private struct BrowseArtworkHostedProvider: MediaProvider {
+    let mediaItem: MediaItem
+    let kind: ProviderKind = .jellyfin
+    let session = UserSession(
+        server: MediaServer(
+            id: "browse-artwork", name: "Server", baseURL: URL(string: "https://example.invalid")!,
+            provider: .jellyfin
+        ),
+        userID: "viewer", userName: "Viewer", deviceID: "fixture", accessToken: ""
+    )
+    func libraries() async throws -> [MediaLibrary] { [] }
+    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func item(id: String) async throws -> MediaItem { mediaItem }
+    func children(of itemID: String) async throws -> [MediaItem] { [] }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        MediaPage(items: [mediaItem], startIndex: 0, totalCount: 1)
+    }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws {}
+    func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
 private struct LibraryCollageHostedProvider: MediaProvider {
     let posterURL: URL
     let kind: ProviderKind = .jellyfin
@@ -989,6 +1198,7 @@ private final class LibraryArtworkServer: @unchecked Sendable {
     private let delays: [String: TimeInterval]
     private let queue = DispatchQueue(label: "NativeLibraryCardHostedTests.artwork")
     private var connections: [NWConnection] = []
+    private var requestCounts: [String: Int] = [:]
 
     init(images: [String: Data], delays: [String: TimeInterval] = [:]) throws {
         self.images = images
@@ -1033,6 +1243,10 @@ private final class LibraryArtworkServer: @unchecked Sendable {
         }
     }
 
+    func requestCount(for path: String) -> Int {
+        queue.sync { requestCounts[path, default: 0] }
+    }
+
     private func receive(_ connection: NWConnection, request: Data) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] data, _, complete, error in
             guard let self, let data, error == nil else { connection.cancel(); return }
@@ -1047,6 +1261,7 @@ private final class LibraryArtworkServer: @unchecked Sendable {
                 return
             }
             let path = header.split(separator: " ").dropFirst().first ?? ""
+            requestCounts[String(path), default: 0] += 1
             let key = path.split(separator: "/").first.map(String.init) ?? ""
             let image = images[key] ?? Data()
             let status = images[key] == nil ? "404 Not Found" : "200 OK"

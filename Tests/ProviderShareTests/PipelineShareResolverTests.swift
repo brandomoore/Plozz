@@ -16,6 +16,7 @@ private final class FakePipelineProvider: MetadataEnrichmentProvider, @unchecked
     private let lock = NSLock()
     private var _lastMissing: Set<MetadataField> = []
     private var _lastQuery: MetadataQuery?
+    private var _calls = 0
 
     init(
         id: MetadataSource,
@@ -35,17 +36,59 @@ private final class FakePipelineProvider: MetadataEnrichmentProvider, @unchecked
     }
 
     func enrichReporting(_ query: MetadataQuery, missing: Set<MetadataField>) async -> ProviderResponse {
-        lock.lock(); _lastMissing = missing; _lastQuery = query; lock.unlock()
+        lock.lock(); _lastMissing = missing; _lastQuery = query; _calls += 1; lock.unlock()
         return ProviderResponse(enrichment: output, health: health)
     }
 
     var lastMissing: Set<MetadataField> { lock.lock(); defer { lock.unlock() }; return _lastMissing }
     var lastQuery: MetadataQuery? { lock.lock(); defer { lock.unlock() }; return _lastQuery }
+    var calls: Int { lock.lock(); defer { lock.unlock() }; return _calls }
 }
 
 final class PipelineShareResolverTests: XCTestCase {
+    func testRetainedResolverUsesLiveOrderAndNeverCallsNewlyDisabledProvider() async throws {
+        let tvdbURL = try XCTUnwrap(URL(string: "https://art.example.test/tvdb.jpg"))
+        let tmdbURL = try XCTUnwrap(URL(string: "https://art.example.test/tmdb.jpg"))
+        let tvdb = FakePipelineProvider(
+            id: .tvdb, capabilities: [.poster],
+            output: .init(posterURL: .init(value: tvdbURL, source: .tvdb))
+        )
+        let tmdb = FakePipelineProvider(
+            id: .tmdb, capabilities: [.poster],
+            output: .init(posterURL: .init(value: tmdbURL, source: .tmdb))
+        )
+        let config = LivePipelineConfig(flatConfig([.tvdb, .tmdb]))
+        let resolver = PipelineShareResolver(makePipeline: {
+            MetadataEnrichmentPipeline(providers: [tvdb, tmdb], config: config.load())
+        })
+        let first = await resolver.resolve(request(title: "First", knownProviderIDs: ["Tvdb": "known-show"]))
+        XCTAssertEqual(first.posterURL, tvdbURL)
+        XCTAssertEqual(tvdb.lastQuery?.providerIDs.providerID(.tvdb), "known-show")
+
+        config.save(flatConfig([.tmdb, .tvdb]))
+        let reordered = await resolver.resolve(request(title: "Second"))
+        XCTAssertEqual(reordered.posterURL, tmdbURL)
+        let callsBeforeDisable = tmdb.calls
+
+        var disabled = flatConfig([.tmdb, .tvdb])
+        disabled.disabledSources = [.tmdb]
+        config.save(disabled)
+        let afterDisable = await resolver.resolve(request(title: "Third"))
+        XCTAssertEqual(afterDisable.posterURL, tvdbURL)
+        XCTAssertEqual(afterDisable.provenance[.posterURL]?.source, .tvdb)
+        XCTAssertEqual(tmdb.calls, callsBeforeDisable, "Filtering projected URLs must not hide a disabled request.")
+    }
+
     private func flatConfig(_ order: [MetadataSource]) -> MetadataEnrichmentConfig {
         MetadataEnrichmentConfig(order: order, priority: MetadataPriorityPolicy(rules: []))
+    }
+
+    private final class LivePipelineConfig: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: MetadataEnrichmentConfig
+        init(_ value: MetadataEnrichmentConfig) { self.value = value }
+        func load() -> MetadataEnrichmentConfig { lock.lock(); defer { lock.unlock() }; return value }
+        func save(_ value: MetadataEnrichmentConfig) { lock.lock(); self.value = value; lock.unlock() }
     }
 
     private func request(

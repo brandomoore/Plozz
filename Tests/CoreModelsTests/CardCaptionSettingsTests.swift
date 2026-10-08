@@ -135,6 +135,38 @@ final class CardCaptionSettingsTests: XCTestCase {
         }
     }
 
+    func testSyncedResetBeforeFirstLoadDoesNotResurrectLegacyHomeLabels() throws {
+        try withDefaults { defaults in
+            var legacy = HeroSettings.default
+            legacy.showsCardCaptions = false
+            let source = CardCaptionSettingsStore(defaults: defaults, namespace: "source")
+            source.save(.init(showsLabels: false, overrides: [.browse: true]))
+            let snapshot = ProfileSettingsTransfer.capture(namespace: "source", defaults: defaults)
+            let blob = try XCTUnwrap(snapshot[CardCaptionSettingsStore.storageKey])
+            for namespace in ["inactive", "never-received"] {
+                HeroSettingsStore(defaults: defaults, namespace: namespace).save(legacy)
+                if namespace == "inactive" {
+                    ProfileSettingsTransfer.applyOne(
+                        baseKey: CardCaptionSettingsStore.storageKey, blob: blob,
+                        namespace: namespace, defaults: defaults
+                    )
+                }
+                ProfileSettingsTransfer.removeOne(
+                    baseKey: CardCaptionSettingsStore.storageKey, namespace: namespace, defaults: defaults
+                )
+                let store = CardCaptionSettingsStore(defaults: defaults, namespace: namespace)
+                XCTAssertEqual(store.load(), .default)
+                XCTAssertEqual(store.load(), .default)
+                XCTAssertFalse(ProfileSettingsTransfer.capture(namespace: namespace, defaults: defaults).keys
+                    .contains { $0.hasSuffix(".migrated") })
+            }
+            HeroSettingsStore(defaults: defaults, namespace: "fresh").save(legacy)
+            XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults, namespace: "fresh").load().overrides,
+                           [.home: false])
+            XCTAssertEqual(source.load().overrides, [.browse: true])
+        }
+    }
+
     @MainActor
     func testModelPersistsAndRebuildsEachProfileIndependently() throws {
         try withDefaults { defaults in

@@ -1,7 +1,7 @@
 #if os(iOS)
 import CoreModels
 import CoreText
-import CoreUI
+@testable import CoreUI
 import FeatureLiveTVCore
 @testable import FeatureSettings
 import SwiftUI
@@ -340,6 +340,94 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                             number.minY, CGFloat(artworkBottom), "The identity must remain below the thumbnail.")
                         XCTAssertGreaterThan(title.minY, number.maxY)
                     }
+                }
+            }
+        }
+    }
+
+    func testManageSeasonsEpisodeArtworkMatchesInlineScopeWithoutChangingSeasonCovers() async throws {
+        let app = PlozziOSAppModel()
+        let artwork = try XCTUnwrap(URL(string: "https://example.invalid/episode-scope-\(UUID()).png"))
+        let episode = MediaItem(
+            id: UUID().uuidString, title: "Episode", kind: .episode,
+            isPlayed: true, posterURL: artwork
+        )
+        let season = MediaItem(
+            id: UUID().uuidString, title: "Season", kind: .season, posterURL: artwork
+        )
+        // Distinct cached policy winners exercise the production renderers without provider requests.
+        for preference in [ArtworkPreference.library, .online] {
+            let policy = ArtworkPresentationPolicy(settings: .init(preference: preference))
+            let color = preference == .online
+                ? UIColor(red: 0.12, green: 0.8, blue: 0.48, alpha: 1)
+                : UIColor(red: 0.8, green: 0.12, blue: 0.48, alpha: 1)
+            for (item, placement, variant, size) in [
+                (episode, ArtworkPlacement.episodeThumbnail, ArtworkImageVariant.landscapeCard,
+                 CGSize(width: 160, height: 90)),
+                (season, .poster, .posterCard, CGSize(width: 60, height: 90))
+            ] {
+                let image = UIGraphicsImageRenderer(size: size).image { context in
+                    color.setFill()
+                    context.fill(CGRect(origin: .zero, size: size))
+                }
+                let key = ArtworkResolveKey.make(
+                    references: item.artworkReferences(for: placement), variant: variant,
+                    maxAspectRatio: nil, pinIdentity: item.stablePresentationID,
+                    providerPolicyIdentity: policy.identity
+                )
+                ArtworkSeedMemo.store(image, reference: .remote(artwork), for: key)
+            }
+        }
+        let surfaces: [(name: String, view: AnyView, area: ArtworkArea)] = [
+            ("inline", AnyView(PlozziOSInlineEpisodeRail(
+                episodes: [episode], isLoading: false, onPlay: { _, _ in }
+            )), .episodes),
+            ("manage-episode", AnyView(PlozziOSDownloadThumbnail(item: episode, style: .episode)), .episodes),
+            ("manage-season", AnyView(PlozziOSDownloadThumbnail(item: season, style: .season)), .details)
+        ]
+        try await withWindow { window, host in
+            window.frame.size = CGSize(width: 390, height: 400)
+            for surface in surfaces {
+                for episodePreference in [ArtworkOverride.online, .library] {
+                    let detailPreference: ArtworkOverride = episodePreference == .online ? .library : .online
+                    var settings = ArtworkSettings()
+                    settings.setOverride(detailPreference, for: .details)
+                    settings.setOverride(episodePreference, for: .episodes)
+                    settings.setOverride(detailPreference, for: .downloads)
+                    host.rootView = AnyView(
+                        surface.view
+                            .padding(22)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .background(Color.black)
+                            .tint(.white)
+                            .environment(app)
+                            .environment(\.plozzArtworkArea, .details)
+                            .environment(\.plozzArtworkSettings, settings)
+                            .environment(\.plozzArtworkProviders, .default)
+                            .environment(\.horizontalSizeClass, .compact)
+                            .environment(\.plozzCardStyle, .borderless)
+                            .environment(\.plozzMetrics, .touch(density: .standard))
+                            .environment(\.themePalette, .dark)
+                    )
+                    try await settle(window)
+                    let bytes = try rgbaPixels(snapshot(
+                        window, name: "episode-artwork-scope-\(surface.name)-\(episodePreference)"
+                    ))
+                    var libraryPixels = 0
+                    var onlinePixels = 0
+                    for index in stride(from: 0, to: bytes.count, by: 4) {
+                        guard bytes[index + 2] > 70 else { continue }
+                        if bytes[index] > 150 && bytes[index + 1] < 70 { libraryPixels += 1 }
+                        if bytes[index + 1] > 150 && bytes[index] < 70 { onlinePixels += 1 }
+                    }
+                    let prefersOnline = settings.prefersOnlineArtwork(in: surface.area)
+                    let selectedPixels = prefersOnline ? onlinePixels : libraryPixels
+                    let otherPixels = prefersOnline ? libraryPixels : onlinePixels
+                    XCTAssertGreaterThan(selectedPixels, 100, "\(surface.name) must render its \(surface.area) artwork.")
+                    XCTAssertGreaterThan(
+                        selectedPixels, otherPixels * 10,
+                        "\(surface.name) must follow \(surface.area), not the opposing artwork choice."
+                    )
                 }
             }
         }

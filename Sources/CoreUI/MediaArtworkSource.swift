@@ -9,25 +9,26 @@ public struct MediaArtworkSource: Sendable {
     public let itemIdentity: String
 
     public init(item: MediaItem, placement: ArtworkPlacement, policy: ArtworkPresentationPolicy) {
+        self.init(item: item, placements: [placement], policy: policy)
+    }
+
+    public init(
+        item: MediaItem, placements: [ArtworkPlacement], policy: ArtworkPresentationPolicy,
+        router: ArtworkRouter = .shared
+    ) {
         self.policy = policy
-        itemIdentity = item.stablePresentationID
-        references = policy.references(for: item, placement: placement)
-        guard ![.folder, .collection, .unknown].contains(item.kind) else {
+        itemIdentity = CardArtworkPolicy.standard.pinIdentity(for: item)
+        var seen = Set<ArtworkReference>()
+        references = placements.flatMap { policy.references(for: item, placement: $0) }
+            .filter { seen.insert($0).inserted }
+        guard item.supportsExternalArtworkLookup else {
             fallbackURL = nil
             return
         }
-        let kind: ArtworkKind
-        switch placement {
-        case .poster, .seriesPoster, .seasonPoster: kind = .poster
-        case .logo: kind = .logo
-        case .episodeThumbnail: kind = .thumbnail
-        default: kind = .hero
-        }
-        let subject = placement == .episodeThumbnail ? item : PosterCardView.seriesArtworkItem(for: item)
         fallbackURL = {
             await ArtworkSession.artworkResolveLimiter.run {
                 guard !Task.isCancelled else { return nil }
-                return await ArtworkRouter.shared.artworkURL(kind, for: subject)
+                return await router.artworkURL(for: item, placements: placements)
             }
         }
     }

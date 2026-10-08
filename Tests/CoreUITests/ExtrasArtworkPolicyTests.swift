@@ -162,8 +162,17 @@ final class ExtrasArtworkPolicyTests: XCTestCase {
         )
         XCTAssertEqual(
             CardArtworkPolicy.standard.references(for: episode, style: .landscape),
-            episode.artworkReferences(for: .episodeThumbnail)
+            [
+                .remote(url("still.jpg")), .remote(url("episode-backdrop.jpg")),
+                .remote(url("show-backdrop.jpg")), .remote(url("show-poster.jpg"))
+            ]
         )
+        for spoilers in [SpoilerSettings.default, .init(isEnabled: true, mode: .blur)] {
+            XCTAssertEqual(MediaArtworkPrefetchPolicy.candidates(
+                for: episode, style: .landscape, spoilerSettings: spoilers
+            ), [url("still.jpg"), url("episode-backdrop.jpg")],
+            "Late display fallbacks must not broaden ordinary episode prefetch.")
+        }
         XCTAssertEqual(
             CardArtworkPolicy.standard.references(for: episode, style: .poster),
             episode.artworkReferences(for: .seriesPoster)

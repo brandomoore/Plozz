@@ -97,10 +97,18 @@ and the single place caption customization lives.
   Child content chooses its initial native focus target and calls
   `SettingsDetailNavigation.focusArrived()` when that control receives focus.
   Customization lists and their inset contextual cards occupy separate regions.
-  A fixed-size illustration highlights the affected artwork, beside one sentence
-  of help; label settings reuse the card-style preview. Keep the card and viewport
+  Larger 16:9 illustrations highlight only the affected artwork, beside one sentence
+  of help; label settings reuse the card-style preview. Navigation follows the active
+  profile, including native sidebar, pinned rail, and top-tab differences. Ordinary
+  title rows use 2:3 posters; episode/player thumbnails use their landscape ratios.
+  Home follows the active Fullscreen Hero/Showcase layout, including disabled heroes;
+  Continue Watching uses its actual thumbnail or extended series-artwork shape.
+  The shared title-detail choice shows separate movie and show layouts: show episodes
+  stay muted because the episode choice owns those images. Extras and cast photos
+  are not promised a title-level source replacement. Keep the card and viewport
   stable as focus or values change, with no extra focus stop or content behind
-  the card. Lists without help reserve no footer. Pane-level transition clipping
+  the card. A smooth 40-point bottom fade and matching scroll clearance keep focused
+  rows above the fade. Lists without help reserve no footer. Pane-level transition clipping
   remains. Artwork values use "Library" and "Metadata providers"; narrow/mobile
   and accessibility layouts stack the complete value rather than abbreviating it.
 - **Mobile Settings is a presentation action.** Its tab or More entry opens

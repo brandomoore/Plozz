@@ -77,10 +77,18 @@ struct AppearanceDetailView: View {
                 SettingsSplitRow(
                     id: "artwork",
                     title: "Artwork",
-                    subpage: SettingsDetailSubpage { ArtworkCustomizationView(cards: cardStyle) }
+                    subpage: SettingsDetailSubpage {
+                        ArtworkCustomizationView(
+                            cards: cardStyle,
+                            continueWatchingShowsSeriesArtwork: librariesScope.homeVisibility.continueWatchingShowsSeriesArtwork
+                        )
+                    }
                 ) {
                     VStack(alignment: .leading, spacing: 32) {
-                        ArtworkSettingsControls(cards: cardStyle)
+                        ArtworkSettingsControls(
+                            cards: cardStyle,
+                            continueWatchingShowsSeriesArtwork: librariesScope.homeVisibility.continueWatchingShowsSeriesArtwork
+                        )
                         if canManageProviders {
                             VStack(alignment: .leading, spacing: 12) {
                                 Button(action: settingsNavigation.openMetadataProviders) {

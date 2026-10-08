@@ -109,18 +109,101 @@ public actor ArtworkRouter {
 
     // MARK: - Video artwork
 
+    /// External artwork for an ordered presentation ladder. Library bytes remain
+    /// the first-paint resolver's responsibility. Only `.episodeThumbnail` may
+    /// consult episode artwork; other episode placements resolve the owning show.
+    public func artworkURL(for item: MediaItem, placements: [ArtworkPlacement]) async -> URL? {
+        await sourcedArtworkURL(for: item, placements: placements)?.value
+    }
+
+    public func sourcedArtworkURL(
+        for item: MediaItem, placements: [ArtworkPlacement]
+    ) async -> SourcedValue<URL>? {
+        guard item.supportsExternalArtworkLookup else { return nil }
+        let lookup = item.artworkLookupItem
+        let policy = settingsStore.load().artworkPolicyIdentity
+        var seen = Set<ArtworkPlacement>()
+        for placement in placements where seen.insert(placement).inserted {
+            guard !Task.isCancelled, settingsStore.load().artworkPolicyIdentity == policy else { return nil }
+            if placement == .episodeThumbnail && lookup.kind != .episode { continue }
+            let subject = placement == .episodeThumbnail ? lookup : Self.seriesArtworkItem(for: lookup)
+            let kind: ArtworkKind
+            switch placement {
+            case .poster, .seriesPoster, .seasonPoster: kind = .poster
+            case .logo: kind = .logo
+            case .episodeThumbnail: kind = .thumbnail
+            case .homeHero, .detailBackdrop, .banner, .seasonBanner: kind = .hero
+            default: continue
+            }
+            let cachedSubject = lookup.kind == .season && (placement == .poster || placement == .seasonPoster)
+                ? lookup : subject
+            let cachedPlacement: ArtworkPlacement = lookup.kind == .season && placement == .poster
+                ? .seasonPoster : placement
+            let answer = await sourcedArtworkURL(
+                kind, for: MetadataQuery(subject),
+                catalogCandidates: cachedSubject.metadataArtworkURLs(for: cachedPlacement)
+            )
+            guard !Task.isCancelled, settingsStore.load().artworkPolicyIdentity == policy else { return nil }
+            if let answer { return answer }
+        }
+        return nil
+    }
+
+    /// A query-only show subject. Never reinterpret child IDs or episode stills
+    /// as series identity/artwork, and never mutate the playable original.
+    public nonisolated static func seriesArtworkItem(for item: MediaItem) -> MediaItem {
+        let episode = item.artworkLookupItem
+        guard episode.kind == .episode || episode.kind == .season else { return episode }
+        let query = MetadataQuery(episode).seriesScoped
+        let hasSeriesTitle = episode.parentTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        var ids = query.providerIDs
+        ids.removeProviderID(.plexGuid)
+        for (namespace, value) in [
+            (ProviderIDNamespace.aniList, query.animeIDs.anilist),
+            (.myAnimeList, query.animeIDs.mal), (.aniDB, query.animeIDs.anidb)
+        ] where ids.providerID(namespace) == nil {
+            if let value { ids[namespace.canonicalKey] = String(value) }
+        }
+        var series = MediaItem(
+            id: episode.seriesID ?? episode.id, title: episode.parentTitle ?? episode.title, kind: .series,
+            genres: episode.genres, tags: episode.tags, seriesID: episode.seriesID,
+            posterURL: episode.seriesPosterURL, backdropURL: episode.fallbackArtworkURL,
+            fallbackArtworkURL: episode.fallbackArtworkURL, logoURL: episode.logoURL,
+            providerIDs: ids,
+            allowsTitleBasedMetadataMatching: episode.allowsTitleBasedMetadataMatching && hasSeriesTitle,
+            metadataProvenance: episode.metadataProvenance,
+            sourceAccountID: episode.sourceAccountID,
+            artworkSourceAccountIDsByURL: episode.artworkSourceAccountIDsByURL
+        )
+        series.artworkMetadataSourcesByURL = episode.artworkMetadataSourcesByURL
+        if let selection = episode.artworkSelections.first(where: { $0.placement == .seriesPoster }) {
+            series.artworkSelections = [
+                .init(placement: .poster, references: selection.references),
+                selection
+            ]
+        }
+        if let logo = episode.artworkSelections.first(where: { $0.placement == .logo }) {
+            series.artworkSelections.append(logo)
+        }
+        return series
+    }
+
     /// Resolves a `kind` artwork URL for `item`, trying the content-type-specific
     /// provider chain and caching the (positive or negative) result. Never throws.
     public func artworkURL(_ kind: ArtworkKind, for item: MediaItem) async -> URL? {
-        let query = MetadataQuery(item)
-        return await artworkURL(kind, for: query)
+        await sourcedArtworkURL(kind, for: item)?.value
     }
 
     public func sourcedArtworkURL(
         _ kind: ArtworkKind,
         for item: MediaItem
     ) async -> SourcedValue<URL>? {
-        await sourcedArtworkURL(kind, for: MetadataQuery(item))
+        guard item.supportsExternalArtworkLookup else { return nil }
+        let subject = item.artworkLookupItem
+        return await sourcedArtworkURL(
+            kind, for: MetadataQuery(subject),
+            catalogCandidates: subject.metadataArtworkURLs(for: Self.placement(for: kind))
+        )
     }
 
     /// Lower-level entry point taking a prebuilt ``MetadataQuery``.
@@ -133,6 +216,14 @@ public actor ArtworkRouter {
         _ kind: ArtworkKind,
         for query: MetadataQuery
     ) async -> SourcedValue<URL>? {
+        await sourcedArtworkURL(kind, for: query, catalogCandidates: [])
+    }
+
+    private func sourcedArtworkURL(
+        _ kind: ArtworkKind,
+        for query: MetadataQuery,
+        catalogCandidates: [SourcedValue<URL>]
+    ) async -> SourcedValue<URL>? {
         let providers = configuredProviders(for: query, kind: kind)
         guard !providers.isEmpty else { return nil }
         let cache = self.cache
@@ -143,6 +234,7 @@ public actor ArtworkRouter {
         ) { group in
             for (index, entry) in providers.enumerated() {
                 group.addTask {
+                    let saved = catalogCandidates.first(where: { $0.source == entry.source })
                     let key = Self.providerCacheKey(
                         query: query,
                         kind: kind,
@@ -151,14 +243,14 @@ public actor ArtworkRouter {
                     if let hit = await cache.cached(key) {
                         return (
                             index,
-                            hit.map { SourcedValue(value: $0, source: entry.source) }
+                            hit.map { SourcedValue(value: $0, source: entry.source) } ?? saved
                         )
                     }
                     let url = await entry.provider.artworkURL(kind, for: query)
                     await cache.store(url, for: key)
                     return (
                         index,
-                        url.map { SourcedValue(value: $0, source: entry.source) }
+                        url.map { SourcedValue(value: $0, source: entry.source) } ?? saved
                     )
                 }
             }
@@ -180,6 +272,9 @@ public actor ArtworkRouter {
             }
             return []
         }
+        guard !Task.isCancelled,
+              configuredProviders(for: query, kind: kind).map(\.source) == providers.map(\.source)
+        else { return nil }
         return answers.sorted { $0.0 < $1.0 }.compactMap(\.1).first
     }
 
@@ -189,7 +284,12 @@ public actor ArtworkRouter {
         for item: MediaItem,
         limit: Int = 2
     ) async -> [SourcedValue<URL>] {
-        await sourcedArtworkURLs(kind, for: MetadataQuery(item), limit: limit)
+        guard item.supportsExternalArtworkLookup else { return [] }
+        let subject = item.artworkLookupItem
+        return await sourcedArtworkURLs(
+            kind, for: MetadataQuery(subject), limit: limit,
+            catalogCandidates: subject.metadataArtworkURLs(for: Self.placement(for: kind))
+        )
     }
 
     /// Ordered artwork candidates for `kind`, best first, across the provider chain.
@@ -210,11 +310,24 @@ public actor ArtworkRouter {
         for query: MetadataQuery,
         limit: Int = 2
     ) async -> [SourcedValue<URL>] {
+        await sourcedArtworkURLs(kind, for: query, limit: limit, catalogCandidates: [])
+    }
+
+    private func sourcedArtworkURLs(
+        _ kind: ArtworkKind,
+        for query: MetadataQuery,
+        limit: Int,
+        catalogCandidates: [SourcedValue<URL>]
+    ) async -> [SourcedValue<URL>] {
         guard limit > 0 else { return [] }
         let providers = configuredProviders(for: query, kind: kind)
         let sourceFingerprint = providers.map(\.source.rawValue).joined(separator: ",")
-        let key = "\(query.cacheKey(for: kind))|candidates|\(sourceFingerprint)"
+        let catalogFingerprint = catalogCandidates.map {
+            "\($0.source.rawValue):\(ArtworkReference.remote($0.value).privacySafeIdentity)"
+        }.joined(separator: ",")
+        let key = "\(query.cacheKey(for: kind))|candidates|\(sourceFingerprint)|\(catalogFingerprint)"
         if let hit = heroCandidates[key] { return hit }
+        let cache = self.cache
 
         let batches = await withTaskGroup(
             of: (Int, MetadataSource, [URL]).self,
@@ -222,8 +335,16 @@ public actor ArtworkRouter {
         ) { group in
             for (index, entry) in providers.enumerated() {
                 group.addTask {
+                    let saved = catalogCandidates.filter { $0.source == entry.source }.map(\.value)
+                    let cached = await cache.cached(Self.providerCacheKey(
+                        query: query, kind: kind, source: entry.source
+                    ))
+                    if let cached, cached == nil {
+                        return (index, entry.source, saved)
+                    }
                     let offered = await entry.provider.artworkURLs(kind, for: query, limit: limit)
-                    return (index, entry.source, offered)
+                    let fallback = (cached ?? nil).map { [$0] } ?? saved
+                    return (index, entry.source, offered.isEmpty ? fallback : offered)
                 }
             }
             var completed = Array<[URL]?>(repeating: nil, count: providers.count)
@@ -244,6 +365,9 @@ public actor ArtworkRouter {
             return []
         }
 
+        guard !Task.isCancelled,
+              configuredProviders(for: query, kind: kind).map(\.source) == providers.map(\.source)
+        else { return [] }
         var found: [SourcedValue<URL>] = []
         var asked: [String] = []
         for (_, source, offered) in batches.sorted(by: { $0.0 < $1.0 }) {
@@ -266,13 +390,16 @@ public actor ArtworkRouter {
     }
 
     /// Deterministic Home/detail picks from one online candidate pool. Detail uses
-    /// the runner-up when available, preserving the deliberate two-hero design.
+    /// the runner-up when available. A poster-only title retains its permitted
+    /// external poster as a last resort.
     public func heroArtworkURL(
         for item: MediaItem,
         placement: ArtworkPlacement
     ) async -> URL? {
-        let candidates = await sourcedArtworkURLs(.hero, for: item, limit: 4)
-        return Self.heroCandidate(from: candidates, placement: placement)
+        let subject = Self.seriesArtworkItem(for: item)
+        let candidates = await sourcedArtworkURLs(.hero, for: subject, limit: 4)
+        if let hero = Self.heroCandidate(from: candidates, placement: placement) { return hero }
+        return await artworkURL(for: item, placements: [.poster])
     }
 
     static func heroCandidate(
@@ -299,6 +426,15 @@ public actor ArtworkRouter {
         case .hero: .backdropURL
         case .thumbnail: .episodeThumbnail
         case .logo: .logoURL
+        }
+    }
+
+    private static func placement(for kind: ArtworkKind) -> ArtworkPlacement {
+        switch kind {
+        case .poster: .poster
+        case .hero: .homeHero
+        case .thumbnail: .episodeThumbnail
+        case .logo: .logo
         }
     }
 

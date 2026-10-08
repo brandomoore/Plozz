@@ -797,7 +797,6 @@ private struct LibraryGridCell: View {
                         item: item,
                         style: .poster,
                         spoilerSettings: spoilerSettings,
-                        enablesAsyncArtworkFallback: false,
                         focusRequest: focusRequest,
                         onFocusRequestHandled: {
                             if let focusRequest { onFocusRequestHandled(focusRequest) }

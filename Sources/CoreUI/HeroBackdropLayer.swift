@@ -12,7 +12,11 @@ public enum DetailBackdropArtwork {
         // Discovery enrichment owns its first backdrop; do not race a different chooser.
         guard !isDiscoveryItem || item.heroBackdropURL != nil || item.backdropURL != nil else { return nil }
         return {
-            await ArtworkRouter.shared.heroArtworkURL(for: item, placement: .detailBackdrop) ?? item.posterURL
+            if let hero = await ArtworkRouter.shared.heroArtworkURL(for: item, placement: .detailBackdrop) {
+                return hero
+            }
+            if let poster = item.libraryArtworkURL(item.posterURL) { return poster }
+            return await ArtworkRouter.shared.artworkURL(.poster, for: item)
         }
     }
 }

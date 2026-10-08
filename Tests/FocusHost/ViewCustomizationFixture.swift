@@ -12,6 +12,12 @@ struct ViewCustomizationFixture: View {
         let models = ProfileSettingsModel(namespace: "ViewCustomizationRemote.\(UUID())")
         models.cardStyleModel.artwork = ArtworkSettings(preference: .online)
         models.cardStyleModel.captions = .default
+        if ProcessInfo.processInfo.arguments.contains("--preview-showcase") {
+            models.heroSettingsModel.settings.style = .followsFocus
+        }
+        if ProcessInfo.processInfo.arguments.contains("--preview-episode-stills") {
+            models.homeLibraryVisibilityModel.setContinueWatchingShowsSeriesArtwork(false)
+        }
         let navigation = SettingsNavigationModel()
         navigation.appearanceRowID = ProcessInfo.processInfo.arguments.contains("--labels") ? "cards" : "artwork"
         _models = State(initialValue: models)
@@ -42,8 +48,16 @@ struct ViewCustomizationFixture: View {
         .environment(models.navigationStyleModel)
         .environment(models.transparencyModel)
         .environment(models.appLanguageModel)
+        .environment(models.heroSettingsModel)
+        .environment(\.plozzNavigationStyle, previewNavigationStyle)
         .environment(\.themePalette, .dark)
         .environment(\.colorScheme, .dark)
         .environment(\.locale, Locale(identifier: "en_US"))
+    }
+
+    private var previewNavigationStyle: NavigationStyle {
+        if ProcessInfo.processInfo.arguments.contains("--preview-rail") { return .rail }
+        if ProcessInfo.processInfo.arguments.contains("--preview-tabs") { return .tabBar }
+        return .sidebar
     }
 }

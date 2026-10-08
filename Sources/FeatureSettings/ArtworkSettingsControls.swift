@@ -5,8 +5,12 @@ import SwiftUI
 
 public struct ArtworkSettingsControls: View {
     @Bindable private var cards: CardStyleSettingsModel
+    private let continueWatchingShowsSeriesArtwork: Bool
 
-    public init(cards: CardStyleSettingsModel) { self.cards = cards }
+    public init(cards: CardStyleSettingsModel, continueWatchingShowsSeriesArtwork: Bool = true) {
+        self.cards = cards
+        self.continueWatchingShowsSeriesArtwork = continueWatchingShowsSeriesArtwork
+    }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 28) {
@@ -15,7 +19,9 @@ public struct ArtworkSettingsControls: View {
                 .foregroundStyle(.secondary)
             ArtworkPresetPicker(settings: $cards.artwork)
             ViewCustomizationLink(isCustomized: cards.artwork.selectedPreset == nil) {
-                ArtworkCustomizationView(cards: cards)
+                ArtworkCustomizationView(
+                    cards: cards, continueWatchingShowsSeriesArtwork: continueWatchingShowsSeriesArtwork
+                )
             }
             .accessibilityIdentifier("artwork-customization")
         }
@@ -45,6 +51,8 @@ private struct ArtworkPresetPicker: View {
 
 struct ArtworkCustomizationView: View {
     @Bindable var cards: CardStyleSettingsModel
+    var continueWatchingShowsSeriesArtwork = true
+    @Environment(HeroSettingsModel.self) private var hero: HeroSettingsModel?
 
     private var areas: [ArtworkArea] {
         #if os(tvOS)
@@ -61,7 +69,14 @@ struct ArtworkCustomizationView: View {
                 areas.first { "artwork-view-\($0.rawValue)" == id }
                     .flatMap { area in
                         cards.artwork.customizationDetail(in: area).map {
-                            ViewCustomizationHelp(detail: $0, illustration: .artwork(area))
+                            let settings = hero?.settings ?? .default
+                            let detail: LocalizedStringResource =
+                                area == .home && !settings.followsFocus && !settings.isActive
+                                ? "No hero is currently shown with your Home layout." : $0
+                            return ViewCustomizationHelp(
+                                detail: detail, illustration: .artwork(area),
+                                continueWatchingShowsSeriesArtwork: continueWatchingShowsSeriesArtwork
+                            )
                         }
                     }
             }

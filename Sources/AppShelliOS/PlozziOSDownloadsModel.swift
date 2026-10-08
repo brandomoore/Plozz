@@ -3,6 +3,7 @@ import CoreModels
 import CoreUI
 import Foundation
 import MediaDownloads
+import MetadataKit
 import MediaTransportCore
 import Observation
 import ProviderSilo
@@ -928,6 +929,31 @@ final class PlozziOSDownloadsModel {
         }
     }
 
+    /// Capture another supplied image before giving up on a new download.
+    /// This does not change detail-page backdrop selection or existing files.
+    static func artworkReferences(
+        for item: MediaItem, policy: ArtworkPresentationPolicy
+    ) -> [ArtworkReference] {
+        let policy = policy.forArea(.downloads)
+        var seen = Set<ArtworkReference>()
+        return artworkPlacements(for: item).flatMap { policy.references(for: item, placement: $0) }
+            .filter { seen.insert($0).inserted }
+    }
+
+    static func artworkPlacements(for item: MediaItem) -> [ArtworkPlacement] {
+        item.kind == .episode
+            ? [.detailBackdrop, .episodeThumbnail, .poster]
+            : [.detailBackdrop, .poster]
+    }
+
+    static func artworkLookup(for item: MediaItem, router: ArtworkRouter = .shared) async -> URL? {
+        let placements = artworkPlacements(for: item)
+        return await ArtworkSession.artworkResolveLimiter.run {
+            guard !Task.isCancelled else { return nil }
+            return await router.artworkURL(for: item, placements: placements)
+        }
+    }
+
     private func pinArtworkIfAvailable(
         for item: MediaItem,
         record: DownloadedMediaRecord
@@ -963,8 +989,12 @@ final class PlozziOSDownloadsModel {
     ) async {
         guard let storage, let registry else { return }
         do {
-            let source = MediaArtworkSource(item: item, placement: .detailBackdrop, policy: policy)
-            guard let artwork = await source.resolve(variant: .landscapeCard),
+            guard let artwork = await ArtworkFirstPaintResolver.resolve(
+                references: Self.artworkReferences(for: item, policy: policy),
+                variant: .landscapeCard,
+                asyncOnlineURL: { await Self.artworkLookup(for: item) },
+                prefersOnlineArtwork: policy.prefersOnlineArtwork
+            ),
                   let data = artwork.image.jpegData(compressionQuality: 0.9) else {
                 PlozzLog.app.debug("No usable artwork was available for the download")
                 return

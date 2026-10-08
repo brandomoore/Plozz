@@ -2,6 +2,7 @@ import CoreModels
 import SwiftUI
 import XCTest
 @testable import CoreUI
+@testable import MetadataKit
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -183,6 +184,100 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
     }
 
     #if canImport(UIKit)
+    func testLandscapeAndRecognizedFolderRecoverAnExternalOnlyPoster() async throws {
+        let external = try XCTUnwrap(URL(string: "https://art.example.test/catalog-poster.jpg"))
+        var movie = MediaItem(id: "movie", title: "Catalog Movie", kind: .movie, posterURL: external)
+        movie.recordArtworkMetadataSource(.tvdb, for: external)
+        let settings = PolicyArtworkSettings(.init(orderMode: .custom, enabledOrder: ["tvdb", "tmdb"]))
+        let router = await policyRouter(for: movie, settings: settings)
+        let policy = ArtworkPresentationPolicy(settings: .init(preference: .library), providers: settings.load())
+        let landscape = CardArtworkPolicy.standard.artworkFallback(for: movie, style: .landscape, router: router)
+        let landscapeURL = await landscape?()
+        XCTAssertEqual(landscapeURL, external)
+
+        var folder = MediaItem(id: "d:movie", title: "Physical Folder", kind: .folder, posterURL: external)
+        folder.recordArtworkMetadataSource(.tvdb, for: external)
+        folder.artworkLookupSubject = try XCTUnwrap(ArtworkLookupSubject(catalog: movie))
+        XCTAssertNotNil(CardArtworkPolicy.standard.posterFallback(for: folder))
+        XCTAssertNil(CardArtworkPolicy.extra.posterFallback(for: folder))
+        let source = MediaArtworkSource(
+            item: folder, placements: [.detailBackdrop, .poster], policy: policy, router: router
+        )
+        XCTAssertTrue(source.references.isEmpty)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 12)).image {
+            UIColor.blue.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 8, height: 12))
+        }
+        let resolved = await ArtworkFirstPaintResolver.resolve(
+            references: source.references, variant: .posterCard,
+            asyncOnlineURL: source.fallbackURL, prefersOnlineArtwork: policy.prefersOnlineArtwork,
+            imageLoader: { $0 == .remote(external) ? image : nil }
+        )
+        XCTAssertEqual(resolved?.reference, .remote(external))
+        XCTAssertEqual(folder.kind, .folder)
+        XCTAssertEqual(folder.id, "d:movie")
+        var corrected = folder
+        var differentCatalog = movie
+        differentCatalog.providerIDs = ["Tvdb": "corrected-title"]
+        corrected.artworkLookupSubject = ArtworkLookupSubject(catalog: differentCatalog)
+        XCTAssertEqual(folder.stablePresentationID, corrected.stablePresentationID)
+        XCTAssertNotEqual(
+            CardArtworkPolicy.standard.pinIdentity(for: folder),
+            CardArtworkPolicy.standard.pinIdentity(for: corrected)
+        )
+        settings.save(.init(orderMode: .custom, disabledOrder: ["tvdb", "tmdb"]))
+        let disabled = await source.fallbackURL?()
+        XCTAssertNil(disabled, "The retained URL cannot bypass a live provider disable.")
+    }
+
+    func testEpisodeSourceUsesSeriesPosterAfterMissingHeroWithoutExposingTheStill() async throws {
+        let still = try XCTUnwrap(URL(string: "https://art.example.test/still.jpg"))
+        let poster = try XCTUnwrap(URL(string: "https://art.example.test/show.jpg"))
+        var item = MediaItem(
+            id: "episode", title: "Episode", kind: .episode, parentTitle: "Series",
+            seasonNumber: 1, episodeNumber: 1, posterURL: still, seriesPosterURL: poster
+        )
+        item.recordArtworkMetadataSource(.tvdb, for: still)
+        item.recordArtworkMetadataSource(.tvdb, for: poster)
+        let settings = PolicyArtworkSettings(.init(orderMode: .custom, enabledOrder: ["tvdb", "tmdb"]))
+        let router = await policyRouter(for: item, settings: settings)
+        let hidden = EpisodeArtworkSource(
+            item: item, spoilerSettings: .init(isEnabled: true, mode: .placeholder), router: router
+        )
+        let visible = EpisodeArtworkSource(item: item, spoilerSettings: .default, router: router)
+        let hiddenURL = await hidden.fallbackURL()
+        let visibleURL = await visible.fallbackURL()
+        XCTAssertEqual(hiddenURL, poster)
+        XCTAssertEqual(visibleURL, still)
+        XCTAssertTrue(hidden.references.isEmpty)
+        XCTAssertNotEqual(hidden.requestIdentity, visible.requestIdentity)
+        item.seriesPosterURL = nil
+        let unavailable = EpisodeArtworkSource(
+            item: item, spoilerSettings: .init(isEnabled: true, mode: .placeholder), router: router
+        )
+        let missingSeries = await unavailable.fallbackURL()
+        XCTAssertNil(missingSeries)
+    }
+
+    private func policyRouter(
+        for item: MediaItem, settings: PolicyArtworkSettings
+    ) async -> ArtworkRouter {
+        let cache = MetadataDiskCache(directory: nil)
+        for subject in [item, ArtworkRouter.seriesArtworkItem(for: item)] {
+            for source in [MetadataSource.tvdb, .tmdb] {
+                for kind in [ArtworkKind.poster, .hero, .thumbnail] {
+                    await cache.store(nil, for: ArtworkRouter.providerCacheKey(
+                        query: MetadataQuery(subject), kind: kind, source: source
+                    ))
+                }
+            }
+        }
+        return ArtworkRouter(
+            cache: cache, enrichmentBaseline: .init(order: [.tvdb, .tmdb], priority: .init(rules: [])),
+            settingsStore: settings
+        )
+    }
+
     func testLibraryFirstUsesSuppliedNetworkFileWithoutAnOnlineLookup() async throws {
         let reference = try NetworkArtworkReference(
             accountID: UUID().uuidString, credentialRevision: CredentialRevision(),
@@ -202,19 +297,100 @@ final class ArtworkPresentationPolicyTests: XCTestCase {
         let loader = PolicyArtworkLoader(data: try XCTUnwrap(image.pngData()))
         ArtworkImageCache.shared.configure(networkFileService: ArtworkNetworkFileService(loader: loader))
         defer { ArtworkImageCache.shared.configure(networkFileService: nil) }
+        let external = try XCTUnwrap(URL(string: "https://art.example.test/stored-provider.jpg"))
+        var item = MediaItem(
+            id: "share-artwork", title: "Share artwork", kind: .movie, posterURL: external,
+            artworkSelections: [.init(placement: .poster, references: [.networkFile(reference)])]
+        )
+        item.metadataProvenance[.posterURL] = MetadataAttribution(source: .tmdb)
+        XCTAssertEqual(CardArtworkPolicy.standard.references(for: item, style: .landscape), [.networkFile(reference)])
         let online = PolicyOnlineProbe()
         for preference in [ArtworkPreference.recommended, .library, .online] {
             let policy = ArtworkPresentationPolicy(
                 area: .browse, settings: .init(preference: preference)
             )
+            let source = MediaArtworkSource(item: item, placement: .poster, policy: policy)
+            XCTAssertEqual(source.references, [.networkFile(reference)])
             let result = await ArtworkFirstPaintResolver.resolve(
-                references: [.networkFile(reference)], variant: .landscapeCard,
+                references: source.references, variant: .landscapeCard,
                 asyncOnlineURL: { await online.lookup() },
                 prefersOnlineArtwork: policy.prefersOnlineArtwork
             )
             XCTAssertEqual(result?.reference, .networkFile(reference))
             let count = await online.requests
             XCTAssertEqual(count, preference == .online ? 1 : 0)
+        }
+    }
+
+    func testPersistedExternalArtworkCannotSkipCurrentProviderLookup() async throws {
+        let external = try XCTUnwrap(URL(string: "https://art.example.test/stored-provider.jpg"))
+        var item = MediaItem(
+            id: "external-only", title: "External only", kind: .movie,
+            posterURL: external, backdropURL: external
+        )
+        item.metadataProvenance[.posterURL] = MetadataAttribution(source: .tmdb)
+        item.metadataProvenance[.backdropURL] = MetadataAttribution(source: .tmdb)
+        for preference in [ArtworkPreference.recommended, .library] {
+            let policy = ArtworkPresentationPolicy(area: .browse, settings: .init(preference: preference))
+            let source = MediaArtworkSource(item: item, placement: .poster, policy: policy)
+            XCTAssertTrue(source.references.isEmpty)
+            XCTAssertTrue(CardArtworkPolicy.standard.references(for: item, style: .landscape).isEmpty)
+            XCTAssertTrue(item.artworkCandidates(for: .poster).isEmpty)
+            let online = PolicyOnlineProbe()
+            let result = await ArtworkFirstPaintResolver.resolve(
+                references: source.references, variant: .posterCard,
+                asyncOnlineURL: { await online.lookup() },
+                prefersOnlineArtwork: policy.prefersOnlineArtwork
+            )
+            XCTAssertNil(result)
+            let requests = await online.requests
+            XCTAssertEqual(requests, 1, "Library-first must route cached external art under today's provider policy.")
+        }
+    }
+
+    func testSpoilerSafeSeriesSidecarPaintsBeforeExternalSeriesArt() async throws {
+        let sidecar = ArtworkReference.networkFile(try NetworkArtworkReference(
+            accountID: UUID().uuidString, credentialRevision: CredentialRevision(),
+            catalogArtworkID: UUID().uuidString,
+            representation: RemoteFileRepresentation(
+                size: 1_024,
+                identity: RemoteFileIdentity(kind: .modificationTime, modifiedAt: .distantPast),
+                consistency: .changeDetecting
+            ),
+            sourceRevision: UUID().uuidString,
+            dimensions: ArtworkDimensions(width: 8, height: 12)
+        ))
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 12)).image {
+            UIColor.green.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 8, height: 12))
+        }
+        let loader = PolicyArtworkLoader(data: try XCTUnwrap(image.pngData()))
+        ArtworkImageCache.shared.configure(networkFileService: ArtworkNetworkFileService(loader: loader))
+        defer { ArtworkImageCache.shared.configure(networkFileService: nil) }
+        var item = MediaItem(
+            id: "episode-sidecar", title: "Episode", kind: .episode, parentTitle: "Series",
+            posterURL: URL(string: "https://library.example.test/episode-still.jpg"),
+            seriesPosterURL: URL(string: "https://art.example.test/series-poster.jpg"),
+            fallbackArtworkURL: URL(string: "https://art.example.test/series-backdrop.jpg"),
+            artworkSelections: [.init(placement: .seriesPoster, references: [sidecar])]
+        )
+        item.metadataProvenance[.backdropURL] = MetadataAttribution(source: .tvdb)
+        for preference in [ArtworkPreference.recommended, .library] {
+            let policy = ArtworkPresentationPolicy(area: .episodes, settings: .init(preference: preference))
+            let source = EpisodeArtworkSource(
+                item: item, spoilerSettings: .init(isEnabled: true, mode: .placeholder), policy: policy
+            )
+            XCTAssertEqual(source.references.first, sidecar)
+            XCTAssertFalse(source.references.contains(.remote(try XCTUnwrap(item.posterURL))))
+            let online = PolicyOnlineProbe()
+            let result = await ArtworkFirstPaintResolver.resolve(
+                references: source.references, variant: .landscapeCard,
+                asyncOnlineURL: { await online.lookup() },
+                prefersOnlineArtwork: policy.prefersOnlineArtwork
+            )
+            XCTAssertEqual(result?.reference, sidecar)
+            let requests = await online.requests
+            XCTAssertEqual(requests, 0)
         }
     }
 
@@ -245,6 +421,14 @@ private actor PolicyOnlineProbe {
         requests += 1
         return nil
     }
+}
+
+private final class PolicyArtworkSettings: MetadataProviderSettingsStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: MetadataProviderSettings
+    init(_ value: MetadataProviderSettings) { self.value = value }
+    func load() -> MetadataProviderSettings { lock.lock(); defer { lock.unlock() }; return value }
+    func save(_ value: MetadataProviderSettings) { lock.lock(); self.value = value; lock.unlock() }
 }
 
 private actor PolicyOnlineGate {

@@ -63,7 +63,7 @@ public enum ArtworkArea: String, CaseIterable, Codable, Identifiable, Sendable {
         case .playlists: "The playlist covers, rather than the titles inside them."
         case .search: "Posters and thumbnails for titles found in Search."
         case .watchlist: "Posters on the Watchlist page, rather than Home's Watchlist row."
-        case .details: "Backdrops, title logos, and supporting cards on movie and show detail pages."
+        case .details: "Movie and show backgrounds, logos, and related-title posters."
         case .episodes: "Episode thumbnails in a show's detail page, rather than the video player."
         case .playback: "Video player Info, episode and playlist menus, Up Next, and system Now Playing."
         case .music: "Covers, artist images, and the music player."

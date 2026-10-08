@@ -14,6 +14,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             nil,
             ViewCustomizationHelp(detail: try XCTUnwrap(ArtworkArea.home.detail), illustration: .artwork(.home)),
             ViewCustomizationHelp(detail: try XCTUnwrap(ArtworkArea.playback.detail), illustration: .artwork(.playback)),
+            ViewCustomizationHelp(detail: try XCTUnwrap(ArtworkArea.details.detail), illustration: .artwork(.details)),
             CardCaptionSettings.default.customizationHelp(in: .home, style: .framed),
             CardCaptionSettings(preference: .hide).customizationHelp(in: .home, style: .borderless)
         ]
@@ -45,13 +46,13 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                     XCTAssertEqual(scroll.bounds.height, 900, accuracy: 2,
                                    "Lists without contextual help must not reserve a blank footer.")
                 } else {
-                    XCTAssertEqual(scroll.bounds.height, 696, accuracy: 2,
+                    XCTAssertEqual(scroll.bounds.height, 632, accuracy: 2,
                                    "Reserve exactly the card, inset and separation, not an overlay.")
                     if let viewportHeight {
                         XCTAssertEqual(scroll.bounds.height, viewportHeight, accuracy: 1)
                     }
                     viewportHeight = scroll.bounds.height
-                    XCTAssertEqual(scroll.adjustedContentInset.bottom, 0, accuracy: 1)
+                    XCTAssertEqual(scroll.adjustedContentInset.bottom, 40, accuracy: 1)
                 }
                 _ = try await self.capture(window, name: "customization-inset-card-\(index)",
                                            includeMaster: true)
