@@ -169,8 +169,13 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   Native Silo downloads are supported too; they use the server's download
   permissions and preparation options, not a temporary playback link.
   Missing artwork is repaired when the source is reachable on an allowed network,
-  without downloading the video again. Show tiles reflect their downloaded
+  without downloading the video again. Compact artwork-led lists keep large
+  libraries scannable, with per-title progress, status, and trailing actions.
+  Downloaded shows group compact episode rows by season; season removal lives
+  in the season menu. Show rows reflect their downloaded
   episodes' live progress and are marked available offline once all are complete.
+  Only the Downloads navigation item displays queue progress; Watchlist retains
+  its bookmark.
   Progress display updates are batched rather than redrawing at network-callback
   speed; completion, pause, failure, and removal updates remain immediate.
   Episode badges observe their own download, so another episode's progress

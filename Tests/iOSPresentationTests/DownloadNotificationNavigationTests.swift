@@ -276,6 +276,45 @@ final class DownloadNotificationNavigationTests: XCTestCase {
         }
     }
 
+    func testNativeWatchlistIconDoesNotInheritDownloadsIcon() async throws {
+        let app = PlozziOSAppModel(appAdmissionStore: NotificationAdmissionStore())
+        let originalProfileID = app.profiles.activeProfileID
+        let profile = app.profiles.add(name: "Tab icon isolation", isAwaitingSetup: false)
+        let store = NavigationLibraryLayoutStore(namespace: profile.id)
+        let keys = NavigationDestinationDefaults.iOS
+        let order = [
+            NavigationLibraryLayout.homeKey, NavigationLibraryLayout.watchlistKey,
+            NavigationLibraryLayout.liveTVKey, NavigationLibraryLayout.downloadsKey,
+            NavigationLibraryLayout.searchKey, NavigationLibraryLayout.settingsKey,
+        ]
+        store.save(.init(order: order, hiddenKeys: [], shownKeys: Set(keys)))
+        app.selectProfile(profile.id)
+        app.clearFirstRunStepIfHouseholdSetUp()
+        defer {
+            app.selectProfile(originalProfileID)
+            app.profiles.remove(profile.id)
+            store.save(.default)
+        }
+        try await withTabShell(app) { window in
+            @MainActor func tabs(in controller: UIViewController) -> UITabBarController? {
+                if let tabs = controller as? UITabBarController { return tabs }
+                return controller.children.lazy.compactMap { tabs(in: $0) }.first
+            }
+            let controller = try XCTUnwrap(window.rootViewController.flatMap { tabs(in: $0) })
+            _ = try self.captureText(window, name: "download-tab-icon-isolation")
+            let items = try XCTUnwrap(controller.tabBar.items)
+            let watchlist = try XCTUnwrap(items.first { $0.title == "Watchlist" }, "\(items)")
+            let downloads = try XCTUnwrap(items.first { $0.title == "Downloads" }, "\(items)")
+            let watchlistImage = try XCTUnwrap(watchlist.image)
+            let downloadImage = try XCTUnwrap(downloads.image)
+            print("TAB_ICONS watchlist=\(watchlistImage) downloads=\(downloadImage)")
+            XCTAssertNotEqual(
+                watchlistImage.pngData(), downloadImage.pngData(),
+                "Watchlist must retain its bookmark instead of inheriting the Downloads image."
+            )
+        }
+    }
+
     private func withTabShell(
         _ app: PlozziOSAppModel, exercise: (UIWindow) async throws -> Void
     ) async throws {

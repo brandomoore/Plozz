@@ -13,6 +13,247 @@ import XCTest
 
 @MainActor
 final class DownloadPresentationTests: XCTestCase {
+    func testNativeDownloadTabProgressNeverChangesTheWatchlistSymbol() async throws {
+        var download = record()
+        download.status = .downloading
+        download.bytesDownloaded = 20
+        download.totalBytes = 100
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(
+            records: [download.identityKey: download]
+        )))
+        let model = makeModel(
+            registry: registry, storage: try temporaryStorage(),
+            probe: ArtworkProbe(data: imageData()), startsActive: false
+        )
+        defer { model.beginProfileTransition() }
+        try await waitUntil { model.records.count == 1 }
+        let state = DownloadTabFixtureState()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.rootViewController = UIHostingController(rootView:
+            DownloadTabFixture(model: model, state: state)
+                .environment(\.locale, Locale(identifier: "en"))
+        )
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(400))
+        @MainActor func findTabs(_ controller: UIViewController) -> UITabBarController? {
+            if let tabs = controller as? UITabBarController { return tabs }
+            return controller.children.lazy.compactMap(findTabs).first
+        }
+        let tabs = try XCTUnwrap(window.rootViewController.flatMap(findTabs))
+        func image(_ name: String) throws -> Data {
+            let item = try XCTUnwrap(tabs.tabBar.items?.first { $0.title == name })
+            return try XCTUnwrap(item.image?.pngData())
+        }
+        func capture(_ name: String) {
+            window.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        let bookmark = try image("Watchlist")
+        let selectedBookmark = tabs.tabBar.items?.first { $0.title == "Watchlist" }?.selectedImage?.pngData()
+        var priorDownload = try image("Downloads")
+        XCTAssertNotEqual(bookmark, priorDownload)
+        capture("download-tabs-active")
+        for bytes in [40, 70] {
+            try await registry.updateProgress(
+                identityKey: download.identityKey, bytesDownloaded: Int64(bytes), totalBytes: 100
+            )
+            try await waitUntil { model.records.first?.bytesDownloaded == Int64(bytes) }
+            try await Task.sleep(for: .milliseconds(300))
+            XCTAssertEqual(try image("Watchlist"), bookmark)
+            XCTAssertEqual(
+                tabs.tabBar.items?.first { $0.title == "Watchlist" }?.selectedImage?.pngData(),
+                selectedBookmark
+            )
+            let updated = try image("Downloads")
+            XCTAssertNotEqual(updated, priorDownload, "The native Downloads item must receive live ring changes.")
+            priorDownload = updated
+        }
+        state.order.reverse()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(try image("Watchlist"), bookmark)
+        XCTAssertEqual(try image("Downloads"), priorDownload)
+        capture("download-tabs-reordered")
+        state.order = ["watchlist"]
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(try image("Watchlist"), bookmark)
+        state.order = ["watchlist", "downloads"]
+        try await registry.markCompleted(identityKey: download.identityKey, totalBytes: 100)
+        try await waitUntil { model.records.first?.status == .completed }
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(try image("Watchlist"), bookmark)
+        XCTAssertNotEqual(try image("Downloads"), priorDownload)
+        XCTAssertNotEqual(try image("Downloads"), bookmark)
+        capture("download-tabs-completed")
+    }
+
+    func testCompactDownloadRowsRemainDenseAndReadableAcrossStates() throws {
+        for status in [DownloadStatus.downloading, .queued, .paused, .completed, .failed] {
+            var record = record()
+            record.status = status
+            record.bytesDownloaded = 38
+            record.totalBytes = 100
+            record.snapshot.title = "E1 · One Year Later"
+            if status == .failed { record.failureReason = "Reconnect to the server and try again." }
+            for width in [350.0, 728.0] {
+                let content = DownloadCompactCard(menu: {
+                    Button("Remove", systemImage: "trash", role: .destructive) {}
+                }, accessibilityTitle: record.snapshot.title) {
+                    DownloadRowContent(
+                        title: record.snapshot.title, subtitle: DownloadFormatting.status(for: record),
+                        subtitleColor: DownloadFormatting.statusColor(for: record),
+                        fraction: DownloadFormatting.activeFraction(for: record),
+                        failure: DownloadFormatting.failure(for: record), artworkURL: nil, kind: .episode
+                    )
+                }
+                .frame(width: width)
+                .environment(\.plozzMetrics, .touch(density: .standard))
+                .environment(\.plozzCardStyle, .framed)
+                .environment(\.themePalette, .dark)
+                .environment(\.locale, Locale(identifier: "en"))
+                .environment(\.colorScheme, .dark)
+                .padding(8)
+                .background(Color.black)
+                let renderer = ImageRenderer(content: content)
+                renderer.scale = 2
+                let image = try XCTUnwrap(renderer.cgImage)
+                XCTAssertEqual(image.width, Int(width + 16) * 2)
+                XCTAssertLessThanOrEqual(image.height, 280, "A compact row, including padding, must stay within 140 points.")
+                let text = try recognizedText(image).map(\.text).joined(separator: " ")
+                XCTAssertTrue(text.contains("One Year Later"), text)
+                if status == .downloading { XCTAssertTrue(text.contains("38%"), text) }
+                if status == .failed { XCTAssertTrue(text.contains("try again"), text) }
+                let attachment = XCTAttachment(image: UIImage(cgImage: image))
+                attachment.name = "compact-download-row-\(status)-\(width)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
+    func testCompactDownloadsExpandForAccessibleTextAndRTLWithoutLosingContent() throws {
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+            let content = VStack(spacing: 16) {
+                DownloadSeasonHeader(
+                    seasonNumber: 2,
+                    summary: DownloadFormatting.showSubtitle(episodeCount: 12, seasonCount: 1, bytes: 8_000_000_000),
+                    isRunning: true, canResume: false, toggle: {}, remove: {}
+                )
+                DownloadCompactCard(menu: { Button("Remove") {} }, accessibilityTitle: "episode") {
+                    DownloadRowContent(
+                        title: "It's Always Sunny in Philadelphia",
+                        subtitle: Text("Queued"), subtitleColor: .secondary, fraction: 0,
+                        failure: "Reconnect to the server and try again.", artworkURL: nil, kind: .episode
+                    )
+                }
+            }
+            .frame(width: 320)
+            .environment(\.plozzMetrics, .touch(density: .standard, dynamicTypeSize: .accessibility3))
+            .environment(\.plozzCardStyle, .framed)
+            .environment(\.themePalette, .dark)
+            .environment(\.dynamicTypeSize, .accessibility3)
+            .environment(\.layoutDirection, direction)
+            .environment(\.locale, Locale(identifier: "en"))
+            .environment(\.colorScheme, .dark)
+            .padding(12)
+            .background(Color.black)
+            let renderer = ImageRenderer(content: content)
+            renderer.scale = 2
+            let image = try XCTUnwrap(renderer.cgImage)
+            XCTAssertEqual(image.width, 688)
+            let text = try recognizedText(image).map(\.text).joined(separator: " ")
+            for fragment in ["Season 2", "12", "Philadelphia", "Queued", "try again"] {
+                XCTAssertTrue(text.contains(fragment), text)
+            }
+            let attachment = XCTAttachment(image: UIImage(cgImage: image))
+            attachment.name = "accessible-compact-downloads-\(direction)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    func testDownloadedLibraryAndShowUseCompactRowsInHostedNavigation() async throws {
+        let downloads = (1...10).map { index in
+            var value = record(id: "episode-\(index)")
+            value.snapshot.title = "Episode \(index)"
+            value.snapshot.episodeNumber = index
+            value.snapshot.seriesID = index < 5 ? "andor" : "show-\(index)"
+            value.snapshot.seriesTitle = index < 5 ? "Andor" : "Downloaded Show \(index)"
+            value.snapshot.seasonNumber = index == 4 ? 2 : 1
+            value.status = index == 1 ? .downloading : .completed
+            value.bytesDownloaded = index == 1 ? 38 : 100
+            return value
+        }
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore(.init(
+            records: Dictionary(uniqueKeysWithValues: downloads.map { ($0.identityKey, $0) })
+        )))
+        let model = makeModel(
+            registry: registry, storage: try temporaryStorage(),
+            probe: ArtworkProbe(data: imageData()), startsActive: false
+        )
+        defer { model.beginProfileTransition() }
+        try await waitUntil { model.records.count == downloads.count }
+        await model.refreshArtwork()
+        let app = PlozziOSAppModel()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for showPage in [false, true] {
+            let show = try XCTUnwrap(model.library.shows.first { $0.title == "Andor" })
+            window.rootViewController = UIHostingController(rootView: NavigationStack {
+                if showPage {
+                    PlozziOSDownloadedShowView(showID: show.id, model: model, appModel: app)
+                } else {
+                    PlozziOSDownloadsView(model: model, appModel: app, onShowSettings: {})
+                }
+            }
+            .environment(app)
+            .environment(\.themePalette, .dark)
+            .environment(\.plozzMetrics, .touch(density: .standard))
+            .environment(\.plozzCardStyle, .framed)
+            .environment(\.locale, Locale(identifier: "en"))
+            .environment(\.colorScheme, .dark))
+            window.makeKeyAndVisible()
+            try await Task.sleep(for: .milliseconds(600))
+            window.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let text = try recognizedText(XCTUnwrap(image.cgImage)).map(\.text).joined(separator: " ")
+            if showPage {
+                for fragment in ["Andor", "Season 1", "Episode 1", "Episode 2", "Episode 3", "Season 2"] {
+                    XCTAssertTrue(text.contains(fragment), text)
+                }
+            } else {
+                XCTAssertTrue(text.contains("Downloads"), text)
+                XCTAssertGreaterThanOrEqual(text.components(separatedBy: "Downloaded Show").count - 1, 4, text)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = showPage ? "downloaded-show-compact-page" : "downloads-compact-library"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testShowDownloadActionUsesSharedLayoutWithoutInventingEpisodeTotals() throws {
         for (seasonCount, completedCount) in [(3, 8), (0, 0)] {
             for size in [DynamicTypeSize.large, .accessibility3] {
@@ -689,6 +930,36 @@ final class DownloadPresentationTests: XCTestCase {
         while !(await predicate()), Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
         let satisfied = await predicate()
         XCTAssertTrue(satisfied)
+    }
+}
+
+@MainActor
+@Observable
+private final class DownloadTabFixtureState {
+    var order = ["watchlist", "downloads"]
+}
+
+private struct DownloadTabFixture: View {
+    let model: PlozziOSDownloadsModel
+    let state: DownloadTabFixtureState
+
+    var body: some View {
+        TabView {
+            ForEach(state.order, id: \.self) { destination in
+                if destination == "downloads" {
+                    Tab {
+                        Text("Downloads")
+                    } label: {
+                        PlozziOSDownloadsTabLabel(model: model)
+                    }
+                } else {
+                    Tab("Watchlist", systemImage: "bookmark") {
+                        Text("Watchlist")
+                    }
+                }
+            }
+        }
+        .tabViewStyle(.tabBarOnly)
     }
 }
 

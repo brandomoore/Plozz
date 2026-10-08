@@ -440,6 +440,14 @@ for accessibility text and right-to-left layouts. Live storage and transfer
 sections own their record observation: progress must not invalidate the settings
 view that constructs native picker menus. Actual preference changes must still
 update those controls.
+Compact download rows have bounded normal-text heights, expanding failure text,
+and accessibility/RTL coverage. Hosted library and show checks verify visible
+row density and season metadata. Native tab checks drive progress, completion,
+reordering, and removal/reinsertion: only Downloads may change its image, while
+Watchlist keeps its bookmark.
+`DownloadsInteractionTests` taps the production library and episode menus,
+checks 44-point targets and the compact queue control, returns through one Back
+step, and cancels then confirms season deletion without navigating by accident.
 
 The `PlozziOSInteractionTests` scheme adds real native touch coverage for Settings
 on both an owned iPhone simulator and an owned iPad simulator. It launches the

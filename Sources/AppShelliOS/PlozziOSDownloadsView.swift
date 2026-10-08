@@ -139,29 +139,34 @@ struct PlozziOSDownloadsView: View {
 
     private func libraryList(_ library: PlozziOSDownloadLibrary) -> some View {
         GeometryReader { proxy in
-            ScrollView {
-                VStack(spacing: 16) {
-                    if model.hasActiveTransfers {
-                        activeTransfersHeader
-                    }
-                    LazyVGrid(
-                        columns: Self.columns(for: proxy.size.width),
-                        spacing: 20
-                    ) {
-                        ForEach(library.entries) { entry in
-                            switch entry {
-                            case let .movie(movie):
-                                movieTile(movie)
-                            case let .show(show):
-                                showTile(show)
-                            }
-                        }
+            List {
+                if model.hasActiveTransfers {
+                    activeTransfersHeader
+                        .labelStyle(.titleAndIcon)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(
+                            top: 6, leading: max(20, (proxy.size.width - 900) / 2),
+                            bottom: 10, trailing: max(20, (proxy.size.width - 900) / 2)
+                        ))
+                }
+                ForEach(library.entries) { entry in
+                    switch entry {
+                    case let .movie(movie):
+                        movieRow(movie)
+                    case let .show(show):
+                        showRow(show)
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-                .padding(.bottom, 24)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(
+                    top: 6, leading: max(20, (proxy.size.width - 900) / 2),
+                    bottom: 6, trailing: max(20, (proxy.size.width - 900) / 2)
+                ))
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
     }
 
@@ -186,23 +191,10 @@ struct PlozziOSDownloadsView: View {
         }
     }
 
-    /// Landscape download tiles: one column on a compact phone, two on an iPad in
-    /// portrait, three on a wide iPad — using the real estate the old full-width
-    /// rows left empty.
-    private static func columns(for width: CGFloat) -> [GridItem] {
-        let count: Int
-        switch width {
-        case ..<560: count = 1
-        case ..<1100: count = 2
-        default: count = 3
-        }
-        return Array(repeating: GridItem(.flexible(), spacing: 20), count: count)
-    }
-
     @ViewBuilder
-    private func movieTile(_ movie: PlozziOSDownloadedMovie) -> some View {
+    private func movieRow(_ movie: PlozziOSDownloadedMovie) -> some View {
         let record = movie.record
-        tileCard(
+        DownloadCompactCard(
             menu: {
                 transferMenuActions(for: record)
                 Button("Remove", systemImage: "trash", role: .destructive) {
@@ -212,7 +204,7 @@ struct PlozziOSDownloadsView: View {
             accessibilityTitle: record.snapshot.title
         ) {
             DownloadRowLink(record: record, model: model, appModel: appModel) {
-                DownloadTileContent(
+                DownloadRowContent(
                     title: record.snapshot.title,
                     subtitle: DownloadFormatting.status(for: record),
                     subtitleColor: DownloadFormatting.statusColor(for: record),
@@ -227,9 +219,18 @@ struct PlozziOSDownloadsView: View {
     }
 
     @ViewBuilder
-    private func showTile(_ show: PlozziOSDownloadedShow) -> some View {
-        tileCard(
+    private func showRow(_ show: PlozziOSDownloadedShow) -> some View {
+        DownloadCompactCard(
             menu: {
+                if show.records.contains(where: { $0.status.isActive }) {
+                    Button("Pause Show", systemImage: "pause.fill") {
+                        Task { await model.pause(show.records) }
+                    }
+                } else if show.records.contains(where: { $0.status == .paused || $0.status == .failed }) {
+                    Button("Resume Show", systemImage: "play.fill") {
+                        Task { await model.resume(show.records) }
+                    }
+                }
                 Button("Remove", systemImage: "trash", role: .destructive) {
                     pendingBulkDeletion = .show(show)
                 }
@@ -243,7 +244,7 @@ struct PlozziOSDownloadsView: View {
                     appModel: appModel
                 )
             } label: {
-                DownloadTileContent(
+                DownloadRowContent(
                     title: show.title,
                     subtitle: DownloadFormatting.status(for: show),
                     subtitleColor: DownloadFormatting.statusColor(show.status),
@@ -254,34 +255,6 @@ struct PlozziOSDownloadsView: View {
                 )
             }
             .buttonStyle(.plain)
-        }
-    }
-
-    /// Wraps a tile's navigation link with a "⋯" actions menu placed in the same
-    /// top-leading slot the detail-page episode cards use, plus a matching
-    /// long-press context menu. The menu is a sibling *above* the link so its taps
-    /// never trigger navigation.
-    @ViewBuilder
-    private func tileCard<Menu: View, Card: View>(
-        @ViewBuilder menu: () -> Menu,
-        accessibilityTitle: String,
-        @ViewBuilder card: () -> Card
-    ) -> some View {
-        let menuContent = menu()
-        ZStack(alignment: .topLeading) {
-            card()
-                .contextMenu { menuContent }
-            SwiftUI.Menu {
-                menuContent
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Circle())
-            }
-            .padding(4)
-            .accessibilityLabel("More actions for \(accessibilityTitle)")
         }
     }
 
@@ -518,49 +491,7 @@ struct DownloadRowLink<Content: View>: View {
 }
 
 struct DownloadRowContent: View {
-    /// Media title and a formatted status line — both provider/derived content.
-    let title: String   // l10n:content — media title from the server
-    let subtitle: Text
-    let subtitleColor: Color
-    let fraction: Double?
-    let failure: String?
-    let artworkURL: URL?
-    let kind: MediaItemKind
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            DownloadArtwork(url: artworkURL, kind: kind)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title)
-                    .font(.headline)
-                    .lineLimit(2)
-                subtitle
-                    .font(.caption)
-                    .foregroundStyle(subtitleColor)
-                if let fraction {
-                    ProgressView(value: fraction)
-                }
-                if let failure {
-                    Text(failure)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .lineLimit(2)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
-    }
-}
-
-/// A landscape download tile that shares the app's media-card chrome: the same
-/// concentric framed surface (`plozzFramedMediaCard`), media edge, corner radius,
-/// and caption insets the Home landscape library cards and detail episode cards
-/// use — so downloads read as first-class cards, not a bespoke list.
-struct DownloadTileContent: View {
-    @Environment(\.plozzCardStyle) private var cardStyle
-    @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.themePalette) private var palette
     /// Media title and a formatted status line — both provider/derived content.
     let title: String   // l10n:content — media title from the server
@@ -571,113 +502,76 @@ struct DownloadTileContent: View {
     let artworkURL: URL?
     let kind: MediaItemKind
 
-    @ViewBuilder
     var body: some View {
-        if cardStyle == .framed {
-            content
-                .plozzFramedMediaCard(
-                    innerCornerRadius: metrics.landscapeArtworkCornerRadius
-                )
-                .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
-        } else {
-            content
-        }
-    }
-
-    private var content: some View {
-        VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
-            artwork
-                .frame(maxWidth: .infinity)
-                .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                .overlay { cornerScrim }
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: metrics.landscapeArtworkCornerRadius,
-                        style: .continuous
-                    )
-                )
-                .plozzMediaEdge(
-                    cornerRadius: metrics.landscapeArtworkCornerRadius
-                )
-                .overlay(alignment: .bottom) { progressOverlay }
-
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .top, spacing: 12) {
+            if !dynamicTypeSize.isAccessibilitySize {
+                DownloadArtwork(url: artworkURL, kind: kind)
+            }
+            VStack(alignment: .leading, spacing: 6) {
                 Text(title)
-                    .font(.headline)
-                    .lineLimit(1)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                     .foregroundStyle(palette.primaryText)
                 subtitle
                     .font(.caption)
                     .foregroundStyle(subtitleColor)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let fraction {
+                    ProgressView(value: fraction)
+                        .tint(ThemePalette.brandBlue)
+                        .accessibilityHidden(true)
+                }
                 if let failure {
                     Text(failure)
                         .font(.caption)
-                        .foregroundStyle(.red)
-                        .lineLimit(1)
+                        .foregroundStyle(palette.errorText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.horizontal, metrics.landscapeCaptionHorizontalInset)
-            .padding(
-                .bottom,
-                cardStyle == .framed ? metrics.landscapeCaptionInset : 0
-            )
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.vertical, 8)
+        .padding(.leading, 8)
         .contentShape(Rectangle())
     }
+}
 
-    private var artwork: some View {
-        DownloadLocalArtwork(url: artworkURL) {
-            ZStack {
-                Color.secondary.opacity(0.12)
-                Image(systemName: fallbackSymbol)
-                    .font(.largeTitle)
-                    .plozzForeground(.secondary)
+struct DownloadCompactCard<MenuContent: View, Card: View>: View {
+    @Environment(\.plozzCardStyle) private var cardStyle
+    @Environment(\.themePalette) private var palette
+    @ViewBuilder var menu: () -> MenuContent
+    let accessibilityTitle: String // l10n:content - pinned media title.
+    @ViewBuilder var card: () -> Card
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 0) {
+            card()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contextMenu { menu() }
+            Menu {
+                menu()
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("More actions for \(accessibilityTitle)")
         }
+        .modifier(DownloadCompactCardSurface(isFramed: cardStyle == .framed))
     }
+}
 
-    /// A corner-anchored legibility scrim: dark at the top-leading corner (behind
-    /// the "⋯" menu) fading to clear by roughly the middle of the artwork —
-    /// similar to the detail episode card's gradient, but only where the menu sits
-    /// so most of the image stays untouched.
-    private var cornerScrim: some View {
-        GeometryReader { proxy in
-            RadialGradient(
-                colors: [.black.opacity(0.5), .clear],
-                center: .topLeading,
-                startRadius: 0,
-                endRadius: max(proxy.size.width, proxy.size.height) * 0.55
-            )
-            .allowsHitTesting(false)
-        }
-    }
+private struct DownloadCompactCardSurface: ViewModifier {
+    let isFramed: Bool
 
-    @ViewBuilder
-    private var progressOverlay: some View {
-        if let fraction {
-            ProgressView(value: fraction)
-                .tint(palette.accent)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
-                .background(
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.55)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-        }
-    }
-
-    private var fallbackSymbol: String {
-        switch kind {
-        case .episode, .series, .season:
-            return "tv"
-        case .movie, .video:
-            return "film"
-        case .collection, .playlist, .folder, .unknown:
-            return "photo"
+    func body(content: Content) -> some View {
+        if isFramed {
+            content.plozzFramedMediaCard(innerCornerRadius: 8, glassAtRest: false)
+        } else {
+            content
         }
     }
 }
@@ -1101,6 +995,7 @@ struct DownloadArtwork: View {
         }
         .frame(width: 104, height: 60)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .plozzMediaEdge(cornerRadius: 8)
         .accessibilityHidden(true)
     }
 
