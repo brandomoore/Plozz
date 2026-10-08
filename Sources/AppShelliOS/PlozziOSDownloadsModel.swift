@@ -41,6 +41,7 @@ final class PlozziOSDownloadsModel {
             .mapValues { records in
                 records.sorted { $0.identityKey < $1.identityKey }
             }
+            recordIndex.update(records)
         }
     }
     /// `records` indexed by identity key. `cachedRecord(forSelectedVersionOf:)` is
@@ -50,6 +51,7 @@ final class PlozziOSDownloadsModel {
     private var recordsByKey: [String: DownloadedMediaRecord] = [:]
     @ObservationIgnored
     private var recordsByIdentityKey: [String: [DownloadedMediaRecord]] = [:]
+    private let recordIndex = PlozziOSDownloadRecordIndex()
     private(set) var initializationError: String?
     var allowsCellular: Bool {
         didSet {
@@ -153,6 +155,10 @@ final class PlozziOSDownloadsModel {
     @ObservationIgnored
     nonisolated(unsafe) private var eventsTask: Task<Void, Never>?
     @ObservationIgnored
+    nonisolated(unsafe) private var progressReloadTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var reloadGeneration = 0
+    @ObservationIgnored
     nonisolated(unsafe) private var networkTask: Task<Void, Never>?
     @ObservationIgnored
     nonisolated(unsafe) private var metricsExpiryTask: Task<Void, Never>?
@@ -252,9 +258,9 @@ final class PlozziOSDownloadsModel {
         eventsTask = Task { [weak self, registry] in
             let events = await registry.events()
             await self?.reload()
-            for await _ in events {
+            for await event in events {
                 guard !Task.isCancelled else { return }
-                await self?.reload()
+                await self?.receive(event)
             }
         }
         networkTask = Task { [weak self, networkObserver] in
@@ -308,6 +314,7 @@ final class PlozziOSDownloadsModel {
         eventsTask?.cancel()
         networkTask?.cancel()
         metricsExpiryTask?.cancel()
+        progressReloadTask?.cancel()
         artworkTasks.values.forEach { $0.task.cancel() }
     }
 
@@ -315,6 +322,9 @@ final class PlozziOSDownloadsModel {
         acceptsNewWork = false
         applicationActivityGeneration += 1
         networkTask?.cancel()
+        progressReloadTask?.cancel()
+        progressReloadTask = nil
+        reloadGeneration += 1
         cancelArtworkTasks()
     }
 
@@ -357,7 +367,7 @@ final class PlozziOSDownloadsModel {
     /// that must answer without awaiting (building a menu as it opens). `records`
     /// is the already-loaded published snapshot, so this needs no actor hop.
     func cachedRecord(forSelectedVersionOf item: MediaItem) -> DownloadedMediaRecord? {
-        access(keyPath: \.records)
+        let indexedRecords = recordIndex.records
         // An item can carry SEVERAL identities (the same title on more than one
         // server), so match the registry's own resolution rather than assuming a
         // single key — otherwise a download made from one server is invisible to
@@ -371,17 +381,17 @@ final class PlozziOSDownloadsModel {
                 for: identity,
                 versionID: versionID
             )
-            if let record = recordsByKey[key] { return record }
+            if let record = recordIndex.record(forKey: key) { return record }
         }
         if let identity = DownloadMediaIdentity.primary(for: item),
-           let record = recordsByKey[
+           let record = recordIndex.record(forKey:
                MediaIdentityKey.string(for: identity, versionID: versionID)
-           ] {
+           ) {
             return record
         }
-        return records.first {
+        return indexedRecords.first {
             $0.versionID == versionID && $0.snapshot.sourceItemID == item.id
-        }
+        }.flatMap { recordIndex.record(forKey: $0.identityKey) }
     }
 
     func supportsReducedQuality(for item: MediaItem) -> Bool {
@@ -426,26 +436,26 @@ final class PlozziOSDownloadsModel {
     /// episode row has no explicit version selected, any downloaded copy satisfies
     /// its badge just as the registry's authoritative `record(for:)` lookup does.
     func cachedRecord(for item: MediaItem) -> DownloadedMediaRecord? {
-        access(keyPath: \.records)
+        let indexedRecords = recordIndex.records
         let identities = MediaItemIdentity.identities(for: item)
         for identity in identities {
             let key = MediaIdentityKey.string(for: identity)
             if let record = recordsByKey[key]
                 ?? recordsByIdentityKey[key]?.first {
-                return record
+                return recordIndex.record(forKey: record.identityKey)
             }
         }
         if let identity = DownloadMediaIdentity.primary(for: item) {
             let key = MediaIdentityKey.string(for: identity)
             if let record = recordsByKey[key]
                 ?? recordsByIdentityKey[key]?.first {
-                return record
+                return recordIndex.record(forKey: record.identityKey)
             }
         }
         let expectedAccountSource = item.sourceAccountID.map {
             "\(DownloadMediaIdentity.accountSourcePrefix)\($0)"
         }
-        let sourceScopedMatches = records.filter {
+        let sourceScopedMatches = indexedRecords.filter {
             guard case .external(let source, let value) = $0.identity,
                   value == item.id else {
                 return false
@@ -455,7 +465,8 @@ final class PlozziOSDownloadsModel {
             }
             return source.hasPrefix(DownloadMediaIdentity.accountSourcePrefix)
         }
-        return sourceScopedMatches.count == 1 ? sourceScopedMatches[0] : nil
+        return sourceScopedMatches.count == 1
+            ? recordIndex.record(forKey: sourceScopedMatches[0].identityKey) : nil
     }
 
     @discardableResult
@@ -1605,9 +1616,44 @@ final class PlozziOSDownloadsModel {
             : .backgroundPolicy
     }
 
+    private func receive(_ event: DownloadProgressEvent) async {
+        switch event {
+        case .item(let record):
+            if let previous = recordsByKey[record.identityKey],
+               previous.createdAt == record.createdAt,
+               previous.status == record.status,
+               record.status == .downloading || record.status == .preparing {
+                guard acceptsNewWork, progressReloadTask == nil else { return }
+                // Network callbacks may arrive hundreds of times per second.
+                // Publish the latest snapshot at most four times per second.
+                progressReloadTask = Task { @MainActor [weak self] in
+                    do {
+                        try await Task.sleep(for: .milliseconds(250))
+                    } catch {
+                        return
+                    }
+                    guard let self, !Task.isCancelled else { return }
+                    self.progressReloadTask = nil
+                    await self.reload()
+                }
+            } else {
+                await reload()
+            }
+        case .removed:
+            await reload()
+        case .group, .global:
+            break
+        }
+    }
+
     private func reload() async {
+        progressReloadTask?.cancel()
+        progressReloadTask = nil
+        reloadGeneration += 1
+        let generation = reloadGeneration
         let refreshed = (await registry?.all() ?? [])
             .sorted { $0.updatedAt > $1.updatedAt }
+        guard generation == reloadGeneration else { return }
         if hasLoadedRecords {
             notifyForTransitions(from: recordsByKey, to: refreshed)
         }
