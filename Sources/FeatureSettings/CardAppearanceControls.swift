@@ -61,7 +61,7 @@ struct CardLabelControls: View {
         VStack(alignment: .leading, spacing: 20) {
             CardCaptionPicker(settings: $settings, style: style)
             ViewCustomizationLink(isCustomized: settings.selectedPreset == nil) {
-                CardCaptionCustomizationContent(settings: $settings)
+                CardCaptionCustomizationContent(settings: $settings, style: style)
             }
             .accessibilityIdentifier("card-label-customization")
         }
@@ -120,19 +120,20 @@ public struct CardCaptionCustomizationView: View {
     public init(cards: CardStyleSettingsModel) { self.cards = cards }
 
     public var body: some View {
-        CardCaptionCustomizationContent(settings: $cards.captions)
+        CardCaptionCustomizationContent(settings: $cards.captions, style: cards.style)
     }
 }
 
 struct CardCaptionCustomizationContent: View {
     @Binding var settings: CardCaptionSettings
+    var style: CardStyle = .borderless
 
     var body: some View {
         ViewCustomizationList(
             title: "Labels by view", initialRowID: "card-label-view-home",
-            focusedDetail: { id in
+            focusedHelp: { id in
                 CardCaptionView.allCases.first { "card-label-view-\($0.rawValue)" == id }
-                    .flatMap { settings.customizationDetail(in: $0) }
+                    .map { settings.customizationHelp(in: $0, style: style) }
             }
         ) {
             CardCaptionViewChoices(view: .home, settings: $settings)
@@ -183,6 +184,17 @@ struct CardCaptionViewChoices: View {
 }
 
 extension CardCaptionSettings {
+    func customizationHelp(in view: CardCaptionView, style: CardStyle) -> ViewCustomizationHelp {
+        let mixedDetail = customizationDetail(in: view)
+        return ViewCustomizationHelp(
+            detail: mixedDetail ?? "Labels are separate from any text already in the artwork.",
+            illustration: .captions(
+                style: style, showsCaptions: showsLabels(in: view),
+                showsMixedCaptions: mixedDetail != nil
+            )
+        )
+    }
+
     func customizationValue(in view: CardCaptionView) -> LocalizedStringResource {
         if preference == .recommended, overrides[view] == nil, view == .home || view == .recommended {
             return LocalizedStringResource(

@@ -263,7 +263,7 @@ final class SettingsInteractionTests: XCTestCase {
         for area in ["homeRows", "recommended", "collections", "playlists"] {
             let row = app.buttons["artwork-view-\(area)"]
             reveal(row, fullyVisible: true)
-            XCTAssertEqual(row.value as? String, "Providers",
+            XCTAssertEqual(row.value as? String, "Metadata providers",
                            "A different location must not inherit the edited Home hero choice.")
             cycleCustomization(row, expecting: "Library")
         }
@@ -272,14 +272,14 @@ final class SettingsInteractionTests: XCTestCase {
         let browse = app.buttons["artwork-view-browse"]
         reveal(browse, towardTop: true, fullyVisible: true)
         XCTAssertTrue(browse.waitForExistence(timeout: 3))
-        XCTAssertEqual(browse.value as? String, "Providers")
+        XCTAssertEqual(browse.value as? String, "Metadata providers")
         for _ in 0..<3 {
             cycleCustomization(browse, expecting: "Library")
-            cycleCustomization(browse, expecting: "Providers")
+            cycleCustomization(browse, expecting: "Metadata providers")
         }
         let downloads = app.buttons["artwork-view-downloads"]
         reveal(downloads, fullyVisible: true)
-        XCTAssertEqual(downloads.value as? String, "Providers")
+        XCTAssertEqual(downloads.value as? String, "Metadata providers")
         cycleCustomization(downloads, expecting: "Library")
         app.navigationBars.buttons.firstMatch.tap()
         reveal(customize)
@@ -294,8 +294,8 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertFalse(customize.label.hasSuffix("Custom"))
         customize.tap()
         reveal(downloads)
-        XCTAssertEqual(downloads.value as? String, "Providers")
-        reveal(browse, towardTop: true)
+        XCTAssertEqual(downloads.value as? String, "Metadata providers")
+        reveal(browse, towardTop: true, fullyVisible: true)
         cycleCustomization(browse, expecting: "Library")
         app.navigationBars.buttons.firstMatch.tap()
         let library = app.buttons["artwork-preset-library"]
@@ -312,7 +312,7 @@ final class SettingsInteractionTests: XCTestCase {
         recommended.tap()
         reveal(customize)
         customize.tap()
-        XCTAssertEqual(app.buttons["artwork-view-continueWatching"].value as? String, "Providers")
+        XCTAssertEqual(app.buttons["artwork-view-continueWatching"].value as? String, "Metadata providers")
         XCTAssertEqual(browse.value as? String, "Library")
         XCTAssertFalse(app.buttons["artwork-remove-customizations"].exists)
         capture("artwork-restored-preset")
@@ -548,13 +548,27 @@ final class SettingsInteractionTests: XCTestCase {
             let scroll = settingsMenu
                 ? app.scrollViews.firstMatch
                 : app.collectionViews.element(boundBy: app.collectionViews.count - 1)
+            var viewport = scroll.frame.intersection(app.windows.firstMatch.frame)
+            if fullyVisible, app.navigationBars.firstMatch.exists {
+                let top = max(viewport.minY, app.navigationBars.firstMatch.frame.maxY)
+                viewport = CGRect(x: viewport.minX, y: top, width: viewport.width,
+                                  height: max(0, viewport.maxY - top))
+            }
             if element.exists && element.isHittable
-                && (!fullyVisible || scroll.frame.intersection(app.windows.firstMatch.frame).contains(element.frame)) {
+                && (!fullyVisible || viewport.contains(element.frame)) {
                 return
             }
-            if towardTop { scroll.swipeDown() } else { scroll.swipeUp() }
+            if fullyVisible, element.exists, element.frame.minY < viewport.minY {
+                scroll.swipeDown()
+            } else if fullyVisible, element.exists, element.frame.maxY > viewport.maxY {
+                scroll.swipeUp()
+            } else if towardTop {
+                scroll.swipeDown()
+            } else {
+                scroll.swipeUp()
+            }
         }
-        XCTAssertTrue(element.isHittable, app.debugDescription)
+        XCTFail("Could not reveal the requested row before tapping it. \(app.debugDescription)")
     }
 
     private func capture(_ name: String) {

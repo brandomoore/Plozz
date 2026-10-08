@@ -57,9 +57,13 @@ struct ArtworkCustomizationView: View {
     var body: some View {
         ViewCustomizationList(
             title: "Artwork by view", initialRowID: "artwork-view-home",
-            focusedDetail: { id in
+            focusedHelp: { id in
                 areas.first { "artwork-view-\($0.rawValue)" == id }
-                    .flatMap { cards.artwork.customizationDetail(in: $0) }
+                    .flatMap { area in
+                        cards.artwork.customizationDetail(in: area).map {
+                            ViewCustomizationHelp(detail: $0, illustration: .artwork(area))
+                        }
+                    }
             }
         ) {
             section("Home", areas: [.home, .homeRows])
@@ -105,7 +109,7 @@ struct ArtworkAreaChoices: View {
 
 extension ArtworkSettings {
     func customizationValue(in area: ArtworkArea) -> LocalizedStringResource {
-        prefersOnlineArtwork(in: area) ? "Providers" : "Library"
+        prefersOnlineArtwork(in: area) ? "Metadata providers" : "Library"
     }
 
     func customizationDetail(in area: ArtworkArea) -> LocalizedStringResource? {

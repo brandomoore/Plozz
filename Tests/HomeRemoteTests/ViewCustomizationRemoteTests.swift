@@ -18,31 +18,42 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         XCUIRemote.shared.press(.select)
         let hero = app.buttons["artwork-view-home"]
         XCTAssertTrue(waitUntil { self.hasFocus(hero) }, app.debugDescription)
+        let help = app.descendants(matching: .any)["view-customization-help"]
+        let viewport = app.scrollViews["view-customization-scroll"]
+        XCTAssertTrue(help.exists, app.debugDescription)
+        let initialHelpFrame = help.frame
+        let initialViewportFrame = viewport.frame
+        capture(app, "artwork-home-context-card")
         XCTAssertEqual(hero.label, "Showcase / hero")
         cycle(hero, expecting: "Library")
-        XCTAssertEqual(app.buttons["artwork-view-homeRows"].value as? String, "Providers")
-        XCTAssertEqual(app.buttons["artwork-view-recommendedHero"].value as? String, "Providers")
+        XCTAssertEqual(app.buttons["artwork-view-homeRows"].value as? String, "Metadata providers")
+        XCTAssertEqual(app.buttons["artwork-view-recommendedHero"].value as? String, "Metadata providers")
         for area in ["homeRows", "recommendedHero", "recommended", "browse", "collections", "playlists"] {
             let row = app.buttons["artwork-view-\(area)"]
             focus(row, in: app)
             cycle(row, expecting: "Library")
-            XCTAssertEqual(app.buttons["artwork-view-watchlist"].value as? String, "Providers")
+            XCTAssertEqual(app.buttons["artwork-view-watchlist"].value as? String, "Metadata providers")
         }
         capture(app, "artwork-library-scopes")
         for area in ["continueWatching", "search", "watchlist", "details", "episodes", "playback", "music", "topShelf"] {
             let row = app.buttons["artwork-view-\(area)"]
             focus(row, in: app)
-            let viewport = app.scrollViews["view-customization-scroll"]
-            let help = app.staticTexts["view-customization-help"]
             XCTAssertTrue(viewport.exists, app.debugDescription)
             XCTAssertTrue(help.exists, app.debugDescription)
-            XCTAssertEqual(viewport.frame.maxY, help.frame.maxY, accuracy: 2,
-                           "Help must overlay the pane, not shorten its scrolling viewport.")
+            XCTAssertEqual(viewport.frame, initialViewportFrame)
+            XCTAssertEqual(help.frame, initialHelpFrame, "Focus changes must not resize or move the card.")
+            XCTAssertLessThan(viewport.frame.maxY, help.frame.minY,
+                              "The list and card must occupy separate regions.")
+            XCTAssertGreaterThanOrEqual(help.frame.minX - viewport.frame.minX, 46)
+            XCTAssertGreaterThanOrEqual(viewport.frame.maxX - help.frame.maxX, 46)
             XCTAssertTrue(waitUntil {
-                row.frame.minY >= viewport.frame.minY && row.frame.maxY <= help.frame.minY
+                row.frame.minY >= viewport.frame.minY && row.frame.maxY <= viewport.frame.maxY
             }, "The complete focused row must remain above contextual help: \(row.frame), \(help.frame)")
             if area == "music" { capture(app, "artwork-music-fully-visible") }
         }
+        XCUIRemote.shared.press(.down)
+        XCTAssertTrue(hasFocus(app.buttons["artwork-view-topShelf"]),
+                      "The help card must not create an extra focus stop.")
         capture(app, "artwork-bottom-fully-visible")
     }
 
@@ -63,12 +74,12 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         XCTAssertTrue(waitUntil { self.hasFocus(app.buttons["artwork-view-home"]) }, app.debugDescription)
         XCTAssertEqual(sidebar.frame, originalFrame)
         XCTAssertFalse(app.buttons["artwork-preset-online"].exists)
-        XCTAssertEqual(browse.value as? String, "Providers")
+        XCTAssertEqual(browse.value as? String, "Metadata providers")
         focus(browse, in: app)
         capture(app, "artwork-flat-child-page")
         for _ in 0..<3 {
             cycle(browse, expecting: "Library")
-            cycle(browse, expecting: "Providers")
+            cycle(browse, expecting: "Metadata providers")
         }
         XCUIRemote.shared.press(.menu)
         XCTAssertTrue(waitUntil { self.hasFocus(customize) }, app.debugDescription)
@@ -136,9 +147,17 @@ final class ViewCustomizationRemoteTests: XCTestCase {
         XCTAssertEqual(sidebar.frame, originalFrame)
         XCTAssertEqual(home.value as? String, "Mixed")
         XCTAssertTrue(waitUntil { self.hasFocus(home) }, app.debugDescription)
+        let help = app.descendants(matching: .any)["view-customization-help"]
+        let initialHelpFrame = help.frame
+        let viewport = app.scrollViews["view-customization-scroll"]
+        let initialViewportFrame = viewport.frame
         cycle(home, expecting: "Off")
+        XCTAssertEqual(help.frame, initialHelpFrame)
+        XCTAssertEqual(viewport.frame, initialViewportFrame)
         capture(app, "labels-flat-child-page")
         cycle(home, expecting: "On")
+        XCTAssertEqual(help.frame, initialHelpFrame)
+        XCTAssertEqual(viewport.frame, initialViewportFrame)
         cycle(home, expecting: "Off")
         cycle(home, expecting: "On")
         focus(app.buttons["view-customization-back"], in: app, direction: .up)

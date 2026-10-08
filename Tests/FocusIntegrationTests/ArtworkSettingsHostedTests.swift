@@ -9,11 +9,19 @@ import XCTest
 
 @MainActor
 final class ArtworkSettingsHostedTests: XCTestCase {
-    func testCustomizationViewportUsesTheWholePaneWithOrWithoutHelp() async throws {
-        for hasHelp in [false, true] {
+    func testCustomizationCardReservesAStableViewportWithoutOverlappingRows() async throws {
+        let helpCases: [ViewCustomizationHelp?] = [
+            nil,
+            ViewCustomizationHelp(detail: try XCTUnwrap(ArtworkArea.home.detail), illustration: .artwork(.home)),
+            ViewCustomizationHelp(detail: try XCTUnwrap(ArtworkArea.playback.detail), illustration: .artwork(.playback)),
+            CardCaptionSettings.default.customizationHelp(in: .home, style: .framed),
+            CardCaptionSettings(preference: .hide).customizationHelp(in: .home, style: .borderless)
+        ]
+        var viewportHeight: CGFloat?
+        for (index, help) in helpCases.enumerated() {
             try await withScreen(content: ViewCustomizationList(
                 title: "Artwork by view", initialRowID: "viewport-first",
-                focusedDetail: { _ in hasHelp ? "A focused setting explanation." : nil }
+                focusedHelp: { _ in help }
             ) {
                 ForEach(0..<18) { index in
                     ViewCustomizationRow(
@@ -33,11 +41,19 @@ final class ArtworkSettingsHostedTests: XCTestCase {
                     views.append(contentsOf: view.subviews)
                 }
                 let scroll = try XCTUnwrap(scrollViews.max { $0.bounds.width < $1.bounds.width })
-                XCTAssertEqual(scroll.bounds.height, 900, accuracy: 2,
-                               "The scroll view must fill the pane rather than stop above an empty footer.")
-                XCTAssertGreaterThanOrEqual(scroll.adjustedContentInset.bottom, 88,
-                                            "Native focus scrolling must leave room for contextual help.")
-                _ = try await self.capture(window, name: "customization-full-viewport-help-\(hasHelp)",
+                if help == nil {
+                    XCTAssertEqual(scroll.bounds.height, 900, accuracy: 2,
+                                   "Lists without contextual help must not reserve a blank footer.")
+                } else {
+                    XCTAssertEqual(scroll.bounds.height, 696, accuracy: 2,
+                                   "Reserve exactly the card, inset and separation, not an overlay.")
+                    if let viewportHeight {
+                        XCTAssertEqual(scroll.bounds.height, viewportHeight, accuracy: 1)
+                    }
+                    viewportHeight = scroll.bounds.height
+                    XCTAssertEqual(scroll.adjustedContentInset.bottom, 0, accuracy: 1)
+                }
+                _ = try await self.capture(window, name: "customization-inset-card-\(index)",
                                            includeMaster: true)
             }
         }
@@ -82,6 +98,31 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             XCTAssertTrue(customized.split(whereSeparator: \.isWhitespace).contains("Custom"), customized)
             XCTAssertFalse(customized.contains("Remove view customizations"), customized)
             XCTAssertNil(cards.captions.selectedPreset)
+        }
+    }
+
+    func testContextCardsKeepTheirSentenceReadableAcrossThemesAndTextSizes() async throws {
+        let detail = try XCTUnwrap(ArtworkArea.continueWatching.detail)
+        for (name, palette) in [("dark", ThemePalette.dark), ("black", .pureBlack), ("light", .light)] {
+            for size in [DynamicTypeSize.large, .accessibility3] {
+                try await withScreen(content: VStack(spacing: 40) {
+                    ViewCustomizationHelpCard(help: .init(
+                        detail: detail, illustration: .artwork(.continueWatching)
+                    ))
+                    Button("Focus target") {}
+                }
+                .padding(48)
+                .frame(width: 1100)
+                .background(palette.settingsBackground)
+                .environment(\.themePalette, palette)
+                .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                .environment(\.dynamicTypeSize, size)) { window in
+                    let copy = try await self.capture(window, name: "context-card-\(name)-\(size)", includeMaster: true)
+                    XCTAssertTrue(copy.contains(String(localized: detail)), copy)
+                    XCTAssertEqual(self.focusItems(in: window).count, 1,
+                                   "Illustrations and help must remain non-interactive.")
+                }
+            }
         }
     }
 
@@ -194,7 +235,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
 
             cards.artwork.setOverride(.online, for: .browse)
             let overridden = try await self.capture(window, name: "artwork-browse-provider-first")
-            XCTAssertTrue(overridden.contains("Providers"), overridden)
+            XCTAssertTrue(overridden.contains("Metadata providers"), overridden)
             XCTAssertFalse(overridden.contains("Custom"), overridden)
             XCTAssertEqual(cards.artwork.override(for: .browse), .online)
             cards.artwork.applyPreset(.library)
@@ -214,7 +255,7 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         let cards = makeCards(defaults: defaults)
         try await withScreen(cards: cards, area: .continueWatching) { window in
             let text = try await self.capture(window, name: "artwork-continue-watching")
-            XCTAssertTrue(text.contains("Providers"), text)
+            XCTAssertTrue(text.contains("Metadata providers"), text)
             XCTAssertFalse(text.contains("Main setting"), text)
             XCTAssertFalse(text.contains("Recommended"), text)
             XCTAssertFalse(text.contains("Custom"), text)

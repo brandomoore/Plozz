@@ -96,9 +96,13 @@ and the single place caption customization lives.
   for sidebar navigation, RTL mirrors the motion, and Reduce Motion disables it.
   Child content chooses its initial native focus target and calls
   `SettingsDetailNavigation.focusArrived()` when that control receives focus.
-  Customization lists scroll through the full pane. Contextual help overlays its
-  bottom edge; scroll-content margins keep focused rows clear of it without an
-  empty footer shortening the viewport. Pane-level transition clipping remains.
+  Customization lists and their inset contextual cards occupy separate regions.
+  A fixed-size illustration highlights the affected artwork, beside one sentence
+  of help; label settings reuse the card-style preview. Keep the card and viewport
+  stable as focus or values change, with no extra focus stop or content behind
+  the card. Lists without help reserve no footer. Pane-level transition clipping
+  remains. Artwork values use "Library" and "Metadata providers"; narrow/mobile
+  and accessibility layouts stack the complete value rather than abbreviating it.
 - **Mobile Settings is a presentation action.** Its tab or More entry opens
   the drawer over the current page without selecting a replacement destination.
   Keep the active content stack and overflow navigation intact on dismissal;

@@ -18,6 +18,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         let original = app.settings.cardStyle.artwork
         defer { app.settings.cardStyle.artwork = original }
         app.settings.cardStyle.artwork = .default
+        app.settings.cardStyle.artwork.setOverride(.online, for: .home)
         try await withWindow { window, host in
             for (width, typeSize) in [
                 (CGFloat(320), DynamicTypeSize.large), (390, .large),
@@ -37,7 +38,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                 let image = snapshot(window, name: "artwork-scopes-\(Int(width))-\(typeSize)")
                 let observations = try text(image, maximumCandidates: 1)
                 let copy = observations.map(\.candidate.string).joined(separator: " ")
-                for word in ["Showcase", "hero", "Other", "Home", "rows", "Library"] {
+                for word in ["Showcase", "hero", "Other", "Home", "rows", "Library", "Metadata", "providers"] {
                     XCTAssertTrue(copy.contains(word), copy)
                     let rect = try textFrame(word, observations: observations, size: image.size)
                     XCTAssertGreaterThan(rect.minX, 0)

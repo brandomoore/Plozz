@@ -109,7 +109,7 @@ private struct ViewCustomizationLinkLabel: View {
 struct ViewCustomizationList<Content: View>: View {
     let title: LocalizedStringResource
     let initialRowID: String
-    var focusedDetail: (String) -> LocalizedStringResource? = { _ in nil }
+    var focusedHelp: (String) -> ViewCustomizationHelp? = { _ in nil }
     @ViewBuilder var content: () -> Content
     @Environment(\.dismiss) private var dismiss
     @Environment(SettingsDetailNavigation.self) private var detailNavigation: SettingsDetailNavigation?
@@ -120,7 +120,7 @@ struct ViewCustomizationList<Content: View>: View {
 
     var body: some View {
         #if os(tvOS)
-        ZStack(alignment: .bottomLeading) {
+        VStack(spacing: 20) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     Button {
@@ -152,18 +152,11 @@ struct ViewCustomizationList<Content: View>: View {
                 .padding(.bottom, 24)
                 .padding(.horizontal, 48)
             }
-            .contentMargins(.bottom, 88, for: .scrollContent)
             .accessibilityIdentifier("view-customization-scroll")
-            if let focusedRow, let detail = focusedDetail(focusedRow) {
-                Text(detail)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, minHeight: 64, alignment: .topLeading)
-                    .padding(.horizontal, 64)
+            if let help = focusedHelp(focusedRow ?? initialRowID) {
+                ViewCustomizationHelpCard(help: help)
+                    .padding(.horizontal, 48)
                     .padding(.bottom, 24)
-                    .background(.regularMaterial)
-                    .accessibilityIdentifier("view-customization-help")
             }
         }
         .navigationTitle(Text(verbatim: ""))
@@ -230,19 +223,18 @@ private struct ViewCustomizationRowLabel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(spacing: 16) {
-            let layout = dynamicTypeSize.isAccessibilitySize
-                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-                : AnyLayout(HStackLayout(spacing: 20))
-            layout {
-                Text(title)
-                    .font(.body.weight(.medium))
-                    .multilineTextAlignment(.leading)
-                if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 12) }
-                Text(value)
-                    .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
-                    .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: true)
-                    .settingsRowSecondary()
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                stackedLabel
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 20) {
+                        titleText.fixedSize()
+                        Spacer(minLength: 12)
+                        valueText.fixedSize()
+                    }
+                    stackedLabel
+                }
             }
         }
         .frame(minHeight: 44)
@@ -251,6 +243,27 @@ private struct ViewCustomizationRowLabel: View {
         .padding(.vertical, 12)
         #endif
         .contentShape(Rectangle())
+    }
+
+    private var stackedLabel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            titleText
+            valueText
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(.body.weight(.medium))
+            .multilineTextAlignment(.leading)
+    }
+
+    private var valueText: some View {
+        Text(value)
+            .multilineTextAlignment(.leading)
+            .settingsRowSecondary()
     }
 }
 

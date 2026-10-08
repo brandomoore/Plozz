@@ -53,22 +53,22 @@ public enum ArtworkArea: String, CaseIterable, Codable, Identifiable, Sendable {
 
     public var detail: LocalizedStringResource? {
         switch self {
-        case .home: "Home's Showcase background, carousel images, and title logos. Rows have separate choices."
-        case .homeRows: "Home rows, including Watchlist and Recently Added. Continue Watching has its own choice."
+        case .home: "The large background, carousel images, and title logo at the top of Home."
+        case .homeRows: "Home's rows below the hero, including Watchlist and Recently Added."
         case .recommendedHero: "The Showcase background and title logo in each library's Recommended tab."
-        case .recommended: "Rows in each library's Recommended tab. Continue Watching has its own choice."
-        case .continueWatching: "Continue Watching rows on Home and in libraries. Providers favor images without text."
+        case .recommended: "Artwork in the rows of each library's Recommended tab."
+        case .continueWatching: "Continue Watching on Home and in libraries; metadata providers favor images without text."
         case .browse: "The Browse tab in every library, plus titles inside collections and playlists."
-        case .collections: "Collection cards in each library's Collections tab. Titles inside use Browse."
-        case .playlists: "Playlist cards in each library's Playlists tab. Titles inside use Browse."
-        case .search: "Artwork in search results."
-        case .watchlist: "The separate Watchlist page. Home's Watchlist row uses Other Home rows."
-        case .details: "Movie and show detail-page backdrops, logos, and supporting cards. Episode browsers have their own choice."
-        case .episodes: "Episode thumbnails in the show detail-page browser. Player thumbnails use Video player artwork."
+        case .collections: "The collection covers, rather than the titles inside them."
+        case .playlists: "The playlist covers, rather than the titles inside them."
+        case .search: "Posters and thumbnails for titles found in Search."
+        case .watchlist: "Posters on the Watchlist page, rather than Home's Watchlist row."
+        case .details: "Backdrops, title logos, and supporting cards on movie and show detail pages."
+        case .episodes: "Episode thumbnails in a show's detail page, rather than the video player."
         case .playback: "Video player Info, episode and playlist menus, Up Next, and system Now Playing."
         case .music: "Covers, artist images, and the music player."
-        case .topShelf: "Apple TV Home Screen."
-        case .downloads: "Applies when you queue new downloads. Existing downloads keep their artwork."
+        case .topShelf: "The large preview above Plozz on the Apple TV Home Screen."
+        case .downloads: "Artwork saved with new downloads; existing downloads keep their images."
         }
     }
 }
