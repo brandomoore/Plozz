@@ -38,6 +38,7 @@ struct PlozziOSSystemDownloadNotificationClient: PlozziOSDownloadNotificationCli
 
 @MainActor
 final class PlozziOSDownloadNotifications {
+    private let profileID: String
     private let registry: DownloadedMediaRegistry
     private let client: any PlozziOSDownloadNotificationClient
     private let preferences: @MainActor () -> PlozziOSDownloadPreferences
@@ -47,10 +48,12 @@ final class PlozziOSDownloadNotifications {
     private var retired = false
 
     init(
+        profileID: String,
         registry: DownloadedMediaRegistry,
         client: any PlozziOSDownloadNotificationClient = PlozziOSSystemDownloadNotificationClient(),
         preferences: @escaping @MainActor () -> PlozziOSDownloadPreferences
     ) {
+        self.profileID = profileID
         self.registry = registry
         self.client = client
         self.preferences = preferences
@@ -114,7 +117,7 @@ final class PlozziOSDownloadNotifications {
                     }
                     let identifier = "plozz.download.\(notice.id.uuidString)"
                     if !existing.contains(identifier) {
-                        try await client.add(Self.request(for: notice, identifier: identifier))
+                        try await client.add(Self.request(for: notice, profileID: profileID, identifier: identifier))
                         existing.insert(identifier)
                     }
                     try await registry.acknowledgeNotification(notice.id)
@@ -126,7 +129,9 @@ final class PlozziOSDownloadNotifications {
         }
     }
 
-    private static func request(for notice: DownloadNotification, identifier: String) -> UNNotificationRequest {
+    private static func request(
+        for notice: DownloadNotification, profileID: String, identifier: String
+    ) -> UNNotificationRequest {
         let title: LocalizedStringResource
         let body: LocalizedStringResource
         switch notice.kind {
@@ -145,6 +150,9 @@ final class PlozziOSDownloadNotifications {
         content.title = String(localized: title) // l10n:content — notification API requires resolved text.
         content.body = String(localized: body) // l10n:content — notification API requires resolved text.
         content.sound = .default
+        if notice.kind != .failed {
+            content.userInfo = PlozziOSDownloadNotificationTarget(profileID: profileID, notice: notice).userInfo
+        }
         return UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
     }
 

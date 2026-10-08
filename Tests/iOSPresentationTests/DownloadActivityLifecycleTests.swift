@@ -8,6 +8,136 @@ import XCTest
 
 @MainActor
 final class DownloadActivityLifecycleTests: XCTestCase {
+    func testRTLActivityDetailsKeepEpisodeCodesAndProgressInSeparateDirectionalRuns() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Native continued-processing task requires iOS 26.") }
+        var record = downloadActivityRecord()
+        record.bytesDownloaded = 50
+        record.snapshot = .init(title: "Episode", kind: .episode, seasonNumber: 1, episodeNumber: 4)
+        let progress = DownloadActivityProgress(records: [record], bytesPerSecond: 0)
+        for language in ["ar", "he", "fa"] {
+            let subtitle = PlozziOSSystemDownloadActivityScheduler.subtitle(
+                for: progress, locale: Locale(identifier: language)
+            )
+            XCTAssertTrue(subtitle.hasPrefix("\u{2068}"), subtitle)
+            XCTAssertTrue(subtitle.contains("\u{2069} · \u{2068}"), subtitle)
+            XCTAssertTrue(subtitle.hasSuffix("\u{2069}"), subtitle)
+        }
+    }
+
+    func testNativeSubtitleShowsEpisodeAndWholeBatchProgress() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Native continued-processing task requires iOS 26.") }
+        let records = (1...10).map { index in
+            var record = downloadActivityRecord(id: "episode-\(index)")
+            record.status = index < 4 ? .completed : (index == 4 ? .downloading : .queued)
+            record.bytesDownloaded = index < 4 ? 100 : (index == 4 ? 62 : 0)
+            record.totalBytes = 100
+            record.batchID = "season"
+            record.batchTitle = "Example Show"
+            record.snapshot.kind = .episode
+            record.snapshot.seasonNumber = 1
+            record.snapshot.episodeNumber = index
+            return record
+        }
+        let progress = DownloadActivityProgress(records: records)
+        XCTAssertEqual(progress.displayTitle, "Example Show")
+        XCTAssertEqual(progress.completedUnitCount, 3_620)
+        XCTAssertEqual(
+            PlozziOSSystemDownloadActivityScheduler.subtitle(for: progress, locale: Locale(identifier: "en")),
+            "S1 E4 · 62% · 3/10 complete"
+        )
+    }
+
+    func testNativeSubtitleDoesNotConfuseTransferAndFinalization() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Native continued-processing task requires iOS 26.") }
+        var record = downloadActivityRecord()
+        record.snapshot.kind = .episode
+        record.snapshot.seasonNumber = 1
+        record.snapshot.episodeNumber = 4
+        func subtitle() -> String {
+            PlozziOSSystemDownloadActivityScheduler.subtitle(
+                for: DownloadActivityProgress(records: [record]), locale: Locale(identifier: "en")
+            )
+        }
+        record.status = .preparing
+        record.preparationFraction = 0.4
+        XCTAssertEqual(subtitle(), "S1 E4 · Preparing 40%")
+        record.preparationFraction = nil
+        XCTAssertEqual(subtitle(), "S1 E4 · Preparing Download")
+        record.status = .downloading
+        record.totalBytes = 1_000
+        record.bytesDownloaded = 999
+        XCTAssertEqual(subtitle(), "S1 E4 · 99%")
+        record.bytesDownloaded = 1_000
+        XCTAssertEqual(subtitle(), "S1 E4 · Finishing")
+        record.totalBytes = nil
+        XCTAssertEqual(subtitle(), "S1 E4 · Downloading")
+        record.snapshot.seasonNumber = nil
+        XCTAssertEqual(subtitle(), "E4 · Downloading")
+        record.snapshot.episodeNumber = nil
+        XCTAssertEqual(subtitle(), "Downloading")
+        record.bytesDownloaded = 40
+        record.totalBytes = 100
+        XCTAssertEqual(subtitle(), "Downloading · 40%")
+    }
+
+    func testNativeSubtitleReportsParallelAndTerminalQueueStates() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Native continued-processing task requires iOS 26.") }
+        var first = downloadActivityRecord()
+        var second = downloadActivityRecord(id: "second")
+        first.status = .downloading
+        second.status = .preparing
+        func subtitle() -> String {
+            PlozziOSSystemDownloadActivityScheduler.subtitle(
+                for: DownloadActivityProgress(records: [first, second]), locale: Locale(identifier: "en")
+            )
+        }
+        XCTAssertEqual(subtitle(), "Active: 2 · 0/2 complete")
+        first.status = .queued
+        second.status = .queued
+        XCTAssertEqual(subtitle(), "Queued · 0/2 complete")
+        first.status = .completed
+        second.status = .paused
+        XCTAssertEqual(subtitle(), "Download Paused · 1/2 complete")
+        second.status = .failed
+        XCTAssertEqual(subtitle(), "Download Failed · 1/2 complete")
+        second.status = .completed
+        XCTAssertEqual(subtitle(), "2/2 complete")
+    }
+
+    func testCurrentEpisodeAdvancesWithinTheSameActivityAfterFinalization() async throws {
+        let scheduler = DownloadActivitySchedulerStub()
+        let activity = PlozziOSDownloadActivity(
+            scheduler: scheduler, beginExecution: { _ in true }, pauseExpiredWork: { _ in }
+        )
+        var first = downloadActivityRecord()
+        var second = downloadActivityRecord(id: "second")
+        first.snapshot.kind = .episode
+        first.snapshot.episodeNumber = 1
+        second.snapshot.kind = .episode
+        second.snapshot.episodeNumber = 2
+        first.status = .downloading
+        second.status = .queued
+        await activity.start(records: [first, second])
+        let task = DownloadActivityTaskStub()
+        scheduler.launch(task)
+        try await waitForDownloadCondition { !task.updates.isEmpty }
+        first.bytesDownloaded = first.totalBytes ?? 100
+        activity.update(records: [first, second], bytesPerSecond: 10)
+        XCTAssertEqual(task.updates.last?.currentItem?.phase, .finishing)
+        XCTAssertEqual(task.updates.last?.completedCount, 0)
+        first.status = .completed
+        second.status = .downloading
+        second.bytesDownloaded = 62
+        activity.update(records: [second, first], bytesPerSecond: 10)
+        XCTAssertEqual(task.updates.last?.currentItem?.episodeNumber, 2)
+        XCTAssertEqual(task.updates.last?.currentItem?.fractionCompleted, 0.62)
+        XCTAssertEqual(task.updates.last?.completedCount, 1)
+        XCTAssertEqual(task.updates.last?.totalCount, 2)
+        XCTAssertEqual(scheduler.submissions.count, 1)
+        XCTAssertTrue(task.completions.isEmpty)
+        activity.retire()
+    }
+
     func testSystemActivityReceivesRealHTTPDownloadProgressOnDevice() async throws {
         guard ProcessInfo.processInfo.environment["PLOZZ_VERIFY_SYSTEM_DOWNLOAD_ACTIVITY"] == "1" else {
             throw XCTSkip("Opt in on an owned physical iPhone/iPad to exercise system admission.")
@@ -279,6 +409,31 @@ final class DownloadActivityLifecycleTests: XCTestCase {
 
 @MainActor
 final class DownloadNotificationDeliveryTests: XCTestCase {
+    func testBatchCompletionPayloadPreservesTheProfileAndBatchRatherThanOnlyTheLastEpisode() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        var records = [downloadActivityRecord(id: "first"), downloadActivityRecord(id: "last")]
+        for index in records.indices {
+            records[index].batchID = "season-batch"
+            records[index].batchKind = .season
+            records[index].batchTitle = "Show"
+            records[index].batchExpectedCount = 2
+            try await registry.beginDownload(records[index])
+        }
+        for record in records {
+            try await registry.markCompleted(identityKey: record.identityKey, totalBytes: 100)
+        }
+        let client = DownloadNotificationClientStub()
+        let notifications = PlozziOSDownloadNotifications(profileID: "batch-profile", registry: registry, client: client) { .default }
+        await notifications.deliverPending()
+        XCTAssertEqual(client.requests.count, 1)
+        let request = try XCTUnwrap(client.requests.first)
+        let target = try XCTUnwrap(PlozziOSDownloadNotificationTarget(userInfo: request.content.userInfo))
+        XCTAssertEqual(target.profileID, "batch-profile")
+        XCTAssertEqual(target.batchID, "season-batch")
+        XCTAssertEqual(target.identityKey, records[1].identityKey)
+        XCTAssertEqual(target.recordCreatedAt, records[1].createdAt)
+    }
+
     func testColdDeliveryDoesNotRequireAVisibleDownloadsViewAndDoesNotRepeat() async throws {
         let store = InMemoryDownloadedMediaStore()
         let original = DownloadedMediaRegistry(store: store)
@@ -287,11 +442,16 @@ final class DownloadNotificationDeliveryTests: XCTestCase {
         try await original.markCompleted(identityKey: record.identityKey, totalBytes: 100)
         let registry = DownloadedMediaRegistry(store: store)
         let client = DownloadNotificationClientStub()
-        let notifications = PlozziOSDownloadNotifications(registry: registry, client: client) { .default }
+        let notifications = PlozziOSDownloadNotifications(profileID: "profile", registry: registry, client: client) { .default }
         await notifications.deliverPending()
         await notifications.deliverPending()
         XCTAssertEqual(client.requests.count, 1)
         XCTAssertTrue(client.requests[0].identifier.hasPrefix("plozz.download."))
+        let target = try XCTUnwrap(PlozziOSDownloadNotificationTarget(userInfo: client.requests[0].content.userInfo))
+        XCTAssertEqual(target.profileID, "profile")
+        XCTAssertEqual(target.identityKey, record.identityKey)
+        XCTAssertEqual(target.recordCreatedAt, record.createdAt)
+        XCTAssertNil(target.batchID)
         let pending = await registry.pendingNotifications()
         XCTAssertTrue(pending.isEmpty)
     }
@@ -302,7 +462,7 @@ final class DownloadNotificationDeliveryTests: XCTestCase {
             let client = DownloadNotificationClientStub(authorization: optedOut ? .authorized : .denied)
             var preferences = PlozziOSDownloadPreferences.default
             preferences.notifiesOnStandaloneCompletion = !optedOut
-            let notifications = PlozziOSDownloadNotifications(registry: registry, client: client) { preferences }
+            let notifications = PlozziOSDownloadNotifications(profileID: "profile", registry: registry, client: client) { preferences }
             await notifications.deliverPending()
             XCTAssertTrue(client.requests.isEmpty)
             let pending = await registry.pendingNotifications()
@@ -313,7 +473,7 @@ final class DownloadNotificationDeliveryTests: XCTestCase {
     func testCompletionWaitsForFirstPermissionDecision() async throws {
         let registry = try await completedRegistry()
         let client = DownloadNotificationClientStub(authorization: .notDetermined)
-        let notifications = PlozziOSDownloadNotifications(registry: registry, client: client) { .default }
+        let notifications = PlozziOSDownloadNotifications(profileID: "profile", registry: registry, client: client) { .default }
         await notifications.deliverPending()
         XCTAssertTrue(client.requests.isEmpty)
         let waiting = await registry.pendingNotifications()
@@ -327,7 +487,7 @@ final class DownloadNotificationDeliveryTests: XCTestCase {
         let registry = try await completedRegistry()
         let client = DownloadNotificationClientStub()
         client.failsNextAdd = true
-        let notifications = PlozziOSDownloadNotifications(registry: registry, client: client) { .default }
+        let notifications = PlozziOSDownloadNotifications(profileID: "profile", registry: registry, client: client) { .default }
         await notifications.deliverPending()
         let retained = await registry.pendingNotifications()
         XCTAssertEqual(retained.count, 1)
@@ -343,7 +503,7 @@ final class DownloadNotificationDeliveryTests: XCTestCase {
         let notice = try XCTUnwrap(pending.first)
         let client = DownloadNotificationClientStub()
         client.existing = ["plozz.download.\(notice.id.uuidString)"]
-        let notifications = PlozziOSDownloadNotifications(registry: registry, client: client) { .default }
+        let notifications = PlozziOSDownloadNotifications(profileID: "profile", registry: registry, client: client) { .default }
         await notifications.deliverPending()
         XCTAssertTrue(client.requests.isEmpty)
         let remaining = await registry.pendingNotifications()
@@ -357,7 +517,7 @@ final class DownloadNotificationDeliveryTests: XCTestCase {
         client.beforeAdd = {
             await withCheckedContinuation { releaseDelivery = $0 }
         }
-        let notifications = PlozziOSDownloadNotifications(registry: registry, client: client) { .default }
+        let notifications = PlozziOSDownloadNotifications(profileID: "profile", registry: registry, client: client) { .default }
         let first = Task { await notifications.deliverPending() }
         defer { releaseDelivery?.resume() }
         try await waitForDownloadCondition { releaseDelivery != nil }
@@ -388,7 +548,7 @@ final class DownloadNotificationDeliveryTests: XCTestCase {
             do { try await registry.remove(identityKey: record.identityKey) }
             catch { XCTFail("Could not remove completed record: \(error)") }
         }
-        let notifications = PlozziOSDownloadNotifications(registry: registry, client: client) { .default }
+        let notifications = PlozziOSDownloadNotifications(profileID: "profile", registry: registry, client: client) { .default }
         await notifications.deliverPending()
         XCTAssertTrue(client.requests.isEmpty)
         let pending = await registry.pendingNotifications()
@@ -398,7 +558,7 @@ final class DownloadNotificationDeliveryTests: XCTestCase {
     func testRetiredProfileDoesNotDeliverAnotherProfilesOutbox() async throws {
         let registry = try await completedRegistry()
         let client = DownloadNotificationClientStub()
-        let notifications = PlozziOSDownloadNotifications(registry: registry, client: client) { .default }
+        let notifications = PlozziOSDownloadNotifications(profileID: "profile", registry: registry, client: client) { .default }
         notifications.retire()
         await notifications.deliverPending()
         await notifications.requestPermissionIfNeeded()

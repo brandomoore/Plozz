@@ -269,9 +269,101 @@ struct PlozziOSSystemDownloadActivityScheduler: PlozziOSDownloadActivityScheduli
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
     }
 
-    static func subtitle(for progress: DownloadActivityProgress) -> String { // l10n:content - system task requires resolved text.
+    static func subtitle( // l10n:content - resolved text for the system task, refreshed on each update.
+        for progress: DownloadActivityProgress,
+        locale: Locale = .current
+    ) -> String {
+        let completed = progress.completedCount.formatted(.number.locale(locale))
+        let total = progress.totalCount.formatted(.number.locale(locale))
+        if progress.succeeded, progress.totalCount > 1 {
+            return resolve(
+                .init("\(completed)/\(total) complete", comment: "Compact Live Activity completion counter. The two placeholders are locale-formatted completed and total download counts, in that order. All downloads have finished."),
+                locale: locale
+            )
+        }
+        let detail: String
+        if progress.activeItemCount > 1 {
+            let count = progress.activeItemCount.formatted(.number.locale(locale))
+            detail = resolve(
+                .init("Active: \(count)", comment: "Compact Live Activity label counting downloads currently preparing, transferring, or finishing in parallel. The placeholder is a locale-formatted count."),
+                locale: locale
+            )
+        } else if let item = progress.currentItem {
+            let itemDetail = Self.detail(for: item, locale: locale)
+            if let label = itemLabel(item, includesTitle: progress.totalCount > 1, locale: locale) {
+                detail = joinedDetails(label, itemDetail, locale: locale)
+            } else if item.phase == .downloading, item.fractionCompleted != nil {
+                let status = resolve("Downloading", locale: locale)
+                detail = joinedDetails(status, itemDetail, locale: locale)
+            } else {
+                detail = itemDetail
+            }
+        } else {
+            detail = resolve(status(for: progress.status), locale: locale)
+        }
+        if progress.totalCount > 1 {
+            return resolve(
+                .init("\(detail) · \(completed)/\(total) complete", comment: "Compact download Live Activity subtitle. First placeholder is an already localized item/progress or queue-status detail. Second and third are locale-formatted completed and total download counts. Use a grammar-neutral completed-count label; some downloads are still unfinished."),
+                locale: locale
+            )
+        }
+        return detail
+    }
+
+    private static func joinedDetails( // l10n:content - independent localized fragments, not a translatable phrase.
+        _ first: String, _ second: String, locale: Locale
+    ) -> String {
+        if locale.language.characterDirection == .rightToLeft {
+            return "\u{2068}\(first)\u{2069} · \u{2068}\(second)\u{2069}"
+        }
+        return "\(first) · \(second)"
+    }
+
+    private static func detail( // l10n:content - resolved system activity text and measured numeric data.
+        for item: DownloadActivityProgress.ItemProgress,
+        locale: Locale
+    ) -> String {
+        switch item.phase {
+        case .preparing:
+            if let fraction = item.fractionCompleted {
+                let percentage = fraction.formatted(.percent.precision(.fractionLength(0)).locale(locale))
+                return resolve(
+                    .init("Preparing \(percentage)", comment: "Live Activity preparation stage followed by its measured, already localized percentage. This is server preparation, not downloaded bytes or overall batch progress."),
+                    locale: locale
+                )
+            }
+            return resolve("Preparing Download", locale: locale)
+        case .downloading:
+            if let fraction = item.fractionCompleted {
+                return min(0.99, fraction).formatted(.percent.precision(.fractionLength(0)).locale(locale))
+            }
+            return resolve("Downloading", locale: locale)
+        case .finishing:
+            return resolve(
+                .init("Finishing", comment: "Download Live Activity status after the media bytes arrive while the engine validates and finalizes the offline copy. It is not complete yet."),
+                locale: locale
+            )
+        }
+    }
+
+    private static func itemLabel(
+        _ item: DownloadActivityProgress.ItemProgress,
+        includesTitle: Bool,
+        locale: Locale
+    ) -> String? { // l10n:content - pinned media title or the app's S/E episode notation.
+        if let episode = item.episodeNumber, episode >= 0 {
+            let episodeLabel = "E\(episode.formatted(.number.locale(locale)))"
+            if let season = item.seasonNumber, season >= 0 {
+                return "S\(season.formatted(.number.locale(locale))) \(episodeLabel)"
+            }
+            return episodeLabel
+        }
+        return includesTitle && !item.title.isEmpty ? item.title : nil
+    }
+
+    private static func status(for status: DownloadStatus) -> LocalizedStringResource {
         let resource: LocalizedStringResource
-        switch progress.status {
+        switch status {
         case .completed: resource = "Download Complete"
         case .failed: resource = "Download Failed"
         case .paused: resource = "Download Paused"
@@ -279,7 +371,15 @@ struct PlozziOSSystemDownloadActivityScheduler: PlozziOSDownloadActivityScheduli
         case .queued: resource = "Queued"
         case .downloading: resource = "Downloading"
         }
-        return String(localized: resource) // l10n:content — system Live Activity requires resolved text.
+        return resource
+    }
+
+    private static func resolve(
+        _ resource: LocalizedStringResource, locale: Locale
+    ) -> String { // l10n:content - localized system API boundary.
+        var resource = resource
+        resource.locale = locale
+        return String(localized: resource) // l10n:content - system API boundary, resolved using this update's locale.
     }
 }
 

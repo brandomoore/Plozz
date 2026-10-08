@@ -16,6 +16,38 @@ public final class DownloadBackgroundExecutionLease: @unchecked Sendable {
 }
 
 public struct DownloadActivityProgress: Equatable, Sendable {
+    public struct ItemProgress: Equatable, Sendable {
+        public enum Phase: Equatable, Sendable {
+            case preparing
+            case downloading
+            case finishing
+        }
+
+        public let title: String
+        public let seasonNumber: Int?
+        public let episodeNumber: Int?
+        public let phase: Phase
+        public let fractionCompleted: Double?
+
+        fileprivate init(record: DownloadedMediaRecord) {
+            title = record.snapshot.title
+            seasonNumber = record.snapshot.kind == .episode ? record.snapshot.seasonNumber : nil
+            episodeNumber = record.snapshot.kind == .episode ? record.snapshot.episodeNumber : nil
+            if record.status == .preparing {
+                phase = .preparing
+                fractionCompleted = record.preparationFraction.flatMap {
+                    $0.isFinite ? min(1, max(0, $0)) : nil
+                }
+            } else if let total = record.totalBytes, total > 0, record.bytesDownloaded >= total {
+                phase = .finishing
+                fractionCompleted = nil
+            } else {
+                phase = .downloading
+                fractionCompleted = record.fractionCompleted.map { min(1, max(0, $0)) }
+            }
+        }
+    }
+
     public let totalUnitCount: Int64
     public let completedUnitCount: Int64
     public let completedCount: Int
@@ -25,12 +57,17 @@ public struct DownloadActivityProgress: Equatable, Sendable {
     public let displayTitle: String?
     public let status: DownloadStatus
     public let estimatedTimeRemaining: TimeInterval?
+    public let activeItemCount: Int
+    public let currentItem: ItemProgress?
 
     public init(records: [DownloadedMediaRecord], bytesPerSecond: Int64 = 0) {
         totalCount = records.count
         completedCount = records.filter { $0.status == .completed }.count
         hasActiveWork = records.contains { $0.status.isActive }
         succeeded = !records.isEmpty && completedCount == totalCount
+        let activeItems = records.filter { $0.status == .downloading || $0.status == .preparing }
+        activeItemCount = activeItems.count
+        currentItem = activeItems.count == 1 ? activeItems.first.map(ItemProgress.init(record:)) : nil
         totalUnitCount = Int64(records.count) * 1_000
         // Equal-weight item progress, not an invented aggregate byte total.
         // Receiving every byte is not completion until engine finalization passes.

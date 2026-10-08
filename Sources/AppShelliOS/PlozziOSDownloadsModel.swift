@@ -52,6 +52,8 @@ final class PlozziOSDownloadsModel {
     private var recordsByIdentityKey: [String: [DownloadedMediaRecord]] = [:]
     private let recordIndex = PlozziOSDownloadRecordIndex()
     private(set) var initializationError: String?
+    let profileID: String?
+    private(set) var hasLoadedRecords = false
     var allowsCellular: Bool {
         didSet {
             policy.allowsExpensiveNetwork = allowsCellular
@@ -218,6 +220,7 @@ final class PlozziOSDownloadsModel {
             applicationIsActive: startsActive
         )
 
+        self.profileID = profileID
         self.registry = registry
         self.managedRemoval = managedRemoval
         self.managedCompletion = managedCompletion
@@ -261,7 +264,7 @@ final class PlozziOSDownloadsModel {
         self.notifiesOnFailure = preferences.notifiesOnFailure
 
         downloadNotifications = PlozziOSDownloadNotifications(
-            registry: registry, client: notificationClient,
+            profileID: profileID, registry: registry, client: notificationClient,
             preferences: { PlozziOSDownloadPreferences.load(key: preferencesKey) }
         )
         if let activityScheduler {
@@ -322,7 +325,8 @@ final class PlozziOSDownloadsModel {
         }
     }
 
-    init(initializationError: String) {
+    init(profileID: String? = nil, initializationError: String) {
+        self.profileID = profileID
         self.initializationError = initializationError
         self.registry = nil
         self.queue = nil
@@ -1732,6 +1736,7 @@ final class PlozziOSDownloadsModel {
         guard generation == reloadGeneration else { return }
         sampleTransferSpeed(refreshed)
         records = refreshed
+        hasLoadedRecords = true
         await downloadNotifications?.deliverPending()
         guard generation == reloadGeneration else { return }
         if !applyingActivityPolicy {

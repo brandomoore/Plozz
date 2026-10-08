@@ -188,6 +188,10 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   using per-item progress, including measured rendition preparation; time
   estimates use only known sizes and current throughput. Receiving every byte
   is not completion until offline validation finishes.
+  The subtitle shows the current episode or item, its measured percentage or
+  preparation/finalization stage, and the completed/total count for the queue.
+  The main progress indicator remains queue-wide. Parallel transfers show an
+  active count instead of presenting one arbitrary episode as the only download.
   Network-share transfers can continue while the system grants execution.
   Cancellation or expiration pauses the activity's downloads without deleting
   partial files; resume them in Plozz. Saved network and speed-limit policies
@@ -199,7 +203,11 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
 - **Completion notifications** — individual downloads and whole season/show
   batches have separate profile settings. Completion notifications default to
   on for profiles without saved preferences, require device permission, and
-  preserve existing opt-outs. Terminal notices are committed with the download
+  preserve existing opt-outs. Tapping a new completion notification opens the
+  downloaded movie or episode, or the downloaded show/season for a batch,
+  without autoplaying. Cold launches and profile changes retain the normal
+  profile and Plex PIN gates; removed or replaced downloads report that they
+  are unavailable. Terminal notices are committed with the download
   record and replayed after interruption, without notifying about old downloads
   merely because the app was upgraded. A batch produces one completion notice,
   not one per episode. After a cold relaunch, unfinished transfers still need

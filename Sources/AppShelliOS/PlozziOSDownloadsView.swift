@@ -9,8 +9,11 @@ struct PlozziOSDownloadsView: View {
     @Bindable var model: PlozziOSDownloadsModel
     let appModel: PlozziOSAppModel
     let onShowSettings: () -> Void
+    // Only the rebuilt stack may consume the tap; the retiring view must not race it.
+    var notificationPresentationID: UUID?
 
     @State private var pendingBulkDeletion: PlozziOSDownloadsBulkDeletion?
+    @State private var notificationDestination: PlozziOSDownloadNotificationDestination?
 
     var body: some View {
         let library = model.library
@@ -35,6 +38,19 @@ struct PlozziOSDownloadsView: View {
         }
         .navigationTitle("Downloads")
         .task { await model.refreshArtwork() }
+        .task(id: notificationPresentationID) {
+            let navigation = PlozziOSDownloadNotificationNavigation.shared
+            guard let notificationPresentationID,
+                  navigation.presentation?.id == notificationPresentationID,
+                  appModel.isActiveProfileAuthorized,
+                  let destination = navigation.claimDestination(
+                profileID: appModel.profiles.activeProfileID
+            ) else { return }
+            notificationDestination = destination == .library ? nil : destination
+        }
+        .navigationDestination(item: $notificationDestination) { destination in
+            notificationPage(destination)
+        }
         .toolbarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -76,6 +92,49 @@ struct PlozziOSDownloadsView: View {
                 Text(deletion.message)
             }
         }
+    }
+
+    @ViewBuilder
+    private func notificationPage(_ destination: PlozziOSDownloadNotificationDestination) -> some View {
+        switch destination {
+        case .library:
+            EmptyView()
+        case let .show(id, seasonID):
+            PlozziOSDownloadedShowView(
+                showID: id, model: model, appModel: appModel, initialSeasonID: seasonID
+            )
+        case let .item(identityKey, createdAt):
+            if let record = model.records.first(where: {
+                $0.identityKey == identityKey && $0.createdAt == createdAt && $0.status == .completed
+            }), let item = model.playbackItem(for: record) {
+                if let provider = appModel.provider(for: item) {
+                    PlozziOSItemDetailView(
+                        appModel: appModel, provider: provider, item: item,
+                        seerService: appModel.seerService,
+                        originSourceAccountID: item.sourceAccountID,
+                        presentsEpisodeAsSubject: item.kind == .episode
+                    )
+                } else {
+                    ContentUnavailableView(
+                        "Server unavailable",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text("This title's server is no longer connected.")
+                    )
+                }
+            } else {
+                unavailableNotificationPage
+            }
+        case .unavailable:
+            unavailableNotificationPage
+        }
+    }
+
+    private var unavailableNotificationPage: some View {
+        ContentUnavailableView(
+            "Downloads Unavailable",
+            systemImage: "arrow.down.circle",
+            description: Text("This download has been removed or replaced.")
+        )
     }
 
     private func libraryList(_ library: PlozziOSDownloadLibrary) -> some View {

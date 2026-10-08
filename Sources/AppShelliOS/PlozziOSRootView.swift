@@ -37,6 +37,8 @@ public struct PlozziOSRootView: View {
     /// A pairing link that arrived while a sheet was open — see
     /// `receivePairingURL`.
     @State private var deferredPairingURL: URL?
+    @State private var downloadNotifications = PlozziOSDownloadNotificationNavigation.shared
+    @State private var notificationDismissals: Set<NotificationPresentation> = []
     /// A synced server the user tapped "Set Up" on, used to pre-fill the Add Server
     /// sheet so they only have to sign in.
     @State private var serverSetupSeed: SyncedAccountDescriptor?
@@ -102,6 +104,7 @@ public struct PlozziOSRootView: View {
                     showingSettings: $showingSettings,
                     showingProfileSwitcher: $showingProfileSwitcher,
                     deferredPairingURL: $deferredPairingURL,
+                    onNotificationPresentationDismissed: { notificationDismissals.remove($0) },
                     systemColorScheme: systemColorScheme
                 )
             }
@@ -117,7 +120,9 @@ public struct PlozziOSRootView: View {
         // One opaque cover for profile PIN then Plex PIN. Separate presentations
         // briefly exposed the tab shell between them.
         .fullScreenCover(isPresented: profileAccessGateBinding) {
-            PlozziOSProfileAccessGateView(appModel: appModel)
+            PlozziOSProfileAccessGateView(
+                appModel: appModel, onCancel: downloadNotifications.cancelPending
+            )
         }
         // Setup that was abandoned part-way — quit mid-flow, or arrived over sync
         // from a device where it was never finished. The gate is persisted, so a
@@ -290,6 +295,16 @@ public struct PlozziOSRootView: View {
         .onChange(of: shellIdentity) {
             heroTrailerController.stop()
         }
+        .modifier(PlozziOSDownloadNotificationRouting(
+            navigation: downloadNotifications,
+            context: downloadNotificationContext,
+            preparePresentation: prepareDownloadNotificationPresentation,
+            selectProfile: appModel.selectProfile,
+            resolve: {
+                appModel.downloads.initializationError == nil
+                    ? .resolve($0, records: appModel.downloads.records) : .library
+            }
+        ))
         .sheet(
             isPresented: $showingAddServer,
             onDismiss: {
@@ -297,6 +312,7 @@ public struct PlozziOSRootView: View {
                 iptvSetup = nil
                 appModel.finishManagedServerPresentation()
                 consumeDeferredPairingURL()
+                notificationDismissals.remove(.addServer)
             }
         ) {
             AddServerView(
@@ -555,6 +571,49 @@ public struct PlozziOSRootView: View {
         appModel.handleIncomingURL(url)
     }
 
+    enum NotificationPresentation: Hashable {
+        case settings, profileSwitcher, addServer
+    }
+
+    private func prepareDownloadNotificationPresentation() {
+        guard downloadNotifications.pending != nil else { return }
+        if showingSettings || appModel.isSettingsPresented {
+            notificationDismissals.insert(.settings)
+            showingSettings = false
+        }
+        if showingProfileSwitcher {
+            notificationDismissals.insert(.profileSwitcher)
+            showingProfileSwitcher = false
+        }
+        if showingAddServer {
+            notificationDismissals.insert(.addServer)
+            showingAddServer = false
+        }
+    }
+
+    private var downloadNotificationContext: PlozziOSDownloadNotificationNavigation.Context {
+        let request = downloadNotifications.pending
+        let targetProfileID = request?.target.profileID
+        let downloads = appModel.downloads
+        return .init(
+            requestID: request?.id,
+            targetExists: appModel.profiles.profiles.contains { $0.id == targetProfileID },
+            activeProfileID: appModel.profiles.activeProfileID,
+            canEnterApp: appModel.canEnterApp,
+            profileIsAuthorized: appModel.isActiveProfileAuthorized,
+            profileGateIsPresented: profileAccessGateBinding.wrappedValue,
+            downloadsAreReady: downloads.profileID == targetProfileID
+                && (downloads.hasLoadedRecords || downloads.initializationError != nil),
+            presentationIsAvailable: notificationDismissals.isEmpty
+                && !showingSettings && !appModel.isSettingsPresented
+                && !showingProfileSwitcher && !showingAddServer
+                && !showDetectedCover && !showReceiveFromDetected && pairingServer == nil
+                && appModel.pendingPairingInvite == nil
+                && !releaseNotes.hasPendingStartupNotes
+                && appModel.pendingSyncedServerPrompt == nil
+        )
+    }
+
     private var pendingPairingBinding: Binding<PendingPairing?> {
         Binding(
             get: { appModel.pendingPairingInvite.map(PendingPairing.init(invite:)) },
@@ -752,6 +811,8 @@ struct PlozziOSTabShell: View {
     @State private var lastContentDestination: PlozziOSDestination = .home
     @State private var retainsExplicitLiveTVEntry = false
     @State private var retainsExplicitHomeEntry = false
+    @State private var retainsExplicitDownloadEntry = false
+    @State private var downloadNavigationID: UUID?
     @State private var hasChosenNavigationDestination = false
     let homeViewModelBox: LazyViewState<HomeViewModel>
     var sharedHomeViewModel: HomeViewModel {
@@ -785,6 +846,7 @@ struct PlozziOSTabShell: View {
     /// A pairing link parked until this shell's sheets have closed — see
     /// `PlozziOSRootView.receivePairingURL`.
     @Binding var deferredPairingURL: URL?
+    let onNotificationPresentationDismissed: (PlozziOSRootView.NotificationPresentation) -> Void
     let systemColorScheme: ColorScheme
 
     init(
@@ -794,6 +856,8 @@ struct PlozziOSTabShell: View {
         showingSettings: Binding<Bool>,
         showingProfileSwitcher: Binding<Bool>,
         deferredPairingURL: Binding<URL?>,
+        onNotificationPresentationDismissed:
+            @escaping (PlozziOSRootView.NotificationPresentation) -> Void = { _ in },
         systemColorScheme: ColorScheme
     ) {
         self.appModel = appModel
@@ -802,6 +866,7 @@ struct PlozziOSTabShell: View {
         _showingSettings = showingSettings
         _showingProfileSwitcher = showingProfileSwitcher
         _deferredPairingURL = deferredPairingURL
+        self.onNotificationPresentationDismissed = onNotificationPresentationDismissed
         self.systemColorScheme = systemColorScheme
         let visible = Self.configuredDestinations(appModel: appModel)
         let initial: PlozziOSDestination
@@ -869,6 +934,9 @@ struct PlozziOSTabShell: View {
         )
         if retainsExplicitHomeEntry, !configured.contains(.home) {
             configured.insert(.home, at: 0)
+        }
+        if retainsExplicitDownloadEntry, !configured.contains(.downloads) {
+            configured.append(.downloads)
         }
         return AppAdmissionNavigation.destinations(
             configured,
@@ -964,6 +1032,7 @@ struct PlozziOSTabShell: View {
         NavigationStack {
             destinationContent(for: destination)
         }
+        .id(destination == .downloads ? downloadNavigationID : nil)
     }
 
     @ViewBuilder
@@ -1041,7 +1110,8 @@ struct PlozziOSTabShell: View {
                 appModel: appModel,
                 sharedHomeViewModel: sharedHomeViewModel,
                 onAddServer: onAddServer,
-                onShowSettings: showSettings
+                onShowSettings: showSettings,
+                downloadNotificationID: downloadNavigationID
             )
             .toolbarBackground(.hidden, for: .navigationBar)
             .background { AppBackground(palette: palette) }
@@ -1132,6 +1202,7 @@ struct PlozziOSTabShell: View {
                             destinationContent(for: destination, keepsNavigationBar: true)
                         }
                     }
+                    .id(downloadNavigationID)
                 }
             }
         }
@@ -1187,6 +1258,17 @@ struct PlozziOSTabShell: View {
 
     var body: some View {
         contentAwareTabs
+        .onChange(
+            of: PlozziOSDownloadNotificationNavigation.shared.presentation?.id, initial: true
+        ) { _, _ in
+            let navigation = PlozziOSDownloadNotificationNavigation.shared
+            guard appModel.isActiveProfileAuthorized,
+                  navigation.claimTabSelection(profileID: appModel.profiles.activeProfileID) else { return }
+            retainsExplicitDownloadEntry = true
+            downloadNavigationID = navigation.presentation?.id
+            _ = appModel.consumeStandaloneLiveTVEntryIntent()
+            openDestination(.downloads)
+        }
         .onChange(of: appModel.pendingStandaloneLiveTVEntry, initial: true) { _, _ in
             consumeStandaloneEntryIfNeeded()
         }
@@ -1217,6 +1299,7 @@ struct PlozziOSTabShell: View {
                 retainsExplicitLiveTVEntry = false
             }
             if destination != .home { retainsExplicitHomeEntry = false }
+            if destination != .downloads { retainsExplicitDownloadEntry = false }
         }
         .background { AppBackground(palette: palette) }
         .background(alignment: .topLeading) {
@@ -1280,6 +1363,7 @@ struct PlozziOSTabShell: View {
                 appModel.selectProfile(id)
             }
             consumeDeferredPairingURL()
+            onNotificationPresentationDismissed(.profileSwitcher)
         }) {
             PlozziOSProfilePickerView(
                 profiles: appModel.profiles.profilesByRecency,
@@ -1316,6 +1400,7 @@ struct PlozziOSTabShell: View {
                     : fallback)
             }
             consumeDeferredPairingURL()
+            onNotificationPresentationDismissed(.settings)
         }) {
             PlozziOSSettingsView(
                 appModel: appModel,
@@ -1580,6 +1665,7 @@ private struct PlozziOSDestinationView: View {
     let onAddServer: () -> Void
     let onShowSettings: () -> Void
     var keepsNavigationBar = false
+    var downloadNotificationID: UUID?
 
     var body: some View {
         ZStack {
@@ -1619,7 +1705,8 @@ private struct PlozziOSDestinationView: View {
             PlozziOSDownloadsView(
                 model: appModel.downloads,
                 appModel: appModel,
-                onShowSettings: onShowSettings
+                onShowSettings: onShowSettings,
+                notificationPresentationID: downloadNotificationID
             )
                 .id(appModel.profiles.activeProfileID)
         case .settings:
@@ -1823,12 +1910,14 @@ private struct PlozziOSHomeLandingView: View {
 /// iPhone/iPad counterpart of tvOS's persistent profile-entry gate.
 private struct PlozziOSProfileAccessGateView: View {
     let appModel: PlozziOSAppModel
+    let onCancel: () -> Void
 
     @Environment(\.themePalette) private var palette
     @State private var expectsTwoPINs: Bool
 
-    init(appModel: PlozziOSAppModel) {
+    init(appModel: PlozziOSAppModel, onCancel: @escaping () -> Void) {
         self.appModel = appModel
+        self.onCancel = onCancel
         let profile = appModel.lockedSwitch?.target
         _expectsTwoPINs = State(initialValue:
             profile?.isLocked == true
@@ -1847,7 +1936,10 @@ private struct PlozziOSProfileAccessGateView: View {
                     destination: request.target,
                     errorMessage: request.error,
                     onSubmit: { appModel.submitParentalPIN($0) },
-                    onCancel: { appModel.cancelParentalSwitch() }
+                    onCancel: {
+                        onCancel()
+                        appModel.cancelParentalSwitch()
+                    }
                 )
                 .id("parental-pin")
                 .transition(.opacity)
@@ -1860,7 +1952,10 @@ private struct PlozziOSProfileAccessGateView: View {
                         ? .init(current: 1, total: 2)
                         : nil,
                     onSubmit: { appModel.submitProfileLockPIN($0) },
-                    onCancel: { appModel.cancelProfileLockPrompt() }
+                    onCancel: {
+                        onCancel()
+                        appModel.cancelProfileLockPrompt()
+                    }
                 )
                 .id("profile-pin")
                 .transition(.opacity)
@@ -1871,7 +1966,8 @@ private struct PlozziOSProfileAccessGateView: View {
                     sequenceStep: expectsTwoPINs
                         ? .init(current: 2, total: 2)
                         : nil,
-                    dismissOnSuccess: false
+                    dismissOnSuccess: false,
+                    onCancel: onCancel
                 )
                 .id("plex-pin")
                 .transition(.opacity)

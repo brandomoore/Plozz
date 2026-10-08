@@ -2018,6 +2018,7 @@ final class PlozziOSAppModel {
     ) -> PlozziOSDownloadsModel {
         guard let durableStore else {
             return PlozziOSDownloadsModel(
+                profileID: namespace,
                 initializationError: "Durable download storage is unavailable."
             )
         }
@@ -2251,6 +2252,7 @@ final class PlozziOSAppModel {
             )
         } catch {
             return PlozziOSDownloadsModel(
+                profileID: namespace,
                 initializationError: error.localizedDescription
             )
         }

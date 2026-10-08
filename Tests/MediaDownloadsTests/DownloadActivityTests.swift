@@ -89,6 +89,86 @@ final class DownloadActivityTests: XCTestCase {
         XCTAssertFalse(lease.isValid)
         XCTAssertTrue(DownloadBackgroundExecutionLease().isValid)
     }
+
+    func testBatchKeepsEpisodeProgressSeparateFromOverallProgress() throws {
+        var records = try (1...10).map { index in
+            var record = try DownloadTestFactory.record(
+                identity: DownloadTestFactory.imdbIdentity("episode-\(index)"),
+                status: index < 4 ? .completed : (index == 4 ? .downloading : .queued),
+                bytesDownloaded: index < 4 ? 100 : (index == 4 ? 62 : 0), totalBytes: 100
+            )
+            record.snapshot.kind = .episode
+            record.snapshot.seasonNumber = 1
+            record.snapshot.episodeNumber = index
+            record.batchID = "season"
+            record.batchTitle = "Example Show"
+            return record
+        }
+        let progress = DownloadActivityProgress(records: records)
+        XCTAssertEqual(progress.completedUnitCount, 3_620)
+        XCTAssertEqual(progress.totalUnitCount, 10_000)
+        XCTAssertEqual(progress.completedCount, 3)
+        XCTAssertEqual(progress.activeItemCount, 1)
+        XCTAssertEqual(progress.currentItem?.seasonNumber, 1)
+        XCTAssertEqual(progress.currentItem?.episodeNumber, 4)
+        XCTAssertEqual(progress.currentItem?.fractionCompleted, 0.62)
+        XCTAssertEqual(progress.currentItem?.phase, .downloading)
+        records.reverse()
+        XCTAssertEqual(DownloadActivityProgress(records: records), progress)
+    }
+
+    func testCurrentItemDistinguishesPreparationTransferAndFinalization() throws {
+        var record = try DownloadTestFactory.record(status: .preparing, totalBytes: 100)
+        record.quality = .hd720
+        record.preparationFraction = 0.4
+        var progress = DownloadActivityProgress(records: [record])
+        XCTAssertEqual(progress.currentItem?.phase, .preparing)
+        XCTAssertEqual(progress.currentItem?.fractionCompleted, 0.4)
+        XCTAssertEqual(progress.completedUnitCount, 200)
+        record.preparationFraction = .nan
+        XCTAssertNil(DownloadActivityProgress(records: [record]).currentItem?.fractionCompleted)
+        record.status = .downloading
+        record.bytesDownloaded = 40
+        progress = DownloadActivityProgress(records: [record])
+        XCTAssertEqual(progress.currentItem?.phase, .downloading)
+        XCTAssertEqual(progress.currentItem?.fractionCompleted, 0.4)
+        XCTAssertEqual(progress.completedUnitCount, 700)
+        record.bytesDownloaded = 100
+        progress = DownloadActivityProgress(records: [record])
+        XCTAssertEqual(progress.currentItem?.phase, .finishing)
+        XCTAssertNil(progress.currentItem?.fractionCompleted)
+        XCTAssertEqual(progress.completedCount, 0)
+        record.status = .completed
+        progress = DownloadActivityProgress(records: [record])
+        XCTAssertNil(progress.currentItem)
+        XCTAssertEqual(progress.completedCount, 1)
+    }
+
+    func testParallelWorkDoesNotPretendThereIsOneCurrentItem() throws {
+        let first = try DownloadTestFactory.record(status: .downloading, totalBytes: 100)
+        var second = try DownloadTestFactory.record(
+            identity: DownloadTestFactory.imdbIdentity("second"), status: .preparing
+        )
+        var progress = DownloadActivityProgress(records: [first, second])
+        XCTAssertEqual(progress.activeItemCount, 2)
+        XCTAssertNil(progress.currentItem)
+        second.status = .queued
+        progress = DownloadActivityProgress(records: [second, first])
+        XCTAssertEqual(progress.activeItemCount, 1)
+        XCTAssertEqual(progress.currentItem?.title, first.snapshot.title)
+    }
+
+    func testUnknownSizeAndInactiveRecordsDoNotInventCurrentProgress() throws {
+        var record = try DownloadTestFactory.record(status: .downloading, totalBytes: nil)
+        XCTAssertEqual(DownloadActivityProgress(records: [record]).currentItem?.phase, .downloading)
+        XCTAssertNil(DownloadActivityProgress(records: [record]).currentItem?.fractionCompleted)
+        for status in [DownloadStatus.queued, .paused, .failed, .completed] {
+            record.status = status
+            let progress = DownloadActivityProgress(records: [record])
+            XCTAssertEqual(progress.activeItemCount, 0)
+            XCTAssertNil(progress.currentItem)
+        }
+    }
 }
 
 final class DownloadNotificationOutboxTests: XCTestCase {

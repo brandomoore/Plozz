@@ -405,6 +405,23 @@ continued-processing identifier and a bounded loopback HTTP fixture, never
 stored accounts or user downloads. Simulator runs skip this system-admission
 check; that skip is not device proof.
 
+Activity progress tests distinguish the current item's measured stage from the
+equal-weight overall indicator. Native subtitle checks cover episode and legacy
+metadata, unknown sizes, preparation, finalization before completion, parallel
+work, and completed/paused/failed queues. Episode handoffs must update the same
+activity only after the preceding record is finalized; do not round an unfinished
+transfer up to 100% or select an arbitrary item when several are active.
+
+`DownloadNotificationNavigationTests` checks versioned, credential-free routing
+payloads, exact item generations, batch/show/season destinations, cold-start
+readiness, profile authorization and cancellation, deleted profiles, and
+single-consumer delivery. Its hosted tab check opens and replaces notifications
+through direct, More, and manually hidden Downloads layouts without changing
+saved navigation preferences. Only the rebuilt navigation stack may consume a
+tap; a retiring Downloads view must not steal it before the new page appears.
+Back navigation must not reopen a consumed notification. These checks do not
+claim physical notification-center tap coverage.
+
 `ManagedDownloadResumeTests` exercises the real background HTTP engine and
 download queue against a bounded local fixture, with and without an ETag.
 It checks that pause/resume preserves progress, issues no second full-body GET,
