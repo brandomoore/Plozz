@@ -394,6 +394,14 @@ use synthetic received data, not pairing services or stored household credential
 Package-only UIKit snapshots cannot replace this gate:
 without an application scene, `drawHierarchy` returns an empty image.
 
+`ProfilePickerPresentationTests` covers compact/adaptive avatar sizing, small
+and large households, themes/gradients, landscape, iPad, accessible names and RTL.
+Hosted animation frames check the stagger and settled scale; Reduce Motion
+reveals every tile immediately. `ProfilePickerInteractionTests` exercises
+selection, cancellation, reopening, Edit/Done, long-press editing, separate
+adult/kids creation entry points, and launch/restricted management visibility.
+Its fixture disables sync and uses only synthetic host-sandbox profiles.
+
 `DownloadActivityLifecycleTests` and `DownloadNotificationDeliveryTests` cover
 continued-processing admission, expiration, profile retirement, real-progress
 finalization, and durable notification replay without requesting notification
@@ -440,6 +448,20 @@ for accessibility text and right-to-left layouts. Live storage and transfer
 sections own their record observation: progress must not invalidate the settings
 view that constructs native picker menus. Actual preference changes must still
 update those controls.
+Compact download rows have bounded normal-text heights, expanding failure text,
+and accessibility/RTL coverage. Hosted library and show checks verify visible
+row density and season metadata. Native tab checks drive progress, completion,
+reordering, and removal/reinsertion: only Downloads may change its image, while
+Watchlist keeps its bookmark.
+`DownloadsInteractionTests` taps the production library and episode menus,
+checks 44-point targets and the compact queue control, returns through one Back
+step, and cancels then confirms season deletion without navigating by accident.
+Completed library and episode rows retain a spoken "Downloaded" label on the
+shared filled download glyph, without visible completion copy or disclosure
+chevrons beside their menus. Receiving 100% of bytes still does not confer the
+completed state before finalization.
+Native geometry checks keep episode artwork aligned with season headings in
+both card styles; the framed surface must not add a second content inset.
 
 The `PlozziOSInteractionTests` scheme adds real native touch coverage for Settings
 on both an owned iPhone simulator and an owned iPad simulator. It launches the

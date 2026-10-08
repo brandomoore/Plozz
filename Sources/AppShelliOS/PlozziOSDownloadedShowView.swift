@@ -16,6 +16,7 @@ struct PlozziOSDownloadedShowView: View {
     var initialSeasonID: String? = nil
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.themePalette) private var palette
     @State private var pendingBulkDeletion: PlozziOSDownloadsBulkDeletion?
     @State private var detailNav: PlozziOSDownloadDetailNav?
 
@@ -24,19 +25,32 @@ struct PlozziOSDownloadedShowView: View {
         Group {
             if let show {
                 ScrollViewReader { proxy in
-                    List {
-                        ForEach(show.seasons) { season in
-                            seasonSection(season, show: show)
+                    GeometryReader { geometry in
+                        List {
+                            ForEach(show.seasons) { season in
+                                PlozziOSDownloadedSeasonSection(
+                                    season: season, model: model,
+                                    horizontalInset: max(20, (geometry.size.width - 900) / 2),
+                                    openEpisode: { item in
+                                        detailNav = PlozziOSDownloadDetailNav(item: item)
+                                    },
+                                    removeSeason: {
+                                        pendingBulkDeletion = .season(season, showTitle: show.title)
+                                    }
+                                )
                                 .id(season.id)
+                            }
+                        }
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                        .task(id: initialSeasonID) {
+                            guard let initialSeasonID else { return }
+                            await Task.yield()
+                            proxy.scrollTo(initialSeasonID, anchor: .top)
                         }
                     }
-                    .task(id: initialSeasonID) {
-                        guard let initialSeasonID else { return }
-                        await Task.yield()
-                        proxy.scrollTo(initialSeasonID, anchor: .top)
-                    }
                 }
-                .listStyle(.insetGrouped)
+                .background { AppBackground(palette: palette) }
                 .navigationTitle(show.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(item: $detailNav) { nav in
@@ -45,7 +59,9 @@ struct PlozziOSDownloadedShowView: View {
                             appModel: appModel,
                             provider: provider,
                             item: nav.item,
-                            seerService: appModel.seerService
+                            seerService: appModel.seerService,
+                            originSourceAccountID: nav.item.sourceAccountID,
+                            presentsEpisodeAsSubject: nav.item.kind == .episode
                         )
                     } else {
                         ContentUnavailableView(
@@ -123,79 +139,140 @@ struct PlozziOSDownloadedShowView: View {
         model.library.shows.contains { $0.id == showID }
     }
 
-    @ViewBuilder
-    private func seasonSection(
-        _ season: PlozziOSDownloadedSeason,
-        show: PlozziOSDownloadedShow
-    ) -> some View {
+}
+
+private struct PlozziOSDownloadedSeasonSection: View {
+    let season: PlozziOSDownloadedSeason
+    let model: PlozziOSDownloadsModel
+    let horizontalInset: CGFloat
+    let openEpisode: (MediaItem) -> Void
+    let removeSeason: () -> Void
+
+    var body: some View {
         Section {
             ForEach(season.records) { record in
-                episodeRow(record)
+                PlozziOSDownloadedEpisodeRow(record: record, model: model, openEpisode: openEpisode)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(
+                        top: 6, leading: horizontalInset, bottom: 6, trailing: horizontalInset
+                    ))
             }
         } header: {
-            HStack {
-                Text(season.title)
-                Spacer()
-                if season.records.contains(where: \.isActiveDownload) {
-                    Button {
-                        Task { await model.pause(season.records) }
-                    } label: {
-                        Image(systemName: "pause.fill")
+            DownloadSeasonHeader(
+                seasonNumber: season.seasonNumber,
+                summary: DownloadFormatting.showSubtitle(
+                    episodeCount: season.episodeCount, seasonCount: 1, bytes: season.totalBytes
+                ),
+                isRunning: season.records.contains(where: \.isActiveDownload),
+                canResume: season.records.contains(where: \.isResumableDownload),
+                toggle: {
+                    Task {
+                        if season.records.contains(where: \.isActiveDownload) {
+                            await model.pause(season.records)
+                        } else {
+                            await model.resume(season.records)
+                        }
                     }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Pause \(season.title)")
-                } else if season.records.contains(where: \.isResumableDownload) {
-                    Button {
-                        Task { await model.resume(season.records) }
-                    } label: {
-                        Image(systemName: "play.fill")
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Resume \(season.title)")
-                }
-                Button(role: .destructive) {
-                    pendingBulkDeletion = .season(season, showTitle: show.title)
-                } label: {
-                    Text("Remove")
-                        .font(.caption.weight(.semibold))
-                }
-                .buttonStyle(.borderless)
-            }
-        } footer: {
-            Text(
-                DownloadFormatting.showSubtitle(
-                    episodeCount: season.episodeCount,
-                    seasonCount: 1,
-                    bytes: season.totalBytes
-                )
+                },
+                remove: removeSeason
             )
+            .textCase(nil)
+            .listRowInsets(EdgeInsets(
+                top: 16, leading: horizontalInset, bottom: 6, trailing: horizontalInset
+            ))
         }
     }
+}
 
-    @ViewBuilder
-    private func episodeRow(_ record: DownloadedMediaRecord) -> some View {
-        Button {
-            if let item = model.playbackItem(for: record)
-                ?? model.detailItem(for: record) {
-                detailNav = PlozziOSDownloadDetailNav(item: item)
+struct DownloadSeasonHeader: View {
+    let seasonNumber: Int?
+    let summary: LocalizedStringResource
+    let isRunning: Bool
+    let canResume: Bool
+    let toggle: () -> Void
+    let remove: () -> Void
+    @Environment(\.themePalette) private var palette
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 5) {
+                Group {
+                    if let seasonNumber {
+                        Text("Season \(seasonNumber)")
+                    } else {
+                        Text("Episodes")
+                    }
+                }
+                .font(.title3.weight(.bold))
+                .foregroundStyle(palette.primaryText)
+                .accessibilityAddTraits(.isHeader)
+                Text(summary)
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-        } label: {
-            HStack(spacing: 10) {
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if isRunning || canResume {
+                Button(action: toggle) {
+                    Image(systemName: isRunning ? "pause.fill" : "play.fill")
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(isRunning ? Text("Pause") : Text("Resume"))
+            }
+            Menu {
+                Button("Remove", systemImage: "trash", role: .destructive, action: remove)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("More actions")
+            .foregroundStyle(palette.secondaryText)
+        }
+    }
+}
+
+private struct PlozziOSDownloadedEpisodeRow: View {
+    let record: DownloadedMediaRecord
+    let model: PlozziOSDownloadsModel
+    let openEpisode: (MediaItem) -> Void
+
+    var body: some View {
+        DownloadCompactCard(menu: {
+            if record.isActiveDownload {
+                Button("Pause", systemImage: "pause.fill") {
+                    Task { await model.pause(record) }
+                }
+            } else if record.isResumableDownload {
+                Button("Resume", systemImage: "play.fill") {
+                    Task { await model.resume(record) }
+                }
+            }
+            Button("Remove", systemImage: "trash", role: .destructive) {
+                Task { await model.remove(record) }
+            }
+        }, accessibilityTitle: record.snapshot.title) {
+            Button {
+                if let item = model.playbackItem(for: record) ?? model.detailItem(for: record) {
+                    openEpisode(item)
+                }
+            } label: {
                 DownloadRowContent(
                     title: DownloadFormatting.episodeLabel(for: record),
                     subtitle: DownloadFormatting.status(for: record),
-                    subtitleColor: DownloadFormatting.statusColor(for: record),
+                    status: record.status,
                     fraction: DownloadFormatting.activeFraction(for: record),
                     failure: DownloadFormatting.failure(for: record),
                     artworkURL: model.artworkURL(for: record),
                     kind: record.snapshot.kind
                 )
-                Image(systemName: "chevron.forward")
-                    .font(.caption.weight(.semibold))
-                    .plozzForeground(.tertiary)
             }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button("Remove", systemImage: "trash", role: .destructive) {
                 Task { await model.remove(record) }

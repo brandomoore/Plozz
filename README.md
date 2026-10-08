@@ -169,8 +169,16 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   Native Silo downloads are supported too; they use the server's download
   permissions and preparation options, not a temporary playback link.
   Missing artwork is repaired when the source is reachable on an allowed network,
-  without downloading the video again. Show tiles reflect their downloaded
-  episodes' live progress and are marked available offline once all are complete.
+  without downloading the video again. Compact artwork-led lists keep large
+  libraries scannable, with per-title progress, status, and trailing actions.
+  Downloaded shows group compact episode rows by season; season removal lives
+  in the season menu. Show rows reflect their downloaded
+  episodes' live progress. Completed shows, movies, and episodes use the same
+  filled download icon as media cards, with neutral counts and sizes instead of
+  repeated completion text. Tap a row to open it; the trailing menu is its only
+  accessory.
+  Only the Downloads navigation item displays queue progress; Watchlist retains
+  its bookmark.
   Progress display updates are batched rather than redrawing at network-callback
   speed; completion, pause, failure, and removal updates remain immediate.
   Episode badges observe their own download, so another episode's progress
@@ -244,7 +252,9 @@ and Plozz does not supply channels or an IPTV subscription.
   subtitle preferences with the active Plozz profile. Apple TV system-user
   support and Plex Home/Silo server-profile selection keep the right identity
   in view. Server-side access and watch history still belong to the server user
-  you choose; device-wide settings remain device-wide.
+  you choose; device-wide settings remain device-wide. The iPhone/iPad picker
+  uses a compact, theme-aware grid with a subtle staggered entrance, skipped
+  with Reduce Motion. Larger households scroll, and accessible text wraps.
 - **Set up another device** — use nearby-device setup, a QR code, or a pairing
   code to import an existing setup. iCloud sync carries profiles, settings, and
   server details; Silo asks you to approve each receiving device independently.

@@ -19,8 +19,8 @@ struct PlozziOSProfilePickerView: View {
     let profiles: [Profile]
     let activeProfileID: String
     let onSelect: (Profile) -> Void
-    /// Supplied when this picker is being used as the switcher rather than the
-    /// launch gate. Its presence is what turns on Add and Edit.
+    /// Supplied only when profile management is authorized. Its presence turns
+    /// on Add and Edit at launch as well as in the switcher.
     ///
     /// The picker drives those flows through its OWN navigation stack instead of
     /// handing them back to the caller. A second presentation from the same host
@@ -32,6 +32,9 @@ struct PlozziOSProfilePickerView: View {
 
     @State private var isEditing = false
     @State private var route: Route?
+    @Environment(\.themePalette) private var palette
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// What the picker has pushed on top of itself.
     private enum Route: Hashable, Identifiable {
@@ -40,113 +43,68 @@ struct PlozziOSProfilePickerView: View {
         var id: Self { self }
     }
 
-    private let columns = [
-        GridItem(.adaptive(minimum: 140, maximum: 220), spacing: 24)
-    ]
-
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 32) {
-                    VStack(spacing: 8) {
-                        // With a single profile there is nobody to choose
-                        // between, so the screen says what it can actually do.
+            GeometryReader { geometry in
+                let layout = PlozziOSProfilePickerLayout(
+                    width: geometry.size.width,
+                    itemCount: profiles.count + (manager != nil ? 2 : 0),
+                    usesAccessibleText: dynamicTypeSize.isAccessibilitySize
+                )
+                ScrollView {
+                    VStack(spacing: 36) {
                         Text(isEditing
                             ? "Edit Profiles"
                             : (profiles.count > 1 ? "Who’s watching?" : "Profiles"))
-                            .font(.largeTitle.bold())
-                        Text(isEditing
-                            ? "Choose a profile to change it."
-                            : (profiles.count > 1
-                                ? "Choose a profile to continue."
-                                : "Add a profile, or change the one you have."))
-                            .plozzForeground(.secondary)
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(palette.primaryText)
+                            .multilineTextAlignment(.center)
+                            .accessibilityAddTraits(.isHeader)
+
+                        PlozziOSProfilePickerGrid(
+                            profiles: profiles, layout: layout,
+                            canManage: manager != nil, isEditing: isEditing,
+                            onSelect: onSelect,
+                            onEdit: { route = .edit(profileID: $0.id) },
+                            onAdd: { route = .add(isKids: $0) }
+                        )
                     }
-                    .multilineTextAlignment(.center)
-
-                    LazyVGrid(columns: columns, spacing: 28) {
-                        ForEach(profiles) { profile in
-                            Button {
-                                if isEditing, manager != nil {
-                                    route = .edit(profileID: profile.id)
-                                } else {
-                                    onSelect(profile)
-                                }
-                            } label: {
-                                profileCard(profile)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(profile.name)
-                            .accessibilityHint(isEditing
-                                ? "Opens this profile’s settings"
-                                : "Switches to this profile")
-                            .contextMenu {
-                                if manager != nil {
-                                    Button("Edit Profile", systemImage: "pencil") {
-                                        route = .edit(profileID: profile.id)
-                                    }
-                                }
-                            }
-                        }
-
-                        if manager != nil, !isEditing {
-                            Button { route = .add(isKids: false) } label: {
-                                addCard(
-                                    title: "Add Profile",
-                                    systemImage: "plus"
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(Text("Add Profile"))
-
-                            // Its own tile, matching tvOS. Creating a child's
-                            // profile and then remembering to mark it as one is
-                            // a step people skip, and the consequence is a
-                            // profile that isn't restricted.
-                            Button { route = .add(isKids: true) } label: {
-                                addCard(
-                                    title: KidsProfileCopy.addTile,
-                                    systemImage: "figure.and.child.holdinghands"
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(Text(KidsProfileCopy.addTile))
-                        }
-                    }
-                    .frame(maxWidth: 760)
-
-                    // Full-size controls under the grid rather than a small
-                    // toolbar button: they're as prominent as what they act on.
-                    if manager != nil || onCancel != nil {
-                        VStack(spacing: 12) {
-                            if manager != nil {
-                                Button {
-                                    withAnimation(.easeInOut(duration: 0.2)) { isEditing.toggle() }
-                                } label: {
-                                    Label(
-                                        isEditing ? "Done" : "Edit Profiles",
-                                        systemImage: isEditing ? "checkmark.circle" : "pencil"
-                                    )
-                                    .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.large)
-                            }
-                            if let onCancel, !isEditing {
-                                Button("Cancel", action: onCancel)
-                                    .buttonStyle(.plain)
-                                    .plozzForeground(.secondary)
-                            }
-                        }
-                        .frame(maxWidth: 360)
+                    .frame(maxWidth: layout.contentWidth)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 32)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: geometry.size.height, alignment: .center)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+            }
+            .background { AppBackground(palette: palette) }
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                if let onCancel, !isEditing {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Cancel", systemImage: "xmark", action: onCancel)
+                            .labelStyle(.iconOnly)
+                            .accessibilityIdentifier("profile-picker-close")
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 48)
+                if manager != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                                isEditing.toggle()
+                            }
+                        } label: {
+                            if isEditing {
+                                Text("Done")
+                            } else {
+                                Label("Edit Profiles", systemImage: "pencil")
+                                    .labelStyle(.iconOnly)
+                            }
+                        }
+                        .accessibilityIdentifier("profile-picker-edit")
+                    }
+                }
             }
-            .background(.background)
-            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $route) { route in
                 destination(for: route)
             }
@@ -173,48 +131,167 @@ struct PlozziOSProfilePickerView: View {
             }
         }
     }
+}
 
-    /// Matches a profile card's shape so the grid stays even.
-    private func addCard(
-        title: LocalizedStringResource,
-        systemImage: String
-    ) -> some View {
-        VStack(spacing: 14) {
-            ZStack {
-                Circle().fill(.quaternary)
-                Image(systemName: systemImage)
-                    .font(.system(size: 40, weight: .semibold))
-                    .plozzForeground(.secondary)
+struct PlozziOSProfilePickerLayout {
+    let contentWidth: CGFloat
+    let columnCount: Int
+    let avatarSize: CGFloat
+    let columnSpacing: CGFloat = 24
+
+    init(width: CGFloat, itemCount: Int, usesAccessibleText: Bool) {
+        contentWidth = max(1, min(640, width - 48))
+        let capacity = usesAccessibleText ? 1
+            : contentWidth >= 520 ? 4
+            : contentWidth >= 340 && itemCount > 6 ? 3 : 2
+        columnCount = min(max(1, itemCount), capacity)
+        let cellWidth = (contentWidth - CGFloat(columnCount - 1) * columnSpacing) / CGFloat(columnCount)
+        avatarSize = min(contentWidth >= 520 ? 104 : 96, max(64, cellWidth - 16))
+    }
+}
+
+private struct PlozziOSProfilePickerGrid: View {
+    let profiles: [Profile]
+    let layout: PlozziOSProfilePickerLayout
+    let canManage: Bool
+    let isEditing: Bool
+    let onSelect: (Profile) -> Void
+    let onEdit: (Profile) -> Void
+    let onAdd: (Bool) -> Void
+    @State private var hasAppeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: layout.columnSpacing, alignment: .top),
+                           count: layout.columnCount),
+            spacing: 24
+        ) {
+            ForEach(Array(profiles.enumerated()), id: \.element.id) { position, profile in
+                Button {
+                    if isEditing, canManage { onEdit(profile) } else { onSelect(profile) }
+                } label: {
+                    PlozziOSProfilePickerTile(title: Text(profile.name)) {
+                        ProfileAvatarView(profile: profile, size: layout.avatarSize)
+                            .overlay(alignment: .bottomTrailing) {
+                                if isEditing {
+                                    Image(systemName: "pencil.circle.fill")
+                                        .font(.title3)
+                                        .symbolRenderingMode(.palette)
+                                        .foregroundStyle(.black, .white)
+                                }
+                            }
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(profile.name)
+                .accessibilityIdentifier("profile-picker-\(profile.id)")
+                .accessibilityHint(isEditing
+                    ? "Opens this profile’s settings" : "Switches to this profile")
+                .contextMenu {
+                    if canManage {
+                        Button("Edit Profile", systemImage: "pencil") { onEdit(profile) }
+                    }
+                }
+                .modifier(PlozziOSProfilePickerEntrance(
+                    isPresented: hasAppeared, position: position, reduceMotion: reduceMotion
+                ))
             }
-            .frame(width: 116, height: 116)
+            if canManage, !isEditing {
+                PlozziOSProfilePickerAddTile(
+                    title: "Add Profile", symbol: "plus", size: layout.avatarSize
+                ) { onAdd(false) }
+                .modifier(PlozziOSProfilePickerEntrance(
+                    isPresented: hasAppeared, position: profiles.count, reduceMotion: reduceMotion
+                ))
+                PlozziOSProfilePickerAddTile(
+                    title: KidsProfileCopy.addTile, symbol: "figure.and.child.holdinghands",
+                    size: layout.avatarSize
+                ) { onAdd(true) }
+                .modifier(PlozziOSProfilePickerEntrance(
+                    isPresented: hasAppeared, position: profiles.count + 1, reduceMotion: reduceMotion
+                ))
+            }
+        }
+        .task {
+            guard !hasAppeared else { return }
+            if !reduceMotion {
+                // Commit the hidden grid first; onAppear coalesces into the initial render.
+                try? await Task.sleep(for: .milliseconds(40))
+                guard !Task.isCancelled else { return }
+            }
+            hasAppeared = true
+        }
+    }
+}
 
-            Text(title)
-                .font(.headline)
-                .lineLimit(1)
+private struct PlozziOSProfilePickerTile<Avatar: View>: View {
+    let title: Text
+    @ViewBuilder var avatar: () -> Avatar
+    @Environment(\.themePalette) private var palette
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        VStack(spacing: 10) {
+            avatar()
+            title
+                .font(.callout)
+                .foregroundStyle(palette.primaryText)
+                .multilineTextAlignment(.center)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
     }
+}
 
-    private func profileCard(_ profile: Profile) -> some View {
-        VStack(spacing: 14) {
-            // Shared avatar renderer so the picker matches every other avatar
-            // surface (Settings list, editor preview): symbol / emoji on the
-            // profile's CHOSEN colour, or a borrowed photo. The old local
-            // `fallbackAvatar` painted a flat accent tint and ignored the
-            // profile's colour entirely.
-            ProfileAvatarView(profile: profile, size: 116)
-                .frame(width: 116, height: 116)
-                .clipShape(Circle())
-                .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
+private struct PlozziOSProfilePickerAddTile: View {
+    let title: LocalizedStringResource
+    let symbol: String
+    let size: CGFloat
+    let action: () -> Void
+    @Environment(\.themePalette) private var palette
 
-            Text(profile.name)
-                .font(.headline)
-                .lineLimit(1)
-
+    var body: some View {
+        Button(action: action) {
+            PlozziOSProfilePickerTile(title: Text(title)) {
+                Circle()
+                    .fill(palette.primaryText.opacity(0.06))
+                    .overlay { Circle().strokeBorder(palette.primaryText.opacity(0.12), lineWidth: 1) }
+                    .overlay {
+                        Image(systemName: symbol)
+                            .font(.system(size: size * 0.32, weight: .regular))
+                            .foregroundStyle(palette.secondaryText)
+                    }
+                    .frame(width: size, height: size)
+            }
         }
-        .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(title))
+    }
+}
+
+struct PlozziOSProfilePickerEntrance: ViewModifier {
+    let isPresented: Bool
+    let position: Int
+    let reduceMotion: Bool
+
+    static let initialScale: CGFloat = 0.94
+    static let duration: TimeInterval = 0.5
+    static func delay(at position: Int) -> TimeInterval { min(Double(max(0, position)) * 0.05, 0.3) }
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isPresented || reduceMotion ? 1 : 0)
+            .scaleEffect(isPresented || reduceMotion ? 1 : Self.initialScale)
+            .allowsHitTesting(isPresented || reduceMotion)
+            .accessibilityHidden(!isPresented && !reduceMotion)
+            .animation(
+                reduceMotion ? nil : .timingCurve(0.2, 0.8, 0.2, 1, duration: Self.duration)
+                    .delay(Self.delay(at: position)),
+                value: isPresented
+            )
     }
 }
 #endif

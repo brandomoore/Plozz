@@ -28,6 +28,8 @@ public enum MediaDownloadBadgeState: Equatable, Sendable {
 /// it matches whatever typography it sits beside instead of carrying its own
 /// platform-specific point size.
 public struct MediaDownloadBadge: View {
+    public static let completedSystemImage = "arrow.down.circle.fill"
+
     private let state: MediaDownloadBadgeState
     private let size: CGFloat
 
@@ -46,7 +48,7 @@ public struct MediaDownloadBadge: View {
     private var content: some View {
         switch state {
         case .completed:
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: Self.completedSystemImage)
                 .font(.system(size: size))
                 .foregroundStyle(.white.opacity(0.85))
                 .accessibilityLabel("Downloaded")

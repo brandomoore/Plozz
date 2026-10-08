@@ -1176,6 +1176,12 @@ struct PlozziOSTabShell: View {
                     ) {
                         tabContent(for: destination)
                     }
+                } else if destination == .downloads {
+                    Tab(value: PlozziOSTabSelection.destination(destination)) {
+                        tabContent(for: destination)
+                    } label: {
+                        PlozziOSDownloadsTabLabel(model: appModel.downloads)
+                    }
                 } else {
                     Tab(value: PlozziOSTabSelection.destination(destination)) {
                         tabContent(for: destination)
@@ -1183,11 +1189,7 @@ struct PlozziOSTabShell: View {
                         Label {
                             Text(destination.title)
                         } icon: {
-                            if destination == .downloads {
-                                downloadsTabIcon
-                            } else {
-                                Image(systemName: destination.systemImage)
-                            }
+                            Image(systemName: destination.systemImage)
                         }
                     }
                 }
@@ -1482,12 +1484,31 @@ struct PlozziOSTabShell: View {
         return "\(appModel.profiles.activeProfileID)#\(credentials)#\(active)"
     }
 
+    private func showSettings() {
+        hasChosenNavigationDestination = true
+        settingsPresentationColorScheme = settingsPalette.isLight ? .light : .dark
+        showingSettings = true
+    }
+
+}
+
+struct PlozziOSDownloadsTabLabel: View {
+    let model: PlozziOSDownloadsModel
+
+    var body: some View {
+        Label {
+            Text("Downloads")
+        } icon: {
+            downloadsTabIcon
+        }
+    }
+
     /// Overall progress for work that is actively transferring. Completed
     /// siblings in the same season batch remain in the denominator so the tab
     /// ring advances monotonically instead of resetting each time an episode
     /// finishes and the next queued episode starts.
     private var downloadsNavigationProgress: Double? {
-        let active = appModel.downloads.records.filter {
+        let active = model.records.filter {
             $0.status == .queued
                 || $0.status == .preparing
                 || $0.status == .downloading
@@ -1496,7 +1517,7 @@ struct PlozziOSTabShell: View {
 
         let activeKeys = Set(active.map(\.identityKey))
         let activeBatchIDs = Set(active.compactMap(\.batchID))
-        let tracked = appModel.downloads.records.filter {
+        let tracked = model.records.filter {
             activeKeys.contains($0.identityKey)
                 || $0.batchID.map(activeBatchIDs.contains) == true
         }
@@ -1545,12 +1566,6 @@ struct PlozziOSTabShell: View {
             ring.stroke()
         }
         .withRenderingMode(.alwaysTemplate)
-    }
-
-    private func showSettings() {
-        hasChosenNavigationDestination = true
-        settingsPresentationColorScheme = settingsPalette.isLight ? .light : .dark
-        showingSettings = true
     }
 
 }
