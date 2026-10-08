@@ -149,7 +149,7 @@ public struct MediaItemSourceIdentity: Hashable, Sendable {
 public struct ArtworkLookupSubject: Codable, Hashable, Sendable {
     public let id: String
     public let kind: MediaItemKind
-    public let title: String
+    public let title: String // l10n:content - catalog media title, not application copy
     public let parentTitle: String?
     public let productionYear: Int?
     public let seasonNumber: Int?
