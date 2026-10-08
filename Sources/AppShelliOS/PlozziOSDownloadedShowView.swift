@@ -13,6 +13,7 @@ struct PlozziOSDownloadedShowView: View {
     let showID: String
     @Bindable var model: PlozziOSDownloadsModel
     let appModel: PlozziOSAppModel
+    var initialSeasonID: String? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var pendingBulkDeletion: PlozziOSDownloadsBulkDeletion?
@@ -22,9 +23,17 @@ struct PlozziOSDownloadedShowView: View {
         let show = currentShow
         Group {
             if let show {
-                List {
-                    ForEach(show.seasons) { season in
-                        seasonSection(season, show: show)
+                ScrollViewReader { proxy in
+                    List {
+                        ForEach(show.seasons) { season in
+                            seasonSection(season, show: show)
+                                .id(season.id)
+                        }
+                    }
+                    .task(id: initialSeasonID) {
+                        guard let initialSeasonID else { return }
+                        await Task.yield()
+                        proxy.scrollTo(initialSeasonID, anchor: .top)
                     }
                 }
                 .listStyle(.insetGrouped)

@@ -11,6 +11,7 @@ private final class PlozziOSAppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions:
             [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        PlozziOSDownloadNotificationBridge.activate()
         PlozziOSBackgroundSessionBridge.activate()
         return true
     }

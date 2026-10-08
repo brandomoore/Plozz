@@ -335,6 +335,8 @@ targets:
         PlozzReleaseVersion: "$(PLOZZ_RELEASE_VERSION)"
         UILaunchScreen: {}
         UIRequiresFullScreen: false
+        BGTaskSchedulerPermittedIdentifiers:
+          - "$(PRODUCT_BUNDLE_IDENTIFIER).downloads.*"
         # remote-notification lets CloudKit (CKSyncEngine) wake the app to pull
         # config changes pushed from another device on the same Apple ID.
         UIBackgroundModes:
@@ -345,6 +347,7 @@ targets:
           # backgrounded.
           - audio
           - remote-notification
+          - processing
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
@@ -468,6 +471,15 @@ targets:
       - path: App/PlozziOS/Assets.xcassets
       - path: App/Resources/CommunityAssets.xcassets
       - path: App/Resources/ReleaseNotes.json
+    info:
+      path: Tests/iOSPresentationHost/Info.plist
+      properties:
+        BGTaskSchedulerPermittedIdentifiers:
+          - "$(PRODUCT_BUNDLE_IDENTIFIER).downloads.*"
+        UIBackgroundModes:
+          - processing
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.PresentationHost

@@ -182,6 +182,39 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
 - **Choose download quality separately** — streaming preferences don't change
   your saved download settings. Available renditions and background-transfer
   behavior depend on the provider. Apple TV does not offer offline downloads.
+- **Follow downloads outside Plozz** — on iOS/iPadOS 26 or later, user-started
+  downloads request the system's continued-processing Live Activity, including
+  Dynamic Island on supported iPhones. One activity tracks the active queue
+  using per-item progress, including measured rendition preparation; time
+  estimates use only known sizes and current throughput. Receiving every byte
+  is not completion until offline validation finishes.
+  The title names the current movie or show, including episode numbers. The
+  subtitle shows the current step through sequential downloads (for example,
+  "Downloading 1 of 2") and its measured percentage or preparation/finalization
+  stage. Finished counts are explicitly labeled "Completed" rather than shown
+  as an ambiguous fraction; paused or failed peers also use completed counts.
+  The main progress indicator remains queue-wide. Parallel transfers show an
+  active count instead of presenting one arbitrary episode as the only download.
+  Network-share transfers can continue while the system grants execution.
+  Cancellation or expiration pauses the activity's downloads without deleting
+  partial files; resume them in Plozz. Saved network and speed-limit policies
+  still apply. If iOS declines the request, normal download behavior remains:
+  eligible HTTP transfers use background URL sessions, while in-process
+  transfers require the app to stay active.
+  Pause and resume reuse eligible background transfers, including downloads
+  started by an older app version.
+- **Completion notifications** — individual downloads and whole season/show
+  batches have separate profile settings. Completion notifications default to
+  on for profiles without saved preferences, require device permission, and
+  preserve existing opt-outs. Tapping a new completion notification opens the
+  downloaded movie or episode, or the downloaded show/season for a batch,
+  without autoplaying. Cold launches and profile changes retain the normal
+  profile and Plex PIN gates; removed or replaced downloads report that they
+  are unavailable. Terminal notices are committed with the download
+  record and replayed after interruption, without notifying about old downloads
+  merely because the app was upgraded. A batch produces one completion notice,
+  not one per episode. After a cold relaunch, unfinished transfers still need
+  reconciliation and offline validation before completion can be announced.
 
 ### Music
 

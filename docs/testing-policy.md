@@ -394,6 +394,53 @@ use synthetic received data, not pairing services or stored household credential
 Package-only UIKit snapshots cannot replace this gate:
 without an application scene, `drawHierarchy` returns an empty image.
 
+`DownloadActivityLifecycleTests` and `DownloadNotificationDeliveryTests` cover
+continued-processing admission, expiration, profile retirement, real-progress
+finalization, and durable notification replay without requesting notification
+permission. Their scheduler and notification clients are injected. The opt-in
+`testSystemActivityReceivesRealHTTPDownloadProgressOnDevice` additionally requires
+an owned physical iPhone/iPad on iOS/iPadOS 26 or later and
+`TEST_RUNNER_PLOZZ_VERIFY_SYSTEM_DOWNLOAD_ACTIVITY=1`. It uses the host's own
+continued-processing identifier and a bounded loopback HTTP fixture, never
+stored accounts or user downloads. Simulator runs skip this system-admission
+check; that skip is not device proof.
+
+Activity progress tests distinguish the current item's measured stage from the
+equal-weight overall indicator. Native subtitle checks cover episode and legacy
+metadata, unknown sizes, preparation, finalization before completion, parallel
+work, and completed/paused/failed queues. Episode handoffs must update the same
+activity only after the preceding record is finalized; do not round an unfinished
+transfer up to 100% or select an arbitrary item when several are active.
+Native title/subtitle assertions keep media names and episode codes out of the
+progress line. Sequential work uses a one-based current step, independent of
+registry ordering; paused/failed peers and parallel work use explicit completed
+counts instead. Preparation and finalization must never be labeled transferring.
+
+`DownloadNotificationNavigationTests` checks versioned, credential-free routing
+payloads, exact item generations, batch/show/season destinations, cold-start
+readiness, profile authorization and cancellation, deleted profiles, and
+single-consumer delivery. Its hosted tab check opens and replaces notifications
+through direct, More, and manually hidden Downloads layouts without changing
+saved navigation preferences. Only the rebuilt navigation stack may consume a
+tap; a retiring Downloads view must not steal it before the new page appears.
+Back navigation must not reopen a consumed notification. These checks do not
+claim physical notification-center tap coverage.
+
+`ManagedDownloadResumeTests` exercises the real background HTTP engine and
+download queue against a bounded local fixture, with and without an ETag.
+It checks that pause/resume preserves progress, issues no second full-body GET,
+and produces byte-identical output. Descriptor checks cover legacy JSON ordering
+and escaping, malformed identities, and profile/item/file isolation. HTTP and
+HLS task lookups, callbacks, cancellation markers, and persisted HLS locations
+must use the same canonical identity, including for tasks saved by older builds.
+
+`DownloadPresentationTests` checks that changing rates and ETAs do not change the
+active-queue summary's height at phone and tablet widths, with separate coverage
+for accessibility text and right-to-left layouts. Live storage and transfer
+sections own their record observation: progress must not invalidate the settings
+view that constructs native picker menus. Actual preference changes must still
+update those controls.
+
 The `PlozziOSInteractionTests` scheme adds real native touch coverage for Settings
 on both an owned iPhone simulator and an owned iPad simulator. It launches the
 same presentation host with an explicit settings-fixture argument, exercising

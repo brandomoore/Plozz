@@ -146,8 +146,8 @@ final class TransportCursorByteReader: DownloadByteReader, @unchecked Sendable {
 
 /// Downloads direct-share files (SMB/NFS/WebDAV/SFTP/FTP) via the transport cursor
 /// byte API — the uniform `read(at:length:)` path that works identically across
-/// every share transport. Resumes by byte offset; foreground/while-running only
-/// (the OS can't continue a stateful-socket transfer while suspended).
+/// every share transport. Resumes by byte offset and requires foreground or an
+/// owned system execution lease; the OS cannot transfer these sockets while suspended.
 public struct TransportCursorDownloadEngine:
     MediaDownloadEngine,
     DownloadPolicyApplying,
