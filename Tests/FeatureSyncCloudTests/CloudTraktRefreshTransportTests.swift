@@ -6,6 +6,78 @@ import TraktService
 @testable import FeatureSyncCloud
 
 final class CloudTraktRefreshTransportTests: XCTestCase {
+    func testCanonicalDistributionDoesNotRequireAnAppStoreReceipt() throws {
+        let bundle = try fixtureBundle(identifier: "com.thatcube.Plozz")
+        XCTAssertNil(bundle.url(forResource: "embedded", withExtension: "mobileprovision"))
+        XCTAssertFalse(bundle.appStoreReceiptURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false)
+        XCTAssertTrue(CloudTraktRefreshTransport.permitsCloudKit(
+            containerIdentifier: "iCloud.com.thatcube.Plozz", bundle: bundle, isSimulator: false
+        ))
+    }
+
+    func testProfilelessFallbackRejectsSimulatorsBrandedAppsAndOtherContainers() throws {
+        let cases: [(String, String?, Bool)] = [
+            ("iCloud.com.thatcube.Plozz", "com.thatcube.Plozz", true),
+            ("iCloud.com.thatcube.Plozz", "com.thatcube.Plozz.branch", false),
+            ("iCloud.com.thatcube.Plozz", nil, false),
+            ("iCloud.not.entitled", "com.thatcube.Plozz", false)
+        ]
+        for (container, identifier, simulator) in cases {
+            let bundle = try fixtureBundle(identifier: identifier)
+            XCTAssertFalse(CloudTraktRefreshTransport.permitsCloudKit(
+                containerIdentifier: container, bundle: bundle, isSimulator: simulator
+            ))
+        }
+    }
+
+    func testCanonicalIdentityCannotOverrideAMissingOrUnreadableEntitlement() throws {
+        let profiles = [
+            Data("unreadable provisioning profile".utf8),
+            try provisioningProfile(containers: nil),
+            try provisioningProfile(containers: []),
+            try provisioningProfile(containers: ["iCloud.not.entitled"])
+        ]
+        for profile in profiles {
+            let bundle = try fixtureBundle(identifier: "com.thatcube.Plozz", profile: profile)
+            XCTAssertFalse(CloudTraktRefreshTransport.permitsCloudKit(
+                containerIdentifier: "iCloud.com.thatcube.Plozz", bundle: bundle, isSimulator: false
+            ))
+        }
+    }
+
+    func testExplicitProvisioningStillAllowsItsContainer() throws {
+        let bundle = try fixtureBundle(
+            identifier: "com.thatcube.Plozz",
+            profile: provisioningProfile(containers: ["iCloud.com.thatcube.Plozz"])
+        )
+        XCTAssertTrue(CloudTraktRefreshTransport.permitsCloudKit(
+            containerIdentifier: "iCloud.com.thatcube.Plozz", bundle: bundle, isSimulator: false
+        ))
+    }
+
+    private func fixtureBundle(identifier: String?, profile: Data? = nil) throws -> Bundle {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString).appendingPathExtension("bundle")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try FileManager.default.removeItem(at: directory) }
+        var info = ["CFBundlePackageType": "BNDL"]
+        info["CFBundleIdentifier"] = identifier
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: directory.appendingPathComponent("Info.plist"))
+        if let profile {
+            try profile.write(to: directory.appendingPathComponent("embedded.mobileprovision"))
+        }
+        return try XCTUnwrap(Bundle(url: directory))
+    }
+
+    private func provisioningProfile(containers: [String]?) throws -> Data {
+        var entitlements: [String: Any] = [:]
+        entitlements["com.apple.developer.icloud-container-identifiers"] = containers
+        return try PropertyListSerialization.data(
+            fromPropertyList: ["Entitlements": entitlements], format: .xml, options: 0
+        )
+    }
+
     func testCloudRejectionPreservesErrorCodeInsteadOfClaimingICloudIsUnavailable() {
         for code in [CKError.Code.invalidArguments, .permissionFailure, .serverRejectedRequest, .quotaExceeded] {
             let error = CKError(code, userInfo: [NSLocalizedDescriptionKey: "private-record-and-token"])
