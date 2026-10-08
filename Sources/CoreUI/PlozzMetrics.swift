@@ -281,12 +281,8 @@ public struct PlozzMetrics: Equatable, Sendable {
 
     // MARK: Caption corner-clearance (derived)
 
-    /// Extra inset for a poster card's caption — *beyond* the shared `cardInset` —
-    /// applied to its left, right *and* bottom so title/metadata text clears the
-    /// rounded outer corners instead of crowding them, leaving the text in a
-    /// balanced safe area. Sized so the text's total inset from the glass edge is
-    /// `captionCornerClearanceFactor` × the outer radius, and scales with the
-    /// radius (and thus density). The artwork is unaffected.
+    /// Bottom corner clearance beyond `cardInset`; also the horizontal
+    /// clearance on TV. Touch captions use a separate, smaller horizontal inset.
     public var posterCaptionInset: CGFloat {
         max(posterCardCornerRadius * PlozzTheme.Metrics.captionCornerClearanceFactor - cardInset, 0)
     }
@@ -294,6 +290,15 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// Landscape / music card counterpart of `posterCaptionInset`.
     public var landscapeCaptionInset: CGFloat {
         max(landscapeCardCornerRadius * PlozzTheme.Metrics.captionCornerClearanceFactor - cardInset, 0)
+    }
+
+    /// Horizontal clearance from the artwork edge, independent of bottom rounding.
+    public var posterCaptionHorizontalInset: CGFloat {
+        geometryScale < 1 ? PlozzTheme.Metrics.touchCaptionHorizontalInset : posterCaptionInset
+    }
+
+    public var landscapeCaptionHorizontalInset: CGFloat {
+        geometryScale < 1 ? PlozzTheme.Metrics.touchCaptionHorizontalInset : landscapeCaptionInset
     }
 
     /// Resting artwork-to-caption gap; focus travel is reserved separately on TV.

@@ -168,7 +168,7 @@ private struct PlozziOSLibraryCard: View {
             library.displayName
                 .font(.headline)
                 .lineLimit(2)
-                .padding(.horizontal, metrics.landscapeCaptionInset)
+                .padding(.horizontal, metrics.landscapeCaptionHorizontalInset)
                 .padding(
                     .bottom,
                     cardStyle == .framed ? metrics.landscapeCaptionInset : 0
