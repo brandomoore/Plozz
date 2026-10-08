@@ -7,6 +7,187 @@ import XCTest
 
 @MainActor
 final class LiveTVPortableLibraryImportTests: XCTestCase {
+    func testCaptureReceiptDoesNotRetainAnUnchangedCollectionAbove64MiB() async throws {
+        let worker = LiveTVPortableLibraryPreparation()
+        let bytes = Data(repeating: 42, count: 51_280)
+        let records = Dictionary(uniqueKeysWithValues: (0..<1_478).map { ("record-\($0)", bytes) })
+        XCTAssertGreaterThan(records.values.reduce(0) { $0 + $1.count }, 64 * 1_024 * 1_024)
+        let prepared = try await worker.captureRecords(records, fallback: records)
+        let receipt = try XCTUnwrap(prepared)
+        XCTAssertTrue(receipt.changes.isEmpty)
+        XCTAssertEqual(receipt.byteCount, 0)
+        XCTAssertEqual(receipt.fingerprints.count, records.count)
+        let matches = try await worker.matches(records, fingerprints: receipt.fingerprints)
+        XCTAssertTrue(matches)
+        var edited = records
+        edited["record-0"] = Data(repeating: 43, count: bytes.count)
+        let changed = try await worker.matches(edited, fingerprints: receipt.fingerprints)
+        XCTAssertFalse(changed)
+        edited = records
+        edited["record-0"] = nil
+        let removed = try await worker.matches(edited, fingerprints: receipt.fingerprints)
+        XCTAssertFalse(removed)
+    }
+
+    func testUnacknowledgedLocalOutputReusesCaptureAgainstTheUnchangedServerFallback() async throws {
+        let fixture = try fixture()
+        let profileID = fixture.profiles.activeProfileID
+        let (snapshot, definition) = try library(profileID: profileID)
+        let definitions = PortableImportDefinitions(values: [definition])
+        let snapshots = RetainingImportSnapshots()
+        try await snapshots.seed(snapshot, profileID: profileID)
+        let revision = UUID()
+        let bridge = fixture.bridge(
+            definitions: definitions, snapshots: snapshots, captureIdentityRevision: { _ in revision }
+        )
+        let output = await bridge.capture(fallback: [:])
+        XCTAssertFalse(output.isEmpty)
+        let stabilized = await bridge.capture(fallback: [:])
+        XCTAssertEqual(stabilized, output)
+        let before = await snapshots.readCount
+        for _ in 0..<4 {
+            let retried = await bridge.capture(fallback: [:])
+            XCTAssertEqual(retried, output, "Reuse local output, not the older server fallback")
+        }
+        let after = await snapshots.readCount
+        XCTAssertEqual(before, after, "Pending uploads must not force schedule reconstruction")
+    }
+
+    func testSettledCapturesSkipSnapshotsAndIdentityExportsAcrossProfiles() async throws {
+        let fixture = try fixture()
+        let profileID = fixture.profiles.activeProfileID
+        let other = fixture.profiles.add(name: "Other")
+        LiveTVPortableSyncPreferenceStore(
+            defaults: fixture.defaults, profileID: other.id, namespace: other.id
+        ).isEnabled = true
+        let (snapshot, definition) = try library(profileID: profileID)
+        let definitions = PortableImportDefinitions(values: [definition])
+        let empty = PortableImportDefinitions()
+        let snapshots = RetainingImportSnapshots()
+        try await snapshots.seed(snapshot, profileID: profileID)
+        var identityCaptures = 0
+        var identityRevision = UUID()
+        let bridge = LiveTVPortableSyncBridge(
+            profiles: fixture.profiles, directory: fixture.directory, defaults: fixture.defaults,
+            sourceStore: { _ in PortableImportSources() },
+            definitions: { $0 == profileID ? definitions : empty }, snapshots: snapshots,
+            captureIdentityHints: { _ in identityCaptures += 1; return [:] },
+            captureIdentityRevision: { _ in identityRevision }
+        )
+        var records = await bridge.capture(fallback: [:])
+        records = await bridge.capture(fallback: records)
+        XCTAssertEqual(bridge.statuses[profileID], .ready)
+        XCTAssertEqual(bridge.statuses[other.id], .ready)
+        let readCount = await snapshots.readCount
+        let captures = identityCaptures
+        for _ in 0..<4 {
+            let repeated = await bridge.capture(fallback: records)
+            XCTAssertEqual(repeated, records)
+        }
+        let repeatedReads = await snapshots.readCount
+        XCTAssertEqual(repeatedReads, readCount, "No schedule payload may be read on a settled poll")
+        XCTAssertEqual(identityCaptures, captures, "Empty profiles must not evict another profile's receipt")
+
+        try LiveTVPreferencesStore(defaults: fixture.defaults, namespace: nil).save(
+            .init(favoriteIDs: ["changed"])
+        )
+        records = await bridge.capture(fallback: records)
+        XCTAssertNotNil(records[LiveTVPortableRecordKey(
+            profileID: profileID, kind: .channel, entityID: "changed"
+        ).recordName])
+        XCTAssertGreaterThan(identityCaptures, captures)
+        records = await bridge.capture(fallback: records)
+        let beforeIdentityChange = identityCaptures
+        identityRevision = UUID()
+        _ = await bridge.capture(fallback: records)
+        XCTAssertGreaterThan(identityCaptures, beforeIdentityChange)
+    }
+
+    func testSettledCaptureInvalidatesForDefinitionsSnapshotsFallbackAndConsent() async throws {
+        let fixture = try fixture()
+        let profileID = fixture.profiles.activeProfileID
+        let (snapshot, definition) = try library(profileID: profileID)
+        let definitions = PortableImportDefinitions(values: [definition])
+        let snapshots = RetainingImportSnapshots()
+        try await snapshots.seed(snapshot, profileID: profileID)
+        let revision = UUID()
+        let bridge = fixture.bridge(
+            definitions: definitions, snapshots: snapshots, captureIdentityRevision: { _ in revision }
+        )
+        var records = await bridge.capture(fallback: [:])
+        records = await bridge.capture(fallback: records)
+        var disabled = definition
+        disabled.isEnabled = false
+        try definitions.save([disabled])
+        records = await bridge.capture(fallback: records)
+        let key = LiveTVPortableRecordKey(
+            profileID: profileID, kind: .library, entityID: definition.id.uuidString
+        )
+        let exported = try JSONDecoder().decode(
+            LiveTVPortableRecord.self, from: XCTUnwrap(records[key.recordName])
+        )
+        XCTAssertEqual(exported.library, disabled)
+        records = await bridge.capture(fallback: records)
+        let beforeFallbackChange = await snapshots.readCount
+        _ = await bridge.capture(fallback: [:])
+        let afterFallbackChange = await snapshots.readCount
+        XCTAssertGreaterThan(afterFallbackChange, beforeFallbackChange)
+
+        let consent = LiveTVPortableSyncPreferenceStore(
+            defaults: fixture.defaults, profileID: profileID, namespace: fixture.profiles.activeNamespace
+        )
+        consent.isEnabled = false
+        let optedOut = await bridge.capture(fallback: records)
+        XCTAssertEqual(optedOut, records)
+        consent.isEnabled = true
+        _ = await bridge.capture(fallback: records)
+        let afterConsent = await snapshots.readCount
+        XCTAssertGreaterThan(afterConsent, afterFallbackChange)
+
+        _ = await bridge.capture(fallback: records)
+        try await snapshots.retain(ids: [], profileID: profileID)
+        _ = await bridge.capture(fallback: records)
+        XCTAssertEqual(bridge.statuses[profileID], .pendingLibraryInputs)
+    }
+
+    func testSettledCaptureDoesNotHideJournalEditsFromAnotherAdapter() async throws {
+        let fixture = try fixture()
+        let profileID = fixture.profiles.activeProfileID
+        let (snapshot, definition) = try library(profileID: profileID)
+        let definitions = PortableImportDefinitions(values: [definition])
+        let snapshots = RetainingImportSnapshots()
+        try await snapshots.seed(snapshot, profileID: profileID)
+        let revision = UUID()
+        let bridge = fixture.bridge(
+            definitions: definitions, snapshots: snapshots, captureIdentityRevision: { _ in revision }
+        )
+        var records = await bridge.capture(fallback: [:])
+        records = await bridge.capture(fallback: records)
+        let before = await snapshots.readCount
+        let other = LiveTVPortableSyncAdapter(
+            directory: fixture.directory, profileID: profileID, defaults: fixture.defaults,
+            namespace: fixture.profiles.activeNamespace
+        )
+        var remote = definition
+        remote.isEnabled = false
+        _ = try other.apply(
+            self.records(snapshot: snapshot, definition: remote),
+            sourceStore: PortableImportSources(), includeLibrarySnapshots: false
+        )
+        records = await bridge.capture(fallback: records)
+        let afterApply = await snapshots.readCount
+        XCTAssertGreaterThan(afterApply, before)
+        XCTAssertEqual(try definitions.load(), [remote])
+        _ = await bridge.capture(fallback: records)
+        let enumerator = try XCTUnwrap(FileManager.default.enumerator(
+            at: fixture.directory, includingPropertiesForKeys: nil
+        ))
+        let file = try XCTUnwrap((enumerator.allObjects as? [URL])?.first { $0.pathExtension == "record" })
+        try Data("corrupt".utf8).write(to: file, options: .atomic)
+        _ = await bridge.capture(fallback: records)
+        XCTAssertEqual(bridge.statuses[profileID], .unavailable)
+    }
+
     func testExportPreparationReusesOnlyAnExactlyMatchingValidatedInput() async throws {
         let builds = PortableExportBuilds()
         let worker = LiveTVPortableLibraryPreparation(makeExport: builds.make)
@@ -319,11 +500,13 @@ private struct PortableLibraryImportFixture {
         ).pending(sourceStore: PortableImportSources())
     }
     func bridge(
-        definitions: any LibraryChannelDefinitionStoring, snapshots: any LibraryChannelSnapshotStoring
+        definitions: any LibraryChannelDefinitionStoring, snapshots: any LibraryChannelSnapshotStoring,
+        captureIdentityRevision: (@MainActor (String) async throws -> UUID)? = nil
     ) -> LiveTVPortableSyncBridge {
         LiveTVPortableSyncBridge(
             profiles: profiles, directory: directory, defaults: defaults,
-            sourceStore: { _ in PortableImportSources() }, definitions: { _ in definitions }, snapshots: snapshots
+            sourceStore: { _ in PortableImportSources() }, definitions: { _ in definitions }, snapshots: snapshots,
+            captureIdentityRevision: captureIdentityRevision
         )
     }
 }
@@ -377,6 +560,7 @@ private actor RetainingImportSnapshots: LibraryChannelSnapshotStaging {
     private var stageCount = 0
     private var insertCount = 0
     private var releaseCount = 0
+    private(set) var readCount = 0
     private let afterStage: (@Sendable () async throws -> Void)?
     init(afterStage: (@Sendable () async throws -> Void)? = nil) { self.afterStage = afterStage }
     func seed(_ snapshot: LibraryChannelSnapshot, profileID: String) async throws {
@@ -384,7 +568,11 @@ private actor RetainingImportSnapshots: LibraryChannelSnapshotStaging {
     }
     func counts() -> (stages: Int, inserts: Int, releases: Int) { (stageCount, insertCount, releaseCount) }
     func snapshot(id: UUID, profileID: String) async throws -> LibraryChannelSnapshot? {
-        try await store.snapshot(id: id, profileID: profileID)
+        readCount += 1
+        return try await store.snapshot(id: id, profileID: profileID)
+    }
+    func changeRevision() async throws -> UUID? {
+        try await store.changeRevision()
     }
     func insert(_ snapshot: LibraryChannelSnapshot, profileID: String) async throws {
         insertCount += 1

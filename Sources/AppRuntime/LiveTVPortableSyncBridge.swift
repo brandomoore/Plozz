@@ -1,6 +1,7 @@
 import CoreModels
 import CoreNetworking
 import CoreSecureStore
+import CryptoKit
 import FeatureLiveTVCore
 import Foundation
 import Observation
@@ -31,6 +32,7 @@ public final class LiveTVPortableSyncBridge {
     @ObservationIgnored private let snapshots: (any LibraryChannelSnapshotStoring)?
     @ObservationIgnored private let guideCache: @MainActor (String) -> LiveTVIndexedCache?
     @ObservationIgnored private let captureIdentityHints: @MainActor (String) async throws -> [String: LiveTVPortableChannelIdentityHint]?
+    @ObservationIgnored private let captureIdentityRevision: (@MainActor (String) async throws -> UUID)?
     @ObservationIgnored private let applyIdentityHints: @MainActor (String, [String: LiveTVPortableChannelIdentityHint?]) async throws -> Bool
     @ObservationIgnored private let libraryPreparation = LiveTVPortableLibraryPreparation()
     @ObservationIgnored private var operationInProgress = false
@@ -38,10 +40,30 @@ public final class LiveTVPortableSyncBridge {
     @ObservationIgnored private var operationAuthority: [String: ProfileAuthority] = [:]
     @ObservationIgnored private var operationAdapters: [String: LiveTVPortableSyncAdapter] = [:]
     @ObservationIgnored private var diagnosticFailures: [String: LiveTVSyncDiagnostic] = [:]
+    @ObservationIgnored private var completedCaptures: [String: CompletedCapture] = [:]
+    @ObservationIgnored private var captureOrder: [String] = []
 
     private struct ProfileAuthority: Equatable {
         let namespace: String?
         let consentRevision: String
+    }
+
+    private struct CaptureState: Equatable {
+        let authority: ProfileAuthority
+        let epoch: String
+        let local: LiveTVPortableSyncAdapter.CaptureInputs
+        let definitions: [LibraryChannelDefinition]?
+        let snapshotRevision: UUID?
+        let identityRevision: UUID
+        let guideAuthority: GuideAuthority?
+        let playbackHeld: Bool
+    }
+
+    private struct CompletedCapture {
+        let state: CaptureState
+        let records: LiveTVPortableLibraryPreparation.CaptureRecords
+        // Keep the small journal coordinator alive; endOperation releases decoded data.
+        let adapter: LiveTVPortableSyncAdapter
     }
 
     public init(
@@ -52,7 +74,8 @@ public final class LiveTVPortableSyncBridge {
         snapshots: (any LibraryChannelSnapshotStoring)? = nil,
         guideCache: @escaping @MainActor (String) -> LiveTVIndexedCache? = { _ in nil },
         captureIdentityHints: @escaping @MainActor (String) async throws -> [String: LiveTVPortableChannelIdentityHint]? = { _ in nil },
-        applyIdentityHints: @escaping @MainActor (String, [String: LiveTVPortableChannelIdentityHint?]) async throws -> Bool = { _, _ in false }
+        applyIdentityHints: @escaping @MainActor (String, [String: LiveTVPortableChannelIdentityHint?]) async throws -> Bool = { _, _ in false },
+        captureIdentityRevision: (@MainActor (String) async throws -> UUID)? = nil
     ) {
         self.profiles = profiles
         self.directory = directory
@@ -69,6 +92,7 @@ public final class LiveTVPortableSyncBridge {
         self.guideCache = guideCache
         self.captureIdentityHints = captureIdentityHints
         self.applyIdentityHints = applyIdentityHints
+        self.captureIdentityRevision = captureIdentityRevision
     }
 
     public func capture(fallback: [SyncRecordID: Data]) async -> [SyncRecordID: Data] {
@@ -107,8 +131,28 @@ public final class LiveTVPortableSyncBridge {
                 continue
             }
             guard mayApply(profile.id, epoch: epoch) else { continue }
-            var stage = trace(.capture, .prepareJournal)
+            var stage = LiveTVSyncDiagnostic.Stage.prepareJournal
             do {
+                let profileFallback = fallback.filter {
+                    LiveTVPortableRecordKey.parse($0.key)?.profileID == profile.id
+                }
+                let completed = completedCaptures[profile.id]
+                let fallbackMatches: Bool
+                if let completed {
+                    fallbackMatches = try await libraryPreparation.matches(
+                        profileFallback, fingerprints: completed.records.fingerprints
+                    )
+                } else {
+                    fallbackMatches = false
+                }
+                let initialState = try await captureState(profileID: profile.id, epoch: epoch)
+                guard mayApply(profile.id, epoch: epoch) else { continue }
+                if fallbackMatches, let initialState, let completed, completed.state == initialState {
+                    result.merge(completed.records.changes, uniquingKeysWith: { _, captured in captured })
+                    continue
+                }
+                completedCaptures[profile.id] = nil
+                stage = trace(.capture, .prepareJournal)
                 try await prepare(adapter, profileID: profile.id, epoch: epoch, records: incomingRecords)
                 var libraryIssue: Status?
                 stage = trace(.capture, .libraryState)
@@ -190,6 +234,13 @@ public final class LiveTVPortableSyncBridge {
                 try await updateStatus(pending, profileID: profile.id, epoch: epoch, operation: .capture)
                 if let libraryIssue { statuses[profile.id] = libraryIssue }
                 finishDiagnostic(.capture, profileID: profile.id)
+                if statuses[profile.id] == .ready, let initialState,
+                   try await captureState(profileID: profile.id, epoch: epoch) == initialState,
+                   mayApply(profile.id, epoch: epoch) {
+                    try await rememberCapture(
+                        profileID: profile.id, state: initialState, fallback: profileFallback, records: captured
+                    )
+                }
             } catch {
                 if error is CancellationError { continue }
                 if mayApply(profile.id, epoch: epoch) {
@@ -233,6 +284,7 @@ public final class LiveTVPortableSyncBridge {
         }
         clearDiagnosticFailures(.apply, profileID: "")
         let profileIDs = Set(changes.keys.compactMap(LiveTVPortableRecordKey.parse).map(\.profileID))
+        for profileID in profileIDs { completedCaptures[profileID] = nil }
         for profileID in profileIDs.sorted() where known.contains(profileID) && !removed.contains(profileID) {
             guard epoch == LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults) else { return }
             let adapter = adapter(profileID)
@@ -281,6 +333,7 @@ public final class LiveTVPortableSyncBridge {
     /// Wire to the existing profile removal lifecycle, not to a transient missing
     /// profile roster during cloud hydration.
     public func removeProfile(_ profileID: String) throws {
+        completedCaptures[profileID] = nil
         if followsMainSync { try sourceSync.removeProfile(profileID) }
         var removed = try removedProfiles()
         removed.insert(profileID)
@@ -295,6 +348,8 @@ public final class LiveTVPortableSyncBridge {
     }
 
     public func accountDidChange() {
+        completedCaptures = [:]
+        captureOrder = []
         LiveTVPortableSyncPreferenceStore.accountDidChange(defaults: defaults)
         if followsMainSync { sourceSync.accountDidChange() }
         Task { await libraryPreparation.discardExport() }
@@ -312,6 +367,44 @@ public final class LiveTVPortableSyncBridge {
     }
 
     public var stateDirectory: URL { directory }
+
+    private func captureState(profileID: String, epoch: String) async throws -> CaptureState? {
+        guard let captureIdentityRevision, let authority = authority(profileID) else { return nil }
+        let local = try await adapter(profileID).captureInputs(sourceStore: sourceStore(profileID))
+        let definitions = try definitions?(profileID).load()
+        let snapshotRevision: UUID?
+        if definitions != nil {
+            guard let revision = try await snapshots?.changeRevision() else { return nil }
+            snapshotRevision = revision
+        } else {
+            snapshotRevision = nil
+        }
+        let identityRevision = try await captureIdentityRevision(profileID)
+        try adapter(profileID).validateCaptureInputs(local)
+        guard mayApply(profileID, epoch: epoch) else { throw CancellationError() }
+        return CaptureState(
+            authority: authority, epoch: epoch, local: local, definitions: definitions,
+            snapshotRevision: snapshotRevision, identityRevision: identityRevision,
+            guideAuthority: try guideCache(profileID).map { _ in try guideAuthority(profileID) },
+            playbackHeld: LiveTVPlaybackIdentityHold.isHeld(profileID: profileID)
+        )
+    }
+
+    private func rememberCapture(
+        profileID: String, state: CaptureState, fallback: [SyncRecordID: Data], records: [SyncRecordID: Data]
+    ) async throws {
+        guard let receipt = try await libraryPreparation.captureRecords(records, fallback: fallback),
+              mayApply(profileID, epoch: state.epoch) else { return }
+        captureOrder.removeAll { $0 == profileID || completedCaptures[$0] == nil }
+        captureOrder.append(profileID)
+        completedCaptures[profileID] = CompletedCapture(
+            state: state, records: receipt, adapter: adapter(profileID)
+        )
+        while completedCaptures.values.reduce(0, { $0 + $1.records.byteCount }) > 64 * 1_024 * 1_024
+            || completedCaptures.values.reduce(0, { $0 + $1.records.recordCount }) > 50_000 {
+            completedCaptures[captureOrder.removeFirst()] = nil
+        }
+    }
 
     private func pendingLibraryState(
         _ adapter: LiveTVPortableSyncAdapter, profileID: String, epoch: String
@@ -604,6 +697,7 @@ public final class LiveTVPortableSyncBridge {
         refreshParticipation()
         var result: [String: ProfileAuthority] = [:]
         for profile in profiles.profiles { result[profile.id] = authority(profile.id) }
+        completedCaptures = completedCaptures.filter { result[$0.key] == $0.value.state.authority }
         return result
     }
 
@@ -830,6 +924,13 @@ public final class LiveTVPortableSyncBridge {
 /// Only immutable inputs cross this boundary. Consent checks, source changes
 /// and compare-and-swap publication stay on the main actor; journal I/O is awaited.
 actor LiveTVPortableLibraryPreparation {
+    struct CaptureRecords: Sendable {
+        let fingerprints: [SyncRecordID: SHA256.Digest]
+        let changes: [SyncRecordID: Data]
+        let byteCount: Int
+        var recordCount: Int { fingerprints.count + changes.count }
+    }
+
     private var cachedExport: LiveTVPortableLibraryExport?
     private let makeExport: @Sendable (
         [LibraryChannelDefinition], [LibraryChannelSnapshot]
@@ -856,6 +957,33 @@ actor LiveTVPortableLibraryPreparation {
         let export = try makeExport(definitions, snapshots)
         cachedExport = export
         return export
+    }
+
+    func matches(_ records: [SyncRecordID: Data], fingerprints: [SyncRecordID: SHA256.Digest]) throws -> Bool {
+        guard records.count == fingerprints.count else { return false }
+        for (name, bytes) in records {
+            try Task.checkCancellation()
+            guard let fingerprint = fingerprints[name], SHA256.hash(data: bytes) == fingerprint else { return false }
+        }
+        return true
+    }
+
+    func captureRecords(_ records: [SyncRecordID: Data], fallback: [SyncRecordID: Data]) throws -> CaptureRecords? {
+        var changes: [SyncRecordID: Data] = [:]
+        var byteCount = 0
+        for (name, bytes) in records {
+            try Task.checkCancellation()
+            if fallback[name] != bytes {
+                changes[name] = bytes
+                byteCount += bytes.count
+            }
+        }
+        guard byteCount <= 64 * 1_024 * 1_024, fallback.count + changes.count <= 50_000 else { return nil }
+        let fingerprints = try fallback.mapValues { bytes in
+            try Task.checkCancellation()
+            return SHA256.hash(data: bytes)
+        }
+        return CaptureRecords(fingerprints: fingerprints, changes: changes, byteCount: byteCount)
     }
 
     func discardExport() {

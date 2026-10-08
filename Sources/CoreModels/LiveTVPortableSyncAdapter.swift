@@ -82,6 +82,15 @@ public struct LiveTVPortableImport: Sendable {
 /// source and preferences stores stay authoritative; this journal retains
 /// tombstones and unavailable peer descriptors, not playback or guide caches.
 public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
+    public struct CaptureInputs: Equatable, Sendable {
+        fileprivate let configuration: LiveTVSourcesConfiguration
+        fileprivate let preferences: LiveTVPreferences
+        fileprivate let suppression: [String: Bool]
+        fileprivate let files: [String: LiveTVSyncFileRevision]
+        fileprivate let coordinatorID: UUID
+        fileprivate let journalRevision: UUID
+    }
+
     public struct JournalRevision: Equatable, Sendable {
         fileprivate let coordinatorID: UUID
         fileprivate let accountEpoch: String
@@ -458,6 +467,56 @@ public final class LiveTVPortableSyncAdapter: @unchecked Sendable {
         accountEpoch == LiveTVPortableSyncPreferenceStore.storageEpoch(defaults: defaults)
             && SyncSetupFeatureFlag(defaults: defaults).isEnabled
             && LiveTVPortableSyncPreferenceStore(defaults: defaults, profileID: profileID, namespace: namespace).isEnabled
+    }
+
+    public func validateCaptureInputs(_ inputs: CaptureInputs) throws {
+        let current = coordinator.snapshot()
+        guard !current.writing, coordinator.identity == inputs.coordinatorID,
+              current.revision == inputs.journalRevision else { throw PreparationError.journalChanged }
+    }
+
+    @MainActor
+    public func captureInputs(sourceStore: any LiveTVSourcesStoring) async throws -> CaptureInputs {
+        let before = coordinator.snapshot()
+        guard !before.writing else { throw PreparationError.journalChanged }
+        let configuration = try sourceConfiguration(sourceStore)
+        let saved = try preferences.load()
+        let preferences = LiveTVPreferences(
+            favoriteIDs: saved.favoriteIDs, hiddenChannels: saved.hiddenChannels,
+            favoriteOrder: saved.favoriteOrder, favoriteChannels: saved.favoriteChannels,
+            channelOverrides: saved.channelOverrides
+        )
+        let suppression = try suppression.records()
+        let directory = directory
+        let files = try await Task.detached(priority: .utility) {
+            try Task.checkCancellation()
+            guard let directoryRevision = try LiveTVSyncFileRevision.read(directory) else {
+                return [String: LiveTVSyncFileRevision]()
+            }
+            var revisions = [".": directoryRevision]
+            let urls = try FileManager.default.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: nil
+            ).filter { $0.pathExtension == "record" || $0.lastPathComponent == "observed-local.json" }
+            guard urls.count <= Self.maximumRecords + 1 else { throw LiveTVPortableStateError.tooLarge }
+            for url in urls {
+                try Task.checkCancellation()
+                guard let revision = try LiveTVSyncFileRevision.read(url) else {
+                    throw PreparationError.journalChanged
+                }
+                revisions[url.lastPathComponent] = revision
+            }
+            guard try LiveTVSyncFileRevision.read(directory) == directoryRevision else {
+                throw PreparationError.journalChanged
+            }
+            return revisions
+        }.value
+        try Task.checkCancellation()
+        let after = coordinator.snapshot()
+        guard !after.writing, after.revision == before.revision else { throw PreparationError.journalChanged }
+        return CaptureInputs(
+            configuration: configuration, preferences: preferences, suppression: suppression, files: files,
+            coordinatorID: coordinator.identity, journalRevision: after.revision
+        )
     }
 
     /// The fallback is returned unchanged while consent is off, storage fails, or
