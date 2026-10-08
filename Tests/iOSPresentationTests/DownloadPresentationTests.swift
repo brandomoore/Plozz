@@ -17,7 +17,7 @@ final class DownloadPresentationTests: XCTestCase {
         for size in [DynamicTypeSize.large, .accessibility3] {
             for direction in [LayoutDirection.leftToRight, .rightToLeft] {
                 let content = PlozziOSSeasonDownloadActionLabel(
-                    title: Text(verbatim: "Book 1: Water"),
+                    title: Text(verbatim: "The Final Season: The Battle for the Future of the Four Nations"),
                     episodeCount: 20
                 ) {
                     SeasonDownloadRowArtwork(showsMediaEdge: false) { Color.red }
@@ -64,12 +64,27 @@ final class DownloadPresentationTests: XCTestCase {
                 let request = VNRecognizeTextRequest()
                 request.recognitionLevel = .accurate
                 request.recognitionLanguages = ["en-US"]
+                request.customWords = ["Download All"]
                 try VNImageRequestHandler(cgImage: image).perform([request])
                 let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
                     .joined(separator: " ")
-                XCTAssertTrue(text.contains("Water"), text)
+                XCTAssertTrue(text.contains("The Final"), text)
+                XCTAssertTrue(text.contains("Nations"), text)
                 XCTAssertTrue(text.contains("20"), text)
                 XCTAssertTrue(text.contains("Download"), text)
+                XCTAssertTrue(
+                    (request.results ?? []).contains {
+                        $0.topCandidates(1).first?.string.contains("Download ") == true
+                    },
+                    "The action should fit on one rendered line before the title uses its space: \(text)"
+                )
+                if let action = request.results?.first(where: {
+                    $0.topCandidates(1).first?.string.contains("Download ") == true
+                }), let count = request.results?.first(where: {
+                    $0.topCandidates(1).first?.string.contains("20") == true
+                }) {
+                    XCTAssertLessThan(action.boundingBox.maxY, count.boundingBox.minY)
+                }
                 XCTAssertFalse(text.contains("iPhone"), text)
                 XCTAssertFalse(text.contains("offline"), text)
                 let attachment = XCTAttachment(image: UIImage(cgImage: image))
@@ -126,12 +141,12 @@ final class DownloadPresentationTests: XCTestCase {
         XCTAssertEqual(model.records.first?.status, .completed, "A queued progress update must not replace completion.")
     }
 
-    func testSeasonDownloadActionUsesCompactStatusLabels() throws {
+    func testSeasonDownloadActionLabelsClarifyBulkScope() throws {
         let cases: [(SeriesDownloadAction, MediaDownloadBadgeState?, String)] = [
-            (.download, nil, "Download"),
+            (.download, nil, "Download All"),
             (.preparing, nil, "Preparing Download"),
-            (.pause, .inProgress(fraction: 0.6), "Pause"),
-            (.resume, .paused(fraction: 0.6), "Resume"),
+            (.pause, .inProgress(fraction: 0.6), "Pause All"),
+            (.resume, .paused(fraction: 0.6), "Resume All"),
             (.download, .completed, "Downloaded")
         ]
         for (action, state, expected) in cases {
@@ -151,6 +166,42 @@ final class DownloadPresentationTests: XCTestCase {
                 .joined(separator: " ")
             XCTAssertTrue(text.contains(expected), "\(action): \(text)")
         }
+    }
+
+    func testShortSeasonTitleKeepsActionBesideDetails() throws {
+        let renderer = ImageRenderer(content:
+            PlozziOSSeasonDownloadActionLabel(
+                title: Text(verbatim: "Book 1: Water"), episodeCount: 20
+            ) {
+                SeasonDownloadRowArtwork(showsMediaEdge: false) { Color.red }
+            } accessory: {
+                PlozziOSSeasonDownloadActionControl(action: .download, state: nil)
+            }
+            .frame(width: 320)
+            .padding(16)
+            .background(.black)
+            .environment(\.colorScheme, .dark)
+            .environment(\.locale, Locale(identifier: "en"))
+            .environment(\.dynamicTypeSize, .large)
+        )
+        renderer.scale = 3
+        let image = try XCTUnwrap(renderer.cgImage)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        request.customWords = ["Download All"]
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        let action = try XCTUnwrap(request.results?.first {
+            $0.topCandidates(1).first?.string.contains("Download All") == true
+        })
+        let title = try XCTUnwrap(request.results?.first {
+            $0.topCandidates(1).first?.string.contains("Water") == true
+        })
+        XCTAssertGreaterThan(action.boundingBox.minX, title.boundingBox.maxX)
+        XCTAssertLessThan(
+            abs(action.boundingBox.midY - title.boundingBox.midY) * CGFloat(image.height) / 3,
+            20
+        )
     }
 
     func testDownloadControlKeepsTheSameSlotAcrossStates() throws {

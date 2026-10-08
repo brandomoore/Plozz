@@ -2766,27 +2766,37 @@ struct PlozziOSSeasonDownloadActionLabel<Artwork: View, Accessory: View>: View {
     @ViewBuilder let accessory: Accessory
 
     var body: some View {
-        let layout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-            : AnyLayout(HStackLayout(spacing: 12))
-        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 12) {
-            artwork
-                .accessibilityHidden(true)
-            layout {
-                VStack(alignment: .leading, spacing: 3) {
-                    title
-                        .foregroundStyle(.primary)
-                    Text(
-                        "Episodes: \(episodeCount.formatted())",
-                        comment: "Episode count in the season download header. %@ is the total number of episodes in the season."
-                    )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        let summary = VStack(alignment: .leading, spacing: 3) {
+            title
+                .foregroundStyle(.primary)
+            Text(
+                "Episodes: \(episodeCount.formatted())",
+                comment: "Episode count in the season download header. %@ is the total number of episodes in the season."
+            )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .lineLimit(nil)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        ViewThatFits(in: .horizontal) {
+            if !dynamicTypeSize.isAccessibilitySize {
+                HStack(spacing: 12) {
+                    artwork.accessibilityHidden(true)
+                    summary
+                    accessory.fixedSize(horizontal: true, vertical: true)
                 }
-                .lineLimit(nil)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                accessory
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 12) {
+                    artwork.accessibilityHidden(true)
+                    summary
+                }
+                ViewThatFits(in: .horizontal) {
+                    accessory.fixedSize(horizontal: true, vertical: true)
+                    accessory
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
     }
@@ -2804,9 +2814,13 @@ struct PlozziOSSeasonDownloadActionControl: View {
                     Text("Downloaded")
                 } else {
                     switch action {
-                    case .download: Text("Download")
-                    case .pause: Text("Pause")
-                    case .resume: Text("Resume")
+                    case .download:
+                        Text(
+                            "Download All",
+                            comment: "Button to download every available episode in the selected season or season version."
+                        )
+                    case .pause: Text("Pause All")
+                    case .resume: Text("Resume All")
                     case .preparing: Text("Preparing Download")
                     }
                 }

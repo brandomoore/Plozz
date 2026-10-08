@@ -176,7 +176,8 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   Episode badges observe their own download, so another episode's progress
   does not refresh the whole season list.
   Season download actions pair season artwork, title, and episode count with a
-  compact Download, Pause, or Resume control.
+  compact Download All, Pause All, or Resume All control.
+  When space is tight, the action moves below the details before its label wraps.
 - **Choose download quality separately** — streaming preferences don't change
   your saved download settings. Available renditions and background-transfer
   behavior depend on the provider. Apple TV does not offer offline downloads.
