@@ -30,6 +30,7 @@ public enum ArtworkFirstPaintResolver {
     @MainActor
     public static func prepare(
         references: [ArtworkReference],
+        prefersPrimaryReference: Bool = false,
         variant: ArtworkImageVariant,
         asyncOnlineURL: (@Sendable () async -> URL?)?,
         pinIdentity: String,
@@ -38,11 +39,12 @@ public enum ArtworkFirstPaintResolver {
         let key = ArtworkResolveKey.make(
             references: references, variant: variant, maxAspectRatio: nil,
             pinIdentity: pinIdentity,
-            providerPolicyIdentity: policy.identity
+            providerPolicyIdentity: policy.identity,
+            prefersPrimaryReference: prefersPrimaryReference
         )
         if ArtworkSeedMemo.prepared(for: key, variant: variant) != nil { return }
         guard let artwork = await resolve(
-            references: references, variant: variant,
+            references: references, prefersPrimaryReference: prefersPrimaryReference, variant: variant,
             asyncOnlineURL: asyncOnlineURL,
             prefersOnlineArtwork: policy.prefersOnlineArtwork, background: true
         ), !Task.isCancelled else { return }
@@ -51,6 +53,7 @@ public enum ArtworkFirstPaintResolver {
 
     public static func resolve(
         references: [ArtworkReference],
+        prefersPrimaryReference: Bool = false,
         variant: ArtworkImageVariant,
         maxAspectRatio: CGFloat? = nil,
         asyncOnlineURL: (@Sendable () async -> URL?)?,
@@ -60,9 +63,12 @@ public enum ArtworkFirstPaintResolver {
         imageLoader: (@Sendable (ArtworkReference) async -> UIImage?)? = nil
     ) async -> FirstPaintArtwork? {
         if let sharedKey {
-            return await FirstPaintTaskMemo.shared.value(for: sharedKey) {
+            let key = prefersPrimaryReference
+                ? "\(sharedKey)|primary:\(references.first?.privacySafeIdentity ?? "none")" : sharedKey
+            return await FirstPaintTaskMemo.shared.value(for: key) {
                 await resolve(
                     references: references,
+                    prefersPrimaryReference: prefersPrimaryReference,
                     variant: variant,
                     maxAspectRatio: maxAspectRatio,
                     asyncOnlineURL: asyncOnlineURL,
@@ -72,6 +78,13 @@ public enum ArtworkFirstPaintResolver {
                     imageLoader: imageLoader
                 )
             }
+        }
+        if prefersPrimaryReference, let primary = references.first,
+           let artwork = await loadFirst(
+               [primary], variant: variant, maxAspectRatio: maxAspectRatio,
+               background: background, imageLoader: imageLoader
+           ) {
+            return artwork
         }
         guard prefersOnlineArtwork, let asyncOnlineURL else {
             if let local = await loadFirst(

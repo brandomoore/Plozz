@@ -21,6 +21,7 @@ public struct PosterCardView: View {
     /// Watching, where the row is one entry per show and telling the shows apart
     /// at a glance is the whole job of the card.
     private let showsSeriesArtwork: Bool
+    private let textlessBackdropStore: TextlessBackdropStore
     private let enablesAsyncArtworkFallback: Bool
     private let reservesSubtitleSpace: Bool
     /// Optional caller-owned context cue. It occupies the artwork's top-leading
@@ -59,9 +60,8 @@ public struct PosterCardView: View {
     /// Whether the artwork this card ended up with already has the show's name
     /// printed on it, in which case the card must not print it again.
     @State private var artworkAlreadyCarriesTitle = false
-    /// Bumped once this show's artwork source is settled (or the wait for it ran
-    /// out), which is what lets the body re-read the synchronous store.
-    @State private var textlessAnswerRevision = 0
+    /// The source policy whose textless lookup settled or reached its deadline.
+    @State private var settledTextlessIdentity: String?
     @Environment(\.plozzReduceTransparency) private var reduceTransparency
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.locale) private var locale
@@ -93,6 +93,7 @@ public struct PosterCardView: View {
         isPendingRemoval: Bool = false,
         focusRequest: UUID? = nil,
         onFocusRequestHandled: (() -> Void)? = nil,
+        textlessBackdropStore: TextlessBackdropStore? = nil,
         action: @escaping () -> Void
     ) {
         self.item = item
@@ -100,6 +101,7 @@ public struct PosterCardView: View {
         self.artworkPolicy = artworkPolicy
         self.spoilerSettings = spoilerSettings
         self.showsSeriesArtwork = showsSeriesArtwork
+        self.textlessBackdropStore = textlessBackdropStore ?? .shared
         self.enablesAsyncArtworkFallback = enablesAsyncArtworkFallback && artworkPolicy.allowsOnlineFallback
         self.reservesSubtitleSpace = reservesSubtitleSpace
         self.statusCueText = statusCue
@@ -274,15 +276,18 @@ public struct PosterCardView: View {
     private var nativePosterCard: some View {
         VStack(spacing: metrics.nativePosterCaptionSpacing) {
             FallbackAsyncImage(
-                references: nativePosterReferences,
+                references: nativeArtworkReady ? nativePosterReferences : [],
+                prefersPrimaryReference: preferredSeriesArtwork != nil,
                 maxAspectRatio: posterAspectGuard,
                 variant: artworkVariant,
                 previewVariant: style == .poster ? .posterPreview : nil,
-                asyncFallbackURL: nativePosterFallback,
+                asyncFallbackURL: nativeArtworkReady ? nativePosterFallback : nil,
                 onResolveReference: { reference in
                     artworkAlreadyCarriesTitle = reference.map(titleBearingArtwork.contains) ?? false
                 },
-                pinIdentity: artworkPolicy.pinIdentity(for: item),
+                // An artless library has empty references both before and after
+                // settling; readiness must still restart its metadata fallback.
+                pinIdentity: artworkPolicy.pinIdentity(for: item) + (nativeArtworkReady ? "" : "|pending-textless"),
                 content: { _ in Color.clear },
                 placeholder: { Color.clear }
             )
@@ -313,7 +318,10 @@ public struct PosterCardView: View {
             }
         }
         .padding(.horizontal, metrics.borderlessCardSideMargin)
+        .task(id: textlessResolutionIdentity) { await prepareTextlessArtwork() }
     }
+
+    private var nativeArtworkReady: Bool { !showsSeriesArtwork || textlessAnswerReady }
 
     private func nativePosterOverlay(hasArtwork: Bool) -> some View {
         PosterFocusReader(focus: $isFocused) { focused in
@@ -1070,21 +1078,25 @@ public struct PosterCardView: View {
         // Settles this show's source, then lets the body re-read it. A plain
         // synchronous read gives SwiftUI nothing to invalidate on, so without this
         // the answer would land in a dictionary no view was watching.
-        .task(id: "\(TextlessBackdropStore.key(for: item))|\(presentationArtworkPolicy.identity)") {
-            textlessAnswerRevision = 0
-            guard presentationArtworkPolicy.prefersTextlessArtwork else { return }
-            guard !TextlessBackdropStore.shared.hasAnswer(for: item) else { return }
-            // Ask on the card's own behalf. The row warms its forward window, but
-            // a card must not depend on having been prefetched — the first card of
-            // a freshly loaded row appears at the same moment the row asks, and a
-            // card used outside a row is never asked for at all.
-            TextlessBackdropStore.shared.warm(for: item, variant: artworkVariant)
-            await Self.settleTextlessAnswer(for: item)
-            textlessAnswerRevision &+= 1
-        }
+        .task(id: textlessResolutionIdentity) { await prepareTextlessArtwork() }
         // Logos carry no text for VoiceOver; identify the artwork even when captions are hidden.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(seriesDisplayTitle)
+    }
+
+    private var textlessResolutionIdentity: String? {
+        guard showsSeriesArtwork, enablesAsyncArtworkFallback,
+              presentationArtworkPolicy.prefersTextlessArtwork else { return nil }
+        return "\(TextlessBackdropStore.key(for: item))|\(presentationArtworkPolicy.identity)"
+    }
+
+    private func prepareTextlessArtwork() async {
+        guard let identity = textlessResolutionIdentity,
+              !textlessBackdropStore.hasAnswer(for: item) else { return }
+        textlessBackdropStore.warm(for: item, variant: artworkVariant)
+        await Self.settleTextlessAnswer(for: item, store: textlessBackdropStore)
+        guard !Task.isCancelled else { return }
+        settledTextlessIdentity = identity
     }
 
     /// Waits for this show's artwork source to be decided, but never indefinitely.
@@ -1093,9 +1105,9 @@ public struct PosterCardView: View {
     /// switched off entirely — must not leave the card blank. Past the deadline
     /// the server's art is used, which is exactly its job: the fallback for when
     /// nothing better can be had.
-    private static func settleTextlessAnswer(for item: MediaItem) async {
+    private static func settleTextlessAnswer(for item: MediaItem, store: TextlessBackdropStore) async {
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { await TextlessBackdropStore.shared.answerSettled(for: item) }
+            group.addTask { await store.answerSettled(for: item) }
             group.addTask {
                 try? await Task.sleep(nanoseconds: textlessAnswerDeadlineNanoseconds)
             }
@@ -1108,17 +1120,16 @@ public struct PosterCardView: View {
     /// which will never get an answer is not visibly stalled.
     private static let textlessAnswerDeadlineNanoseconds: UInt64 = 3_000_000_000
 
-    /// Whether this card knows which picture to draw. `textlessAnswerRevision` is
-    /// read first so the body re-evaluates when the answer lands; it is also what
-    /// records that the deadline passed.
+    /// A prior show's or profile's completed wait cannot release this lookup early.
     private var textlessAnswerReady: Bool {
-        !presentationArtworkPolicy.prefersTextlessArtwork
-            || textlessAnswerRevision > 0 || TextlessBackdropStore.shared.hasAnswer(for: item)
+        !enablesAsyncArtworkFallback || !presentationArtworkPolicy.prefersTextlessArtwork
+            || settledTextlessIdentity == textlessResolutionIdentity || textlessBackdropStore.hasAnswer(for: item)
     }
 
     private var seriesArtworkPicture: some View {
         FallbackAsyncImage(
             references: seriesArtworkReferences,
+            prefersPrimaryReference: preferredSeriesArtwork != nil,
             maxAspectRatio: posterAspectGuard,
             variant: artworkVariant,
             asyncFallbackURL: seriesArtworkFallback,
@@ -1155,7 +1166,7 @@ public struct PosterCardView: View {
     private var suppressesSeriesLogo: Bool {
         artworkAlreadyCarriesTitle
             || (presentationArtworkPolicy.prefersTextlessArtwork
-                && TextlessBackdropStore.shared.suppressesLogo(for: item))
+                && textlessBackdropStore.suppressesLogo(for: item))
     }
 
     /// For an episode this is the spoiler-safe series ladder (never the episode's
@@ -1169,10 +1180,16 @@ public struct PosterCardView: View {
     /// body, synchronously) is what keeps the switch invisible.
     private var seriesArtworkReferences: [ArtworkReference] {
         let ladder = item.kind == .episode ? placeholderArtworkReferences : artworkReferences
-        guard showsSeriesArtwork, presentationArtworkPolicy.prefersTextlessArtwork else { return ladder }
-        return PosterCardPresentation.preferringTextless(
-            TextlessBackdropStore.shared.backdrop(for: item),
-            over: ladder
+        guard let preferredSeriesArtwork else { return ladder }
+        return [preferredSeriesArtwork] + ladder.filter { $0 != preferredSeriesArtwork }
+    }
+
+    private var preferredSeriesArtwork: ArtworkReference? {
+        guard showsSeriesArtwork else { return nil }
+        return PosterCardPresentation.continueWatchingPrimaryReference(
+            for: item, policy: presentationArtworkPolicy,
+            textlessBackdrop: presentationArtworkPolicy.prefersTextlessArtwork
+                ? textlessBackdropStore.backdrop(for: item) : nil
         )
     }
 
@@ -1346,6 +1363,26 @@ enum PosterCardPresentation {
             .flatMap(\.references)
             .forEach { titled.insert($0) }
         return titled
+    }
+
+    static func continueWatchingPrimaryReference(
+        for item: MediaItem, policy: ArtworkPresentationPolicy, textlessBackdrop: URL?
+    ) -> ArtworkReference? {
+        guard policy.prefersTextlessArtwork else { return nil }
+        if let textlessBackdrop { return .remote(textlessBackdrop) }
+        guard policy.settings.preference(in: .continueWatching) == .recommended else { return nil }
+        // Recommended falls back to a library background, not a metadata poster
+        // with its title baked in. An explicit provider preference remains provider-first.
+        if item.kind == .episode {
+            if let sidecar = item.seriesArtworkReferences().first(where: {
+                guard case .networkFile(let file) = $0, let dimensions = file.dimensions else { return false }
+                return dimensions.aspectRatio > 1
+            }) {
+                return sidecar
+            }
+            return item.libraryArtworkURL(item.fallbackArtworkURL).map(ArtworkReference.remote)
+        }
+        return item.artworkReferences(for: .detailBackdrop, preferringLibrarySelection: true).first
     }
 
     /// Puts a known-textless backdrop at the head of the candidate ladder.

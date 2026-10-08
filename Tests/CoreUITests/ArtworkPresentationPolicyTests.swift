@@ -9,6 +9,62 @@ import UIKit
 
 @MainActor
 final class ArtworkPresentationPolicyTests: XCTestCase {
+    #if canImport(UIKit)
+    func testTextlessPrimaryWinsBeforeOrdinaryProviderArtwork() async throws {
+        let clean = ArtworkReference.remote(URL(string: "https://example.test/clean.jpg")!)
+        let library = ArtworkReference.remote(URL(string: "https://example.test/library.jpg")!)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 9)).image {
+            UIColor.blue.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 16, height: 9))
+        }
+        for preference in [ArtworkPreference.recommended, .online] {
+            let policy = ArtworkPresentationPolicy(area: .continueWatching, settings: .init(preference: preference))
+            let lookup = PolicyOnlineProbe()
+            let result = await ArtworkFirstPaintResolver.resolve(
+                references: [clean, library], prefersPrimaryReference: policy.prefersTextlessArtwork,
+                variant: .landscapeCard, asyncOnlineURL: { await lookup.lookup() },
+                prefersOnlineArtwork: policy.prefersOnlineArtwork,
+                imageLoader: { _ in image }
+            )
+            XCTAssertEqual(result?.reference, clean)
+            let count = await lookup.requests
+            XCTAssertEqual(count, 0, "A known textless image must not be bypassed by a generic lookup.")
+        }
+    }
+
+    func testUnavailableTextlessPrimaryRetainsProviderThenLibraryFallbacks() async throws {
+        let clean = ArtworkReference.remote(URL(string: "https://example.test/unavailable-clean.jpg")!)
+        let library = ArtworkReference.remote(URL(string: "https://example.test/library.jpg")!)
+        let generic = URL(string: "https://example.test/generic.jpg")!
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 9)).image {
+            UIColor.green.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 16, height: 9))
+        }
+        for genericLoads in [true, false] {
+            let result = await ArtworkFirstPaintResolver.resolve(
+                references: [clean, library], prefersPrimaryReference: true,
+                variant: .landscapeCard, asyncOnlineURL: { generic },
+                imageLoader: { reference in
+                    reference == library || (genericLoads && reference == .remote(generic)) ? image : nil
+                }
+            )
+            XCTAssertEqual(result?.reference, genericLoads ? .remote(generic) : library)
+        }
+    }
+
+    func testTextlessPriorityHasASeparateFirstPaintCacheIdentity() {
+        let references = [ArtworkReference.remote(URL(string: "https://example.test/clean.jpg")!)]
+        let normal = ArtworkResolveKey.make(
+            references: references, variant: .landscapeCard, maxAspectRatio: nil, pinIdentity: "series"
+        )
+        let textless = ArtworkResolveKey.make(
+            references: references, variant: .landscapeCard, maxAspectRatio: nil, pinIdentity: "series",
+            prefersPrimaryReference: true
+        )
+        XCTAssertNotEqual(normal, textless, "A pinned generic winner must not seed a textless-priority request.")
+    }
+    #endif
+
     func testSharedRowLayoutsResolveIndependentPageScopes() {
         for (view, area) in [
             (CardCaptionView.home, ArtworkArea.homeRows),

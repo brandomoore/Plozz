@@ -62,6 +62,7 @@ public final class TextlessBackdropStore {
     private var attempted: Set<String> = []
     /// Where last session's answers are kept, so this session starts knowing them.
     private let store: TextlessBackdropIndex
+    private let resolveArtwork: (@Sendable (MediaItem) async -> URL?)?
     /// Whether ``outcomes`` has been seeded from disk yet. Deferred to first use
     /// rather than done in `init` so constructing the shared instance costs
     /// nothing, and the read lands with the first card that actually needs it.
@@ -69,8 +70,12 @@ public final class TextlessBackdropStore {
     /// Cards currently waiting to hear about a show, by show key.
     private var waiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
 
-    public init(store: TextlessBackdropIndex? = nil) {
+    public init(
+        store: TextlessBackdropIndex? = nil,
+        resolveArtwork: (@Sendable (MediaItem) async -> URL?)? = nil
+    ) {
         self.store = store ?? .sharedIndex
+        self.resolveArtwork = resolveArtwork
     }
 
     /// Reads last session's answers in, once.
@@ -153,9 +158,11 @@ public final class TextlessBackdropStore {
         }
         if outcomes[key] == Outcome.none { return }
         let seriesItem = Self.seriesItem(for: item)
+        let resolveArtwork = resolveArtwork
         Task { [weak self] in
             let url = await ArtworkSession.artworkResolveLimiter.run { () -> URL? in
                 if Task.isCancelled { return nil }
+                if let resolveArtwork { return await resolveArtwork(seriesItem) }
                 return await ArtworkRouter.shared.artworkURL(.hero, for: seriesItem)
             }
             // A cancelled resolve proves nothing about what exists, so it must not

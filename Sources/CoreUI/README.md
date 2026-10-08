@@ -119,14 +119,23 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   later visits; alternative images remain fallbacks if the selected one fails.
   Continue Watching's recommended textless lookup is separate from source
   preference: explicit library-first uses supplied artwork without checking it
-  online. SMB selections retain local and online candidates in the shared
+  online. A selected textless backdrop has priority over both ordinary provider
+  and library images, including synchronous cache seeding. If that image fails,
+  the normal source preference still orders the fallbacks. When textless artwork
+  is unavailable, Recommended keeps a library background ahead of a metadata
+  poster with baked-in lettering; episodes use only their series background.
+  An explicit metadata-provider choice still gives providers priority. Missing
+  or unreadable library backgrounds retain the metadata-poster fallback.
+  Native tvOS and SwiftUI cards both settle cold textless lookups before
+  selecting a background;
+  the native poster and its focus owner remain mounted while waiting.
+  SMB selections retain local and online candidates in the shared
   catalog, including typed network-file references and their access gate.
   SwiftUI, native Browse cells, detached hosts, and prewarmers use the same
   effective policy. Cache identities include source and provider policy; a
   settings change replaces the image selection, not ordinary focus movement.
-  Dense cards retain their bounded 0.5-second online wait; focal artwork uses
-  2 seconds. A fallback is stable for that appearance, not a promise that an
-  online source has no image. Playback system art receives an explicit snapshot.
+  A fallback is stable for that appearance, not a promise that an online source
+  has no image. Playback system art receives an explicit snapshot.
   Top Shelf exports resolved images into its shared container. Downloads capture
   the selected artwork when queued; existing offline artwork is not re-fetched
   after a settings change. Clip-specific extra thumbnails, people, channel
