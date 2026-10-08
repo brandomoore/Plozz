@@ -206,14 +206,16 @@ final class SettingsInteractionTests: XCTestCase {
         let home = app.buttons["card-label-view-home"]
         XCTAssertTrue(home.waitForExistence(timeout: 3))
         XCTAssertEqual(home.value as? String, "On")
-        cycleCustomization(home, expecting: "Off")
+        selectCustomization(home, expecting: "Off")
+        selectCustomization(home, option: "Use default", expecting: "On")
+        selectCustomization(home, expecting: "Off")
         let browse = app.buttons["card-label-view-browse"]
-        cycleCustomization(browse, expecting: "Off")
-        cycleCustomization(browse, expecting: "On")
+        selectCustomization(browse, expecting: "Off")
+        selectCustomization(browse, expecting: "On")
         let episodes = app.buttons["card-label-view-episodes"]
-        cycleCustomization(episodes, expecting: "Off")
+        selectCustomization(episodes, expecting: "Off")
         let filmography = app.buttons["card-label-view-filmography"]
-        cycleCustomization(filmography, expecting: "Off")
+        selectCustomization(filmography, expecting: "Off")
         app.navigationBars.buttons.firstMatch.tap()
         reveal(customization)
         XCTAssertTrue(customization.label.hasSuffix("Custom"))
@@ -259,13 +261,13 @@ final class SettingsInteractionTests: XCTestCase {
         let hero = app.buttons["artwork-view-home"]
         XCTAssertTrue(hero.waitForExistence(timeout: 3))
         XCTAssertEqual(hero.label, "Showcase / hero")
-        cycleCustomization(hero, expecting: "Library")
+        selectCustomization(hero, expecting: "Library")
         for area in ["homeRows", "recommended", "collections", "playlists"] {
             let row = app.buttons["artwork-view-\(area)"]
             reveal(row, fullyVisible: true)
             XCTAssertEqual(row.value as? String, "Metadata providers",
                            "A different location must not inherit the edited Home hero choice.")
-            cycleCustomization(row, expecting: "Library")
+            selectCustomization(row, expecting: "Library")
         }
         XCTAssertFalse(app.buttons["artwork-view-recommendedHero"].exists,
                        "Mobile Recommended has no hero to customize.")
@@ -274,13 +276,13 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(browse.waitForExistence(timeout: 3))
         XCTAssertEqual(browse.value as? String, "Metadata providers")
         for _ in 0..<3 {
-            cycleCustomization(browse, expecting: "Library")
-            cycleCustomization(browse, expecting: "Metadata providers")
+            selectCustomization(browse, expecting: "Library")
+            selectCustomization(browse, expecting: "Metadata providers")
         }
         let downloads = app.buttons["artwork-view-downloads"]
         reveal(downloads, fullyVisible: true)
         XCTAssertEqual(downloads.value as? String, "Metadata providers")
-        cycleCustomization(downloads, expecting: "Library")
+        selectCustomization(downloads, expecting: "Library")
         app.navigationBars.buttons.firstMatch.tap()
         reveal(customize)
         XCTAssertTrue(customize.label.hasSuffix("Custom"))
@@ -296,7 +298,7 @@ final class SettingsInteractionTests: XCTestCase {
         reveal(downloads)
         XCTAssertEqual(downloads.value as? String, "Metadata providers")
         reveal(browse, towardTop: true, fullyVisible: true)
-        cycleCustomization(browse, expecting: "Library")
+        selectCustomization(browse, expecting: "Library")
         app.navigationBars.buttons.firstMatch.tap()
         let library = app.buttons["artwork-preset-library"]
         reveal(library, towardTop: true)
@@ -318,9 +320,57 @@ final class SettingsInteractionTests: XCTestCase {
         capture("artwork-restored-preset")
     }
 
-    private func cycleCustomization(_ row: XCUIElement, expecting value: String) {
+    func testArtworkMenusWaitForAChoiceAndRestoreOnlyTheirOwnDefault() {
+        launch()
+        app.buttons["appearance-artwork"].tap()
+        let recommended = app.buttons["artwork-preset-recommended"]
+        XCTAssertTrue(recommended.waitForExistence(timeout: 3))
+        let customize = app.buttons["artwork-customization"]
+        reveal(customize)
+        customize.tap()
+        let browse = app.buttons["artwork-view-browse"]
+        reveal(browse, fullyVisible: true)
+        XCTAssertEqual(browse.value as? String, "Library")
+        let dismissMenu = app.navigationBars["Artwork by view"]
+            .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        browse.tap()
+        let automatic = app.buttons["Use default"]
+        XCTAssertTrue(automatic.waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertTrue(automatic.isSelected, "The menu must check the inherited choice, not a guessed source.")
+        XCTAssertTrue(app.buttons["Library"].exists)
+        XCTAssertTrue(app.buttons["Metadata providers"].exists)
+        capture("artwork-choice-menu")
+        dismissMenu.tap()
+        XCTAssertTrue(browse.waitForExistence(timeout: 3))
+        XCTAssertEqual(browse.value as? String, "Library")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(recommended.isSelected, "Opening and dismissing a menu must not customize the preset.")
+
+        reveal(customize)
+        customize.tap()
+        let hero = app.buttons["artwork-view-home"]
+        selectCustomization(hero, expecting: "Library")
+        selectCustomization(browse, expecting: "Metadata providers")
+        selectCustomization(browse, option: "Use default", expecting: "Library")
+        reveal(hero, towardTop: true, fullyVisible: true)
+        XCTAssertEqual(hero.value as? String, "Library", "Resetting Browse must not reset the hero.")
+        app.navigationBars.buttons.firstMatch.tap()
+        reveal(customize)
+        XCTAssertTrue(customize.label.hasSuffix("Custom"))
+        customize.tap()
+        selectCustomization(hero, option: "Use default", expecting: "Metadata providers")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(recommended.isSelected, "Removing the final override must restore the original preset.")
+    }
+
+    private func selectCustomization(_ row: XCUIElement, option: String? = nil, expecting value: String) {
         reveal(row, fullyVisible: true)
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44)
         row.tap()
+        let title = option ?? (value == "On" ? "Labels" : value == "Off" ? "No labels" : value)
+        let choice = app.buttons[title]
+        XCTAssertTrue(choice.waitForExistence(timeout: 3), app.debugDescription)
+        choice.tap()
         XCTAssertTrue(row.waitForExistence(timeout: 3), app.debugDescription)
         XCTAssertEqual(row.value as? String, value, app.debugDescription)
     }

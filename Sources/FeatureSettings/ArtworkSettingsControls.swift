@@ -111,6 +111,22 @@ struct ArtworkAreaChoices: View {
     @Binding var settings: ArtworkSettings
 
     var body: some View {
+        #if os(iOS)
+        ViewCustomizationMenu(
+            id: "artwork-view-\(area.rawValue)",
+            title: area.displayName,
+            value: settings.customizationValue(in: area),
+            detail: settings.customizationDetail(in: area),
+            selection: Binding(
+                get: { settings.override(for: area) },
+                set: { settings.setOverride($0, for: area) }
+            )
+        ) {
+            Text("Use default").tag(ArtworkOverride.automatic)
+            Text("Library").tag(ArtworkOverride.library)
+            Text("Metadata providers").tag(ArtworkOverride.online)
+        }
+        #else
         ViewCustomizationRow(
             id: "artwork-view-\(area.rawValue)",
             title: area.displayName,
@@ -119,6 +135,7 @@ struct ArtworkAreaChoices: View {
         ) {
             settings.toggleCustomization(in: area)
         }
+        #endif
     }
 }
 

@@ -136,7 +136,13 @@ struct CardCaptionCustomizationContent: View {
                     .map { settings.customizationHelp(in: $0, style: style) }
             }
         ) {
+            #if os(tvOS)
             CardCaptionViewChoices(view: .home, settings: $settings)
+            #else
+            Section("Home") {
+                CardCaptionViewChoices(view: .home, settings: $settings)
+            }
+            #endif
             Section {
                 ForEach(CardCaptionView.customizableCases.filter(\.isLibraryView), id: \.rawValue) { view in
                     CardCaptionViewChoices(view: view, settings: $settings)
@@ -160,10 +166,16 @@ struct CardCaptionCustomizationContent: View {
                     .padding(.top, 20)
                     .padding(.bottom, 6)
                     #endif
+            } footer: {
+                #if !os(tvOS)
+                Text("Choices apply across all libraries. Titles inside collections and playlists use Browse.")
+                #endif
             }
+            #if os(tvOS)
             Text("Choices apply across all libraries. Titles inside collections and playlists use Browse.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+            #endif
         }
     }
 
@@ -174,12 +186,30 @@ struct CardCaptionViewChoices: View {
     @Binding var settings: CardCaptionSettings
 
     var body: some View {
+        #if os(iOS)
+        ViewCustomizationMenu(
+            id: "card-label-view-\(view.rawValue)",
+            title: view.displayName,
+            value: settings.customizationValue(in: view),
+            detail: settings.customizationDetail(in: view)
+                ?? "Labels are separate from any text already in the artwork.",
+            selection: Binding(
+                get: { settings.override(for: view) },
+                set: { settings.setOverride($0, for: view) }
+            )
+        ) {
+            Text("Use default").tag(CardCaptionOverride.automatic)
+            Text(CardCaptionOverride.show.displayName).tag(CardCaptionOverride.show)
+            Text(CardCaptionOverride.hide.displayName).tag(CardCaptionOverride.hide)
+        }
+        #else
         ViewCustomizationRow(
             id: "card-label-view-\(view.rawValue)",
             title: view.displayName,
             value: settings.customizationValue(in: view),
             detail: settings.customizationDetail(in: view)
         ) { settings.toggleCustomization(in: view) }
+        #endif
     }
 }
 

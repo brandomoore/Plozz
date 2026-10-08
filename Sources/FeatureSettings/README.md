@@ -61,13 +61,17 @@ and the single place caption customization lives.
   overrides; the backing preference retains unedited views' behavior, including
   mixed recommended rules. Settings remain in the existing profile store and sync
   payload; artwork's `scopeVersion` migrates earlier shared choices once.
-  Matching a preset's value manually stays Custom until a preset is chosen.
-  Rows have only a name and short value: Library / Providers, or On / Off. Select
-  toggles the value directly, without an inheritance step, menus, chevrons, or
-  per-row status. Mixed labels in Home and library Recommended retain their
-  Showcase/title-artwork rules until edited. Explanations appear outside the rows
-  when focused on TV, and as accessibility hints on both platforms. Accessibility
-  text sizes can stack the name and value instead of shrinking or clipping them.
+  Matching a preset's value manually stays Custom; choosing a preset replaces all
+  overrides. Rows show a name and short value: Library / Metadata providers, or
+  On / Off. TV Select still toggles directly, with focused explanatory artwork.
+  On iPhone/iPad, a chevron-marked value control opens a native checked menu:
+  opening or dismissing it never changes settings. "Use default" removes only
+  that row's override; removing the final override restores the original preset.
+  Mobile customization pages use inset grouped rows on an opaque theme-aware
+  background, not the ambient gradient. Menus identify the view being edited;
+  accessibility hints retain explanations without repetitive row descriptions. Mixed labels in
+  Home and library Recommended retain their Showcase/title-artwork rules until
+  edited. Long values and accessibility text sizes stack instead of clipping.
   Both lists group library tabs under "Libraries". Artwork separates Home's
   Showcase/hero from other Home rows, and library Recommended's hero (TV only)
   from its rows. Browse, Collections, and Playlists have independent choices;

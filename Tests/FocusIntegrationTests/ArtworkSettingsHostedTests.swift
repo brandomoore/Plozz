@@ -202,8 +202,22 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             XCTAssertFalse(initial.contains("App default"), initial)
             XCTAssertFalse(initial.contains("Use default"), initial)
             XCTAssertTrue(initial.uppercased().contains("LIBRARIES"), initial)
-            XCTAssertTrue(initial.uppercased().contains("OTHER VIEWS"), initial)
             XCTAssertFalse(initial.contains("No labels"), initial)
+            var views = [try XCTUnwrap(window.rootViewController?.view)]
+            var scrollViews: [UIScrollView] = []
+            while let view = views.popLast() {
+                if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height {
+                    scrollViews.append(scroll)
+                }
+                views.append(contentsOf: view.subviews)
+            }
+            let scroll = try XCTUnwrap(scrollViews.max { $0.bounds.width < $1.bounds.width })
+            let originalOffset = scroll.contentOffset
+            // The fixed help card keeps the later section below the initial viewport.
+            scroll.setContentOffset(CGPoint(x: originalOffset.x, y: 400), animated: false)
+            let laterRows = try await self.capture(window, name: "labels-other-views", includeMaster: true)
+            XCTAssertTrue(laterRows.uppercased().contains("OTHER VIEWS"), laterRows)
+            scroll.setContentOffset(originalOffset, animated: false)
             cards.captions.toggleCustomization(in: .browse)
             let changed = try await self.capture(window, name: "labels-browse-explicit")
             XCTAssertFalse(changed.contains("Custom"), changed)
