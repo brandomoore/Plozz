@@ -14,6 +14,49 @@ import XCTest
 
 @MainActor
 final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
+    func testArtworkPresetGroupsFitPhoneTabletAndAccessibleLayouts() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.settings.cardStyle.artwork
+        defer { app.settings.cardStyle.artwork = original }
+        app.settings.cardStyle.artwork = .default
+        try await withWindow { window, host in
+            for (width, typeSize) in [
+                (CGFloat(320), DynamicTypeSize.large), (390, .large), (768, .large),
+                (1024, .large), (320, .accessibility3)
+            ] {
+                window.frame.size = CGSize(width: width, height: typeSize.isAccessibilitySize ? 2600 : 1100)
+                host.rootView = AnyView(
+                    NavigationStack {
+                        PlozziOSArtworkSettingsView(
+                            appModel: app, cardStyle: app.settings.cardStyle, canManageProviders: true
+                        )
+                    }
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
+                    .environment(\.dynamicTypeSize, typeSize)
+                )
+                try await settle(window)
+                let image = snapshot(window, name: "artwork-preset-groups-\(Int(width))-\(typeSize)")
+                let observations = try text(image, maximumCandidates: 1)
+                let copy = observations.map(\.candidate.string).joined(separator: " ")
+                    .replacingOccurrences(of: "- ", with: "")
+                for word in ["Choose", "posters", "backgrounds", "logos", "Recommended", "library", "metadata", "Customize"] {
+                    XCTAssertTrue(copy.localizedCaseInsensitiveContains(word), copy)
+                }
+                let heading = try textFrame("Choose", observations: observations, size: image.size)
+                let first = try textFrame(
+                    typeSize.isAccessibilitySize ? "Recom" : "Recommended",
+                    observations: observations, size: image.size
+                )
+                let last = try textFrame("providers", observations: observations, size: image.size)
+                let customize = try textFrame("Customize", observations: observations, size: image.size)
+                XCTAssertLessThan(heading.maxY, first.minY)
+                XCTAssertGreaterThan(customize.minY - last.maxY, 24)
+            }
+        }
+    }
+
     func testArtworkScopeNamesAndValuesFitPhoneTabletAndAccessibleLayouts() async throws {
         let app = PlozziOSAppModel()
         let original = app.settings.cardStyle.artwork

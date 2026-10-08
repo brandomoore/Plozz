@@ -6,8 +6,7 @@ final class CardCaptionSettingsTests: XCTestCase {
         try withDefaults { defaults in
             let source = CardCaptionSettingsStore(defaults: defaults)
             var settings = CardCaptionSettings.default
-            settings.toggleCustomization(in: .home)
-            settings.toggleCustomization(in: .home)
+            settings.setOverride(.show, for: .home)
             source.save(settings)
             XCTAssertNil(source.load().selectedPreset)
             let entries = ProfileSettingsTransfer.capture(namespace: nil, defaults: defaults)
@@ -67,14 +66,15 @@ final class CardCaptionSettingsTests: XCTestCase {
                         var settings = CardCaptionSettings(preference: preference)
                         let inherited = preference == .show || (preference == .recommended
                             && (view == .episodes || (!showcase && !artworkTitle)))
-                        for override in CardCaptionOverride.allCases {
+                        for override in [.automatic] + view.customizationChoices {
                             settings.setOverride(override, for: view)
                             let restored = try JSONDecoder().decode(
                                 CardCaptionSettings.self, from: JSONEncoder().encode(settings)
                             )
                             XCTAssertEqual(
                                 restored.showsLabels(in: view, isShowcase: showcase, hasArtworkTitle: artworkTitle),
-                                override == .automatic ? inherited : override == .show,
+                                override == .automatic ? inherited
+                                    : override == .mixed ? !(showcase || artworkTitle) : override == .show,
                                 "\(view) / \(preference) / \(override) / \(showcase) / \(artworkTitle)"
                             )
                         }
@@ -103,6 +103,52 @@ final class CardCaptionSettingsTests: XCTestCase {
         settings.resetOverrides()
         XCTAssertTrue(settings.overrides.isEmpty)
         XCTAssertTrue(settings.showsLabels)
+    }
+
+    func testExplicitMixedSurvivesPresetsStorageAndProfileTransfer() throws {
+        try withDefaults { defaults in
+            let store = CardCaptionSettingsStore(defaults: defaults)
+            for preset in CardCaptionPreference.allCases {
+                for view in [CardCaptionView.home, .recommended] {
+                    var settings = CardCaptionSettings(preference: preset)
+                    settings.setOverride(.mixed, for: view)
+                    settings.setOverride(.hide, for: .browse)
+                    store.save(settings)
+                    let entries = ProfileSettingsTransfer.capture(namespace: nil, defaults: defaults)
+                    ProfileSettingsTransfer.apply(entries, namespace: "mixed", defaults: defaults)
+                    let restored = CardCaptionSettingsStore(defaults: defaults, namespace: "mixed").load()
+                    XCTAssertEqual(restored, settings)
+                    XCTAssertEqual(restored.customization(in: view), .mixed)
+                    XCTAssertEqual(restored.override(for: view), .mixed)
+                    XCTAssertNil(restored.selectedPreset)
+                    XCTAssertTrue(restored.showsLabels(in: view))
+                    XCTAssertFalse(restored.showsLabels(in: view, isShowcase: true))
+                    XCTAssertFalse(restored.showsLabels(in: view, hasArtworkTitle: true))
+                    XCTAssertFalse(restored.showsLabels(in: .browse))
+                    settings.setOverride(.show, for: view)
+                    XCTAssertTrue(settings.mixedOverrides.isEmpty)
+                    settings.setOverride(.mixed, for: view)
+                    settings.setOverride(.automatic, for: view)
+                    XCTAssertTrue(settings.mixedOverrides.isEmpty)
+                    settings.setOverride(.mixed, for: view)
+                    settings.applyPreset(preset)
+                    XCTAssertEqual(settings, CardCaptionSettings(preference: preset))
+                    settings.setOverride(.mixed, for: view)
+                    settings.resetOverrides()
+                    XCTAssertEqual(settings.selectedPreset, preset)
+                }
+            }
+        }
+    }
+
+    func testMixedDecodingRetainsLegacyBooleansAndIgnoresUnsupportedScopes() throws {
+        let data = Data(#"{"preference":"show","overrides":{"home":false},"mixedOverrides":["home","recommended","browse","future"]}"#.utf8)
+        let settings = try JSONDecoder().decode(CardCaptionSettings.self, from: data)
+        XCTAssertEqual(settings.overrides, [.home: false])
+        XCTAssertEqual(settings.mixedOverrides, [.recommended])
+        XCTAssertEqual(settings.customization(in: .home), .hide)
+        XCTAssertEqual(settings.customization(in: .recommended), .mixed)
+        XCTAssertEqual(settings.customization(in: .browse), .show)
     }
 
     func testExistingHomeChoiceMigratesOnceAndResetDoesNotResurrectIt() throws {

@@ -63,10 +63,17 @@ and the single place caption customization lives.
   payload; artwork's `scopeVersion` migrates earlier shared choices once.
   Matching a preset's value manually stays Custom; choosing a preset replaces all
   overrides. Rows show a name and short value: Library / Metadata providers, or
-  On / Off. TV Select still toggles directly, with focused explanatory artwork.
+  On / Off. Only title-detail artwork and Home/Recommended labels also offer
+  Mixed: metadata backgrounds/logos with library posters, or labels except in
+  Showcase/on series artwork, respectively. Mixed is an explicit, persisted
+  per-view choice independent of the backing preset. TV Select cycles the same
+  supported choices as the mobile menus, with focused explanatory artwork.
   On iPhone/iPad, a chevron-marked value control opens a native checked menu:
-  opening or dismissing it never changes settings. "Use default" removes only
-  that row's override; removing the final override restores the original preset.
+  opening or dismissing it never changes settings. It checks the effective
+  value, without an extra default/inheritance option. Presets reset the entire
+  configuration, including explicit Mixed choices. The mobile Artwork page
+  places its heading outside the three-preset group and customization in its
+  own group below.
   Mobile customization pages use inset grouped rows on an opaque theme-aware
   background, not the ambient gradient. Only the value opens the menu; the view
   label stays in the row while the menu shows choices without a repeated title.

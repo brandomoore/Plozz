@@ -12,7 +12,7 @@ struct ViewPreferenceChoiceGroup<Content: View>: View {
             VStack(alignment: .leading, spacing: 8, content: content)
         }
         #else
-        VStack(alignment: .leading, spacing: 20, content: content)
+        SettingsSectionGroup(content: content)
         #endif
     }
 }

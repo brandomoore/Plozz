@@ -208,7 +208,8 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(home.waitForExistence(timeout: 3))
         XCTAssertEqual(home.value as? String, "On")
         selectCustomization(home, expecting: "Off")
-        selectCustomization(home, option: "Use default", expecting: "On")
+        selectCustomization(home, expecting: "Mixed")
+        selectCustomization(home, expecting: "On")
         selectCustomization(home, expecting: "Off")
         let browse = app.buttons["card-label-view-browse"]
         selectCustomization(browse, expecting: "Off")
@@ -321,7 +322,7 @@ final class SettingsInteractionTests: XCTestCase {
         capture("artwork-restored-preset")
     }
 
-    func testArtworkMenusWaitForAChoiceAndRestoreOnlyTheirOwnDefault() throws {
+    func testArtworkMenusShowOnlySupportedChoicesAndPreserveOtherRows() throws {
         launch()
         app.buttons["appearance-artwork"].tap()
         let recommended = app.buttons["artwork-preset-recommended"]
@@ -336,11 +337,12 @@ final class SettingsInteractionTests: XCTestCase {
         let dismissMenu = app.navigationBars["Artwork by view"]
             .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         browse.tap()
-        let automatic = app.buttons["Use default"]
-        XCTAssertTrue(automatic.waitForExistence(timeout: 3), app.debugDescription)
-        XCTAssertTrue(automatic.isSelected, "The menu must check the inherited choice, not a guessed source.")
-        XCTAssertTrue(app.buttons["Library"].exists)
+        let library = app.buttons["Library"]
+        XCTAssertTrue(library.waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertTrue(library.isSelected, "The menu must check the same effective value shown in the row.")
         XCTAssertTrue(app.buttons["Metadata providers"].exists)
+        XCTAssertFalse(app.buttons["Use default"].exists)
+        XCTAssertFalse(app.buttons["Mixed"].exists)
         try assertMenuKeepsRowTitle("Browse", in: titleFrame)
         capture("artwork-choice-menu")
         dismissMenu.tap()
@@ -354,16 +356,29 @@ final class SettingsInteractionTests: XCTestCase {
         let hero = app.buttons["artwork-view-home"]
         selectCustomization(hero, expecting: "Library")
         selectCustomization(browse, expecting: "Metadata providers")
-        selectCustomization(browse, option: "Use default", expecting: "Library")
+        selectCustomization(browse, expecting: "Library")
         reveal(hero, towardTop: true, fullyVisible: true)
-        XCTAssertEqual(hero.value as? String, "Library", "Resetting Browse must not reset the hero.")
+        XCTAssertEqual(hero.value as? String, "Library", "Changing Browse must not change the hero.")
         app.navigationBars.buttons.firstMatch.tap()
         reveal(customize)
         XCTAssertTrue(customize.label.hasSuffix("Custom"))
+        reveal(recommended, towardTop: true)
+        recommended.tap()
+        XCTAssertTrue(recommended.isSelected)
+        reveal(customize)
         customize.tap()
-        selectCustomization(hero, option: "Use default", expecting: "Metadata providers")
+        let details = app.buttons["artwork-view-details"]
+        reveal(details, fullyVisible: true)
+        XCTAssertEqual(details.value as? String, "Mixed")
+        for value in ["Library", "Metadata providers", "Mixed"] {
+            selectCustomization(details, expecting: value)
+        }
         app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(recommended.isSelected, "Removing the final override must restore the original preset.")
+        reveal(customize)
+        XCTAssertTrue(customize.label.hasSuffix("Custom"), "Mixed is an explicit per-view choice.")
+        reveal(recommended, towardTop: true)
+        recommended.tap()
+        XCTAssertTrue(recommended.isSelected, "The preset remains the reset for all customizations.")
     }
 
     func testLabelMenuKeepsItsTitleInTheRowWithoutRepeatingIt() throws {
@@ -376,13 +391,48 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(home.waitForExistence(timeout: 3))
         let titleFrame = app.staticTexts["card-label-view-home-title"].frame
         home.tap()
-        XCTAssertTrue(app.buttons["Use default"].waitForExistence(timeout: 3), app.debugDescription)
-        XCTAssertTrue(app.buttons["Labels"].exists)
-        XCTAssertTrue(app.buttons["No labels"].exists)
+        XCTAssertTrue(app.buttons["Mixed"].waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertTrue(app.buttons["Mixed"].isSelected)
+        XCTAssertTrue(app.buttons["On"].exists)
+        XCTAssertTrue(app.buttons["Off"].exists)
+        XCTAssertFalse(app.buttons["Use default"].exists)
         try assertMenuKeepsRowTitle("Home rows", in: titleFrame)
         capture("label-choice-menu")
-        app.buttons["No labels"].tap()
+        app.buttons["Off"].tap()
         XCTAssertEqual(home.value as? String, "Off")
+        selectCustomization(home, expecting: "Mixed")
+        let browse = app.buttons["card-label-view-browse"]
+        browse.tap()
+        XCTAssertTrue(app.buttons["On"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["On"].isSelected)
+        XCTAssertTrue(app.buttons["Off"].exists)
+        XCTAssertFalse(app.buttons["Mixed"].exists)
+        XCTAssertFalse(app.buttons["Use default"].exists)
+        app.buttons["Off"].tap()
+        XCTAssertEqual(browse.value as? String, "Off")
+    }
+
+    func testArtworkPresetsHaveAnExternalHeadingAndSeparateCustomizationGroup() {
+        launch()
+        app.buttons["appearance-artwork"].tap()
+        let recommended = app.buttons["artwork-preset-recommended"]
+        XCTAssertTrue(recommended.waitForExistence(timeout: 3))
+        let group = app.cells.containing(.button, identifier: "artwork-preset-recommended").firstMatch
+        XCTAssertTrue(group.exists, app.debugDescription)
+        let heading = app.staticTexts["artwork-preset-heading"]
+        XCTAssertTrue(heading.exists)
+        XCTAssertLessThanOrEqual(heading.frame.maxY, group.frame.minY)
+        let customize = app.buttons["artwork-customization"]
+        reveal(customize, fullyVisible: true)
+        let customizationGroup = app.cells.containing(.button, identifier: "artwork-customization").firstMatch
+        XCTAssertTrue(customizationGroup.exists, app.debugDescription)
+        XCTAssertGreaterThanOrEqual(customizationGroup.frame.minY, group.frame.maxY)
+        XCTAssertGreaterThan(app.staticTexts["Customize by view"].frame.minY - group.frame.maxY, 24)
+        for name in ["recommended", "library", "online"] {
+            XCTAssertTrue(group.buttons["artwork-preset-\(name)"].exists)
+            XCTAssertFalse(customizationGroup.buttons["artwork-preset-\(name)"].exists)
+        }
+        capture("artwork-separated-presets")
     }
 
     private func assertMenuKeepsRowTitle(_ title: String, in frame: CGRect) throws {
@@ -408,7 +458,7 @@ final class SettingsInteractionTests: XCTestCase {
         reveal(row, fullyVisible: true)
         XCTAssertGreaterThanOrEqual(row.frame.height, 44 - 0.001)
         row.tap()
-        let title = option ?? (value == "On" ? "Labels" : value == "Off" ? "No labels" : value)
+        let title = option ?? value
         let choice = app.buttons[title]
         XCTAssertTrue(choice.waitForExistence(timeout: 3), app.debugDescription)
         choice.tap()

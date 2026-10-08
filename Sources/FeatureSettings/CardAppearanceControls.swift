@@ -194,13 +194,13 @@ struct CardCaptionViewChoices: View {
             detail: settings.customizationDetail(in: view)
                 ?? "Labels are separate from any text already in the artwork.",
             selection: Binding(
-                get: { settings.override(for: view) },
+                get: { settings.customization(in: view) },
                 set: { settings.setOverride($0, for: view) }
             )
         ) {
-            Text("Use default").tag(CardCaptionOverride.automatic)
-            Text(CardCaptionOverride.show.displayName).tag(CardCaptionOverride.show)
-            Text(CardCaptionOverride.hide.displayName).tag(CardCaptionOverride.hide)
+            ForEach(view.customizationChoices) { choice in
+                Text(choice.displayName).tag(choice)
+            }
         }
         #else
         ViewCustomizationRow(
@@ -226,19 +226,11 @@ extension CardCaptionSettings {
     }
 
     func customizationValue(in view: CardCaptionView) -> LocalizedStringResource {
-        if preference == .recommended, overrides[view] == nil, view == .home || view == .recommended {
-            return LocalizedStringResource(
-                "cardLabels.mixed", defaultValue: "Mixed",
-                comment: "Per-view label value: labels are shown except in Showcase and on series artwork."
-            )
-        }
-        return showsLabels(in: view)
-            ? LocalizedStringResource("cardLabels.on", defaultValue: "On", comment: "Per-view setting: show card labels.")
-            : LocalizedStringResource("cardLabels.off", defaultValue: "Off", comment: "Per-view setting: hide card labels.")
+        customization(in: view).displayName
     }
 
     func customizationDetail(in view: CardCaptionView) -> LocalizedStringResource? {
-        if preference == .recommended, overrides[view] == nil, view == .home || view == .recommended {
+        if customization(in: view) == .mixed {
             return "Labels are hidden in Showcase and on series artwork."
         }
         return nil

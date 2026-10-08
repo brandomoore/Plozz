@@ -339,6 +339,42 @@ final class ArtworkSettingsHostedTests: XCTestCase {
         }
     }
 
+    func testMixedChoicesCycleBackOnTVWithoutChangingOtherViews() async throws {
+        let suite = "MixedChoicesHosted.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cards = makeCards(defaults: defaults)
+        cards.artwork = ArtworkSettings(preference: .library)
+        try await withScreen(cards: cards, area: .details) { window in
+            for value in ["Library", "Metadata providers", "Mixed", "Library"] {
+                let text = try await self.capture(window, name: "artwork-details-cycle-\(value)")
+                XCTAssertTrue(text.contains(value), text)
+                XCTAssertFalse(text.contains("Use default"), text)
+                XCTAssertEqual(cards.artwork.preference(in: .browse), .library)
+                XCTAssertEqual(ArtworkSettingsStore(defaults: defaults).load(), cards.artwork)
+                cards.artwork.toggleCustomization(in: .details)
+            }
+        }
+        cards.captions = CardCaptionSettings(preference: .hide)
+        try await withScreen(content: SettingsSplitLayout(
+            title: "Cards",
+            rows: [SettingsSplitRow(id: "labels", title: "Labels") {
+                CardCaptionViewChoices(view: .home, settings: Binding(
+                    get: { cards.captions }, set: { cards.captions = $0 }
+                ))
+            }]
+        )) { window in
+            for value in ["Off", "Mixed", "On", "Off"] {
+                let text = try await self.capture(window, name: "labels-home-cycle-\(value)")
+                XCTAssertTrue(text.contains(value), text)
+                XCTAssertFalse(text.contains("Use default"), text)
+                XCTAssertFalse(cards.captions.showsLabels(in: .browse))
+                XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults).load(), cards.captions)
+                cards.captions.toggleCustomization(in: .home)
+            }
+        }
+    }
+
     func testPresetExplanationsFollowNativeFocusWithoutChangingSelection() async throws {
         let suite = "ArtworkFocusHosted.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

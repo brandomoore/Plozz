@@ -1869,9 +1869,7 @@ struct PlozziOSArtworkSettingsView: View {
 
     var body: some View {
         List {
-            SettingsSectionGroup {
-                ArtworkSettingsControls(cards: cardStyle)
-            }
+            ArtworkSettingsControls(cards: cardStyle)
             if canManageProviders {
                 SettingsSectionGroup {
                     if returnsToMetadata {
