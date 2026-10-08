@@ -99,6 +99,11 @@ The instance counter labels native adapters rather than claiming to count every
 AVPlayer hidden inside third-party engines. New stall records retain measured
 player/engine buffer context in the existing playback journal.
 
+Playback diagnostics row labels use the shared app localization catalog on TV
+and mobile. Media filenames, server names, codec identifiers, and the HDR format
+label remain verbatim; do not mark app-owned field labels as developer content.
+TV rows wrap longer translations and values rather than truncating them.
+
 Diagnostic builds also journal cached Plozzigen pipeline snapshots at most once
 every two seconds, independent of whether Playback Info is open. These read the
 engine's existing off-main telemetry rather than issuing additional synchronous
