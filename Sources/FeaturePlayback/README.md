@@ -314,8 +314,15 @@ AVFoundation, including empty states that clear the display. They are scheduled
 at the supplied **item presentation time**, never callback arrival time or a
 timestamp guessed from the source file. Successive states close the preceding
 intervals, including overlapping lines. Selection replaces the output to fence
-old callbacks; seeks flush its state; teardown detaches it. In-app drawing is
-suppressed at the native output, with an explicit selected-rendition handoff
+old callbacks; seeks flush its state; teardown detaches it. Replacement removes
+the previous registration before adding the next: even a transient overlap can
+prevent paused track switches from delivering cues on tvOS 26.2. The registration
+order is covered independently of the runtime, alongside real paused HLS switching.
+Track changes select the requested rendition before registering its replacement
+output rather than registering against the previous track or an intermediate Off.
+Renderer handoffs likewise restore the rendition before adding the new output.
+Explicit Off still clears the selection and cue timeline.
+In-app drawing is suppressed at the native output, with an explicit selected-rendition handoff
 for external presentation. The handoff restores the current item's last selected
 rendition if AVFoundation temporarily clears it; an explicit Off or track change
 discards that fallback. The Plozzigen remote-HLS bypass uses the same bridge

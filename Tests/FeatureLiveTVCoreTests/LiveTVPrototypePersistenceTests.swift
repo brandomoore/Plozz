@@ -56,6 +56,21 @@ final class LiveTVPrototypePersistenceTests: XCTestCase {
         await fulfillment(of: [favoriteChanged, guideChanged], timeout: 1)
     }
 
+    func testIndexedGuideEntryPreservesObservationWhenCatalogChanges() async throws {
+        let model = LiveTVPrototypeModel(channels: channels)
+        let row = LiveTVGuideRowID(channelID: channels[0].id)
+        let entryChanged = expectation(description: "Indexed guide entry observes publication")
+        withObservationTracking {
+            _ = model.guideEntry(for: row)
+        } onChange: {
+            entryChanged.fulfill()
+        }
+        try model.replaceCatalog(channels: Array(channels.dropFirst()), programs: [])
+        await fulfillment(of: [entryChanged], timeout: 1)
+        XCTAssertNil(model.guideEntry(for: row))
+        XCTAssertEqual(model.guideRowIDs, model.guideChannels.map(\.id))
+    }
+
     func testCatalogPickerAppliesSourceApprovalManualHidingAndScanHidingWithoutBrowseFilters() throws {
         let suite = "LiveTVCatalogPickerTests-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

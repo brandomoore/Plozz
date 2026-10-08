@@ -52,9 +52,15 @@ final class IPTVScaleAndRecoveryTests: XCTestCase {
             credential: credential, name: "Scale fixture", deviceID: "fixture",
             cacheDirectory: root.appendingPathComponent("catalog"),
             progress: { progress in
-                guard case .playlist = progress.stage,
-                      progress.entries.isMultiple(of: 10_000) || progress.entries == total else { return }
-                report("Staged \(progress.entries) of \(total) playlist entries")
+                guard progress.entries.isMultiple(of: 10_000) || progress.entries == total else { return }
+                switch progress.stage {
+                case .playlist:
+                    report("Staged \(progress.entries) of \(total) playlist entries")
+                case .catalogCommit:
+                    report("Copied \(progress.entries) of \(total) entries into the replacement transaction")
+                default:
+                    XCTFail("Unexpected stage for the playlist scale fixture")
+                }
             }
         )
         report("Committed imported catalog; checking channels and pagination")

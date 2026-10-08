@@ -1189,9 +1189,10 @@ public final class NativeVideoEngine: VideoEngine {
             if let track { option = await Self.legibleOption(for: track, in: group) }
             else { option = nil }
             guard !Task.isCancelled, self.player?.currentItem === item else { return }
-            item.select(nil, in: group)
-            self.nativeSubtitleOutput?.select(enabled: option != nil)
+            // Register the replacement output against the requested rendition,
+            // not an intermediate Off or the previous paused track.
             item.select(option, in: group)
+            self.nativeSubtitleOutput?.select(enabled: option != nil)
             if track != nil, option == nil {
                 PlozzLog.playback.error("The selected native subtitle track is unavailable in the current stream.")
             }
