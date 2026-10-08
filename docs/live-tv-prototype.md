@@ -154,7 +154,12 @@ Cancelling one caller does not close the session for other callers.
 The shared live-channel publication path normalizes each matching name once,
 rather than during every sort comparison, and collects language/country facets
 from distinct metadata values. It avoids full-lineup copies for absent overrides
-and indexes only the visible recent/favorite shortcuts it needs. This preserves
+and indexes only the visible recent/favorite shortcuts it needs. Sorting moves
+lightweight browse keys instead of full channel records. Catalogue and guide
+lookups share their immutable presentation arrays and index IDs to ordinals,
+rather than duplicating every record in dictionaries; guide sections are assembled
+in one reserved array. Publication remains synchronous and validates the complete
+replacement before changing the current catalogue. This preserves
 all channels, search relevance, ID tie-breaks and profile filters; it does not
 cap the lineup. `LiveTVLargePlaylistHostedTests` measures the synchronous
 publication of 10,000 and 100,000 channels in both sort orders with a one-second

@@ -674,7 +674,7 @@ final class LiveTVPrototypeModelTests: XCTestCase {
         XCTAssertEqual(model.favoriteIDs, [channels[0].id])
     }
 
-    func testGuideIdentityIndexTracksFiltersFavoritesRecentsAndHiddenChannels() {
+    func testGuideIdentityIndexTracksFiltersFavoritesRecentsAndHiddenChannels() throws {
         let model = LiveTVPrototypeModel(channels: hiddenChannelFixtures)
         func assertIndex() {
             XCTAssertEqual(model.guideRowIDs, model.guideChannels.map(\.id))
@@ -700,6 +700,57 @@ final class LiveTVPrototypeModelTests: XCTestCase {
         XCTAssertTrue(model.hideChannel(first))
         assertIndex()
         XCTAssertNil(model.guideRow(for: first.id))
+        model.sort = .name
+        assertIndex()
+        try model.replaceChannels(Array(model.channels.reversed()))
+        assertIndex()
+        try model.replaceChannels([])
+        assertIndex()
+        XCTAssertTrue(model.guideRowIDs.isEmpty)
+        XCTAssertNil(model.channel(id: first.id))
+        XCTAssertNil(model.guideEntry(for: .init(channelID: first.id)))
+    }
+
+    func testCatalogIndicesPreservePayloadsAndRejectInvalidReplacementsAtomically() throws {
+        let original = hiddenChannelFixtures
+        let model = LiveTVPrototypeModel(channels: original)
+        let replacement = LiveTVPrototypeChannel(
+            id: original[1].id, number: 3, name: "Replacement channel", category: "Movies",
+            symbol: "film", accent: 2, source: .plex, tagline: "Replacement",
+            logoURL: URL(string: "https://example.test/logo.png"),
+            streamURL: URL(string: "https://example.test/stream.m3u8"),
+            guideID: "replacement-guide", guideName: "Replacement guide",
+            httpHeaders: ["User-Agent": "Plozz-Test"], playlistSourceID: "replacement-source",
+            language: "French", country: "CA", groups: ["Movies", "International"]
+        )
+        let channels = [replacement, original[0]]
+        try model.replaceCatalog(channels: channels, programs: [])
+        for sort in [LiveTVPrototypeSort.channelNumber, .name] {
+            model.sort = sort
+            XCTAssertEqual(model.visibleChannels, [original[0], replacement])
+            for channel in channels {
+                XCTAssertEqual(model.channel(id: channel.id), channel)
+                XCTAssertEqual(model.guideEntry(for: .init(channelID: channel.id))?.channel, channel)
+            }
+        }
+
+        let rows = model.guideChannels
+        let revision = model.catalogRevision
+        XCTAssertThrowsError(try model.replaceCatalog(channels: [replacement, replacement], programs: []))
+        XCTAssertThrowsError(try model.replaceCatalog(channels: [original[0]], programs: [
+            .init(id: "orphan", channelID: replacement.id, title: "Orphan", subtitle: "",
+                  start: model.now, end: model.now.addingTimeInterval(1_800))
+        ]))
+        XCTAssertEqual(model.channels, channels)
+        XCTAssertEqual(model.catalogRevision, revision)
+        XCTAssertEqual(model.guideChannels, rows)
+        XCTAssertEqual(model.channel(id: replacement.id), replacement)
+        XCTAssertEqual(model.guideEntry(for: .init(channelID: replacement.id))?.channel, replacement)
+
+        try model.replaceCatalog(channels: [original[0]], programs: [])
+        XCTAssertNil(model.channel(id: replacement.id))
+        XCTAssertNil(model.guideEntry(for: .init(channelID: replacement.id)))
+        XCTAssertEqual(model.channel(id: original[0].id), original[0])
     }
 
     func testFailedMultiviewSaveRetriesWithoutErasingConcurrentFavorites() {
