@@ -12,6 +12,7 @@ public extension IPTVSetupDiagnostic.Failure {
             case .invalidResponse, .temporarilyUnavailable: return .init(.invalidResponse)
             case .responseTooLarge, .guideTooLarge, .guideSourceLimitReached: return .init(.tooLarge)
             case .invalidPlaylist, .invalidGuide: return .init(.malformed)
+            case .emptyPlaylist: return .init(.empty)
             case .streamManifest: return .init(.unsupported)
             case .cacheFailed: return .init(.storage)
             case .unsafeGuideOrigin, .redirectBlocked: return .init(.redirectBlocked)

@@ -127,7 +127,7 @@ struct AppLanguagePicker: View {
                         .font(.headline)
                     SettingsQRCode(
                         string: translationIssueURL.absoluteString,
-                        correctionLevel: "M"
+                        correctionLevel: .medium
                     )
                     .frame(width: 180, height: 180)
                 }

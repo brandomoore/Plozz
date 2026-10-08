@@ -18,6 +18,7 @@ public struct ProfileSeerrSetupView: View {
     private let onContinue: () -> Void
 
     @Environment(\.themePalette) private var palette
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var serverAddress = ""
     @State private var apiKey = ""
     @State private var users: LoadState<[SeerUser]> = .idle
@@ -38,32 +39,7 @@ public struct ProfileSeerrSetupView: View {
     }
 
     public var body: some View {
-        ZStack {
-            AppBackground(palette: palette).ignoresSafeArea()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    SettingsPageHeader(
-                        "Requests as — \(profile.name)",
-                        subtitle: "Choose whose Seerr permissions, quota, approvals, and quality profile this Plozz profile uses."
-                    )
-                    switch seer.phase {
-                    case .connected:
-                        connectedContent
-                    default:
-                        connectionContent
-                    }
-                    actionBar
-                }
-                .frame(
-                    maxWidth: PlozzTheme.Metrics.settingsContentMaxWidth,
-                    alignment: .leading
-                )
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, PlozzTheme.Metrics.screenPadding)
-                .padding(.vertical, 32)
-            }
-            .scrollClipDisabled()
-        }
+        page
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
         .task(id: seer.connectionRevision) {
             let revision = seer.connectionRevision
@@ -84,10 +60,117 @@ public struct ProfileSeerrSetupView: View {
         }
     }
 
+    @ViewBuilder
+    private var page: some View {
+        #if os(iOS)
+        SettingsPageScroll {
+            pageContent
+                .frame(maxWidth: 720, alignment: .leading)
+                .frame(maxWidth: .infinity)
+        }
+        #else
+        ZStack {
+            AppBackground(palette: palette).ignoresSafeArea()
+            ScrollView {
+                pageContent
+                .frame(
+                    maxWidth: PlozzTheme.Metrics.settingsContentMaxWidth,
+                    alignment: .leading
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 48)
+                .padding(.vertical, 32)
+            }
+            .scrollClipDisabled()
+        }
+        #endif
+    }
+
+    private var pageContent: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 8) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        heading
+                        profileChip
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    VStack(alignment: .leading, spacing: 12) {
+                        heading
+                        profileChip
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
+                Text("Choose whose Seerr permissions, quota, approvals, and quality profile this Plozz profile uses.")
+                    .font(.subheadline)
+                    .plozzForeground(.secondary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            switch seer.phase {
+            case .connected:
+                connectedContent
+            default:
+                connectionContent
+            }
+            actionBar
+        }
+    }
+
+    private var heading: some View {
+        Text(
+            "Requests as",
+            comment: "Heading in profile setup followed by a separate avatar-and-name chip identifying the Plozz profile whose Seerr request identity is being configured. It is a standalone heading, not an action or a sentence fragment to translate together with the name."
+        )
+        #if os(iOS)
+        .font(.title2.bold())
+        #else
+        .font(.largeTitle.bold())
+        #endif
+        .plozzForeground(.primary)
+    }
+
+    private var profileChip: some View {
+        HStack(spacing: 8) {
+            ProfileAvatarView(profile: profile, size: profileAvatarSize)
+                .accessibilityHidden(true)
+            Text(verbatim: profile.name)
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+                .plozzForeground(.primary)
+        }
+        .padding(.leading, 6)
+        .padding(.trailing, 12)
+        .padding(.vertical, 6)
+        .background(palette.cardSurface, in: RoundedRectangle(cornerRadius: 20))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(palette.cardBorder, lineWidth: 1)
+        }
+    }
+
+    private var profileAvatarSize: CGFloat {
+        #if os(iOS)
+        28
+        #else
+        44
+        #endif
+    }
+
+    private var panelPadding: EdgeInsets {
+        #if os(iOS)
+        EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)
+        #else
+        .settingsPanelDefault
+        #endif
+    }
+
     private var connectionContent: some View {
         SettingsPanel(
             title: "Connect Seerr",
-            footer: "Seerr is shared by every Plozz profile. The acting user is chosen separately for each profile."
+            footer: "Seerr is shared by every Plozz profile. The acting user is chosen separately for each profile.",
+            contentPadding: panelPadding
         ) {
             VStack(alignment: .leading, spacing: 16) {
                 TextField(
@@ -136,7 +219,8 @@ public struct ProfileSeerrSetupView: View {
         SettingsPanel(
             footer: profile.isKids
                 ? "Kids Profiles must use a Seerr user. Admin requests are unavailable."
-                : "Admin is unrestricted. Choose a user to use their quota and approval flow instead."
+                : "Admin is unrestricted. Choose a user to use their quota and approval flow instead.",
+            contentPadding: panelPadding
         ) {
             VStack(spacing: 14) {
                 if !profile.isKids {
@@ -211,10 +295,12 @@ public struct ProfileSeerrSetupView: View {
     }
 
     private var actionBar: some View {
-        HStack(spacing: 20) {
-            Button("Not Now", action: onContinue)
-                .plozzActionButton(role: .secondary)
-            Button("Continue") {
+        actionLayout {
+            Button(action: onContinue) {
+                actionLabel("Not Now")
+            }
+            .plozzActionButton(role: .secondary)
+            Button {
                 if selectedAdmin {
                     onSelect(nil)
                     onContinue()
@@ -226,6 +312,8 @@ public struct ProfileSeerrSetupView: View {
                 }
                 onSelect(selectedUser)
                 onContinue()
+            } label: {
+                actionLabel("Continue")
             }
             .plozzActionButton()
             .disabled(!canContinue)
@@ -233,6 +321,26 @@ public struct ProfileSeerrSetupView: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 8)
         .tvOSFocusSection()
+    }
+
+    private var actionLayout: AnyLayout {
+        #if os(iOS)
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
+        #else
+        AnyLayout(HStackLayout(spacing: 20))
+        #endif
+    }
+
+    private func actionLabel(_ title: LocalizedStringResource) -> some View {
+        Text(title)
+            #if os(iOS)
+            .lineLimit(nil)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+            #endif
     }
 
     /// - Parameters:
@@ -247,28 +355,49 @@ public struct ProfileSeerrSetupView: View {
         selected: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 16) {
-                avatar(url: avatarURL, fallback: fallback)
-                VStack(alignment: .leading, spacing: 3) {
-                    title.font(.headline)
-                    if let subtitle {
-                        subtitle
-                            .font(.caption)
-                            .settingsRowSecondary()
+        let portrait = avatar(url: avatarURL, fallback: fallback)
+        let indicator = Image(systemName: "checkmark.circle.fill")
+            .settingsRowGreenIndicator()
+            .opacity(selected ? 1 : 0)
+            .accessibilityHidden(true)
+        let text = VStack(alignment: .leading, spacing: 3) {
+            title.font(.headline)
+            if let subtitle {
+                subtitle
+                    .font(.caption)
+                    .settingsRowSecondary()
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+        return Button(action: action) {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            portrait
+                            Spacer()
+                            indicator
+                        }
+                        text
                     }
-                }
-                Spacer()
-                if selected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .settingsRowGreenIndicator()
+                } else {
+                    HStack(spacing: 16) {
+                        portrait
+                        text
+                        indicator
+                    }
                 }
             }
             .padding(.vertical, 12)
+            #if !os(iOS)
             .padding(.horizontal, 14)
+            #endif
             .contentShape(Rectangle())
         }
-        .buttonStyle(SettingsFocusButtonStyle())
+        .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func avatar(url: URL?, fallback: String) -> some View {
@@ -286,7 +415,11 @@ public struct ProfileSeerrSetupView: View {
                 Image(systemName: fallback)
             }
         }
+        #if os(iOS)
+        .frame(width: 44, height: 44)
+        #else
         .frame(width: 52, height: 52)
+        #endif
         .background(palette.cardSurface, in: Circle())
         .clipShape(Circle())
     }

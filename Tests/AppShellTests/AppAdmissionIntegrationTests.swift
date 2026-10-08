@@ -77,6 +77,172 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         XCTAssertEqual(harness.profiles.activeProfile.name, "Me")
     }
 
+    func testInAppIPTVSetupRetainsTheSignedInNavigationThroughCompletion() throws {
+        let harness = try makeHarness(profileSetupComplete: true, withAccount: true)
+        harness.state.bootstrap()
+        harness.state.addAccount(provider: .iptv)
+        XCTAssertTrue(harness.state.presentsAccountSetupOverApp)
+        XCTAssertEqual(harness.state.rootPresentationState, .ready)
+        XCTAssertFalse(harness.state.isLiveTVProfileAuthorized)
+        let session = UserSession(
+            server: MediaServer(id: "playlist", name: "Live channels",
+                                baseURL: URL(string: "https://playlist.example")!, provider: .iptv),
+            userID: "playlist-user", userName: "IPTV", deviceID: "device", accessToken: "fixture"
+        )
+
+        XCTAssertTrue(harness.state.didAuthenticate(session))
+        XCTAssertEqual(harness.state.state, .onboarding(.selectLibraries, canReturnToApp: true))
+        XCTAssertEqual(harness.state.rootPresentationState, .ready)
+        harness.state.confirmLibrarySelection()
+
+        XCTAssertFalse(harness.state.presentsAccountSetupOverApp)
+        XCTAssertEqual(harness.state.rootPresentationState, .ready)
+    }
+
+    func testCancellingInAppSetupReturnsWithoutReplacingTheNavigationTree() throws {
+        let harness = try makeHarness(profileSetupComplete: true, withAccount: true)
+        harness.state.bootstrap()
+        harness.state.addAccount(provider: .iptv)
+        XCTAssertEqual(harness.state.rootPresentationState, .ready)
+
+        harness.state.cancelAuthentication()
+
+        XCTAssertEqual(harness.state.state, .ready)
+        XCTAssertEqual(harness.state.rootPresentationState, .ready)
+        XCTAssertFalse(harness.state.presentsAccountSetupOverApp)
+    }
+
+    func testFirstIPTVAccountCompletesProfileSetupWithoutShowingTheSignedInShellEarly() throws {
+        let harness = try makeHarness()
+        harness.state.bootstrap()
+        let session = UserSession(
+            server: MediaServer(id: "playlist", name: "Live channels",
+                                baseURL: URL(string: "https://playlist.example")!, provider: .iptv),
+            userID: "playlist-user", userName: "IPTV", deviceID: "device", accessToken: "fixture"
+        )
+        XCTAssertTrue(harness.state.didAuthenticate(session))
+        XCTAssertFalse(harness.state.presentsAccountSetupOverApp)
+        XCTAssertEqual(harness.state.rootPresentationState, .onboarding(.selectLibraries, canReturnToApp: true))
+        harness.state.confirmLibrarySelection()
+        XCTAssertEqual(harness.state.rootPresentationState, .onboarding(.confirmProfile, canReturnToApp: true))
+        harness.state.confirmFirstRunProfile()
+        harness.state.completeFirstRunSeerrSetup()
+        harness.state.finishThemeSelection()
+        harness.state.finishNavigationSelection()
+        harness.state.finishHomeLayoutSelection()
+
+        XCTAssertEqual(harness.state.state, .ready)
+        XCTAssertTrue(harness.profiles.firstRunProfileSetupComplete)
+        XCTAssertFalse(harness.state.presentsAccountSetupOverApp)
+        let accounts = harness.state.accountsProviders.homeAccounts.map(\.account)
+        let availability = NavigationContentAvailability(
+            accounts: accounts, libraries: [], discoveredAccountIDs: Set(accounts.map(\.id)),
+            disabledLibraryKeys: [], hasDiscoverySearch: false, hasWatchlistItems: false
+        )
+        XCTAssertEqual(AppAdmissionNavigation.initialSelection(
+            current: "home", visible: ["liveTV", "settings"], liveTV: "liveTV", fallback: "settings",
+            admission: harness.state.admissionContext, hasPendingLiveTVEntry: false,
+            prefersLiveTV: availability.prefersLiveTV
+        ), "liveTV")
+    }
+
+    func testAddingIPTVIncludesItInTheCurrentProfilesExplicitServerSelection() throws {
+        let harness = try makeHarness(profileSetupComplete: true, withAccount: true)
+        let profileID = harness.profiles.activeProfileID
+        harness.profiles.setActiveAccountIDs(["media-account"], for: profileID)
+        let other = harness.profiles.add(name: "Other", activeAccountIDs: ["media-account"])
+        harness.state.bootstrap()
+        let session = UserSession(
+            server: MediaServer(id: "playlist", name: "Live channels",
+                                baseURL: URL(string: "https://playlist.example")!, provider: .iptv),
+            userID: "playlist-user", userName: "IPTV", deviceID: "device", accessToken: "fixture"
+        )
+        let accountID = Account.stableID(for: session)
+
+        XCTAssertTrue(harness.state.didAuthenticate(session))
+
+        XCTAssertEqual(harness.state.accountsProviders.activeAccountIDs, ["media-account", accountID])
+        XCTAssertTrue(harness.state.accountsProviders.liveTVServerChoices.contains { $0.id == accountID })
+        XCTAssertEqual(harness.profiles.storedActiveAccountIDs(for: other.id), ["media-account"])
+        harness.state.accountsProviders.reloadAccounts()
+        XCTAssertTrue(harness.state.accountsProviders.activeAccountIDs.contains(accountID))
+    }
+
+    func testAddingIPTVToAnEmptyProfileDoesNotEnableOtherHouseholdAccounts() throws {
+        let harness = try makeHarness(profileSetupComplete: true, withAccount: true)
+        harness.profiles.setActiveAccountIDs([], for: harness.profiles.activeProfileID)
+        harness.state.bootstrap()
+        let session = UserSession(
+            server: MediaServer(id: "playlist", name: "Live channels",
+                                baseURL: URL(string: "https://playlist.example")!, provider: .iptv),
+            userID: "playlist-user", userName: "IPTV", deviceID: "device", accessToken: "fixture"
+        )
+
+        XCTAssertTrue(harness.state.didAuthenticate(session))
+
+        XCTAssertEqual(harness.state.accountsProviders.activeAccountIDs, [Account.stableID(for: session)])
+        XCTAssertFalse(harness.state.accountsProviders.watchesNothingByChoice)
+    }
+
+    func testReconnectingAnExcludedIPTVAccountDoesNotEnableIt() throws {
+        let harness = try makeHarness(profileSetupComplete: true, withAccount: true)
+        let session = UserSession(
+            server: MediaServer(id: "playlist", name: "Live channels",
+                                baseURL: URL(string: "https://playlist.example")!, provider: .iptv),
+            userID: "playlist-user", userName: "IPTV", deviceID: "device", accessToken: "fixture"
+        )
+        try harness.accounts.add(Account(id: Account.stableID(for: session), from: session), token: "fixture")
+        harness.profiles.setActiveAccountIDs(["media-account"], for: harness.profiles.activeProfileID)
+        harness.state.bootstrap()
+
+        XCTAssertTrue(harness.state.didAuthenticate(session))
+
+        XCTAssertEqual(harness.state.accountsProviders.activeAccountIDs, ["media-account"])
+    }
+
+    func testAddingIPTVCannotOverwriteAnUnreadableProfileSelection() throws {
+        let secrets = AdmissionMembershipStore()
+        let harness = try makeHarness(profileSetupComplete: true, withAccount: true, profileSecrets: secrets)
+        harness.profiles.setActiveAccountIDs(["media-account"], for: harness.profiles.activeProfileID)
+        harness.state.bootstrap()
+        secrets.failMembershipReads = true
+        harness.profiles.setActiveAccountIDs(["media-account"], for: harness.profiles.activeProfileID)
+        let session = UserSession(
+            server: MediaServer(id: "playlist", name: "Live channels",
+                                baseURL: URL(string: "https://playlist.example")!, provider: .iptv),
+            userID: "playlist-user", userName: "IPTV", deviceID: "device", accessToken: "fixture"
+        )
+
+        XCTAssertFalse(harness.state.didAuthenticate(session))
+
+        secrets.failMembershipReads = false
+        harness.profiles.retryUnconfirmedAccountSelections()
+        XCTAssertEqual(harness.profiles.storedActiveAccountIDs(for: harness.profiles.activeProfileID), ["media-account"])
+        harness.state.accountsProviders.reloadAccounts()
+        XCTAssertTrue(harness.state.didAuthenticate(session, activateIPTVAccount: true))
+        XCTAssertTrue(harness.state.accountsProviders.activeAccountIDs.contains(Account.stableID(for: session)))
+    }
+
+    func testExplicitlyAddingPreviouslySavedIPTVSelectsItWithoutDuplicatingTheAccount() throws {
+        let harness = try makeHarness(profileSetupComplete: true, withAccount: true)
+        let session = UserSession(
+            server: MediaServer(id: "playlist", name: "Live channels",
+                                baseURL: URL(string: "https://playlist.example")!, provider: .iptv),
+            userID: "playlist-user", userName: "IPTV", deviceID: "device", accessToken: "fixture"
+        )
+        let id = Account.stableID(for: session)
+        try harness.accounts.add(Account(id: id, from: session), token: "fixture")
+        harness.profiles.setActiveAccountIDs(["media-account"], for: harness.profiles.activeProfileID)
+        let other = harness.profiles.add(name: "Other", activeAccountIDs: ["media-account"])
+        harness.state.bootstrap()
+
+        XCTAssertTrue(harness.state.didAuthenticate(session, activateIPTVAccount: true))
+
+        XCTAssertEqual(harness.accounts.loadAccounts().filter { $0.id == id }.count, 1)
+        XCTAssertTrue(harness.state.accountsProviders.liveTVServerChoices.contains { $0.id == id })
+        XCTAssertEqual(harness.profiles.storedActiveAccountIDs(for: other.id), ["media-account"])
+    }
+
     func testNormalLastAccountSignOutStillOnboards() throws {
         let harness = try makeHarness(profileSetupComplete: true, withAccount: true)
         harness.state.bootstrap()

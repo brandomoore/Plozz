@@ -47,6 +47,20 @@ import UIKit
 public final class AppState {
     public private(set) var state: SessionState = .launching
     private let appAdmission: AppAdmissionModel
+    @ObservationIgnored private var accountSetupOriginProfileID: String?
+
+    var presentsAccountSetupOverApp: Bool {
+        switch state {
+        case .onboarding(_, canReturnToApp: true), .failed(_, canReturnToApp: true):
+            return accountSetupOriginProfileID == profilesModel.activeProfileID
+                && profileFlow.pendingSetupProfile == nil
+        default: return false
+        }
+    }
+
+    var rootPresentationState: SessionState {
+        presentsAccountSetupOverApp ? .ready : state
+    }
 
     public static var isStandalonePlaybackAvailable: Bool {
         true
@@ -1582,12 +1596,11 @@ public final class AppState {
     /// Jellyfin/Emby. Plex stays on the provider step, seeded to `.plex`, because
     /// its account link flow resolves the server after authentication.
     public func beginAddingUser(on server: MediaServer) {
-        pendingOnboardingProvider = server.provider
         pendingAdditionalUser = (
             serverKey: server.identityKey,
             profileID: profilesModel.activeProfileID
         )
-        apply(.addAccountRequested)
+        addAccount(provider: server.provider)
         if server.provider.usesMediaBrowserAPI || server.provider == .silo {
             apply(.serverSelected(server))
         }
@@ -1600,7 +1613,7 @@ public final class AppState {
     /// the sign-in identity and detours through the profile confirm step;
     /// otherwise it enters the app directly.
     @discardableResult
-    public func didAuthenticate(_ session: UserSession) -> Bool {
+    public func didAuthenticate(_ session: UserSession, activateIPTVAccount: Bool = false) -> Bool {
         let isFirstRun = accountsProviders.accounts.isEmpty && !profilesModel.firstRunProfileSetupComplete
         // Every provider now gets a STABLE, deterministic id derived from its
         // (provider + server + user) identity — so re-adding the same server (e.g. to
@@ -1612,6 +1625,9 @@ public final class AppState {
         let previousAccount = accountsProviders.accounts.first { $0.id == account.id }
         do {
             try accountsProviders.accountStore.add(account, token: session.accessToken)
+            if previousAccount == nil || activateIPTVAccount {
+                try accountsProviders.includeIPTVAccountInActiveProfile(account)
+            }
         } catch {
             apply(.authenticationFailed(.unknown("")))
             return false
@@ -2363,6 +2379,7 @@ public final class AppState {
     public func addAccount(
         provider: ProviderKind? = nil, playlist: LiveTVPlaylistSource? = nil, iptvAccount: Account? = nil
     ) {
+        if case .ready = state { accountSetupOriginProfileID = profilesModel.activeProfileID }
         // A fresh add-account flow always starts at the provider chooser.
         pendingOnboardingProvider = provider
         pendingIPTVPlaylist = playlist
@@ -2673,6 +2690,10 @@ public final class AppState {
     private func apply(_ event: SessionEvent) {
         machine.apply(event, allowsStandalonePlayback: allowsStandalonePlayback)
         state = machine.state
+        switch state {
+        case .onboarding(_, canReturnToApp: true), .failed(_, canReturnToApp: true): break
+        default: accountSetupOriginProfileID = nil
+        }
     }
 
     public func retryUnconfirmedCredentials() {

@@ -382,7 +382,7 @@ public struct PosterCardView: View {
                 #endif
 
             if !captionsHidden {
-                captionBlock(inset: metrics.posterCaptionInset, spacing: 2)
+                captionBlock(inset: metrics.posterCaptionHorizontalInset, spacing: 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, metrics.posterCaptionInset)
             }
@@ -468,7 +468,7 @@ public struct PosterCardView: View {
                 #endif
 
             if showsCaption {
-                captionBlock(inset: metrics.landscapeCaptionInset, spacing: 4)
+                captionBlock(inset: metrics.landscapeCaptionHorizontalInset, spacing: 4)
                     .padding(.bottom, metrics.landscapeCaptionInset)
                     .frame(width: size.width, alignment: .leading)
             }
@@ -627,8 +627,8 @@ public struct PosterCardView: View {
     /// artwork edge instead of butting against it.
     private var borderlessCaptionInset: CGFloat {
         switch style {
-        case .poster: return metrics.posterCaptionInset
-        case .landscape: return metrics.landscapeCaptionInset
+        case .poster: return metrics.posterCaptionHorizontalInset
+        case .landscape: return metrics.landscapeCaptionHorizontalInset
         }
     }
 

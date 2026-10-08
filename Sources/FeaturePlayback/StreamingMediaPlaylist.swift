@@ -4,7 +4,7 @@ import Foundation
 
 enum StreamingMediaPlaylist {
     private static let maximumBytes = 64 * 1024
-    private static let client: any HTTPClient = {
+    static let client: any HTTPClient = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 5
         configuration.timeoutIntervalForResource = 5
@@ -61,20 +61,28 @@ enum StreamingMediaPlaylist {
             }
         }
         guard !expectsURI, referencedGroups.isSubset(of: inBandGroups),
-              let variant, let url = URL(string: variant, relativeTo: masterURL)?.absoluteURL,
+              let variant, let url = sameOriginURL(variant, relativeTo: masterURL),
               url.pathExtension.lowercased() == "m3u8", url != masterURL,
               origin(url) == acceptedOrigin else { return nil }
         return url
     }
 
-    private static func origin(_ url: URL) -> NetworkOrigin? {
+    static func sameOriginURL(_ reference: String, relativeTo baseURL: URL) -> URL? {
+        guard !reference.contains("{$"), !reference.contains("\\"),
+              let acceptedOrigin = origin(baseURL),
+              let url = URL(string: reference, relativeTo: baseURL)?.absoluteURL,
+              origin(url) == acceptedOrigin else { return nil }
+        return url
+    }
+
+    static func origin(_ url: URL) -> NetworkOrigin? {
         guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
               parts.user == nil, parts.password == nil, parts.fragment == nil,
               let scheme = parts.scheme, let host = parts.host else { return nil }
         return try? NetworkOrigin(scheme: scheme, host: host, port: parts.port)
     }
 
-    private static func attributes(_ text: String) -> [String: String]? {
+    static func attributes(_ text: String) -> [String: String]? {
         var quoted = false
         var field = ""
         var fields: [String] = []

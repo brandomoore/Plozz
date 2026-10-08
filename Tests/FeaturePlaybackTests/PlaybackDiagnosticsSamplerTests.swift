@@ -355,6 +355,27 @@ final class PlaybackDiagnosticsSamplerTests: XCTestCase {
         XCTAssertTrue(details.technicalBadges.isEmpty)
     }
 
+    func testH264SDRRequestCannotRelabelTheServersActualHDROutput() async throws {
+        for rangeParameter in ["h264-videorange", "h264-rangetype"] {
+            let output = MediaSourceMetadata(video: .init(codec: "h264", videoRangeType: "HDR10"))
+            let sampler = PlaybackDiagnosticsSampler(streamDetailsReader: { _ in output })
+            defer { sampler.stop() }
+            let player = AVPlayer(playerItem: AVPlayerItem(asset: AVMutableComposition()))
+            var details = PlaybackStreamDetails()
+            sampler.start(
+                player: player, mode: .transcode,
+                metadata: .init(video: .init(codec: "hevc", videoRangeType: "DOVI")),
+                streamURL: URL(string: "https://media.example.test/master.m3u8?VideoCodec=h264&\(rangeParameter)=SDR"),
+                onStreamDetails: { details = $0 }
+            )
+            try await wait { sampler.sampleTick(); return sampler.latest?.hdr == .hdr10 }
+            XCTAssertEqual(sampler.latest?.videoCodec, "H.264")
+            XCTAssertEqual(sampler.latest?.hdr, .hdr10)
+            XCTAssertEqual(details.metadata, output)
+            XCTAssertEqual(details.technicalBadges.map(\.label), ["H.264", "HDR10"])
+        }
+    }
+
     func testReplacedPlayerItemAndLatePriorReadsCannotRestoreOldFormat() async throws {
         let entered = expectation(description: "old read suspended")
         var release: CheckedContinuation<Void, Never>?

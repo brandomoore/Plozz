@@ -218,6 +218,249 @@ final class IPTVIntegrationTests: XCTestCase {
         XCTAssertNil(IPTVFixture.state.requests.first?.value(forHTTPHeaderField: "X-Playlist-Key"))
     }
 
+    func testPlaylistGuideMetadataSurvivesTheStoredAccountCatalog() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        IPTVFixture.state.handler = { request in
+            let body = request.url?.path == "/list" ? """
+            #EXTM3U x-tvg-url="https://provider.test/guide.xml"
+            #EXTINF:-1 tvg-id="NEWS.us" tvg-name="News" tvg-country="US",101 - News Live
+            https://provider.test/live/news
+            """ : "<tv/>"
+            return (200, [:], Data(body.utf8))
+        }
+        let credential = try IPTVCredential(mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list")))
+        let session = try await IPTVProvider.signIn(
+            credential: credential, name: "Guide", deviceID: "fixture",
+            cacheDirectory: root, configuration: configuration()
+        )
+        let provider = try IPTVProvider(
+            context: .init(session: session, accountID: "guide", credentialRevision: .init(),
+                           localMediaContext: .init(accountID: "guide", profileID: "viewer", profileNamespace: nil)),
+            cacheDirectory: root, configuration: configuration()
+        ) { _, _, channels, _, _ in
+            XCTAssertEqual(channels.map(\.name), ["101 - News Live"])
+            XCTAssertEqual(channels.map(\.guideID), ["NEWS.us"])
+            XCTAssertEqual(channels.map(\.guideName), ["News"])
+            XCTAssertEqual(channels.map(\.country), ["US"])
+            return []
+        }
+        do {
+            let channels = try await provider.liveTVChannels()
+            _ = try await provider.liveTVGuide(
+                channelIDs: channels.map(\.id), from: Date(timeIntervalSince1970: 100),
+                to: Date(timeIntervalSince1970: 500)
+            )
+            XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/list" }.count, 2)
+            XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/guide.xml" }.count, 1)
+        } catch { await provider.teardown(); throw error }
+        await provider.teardown()
+    }
+
+    func testPlainPlaylistAccountIDsSurviveReordering() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let credential = try IPTVCredential(mode: .playlist, address: XCTUnwrap(URL(string: "https://provider.test/list")))
+        let client = try IPTVClient(credential: credential, directory: root, configuration: configuration())
+        IPTVFixture.state.handler = { _ in
+            (200, [:], Data("https://provider.test/one\nhttps://provider.test/two\n".utf8))
+        }
+        let first = try await client.liveChannels()
+        IPTVFixture.state.handler = { _ in
+            (200, [:], Data("https://provider.test/two\nhttps://provider.test/one\n".utf8))
+        }
+        try await client.ensureCatalog("live", force: true)
+        let second = try await client.liveChannels()
+        XCTAssertEqual(first.count, 2)
+        XCTAssertEqual(Set(first.map(\.id)), Set(second.map(\.id)))
+        XCTAssertEqual(first.first?.id, second.last?.id)
+    }
+
+    func testXtreamFallsBackToXMLTVForEmptyOrUnavailableGuideAPI() async throws {
+        for (status, body) in [
+            (200, #"{"epg_listings":[]}"#), (200, "{}"), (200, "[]"), (200, "invalid JSON"),
+            (404, ""), (405, ""), (501, "")
+        ] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { request in
+                if request.url?.path == "/prefix/xmltv.php" { return (200, [:], Data("<tv/>".utf8)) }
+                if request.url?.query?.contains("action=get_simple_data_table") == true {
+                    return (status, [:], Data(body.utf8))
+                }
+                return try Self.xtream(request)
+            }
+            let provider = try await makeXtreamGuideProvider { data, url, channels, from, to in
+                XCTAssertEqual(data, Data("<tv/>".utf8))
+                XCTAssertEqual(url.path, "/prefix/xmltv.php")
+                let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+                XCTAssertEqual(query?.first { $0.name == "username" }?.value, "fixture-user")
+                XCTAssertEqual(query?.first { $0.name == "password" }?.value, "fixture-password")
+                XCTAssertEqual(channels.map(\.id), ["live:10"])
+                XCTAssertEqual(channels.map(\.guideID), ["news"])
+                return [.init(id: "xmltv", channelID: "live:10", title: "XMLTV", startDate: from, endDate: to)]
+            }
+            let programmes = try await provider.liveTVGuide(
+                channelIDs: ["live:10"], from: Date(timeIntervalSince1970: 100), to: Date(timeIntervalSince1970: 500)
+            )
+            XCTAssertEqual(programmes.map(\.title), ["XMLTV"], "HTTP \(status): \(body)")
+            XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/prefix/xmltv.php" }.count, 1)
+            await provider.teardown()
+        }
+    }
+
+    func testXtreamFallbackPreservesNativeListingsAndOnlyLoadsMissingChannels() async throws {
+        IPTVFixture.state.handler = { request in
+            let query = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems
+            if request.url?.path == "/prefix/xmltv.php" { return (200, [:], Data("<tv/>".utf8)) }
+            if query?.first(where: { $0.name == "action" })?.value == "get_live_streams" {
+                return (200, [:], Data(#"[{"stream_id":10,"name":"News","epg_channel_id":"news"},{"stream_id":11,"name":"Sports","epg_channel_id":"sports"}]"#.utf8))
+            }
+            if query?.first(where: { $0.name == "action" })?.value == "get_simple_data_table",
+               query?.first(where: { $0.name == "stream_id" })?.value == "11" {
+                return (200, [:], Data(#"{"epg_listings":[]}"#.utf8))
+            }
+            return try Self.xtream(request)
+        }
+        let provider = try await makeXtreamGuideProvider { _, _, channels, from, to in
+            XCTAssertEqual(channels.map(\.id), ["live:11"])
+            return [.init(id: "sports", channelID: "live:11", title: "Sports", startDate: from, endDate: to)]
+        }
+        let programmes = try await provider.liveTVGuide(
+            channelIDs: ["live:10", "live:11"], from: Date(timeIntervalSince1970: 100), to: Date(timeIntervalSince1970: 500)
+        )
+        XCTAssertEqual(programmes.map(\.title), ["News", "Sports"])
+        XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/prefix/xmltv.php" }.count, 1)
+    }
+
+    func testUnavailableXtreamGuideEndpointIsNotRetriedForEveryChannel() async throws {
+        for status in [404, 405, 501] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { request in
+                if request.url?.path == "/prefix/xmltv.php" { return (200, [:], Data("<tv/>".utf8)) }
+                if request.url?.query?.contains("action=get_live_streams") == true {
+                    return (200, [:], Data(#"[{"stream_id":10,"name":"News"},{"stream_id":11,"name":"Sports"}]"#.utf8))
+                }
+                if request.url?.query?.contains("action=get_simple_data_table") == true {
+                    return (status, [:], Data())
+                }
+                return try Self.xtream(request)
+            }
+            let provider = try await makeXtreamGuideProvider { _, _, channels, from, to in
+                XCTAssertEqual(channels.map(\.id), ["live:10", "live:11"])
+                return channels.map {
+                    .init(id: $0.id, channelID: $0.id, title: $0.name, startDate: from, endDate: to)
+                }
+            }
+            let programmes = try await provider.liveTVGuide(
+                channelIDs: ["live:10", "live:11"], from: Date(timeIntervalSince1970: 100),
+                to: Date(timeIntervalSince1970: 500)
+            )
+            XCTAssertEqual(programmes.count, 2)
+            XCTAssertEqual(IPTVFixture.state.requests.filter {
+                $0.url?.query?.contains("action=get_simple_data_table") == true
+            }.count, 1)
+            XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.path == "/prefix/xmltv.php" }.count, 1)
+            await provider.teardown()
+        }
+    }
+
+    func testXtreamGuideDoesNotHideAuthenticationRateLimitOrTransportFailures() async throws {
+        for (status, body) in [
+            (401, ""), (403, ""), (429, ""), (500, ""), (0, ""),
+            (200, #"{"user_info":{"auth":0}}"#), (200, #"{"auth":0}"#)
+        ] {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { request in
+                if request.url?.query?.contains("action=get_simple_data_table") == true {
+                    if status == 0 { throw URLError(.timedOut) }
+                    return (status, [:], Data(body.utf8))
+                }
+                return try Self.xtream(request)
+            }
+            let provider = try await makeXtreamGuideProvider { _, _, _, _, _ in
+                XCTFail("Authentication and transient failures must not trigger XMLTV")
+                return []
+            }
+            do {
+                _ = try await provider.liveTVGuide(
+                    channelIDs: ["live:10"], from: Date(timeIntervalSince1970: 100), to: Date(timeIntervalSince1970: 500)
+                )
+                XCTFail("The original error must remain visible")
+            } catch {
+                if status == 401 || status == 403 || status == 200 {
+                    XCTAssertEqual(error as? IPTVError, .authentication)
+                } else if status == 0 {
+                    XCTAssertEqual((error as? URLError)?.code, .timedOut)
+                } else if status == 429 {
+                    guard case AppError.rateLimited = error else { return XCTFail("Expected rate limit, got \(error)") }
+                } else {
+                    guard case AppError.invalidResponse = error else { return XCTFail("Expected server failure, got \(error)") }
+                }
+            }
+            XCTAssertFalse(IPTVFixture.state.requests.contains { $0.url?.path == "/prefix/xmltv.php" })
+            await provider.teardown()
+        }
+    }
+
+    func testExplicitXtreamGuideBypassesNativeAPIAndFailedFallbackRemainsAnError() async throws {
+        let guideURL = try XCTUnwrap(URL(string: "https://cdn.test/guide.xml"))
+        IPTVFixture.state.handler = { request in
+            if request.url == guideURL { return (200, [:], Data("<tv/>".utf8)) }
+            return try Self.xtream(request)
+        }
+        let configured = try await makeXtreamGuideProvider(guideURL: guideURL) { _, url, _, _, _ in
+            XCTAssertEqual(url, guideURL)
+            return []
+        }
+        _ = try await configured.liveTVGuide(
+            channelIDs: ["live:10"], from: Date(timeIntervalSince1970: 100), to: Date(timeIntervalSince1970: 500)
+        )
+        XCTAssertFalse(IPTVFixture.state.requests.contains { $0.url?.query?.contains("get_simple_data_table") == true })
+        await configured.teardown()
+        IPTVFixture.state.reset()
+        IPTVFixture.state.handler = { request in
+            if request.url?.path == "/prefix/xmltv.php" { return (403, [:], Data()) }
+            if request.url?.query?.contains("action=get_simple_data_table") == true {
+                return (200, [:], Data(#"{"epg_listings":[]}"#.utf8))
+            }
+            return try Self.xtream(request)
+        }
+        let fallback = try await makeXtreamGuideProvider { _, _, _, _, _ in
+            XCTFail("Rejected XMLTV must not reach the parser")
+            return []
+        }
+        do {
+            _ = try await fallback.liveTVGuide(
+                channelIDs: ["live:10"], from: Date(timeIntervalSince1970: 100), to: Date(timeIntervalSince1970: 500)
+            )
+            XCTFail("A failed fallback must not look like an empty successful guide")
+        } catch { XCTAssertEqual(error as? IPTVError, .authentication) }
+    }
+
+    private func makeXtreamGuideProvider(
+        guideURL: URL? = nil, guideLoader: @escaping IPTVProvider.IPTVGuideLoader
+    ) async throws -> IPTVProvider {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock {
+            if FileManager.default.fileExists(atPath: root.path) { try FileManager.default.removeItem(at: root) }
+        }
+        let credential = try IPTVCredential(
+            mode: .xtream, address: XCTUnwrap(URL(string: "https://provider.test/prefix")),
+            username: "fixture-user", password: "fixture-password", guideURL: guideURL
+        )
+        let session = try await IPTVProvider.signIn(
+            credential: credential, name: "Guide", deviceID: "fixture",
+            cacheDirectory: root, configuration: configuration()
+        )
+        let provider = try IPTVProvider(
+            context: .init(session: session, accountID: "guide", credentialRevision: .init(),
+                           localMediaContext: .init(accountID: "guide", profileID: "viewer", profileNamespace: nil)),
+            cacheDirectory: root, configuration: configuration(), guideLoader: guideLoader
+        )
+        addTeardownBlock { await provider.teardown() }
+        return provider
+    }
+
     func testArtworkContainingAnAccountSecretNeverEscapesThePrivateCatalog() async throws {
         IPTVFixture.state.handler = { _ in
             (200, [:], Data("""

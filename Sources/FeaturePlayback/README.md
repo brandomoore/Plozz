@@ -63,9 +63,24 @@ and the diagnostics overlay.
   `PlayerViewModel` redacts before logging.
 
 Native asset diagnostics identify `original-url`, `provider-manifest`,
-`subtitle-wrapper`, or `trailer-composition` without recording the URL or tokens.
+`provider-initialization-repair`, `subtitle-wrapper`, or `trailer-composition`
+without recording the URL or tokens.
 Bypassing the legacy tvOS wrapper preserves native media delivery; it is not
 proof of HDR10+ HDMI output, nor a change to the Plozzigen path.
+
+Negotiated HEVC server transcodes also inspect a bounded, same-origin fMP4
+initialization segment for an empty `sdtp` in an empty sample table. Emby's
+muxer can emit this box, which makes AVFoundation fail with -11829/-12848
+before decoding. Only that empty box and its ancestor sizes are changed;
+codec headers, HDR metadata, timing, audio, and encoded samples are preserved.
+The repaired initialization and fixed VOD playlist are served by an item-owned
+resource loader; media segments keep their exact provider URLs. Adaptive,
+live, encrypted, byte-range, foreign-origin, and multi-initialization playlists
+remain untouched. Inspection failure retains normal playback and codec fallback.
+`HEVCInitializationPlaybackHostedTests` covers the native rejection, repaired
+decode, and seeking with a six-second synthetic FFmpeg `testsrc2`/silent AAC
+fixture (160x90, 24fps, x265 `hvc1`, one-second keyframes), not captured media.
+Its video initialization deliberately adds the empty 12-byte `sdtp` box.
 
 WebVTT sidecars distinguish caption class names from literal CSS colors.
 An unstyled `<c.green>` is a compatibility alias for bright `lime` (`#00FF00`),
@@ -98,6 +113,11 @@ server/network throughput, and encoded stream bitrate is not a network rate.
 The instance counter labels native adapters rather than claiming to count every
 AVPlayer hidden inside third-party engines. New stall records retain measured
 player/engine buffer context in the existing playback journal.
+
+Playback diagnostics row labels use the shared app localization catalog on TV
+and mobile. Media filenames, server names, codec identifiers, and the HDR format
+label remain verbatim; do not mark app-owned field labels as developer content.
+TV rows wrap longer translations and values rather than truncating them.
 
 Diagnostic builds also journal cached Plozzigen pipeline snapshots at most once
 every two seconds, independent of whether Playback Info is open. These read the
@@ -294,8 +314,15 @@ AVFoundation, including empty states that clear the display. They are scheduled
 at the supplied **item presentation time**, never callback arrival time or a
 timestamp guessed from the source file. Successive states close the preceding
 intervals, including overlapping lines. Selection replaces the output to fence
-old callbacks; seeks flush its state; teardown detaches it. In-app drawing is
-suppressed at the native output, with an explicit selected-rendition handoff
+old callbacks; seeks flush its state; teardown detaches it. Replacement removes
+the previous registration before adding the next: even a transient overlap can
+prevent paused track switches from delivering cues on tvOS 26.2. The registration
+order is covered independently of the runtime, alongside real paused HLS switching.
+Track changes select the requested rendition before registering its replacement
+output rather than registering against the previous track or an intermediate Off.
+Renderer handoffs likewise restore the rendition before adding the new output.
+Explicit Off still clears the selection and cue timeline.
+In-app drawing is suppressed at the native output, with an explicit selected-rendition handoff
 for external presentation. The handoff restores the current item's last selected
 rendition if AVFoundation temporarily clears it; an explicit Off or track change
 discards that fallback. The Plozzigen remote-HLS bypass uses the same bridge

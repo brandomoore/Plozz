@@ -461,7 +461,7 @@ struct PlayerSequencePanel: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .frame(height: layout.titleHeight, alignment: .center)
-                        .padding(.horizontal, cardMetrics.landscapeCaptionInset)
+                        .padding(.horizontal, cardMetrics.landscapeCaptionHorizontalInset)
                         .padding(.top, cardMetrics.landscapeCaptionTopSpacing)
                     }
                     .padding([.top, .horizontal], cardMetrics.cardInset)
@@ -609,7 +609,7 @@ struct PlayerEpisodeLoadingCard: View {
                         .fill(palette.fill)
                         .frame(width: layout.imageWidth * 0.65, height: layout.metrics.castNameSize * 0.7)
                         .frame(height: layout.titleHeight)
-                        .padding(.horizontal, layout.cardMetrics.landscapeCaptionInset)
+                        .padding(.horizontal, layout.cardMetrics.landscapeCaptionHorizontalInset)
                         .padding(.top, layout.cardMetrics.landscapeCaptionTopSpacing)
                 }
                 .padding([.top, .horizontal], layout.cardMetrics.cardInset)

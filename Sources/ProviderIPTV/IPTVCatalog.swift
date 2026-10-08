@@ -12,6 +12,8 @@ struct IPTVRecord: Codable, Sendable {
     var streamID: String?
     var container: String?
     var guideID: String?
+    var guideName: String?
+    var guideCountry: String?
     var channelNumber: Int?
     var isLive = false
 }
@@ -169,12 +171,29 @@ final class IPTVCatalog {
         catch { PlozzLog.networking.error("IPTV temporary catalogue could not be removed") }
     }
 
-    func commitImport(library: String?, scope: String) throws {
+    func commitImport(
+        library: String?, scope: String, progress: (Int) throws -> Void = { _ in }
+    ) throws {
+        try Task.checkCancellation()
+        try progress(0)
         try execute("BEGIN IMMEDIATE")
         do {
             if let library { try remove(library: library) }
             else { try execute("DELETE FROM entries") }
-            try execute("INSERT INTO entries SELECT * FROM incoming")
+            // Report completed batches without publishing a partially replaced catalogue.
+            var lastRowID: Int64 = 0
+            var copied = 0
+            while let nextRowID = try lastImportRow(after: lastRowID) {
+                try Task.checkCancellation()
+                try execute("""
+                    INSERT INTO entries SELECT * FROM incoming
+                    WHERE rowid > \(lastRowID) AND rowid <= \(nextRowID)
+                    """)
+                copied += Int(sqlite3_changes(db))
+                lastRowID = nextRowID
+                try progress(copied)
+            }
+            try Task.checkCancellation()
             try setState(scope, String(Date().timeIntervalSince1970))
             try execute("COMMIT")
         } catch {
@@ -182,6 +201,19 @@ final class IPTVCatalog {
             catch { PlozzLog.networking.error("IPTV catalogue rollback failed") }
             throw error
         }
+    }
+
+    private func lastImportRow(after rowID: Int64) throws -> Int64? {
+        let statement = try prepare("""
+            SELECT MAX(rowid) FROM (
+                SELECT rowid FROM incoming WHERE rowid > ? ORDER BY rowid LIMIT 10000
+            )
+            """)
+        defer { sqlite3_finalize(statement) }
+        try bind([String(rowID)], to: statement)
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw IPTVError.storage }
+        guard sqlite3_column_type(statement, 0) != SQLITE_NULL else { return nil }
+        return sqlite3_column_int64(statement, 0)
     }
 
     private func prepare(_ sql: String) throws -> OpaquePointer {

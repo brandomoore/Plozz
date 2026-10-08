@@ -170,20 +170,29 @@ final class SettingsCommunityLinksHostedTests: XCTestCase {
         }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
-            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
-        }
-        let attachment = XCTAttachment(image: image)
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
         let detector = try XCTUnwrap(CIDetector(
             ofType: CIDetectorTypeQRCode,
             context: CIContext(options: [.useSoftwareRenderer: true]),
             options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]
         ))
-        let bitmap = try XCTUnwrap(image.cgImage)
-        let codes = detector.features(in: CIImage(cgImage: bitmap)).compactMap { $0 as? CIQRCodeFeature }
+        let renderingDeadline = ContinuousClock.now + .seconds(5)
+        var codes: [CIQRCodeFeature] = []
+        repeat {
+            window.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let bitmap = try XCTUnwrap(image.cgImage)
+            codes = detector.features(in: CIImage(cgImage: bitmap)).compactMap { $0 as? CIQRCodeFeature }
+            if Set(codes.compactMap(\.messageString)) == expectedURLs || ContinuousClock.now >= renderingDeadline {
+                let attachment = XCTAttachment(image: image)
+                attachment.name = name
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                break
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        } while true
         XCTAssertEqual(Set(codes.compactMap(\.messageString)), expectedURLs)
         let decoded = try XCTUnwrap(codes.count == expectedURLs.count ? codes : nil, "Every expected code must decode.")
         for code in codes {

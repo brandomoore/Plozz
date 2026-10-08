@@ -37,6 +37,23 @@ supported capability remains at parity.
 - **Co-equal with `ProviderPlex`.** Any new `MediaProvider` capability must be
   implemented here whenever it's implemented for Plex (and vice versa).
 
+## Library recommendations
+
+Watched- and liked-movie similarity rows share the concise localized heading
+`More like [movie title]`. The server title remains unchanged apart from trimming
+surrounding whitespace; absent or blank titles retain `Suggested movies`.
+
+`/Movies/Recommendations` category IDs are strings on Jellyfin and nullable
+64-bit integers on Emby. `MovieRecommendationDto` normalizes integers directly
+to decimal strings without floating-point conversion, preserving exact stable
+row IDs across refreshes. Existing string IDs are unchanged; null or absent IDs
+retain the provider's recommendation-type/subject fallback. Malformed values
+still fail decoding rather than silently removing recommendations or errors.
+
+`JellyfinLibraryScopingTests` uses backend-specific recommendation fixtures and
+covers full Int64 boundaries, exact IDs above 2^53, malformed IDs, library scope,
+and stable category identity after rows are reordered.
+
 ## Music
 
 Artist browse uses `/Artists` and artist album queries use `ArtistIds`, including
@@ -58,6 +75,30 @@ Quality remains a prediction of negotiation, not a measurement of server output.
 duplicates, pagination/failure, and matching request/quality profiles for Jellyfin
 and Emby. Universal-profile syntax is defined by released Jellyfin's
 [`UniversalAudioController`](https://github.com/jellyfin/jellyfin/blob/v10.11.0/Jellyfin.Api/Controllers/UniversalAudioController.cs).
+
+## Transcode dynamic range
+
+Full H.264 video conversions request SDR independently of the eight-bit depth
+limit. Forced-transcode negotiation adds a codec-scoped range constraint using
+Emby's `VideoRange` or Jellyfin's `VideoRangeType`. The final server-issued
+rendition also carries `h264-videorange=SDR` (Emby) or `h264-rangetype=SDR`
+(Jellyfin), including automatic codec conversion and the HEVC-to-H.264 fallback.
+Other codec options, selected tracks, sessions, and quality bounds are retained.
+
+The ordinary capability profile is unchanged so direct play and video-copy
+remuxes retain their original range. HEVC HDR capabilities are not reduced to SDR.
+These are output requests, not measured facts: never overwrite source metadata
+or label an active stream SDR from its URL. Transcode Info continues to use the
+engine's measured output. A server without tone mapping can still return HDR;
+keep playable output rather than introducing a subscription-dependent playback
+block or silently raising the selected quality limit.
+
+The Emby query contract was confirmed against 4.10.1.0 by comparing otherwise
+identical PlaybackInfo requests with no range, SDR, and HDR constraints. Its
+[official schema](https://github.com/MediaBrowser/Emby.SDK/blob/master/Resources/OpenApi/openapi_v3.json)
+defines `VideoRange`; Jellyfin's
+[`StreamInfo`](https://github.com/jellyfin/jellyfin/blob/v10.11.0/MediaBrowser.Model/Dlna/StreamInfo.cs)
+reads the codec-specific `rangetype` option.
 
 ## Watch-state writes
 

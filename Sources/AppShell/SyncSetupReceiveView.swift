@@ -1,6 +1,5 @@
 #if os(tvOS)
 import SwiftUI
-import CoreImage.CIFilterBuiltins
 import CoreModels
 import CoreUI
 import FeatureProfiles
@@ -48,14 +47,12 @@ struct SyncSetupReceiveView: View {
                 Text("Set up from another device").font(.largeTitle.bold())
                     .foregroundStyle(palette.primaryText)
                 HStack(alignment: .center, spacing: 60) {
-                    if let img = Self.qrImage(invite.encoded()) {
-                        VStack(spacing: 12) {
-                            Image(uiImage: img).interpolation(.none).resizable()
-                                .frame(width: 340, height: 340)
-                                .padding(18).background(.white).cornerRadius(16)
-                            Text("Scan with your phone or tablet").font(.callout)
-                                .foregroundStyle(palette.secondaryText)
-                        }
+                    VStack(spacing: 12) {
+                        QRCodeView(invite.encoded())
+                            .frame(width: 340, height: 340)
+                            .padding(18).background(.white).cornerRadius(16)
+                        Text("Scan with your phone or tablet").font(.callout)
+                            .foregroundStyle(palette.secondaryText)
                     }
                     VStack(spacing: 10) {
                         Text("or enter code").font(.callout).foregroundStyle(palette.secondaryText)
@@ -208,16 +205,6 @@ struct SyncSetupReceiveView: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(palette.cardBorder, lineWidth: 1)
         )
-    }
-
-    static func qrImage(_ string: String) -> UIImage? {
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(string.utf8)
-        filter.correctionLevel = "M"
-        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 12, y: 12)) else { return nil }
-        let context = CIContext()
-        guard let cg = context.createCGImage(output, from: output.extent) else { return nil }
-        return UIImage(cgImage: cg)
     }
 }
 #endif

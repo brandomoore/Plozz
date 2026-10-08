@@ -42,6 +42,7 @@ final class PlozziOSDownloadsModel {
             .mapValues { records in
                 records.sorted { $0.identityKey < $1.identityKey }
             }
+            recordIndex.update(records)
         }
     }
     /// `records` indexed by identity key. `cachedRecord(forSelectedVersionOf:)` is
@@ -51,6 +52,7 @@ final class PlozziOSDownloadsModel {
     private var recordsByKey: [String: DownloadedMediaRecord] = [:]
     @ObservationIgnored
     private var recordsByIdentityKey: [String: [DownloadedMediaRecord]] = [:]
+    private let recordIndex = PlozziOSDownloadRecordIndex()
     private(set) var initializationError: String?
     var allowsCellular: Bool {
         didSet {
@@ -145,8 +147,20 @@ final class PlozziOSDownloadsModel {
     private var acceptsNewWork = true
     private let providerKind: @MainActor (String) -> ProviderKind?
     private let preferredAudioLanguages: @MainActor (MediaItem) -> [String]
+    private let resolveArtworkItem: @MainActor (DownloadedMediaRecord) async throws -> MediaItem?
+    private let loadArtwork: @Sendable (MediaItem, ArtworkPresentationPolicy) async throws -> Data
+    @ObservationIgnored
+    private var verifiedArtwork: Set<String> = []
+    @ObservationIgnored
+    private var artworkRetryAfter: [String: Date] = [:]
+    @ObservationIgnored
+    private var artworkNetworkConditions: DownloadNetworkConditions?
     @ObservationIgnored
     nonisolated(unsafe) private var eventsTask: Task<Void, Never>?
+    @ObservationIgnored
+    nonisolated(unsafe) private var progressReloadTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var reloadGeneration = 0
     @ObservationIgnored
     nonisolated(unsafe) private var networkTask: Task<Void, Never>?
     @ObservationIgnored
@@ -160,26 +174,22 @@ final class PlozziOSDownloadsModel {
 
     init(
         profileID: String,
-        durableStore: DurableLocalStateStore,
+        registry: DownloadedMediaRegistry,
+        storage: any DownloadStorageLocating,
+        networkObserver: any DownloadNetworkObserving = NWPathDownloadNetworkObserver(),
         networkFileResolver: any MediaTransportNetworkFileResolving,
         providerKind: @escaping @MainActor (String) -> ProviderKind?,
         preferredAudioLanguages:
             @escaping @MainActor (MediaItem) -> [String],
         artworkSettings: @escaping @MainActor () -> ArtworkSettings = { .default },
         startsActive: Bool = true,
+        resolveArtworkItem: @escaping @MainActor (DownloadedMediaRecord) async throws -> MediaItem? = { _ in nil },
+        loadArtwork: (@Sendable (MediaItem) async throws -> Data)? = nil,
         managedURLResolver:
             @escaping PlozziOSBackgroundHTTPDownloadEngine.URLResolver,
         managedRemoval: (@Sendable (ManagedHTTPDownloadSource) async throws -> Void)? = nil,
         managedCompletion: (@Sendable (ManagedHTTPDownloadSource, Date) async throws -> Void)? = nil
-    ) throws {
-        let store = try DurableDownloadedMediaStore(
-            store: durableStore,
-            profileID: profileID
-        )
-        let registry = DownloadedMediaRegistry(store: store)
-        let storage = PlatformDownloadStorageLocator(
-            subdirectory: "PlozzDownloads/\(profileID)"
-        )
+    ) {
         let policyKey = "downloads.policy.\(profileID)"
         let policy = Self.loadPolicy(key: policyKey)
         let preferencesKey = "downloads.preferences.\(profileID)"
@@ -188,7 +198,6 @@ final class PlozziOSDownloadsModel {
         let uncappedBackgroundPolicyKey =
             "downloads.uncapped-background-policy.\(profileID)"
         let preferences = Self.loadPreferences(key: preferencesKey)
-        let networkObserver = NWPathDownloadNetworkObserver()
         let engine = RoutingMediaDownloadEngine(
             directShare: TransportCursorDownloadEngine(
                 resolver: networkFileResolver
@@ -229,6 +238,11 @@ final class PlozziOSDownloadsModel {
         self.providerKind = providerKind
         self.preferredAudioLanguages = preferredAudioLanguages
         self.artworkSettings = artworkSettings
+        self.resolveArtworkItem = resolveArtworkItem
+        self.loadArtwork = { item, policy in
+            if let loadArtwork { return try await loadArtwork(item) }
+            return try await PlozziOSDownloadArtwork.load(for: item, policy: policy)
+        }
         self.allowsCellular = policy.allowsExpensiveNetwork
         self.pausesOnLowDataMode = policy.pausesOnConstrainedNetwork
         self.downloadQuality = policy.quality
@@ -250,15 +264,17 @@ final class PlozziOSDownloadsModel {
         self.notifiesOnFailure = preferences.notifiesOnFailure
 
         eventsTask = Task { [weak self, registry] in
-            await self?.reload()
             let events = await registry.events()
-            for await _ in events {
+            await self?.reload()
+            for await event in events {
                 guard !Task.isCancelled else { return }
-                await self?.reload()
+                await self?.receive(event)
             }
         }
         networkTask = Task { [weak self, networkObserver] in
-            for await conditions in networkObserver.updates() {
+            let updates = networkObserver.updates()
+            await self?.applyNetworkConditionsIfActive(await networkObserver.currentConditions())
+            for await conditions in updates {
                 guard !Task.isCancelled else { return }
                 await self?.applyNetworkConditionsIfActive(conditions)
             }
@@ -287,6 +303,8 @@ final class PlozziOSDownloadsModel {
         self.applicationIsActive = true
         self.providerKind = { _ in nil }
         self.preferredAudioLanguages = { _ in [] }
+        self.resolveArtworkItem = { _ in nil }
+        self.loadArtwork = { try await PlozziOSDownloadArtwork.load(for: $0, policy: $1) }
         self.allowsCellular = false
         self.pausesOnLowDataMode = true
         self.downloadQuality = .original
@@ -304,6 +322,7 @@ final class PlozziOSDownloadsModel {
         eventsTask?.cancel()
         networkTask?.cancel()
         metricsExpiryTask?.cancel()
+        progressReloadTask?.cancel()
         artworkTasks.values.forEach { $0.task.cancel() }
     }
 
@@ -311,6 +330,9 @@ final class PlozziOSDownloadsModel {
         acceptsNewWork = false
         applicationActivityGeneration += 1
         networkTask?.cancel()
+        progressReloadTask?.cancel()
+        progressReloadTask = nil
+        reloadGeneration += 1
         cancelArtworkTasks()
     }
 
@@ -353,6 +375,7 @@ final class PlozziOSDownloadsModel {
     /// that must answer without awaiting (building a menu as it opens). `records`
     /// is the already-loaded published snapshot, so this needs no actor hop.
     func cachedRecord(forSelectedVersionOf item: MediaItem) -> DownloadedMediaRecord? {
+        let indexedRecords = recordIndex.records
         // An item can carry SEVERAL identities (the same title on more than one
         // server), so match the registry's own resolution rather than assuming a
         // single key — otherwise a download made from one server is invisible to
@@ -366,17 +389,17 @@ final class PlozziOSDownloadsModel {
                 for: identity,
                 versionID: versionID
             )
-            if let record = recordsByKey[key] { return record }
+            if let record = recordIndex.record(forKey: key) { return record }
         }
         if let identity = DownloadMediaIdentity.primary(for: item),
-           let record = recordsByKey[
+           let record = recordIndex.record(forKey:
                MediaIdentityKey.string(for: identity, versionID: versionID)
-           ] {
+           ) {
             return record
         }
-        return records.first {
+        return indexedRecords.first {
             $0.versionID == versionID && $0.snapshot.sourceItemID == item.id
-        }
+        }.flatMap { recordIndex.record(forKey: $0.identityKey) }
     }
 
     func supportsReducedQuality(for item: MediaItem) -> Bool {
@@ -421,25 +444,26 @@ final class PlozziOSDownloadsModel {
     /// episode row has no explicit version selected, any downloaded copy satisfies
     /// its badge just as the registry's authoritative `record(for:)` lookup does.
     func cachedRecord(for item: MediaItem) -> DownloadedMediaRecord? {
+        let indexedRecords = recordIndex.records
         let identities = MediaItemIdentity.identities(for: item)
         for identity in identities {
             let key = MediaIdentityKey.string(for: identity)
             if let record = recordsByKey[key]
                 ?? recordsByIdentityKey[key]?.first {
-                return record
+                return recordIndex.record(forKey: record.identityKey)
             }
         }
         if let identity = DownloadMediaIdentity.primary(for: item) {
             let key = MediaIdentityKey.string(for: identity)
             if let record = recordsByKey[key]
                 ?? recordsByIdentityKey[key]?.first {
-                return record
+                return recordIndex.record(forKey: record.identityKey)
             }
         }
         let expectedAccountSource = item.sourceAccountID.map {
             "\(DownloadMediaIdentity.accountSourcePrefix)\($0)"
         }
-        let sourceScopedMatches = records.filter {
+        let sourceScopedMatches = indexedRecords.filter {
             guard case .external(let source, let value) = $0.identity,
                   value == item.id else {
                 return false
@@ -449,7 +473,8 @@ final class PlozziOSDownloadsModel {
             }
             return source.hasPrefix(DownloadMediaIdentity.accountSourcePrefix)
         }
-        return sourceScopedMatches.count == 1 ? sourceScopedMatches[0] : nil
+        return sourceScopedMatches.count == 1
+            ? recordIndex.record(forKey: sourceScopedMatches[0].identityKey) : nil
     }
 
     @discardableResult
@@ -479,10 +504,10 @@ final class PlozziOSDownloadsModel {
             [record],
             using: queue
         )
-        await reload()
         if remainsForeground, acceptsNewWork, applicationIsActive {
             pinArtworkIfAvailable(for: item, record: record)
         }
+        await reload()
         return record
     }
 
@@ -571,12 +596,12 @@ final class PlozziOSDownloadsModel {
             records,
             using: queue
         )
-        await reload()
         if remainsForeground, acceptsNewWork, applicationIsActive {
             for (episode, record) in zip(artworkItems, records) {
                 pinArtworkIfAvailable(for: episode, record: record)
             }
         }
+        await reload()
         return records
     }
 
@@ -934,47 +959,39 @@ final class PlozziOSDownloadsModel {
     static func artworkReferences(
         for item: MediaItem, policy: ArtworkPresentationPolicy
     ) -> [ArtworkReference] {
-        let policy = policy.forArea(.downloads)
-        var seen = Set<ArtworkReference>()
-        return artworkPlacements(for: item).flatMap { policy.references(for: item, placement: $0) }
-            .filter { seen.insert($0).inserted }
+        PlozziOSDownloadArtwork.references(for: item, policy: policy)
     }
 
     static func artworkPlacements(for item: MediaItem) -> [ArtworkPlacement] {
-        item.kind == .episode
-            ? [.detailBackdrop, .episodeThumbnail, .poster]
-            : [.detailBackdrop, .poster]
+        PlozziOSDownloadArtwork.placements(for: item)
     }
 
     static func artworkLookup(for item: MediaItem, router: ArtworkRouter = .shared) async -> URL? {
-        let placements = artworkPlacements(for: item)
-        return await ArtworkSession.artworkResolveLimiter.run {
-            guard !Task.isCancelled else { return nil }
-            return await router.artworkURL(for: item, placements: placements)
-        }
+        await PlozziOSDownloadArtwork.lookup(for: item, router: router)
     }
 
     private func pinArtworkIfAvailable(
-        for item: MediaItem,
+        for item: MediaItem? = nil,
         record: DownloadedMediaRecord
     ) {
-        guard record.snapshot.artworkFileName == nil else {
+        guard acceptsNewWork, applicationIsActive,
+              artworkNetworkConditions.map(policy.allows) == true,
+              artworkTasks[record.identityKey] == nil,
+              artworkRetryAfter[record.identityKey, default: .distantPast] <= Date(),
+              !verifiedArtwork.contains(record.identityKey) || artworkURL(for: record) == nil else {
             return
         }
-        let policy = ArtworkPresentationPolicy(
+        let artworkPolicy = ArtworkPresentationPolicy(
             area: .downloads, settings: artworkSettings(),
             providers: MetadataProviderSettingsStore().load()
         )
-        artworkTasks[record.identityKey]?.task.cancel()
         let taskID = UUID()
         let task = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.pinArtwork(
-                item: item,
-                policy: policy,
-                identityKey: record.identityKey
-            )
-            self.artworkTaskFinished(
+            _ = await ArtworkSession.warmLimiter.runUnlessCancelled { [weak self] in
+                guard let self else { return }
+                await self.pinArtwork(initialItem: item, record: record, artworkPolicy: artworkPolicy)
+            }
+            self?.artworkTaskFinished(
                 identityKey: record.identityKey,
                 taskID: taskID
             )
@@ -983,56 +1000,81 @@ final class PlozziOSDownloadsModel {
     }
 
     private func pinArtwork(
-        item: MediaItem,
-        policy: ArtworkPresentationPolicy,
-        identityKey: String
+        initialItem: MediaItem?,
+        record: DownloadedMediaRecord,
+        artworkPolicy: ArtworkPresentationPolicy
     ) async {
         guard let storage, let registry else { return }
+        let identityKey = record.identityKey
+        var unattachedFile: URL?
         do {
-            guard let artwork = await ArtworkFirstPaintResolver.resolve(
-                references: Self.artworkReferences(for: item, policy: policy),
-                variant: .landscapeCard,
-                asyncOnlineURL: { await Self.artworkLookup(for: item) },
-                prefersOnlineArtwork: policy.prefersOnlineArtwork
-            ),
-                  let data = artwork.image.jpegData(compressionQuality: 0.9) else {
-                PlozzLog.app.debug("No usable artwork was available for the download")
+            try Task.checkCancellation()
+            if let localURL = artworkURL(for: record),
+               await PlozziOSDownloadArtwork.isValidFile(at: localURL) {
+                try Task.checkCancellation()
+                verifiedArtwork.insert(identityKey)
                 return
             }
-            guard !Task.isCancelled,
-                  acceptsNewWork,
-                  applicationIsActive,
-                  !data.isEmpty,
-                  data.count <= 15_000_000 else {
-                return
+            let data: Data
+            if let initialItem {
+                do {
+                    data = try await loadArtwork(initialItem, artworkPolicy)
+                } catch {
+                    try Task.checkCancellation()
+                    guard let refreshed = try await resolveArtworkItem(record),
+                          refreshed != initialItem else { throw error }
+                    data = try await loadArtwork(refreshed, artworkPolicy)
+                }
+            } else {
+                guard let item = try await resolveArtworkItem(record) else {
+                    throw PlozziOSDownloadArtwork.Failure.unavailable
+                }
+                data = try await loadArtwork(item, artworkPolicy)
             }
-            guard await registry.record(forKey: identityKey) != nil else {
-                return
-            }
+            let valid = await Task.detached(priority: .utility) {
+                PlozziOSDownloadArtwork.isValid(data)
+            }.value
+            guard valid else { throw PlozziOSDownloadArtwork.Failure.invalidImage }
+            let current = await registry.record(forKey: identityKey)
+            try Task.checkCancellation()
+            guard acceptsNewWork, applicationIsActive,
+                  artworkNetworkConditions.map(policy.allows) == true,
+                  current?.createdAt == record.createdAt else { return }
             let folder = try storage.pinnedFolderURL(forKey: identityKey)
             try FileManager.default.createDirectory(
                 at: folder,
                 withIntermediateDirectories: true
             )
-            let fileName = "artwork.img"
+            let fileName = "artwork-\(UUID().uuidString).jpg"
             let artworkURL = folder.appendingPathComponent(fileName)
+            unattachedFile = artworkURL
             try data.write(
                 to: artworkURL,
                 options: .atomic
             )
             let attached = try await registry.setArtworkFileName(
                 identityKey: identityKey,
-                fileName: fileName
+                fileName: fileName,
+                expectedCreatedAt: record.createdAt
             )
-            if !attached {
-                try FileManager.default.removeItem(at: artworkURL)
-                return
+            if attached {
+                unattachedFile = nil
+                verifiedArtwork.insert(identityKey)
+                artworkRetryAfter[identityKey] = nil
+                await reload()
             }
-            await reload()
-        } catch is CancellationError {
-            return
         } catch {
-            PlozzLog.app.error("Unable to save downloaded artwork: \(String(describing: error))")
+            if !Task.isCancelled {
+                artworkRetryAfter[identityKey] = Date().addingTimeInterval(60)
+                PlozzLog.networking.error("Download artwork could not be pinned; repair will retry while active")
+            }
+        }
+        if let unattachedFile {
+            do {
+                try FileManager.default.removeItem(at: unattachedFile)
+            } catch {
+                PlozzLog.networking.error("An unattached download artwork file could not be removed")
+            }
         }
     }
 
@@ -1360,6 +1402,9 @@ final class PlozziOSDownloadsModel {
         applicationIsActive = isActive
         if !isActive {
             cancelArtworkTasks()
+        } else {
+            verifiedArtwork.removeAll()
+            artworkRetryAfter.removeAll()
         }
         guard acceptsNewWork else { return }
         guard let queue else { return }
@@ -1477,6 +1522,10 @@ final class PlozziOSDownloadsModel {
     private func applyNetworkConditionsIfActive(
         _ conditions: DownloadNetworkConditions
     ) async {
+        artworkNetworkConditions = conditions
+        if !policy.allows(conditions) {
+            cancelArtworkTasks()
+        }
         guard acceptsNewWork, applicationIsActive, let queue else { return }
         let generation = applicationActivityGeneration
         await enforceSpeedLimitPausePolicy()
@@ -1488,6 +1537,9 @@ final class PlozziOSDownloadsModel {
         guard applicationTransitionIsCurrent(generation),
               applicationIsActive else {
             return
+        }
+        if policy.allows(conditions) {
+            artworkRetryAfter.removeAll()
         }
         await reload()
     }
@@ -1592,15 +1644,55 @@ final class PlozziOSDownloadsModel {
             : .backgroundPolicy
     }
 
+    private func receive(_ event: DownloadProgressEvent) async {
+        switch event {
+        case .item(let record):
+            if let previous = recordsByKey[record.identityKey],
+               previous.createdAt == record.createdAt,
+               previous.status == record.status,
+               record.status == .downloading || record.status == .preparing {
+                guard acceptsNewWork, progressReloadTask == nil else { return }
+                // Network callbacks may arrive hundreds of times per second.
+                // Publish the latest snapshot at most four times per second.
+                progressReloadTask = Task { @MainActor [weak self] in
+                    do {
+                        try await Task.sleep(for: .milliseconds(250))
+                    } catch {
+                        return
+                    }
+                    guard let self, !Task.isCancelled else { return }
+                    self.progressReloadTask = nil
+                    await self.reload()
+                }
+            } else {
+                await reload()
+            }
+        case .removed:
+            await reload()
+        case .group, .global:
+            break
+        }
+    }
+
     private func reload() async {
+        progressReloadTask?.cancel()
+        progressReloadTask = nil
+        reloadGeneration += 1
+        let generation = reloadGeneration
         let refreshed = (await registry?.all() ?? [])
             .sorted { $0.updatedAt > $1.updatedAt }
+        guard generation == reloadGeneration else { return }
         if hasLoadedRecords {
             notifyForTransitions(from: recordsByKey, to: refreshed)
         }
         sampleTransferSpeed(refreshed)
         records = refreshed
         hasLoadedRecords = true
+        verifiedArtwork.formIntersection(recordsByKey.keys)
+        artworkRetryAfter = artworkRetryAfter.filter { recordsByKey[$0.key] != nil }
+        for record in refreshed {
+            pinArtworkIfAvailable(record: record)
+        }
         if acceptsNewWork, !drainingManagedRemovals, let registry, let managedRemoval,
            Date().timeIntervalSince(lastManagedRemovalAttempt) >= 60 {
             let pending = await registry.pendingManagedRemovals()
@@ -1633,7 +1725,19 @@ final class PlozziOSDownloadsModel {
         }
     }
 
+    func refreshArtwork() async {
+        artworkRetryAfter.removeAll()
+        await reload()
+        let tasks = artworkTasks.values.map(\.task)
+        for task in tasks { await task.value }
+    }
+
     private func persistPolicy(restartActiveManagedDownloads: Bool = false) {
+        if artworkNetworkConditions.map(policy.allows) != true {
+            cancelArtworkTasks()
+        } else if restartActiveManagedDownloads {
+            artworkRetryAfter.removeAll()
+        }
         guard let queue else { return }
         if let data = try? JSONEncoder().encode(policy) {
             defaults?.set(data, forKey: policyKey)

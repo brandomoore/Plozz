@@ -255,8 +255,13 @@ always required; reaching the grace period alone never interrupts its writer.
 Large scale fixtures emit unbuffered checkpoints from completed work. The
 million-programme XMLTV test reports preparation phases and every 10,000 indexed
 programmes, so a slow, progressing import is not mistaken for a stalled build.
-Its million-entry workload, assertions, and the no-output watchdog remain intact.
-No timer emits artificial progress while an operation is stuck.
+The 800,005-entry IPTV HTTP import likewise reports every 10,000 staged entries
+and every completed 10,000-row database-copy batch through the real importer
+progress callback, followed by commit/query/reopen checkpoints. All copy batches
+remain inside one transaction; a failure or cancellation restores the previous
+catalogue and freshness state, and other connections cannot see partial results.
+Both workloads, their assertions, and the no-output watchdog remain
+intact. No timer emits artificial progress while an operation is stuck.
 
 ### Simulator readiness and authoritative results
 
@@ -649,6 +654,12 @@ vertical animation moves the labels down on focus and returns them on blur,
 reversing from the current presentation position when interrupted. The model
 always contains the latest focus destination, not a deferred completion write.
 Reduce Motion applies the destination without animation.
+`MediaRowEpisodeEntryHostedTests` samples caption pixels from the window's
+presentation-layer tree rather than repeatedly snapshotting the whole UIKit
+hierarchy during the short focus animation. A separate animated-marker/jump
+control verifies that the sampler detects real intermediate positions without
+inventing them. Glyph travel, row stability, and Reduce Motion assertions remain
+unchanged.
 Short captions are centered; overflowing captions reuse the existing marquee
 speeds and reading pauses. Plain labels own a removable Core Animation
 translation with a resting model position, so blur restores the text immediately

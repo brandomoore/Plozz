@@ -34,6 +34,7 @@ struct PlozziOSDownloadsView: View {
             }
         }
         .navigationTitle("Downloads")
+        .task { await model.refreshArtwork() }
         .toolbarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -220,14 +221,10 @@ struct PlozziOSDownloadsView: View {
             } label: {
                 DownloadTileContent(
                     title: show.title,
-                    subtitle: Text(DownloadFormatting.showSubtitle(
-                        episodeCount: show.episodeCount,
-                        seasonCount: show.seasons.count,
-                        bytes: show.totalBytes
-                    )),
-                    subtitleColor: .secondary,
-                    fraction: nil,
-                    failure: nil,
+                    subtitle: DownloadFormatting.status(for: show),
+                    subtitleColor: DownloadFormatting.statusColor(show.status),
+                    fraction: show.status.isActive ? show.fractionCompleted : nil,
+                    failure: show.records.first { $0.status == .failed }?.failureReason,
                     artworkURL: show.artworkRecord.flatMap(model.artworkURL(for:)),
                     kind: .series
                 )
@@ -359,44 +356,70 @@ struct PlozziOSDownloadsStorageBar: View {
 /// and show rows read identically.
 enum DownloadFormatting {
     static func status(for record: DownloadedMediaRecord) -> Text {
-        let base: Text
-        switch record.status {
-        case .queued: base = Text("Queued")
-        case .preparing:
-            if let fraction = record.preparationFraction {
-                base = Text("Preparing on server ") + Text(
-                    fraction,
-                    format: .percent.precision(.fractionLength(0))
-                )
-            } else {
-                base = Text("Preparing on server")
-            }
-        case .downloading:
-            if let fraction = record.fractionCompleted {
-                base = Text(
-                    fraction,
-                    format: .percent.precision(.fractionLength(0))
-                )
-            } else {
-                base = Text("Downloading")
-            }
-        case .paused: base = Text("Paused")
-        case .completed:
-            base = Text("Available offline • \(byteText(record.bytesDownloaded))")
-        case .failed: base = Text("Failed")
-        }
-        // Several versions of one title can now be downloaded side by side, so
-        // the row has to say WHICH file it is or two entries look identical.
-        // The label is pinned at download time because the server's version list
-        // isn't reachable offline.
+        let base = status(
+            record.status, fraction: record.fractionCompleted,
+            preparationFraction: record.preparationFraction,
+            summary: Text(verbatim: byteText(record.bytesDownloaded))
+        )
+        // Version labels are pinned so two offline copies remain distinguishable.
         guard let version = record.versionLabel, !version.isEmpty else {
             return base
         }
         return Text(verbatim: "\(version) • ") + base
     }
 
+    static func status(for show: PlozziOSDownloadedShow) -> Text {
+        let summary = Text(showSubtitle(
+            episodeCount: show.episodeCount,
+            seasonCount: show.seasons.count,
+            bytes: show.totalBytes
+        ))
+        let base = status(
+            show.status, fraction: show.fractionCompleted,
+            preparationFraction: show.fractionCompleted, summary: summary
+        )
+        return show.status == .completed ? base : base + Text(verbatim: " • ") + summary
+    }
+
+    private static func status(
+        _ status: DownloadStatus,
+        fraction: Double?,
+        preparationFraction: Double?,
+        summary: Text
+    ) -> Text {
+        switch status {
+        case .queued: return Text("Queued")
+        case .preparing:
+            if let fraction = preparationFraction {
+                return Text("Preparing on server ") + Text(
+                    fraction,
+                    format: .percent.precision(.fractionLength(0))
+                )
+            } else {
+                return Text("Preparing on server")
+            }
+        case .downloading:
+            if let fraction {
+                return Text(
+                    fraction,
+                    format: .percent.precision(.fractionLength(0))
+                )
+            } else {
+                return Text("Downloading")
+            }
+        case .paused: return Text("Paused")
+        case .completed:
+            return Text("Available offline • \(summary)")
+        case .failed: return Text("Failed")
+        }
+    }
+
     static func statusColor(for record: DownloadedMediaRecord) -> Color {
-        switch record.status {
+        statusColor(record.status)
+    }
+
+    static func statusColor(_ status: DownloadStatus) -> Color {
+        switch status {
         case .completed: .green
         case .failed: .red
         default: .secondary
@@ -570,7 +593,7 @@ struct DownloadTileContent: View {
                         .lineLimit(1)
                 }
             }
-            .padding(.horizontal, metrics.landscapeCaptionInset)
+            .padding(.horizontal, metrics.landscapeCaptionHorizontalInset)
             .padding(
                 .bottom,
                 cardStyle == .framed ? metrics.landscapeCaptionInset : 0

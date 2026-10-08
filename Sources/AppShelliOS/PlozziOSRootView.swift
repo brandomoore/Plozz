@@ -23,6 +23,7 @@ public struct PlozziOSRootView: View {
     @Environment(\.accessibilityReduceTransparency)
     private var systemReduceTransparency
     @State private var appModel = PlozziOSProcessComposition.appModel
+    @State private var homeViewModelBox = LazyViewState<HomeViewModel>()
     @State private var heroTrailerController = HeroTrailerController()
     @State private var sidebarGeometry = PlozziOSSidebarGeometryModel()
     @State private var showingAddServer = false
@@ -96,6 +97,7 @@ public struct PlozziOSRootView: View {
             } else {
                 PlozziOSTabShell(
                     appModel: appModel,
+                    homeViewModelBox: homeViewModelBox,
                     onAddServer: showAddServer,
                     showingSettings: $showingSettings,
                     showingProfileSwitcher: $showingProfileSwitcher,
@@ -753,7 +755,12 @@ struct PlozziOSTabShell: View {
     @State private var retainsExplicitLiveTVEntry = false
     @State private var retainsExplicitHomeEntry = false
     @State private var hasChosenNavigationDestination = false
-    @State private var sharedHomeViewModel: HomeViewModel
+    let homeViewModelBox: LazyViewState<HomeViewModel>
+    var sharedHomeViewModel: HomeViewModel {
+        homeViewModelBox.value(forKey: homeContentIdentity) {
+            Self.makeHomeViewModel(appModel: appModel)
+        }
+    }
     /// The profile picker opened deliberately (from Settings) rather than at
     /// launch. Presented from the ROOT so the Parental PIN and profile-lock gates
     /// it can raise aren't asked for from underneath the Settings sheet — the
@@ -784,6 +791,7 @@ struct PlozziOSTabShell: View {
 
     init(
         appModel: PlozziOSAppModel,
+        homeViewModelBox: LazyViewState<HomeViewModel>,
         onAddServer: @escaping () -> Void,
         showingSettings: Binding<Bool>,
         showingProfileSwitcher: Binding<Bool>,
@@ -791,6 +799,7 @@ struct PlozziOSTabShell: View {
         systemColorScheme: ColorScheme
     ) {
         self.appModel = appModel
+        self.homeViewModelBox = homeViewModelBox
         self.onAddServer = onAddServer
         _showingSettings = showingSettings
         _showingProfileSwitcher = showingProfileSwitcher
@@ -809,9 +818,6 @@ struct PlozziOSTabShell: View {
         )
         _selectedDestination = State(initialValue: initial)
         _lastContentDestination = State(initialValue: initial)
-        _sharedHomeViewModel = State(
-            initialValue: Self.makeHomeViewModel(appModel: appModel)
-        )
     }
 
     private static func configuredDestinations(
@@ -1214,10 +1220,6 @@ struct PlozziOSTabShell: View {
             }
             if destination != .home { retainsExplicitHomeEntry = false }
         }
-        .onChange(of: homeContentIdentity) {
-            _, _ in
-            sharedHomeViewModel = Self.makeHomeViewModel(appModel: appModel)
-        }
         .background { AppBackground(palette: palette) }
         .background(alignment: .topLeading) {
             PlozziOSHomeSidebarOverlapProbe(
@@ -1387,6 +1389,7 @@ struct PlozziOSTabShell: View {
     private var homeContentIdentity: String {
         let credentials = appModel.accounts
             .map { "\($0.id):\($0.credentialRevision)" }
+            .sorted()
             .joined(separator: "|")
         let active = appModel.accountsProviders.activeAccountIDs
             .sorted()

@@ -77,30 +77,33 @@ public enum ManagedProviderRegistry {
 
     public static func registerIPTV(into registry: ProviderRegistry, durableStore: DurableLocalStateStore?) {
         registry.register(.iptv) { context in
-            try IPTVProvider(context: context, durableStore: durableStore) { data, url, channels, from, to in
-                let source = channels.enumerated().map { index, channel in
-                    LiveTVPrototypeChannel(
-                        id: channel.id, number: index + 1, name: channel.name, category: "Live TV",
-                        symbol: "tv", accent: 0, source: .iptv, tagline: "", guideID: channel.guideID
-                    )
-                }
-                let task = Task.detached(priority: .userInitiated) {
-                    let parser = LiveTVXMLTVParser(provider: LiveTVGuideSource.provider(for: url))
-                    return try data.starts(with: [0x1f, 0x8b])
-                        ? parser.parse(gzipData: data, channels: source, now: from)
-                        : parser.parseXML(data: data, channels: source, now: from)
-                }
-                let guide = try await withTaskCancellationHandler {
-                    try await task.value
-                } onCancel: { task.cancel() }
-                return guide.programs.filter { $0.start < to && $0.end > from }.map {
-                    ServerLiveTVProgramme(
-                        id: $0.id, channelID: $0.channelID, title: $0.title, subtitle: $0.subtitle,
-                        overview: $0.details?.description, startDate: $0.start, endDate: $0.end,
-                        imageURL: $0.details?.artworkURL, categories: $0.details?.categories ?? []
-                    )
-                }
-            }
+            try IPTVProvider(context: context, durableStore: durableStore, guideLoader: iptvGuideLoader)
+        }
+    }
+
+    static let iptvGuideLoader: IPTVProvider.IPTVGuideLoader = { data, url, channels, from, to in
+        let source = channels.enumerated().map { index, channel in
+            LiveTVPrototypeChannel(
+                id: channel.id, number: index + 1, name: channel.name, category: "Live TV",
+                symbol: "tv", accent: 0, source: .iptv, tagline: "",
+                guideID: channel.guideID, guideName: channel.guideName, country: channel.country
+            )
+        }
+        let task = Task.detached(priority: .userInitiated) {
+            let parser = LiveTVXMLTVParser(provider: LiveTVGuideSource.provider(for: url))
+            return try data.starts(with: [0x1f, 0x8b])
+                ? parser.parse(gzipData: data, channels: source, now: from)
+                : parser.parseXML(data: data, channels: source, now: from)
+        }
+        let guide = try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: { task.cancel() }
+        return guide.programs.filter { $0.start < to && $0.end > from }.map {
+            ServerLiveTVProgramme(
+                id: $0.id, channelID: $0.channelID, title: $0.title, subtitle: $0.subtitle,
+                overview: $0.details?.description, startDate: $0.start, endDate: $0.end,
+                imageURL: $0.details?.artworkURL, categories: $0.details?.categories ?? []
+            )
         }
     }
 }

@@ -1,4 +1,5 @@
 import CoreModels
+import CoreNetworking
 import FeatureLiveTVCore
 import Foundation
 import Observation
@@ -13,6 +14,7 @@ public final class LiveTVSourcesRuntime {
     public let scanBinding: LiveTVScanCatalogBinding
     private var admissionRevision = 0
     @ObservationIgnored private let admission: LiveTVSourcesRuntimeAdmission
+    @ObservationIgnored private let enrollment: LiveTVServerEnrollmentCoordinator
 
     public var authorityID: String? { admission.currentIdentity }
     public var isPresentationCurrent: Bool { catalog.isPresentationCurrent }
@@ -31,7 +33,9 @@ public final class LiveTVSourcesRuntime {
         scanCoordinator: LiveTVChannelScanCoordinator,
         context: @escaping @MainActor () -> LiveTVSourceApprovalContext?,
         accountAuthorizationID: @escaping @MainActor () -> String,
-        serverProviderResolver: @escaping LiveTVServerProviderResolver = { _ in nil }
+        serverProviderResolver: @escaping LiveTVServerProviderResolver = { _ in nil },
+        serverChoices: @escaping @MainActor () -> [LiveTVServerChoice] = { [] },
+        suppressedAccountIDs: @escaping @MainActor () throws -> Set<String> = { [] }
     ) {
         self.store = store
         let admission = LiveTVSourcesRuntimeAdmission(
@@ -39,6 +43,8 @@ public final class LiveTVSourcesRuntime {
             context: context, accountAuthorizationID: accountAuthorizationID
         )
         self.admission = admission
+        let enrollment = LiveTVServerEnrollmentCoordinator()
+        self.enrollment = enrollment
         let catalog = LiveTVSourcesCatalog(
             profileID: profileID, cache: cache, loader: loader,
             preferencesStore: preferencesStore, authority: admission.authority,
@@ -46,6 +52,23 @@ public final class LiveTVSourcesRuntime {
             serverProviderResolver: { accountID in
                 guard admission.isCurrent else { return nil }
                 return serverProviderResolver(accountID)
+            },
+            prepareSources: {
+                guard admission.isCurrent else { return .accountUnavailable }
+                do {
+                    let configured = Set(try store.load().servers.map(\.accountID))
+                    let choices = serverChoices().filter { $0.kind == .iptv && !configured.contains($0.id) }
+                    guard !choices.isEmpty else { return nil }
+                    await enrollment.refresh(
+                        choices: choices, resolver: serverProviderResolver, store: store,
+                        suppressedAccountIDs: suppressedAccountIDs,
+                        isAuthorized: { admission.isCurrent }
+                    )
+                    return enrollment.statuses.compactMap(\.failure).first
+                } catch {
+                    PlozzLog.app.error("IPTV sources could not be prepared for Settings")
+                    return .configurationNotSaved
+                }
             }
         )
         self.catalog = catalog
@@ -96,6 +119,7 @@ public final class LiveTVSourcesRuntime {
     public func invalidate() {
         admission.isActive = false
         admission.acceptedIdentity = nil
+        enrollment.invalidate()
         scanBinding.deactivate()
         catalog.invalidate()
         admissionRevision &+= 1

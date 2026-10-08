@@ -20,11 +20,10 @@ struct PlozziOSRelatedSection: View {
 
     var body: some View {
         if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Related")
-                    .font(.title3.weight(.bold))
-                    .padding(.horizontal, inset)
-
+            PlozziOSMediaSection(
+                title: Text("Related"), horizontalInset: inset,
+                artworkInset: cardStyle == .framed ? metrics.cardInset : 0
+            ) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(
                         alignment: .top,
@@ -51,9 +50,13 @@ struct PlozziOSRelatedSection: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal, inset)
                 }
-                .scrollClipDisabled()
+                .contentMargins(
+                    .horizontal,
+                    PlozziOSMediaRailLayout.artworkAlignedInset(inset, metrics: metrics, cardStyle: cardStyle),
+                    for: .scrollContent
+                )
+                .plozziOSMediaRailClearance()
             }
             .environment(\.plozzCardCaptionView, .related)
         }

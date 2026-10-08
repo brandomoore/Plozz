@@ -176,9 +176,11 @@ struct PlaybackDiagnosticsOverlay: View {
         section("SOURCE") {
             optionalRow("File", d.sourceFileNameText)
             optionalRow("Size", d.sourceFileSizeText)
-            row("Delivery", d.mode.displayName)
-            optionalRow("Stream", streamTransportText(d.streamTransport))
-            if d.mode != .transcode { optionalRow("Container", d.containerText) }
+            row(LocalizedStringResource("Delivery", comment: "Playback diagnostics label for how media is delivered: direct play, remuxing, or server transcoding."), d.mode.displayName)
+            optionalRow(LocalizedStringResource("Stream", comment: "Playback diagnostics label for the current stream host and transport format."), streamTransportText(d.streamTransport))
+            if d.mode != .transcode {
+                optionalRow(LocalizedStringResource("Container", comment: "Playback diagnostics label for the media container format, such as MKV or MP4."), d.containerText)
+            }
         }
     }
 
@@ -186,25 +188,25 @@ struct PlaybackDiagnosticsOverlay: View {
     private func videoSection(_ d: PlaybackDiagnostics) -> some View {
         section(d.mode == .transcode ? "CURRENT VIDEO" : "VIDEO") {
             if d.mode == .transcode {
-                row("Codec", d.videoCodecText)
+                row(LocalizedStringResource("Codec", comment: "Playback diagnostics label for the video or audio encoding format."), d.videoCodecText)
                 row("Resolution", d.resolutionWithQualityText)
             } else {
-                optionalRow("Codec", d.videoCodecText)
+                optionalRow(LocalizedStringResource("Codec", comment: "Playback diagnostics label for the video or audio encoding format."), d.videoCodecText)
                 optionalRow("Resolution", d.resolutionWithQualityText)
             }
             // Nominal frame rate + live observed FPS folded into one row.
-            optionalRow("Frame Rate", frameRateCombined(d))
+            optionalRow(LocalizedStringResource("Frame Rate", comment: "Playback diagnostics label for video frames per second."), frameRateCombined(d))
             if d.mode == .transcode {
                 if let bitrate = d.videoBitrate {
-                    row("Estimated bitrate", PlaybackDiagnostics.formatBitrate(bitrate))
+                    row(LocalizedStringResource("Estimated bitrate", comment: "Playback diagnostics label for the estimated bitrate of the current transcoded video."), PlaybackDiagnostics.formatBitrate(bitrate))
                 }
             } else {
                 optionalRow("Bitrate", PlaybackDiagnostics.formatBitrate(d.videoBitrate))
             }
             // HDR format + Dolby Vision profile folded into a single HDR row.
-            optionalRow("HDR", hdrCombined(d))
+            optionalRow(Text(verbatim: "HDR"), hdrCombined(d))
             optionalRow("Color", d.colorText)
-            optionalRow("Codec Tag", d.videoCodecTagText)
+            optionalRow(LocalizedStringResource("Codec Tag", comment: "Playback diagnostics label for the technical codec identifier stored in the media container."), d.videoCodecTagText)
         }
     }
 
@@ -212,23 +214,23 @@ struct PlaybackDiagnosticsOverlay: View {
     private func audioSection(_ d: PlaybackDiagnostics) -> some View {
         section(d.mode == .transcode ? "CURRENT AUDIO" : "AUDIO") {
             if d.mode == .transcode {
-                row("Codec", d.audioCodecText)
+                row(LocalizedStringResource("Codec", comment: "Playback diagnostics label for the video or audio encoding format."), d.audioCodecText)
                 row("Channels", d.audioChannelsText)
             } else {
-                optionalRow("Codec", d.audioCodecText)
+                optionalRow(LocalizedStringResource("Codec", comment: "Playback diagnostics label for the video or audio encoding format."), d.audioCodecText)
                 optionalRow("Channels", d.audioChannelsText)
             }
-            optionalRow("Sample Rate", d.audioSampleRateText)
+            optionalRow(LocalizedStringResource("Sample Rate", comment: "Playback diagnostics label for the audio sampling frequency."), d.audioSampleRateText)
             optionalRow("Bitrate", d.audioBitrateText)
-            optionalRow("Output", d.audioOutputDescription)
+            optionalRow(LocalizedStringResource("Output", comment: "Playback diagnostics label for the active audio output route and format."), d.audioOutputDescription)
         }
     }
 
     private func originalFileSection(_ d: PlaybackDiagnostics) -> some View {
         let source = PlaybackDiagnostics.base(from: d.originalSource, mode: .directPlay)
         return section("ORIGINAL FILE") {
-            optionalRow("Container", source.containerText)
-            optionalRow("Video", source.videoLineText)
+            optionalRow(LocalizedStringResource("Container", comment: "Playback diagnostics label for the media container format, such as MKV or MP4."), source.containerText)
+            optionalRow(LocalizedStringResource("Video", comment: "Playback diagnostics label for the original file's video format and quality."), source.videoLineText)
             optionalRow("Audio", source.audioLineText)
         }
     }
@@ -237,7 +239,7 @@ struct PlaybackDiagnosticsOverlay: View {
     private func subtitleSection(_ d: PlaybackDiagnostics) -> some View {
         if d.subtitleText != PlaybackDiagnostics.placeholder {
             section("SUBTITLES") {
-                row("Track", d.subtitleText)
+                row(LocalizedStringResource("Track", comment: "Playback diagnostics label for the selected subtitle track."), d.subtitleText)
             }
         }
     }
@@ -246,26 +248,30 @@ struct PlaybackDiagnosticsOverlay: View {
     private func playbackSection(_ d: PlaybackDiagnostics) -> some View {
         // Transport measurements stay separate from source video/audio facts.
         section("PLAYBACK") {
-            optionalRow(d.mode == .plozzigen ? "AVPlayer time" : "Position", d.positionText)
-            optionalRow(d.mode == .plozzigen ? "AVPlayer window" : "Seekable", seekWindowText(d.seekWindowFacts))
-            optionalRow("State", d.playbackStateText)
-            row("Buffer", bufferStatusText(d.bufferStatusFacts))
-            optionalRow("Engine buffer", PlaybackDiagnostics.formatBuffer(d.engineBufferedSecondsAhead))
-            optionalRow("Stalls", d.stallCount.map(String.init) ?? PlaybackDiagnostics.placeholder)
-            row("Dropped", "\(d.droppedFramesText) frames")
+            optionalRow(d.mode == .plozzigen
+                ? .init("AVPlayer time", comment: "Playback diagnostics label for the internal AVPlayer playback position. Keep AVPlayer unchanged.")
+                : "Position", d.positionText)
+            optionalRow(d.mode == .plozzigen
+                ? .init("AVPlayer window", comment: "Playback diagnostics label for the internal AVPlayer seekable time range. Keep AVPlayer unchanged.")
+                : .init("Seekable", comment: "Playback diagnostics label for the time range available for seeking."), seekWindowText(d.seekWindowFacts))
+            optionalRow(LocalizedStringResource("State", comment: "Playback diagnostics label for the current player state."), d.playbackStateText)
+            row(LocalizedStringResource("Buffer", comment: "Playback diagnostics label for the player's buffered media and buffer health."), bufferStatusText(d.bufferStatusFacts))
+            optionalRow(LocalizedStringResource("Engine buffer", comment: "Playback diagnostics label for media buffered ahead by the playback engine."), PlaybackDiagnostics.formatBuffer(d.engineBufferedSecondsAhead))
+            optionalRow(LocalizedStringResource("Stalls", comment: "Playback diagnostics label for the count of playback stalls."), d.stallCount.map(String.init) ?? PlaybackDiagnostics.placeholder)
+            row(LocalizedStringResource("Dropped", comment: "Playback diagnostics label for dropped video frames."), "\(d.droppedFramesText) frames")
             optionalRow("Declared stream bitrate", d.indicatedBitrateText)
-            optionalRow("Network throughput", d.observedBitrateText)
+            optionalRow(LocalizedStringResource("Network throughput", comment: "Playback diagnostics label for measured network data transfer rate, not encoded media bitrate."), d.observedBitrateText)
         }
     }
 
     @ViewBuilder
     private func systemSection(_ d: PlaybackDiagnostics) -> some View {
         section("SYSTEM") {
-            optionalRow("Device", d.deviceText)
-            optionalRow("Disk", diskSpaceText(d.diskSpaceFacts))
-            optionalRow("Memory", d.memoryText)
-            optionalRow("Thermal", d.thermalResource)
-            optionalRow("Instances", d.liveInstancesText)
+            optionalRow(LocalizedStringResource("playback.diagnostics.device", defaultValue: "Device", comment: "Playback diagnostics label for the hardware model and operating system. Not the audio-language option that follows device settings."), d.deviceText)
+            optionalRow(LocalizedStringResource("Disk", comment: "Playback diagnostics label for free and total device storage."), diskSpaceText(d.diskSpaceFacts))
+            optionalRow(LocalizedStringResource("Memory", comment: "Playback diagnostics label for app memory usage."), d.memoryText)
+            optionalRow(LocalizedStringResource("Thermal", comment: "Playback diagnostics label for the device's thermal condition."), d.thermalResource)
+            optionalRow(LocalizedStringResource("Instances", comment: "Playback diagnostics label for live playback object counts."), d.liveInstancesText)
         }
     }
 
@@ -290,65 +296,76 @@ struct PlaybackDiagnosticsOverlay: View {
     // MARK: - Rows
 
     @ViewBuilder
-    private func optionalRow(_ label: String, _ value: String) -> some View {   // l10n:content — diagnostic values, developer-facing
+    private func optionalRow(_ label: LocalizedStringResource, _ value: String) -> some View {   // l10n:content — diagnostic value
+        optionalRow(Text(label), value)
+    }
+
+    @ViewBuilder
+    private func optionalRow(_ label: Text, _ value: String) -> some View {   // l10n:content — diagnostic value
         if value != PlaybackDiagnostics.placeholder {
-            row(label, value)
+            row(label, Text(verbatim: value))
         }
     }
 
-    private func row(_ label: String, _ value: String) -> some View {   // l10n:content — diagnostic values, developer-facing
-        row(label, Text(value))
+    private func row(_ label: LocalizedStringResource, _ value: String) -> some View {   // l10n:content — diagnostic value
+        row(Text(label), Text(verbatim: value))
     }
 
     /// Row overload for CoreModels-supplied copy resources (e.g. `PlaybackMode`,
     /// `ThermalLevel`, `audioOutputDescription`) — kept distinct from the
     /// `String` overload above so these values go through SwiftUI's catalog
     /// lookup instead of being rendered verbatim.
-    private func row(_ label: String, _ value: LocalizedStringResource) -> some View {   // l10n:content — diagnostic row label, developer-facing
-        row(label, Text(value))
+    private func row(_ label: LocalizedStringResource, _ value: LocalizedStringResource) -> some View {
+        row(Text(label), Text(value))
     }
 
     @ViewBuilder
-    private func optionalRow(_ label: String, _ value: LocalizedStringResource?) -> some View {   // l10n:content — diagnostic row label, developer-facing
+    private func optionalRow(_ label: LocalizedStringResource, _ value: LocalizedStringResource?) -> some View {
         if let value {
             row(label, value)
         }
     }
 
     @ViewBuilder
-    private func optionalRow(_ label: String, _ value: Text?) -> some View {   // l10n:content — diagnostic row label, developer-facing
+    private func optionalRow(_ label: LocalizedStringResource, _ value: Text?) -> some View {
         if let value {
-            row(label, value)
+            row(Text(label), value)
         }
     }
 
+    private func row(_ label: LocalizedStringResource, _ value: Text) -> some View {
+        row(Text(label), value)
+    }
+
     @ViewBuilder
-    private func row(_ label: String, _ value: Text) -> some View {   // l10n:content — diagnostic values, developer-facing
+    private func row(_ label: Text, _ value: Text) -> some View {
         if presentation == .mobile {
             MobileDiagnosticsRow(label: label, value: value)
         } else {
             GridRow {
-                Text(label)
+                label
                     .font(.system(size: 14, design: .monospaced))
                     .foregroundStyle(palette.secondaryText)
-                    .frame(width: 110, alignment: .leading)
+                    .frame(width: 150, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                     .gridColumnAlignment(.leading)
                 value
                     .font(.system(size: 14, design: .monospaced).weight(.semibold))
                     .foregroundStyle(palette.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
                     .gridColumnAlignment(.leading)
             }
         }
     }
 
     struct MobileDiagnosticsRow: View {
-        let label: String // l10n:content — diagnostic field label
+        let label: Text
         let value: Text
         @Environment(\.themePalette) private var palette
 
         var body: some View {
             VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(.caption).foregroundStyle(palette.secondaryText)
+                label.font(.caption).foregroundStyle(palette.secondaryText)
                 value.font(.callout.monospacedDigit())
                     .foregroundStyle(palette.primaryText)
                     .fixedSize(horizontal: false, vertical: true)

@@ -140,19 +140,43 @@ def select_release_xcode
   UI.success("Building with release Xcode: #{chosen} (#{version})")
 end
 
-# Use one build number across both platform archives. Taking the highest current
-# TestFlight build across tvOS and iOS prevents collisions even if one platform
-# has shipped more builds than the other.
+# Compare numeric components, never decimal floats or truncated integers.
+def release_build_components(value)
+  text = value.to_s
+  unless text.match?(/\A[1-9][0-9]{0,3}(?:\.(?:0|[1-9][0-9]?)){0,2}\z/)
+    UI.user_error!("Invalid release build: #{text}")
+  end
+  (text.split(".").map(&:to_i) + [0, 0]).first(3)
+end
+
+def release_build_tag(value)
+  release_build_components(value)
+  parts = value.to_s.split(".")
+  (["release/#{format('%03d', parts.first.to_i)}"] + parts.drop(1)).join(".")
+end
+
+# Query unmodified ASC strings: latest_testflight_build_number truncates dotted
+# values. Check every page and both platforms before accepting the catalog's build.
 def next_build_number
-  latest = RELEASE_TARGETS.map do |target|
-    latest_testflight_build_number(
-      api_key: asc_api_key,
-      app_identifier: APP_IDENTIFIER,
-      platform: target[:platform],
-      initial_build_number: 0
-    ).to_i
-  end.max
-  latest + 1
+  asc_api_key
+  app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
+  UI.user_error!("Plozz App Store Connect record not found") unless app
+  builds = Spaceship::ConnectAPI.get_builds(
+    filter: { app: app.id, "preReleaseVersion.version" => marketing_version },
+    includes: "preReleaseVersion", limit: 200
+  ).all_pages.flat_map(&:to_models)
+  platforms = RELEASE_TARGETS.map { |target| target.fetch(:asc_platform) }
+  latest = builds.select { |build| platforms.include?(build.platform) }
+                 .map { |build| release_build_components(build.version) }.max || [0, 0, 0]
+  selected = if ENV["PLOZZ_RELEASE_ID"].to_s.strip.empty?
+               (latest.first + 1).to_s
+             else
+               release_notes_entry.fetch("build").to_s
+             end
+  unless (release_build_components(selected) <=> latest) == 1
+    UI.user_error!("Selected build #{selected} must be newer than the existing TestFlight builds on both platforms.")
+  end
+  selected
 end
 
 # Refuse to archive a distribution build with no crash-reporting endpoint.
@@ -416,10 +440,8 @@ end
 # Best-effort: a missing/failed `gh` or git push warns but never fails the ship —
 # the upload already succeeded by the time this runs.
 #
-# `build_number` is the CFBundleVersion that was uploaded (sequential TestFlight
-# number, set by the `build` lane). Tags are ZERO-PADDED (`release/016`) so the
-# GitHub Releases web page — which orders releases by tag name, lexicographically —
-# lists newest first (unpadded `release/16` would sort below `release/2` as text).
+# `build_number` is the exact CFBundleVersion that was uploaded. The first
+# component is zero-padded; hotfix components remain intact (`release/051.1`).
 #
 # `prerelease` follows the industry standard for iOS betas: TestFlight builds (the
 # `beta` lane) are GitHub **pre-releases** (the orange badge — the canonical beta
@@ -471,23 +493,29 @@ def tag_github_release(build_number, notes, prerelease, release_version)
     [ENV["GIT_CONFIG_PARAMETERS"], "'safe.bareRepository=all'"]
       .compact.reject(&:empty?).join(" ")
   ident = "-c user.name='Brandon Moore' -c user.email='16313090+thatcube@users.noreply.github.com'"
-  n = build_number.to_i
-  tag = format("release/%03d", n)
-  prev_tag = format("release/%03d", n - 1)
+  tag = release_build_tag(build_number)
 
   begin
-    sh("cd .. && git #{ident} tag -a -f #{tag} -m 'TestFlight build #{build_number}'")
-    sh("cd .. && git push origin -f #{tag}")
+    current = release_build_components(build_number)
+    previous = sh("cd .. && git tag --list 'release/*'").lines.filter_map do |line|
+      candidate = line.strip
+      next unless candidate.match?(/\Arelease\/[0-9]{3,4}(?:\.[0-9]{1,2}){0,2}\z/)
+      number = candidate.delete_prefix("release/").split(".").map(&:to_i).join(".")
+      parts = release_build_components(number)
+      [parts, candidate] if (parts <=> current) == -1
+    end.max_by(&:first)
+    prev_tag = previous&.last
+    sh("cd .. && git #{ident} tag -a #{tag} -m 'TestFlight build #{build_number}'")
+    sh("cd .. && git push origin #{tag}")
   rescue => e
     return note_release_tagging_failure(
       "Tagging #{tag} failed: #{e.message}",
-      "cd #{Dir.pwd}/.. && git #{ident} tag -a -f #{tag} -m 'TestFlight build #{build_number}' && git push origin -f #{tag}"
+      "cd #{Dir.pwd}/.. && git #{ident} tag -a #{tag} -m 'TestFlight build #{build_number}' && git push origin #{tag}"
     )
   end
 
-  has_prev = (sh("cd .. && git rev-parse -q --verify refs/tags/#{prev_tag} >/dev/null 2>&1 && echo yes || echo no").strip == "yes")
   changelog =
-    if has_prev
+    if prev_tag
       (sh("cd .. && git log --no-merges --pretty='- %s' #{prev_tag}..#{tag}").strip)
     else
       "- Initial tagged release."
@@ -541,10 +569,8 @@ lane :build do |options|
   # refuse to ship one blind.
   require_crash_reporting_dsn
 
-  # Build number must strictly increase per upload for a given marketing version.
-  # TestFlight is the source of truth, so derive the next build from (latest
-  # TestFlight build + 1). Set it BEFORE generating the project so generate-project.sh
-  # bakes it into CFBundleVersion for both the app and the Top Shelf extension.
+  # Validate the selected build against TestFlight before baking the same exact
+  # identity into both apps and Top Shelf. Unselected archives use the next integer.
   # Apple version stays on the catalog's selected series unless deliberately
   # changed; the selected entry separately owns the displayed Plozz version.
   build_number = next_build_number

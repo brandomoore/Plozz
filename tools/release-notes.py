@@ -26,6 +26,21 @@ def marketing_version(release: dict[str, Any]) -> str:
     return release.get("marketingVersion", release["version"])
 
 
+def build_parts(value: Any) -> tuple[int, int, int]:
+    if type(value) not in (int, str) or not re.fullmatch(
+        r"[1-9][0-9]{0,3}(?:\.(?:0|[1-9][0-9]?)){0,2}", str(value)
+    ):
+        fail(f"invalid build: {value}")
+    parts = tuple(int(part) for part in str(value).split("."))
+    return (parts + (0, 0))[:3]
+
+
+def release_tag(build: int | str) -> str:
+    build_parts(build)
+    parts = str(build).split(".")
+    return "release/" + ".".join([f"{int(parts[0]):03d}", *parts[1:]])
+
+
 def version_parts(value: Any, counts: tuple[int, ...]) -> tuple[int, ...]:
     if not isinstance(value, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)+", value):
         fail(f"invalid version: {value}")
@@ -68,8 +83,8 @@ def load_catalog(path: Path) -> dict[str, Any]:
         fail("releases must be an array")
 
     ids: set[str] = set()
-    builds: set[int] = set()
-    previous_build: int | None = None
+    builds: set[tuple[int, int, int]] = set()
+    previous_build: tuple[int, int, int] | None = None
     previous_version: tuple[int, ...] | None = None
     previous_marketing_version: tuple[int, ...] | None = None
     for release in releases:
@@ -81,15 +96,14 @@ def load_catalog(path: Path) -> dict[str, Any]:
         released_at = release.get("releasedAt")
         sections = release.get("sections")
 
-        if not isinstance(build, int) or build <= 0:
-            fail(f"{release_id or 'release'} has an invalid build")
-        if release_id != f"release/{build:03d}":
+        build_tuple = build_parts(build)
+        if release_id != release_tag(build):
             fail(f"{release_id} does not match build {build}")
         if release_id in ids:
             fail(f"duplicate release id: {release_id}")
-        if build in builds:
+        if build_tuple in builds:
             fail(f"duplicate release build: {build}")
-        if previous_build is not None and build >= previous_build:
+        if previous_build is not None and build_tuple >= previous_build:
             fail("releases must be sorted by descending build")
         version_tuple = version_parts(version, (3,))
         apple_version = version_parts(marketing_version(release), (3,))
@@ -129,8 +143,8 @@ def load_catalog(path: Path) -> dict[str, Any]:
                 fail(f"{release_id} repeats a release-note item")
 
         ids.add(release_id)
-        builds.add(build)
-        previous_build = build
+        builds.add(build_tuple)
+        previous_build = build_tuple
         previous_version = version_tuple
         previous_marketing_version = apple_version
 
@@ -141,7 +155,7 @@ def selected_release(
     catalog: dict[str, Any],
     release_id: str,
     version: str | None,
-    build: int | None,
+    build: int | str | None,
 ) -> dict[str, Any]:
     release = next(
         (entry for entry in catalog["releases"] if entry["id"] == release_id),
@@ -154,7 +168,7 @@ def selected_release(
             f"{release_id} uses Apple version {marketing_version(release)}, "
             f"but the build is Apple version {version}"
         )
-    if build is not None and release["build"] != build:
+    if build is not None and str(release["build"]) != str(build):
         fail(
             f"{release_id} is build {release['build']}, "
             f"but App Store Connect assigned build {build}"
@@ -163,7 +177,7 @@ def selected_release(
 
 
 def build_identity(
-    catalog: dict[str, Any], release_id: str | None, version: str | None, build: int | None
+    catalog: dict[str, Any], release_id: str | None, version: str | None, build: int | str | None
 ) -> dict[str, str]:
     if not catalog["releases"]:
         fail("A committed release is required to determine the stable Apple version")
@@ -215,7 +229,7 @@ def parser() -> argparse.ArgumentParser:
     validate = subparsers.add_parser("validate")
     validate.add_argument("--release-id")
     validate.add_argument("--version", help="Expected Apple marketing version")
-    validate.add_argument("--build", type=int)
+    validate.add_argument("--build")
 
     render_command = subparsers.add_parser("render")
     render_command.add_argument("--release-id", required=True)
@@ -224,7 +238,7 @@ def parser() -> argparse.ArgumentParser:
     identity = subparsers.add_parser("identity")
     identity.add_argument("--release-id")
     identity.add_argument("--version", help="Explicit Apple marketing version override")
-    identity.add_argument("--build", type=int)
+    identity.add_argument("--build")
     next_version = subparsers.add_parser("next-version")
     next_version.add_argument("--date", type=date.fromisoformat, default=date.today())
     return result

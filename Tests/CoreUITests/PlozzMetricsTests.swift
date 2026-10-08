@@ -49,6 +49,24 @@ final class PlozzMetricsTests: XCTestCase {
         }
     }
 
+    func testCaptionHorizontalClearanceDoesNotChangeBottomSpacingOrTelevision() {
+        for density in UIDensity.allCases {
+            for factor in [CGFloat(0.5), 1, 2] {
+                let touch = PlozzMetrics.touch(density: density).scalingPosters(by: factor)
+                let tv = PlozzMetrics(density: density).scalingPosters(by: factor)
+                XCTAssertEqual(touch.posterCaptionHorizontalInset, 4)
+                XCTAssertEqual(touch.landscapeCaptionHorizontalInset, 4)
+                XCTAssertEqual(touch.posterCaptionInset, (12 + touch.cardInset) * 0.8 - touch.cardInset)
+                XCTAssertEqual(touch.landscapeCaptionInset, touch.posterCaptionInset)
+                XCTAssertLessThan(touch.posterCaptionHorizontalInset, touch.posterCaptionInset)
+                XCTAssertEqual(tv.posterCaptionHorizontalInset, tv.posterCaptionInset)
+                XCTAssertEqual(tv.landscapeCaptionHorizontalInset, tv.landscapeCaptionInset)
+                XCTAssertEqual(tv.posterCaptionInset, (16 + tv.cardInset) * 0.8 - tv.cardInset)
+                XCTAssertEqual(tv.landscapeCaptionInset, (18 + tv.cardInset) * 0.8 - tv.cardInset)
+            }
+        }
+    }
+
     func testCaptionEnvironmentResolvesDefaultOverridesAndDestinationScopes() {
         var environment = EnvironmentValues()
         environment.plozzCardCaptionSettings = CardCaptionSettings(

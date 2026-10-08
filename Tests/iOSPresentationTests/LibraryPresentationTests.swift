@@ -14,6 +14,37 @@ import XCTest
 final class LibraryPresentationTests: XCTestCase {
     private var capturedImage: CGImage?
 
+    func testRecommendationHeadingsTruncateNormallyAndWrapAtAccessibilitySizes() async throws {
+        let appModel = PlozziOSAppModel()
+        let title = "More like Avatar Aang: The Last Airbender"
+        for textSize in [DynamicTypeSize.large, .xxxLarge, .accessibility3, .accessibility5] {
+            let row = PlozziOSLibraryRecommendationRow(
+                section: LibrarySection(id: "similar", title: title, items: []),
+                spoilerSettings: SpoilerSettings(),
+                showsSeriesArtwork: false,
+                onSelect: { _ in }
+            )
+            try await withPresentation(
+                ScrollView { row },
+                appModel: appModel, size: CGSize(width: 390, height: 1200),
+                sizeClass: .compact, dynamicTypeSize: textSize
+            ) { window in
+                let observations = try self.capture(window, name: "recommendation-heading-\(textSize)", scale: 2)
+                let lines = observations.compactMap { $0.topCandidates(1).first?.string }
+                let rendered = lines.joined(separator: " ")
+                XCTAssertTrue(rendered.hasPrefix("More like"), rendered)
+                if textSize.isAccessibilitySize {
+                    XCTAssertGreaterThan(lines.count, 1)
+                    XCTAssertEqual(rendered, title, "Large accessibility text must retain the complete movie title.")
+                } else {
+                    XCTAssertEqual(lines.count, 1, "Normal text sizes must not wrap recommendation headings.")
+                    XCTAssertFalse(rendered.contains("Airbender"), rendered)
+                    XCTAssertTrue(rendered.hasSuffix("…") || rendered.hasSuffix("..."), rendered)
+                }
+            }
+        }
+    }
+
     func testLibraryModesOnPhoneAndTablet() async throws {
         let artwork = try await seedArtwork()
         let appModel = PlozziOSAppModel()

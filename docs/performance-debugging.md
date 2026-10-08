@@ -65,12 +65,27 @@ crash-reporting consent and limited to one warning per category per reporter
 lifecycle. These measurements diagnose an unavailable input; a screenshot of the
 generic import error alone cannot establish which limit was reached.
 
-Temporary IPTV setup diagnostics are enabled for TestFlight builds **51 and 52**
-and local Debug verification, never App Store builds. Build 53 and later stop
-recording automatically; this is not a remote configuration switch. They reuse
-Share Crash Reports (including explicit opt-outs), not the manual Send Diagnostics
-action. A handled add/reconnect failure produces a warning with
+IPTV setup diagnostics are enabled for **all TestFlight builds**, including
+hotfixes, and local Debug verification, never App Store builds. There is no
+build-number allowlist or automatic build-based expiry; retire the investigation
+explicitly once the setup issues are resolved. This is not a remote configuration
+switch. They reuse Share Crash Reports (including explicit opt-outs), not the
+manual Send Diagnostics action. A handled add/reconnect failure produces a warning with
 `report.kind:iptv-setup`; a crash or button press is not required.
+
+Playback failures use the same Debug/TestFlight and Share Crash Reports gate,
+with `report.kind:playback-failure`. The IPTV proxy records the upstream HTTP
+status and MIME category before converting a failed request to a gateway
+response; the live engine records typed error kinds and numeric domain/code
+evidence. Reports distinguish response, body, manifest, load, playback and
+audio-session failures. Unknown format information stays unknown. URL/header
+values, media names, provider addresses and error descriptions are never included.
+Each playback attempt emits at most one failure; the reporter accepts at most
+10 distinct playback reports per enabled lifecycle, separately from setup
+reports. Success, cancellation and downstream client disconnects do not report
+proxy failures. Opting out invalidates retained attempts even if reporting is
+later re-enabled. These reports diagnose playback separately from catalogue
+imports; they do not establish that two users have the same underlying failure.
 
 Only explicit URL, file, and Xtream account setup and legacy source check/save
 attempts establish the task-local context. Ordinary catalogue refresh, guide

@@ -94,7 +94,7 @@ public struct ReleaseNotesRelease: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let version: String
     public let marketingVersion: String?
-    public let build: Int
+    public let build: ReleaseBuildNumber
     public let releasedAt: String
     public let sections: [ReleaseNotesSection]
     public let featuredContent: ReleaseNotesFeaturedContent?
@@ -102,7 +102,7 @@ public struct ReleaseNotesRelease: Codable, Equatable, Identifiable, Sendable {
     public init(
         id: String,
         version: String,
-        build: Int,
+        build: ReleaseBuildNumber,
         releasedAt: String,
         sections: [ReleaseNotesSection],
         marketingVersion: String? = nil,
@@ -132,8 +132,8 @@ public enum ReleaseNotesCatalogError: LocalizedError, Equatable {
     case unsupportedSchemaVersion(Int)
     case releasesNotNewestFirst
     case duplicateReleaseID(String)
-    case duplicateBuild(Int)
-    case invalidReleaseID(String, build: Int)
+    case duplicateBuild(ReleaseBuildNumber)
+    case invalidReleaseID(String, build: ReleaseBuildNumber)
     case invalidVersion(String)
     case invalidMarketingVersion(String)
     case invalidReleaseDate(String)
@@ -289,7 +289,7 @@ public struct ReleaseNotesCatalog: Codable, Equatable, Sendable {
             throw ReleaseNotesCatalogError.unsupportedSchemaVersion(schemaVersion)
         }
         var ids = Set<String>()
-        var builds = Set<Int>()
+        var builds = Set<ReleaseBuildNumber>()
         for release in releases {
             guard ids.insert(release.id).inserted else {
                 throw ReleaseNotesCatalogError.duplicateReleaseID(release.id)
@@ -297,7 +297,7 @@ public struct ReleaseNotesCatalog: Codable, Equatable, Sendable {
             guard builds.insert(release.build).inserted else {
                 throw ReleaseNotesCatalogError.duplicateBuild(release.build)
             }
-            let expectedID = String(format: "release/%03d", release.build)
+            let expectedID = release.build.releaseID
             guard release.id == expectedID else {
                 throw ReleaseNotesCatalogError.invalidReleaseID(release.id, build: release.build)
             }

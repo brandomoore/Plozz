@@ -142,9 +142,10 @@ public struct SkeletonCardView: View {
             // the caption block the exact same height, so the row never shifts
             // vertically when real content swaps in.
             if showsCaption {
-                textLines(contentWidth: metrics.posterWidth - 2 * metrics.posterCaptionInset, spacing: 2)
+                textLines(contentWidth: metrics.posterWidth - 2 * metrics.posterCaptionHorizontalInset, spacing: 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding([.horizontal, .bottom], metrics.posterCaptionInset)
+                    .padding(.horizontal, metrics.posterCaptionHorizontalInset)
+                    .padding(.bottom, metrics.posterCaptionInset)
             }
         }
         .shimmering()
@@ -174,8 +175,9 @@ public struct SkeletonCardView: View {
 
             // PosterCardView's landscape caption uses VStack(spacing: 4).
             if showsCaption {
-                textLines(contentWidth: artworkSize.width - 2 * metrics.landscapeCaptionInset, spacing: 4)
-                    .padding([.horizontal, .bottom], metrics.landscapeCaptionInset)
+                textLines(contentWidth: artworkSize.width - 2 * metrics.landscapeCaptionHorizontalInset, spacing: 4)
+                    .padding(.horizontal, metrics.landscapeCaptionHorizontalInset)
+                    .padding(.bottom, metrics.landscapeCaptionInset)
                     .frame(width: artworkSize.width, alignment: .leading)
             }
         }
@@ -326,8 +328,8 @@ public struct SkeletonCardView: View {
     /// `PosterCardView.borderlessCaptionInset`.
     private var borderlessCaptionInset: CGFloat {
         switch style {
-        case .poster: return metrics.posterCaptionInset
-        case .landscape: return metrics.landscapeCaptionInset
+        case .poster: return metrics.posterCaptionHorizontalInset
+        case .landscape: return metrics.landscapeCaptionHorizontalInset
         }
     }
 

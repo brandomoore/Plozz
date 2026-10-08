@@ -10,6 +10,8 @@ struct FocusHostApp: App {
         WindowGroup {
             if ProcessInfo.processInfo.arguments.contains("--view-customization-fixture") {
                 ViewCustomizationFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--iptv-setup-fixture") {
+                IPTVSetupFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--skip-marker-preview") {
                 SkipMarkerPreviewFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--player-cast-focus-fixture") {

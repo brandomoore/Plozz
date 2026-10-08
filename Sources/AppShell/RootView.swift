@@ -352,7 +352,7 @@ public struct RootView: View {
                     onAppearanceSelected: completeAppearanceIntroductions
                 )
             } else {
-                switch appState.state {
+                switch appState.rootPresentationState {
             case .launching:
                 LaunchView()
 
@@ -569,6 +569,10 @@ public struct RootView: View {
             }
             }
         }
+        .modifier(AccountSetupOverlay(
+            appState: appState, deviceColorScheme: systemColorScheme,
+            onAppearanceSelected: completeAppearanceIntroductions
+        ))
         .background { AppBackground(palette: resolvedPalette) }
         .environment(\.themePalette, resolvedPalette)
         .environment(\.managedProviderSetupRouter, providerSetupRouter)
@@ -1138,7 +1142,7 @@ private struct OnboardingPageContent: View {
                                   $0.id == original.id && $0.credentialRevision == original.credentialRevision
                               }
                           }) != false,
-                          appState.didAuthenticate(session) else {
+                          appState.didAuthenticate(session, activateIPTVAccount: previous == nil) else {
                         throw IPTVAuthViewModel.CompletionError.persistence
                     }
                 },
@@ -1267,13 +1271,43 @@ private struct OnboardingPageContent: View {
     }
 }
 
-/// Keeps every detour from new-profile setup inside the setup cover.
-///
-/// Selecting a PIN-protected Plex user used to ask the ROOT to present another
-/// cover, which replaced the setup cover and exposed Home during the hand-off.
-/// Adding another user changed the session state underneath the unchanged setup
-/// cover, so its auth screen existed but could never be seen. One full-page
-/// switch here handles both: PIN, add-account onboarding, then back to Libraries.
+/// In-app authentication covers navigation instead of destroying its current path.
+struct AccountSetupOverlay: ViewModifier {
+    let appState: AppState
+    let deviceColorScheme: ColorScheme
+    var onAppearanceSelected: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        content
+            .disabled(appState.presentsAccountSetupOverApp)
+            .accessibilityHidden(appState.presentsAccountSetupOverApp)
+            .overlay {
+                if appState.presentsAccountSetupOverApp {
+                    ZStack {
+                        AppBackground(palette: ThemePalette.palette(
+                            for: appState.profileSettings.themeModel.theme,
+                            systemColorScheme: deviceColorScheme
+                        )).ignoresSafeArea()
+                        switch appState.state {
+                        case let .onboarding(step, canReturnToApp):
+                            OnboardingFlowView(
+                                appState: appState, step: step, canReturnToApp: canReturnToApp,
+                                deviceColorScheme: deviceColorScheme,
+                                onAppearanceSelected: onAppearanceSelected
+                            )
+                        case let .failed(error, _):
+                            FailureView(message: error.userMessage) { appState.retry() }
+                        default:
+                            EmptyView()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+    }
+}
+
+/// Keeps PIN and add-account detours inside the new-profile setup cover.
 private struct ProfileSetupFlowView: View {
     let appState: AppState
     let profile: Profile

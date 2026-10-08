@@ -71,6 +71,14 @@ through Files into the same disk-backed catalogue. File catalogues remain on
 the importing device; they are not copied by account sync. Use a playlist URL
 for a source that should refresh independently on multiple devices.
 
+Event playlists can be added before their streams go live. A valid `#EXTM3U`
+playlist with no entries is saved and remains in Sources with zero channels.
+Refreshing Live TV or Sources checks the provider again, bypassing the IPTV
+catalog's normal 30-minute cache. Newly published channels appear on refresh;
+a successful empty response clears ended events without deleting the source.
+Failed downloads preserve the previous catalog. Blank responses, web pages,
+and lists containing only unusable entries still fail validation.
+
 The first-run chooser selects a provider, not a playback destination. Its
 **IPTV** entry opens the playlist/provider connection form directly, just as
 account management does. **Live TV** is a destination inside the app: it can
@@ -91,8 +99,33 @@ authorization checks during enrollment, loading and playback.
 Bracketed availability notices such as `[NO PUBLIC STREAM]` are skipped, not
 resolved into fake relative channel URLs. Valid relative addresses, encoded
 filenames and IPv6 streams remain supported.
+Basic M3U files may contain absolute HTTP(S) URLs without `#EXTM3U` or
+`#EXTINF`; unnamed entries receive a localized channel label without exposing
+their URL credentials. Their identity does not depend on playlist order.
+Headerless `#EXTINF` entries still support relative URLs; arbitrary bare text
+does not become a relative stream. Malformed extended entries remain skipped,
+and HLS segments/renditions never become individual channels. `#EXTGRP` supplies
+persistent default groups until changed or cleared, while an entry's
+`group-title` overrides those defaults for that entry.
+
+Playlist `user-agent`/`referrer` attributes (including HTTP-prefixed aliases),
+`#EXTVLCOPT`, and URL pipe headers share the same bounded header validation.
+Precedence is entry attributes, then following VLC directives, then URL pipe
+headers; none leak to the next entry or into playlist-download requests.
+Kodi inputstream/DRM properties are not executable player configuration.
+Account catalogues retain `tvg-name` and country metadata for XMLTV matching,
+without relaxing the existing station/region checks or accepting name-only
+guesses. Existing URL accounts refresh once for the new mapping; imported files
+need reimporting to recover previously discarded metadata.
+
 Explicit XMLTV guides are ordered, with separate first-guide-origin headers;
-Xtream otherwise uses its native guide API. Auto-discovered guide URLs on
+Xtream otherwise uses its native guide API, falling back to its `xmltv.php`
+for channels with empty, malformed or unsupported API listings. Successful
+native listings are retained. Explicit guides bypass that fallback selection.
+An unavailable endpoint is not retried once per remaining channel in the batch.
+Authentication failures, rate limits, transport failures and ordinary server
+errors remain visible rather than triggering another request path; a failed
+XMLTV fallback also remains an error. Auto-discovered guide URLs on
 another origin require explicit configuration for URL-based playlists.
 
 Catalogue imports stream into encrypted SQLite staging, not a retained
@@ -104,10 +137,29 @@ decoded by page; the guide still holds lightweight channel values for its full
 lineup. This is not a claim of unlimited device memory or measured performance
 on every older device.
 
+`IPTVScaleAndRecoveryTests` exercises an 800,005-entry, 50 MB HTTP playlist
+through sign-in, encrypted catalogue commit, session restoration and final-page
+queries. The fixture includes 2,000 live channels and 798,005 movies. It also
+checks interrupted downloads and truncated Xtream arrays beyond 2,000 rows:
+failed refreshes preserve the previous catalogue, and complete retries replace it.
+These are simulator integration checks, not a reproduction of an unavailable
+provider playlist or physical-device performance guarantees.
+
+IPTV HTTP teardown closes request admission before invalidating its session.
+Requests still creating their native URLSession tasks are cancelled and drained
+first; delivered response bodies are cancelled by final invalidation. Late
+callers receive cancellation, not an Objective-C invalidated-session exception.
+Cancelling one caller does not close the session for other callers.
+
 The shared live-channel publication path normalizes each matching name once,
 rather than during every sort comparison, and collects language/country facets
 from distinct metadata values. It avoids full-lineup copies for absent overrides
-and indexes only the visible recent/favorite shortcuts it needs. This preserves
+and indexes only the visible recent/favorite shortcuts it needs. Sorting moves
+lightweight browse keys instead of full channel records. Catalogue and guide
+lookups share their immutable presentation arrays and index IDs to ordinals,
+rather than duplicating every record in dictionaries; guide sections are assembled
+in one reserved array. Publication remains synchronous and validates the complete
+replacement before changing the current catalogue. This preserves
 all channels, search relevance, ID tie-breaks and profile filters; it does not
 cap the lineup. `LiveTVLargePlaylistHostedTests` measures the synchronous
 publication of 10,000 and 100,000 channels in both sort orders with a one-second
@@ -118,6 +170,13 @@ Private URLs and authentication headers remain in Keychain credentials and
 encrypted catalogue records. Playback uses an account/revision/session-fenced
 locator and a provider-owned loopback proxy. It forwards authorized headers
 only to the original origin, rewrites HLS playlists and supports byte ranges.
+Opaque proxy paths preserve only verified `m3u8`, `ts`, `m2ts`, and `mts`
+suffixes, never original filenames. The suffix must agree with the encrypted
+upstream URL. Known raw transport-stream URLs use Aether's regular live-source
+path rather than its HLS-only native bypass; HLS retains native playback,
+including fragmented MP4. Hosted tests require a rendered frame and advancing
+time through the authenticated proxy on both platforms. Extensionless raw
+streams are not classified by this suffix-based correction.
 Ambient cookies and credential stores are disabled. HTTP remains unencrypted;
 use HTTPS when available. HLS/file playback does not establish DRM, DASH,
 browser-login, or remote AirPlay receiver support. Credential-protected artwork
@@ -533,6 +592,11 @@ discovery of the profile's accessible supported libraries.
 A failure in an unused server is not reported as a broken channel in the IPTV
 guide. Failures affecting configured Plozz channels and saved schedules remain
 visible, and editor-only discovery errors stay in the editor.
+
+The guide and Sources share one profile-authorized library refresh. Navigating
+away from either view does not cancel the other view's channel preparation or
+report an access change. A changed account authorization or explicit retry
+supersedes the old refresh; profile checks still reject late results.
 
 ### Automatic Plozz channels
 

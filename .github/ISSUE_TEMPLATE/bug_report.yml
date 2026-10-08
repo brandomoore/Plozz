@@ -30,6 +30,7 @@ body:
     id: backend
     attributes:
       label: Media source
+      description: Select the server or source affected by this bug. You can select more than one. If it happens before setup or you don't know, select "Not applicable / not sure".
       multiple: true
       options:
         - Jellyfin
@@ -41,7 +42,7 @@ body:
         - All sources
         - Not applicable / not sure
     validations:
-      required: false
+      required: true
   - type: input
     id: app-version
     attributes:

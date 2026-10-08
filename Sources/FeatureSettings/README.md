@@ -111,6 +111,14 @@ and the single place caption customization lives.
   rows above the fade. Lists without help reserve no footer. Pane-level transition clipping
   remains. Artwork values use "Library" and "Metadata providers"; narrow/mobile
   and accessibility layouts stack the complete value rather than abbreviating it.
+- **Profile Seerr setup uses page gutters, not artwork padding.** On iPhone/iPad,
+  `ProfileSeerrSetupView` uses `SettingsPageScroll` and a centered, at-most
+  720-point column. Its noninteractive profile chip uses `ProfileAvatarView`
+  for the real photo, emoji, or symbol and wraps below the heading when needed.
+  Panel rows and footers share one inner inset. Actions fill
+  the column and stack at accessibility text sizes; long profile/user names
+  wrap without widening the scroll content. TV retains its bounded settings
+  layout with contained row focus.
 - **Mobile Settings is a presentation action.** Its tab or More entry opens
   the drawer over the current page without selecting a replacement destination.
   Keep the active content stack and overflow navigation intact on dismissal;

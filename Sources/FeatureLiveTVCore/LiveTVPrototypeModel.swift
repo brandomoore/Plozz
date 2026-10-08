@@ -215,6 +215,21 @@ private final class LiveTVPrototypeGuideState {
     var knownChannelIDs: Set<String> = []
 }
 
+private struct LiveTVCatalogIndex<Entry: Identifiable> {
+    let entries: [Entry]
+    let ordinals: [Entry.ID: Int]
+
+    init(_ entries: [Entry] = []) {
+        self.entries = entries
+        ordinals = Dictionary(uniqueKeysWithValues: entries.enumerated().lazy.map { ($0.element.id, $0.offset + 1) })
+    }
+
+    subscript(id: Entry.ID) -> Entry? {
+        guard let ordinal = ordinals[id] else { return nil }
+        return entries[ordinal - 1]
+    }
+}
+
 @MainActor
 @Observable
 public final class LiveTVPrototypeModel {
@@ -330,7 +345,7 @@ public final class LiveTVPrototypeModel {
     public private(set) var visibleChannels: [LiveTVPrototypeChannel] = []
     public private(set) var guideChannels: [LiveTVGuideChannel] = []
     @ObservationIgnored private var orderedGuideRowIDs: [LiveTVGuideRowID] = []
-    @ObservationIgnored private var guideEntries: [LiveTVGuideRowID: LiveTVGuideChannel] = [:]
+    @ObservationIgnored private var guideEntries = LiveTVCatalogIndex<LiveTVGuideChannel>()
     public var guideRowIDs: [LiveTVGuideRowID] {
         _ = guideChannels
         return orderedGuideRowIDs
@@ -433,8 +448,7 @@ public final class LiveTVPrototypeModel {
     #endif
     public private(set) var tuneFailed = false
 
-    @ObservationIgnored private var channelsByID: [String: LiveTVPrototypeChannel] = [:]
-    @ObservationIgnored private var channelOrdinalsByID: [String: Int] = [:]
+    @ObservationIgnored private var channelsByID = LiveTVCatalogIndex<LiveTVPrototypeChannel>()
     @ObservationIgnored private var isBatchingFilterChanges = false
     @ObservationIgnored private var suppliedChannels: [LiveTVPrototypeChannel]?
     @ObservationIgnored private let preferencesStore: (any LiveTVPreferencesStoring)?
@@ -952,10 +966,7 @@ public final class LiveTVPrototypeModel {
                 )
             }
         }
-        channelsByID = Dictionary(uniqueKeysWithValues: channels.map { ($0.id, $0) })
-        channelOrdinalsByID = Dictionary(
-            uniqueKeysWithValues: channels.enumerated().map { ($0.element.id, $0.offset + 1) }
-        )
+        channelsByID = LiveTVCatalogIndex(channels)
         refreshCategories()
         if let playingChannelID, channelsByID[playingChannelID] == nil {
             stop()
@@ -981,8 +992,11 @@ public final class LiveTVPrototypeModel {
         let favoriteIDs = favoriteIDs
         let guideOnly = guideOnly
         let sort = sort
+        let channels = channels
 
-        visibleChannels = channels.compactMap { channel -> (channel: LiveTVPrototypeChannel, rank: Int, name: String)? in
+        // Sort lightweight keys rather than repeatedly moving whole channel payloads.
+        visibleChannels = channels.enumerated().compactMap {
+            index, channel -> (index: Int, rank: Int, number: Int, id: String, name: String)? in
             guard !hiddenChannelIDs.contains(channel.id),
                   selectedCategory == nil || channel.categories.contains(where: { Self.normalized($0) == selectedCategory }),
                   source == nil || channel.source == source,
@@ -995,10 +1009,10 @@ public final class LiveTVPrototypeModel {
 
             // Normalize once per match, not on every comparison of a large lineup.
             let name = sort == .name || !normalizedQuery.isEmpty ? Self.normalized(channel.name) : ""
-            guard !normalizedQuery.isEmpty else { return (channel, 0, name) }
+            guard !normalizedQuery.isEmpty else { return (index, 0, channel.number, channel.id, name) }
             let number = String(channel.number)
             if number == normalizedQuery {
-                return (channel, 0, name)
+                return (index, 0, channel.number, channel.id, name)
             }
             let fields = [
                 name,
@@ -1007,10 +1021,10 @@ public final class LiveTVPrototypeModel {
                 Self.normalized(channel.source.rawValue)
             ]
             if fields.contains(where: { $0.hasPrefix(normalizedQuery) }) {
-                return (channel, 1, name)
+                return (index, 1, channel.number, channel.id, name)
             }
             if fields.contains(where: { $0.contains(normalizedQuery) }) {
-                return (channel, 2, name)
+                return (index, 2, channel.number, channel.id, name)
             }
             return nil
         }
@@ -1020,15 +1034,15 @@ public final class LiveTVPrototypeModel {
             }
             switch sort {
             case .channelNumber:
-                if lhs.channel.number != rhs.channel.number {
-                    return lhs.channel.number < rhs.channel.number
+                if lhs.number != rhs.number {
+                    return lhs.number < rhs.number
                 }
             case .name:
                 if lhs.name != rhs.name { return lhs.name < rhs.name }
             }
-            return lhs.channel.id < rhs.channel.id
+            return lhs.id < rhs.id
         }
-        .map(\.channel)
+        .map { channels[$0.index] }
         refreshGuideChannels()
     }
 
@@ -1063,13 +1077,16 @@ public final class LiveTVPrototypeModel {
         let groups: [(LiveTVGuideSection, [LiveTVPrototypeChannel])] = [
             (.recent, recent), (.favorites, favorites), (.channels, visibleChannels)
         ]
-        let updated = groups.flatMap { section, channels in
-            channels.enumerated().map { index, channel in
-                LiveTVGuideChannel(channel: channel, section: section, startsSection: index == 0)
+        var updated: [LiveTVGuideChannel] = []
+        updated.reserveCapacity(recent.count + favorites.count + visibleChannels.count)
+        for (section, channels) in groups {
+            for (index, channel) in channels.enumerated() {
+                updated.append(LiveTVGuideChannel(channel: channel, section: section, startsSection: index == 0))
             }
         }
         orderedGuideRowIDs = updated.map(\.id)
-        guideEntries = Dictionary(uniqueKeysWithValues: updated.map { ($0.id, $0) })
+        // Share the row array with presentation; the lookup retains only offsets.
+        guideEntries = LiveTVCatalogIndex(updated)
         guideChannels = updated
     }
 
@@ -1085,7 +1102,7 @@ public final class LiveTVPrototypeModel {
         case .fullGuide, .staleGuide:
             return true
         case .mixedGuide:
-            let ordinal = channelOrdinalsByID[channel.id] ?? 0
+            let ordinal = channelsByID.ordinals[channel.id] ?? 0
             return channel.source == .plozz || ordinal.isMultiple(of: 3)
         }
         #else
@@ -1095,7 +1112,7 @@ public final class LiveTVPrototypeModel {
 
     #if DEBUG
     private func programDuration(for channelID: String) -> TimeInterval {
-        let ordinal = channelOrdinalsByID[channelID] ?? 1
+        let ordinal = channelsByID.ordinals[channelID] ?? 1
         return ordinal.isMultiple(of: 4) ? 3_600 : 1_800
     }
 
@@ -1106,7 +1123,7 @@ public final class LiveTVPrototypeModel {
     ) -> LiveTVPrototypeProgram {
         let duration = end.timeIntervalSince(start)
         let slot = Int(start.timeIntervalSince1970 / duration)
-        let ordinal = channelOrdinalsByID[channel.id] ?? 1
+        let ordinal = channelsByID.ordinals[channel.id] ?? 1
         let fixture = Self.programFixtures[Self.positiveModulo(slot + ordinal, Self.programFixtures.count)]
         let startSeconds = Int(start.timeIntervalSince1970)
         return LiveTVPrototypeProgram(

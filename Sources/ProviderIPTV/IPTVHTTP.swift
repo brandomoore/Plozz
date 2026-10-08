@@ -1,10 +1,17 @@
 import CoreModels
 import CoreNetworking
 import Foundation
+import os
 
 final class IPTVHTTP: Sendable {
     private let session: URLSession
     private let redirects: IPTVRedirects
+    private typealias RequestTask = Task<(URLSession.AsyncBytes, URLResponse), Error>
+    private struct Lifecycle {
+        var closed = false
+        var starting: [UUID: RequestTask] = [:]
+    }
+    private let lifecycle = OSAllocatedUnfairLock(initialState: Lifecycle())
 
     init(
         configuration: URLSessionConfiguration? = nil, resourceTimeout: TimeInterval = 1_800,
@@ -23,9 +30,29 @@ final class IPTVHTTP: Sendable {
     }
 
     deinit { session.invalidateAndCancel() }
-    func cancel() { session.invalidateAndCancel() }
+    func cancel() {
+        let shutdown = lifecycle.withLock { state -> (tasks: [RequestTask], invalidate: Bool) in
+            guard !state.closed else { return ([], false) }
+            state.closed = true
+            return (Array(state.starting.values), state.starting.isEmpty)
+        }
+        for task in shutdown.tasks { task.cancel() }
+        if shutdown.invalidate { session.invalidateAndCancel() }
+    }
 
-    func bytes(url: URL, headers: [String: String], method: String = "GET") async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+    private func finishStarting(_ id: UUID) {
+        let invalidate = lifecycle.withLock { state in
+            state.starting.removeValue(forKey: id)
+            return state.closed && state.starting.isEmpty
+        }
+        if invalidate { session.invalidateAndCancel() }
+    }
+
+    func bytes(
+        url: URL, headers: [String: String], method: String = "GET",
+        receivedResponse: (@Sendable (Int, String?) -> Void)? = nil
+    ) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+        try Task.checkCancellation()
         guard LiveTVPlaylistSource.isSupportedURL(url) else { throw IPTVError.invalidAddress }
         try IPTVCredential.validate(headers: headers)
         var request = URLRequest(url: url)
@@ -34,17 +61,45 @@ final class IPTVHTTP: Sendable {
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         let diagnostic = IPTVSetupDiagnostics.current
         diagnostic?.willRequest()
-        let (bytes, response) = try await session.bytes(for: request)
+        let id = UUID()
+        // URLSession.bytes creates its native task asynchronously. Fence that
+        // entire startup, not just a cancellation check before calling it.
+        let task = try lifecycle.withLock { state in
+            guard !state.closed else { throw CancellationError() }
+            let task = RequestTask { [session, request] in
+                try Task.checkCancellation()
+                let result = try await session.bytes(for: request)
+                if Task.isCancelled {
+                    result.0.task.cancel()
+                    throw CancellationError()
+                }
+                return result
+            }
+            state.starting[id] = task
+            return task
+        }
+        defer { finishStarting(id) }
+        let (bytes, response) = try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if Task.isCancelled {
+            bytes.task.cancel()
+            throw CancellationError()
+        }
         guard let response = response as? HTTPURLResponse else {
             bytes.task.cancel()
             throw IPTVError.malformed
         }
         diagnostic?.received(status: response.statusCode, response: .init(mimeType: response.mimeType))
+        receivedResponse?(response.statusCode, response.mimeType)
         guard (200...299).contains(response.statusCode) else {
             bytes.task.cancel()
             if response.statusCode == 401 || response.statusCode == 403 { throw IPTVError.authentication }
             if (300...399).contains(response.statusCode) { throw LiveTVSourceImportError.redirectBlocked }
             if response.statusCode == 404 { throw AppError.notFound }
+            if response.statusCode == 405 || response.statusCode == 501 { throw IPTVError.unsupported }
             if response.statusCode == 429 {
                 throw AppError.rateLimited(retryAfter: response.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init))
             }

@@ -8,6 +8,12 @@ fallback when the user's server has no attached trailer.
 - **Home** — `HomeView` + `HomeViewModel` render the focused tvOS rows:
   Continue Watching, Latest, Recently Added (per library). `HomeLayout`
   centralises sizing/spacing so all rows feel uniform.
+  On mobile, a root-owned `LazyViewState` retains the shared Home/Watchlist
+  model by profile, credentials and active accounts. Rebuilding the tab shell
+  for settings/theme changes must not construct and rehydrate throwaway models.
+  Both platforms recheck hero Watchlist membership immediately, but memoize
+  supporting-source identity tokens by the full current row values. No
+  supporting index is built without exclusions; source-scope changes clear it.
 - **Multi-account aggregation** — `HomeAggregator` fans out across the
   active account set (`[ResolvedAccount]`) so Home is a merged view
   across multiple servers / profiles. Uses the `MediaProvider`
@@ -50,12 +56,15 @@ fallback when the user's server has no attached trailer.
   loading placeholders and keeping adjacent captions and row heights aligned.
 - Mobile library provider icons align with the thumbnail's leading edge; the
   library name and server name share the adjacent text column.
-- **Mobile Home rhythm** — every loaded, placeholder, library, and failed row uses
-  `PlozziOSHomeSection`: native Dynamic Type `title3` semibold headings, a 12pt
-  heading-to-artwork layout gap, and 32pt between sections. Home's media surfaces
+- **Shared mobile row rhythm** — Home, library recommendations, search groups,
+  related titles, extras (including loading/failure), and cast use
+  `PlozziOSMediaSection`: native Dynamic Type `title3` semibold headings, a 12pt
+  heading-to-artwork layout gap, and 32pt between sections. Mobile media surfaces
   sit 12pt apart; framed cards retain their interior artwork insets. Scroll shadow
   clearance does not add invisible vertical padding, and framed artwork shares
-  the same vertical keylines as borderless posters.
+  the same vertical keylines as borderless posters. Normal-size headings truncate
+  at the tail; accessibility sizes wrap. Card sizing, caption preferences, native
+  page titles and tvOS typography remain separate from this shared section style.
 - **Item detail** — `ItemDetailView` + `ItemDetailViewModel` and
   `DetailHeroView` / `DetailExtrasView` render the cinematic full-bleed
   backdrop, logo, overview, ratings, cast, and Play/Resume button. Works
@@ -112,7 +121,7 @@ fallback when the user's server has no attached trailer.
   Mode changes reset to the padded page's true top, keeping both the tabs and
   native navigation-bar scroll-edge appearance consistent across all four modes.
   Recommendation rails remain horizontally lazy and share touch card appearance
-  and artwork keylines with mobile Home, retaining their roomier 14pt surface gap.
+  and the same heading, visible spacing, and artwork keylines as mobile Home.
   Library Continue Watching uses Home's profile-selected series artwork and
   resume progress treatment, including profile spoiler protection on mobile.
   Merged libraries validate Continue Watching against every account-qualified

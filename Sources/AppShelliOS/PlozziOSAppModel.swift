@@ -2022,9 +2022,12 @@ final class PlozziOSAppModel {
             )
         }
         do {
-            return try PlozziOSDownloadsModel(
+            return PlozziOSDownloadsModel(
                 profileID: namespace,
-                durableStore: durableStore,
+                registry: DownloadedMediaRegistry(store: try DurableDownloadedMediaStore(
+                    store: durableStore, profileID: namespace
+                )),
+                storage: PlatformDownloadStorageLocator(subdirectory: "PlozzDownloads/\(namespace)"),
                 networkFileResolver: mediaShareRuntime.networkFileResolver,
                 providerKind: { accountID in
                     accountsProviders.accounts.first {
@@ -2048,6 +2051,14 @@ final class PlozziOSAppModel {
                 },
                 artworkSettings: { settings.cardStyle.artwork },
                 startsActive: startsActive,
+                resolveArtworkItem: { record in
+                    guard let accountID = record.snapshot.sourceAccountID
+                        ?? record.managedHTTPSource?.accountID
+                        ?? record.directShareSource?.accountID,
+                          let itemID = record.snapshot.sourceItemID ?? record.managedHTTPSource?.itemID,
+                          let provider = accountsProviders.provider(forAccountID: accountID) else { return nil }
+                    return try await provider.item(id: itemID)
+                },
                 managedURLResolver: {
                     source,
                     updateSource,
@@ -2454,7 +2465,7 @@ final class PlozziOSAppModel {
     }
 
     @discardableResult
-    func persist(_ sessions: [UserSession]) -> Bool {
+    func persist(_ sessions: [UserSession], activateIPTVAccount: Bool = false) -> Bool {
         do {
             let existingIDs = Set(accountsProviders.accounts.map(\.id))
             let isFirstRun = existingIDs.isEmpty
@@ -2465,6 +2476,9 @@ final class PlozziOSAppModel {
                 try accountStore.add(account, token: session.accessToken)
                 // A (re)added server clears any household-removal tombstone for it.
                 clearRemovalTombstone(for: account.id)
+                if !existingIDs.contains(account.id) || activateIPTVAccount {
+                    try accountsProviders.includeIPTVAccountInActiveProfile(account)
+                }
                 if !existingIDs.contains(account.id) {
                     addedAccounts.append(account)
                 }

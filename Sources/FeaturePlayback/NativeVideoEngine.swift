@@ -123,6 +123,7 @@ public final class NativeVideoEngine: VideoEngine {
     /// Retains the resource-loader delegate that serves injected subtitle
     /// playlists; `AVAssetResourceLoader` holds it only weakly.
     @ObservationIgnored private var subtitleLoader: SubtitleInjectingResourceLoader?
+    @ObservationIgnored private var streamingInitializationLoader: StreamingInitializationLoader?
     @ObservationIgnored private var nativeSubtitleOutput: NativeSubtitleCueOutput?
     /// Off-critical-path default-subtitle pick. Runs concurrently with playback
     /// startup so resolving the asset's `AVMediaSelectionGroup` never extends the
@@ -259,11 +260,31 @@ public final class NativeVideoEngine: VideoEngine {
             guard generation == loadGeneration, !Task.isCancelled else { return }
         }
 
+        var initializationRepair: StreamingInitializationRepair?
+        if request.streamingOptions != nil, request.isTranscoding, request.isManifestStream,
+           request.negotiatedStreamingVideoCodec == .hevc, request.externalAudioURL == nil {
+            do {
+                initializationRepair = try await StreamingInitializationRepair.prepare(
+                    mediaURL: streamURL, using: streamingPlaylistClient
+                )
+            } catch {
+                guard generation == loadGeneration, !Task.isCancelled else { return }
+                PlozzLog.playback.error("Could not inspect the HEVC initialization; retaining the provider stream.")
+            }
+            guard generation == loadGeneration, !Task.isCancelled else { return }
+        }
+
         let injectableSubtitles = await resolveInjectableSubtitles(for: request)
         guard generation == loadGeneration, !Task.isCancelled else { return }
         let asset: AVURLAsset
         var item: AVPlayerItem
-        if let audioURL = request.externalAudioURL {
+        if let initializationRepair {
+            let loader = StreamingInitializationLoader(repair: initializationRepair)
+            streamingInitializationLoader = loader
+            asset = loader.makeAsset()
+            item = AVPlayerItem(asset: asset)
+            HandoffDiagnostics.emit("native ASSET route=provider-initialization-repair empty-sdtp-removed=true")
+        } else if let audioURL = request.externalAudioURL {
             PlaybackTrace.note("trailer mux: extAudio present video=\(Self.itagOf(streamURL)) audio=\(Self.itagOf(audioURL))")
             // Adaptive trailer: a video-only stream paired with a separate
             // audio-only stream (the only way YouTube serves 1080p). AVPlayer can't
@@ -994,6 +1015,7 @@ public final class NativeVideoEngine: VideoEngine {
         preferredAudioSelectionTask?.cancel()
         preferredAudioSelectionTask = nil
         subtitleLoader = nil
+        streamingInitializationLoader = nil
         nativeSubtitleOutput?.detach()
         nativeSubtitleOutput = nil
         if let endOfPlaybackObserver {
@@ -1167,9 +1189,10 @@ public final class NativeVideoEngine: VideoEngine {
             if let track { option = await Self.legibleOption(for: track, in: group) }
             else { option = nil }
             guard !Task.isCancelled, self.player?.currentItem === item else { return }
-            item.select(nil, in: group)
-            self.nativeSubtitleOutput?.select(enabled: option != nil)
+            // Register the replacement output against the requested rendition,
+            // not an intermediate Off or the previous paused track.
             item.select(option, in: group)
+            self.nativeSubtitleOutput?.select(enabled: option != nil)
             if track != nil, option == nil {
                 PlozzLog.playback.error("The selected native subtitle track is unavailable in the current stream.")
             }

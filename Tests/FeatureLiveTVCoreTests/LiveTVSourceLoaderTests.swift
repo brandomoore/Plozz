@@ -5,6 +5,24 @@ import XCTest
 @testable import FeatureLiveTVCore
 
 final class LiveTVSourceLoaderTests: XCTestCase {
+    func testValidEmptyEventPlaylistLoadsAndCanBecomePopulated() async throws {
+        let url = fixtureURL()
+        LoaderProtocol.state.register(url, [
+            .init(status: 200, headers: ["Cache-Control": "max-age=0"],
+                  body: Data("# Playlist awaiting channels\n#EXTM3U\n".utf8)),
+            .init(status: 200, body: playlist)
+        ])
+        defer { LoaderProtocol.state.remove(url) }
+        let loader = loader()
+        let empty = try await loader.loadPlaylist(from: url)
+        XCTAssertEqual(empty.entryCount, 0)
+        XCTAssertTrue(empty.channels.isEmpty)
+        XCTAssertEqual(LoaderProtocol.state.requests(url).count, 1)
+        let updated = try await loader.loadPlaylist(from: url)
+        XCTAssertFalse(updated.channels.isEmpty)
+        XCTAssertEqual(LoaderProtocol.state.requests(url).count, 2)
+    }
+
     func testOneHundredThousandEntriesLargerThanTwentyMiBAreNotTruncated() async throws {
         let url = fixtureURL()
         var body = Data("#EXTM3U\n".utf8)

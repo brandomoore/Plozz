@@ -27,10 +27,7 @@ public struct IPTVSignInView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                OnboardingHeader(
-                    Text("Connect your IPTV provider"),
-                    subtitle: Text("Add a playlist or sign in.")
-                )
+                OnboardingHeader(Text("Connect your IPTV provider"))
                 IPTVConnectionFields(model: model)
                     .disabled(model.isConnecting)
                 IPTVConnectionStatus(model: model)
@@ -61,11 +58,16 @@ public struct IPTVSignInView: View {
 
 private struct IPTVConnectionFields: View {
     @Bindable var model: IPTVAuthViewModel
-    @State private var showsAdvanced = false
+    @State private var showsAdvanced: Bool
+
+    init(model: IPTVAuthViewModel) {
+        self.model = model
+        _showsAdvanced = State(initialValue: model.hasAdvancedConfiguration)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            SettingsSectionGroup("Connection") {
+            SettingsSectionGroup {
                 Picker("Connection type", selection: $model.mode) {
                     Text("Playlist URL").tag(IPTVCredential.Mode.playlist)
                     Text("Xtream account").tag(IPTVCredential.Mode.xtream)
@@ -73,6 +75,7 @@ private struct IPTVConnectionFields: View {
                     Text("Playlist file").tag(IPTVCredential.Mode.file)
                     #endif
                 }
+                .accessibilityIdentifier("iptv-connection-type")
                 if model.mode == .file {
                     #if os(iOS)
                     IPTVPlaylistFileFields(model: model)
@@ -89,31 +92,73 @@ private struct IPTVConnectionFields: View {
                 if model.mode == .xtream {
                     IPTVLoginFields(username: $model.username, password: $model.password)
                 }
-            }
-            if model.mode == .playlist {
-                SettingsSectionGroup("Authentication") {
-                    Picker("Authentication", selection: $model.authentication) {
-                        ForEach(IPTVAuthViewModel.Authentication.allCases) { method in
-                            Text(method.title).tag(method)
-                        }
+                Button {
+                    showsAdvanced.toggle()
+                } label: {
+                    HStack {
+                        Text("Advanced options")
+                        Spacer()
+                        Image(systemName: showsAdvanced ? "chevron.up" : "chevron.down")
+                            .accessibilityHidden(true)
                     }
-                    if model.authentication == .basic {
-                        IPTVLoginFields(username: $model.username, password: $model.password)
-                    } else if model.authentication == .bearer {
-                        SecureField("Bearer token", text: $model.token)
-                            .textContentType(.password)
-                    }
-                } footer: {
-                    Text("Your link may already include a login.")
                 }
+                .buttonStyle(SettingsFormButtonStyle())
+                .accessibilityIdentifier("iptv-advanced-options")
+                .accessibilityValue(showsAdvanced
+                    ? Text("Expanded", comment: "Accessibility state of an expanded section of a form.")
+                    : Text("Collapsed", comment: "Accessibility state of a collapsed section of a form."))
             }
-            Toggle("Advanced options", isOn: $showsAdvanced)
             if showsAdvanced {
+                if model.mode == .playlist {
+                    IPTVPlaylistAuthenticationFields(model: model)
+                }
                 IPTVAdvancedFields(model: model)
             }
-            Text("HTTP is unencrypted. Use HTTPS when available.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            if model.usesHTTP {
+                Text("HTTP is unencrypted. Use HTTPS when available.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.body)
+        .onChange(of: model.mode) { _, _ in
+            if model.hasAdvancedConfiguration { showsAdvanced = true }
+        }
+    }
+}
+
+private struct IPTVPlaylistAuthenticationFields: View {
+    @Bindable var model: IPTVAuthViewModel
+
+    var body: some View {
+        SettingsSectionGroup("Authentication") {
+            Menu {
+                Picker("Authentication", selection: $model.authentication) {
+                    ForEach(IPTVAuthViewModel.Authentication.allCases) { method in
+                        Text(method.title).tag(method)
+                    }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                HStack {
+                    Text(model.authentication.title)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(SettingsFormButtonStyle())
+            .accessibilityLabel("Authentication")
+            .accessibilityValue(Text(model.authentication.title))
+            .accessibilityIdentifier("iptv-authentication")
+            if model.authentication == .basic {
+                IPTVLoginFields(username: $model.username, password: $model.password)
+            } else if model.authentication == .bearer {
+                SecureField("Bearer token", text: $model.token)
+                    .textContentType(.password)
+            }
         }
     }
 }
@@ -182,24 +227,30 @@ private struct IPTVAdvancedFields: View {
     var body: some View {
         SettingsSectionGroup("Program guides") {
             if model.mode != .xtream {
-                Toggle("Find guides in playlist", isOn: $model.discoversPlaylistGuides)
+                Toggle(isOn: $model.discoversPlaylistGuides) {
+                    Text("Find guides in playlist").font(.body)
+                }
             }
             IPTVAddressField(title: "Guide URL (optional)", value: $model.guideAddress)
             ForEach($model.additionalGuides) { $guide in
                 IPTVAddressField(title: "Additional guide URL", value: $guide.address)
-                Button("Remove guide", role: .destructive) {
-                    model.additionalGuides.removeAll { $0.id == guide.id }
+                Button(role: .destructive) { [id = guide.id] in
+                    model.additionalGuides.removeAll { $0.id == id }
+                } label: {
+                    Text("Remove guide").frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .buttonStyle(SettingsFormButtonStyle())
             }
-            Button("Add guide", systemImage: "plus", action: model.addGuide)
-                .disabled(model.additionalGuides.count >= 31)
+            Button(action: model.addGuide) {
+                Label("Add guide", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(SettingsFormButtonStyle())
+            .disabled(model.additionalGuides.count >= 31)
         }
         if model.mode != .file {
-        SettingsSectionGroup("Playlist and stream headers") {
-            IPTVHeaderFields(headers: $model.headers, add: model.addHeader)
-        } footer: {
-            Text("Only add headers requested by your provider. Credentials are never forwarded to a different server.")
-        }
+            SettingsSectionGroup("Playlist and stream headers") {
+                IPTVHeaderFields(headers: $model.headers, add: model.addHeader)
+            }
         }
         SettingsSectionGroup("Guide request headers") {
             IPTVHeaderFields(headers: $model.guideHeaders, add: model.addGuideHeader)
@@ -213,21 +264,25 @@ private struct IPTVHeaderFields: View {
     @Binding var headers: [IPTVAuthViewModel.Header]
     let add: () -> Void
     var body: some View {
-            ForEach($headers) { $header in
-                VStack(alignment: .leading, spacing: 12) {
-                    TextField("Header name", text: $header.name)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    SecureField("Header value", text: $header.value)
-                    Button("Remove header", role: .destructive) {
-                        headers.removeAll { $0.id == header.id }
-                    }
-                    .buttonStyle(.bordered)
+        ForEach($headers) { $header in
+            VStack(alignment: .leading, spacing: 12) {
+                TextField("Header name", text: $header.name)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                SecureField("Header value", text: $header.value)
+                Button(role: .destructive) { [id = header.id] in
+                    headers.removeAll { $0.id == id }
+                } label: {
+                    Text("Remove header").frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .buttonStyle(SettingsFormButtonStyle())
             }
-            Button("Add header", systemImage: "plus", action: add)
-                .buttonStyle(.bordered)
-                .disabled(headers.count >= 32)
+        }
+        Button(action: add) {
+            Label("Add header", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(SettingsFormButtonStyle())
+        .disabled(headers.count >= 32)
     }
 }
 
@@ -237,9 +292,6 @@ private struct IPTVConnectionStatus: View {
         VStack(alignment: .leading, spacing: 12) {
             if model.isConnecting {
                 ProgressView(model.progressMessage)
-                Text("Large libraries may take a few minutes. You can cancel at any time.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
             if let issue = model.issue {
                 Label(issue, systemImage: "exclamationmark.triangle")

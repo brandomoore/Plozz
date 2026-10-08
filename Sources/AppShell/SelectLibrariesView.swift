@@ -77,9 +77,18 @@ struct SelectLibrariesView: View {
         .frame(maxWidth: 900)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onExitCommand { appState.confirmLibrarySelection() }
-        .task {
-            await discovery.load(from: appState.accountsProviders.resolvedAccounts(withIDs: appState.pendingLibrarySelectionAccountIDs))
+        .task(id: appState.pendingLibrarySelectionAccountIDs) {
+            await loadLibraries()
         }
+    }
+
+    private func loadLibraries() async {
+        let ids = appState.pendingLibrarySelectionAccountIDs
+        let accounts = appState.accountsProviders.resolvedAccounts(withIDs: ids)
+        await discovery.load(from: accounts)
+        guard !Task.isCancelled, ids == appState.pendingLibrarySelectionAccountIDs,
+              accounts.count == ids.count, discovery.canSkipSelection else { return }
+        appState.confirmLibrarySelection()
     }
 
     @ViewBuilder
@@ -107,7 +116,7 @@ struct SelectLibrariesView: View {
                     .font(.title3)
                     .plozzForeground(.secondary)
                 Button {
-                    Task { await discovery.load(from: appState.accountsProviders.resolvedAccounts(withIDs: appState.pendingLibrarySelectionAccountIDs)) }
+                    Task { await loadLibraries() }
                 } label: {
                     Label("Try Again", systemImage: "arrow.clockwise")
                 }

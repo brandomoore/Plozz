@@ -3,15 +3,16 @@ import Foundation
 import XCTest
 
 final class IPTVSetupDiagnosticTests: XCTestCase {
-    func testCampaignExpiresAfterExactlyTwoTestFlightBuildsAndNeverEnablesProduction() {
-        for build in ["", "50", "51.1", "051", "53", "100", "$(BUILD_NUMBER)"] {
-            XCTAssertFalse(IPTVSetupDiagnostic.isEnabled(environment: "testflight", build: build))
+    func testCampaignRemainsEnabledForTestFlightAndDebugWithoutABuildNumber() {
+        for environment in ["testflight", "debug"] {
+            XCTAssertTrue(IPTVSetupDiagnostic.isEnabled(environment: environment), environment)
         }
-        for build in ["51", "52"] {
-            XCTAssertTrue(IPTVSetupDiagnostic.isEnabled(environment: "testflight", build: build))
-            XCTAssertFalse(IPTVSetupDiagnostic.isEnabled(environment: "production", build: build))
+    }
+
+    func testCampaignNeverEnablesProductionOrUnknownReleaseChannels() {
+        for environment in ["production", "appstore", "development", "TestFlight", ""] {
+            XCTAssertFalse(IPTVSetupDiagnostic.isEnabled(environment: environment), environment)
         }
-        XCTAssertTrue(IPTVSetupDiagnostic.isEnabled(environment: "debug", build: "4301.2"))
     }
 
     func testDisabledDiagnosticsAllocateNoAttemptAndRevocationDiscardsOldAttempts() throws {

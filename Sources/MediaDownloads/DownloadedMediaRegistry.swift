@@ -230,10 +230,13 @@ public actor DownloadedMediaRegistry {
     @discardableResult
     public func setArtworkFileName(
         identityKey: String,
-        fileName: String
+        fileName: String,
+        expectedCreatedAt: Date? = nil
     ) throws -> Bool {
+        try Task.checkCancellation()
         guard fileName == URL(fileURLWithPath: fileName).lastPathComponent,
-              var record = state.records[identityKey] else {
+              var record = state.records[identityKey],
+              expectedCreatedAt == nil || record.createdAt == expectedCreatedAt else {
             return false
         }
         record.snapshot.artworkFileName = fileName

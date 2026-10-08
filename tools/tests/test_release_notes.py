@@ -265,6 +265,51 @@ class ReleaseNotesToolTests(unittest.TestCase):
                                    "--platform", "iOS", "--empty-text", "No changes.")
             self.assertEqual(result.stdout.strip(), "Plozz 2026.9.29 (50)\n\nNo changes.")
 
+    def test_dotted_build_identity_rendering_and_numeric_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.revised_catalog(Path(temp), versions=("2026.9.29",))
+            catalog = json.loads(path.read_text())
+            template = catalog["releases"][0]
+            values = [52, "51.10", "51.2", "51.1", 51]
+            catalog["releases"] = [
+                {**template, "build": value, "id": "release/" + str(value).zfill(3)
+                 if isinstance(value, int) else "release/0" + value}
+                for value in values
+            ]
+            path.write_text(json.dumps(catalog))
+            self.assertEqual(self.run_tool(path, "validate").returncode, 0)
+            result = self.run_tool(path, "identity", "--release-id", "release/051.1", "--build", "51.1")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["releaseID"], "release/051.1")
+            rendered = self.run_tool(path, "render", "--release-id", "release/051.1")
+            self.assertIn("Plozz 2026.9.29 (51.1)", rendered.stdout)
+            self.assertNotEqual(self.run_tool(
+                path, "validate", "--release-id", "release/051.1", "--build", "51"
+            ).returncode, 0)
+            catalog["releases"][1:3] = reversed(catalog["releases"][1:3])
+            path.write_text(json.dumps(catalog))
+            self.assertIn("descending build", self.run_tool(path, "validate").stderr)
+
+    def test_invalid_and_equivalent_dotted_builds_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            for value in [True, 51.1, 0, -1, "051", "51.01", "51.", "51.1.1.1",
+                          "10000", "51.100", "51.1.100", "51.1b1"]:
+                with self.subTest(build=value):
+                    path = self.fixture(Path(temp), ["Shared"])
+                    catalog = json.loads(path.read_text())
+                    catalog["releases"][0]["build"] = value
+                    path.write_text(json.dumps(catalog))
+                    self.assertIn("invalid build", self.run_tool(path, "validate").stderr)
+            path = self.revised_catalog(Path(temp), versions=("2026.9.29",))
+            catalog = json.loads(path.read_text())
+            template = catalog["releases"][0]
+            catalog["releases"] = [
+                {**template, "id": f"release/0{value}", "build": value}
+                for value in ("51.1.0", "51.1")
+            ]
+            path.write_text(json.dumps(catalog))
+            self.assertIn("duplicate release build", self.run_tool(path, "validate").stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

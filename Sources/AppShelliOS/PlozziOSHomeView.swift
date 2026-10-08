@@ -74,7 +74,7 @@ struct PlozziOSHomeScrollView<Hero: View, Rows: View>: View {
     var body: some View {
         ScrollView {
             // Rows own their horizontal laziness; keep the vertical layout eager.
-            VStack(alignment: .leading, spacing: PlozziOSHomeLayout.rowSpacing) {
+            VStack(alignment: .leading, spacing: PlozziOSMediaRailLayout.sectionSpacing) {
                 if heroActive {
                     hero
                 }
@@ -112,6 +112,7 @@ struct PlozziOSHomeView: View {
     /// so a deleted or un-watchlisted one eventually leaves. See `HeroLiveMerge`.
     @State private var heroRetainedMisses: [String: Int] = [:]
     @State private var heroEligibility = HeroSourceEligibility.unrestricted
+    @State private var heroSupportingIndex = HeroSupportingSourceIndex()
     @State private var heroCandidatePool = HeroFreshnessCandidatePool.empty
     /// The Random source's retained draw, so a background recomputation reuses the
     /// titles already on screen instead of re-shuffling every library on every
@@ -992,6 +993,7 @@ struct PlozziOSHomeView: View {
 
     private func resetHeroScope() {
         heroEligibility = .unrestricted
+        heroSupportingIndex.reset()
         heroCandidatePool = .empty
         heroPinnedItemIDs = []
         heroRetainedMisses = [:]
@@ -1037,7 +1039,8 @@ struct PlozziOSHomeView: View {
             recentlyAdded: content.latest,
             randomLibraries: randomLibraries,
             supportingCandidates: supportingCandidates,
-            previous: heroEligibility
+            previous: heroEligibility,
+            supportingIndex: heroSupportingIndex
         ) { item in
             let subject = item.watchlistSubject
             if handler.isActivelyRemovingFromWatchlist(subject) { return false }
@@ -2216,14 +2219,13 @@ private struct PlozziOSFeaturedRow: View {
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
-        PlozziOSHomeSection(title: Text("Trending"), artworkInset: cardStyle == .framed ? metrics.cardInset : 0) {
+        PlozziOSMediaSection(title: Text("Trending"), artworkInset: cardStyle == .framed ? metrics.cardInset : 0) {
             ScrollView(.horizontal) {
                 LazyHStack(
                     alignment: .top,
                     spacing: PlozziOSMediaRailLayout.stackSpacing(
                         metrics: metrics,
-                        cardStyle: cardStyle,
-                        visibleSpacing: PlozziOSHomeLayout.cardSpacing
+                        cardStyle: cardStyle
                     )
                 ) {
                     ForEach(items, id: \.stablePresentationID) { item in
@@ -2248,7 +2250,7 @@ private struct PlozziOSFeaturedRow: View {
                     metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
-            .plozziOSHomeRailClearance()
+            .plozziOSMediaRailClearance()
         }
         .environment(\.plozzCardCaptionView, .home)
     }
@@ -2260,7 +2262,7 @@ private struct PlozziOSHomeRowFailure: View {
     let viewModel: HomeViewModel
 
     var body: some View {
-        PlozziOSHomeSection(title: title) {
+        PlozziOSMediaSection(title: title) {
             ContentStateView<Bool, EmptyView>(
                 state: .failed(error),
                 onRetry: { Task { await viewModel.load(showLoadingState: false) } }
@@ -2284,7 +2286,7 @@ private struct PlozziOSHomeRowView: View {
             if let failure = row.failure, row.items.isEmpty, row.libraries.isEmpty {
                 PlozziOSHomeRowFailure(title: Text(row.title), error: failure, viewModel: viewModel)
             } else if row.kind == .libraries, row.loadingPlaceholderCount == 0 {
-                PlozziOSHomeSection(title: Text(row.title)) {
+                PlozziOSMediaSection(title: Text(row.title)) {
                     libraryRow
                 }
             } else if row.items.isEmpty {
@@ -2347,7 +2349,7 @@ private struct PlozziOSHomeRowView: View {
 
     private var libraryRow: some View {
         ScrollView(.horizontal) {
-            LazyHStack(spacing: PlozziOSHomeLayout.cardSpacing) {
+            LazyHStack(spacing: PlozziOSMediaRailLayout.visibleSpacing) {
                 ForEach(row.libraries) { library in
                     // Still gated on the account having a live provider; the route
                     // resolves it again at push time so this row holds no reference.
@@ -2381,7 +2383,7 @@ private struct PlozziOSHomeRowView: View {
             PlozziOSPageLayout.horizontalInset(for: horizontalSizeClass),
             for: .scrollContent
         )
-        .plozziOSHomeRailClearance()
+        .plozziOSMediaRailClearance()
     }
 
 }
@@ -2419,14 +2421,13 @@ struct PlozziOSHomeMediaRail: View {
     }
 
     private func rail(metrics: PlozzMetrics) -> some View {
-        PlozziOSHomeSection(title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0) {
+        PlozziOSMediaSection(title: title, artworkInset: cardStyle == .framed ? metrics.cardInset : 0) {
             ScrollView(.horizontal) {
                 LazyHStack(
                     alignment: .top,
                     spacing: PlozziOSMediaRailLayout.stackSpacing(
                         metrics: metrics,
-                        cardStyle: cardStyle,
-                        visibleSpacing: PlozziOSHomeLayout.cardSpacing
+                        cardStyle: cardStyle
                     )
                 ) {
                     ForEach(MediaRowView.presentationElements(
@@ -2482,7 +2483,7 @@ struct PlozziOSHomeMediaRail: View {
                     metrics: metrics, cardStyle: cardStyle),
                 for: .scrollContent
             )
-            .plozziOSHomeRailClearance()
+            .plozziOSMediaRailClearance()
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.x
             } action: { oldOffset, newOffset in
@@ -2802,7 +2803,7 @@ struct PlozziOSHomeLibraryCard: View {
                         .lineLimit(1)
                 }
             }
-            .padding(.trailing, metrics.landscapeCaptionInset)
+            .padding(.trailing, metrics.landscapeCaptionHorizontalInset)
             .padding(
                 .bottom,
                 cardStyle == .framed ? metrics.landscapeCaptionInset : 0

@@ -194,7 +194,7 @@ fi
 # local builds and from another TestFlight build using the same CalVer date.
 release_id="${PLOZZ_RELEASE_ID:-}"
 if [ -n "$release_id" ]; then
-  if ! printf '%s' "$release_id" | grep -Eq '^release/[0-9]{3,}$'; then
+  if ! printf '%s' "$release_id" | grep -Eq '^release/[0-9]{3,4}(\.[0-9]{1,2}){0,2}$'; then
     echo "error: PLOZZ_RELEASE_ID must match release/<build> (got '${release_id}')" >&2
     exit 1
   fi

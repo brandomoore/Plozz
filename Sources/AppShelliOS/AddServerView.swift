@@ -66,7 +66,9 @@ struct AddServerView: View {
                                       $0.id == previous.id && $0.credentialRevision == previous.credentialRevision
                                   }
                               }) != false else { throw IPTVAuthViewModel.CompletionError.persistence }
-                        guard appModel.persist([$0]) else { throw IPTVAuthViewModel.CompletionError.persistence }
+                        guard appModel.persist([$0], activateIPTVAccount: initialIPTVAccount == nil) else {
+                            throw IPTVAuthViewModel.CompletionError.persistence
+                        }
                         dismiss()
                     },
                     onCancel: { dismiss() }

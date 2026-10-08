@@ -156,7 +156,7 @@ final class MobileDiagnosticsLayoutTests: XCTestCase {
     func testPhoneRowsUseReadableFullWidthValuesAtNormalAndLargeType() throws {
         for size in [DynamicTypeSize.large, .accessibility3] {
             let renderer = ImageRenderer(content:
-                PlaybackDiagnosticsOverlay.MobileDiagnosticsRow(label: "File", value: Text(verbatim: fixture.sourceFileName!))
+                PlaybackDiagnosticsOverlay.MobileDiagnosticsRow(label: Text("File"), value: Text(verbatim: fixture.sourceFileName!))
                     .environment(\.themePalette, .dark)
                     .environment(\.dynamicTypeSize, size)
                     .frame(width: 280)

@@ -228,6 +228,11 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         return ServerLiveTVAvailability(status: count > 0 ? .available : .noChannels, channelCount: count)
     }
 
+    public func refreshLiveTVAvailability() async throws -> ServerLiveTVAvailability {
+        try await client.ensureCatalog("live", force: true)
+        return try await liveTVAvailability()
+    }
+
     public func liveTVChannels() async throws -> [ServerLiveTVChannel] {
         try await client.liveChannels()
     }
@@ -239,19 +244,48 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         let credential = await client.credential
         if credential.mode == .xtream, credential.explicitGuideURLs.isEmpty {
             var result: [ServerLiveTVProgramme] = []
+            var fallbackIDs: [String] = []
+            var endpointUnavailable = false
             for id in channelIDs {
                 try Task.checkCancellation()
-                result += try await client.guide(channelID: id, from: from, to: to)
+                if endpointUnavailable {
+                    fallbackIDs.append(id)
+                    continue
+                }
+                do {
+                    let programmes = try await client.guide(channelID: id, from: from, to: to)
+                    if programmes.isEmpty { fallbackIDs.append(id) }
+                    else { result += programmes }
+                } catch AppError.notFound, IPTVError.unsupported {
+                    PlozzLog.networking.info("IPTV guide endpoint is unavailable; using XMLTV for remaining channels")
+                    endpointUnavailable = true
+                    fallbackIDs.append(id)
+                } catch IPTVError.malformed {
+                    PlozzLog.networking.info("IPTV channel guide API returned malformed listings; trying XMLTV")
+                    fallbackIDs.append(id)
+                }
+            }
+            if !fallbackIDs.isEmpty {
+                PlozzLog.networking.info("IPTV XMLTV fallback requested for channels without API listings")
+                result += try await xmlTVGuide(channelIDs: fallbackIDs, from: from, to: to)
             }
             return result
         }
+        return try await xmlTVGuide(channelIDs: channelIDs, from: from, to: to)
+    }
+
+    private func xmlTVGuide(channelIDs: [String], from: Date, to: Date) async throws -> [ServerLiveTVProgramme] {
+        guard !channelIDs.isEmpty else { return [] }
         let urls = try await client.guideURLs()
         guard !urls.isEmpty else { return [] }
         guard let guideLoader else { throw ServerLiveTVError.unsupportedAPI }
         var channels: [IPTVGuideChannel] = []
         for id in channelIDs {
             let record = try await client.record(id)
-            channels.append(IPTVGuideChannel(id: id, name: record.item.title, guideID: record.guideID))
+            channels.append(IPTVGuideChannel(
+                id: id, name: record.item.title, guideID: record.guideID,
+                guideName: record.guideName, country: record.guideCountry
+            ))
         }
         var result: [ServerLiveTVProgramme] = []
         var covered = Set<String>()
@@ -271,6 +305,16 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         public let id: String
         public let name: String
         public let guideID: String?
+        public let guideName: String?
+        public let country: String?
+
+        public init(id: String, name: String, guideID: String?, guideName: String? = nil, country: String? = nil) {
+            self.id = id
+            self.name = name
+            self.guideID = guideID
+            self.guideName = guideName
+            self.country = country
+        }
     }
 
     public typealias IPTVGuideLoader = @Sendable (
@@ -297,7 +341,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
             resource: AuthenticatedHTTPResource(pathBase: .configuredBaseURL, path: "iptv/" + session),
             playSessionID: session
         )
-        try await playback.register(locator)
+        try await playback.register(locator, isLive: record.isLive)
         return locator
     }
 
@@ -334,6 +378,7 @@ private actor IPTVPlaybackSessions {
     }
     private struct Entry {
         let locator: AuthenticatedHTTPPlaybackLocator
+        let isLive: Bool
         var pending: Task<Delivery, Error>?
         var delivery: Delivery?
         var started = false
@@ -347,9 +392,9 @@ private actor IPTVPlaybackSessions {
         self.configuration = configuration
     }
 
-    func register(_ locator: AuthenticatedHTTPPlaybackLocator) throws {
+    func register(_ locator: AuthenticatedHTTPPlaybackLocator, isLive: Bool) throws {
         guard let id = locator.playSessionID, entries.count < 32 else { throw AppError.invalidResponse }
-        entries[id] = Entry(locator: locator)
+        entries[id] = Entry(locator: locator, isLive: isLive)
     }
 
     func resolve(_ locator: AuthenticatedHTTPPlaybackLocator) async throws -> URL {
@@ -360,12 +405,12 @@ private actor IPTVPlaybackSessions {
         let task: Task<Delivery, Error>
         if let pending = entry.pending { task = pending }
         else {
-            task = Task { [client, configuration] in
+            task = Task { [client, configuration, isLive = entry.isLive] in
                 let (url, headers) = try await client.delivery(locator.itemID)
                 let credential = await client.credential
                 let proxy = try IPTVPlaybackProxy(
                     origin: url, headers: headers, configuration: configuration,
-                    sensitiveValues: [credential.password]
+                    sensitiveValues: [credential.password], content: isLive ? .live : .onDemand
                 )
                 do { return try await Delivery(url: proxy.start(), proxy: proxy) }
                 catch { await proxy.stop(); throw error }

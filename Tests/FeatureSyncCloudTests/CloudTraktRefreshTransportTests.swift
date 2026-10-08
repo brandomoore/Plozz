@@ -2,9 +2,38 @@ import CloudKit
 import CoreModels
 import Foundation
 import XCTest
+import TraktService
 @testable import FeatureSyncCloud
 
 final class CloudTraktRefreshTransportTests: XCTestCase {
+    func testCloudRejectionPreservesErrorCodeInsteadOfClaimingICloudIsUnavailable() {
+        for code in [CKError.Code.invalidArguments, .permissionFailure, .serverRejectedRequest, .quotaExceeded] {
+            let error = CKError(code, userInfo: [NSLocalizedDescriptionKey: "private-record-and-token"])
+            let mapped = CloudTraktRefreshTransport.mapError(error, operation: "read")
+            XCTAssertEqual(mapped as? TraktSharedRefreshError, .cloudFailure(code: code.rawValue))
+            let message = String(localized: TraktSharedRefreshError.cloudFailure(code: code.rawValue).userMessage)
+            XCTAssertFalse(message.contains("private-record-and-token"))
+            XCTAssertTrue(message.contains(String(code.rawValue)))
+        }
+    }
+
+    func testTemporaryCloudOutageRetainsExistingSafeOfflineRecoveryBehavior() {
+        for code in [CKError.Code.networkFailure, .networkUnavailable, .notAuthenticated,
+                     .serviceUnavailable, .requestRateLimited, .accountTemporarilyUnavailable] {
+            XCTAssertEqual(
+                CloudTraktRefreshTransport.mapError(CKError(code), operation: "read") as? TraktSharedRefreshError,
+                .unavailable
+            )
+        }
+    }
+
+    func testCancellationAndSharedAccountFencesAreNotReclassified() {
+        XCTAssertTrue(CloudTraktRefreshTransport.mapError(CancellationError(), operation: "read") is CancellationError)
+        for error in [TraktSharedRefreshError.accountChanged, .conflict, .invalidRecord] {
+            XCTAssertEqual(CloudTraktRefreshTransport.mapError(error, operation: "read") as? TraktSharedRefreshError, error)
+        }
+    }
+
     func testSharedGrantUsesExistingEncryptedSchemaAndStableProfileScope() {
         let schema = CloudSyncSchemaDescriptor.trackerTokensV1
         let scope = "com.plozz.app.tokens\0trakt.oauth.profile-a"
