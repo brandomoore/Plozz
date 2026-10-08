@@ -1,5 +1,4 @@
 #if os(iOS)
-import CoreImage.CIFilterBuiltins
 import CoreModels
 import CoreUI
 import FeatureProfiles
@@ -134,12 +133,10 @@ struct PlozziOSSyncSetupReceiveView: View {
             // Manual fallback, visually demoted into its own card so the automatic
             // path above reads as the primary action.
             VStack(spacing: 16) {
-                if let img = Self.qrImage(invite.encoded()) {
-                    Image(uiImage: img).interpolation(.none).resizable()
-                        .frame(width: 176, height: 176)
-                        .padding(14).background(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                }
+                QRCodeView(invite.encoded())
+                    .frame(width: 176, height: 176)
+                    .padding(14).background(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 VStack(spacing: 4) {
                     Text("or enter this code").font(.subheadline)
                         .foregroundStyle(palette.secondaryText)
@@ -229,17 +226,6 @@ struct PlozziOSSyncSetupReceiveView: View {
     private func centered<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(spacing: 16) { content() }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    static func qrImage(_ string: String) -> UIImage? {
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(string.utf8)
-        filter.correctionLevel = "M"
-        guard let output = filter.outputImage?
-            .transformed(by: CGAffineTransform(scaleX: 10, y: 10)) else { return nil }
-        let context = CIContext()
-        guard let cg = context.createCGImage(output, from: output.extent) else { return nil }
-        return UIImage(cgImage: cg)
     }
 }
 

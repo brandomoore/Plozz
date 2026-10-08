@@ -8,6 +8,7 @@ actor IPTVTestHTTPServer {
         var status = 200
         var headers: [String: String] = [:]
         var cutoff: Int?
+        var headerDelay: Duration = .zero
         var delay: Duration = .zero
     }
 
@@ -89,6 +90,7 @@ actor IPTVTestHTTPServer {
             requestCount += 1
             let text = String(decoding: request, as: UTF8.self)
             let response = respond(text)
+            if response.headerDelay != .zero { try await Task.sleep(for: response.headerDelay) }
             let file = try response.file.map { try FileHandle(forReadingFrom: $0) }
             defer {
                 do { try file?.close() }

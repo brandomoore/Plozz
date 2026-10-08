@@ -53,6 +53,12 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
   Native card focus observation is separate from explicit focus requests.
   Caption, overlay and transition-anchor readers update without rebuilding
   the poster's artwork loader or context menu.
+- **QR images** — `QRCodeView` renders on a worker actor, including Core Image
+  initialization. Settings, account authorization and device pairing share it.
+  Payload/correction/mask changes replace the request; cancelled work cannot
+  publish an old code. Theme tint is applied to a transparent mask without
+  rerendering. The memory-only cache retains at most 8 images and 16 MiB of
+  pixels; payloads are never persisted or included in error logs.
 - **Mobile content tabs** — `PlozzContentTabs` owns the touch-sized horizontal
   navigation shared by library modes and series seasons. Selected tabs use the
   existing glass capsule style; inactive tabs are secondary text without a

@@ -8,6 +8,12 @@ fallback when the user's server has no attached trailer.
 - **Home** — `HomeView` + `HomeViewModel` render the focused tvOS rows:
   Continue Watching, Latest, Recently Added (per library). `HomeLayout`
   centralises sizing/spacing so all rows feel uniform.
+  On mobile, a root-owned `LazyViewState` retains the shared Home/Watchlist
+  model by profile, credentials and active accounts. Rebuilding the tab shell
+  for settings/theme changes must not construct and rehydrate throwaway models.
+  Both platforms recheck hero Watchlist membership immediately, but memoize
+  supporting-source identity tokens by the full current row values. No
+  supporting index is built without exclusions; source-scope changes clear it.
 - **Multi-account aggregation** — `HomeAggregator` fans out across the
   active account set (`[ResolvedAccount]`) so Home is a merged view
   across multiple servers / profiles. Uses the `MediaProvider`

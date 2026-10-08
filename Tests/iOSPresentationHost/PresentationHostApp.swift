@@ -125,12 +125,14 @@ private struct SettingsInteractionFixture: View {
     @State private var deferredPairingURL: URL?
     @State private var sidebarGeometry = PlozziOSSidebarGeometryModel()
     @State private var heroTrailers = HeroTrailerController()
+    @State private var homeViewModelBox = LazyViewState<HomeViewModel>()
 
     var body: some View {
         Group {
             if ProcessInfo.processInfo.arguments.contains("--navigation-interaction-fixture") {
                 PlozziOSTabShell(
                     appModel: appModel,
+                    homeViewModelBox: homeViewModelBox,
                     onAddServer: {},
                     showingSettings: $showingSettings,
                     showingProfileSwitcher: $showingProfiles,

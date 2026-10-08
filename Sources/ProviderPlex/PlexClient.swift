@@ -585,11 +585,11 @@ public struct PlexClient: Sendable {
         ).MediaContainer.Metadata ?? []
     }
 
-    /// Both static and smart collections resolve through their children endpoint.
+    /// Use the collection namespace: metadata children can report smart collections as empty.
     /// Omitting `sort` preserves the server's configured collection order.
     func collectionMembers(ratingKey: String, start: Int, size: Int) async throws -> PlexMediaContainer {
         let endpoint = Endpoint(
-            path: "/library/metadata/\(ratingKey)/children",
+            path: "/library/collections/\(ratingKey)/children",
             // Request extra streams without whitelisting away the members of
             // smart collections on servers that honor response customization.
             queryItems: containerQuery(start: start, size: size)
