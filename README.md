@@ -182,6 +182,26 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
 - **Choose download quality separately** — streaming preferences don't change
   your saved download settings. Available renditions and background-transfer
   behavior depend on the provider. Apple TV does not offer offline downloads.
+- **Follow downloads outside Plozz** — on iOS/iPadOS 26 or later, user-started
+  downloads request the system's continued-processing Live Activity, including
+  Dynamic Island on supported iPhones. One activity tracks the active queue
+  using per-item progress, including measured rendition preparation; time
+  estimates use only known sizes and current throughput. Receiving every byte
+  is not completion until offline validation finishes.
+  Network-share transfers can continue while the system grants execution.
+  Cancellation or expiration pauses the activity's downloads without deleting
+  partial files; resume them in Plozz. Saved network and speed-limit policies
+  still apply. If iOS declines the request, normal download behavior remains:
+  eligible HTTP transfers use background URL sessions, while in-process
+  transfers require the app to stay active.
+- **Completion notifications** — individual downloads and whole season/show
+  batches have separate profile settings. Completion notifications default to
+  on for profiles without saved preferences, require device permission, and
+  preserve existing opt-outs. Terminal notices are committed with the download
+  record and replayed after interruption, without notifying about old downloads
+  merely because the app was upgraded. A batch produces one completion notice,
+  not one per episode. After a cold relaunch, unfinished transfers still need
+  reconciliation and offline validation before completion can be announced.
 
 ### Music
 

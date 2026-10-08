@@ -6,11 +6,11 @@ import Foundation
 /// is suspended.
 public enum DownloadSourceKind: String, Codable, Sendable, Hashable {
     /// Direct network share (SMB/NFS/WebDAV/SFTP/FTP): read via the transport
-    /// cursor byte API. Foreground/while-running only; resumes by byte offset.
+    /// cursor byte API. Requires foreground or an owned system background
+    /// execution lease; resumes by byte offset.
     case directShare
     /// Managed provider (Jellyfin/Emby/Plex) over HTTP: eligible for a background
-    /// `URLSession` transfer that survives suspension. (Engine lands in a later
-    /// phase; the record already models it so no migration is needed.)
+    /// `URLSession` transfer that survives suspension.
     case managedHTTP
 }
 

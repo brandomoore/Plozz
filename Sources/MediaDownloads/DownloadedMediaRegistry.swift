@@ -392,13 +392,63 @@ public actor DownloadedMediaRegistry {
         state = next
     }
 
+    public func pendingNotifications() -> [DownloadNotification] {
+        state.pendingNotifications
+    }
+
+    public func acknowledgeNotification(_ id: UUID) throws {
+        guard state.pendingNotifications.contains(where: { $0.id == id }) else { return }
+        var next = state
+        next.pendingNotifications.removeAll { $0.id == id }
+        try store.save(next)
+        state = next
+    }
+
+    public func notificationIsCurrent(_ notification: DownloadNotification) -> Bool {
+        guard let record = state.records[notification.identityKey],
+              record.createdAt == notification.recordCreatedAt else { return false }
+        switch notification.kind {
+        case .failed:
+            return record.status == .failed
+        case .completed:
+            return record.status == .completed
+        case .batchCompleted:
+            guard let batchID = notification.batchID, record.batchID == batchID else { return false }
+            let members = state.records.values.filter { $0.batchID == batchID }
+            return batchIsComplete(members)
+        }
+    }
+
     // MARK: - Internals
 
     private func persist(_ record: DownloadedMediaRecord) throws {
-        state.records[record.identityKey] = record
-        try store.save(state)
+        var next = state
+        let previous = next.records[record.identityKey]
+        next.records[record.identityKey] = record
+        if let previous, previous.status != record.status {
+            if record.status == .failed {
+                next.pendingNotifications.append(.init(kind: .failed, record: record))
+            } else if record.status == .completed {
+                if let batchID = record.batchID {
+                    let members = next.records.values.filter { $0.batchID == batchID }
+                    if batchIsComplete(members) {
+                        next.pendingNotifications.append(.init(kind: .batchCompleted, record: record))
+                    }
+                } else {
+                    next.pendingNotifications.append(.init(kind: .completed, record: record))
+                }
+            }
+        }
+        try store.save(next)
+        state = next
         emit(.item(record))
         emitAggregates(forGroup: record.groupID)
+    }
+
+    private func batchIsComplete(_ records: [DownloadedMediaRecord]) -> Bool {
+        guard let expected = records.first?.batchExpectedCount, expected > 0,
+              records.count >= expected else { return false }
+        return records.allSatisfy { $0.status == .completed }
     }
 
     private func mergedRecord(

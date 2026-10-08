@@ -531,6 +531,8 @@ final class DownloadPresentationTests: XCTestCase {
             networkObserver: observer, networkFileResolver: UnusedNetworkResolver(),
             providerKind: { _ in .emby }, preferredAudioLanguages: { _ in [] },
             startsActive: startsActive,
+            activityScheduler: nil,
+            notificationClient: DownloadNotificationClientStub(authorization: .denied),
             resolveArtworkItem: { record in
                 MediaItem(id: record.snapshot.sourceItemID ?? "item", title: record.snapshot.title, kind: record.snapshot.kind)
             },

@@ -671,9 +671,17 @@ struct PlozziOSDownloadSettingsView: View {
                     isOn: $model.pausesOnLowDataMode
                 )
             } footer: {
-                Text(
-                    "These settings affect offline downloads only. Playback is never throttled."
-                )
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(
+                        "These settings affect offline downloads only. Playback is never throttled."
+                    )
+                    if #available(iOS 26.0, *) {
+                        Text(
+                            "Live Activities show download progress when background processing is available. Cancel in the Live Activity to pause its downloads. You can resume them in Plozz.",
+                            comment: "iOS/iPadOS 26+ download-settings footer. Live Activities is Apple's system feature. Cancelling its task pauses, rather than deletes, the downloads."
+                        )
+                    }
+                }
             }
 
             SettingsSectionGroup("Download Speed") {
@@ -731,7 +739,8 @@ struct PlozziOSDownloadSettingsView: View {
                     Text("Downloads use the full available connection speed.")
                 } else {
                     Text(
-                        "iOS cannot enforce a speed limit on background transfers. Choose whether capped downloads pause or continue uncapped while Plozz is in the background."
+                        "Choose whether speed-limited downloads pause or continue at full speed while Plozz is in the background.",
+                        comment: "Download speed settings footer explaining the two background choices: pause, or temporarily remove the speed limit."
                     )
                 }
             }

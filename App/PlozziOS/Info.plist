@@ -6,6 +6,10 @@
 	<string>$(ANILIST_CLIENT_ID)</string>
 	<key>AniListClientSecret</key>
 	<string>$(ANILIST_CLIENT_SECRET)</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).downloads.*</string>
+	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -108,6 +112,7 @@
 	<array>
 		<string>audio</string>
 		<string>remote-notification</string>
+		<string>processing</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

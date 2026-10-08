@@ -394,6 +394,17 @@ use synthetic received data, not pairing services or stored household credential
 Package-only UIKit snapshots cannot replace this gate:
 without an application scene, `drawHierarchy` returns an empty image.
 
+`DownloadActivityLifecycleTests` and `DownloadNotificationDeliveryTests` cover
+continued-processing admission, expiration, profile retirement, real-progress
+finalization, and durable notification replay without requesting notification
+permission. Their scheduler and notification clients are injected. The opt-in
+`testSystemActivityReceivesRealHTTPDownloadProgressOnDevice` additionally requires
+an owned physical iPhone/iPad on iOS/iPadOS 26 or later and
+`TEST_RUNNER_PLOZZ_VERIFY_SYSTEM_DOWNLOAD_ACTIVITY=1`. It uses the host's own
+continued-processing identifier and a bounded loopback HTTP fixture, never
+stored accounts or user downloads. Simulator runs skip this system-admission
+check; that skip is not device proof.
+
 The `PlozziOSInteractionTests` scheme adds real native touch coverage for Settings
 on both an owned iPhone simulator and an owned iPad simulator. It launches the
 same presentation host with an explicit settings-fixture argument, exercising

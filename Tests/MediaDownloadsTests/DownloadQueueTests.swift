@@ -546,6 +546,79 @@ final class DownloadQueueTests: XCTestCase {
         XCTAssertEqual(completed?.status, .completed)
     }
 
+    func testDirectShareBackgroundDownloadRequiresUnrevokedExecutionLease() async throws {
+        for grantsLease in [false, true] {
+            let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+            let engine = CountingDownloadEngine()
+            let (queue, dir) = makeQueue(registry: registry, engine: engine)
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let record = try await queue.enqueue(DownloadTestFactory.request(), startImmediately: false)
+            let lease = DownloadBackgroundExecutionLease()
+            await queue.setBackgroundExecutionLease(lease)
+            if !grantsLease { lease.invalidate() }
+            await queue.setApplicationActive(false, revision: 1)
+            await queue.resume(identityKey: record.identityKey)
+            await queue.drainForTesting()
+            let result = await registry.record(forKey: record.identityKey)
+            let calls = await engine.callCount()
+            XCTAssertEqual(result?.status, grantsLease ? .completed : .paused)
+            XCTAssertEqual(calls, grantsLease ? 1 : 0)
+        }
+    }
+
+    func testExecutionLeaseDoesNotOverrideSavedCappedPausePolicy() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        let engine = CountingDownloadEngine()
+        let (queue, dir) = makeQueue(registry: registry, engine: engine)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        var policy = DownloadNetworkPolicy.default
+        policy.maximumBytesPerSecond = 100
+        policy.cappedBackgroundBehavior = .pause
+        await queue.updatePolicy(policy)
+        await queue.setBackgroundExecutionLease(DownloadBackgroundExecutionLease())
+        let record = try await queue.enqueue(DownloadTestFactory.request(), startImmediately: false)
+        await queue.setApplicationActive(false, revision: 1)
+        await queue.resume(identityKey: record.identityKey)
+        await queue.drainForTesting()
+        let calls = await engine.callCount()
+        let paused = await registry.record(forKey: record.identityKey)
+        XCTAssertEqual(calls, 0)
+        XCTAssertEqual(paused?.status, .paused)
+        XCTAssertEqual(paused?.pauseReason, .backgroundPolicy)
+    }
+
+    func testProfileRetirementRevokesExecutionLease() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        let (queue, dir) = makeQueue(registry: registry, engine: CountingDownloadEngine())
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let lease = DownloadBackgroundExecutionLease()
+        await queue.setBackgroundExecutionLease(lease)
+        await queue.suspendScheduling()
+        XCTAssertFalse(lease.isValid)
+        let lateLease = DownloadBackgroundExecutionLease()
+        await queue.setBackgroundExecutionLease(lateLease)
+        do {
+            _ = try await queue.enqueue(DownloadTestFactory.request())
+            XCTFail("A late system grant must not reopen a retired profile")
+        } catch is CancellationError {}
+    }
+
+    func testResumeInterruptedDoesNotResetAnAlreadyRunningTransfer() async throws {
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        let engine = CancellationInsensitiveThenCompletingEngine()
+        let (queue, dir) = makeQueue(registry: registry, engine: engine)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let record = try await queue.enqueue(DownloadTestFactory.request())
+        await engine.waitUntilFirstAttemptStarts()
+        await queue.resumeInterrupted()
+        let active = await registry.record(forKey: record.identityKey)
+        XCTAssertEqual(active?.status, .downloading)
+        await engine.releaseFirstAttempt()
+        await queue.drainForTesting()
+        let attempts = await engine.attemptCount()
+        XCTAssertEqual(attempts, 1)
+    }
+
     func testResumeIsNotBlockedByCancellationInsensitiveAttempt() async throws {
         let registry = DownloadedMediaRegistry(
             store: InMemoryDownloadedMediaStore()
