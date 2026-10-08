@@ -106,6 +106,10 @@ and the single place caption customization lives.
   Back restores the originating link after removal completes. Stale completions
   are invalidated when changing the selected sidebar page. Left remains available
   for sidebar navigation, RTL mirrors the motion, and Reduce Motion disables it.
+  The slide mask contains horizontal overflow but extends through the vertical
+  safe area, preserving native scroll rendering at the pane's top and bottom.
+  Do not clip the safe-area frame on both axes: it cuts preview cards off above
+  the panel's lower edge.
   Child content chooses its initial native focus target and calls
   `SettingsDetailNavigation.focusArrived()` when that control receives focus.
   Customization lists and their inset contextual cards occupy separate regions.
@@ -121,8 +125,8 @@ and the single place caption customization lives.
   are not promised a title-level source replacement. Keep the card and viewport
   stable as focus or values change, with no extra focus stop or content behind
   the card. A smooth 40-point bottom fade and matching scroll clearance keep focused
-  rows above the fade. Lists without help reserve no footer. Pane-level transition clipping
-  remains. Artwork values use "Library" and "Metadata providers", with "Mixed" for
+  rows above the fade. Lists without help reserve no footer. Horizontal pane-level
+  transition clipping remains. Artwork values use "Library" and "Metadata providers", with "Mixed" for
   Recommended title details (metadata-provider heroes and library-first related posters); narrow/mobile
   and accessibility layouts stack the complete value rather than abbreviating it.
 - **Profile Seerr setup uses page gutters, not artwork padding.** On iPhone/iPad,

@@ -1,6 +1,6 @@
 import CoreModels
 import CoreUI
-import AppShell
+@testable import AppShell
 @testable import FeatureSettings
 import SwiftUI
 import UIKit
@@ -228,6 +228,58 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             cards.captions.applyPreset(.show)
             XCTAssertTrue(cards.captions.showsLabels(in: .browse))
             XCTAssertTrue(cards.captions.overrides.isEmpty)
+        }
+    }
+
+    func testCardsDetailScrollsThroughWatchedIndicatorsAndTheLastStyleRow() async throws {
+        let suite = "CardsViewportHosted.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cards = makeCards(defaults: defaults)
+        let watched = WatchStatusIndicatorSettingsModel(
+            store: WatchStatusIndicatorSettingsStore(defaults: defaults)
+        )
+        try await withScreen(content: SettingsSplitLayout(
+            title: "Appearance",
+            rows: [SettingsSplitRow(
+                id: "cards", title: "Cards",
+                description: "How media cards look across the app.",
+                subpage: SettingsDetailSubpage { CardCaptionCustomizationView(cards: cards) }
+            ) {
+                CardAppearanceControls(cards: cards, watchIndicator: watched)
+            }]
+        )) { window in
+            var views = [try XCTUnwrap(window.rootViewController?.view)]
+            var scrollViews: [UIScrollView] = []
+            while let view = views.popLast() {
+                if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height {
+                    scrollViews.append(scroll)
+                }
+                views.append(contentsOf: view.subviews)
+            }
+            let scroll = try XCTUnwrap(scrollViews.max { $0.bounds.width < $1.bounds.width })
+            for (offset, words) in [
+                (CGFloat(180), ["Watched", "Unwatched"]),
+                (scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom,
+                 ["Posters", "Cards"])
+            ] {
+                scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: offset), animated: false)
+                let copy = try await self.capture(window, name: "cards-viewport-\(Int(offset))")
+                for word in words { XCTAssertTrue(copy.contains(word), copy) }
+            }
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let host = try XCTUnwrap(window.rootViewController as? ArtworkFocusRequesting)
+            let target = try XCTUnwrap(self.focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window) else { return nil }
+                return frame.minX > window.bounds.width * 0.4 && frame.height > 150 ? (item, frame) : nil
+            }.max { $0.1.maxY < $1.1.maxY }?.0)
+            host.artworkFocusTarget = target
+            system.requestFocusUpdate(to: try XCTUnwrap(window.rootViewController))
+            system.updateFocusIfNeeded()
+            host.artworkFocusTarget = nil
+            let focused = try await self.capture(window, name: "cards-last-style-focused")
+            XCTAssertTrue(system.focusedItem === target)
+            XCTAssertTrue(focused.contains("Posters") && focused.contains("Cards"), focused)
         }
     }
 
