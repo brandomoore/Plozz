@@ -75,7 +75,11 @@ struct SettingsDetailPages<Root: View, Detail: View>: View {
             }
         }
         .environment(navigation)
-        .clipped()
+        .mask {
+            // Contain the horizontal slide without cutting off the scroll view's
+            // native rendering into the vertical safe-area margins.
+            Rectangle().ignoresSafeArea(.container, edges: .vertical)
+        }
     }
 }
 

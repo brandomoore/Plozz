@@ -71,9 +71,20 @@ folders never use title-based artwork lookup. Collage candidates retain their
 items alongside library references, and collage caches include current
 presentation/provider policy before reusing a composed image.
 
-Synced artwork/label-setting deletions consume their one-time legacy migration
-even for profiles not yet loaded on this device. Migration markers remain
-device-local and never enter profile transfer snapshots.
+New profiles and existing profiles adopting card labels inherit App default:
+ordinary browsing/Home labels are on, with Showcase and series-artwork exceptions.
+The legacy default-off Home flag does not become a new override; a legacy opt-in
+still does. Unversioned Home-only off configurations matching the old automatic
+migration reset to App default, including its original boolean format. That
+ambiguous shape cannot distinguish an old default from an old manual Home-only
+choice. Explicit show/hide presets and other per-view customizations, including
+Mixed choices, are preserved.
+`homeDefaultVersion` travels in the label payload, so subsequent Home-only opt-outs
+survive reload, profile switching, and transfer.
+
+Synced artwork/label-setting deletions consume their one-time legacy import
+even for profiles not yet loaded on this device. The separate `.migrated` store
+markers remain device-local and never enter profile transfer snapshots.
 
 ## Watch-state replay identity
 

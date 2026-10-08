@@ -1,6 +1,6 @@
 import CoreModels
 import CoreUI
-import AppShell
+@testable import AppShell
 @testable import FeatureSettings
 import SwiftUI
 import UIKit
@@ -202,8 +202,22 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             XCTAssertFalse(initial.contains("App default"), initial)
             XCTAssertFalse(initial.contains("Use default"), initial)
             XCTAssertTrue(initial.uppercased().contains("LIBRARIES"), initial)
-            XCTAssertTrue(initial.uppercased().contains("OTHER VIEWS"), initial)
             XCTAssertFalse(initial.contains("No labels"), initial)
+            var views = [try XCTUnwrap(window.rootViewController?.view)]
+            var scrollViews: [UIScrollView] = []
+            while let view = views.popLast() {
+                if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height {
+                    scrollViews.append(scroll)
+                }
+                views.append(contentsOf: view.subviews)
+            }
+            let scroll = try XCTUnwrap(scrollViews.max { $0.bounds.width < $1.bounds.width })
+            let originalOffset = scroll.contentOffset
+            // The fixed help card keeps the later section below the initial viewport.
+            scroll.setContentOffset(CGPoint(x: originalOffset.x, y: 400), animated: false)
+            let laterRows = try await self.capture(window, name: "labels-other-views", includeMaster: true)
+            XCTAssertTrue(laterRows.uppercased().contains("OTHER VIEWS"), laterRows)
+            scroll.setContentOffset(originalOffset, animated: false)
             cards.captions.toggleCustomization(in: .browse)
             let changed = try await self.capture(window, name: "labels-browse-explicit")
             XCTAssertFalse(changed.contains("Custom"), changed)
@@ -214,6 +228,58 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             cards.captions.applyPreset(.show)
             XCTAssertTrue(cards.captions.showsLabels(in: .browse))
             XCTAssertTrue(cards.captions.overrides.isEmpty)
+        }
+    }
+
+    func testCardsDetailScrollsThroughWatchedIndicatorsAndTheLastStyleRow() async throws {
+        let suite = "CardsViewportHosted.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cards = makeCards(defaults: defaults)
+        let watched = WatchStatusIndicatorSettingsModel(
+            store: WatchStatusIndicatorSettingsStore(defaults: defaults)
+        )
+        try await withScreen(content: SettingsSplitLayout(
+            title: "Appearance",
+            rows: [SettingsSplitRow(
+                id: "cards", title: "Cards",
+                description: "How media cards look across the app.",
+                subpage: SettingsDetailSubpage { CardCaptionCustomizationView(cards: cards) }
+            ) {
+                CardAppearanceControls(cards: cards, watchIndicator: watched)
+            }]
+        )) { window in
+            var views = [try XCTUnwrap(window.rootViewController?.view)]
+            var scrollViews: [UIScrollView] = []
+            while let view = views.popLast() {
+                if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height {
+                    scrollViews.append(scroll)
+                }
+                views.append(contentsOf: view.subviews)
+            }
+            let scroll = try XCTUnwrap(scrollViews.max { $0.bounds.width < $1.bounds.width })
+            for (offset, words) in [
+                (CGFloat(180), ["Watched", "Unwatched"]),
+                (scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom,
+                 ["Posters", "Cards"])
+            ] {
+                scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: offset), animated: false)
+                let copy = try await self.capture(window, name: "cards-viewport-\(Int(offset))")
+                for word in words { XCTAssertTrue(copy.contains(word), copy) }
+            }
+            let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
+            let host = try XCTUnwrap(window.rootViewController as? ArtworkFocusRequesting)
+            let target = try XCTUnwrap(self.focusItems(in: window).compactMap { item -> (any UIFocusItem, CGRect)? in
+                guard let frame = NavigationRowFocusRequester.frame(of: item, relativeTo: window) else { return nil }
+                return frame.minX > window.bounds.width * 0.4 && frame.height > 150 ? (item, frame) : nil
+            }.max { $0.1.maxY < $1.1.maxY }?.0)
+            host.artworkFocusTarget = target
+            system.requestFocusUpdate(to: try XCTUnwrap(window.rootViewController))
+            system.updateFocusIfNeeded()
+            host.artworkFocusTarget = nil
+            let focused = try await self.capture(window, name: "cards-last-style-focused")
+            XCTAssertTrue(system.focusedItem === target)
+            XCTAssertTrue(focused.contains("Posters") && focused.contains("Cards"), focused)
         }
     }
 
@@ -322,6 +388,42 @@ final class ArtworkSettingsHostedTests: XCTestCase {
             XCTAssertTrue(cards.artwork.prefersTextlessArtwork(in: .continueWatching))
             let row = try XCTUnwrap(self.focusItems(in: window).first { $0.frame.width > 700 })
             XCTAssertLessThan(row.frame.height, 80, "The name and value must fit one line at normal TV text size.")
+        }
+    }
+
+    func testMixedChoicesCycleBackOnTVWithoutChangingOtherViews() async throws {
+        let suite = "MixedChoicesHosted.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cards = makeCards(defaults: defaults)
+        cards.artwork = ArtworkSettings(preference: .library)
+        try await withScreen(cards: cards, area: .details) { window in
+            for value in ["Library", "Metadata providers", "Mixed", "Library"] {
+                let text = try await self.capture(window, name: "artwork-details-cycle-\(value)")
+                XCTAssertTrue(text.contains(value), text)
+                XCTAssertFalse(text.contains("Use default"), text)
+                XCTAssertEqual(cards.artwork.preference(in: .browse), .library)
+                XCTAssertEqual(ArtworkSettingsStore(defaults: defaults).load(), cards.artwork)
+                cards.artwork.toggleCustomization(in: .details)
+            }
+        }
+        cards.captions = CardCaptionSettings(preference: .hide)
+        try await withScreen(content: SettingsSplitLayout(
+            title: "Cards",
+            rows: [SettingsSplitRow(id: "labels", title: "Labels") {
+                CardCaptionViewChoices(view: .home, settings: Binding(
+                    get: { cards.captions }, set: { cards.captions = $0 }
+                ))
+            }]
+        )) { window in
+            for value in ["Off", "Mixed", "On", "Off"] {
+                let text = try await self.capture(window, name: "labels-home-cycle-\(value)")
+                XCTAssertTrue(text.contains(value), text)
+                XCTAssertFalse(text.contains("Use default"), text)
+                XCTAssertFalse(cards.captions.showsLabels(in: .browse))
+                XCTAssertEqual(CardCaptionSettingsStore(defaults: defaults).load(), cards.captions)
+                cards.captions.toggleCustomization(in: .home)
+            }
         }
     }
 

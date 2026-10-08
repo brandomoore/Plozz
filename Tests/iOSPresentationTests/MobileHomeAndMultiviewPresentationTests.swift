@@ -14,6 +14,49 @@ import XCTest
 
 @MainActor
 final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
+    func testArtworkPresetGroupsFitPhoneTabletAndAccessibleLayouts() async throws {
+        let app = PlozziOSAppModel()
+        let original = app.settings.cardStyle.artwork
+        defer { app.settings.cardStyle.artwork = original }
+        app.settings.cardStyle.artwork = .default
+        try await withWindow { window, host in
+            for (width, typeSize) in [
+                (CGFloat(320), DynamicTypeSize.large), (390, .large), (768, .large),
+                (1024, .large), (320, .accessibility3)
+            ] {
+                window.frame.size = CGSize(width: width, height: typeSize.isAccessibilitySize ? 2600 : 1100)
+                host.rootView = AnyView(
+                    NavigationStack {
+                        PlozziOSArtworkSettingsView(
+                            appModel: app, cardStyle: app.settings.cardStyle, canManageProviders: true
+                        )
+                    }
+                    .environment(\.themePalette, .dark)
+                    .environment(\.colorScheme, .dark)
+                    .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
+                    .environment(\.dynamicTypeSize, typeSize)
+                )
+                try await settle(window)
+                let image = snapshot(window, name: "artwork-preset-groups-\(Int(width))-\(typeSize)")
+                let observations = try text(image, maximumCandidates: 1)
+                let copy = observations.map(\.candidate.string).joined(separator: " ")
+                    .replacingOccurrences(of: "- ", with: "")
+                for word in ["Choose", "posters", "backgrounds", "logos", "Recommended", "library", "metadata", "Customize"] {
+                    XCTAssertTrue(copy.localizedCaseInsensitiveContains(word), copy)
+                }
+                let heading = try textFrame("Choose", observations: observations, size: image.size)
+                let first = try textFrame(
+                    typeSize.isAccessibilitySize ? "Recom" : "Recommended",
+                    observations: observations, size: image.size
+                )
+                let last = try textFrame("providers", observations: observations, size: image.size)
+                let customize = try textFrame("Customize", observations: observations, size: image.size)
+                XCTAssertLessThan(heading.maxY, first.minY)
+                XCTAssertGreaterThan(customize.minY - last.maxY, 24)
+            }
+        }
+    }
+
     func testArtworkScopeNamesAndValuesFitPhoneTabletAndAccessibleLayouts() async throws {
         let app = PlozziOSAppModel()
         let original = app.settings.cardStyle.artwork
@@ -21,9 +64,10 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         app.settings.cardStyle.artwork = .default
         app.settings.cardStyle.artwork.setOverride(.online, for: .home)
         try await withWindow { window, host in
-            for (width, typeSize) in [
-                (CGFloat(320), DynamicTypeSize.large), (390, .large),
-                (768, .large), (1024, .large), (320, .accessibility3)
+            for (width, typeSize, direction) in [
+                (CGFloat(320), DynamicTypeSize.large, LayoutDirection.leftToRight), (390, .large, .leftToRight),
+                (768, .large, .leftToRight), (1024, .large, .leftToRight),
+                (320, .accessibility3, .leftToRight), (390, .large, .rightToLeft)
             ] {
                 window.frame.size = CGSize(width: width, height: typeSize.isAccessibilitySize ? 2400 : 1500)
                 host.rootView = AnyView(
@@ -34,9 +78,10 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     .environment(\.colorScheme, .dark)
                     .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
                     .environment(\.dynamicTypeSize, typeSize)
+                    .environment(\.layoutDirection, direction)
                 )
                 try await settle(window)
-                let image = snapshot(window, name: "artwork-scopes-\(Int(width))-\(typeSize)")
+                let image = snapshot(window, name: "artwork-scopes-\(Int(width))-\(typeSize)-\(direction)")
                 let observations = try text(image, maximumCandidates: 1)
                 let copy = observations.map(\.candidate.string).joined(separator: " ")
                 for word in ["Showcase", "hero", "Other", "Home", "rows", "Library", "Metadata", "providers"] {
@@ -48,6 +93,55 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                 XCTAssertTrue(copy.uppercased().contains("LIBRARIES"), copy)
                 XCTAssertFalse(copy.contains("Recommended hero"), copy)
                 XCTAssertFalse(copy.contains("…"), copy)
+            }
+        }
+    }
+
+    func testCustomizationPagesUseSolidThemeBackgroundsEvenWithGradientsEnabled() async throws {
+        let app = PlozziOSAppModel()
+        try await withWindow { window, host in
+            for palette in [ThemePalette.dark, .light, .pureBlack] {
+                for width in [CGFloat(390), CGFloat(768)] {
+                    for artwork in [true, false] {
+                        window.frame.size = CGSize(width: width, height: 900)
+                        window.overrideUserInterfaceStyle = palette.isLight ? .light : .dark
+                        host.rootView = AnyView(
+                            NavigationStack {
+                                Group {
+                                    if artwork {
+                                        ArtworkCustomizationView(cards: app.settings.cardStyle)
+                                    } else {
+                                        CardCaptionCustomizationView(cards: app.settings.cardStyle)
+                                    }
+                                }
+                            }
+                            .background(Color(uiColor: .magenta))
+                            .environment(\.themePalette, palette)
+                            .environment(\.colorScheme, palette.isLight ? .light : .dark)
+                            .environment(\.gradientBackgroundsEnabled, true)
+                            .environment(\.horizontalSizeClass, width < 600 ? .compact : .regular)
+                        )
+                        try await settle(window)
+                        let image = snapshot(
+                            window, name: "customization-surface-\(Int(width))-\(palette.isLight)-\(artwork)"
+                        )
+                        let cg = try XCTUnwrap(image.cgImage)
+                        let bytes = try rgbaPixels(image)
+                        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+                        XCTAssertTrue(UIColor(palette.settingsBackground).getRed(
+                            &red, green: &green, blue: &blue, alpha: &alpha
+                        ))
+                        for y: CGFloat in [100, 320, 600] {
+                            let index = (Int(y * image.scale) * cg.width + Int(4 * image.scale)) * 4
+                            for (channel, expected) in [red, green, blue, alpha].enumerated() {
+                                XCTAssertEqual(
+                                    CGFloat(bytes[index + channel]) / 255, expected, accuracy: 0.015,
+                                    "The page and navigation margins must stay opaque and uniform, not show an ambient gradient."
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }

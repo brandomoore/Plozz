@@ -30,6 +30,10 @@ public enum ArtworkArea: String, CaseIterable, Codable, Identifiable, Sendable {
 
     public var id: Self { self }
 
+    public var customizationChoices: [ArtworkOverride] {
+        self == .details ? [.library, .online, .mixed] : [.library, .online]
+    }
+
     public var displayName: LocalizedStringResource {
         switch self {
         case .home: "Showcase / hero"
@@ -74,15 +78,16 @@ public enum ArtworkArea: String, CaseIterable, Codable, Identifiable, Sendable {
 }
 
 public enum ArtworkOverride: String, CaseIterable, Identifiable, Sendable {
-    case automatic, library, online
+    case automatic, library, online, mixed
 
     public var id: Self { self }
 
     public var displayName: LocalizedStringResource {
         switch self {
         case .automatic: "Use default"
-        case .library: ArtworkPreference.library.displayName
-        case .online: ArtworkPreference.online.displayName
+        case .library: "Library"
+        case .online: "Metadata providers"
+        case .mixed: "Mixed"
         }
     }
 }
@@ -102,7 +107,16 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
     }
 
     public mutating func toggleCustomization(in area: ArtworkArea) {
-        setOverride(prefersOnlineArtwork(in: area) ? .library : .online, for: area)
+        let choices = area.customizationChoices
+        guard let index = choices.firstIndex(of: customization(in: area)) else {
+            preconditionFailure("Artwork customization must be one of the area's supported choices.")
+        }
+        setOverride(choices[(index + 1) % choices.count], for: area)
+    }
+
+    public func customization(in area: ArtworkArea) -> ArtworkOverride {
+        if area == .details, preference(in: area) == .recommended { return .mixed }
+        return prefersOnlineArtwork(in: area) ? .online : .library
     }
 
     public init(
@@ -110,7 +124,7 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
         overrides: [ArtworkArea: ArtworkPreference] = [:]
     ) {
         self.preference = preference
-        self.overrides = overrides.filter { $0.value != .recommended }
+        self.overrides = overrides.filter { $0.value != .recommended || $0.key == .details }
     }
 
     public func preference(in area: ArtworkArea) -> ArtworkPreference {
@@ -159,6 +173,7 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
         switch overrides[area] {
         case .library: .library
         case .online: .online
+        case .recommended: .mixed
         default: .automatic
         }
     }
@@ -168,6 +183,9 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
         case .automatic: overrides.removeValue(forKey: area)
         case .library: overrides[area] = .library
         case .online: overrides[area] = .online
+        case .mixed:
+            precondition(area.customizationChoices.contains(.mixed))
+            overrides[area] = .recommended
         }
     }
 
@@ -183,7 +201,7 @@ public struct ArtworkSettings: Codable, Equatable, Sendable {
         overrides = Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in
             guard let area = ArtworkArea(rawValue: key),
                   let preference = ArtworkPreference(rawValue: value),
-                  preference != .recommended else { return nil }
+                  preference != .recommended || area == .details else { return nil }
             return (area, preference)
         })
         if try values.decodeIfPresent(Int.self, forKey: .scopeVersion) == nil {
