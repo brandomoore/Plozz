@@ -221,6 +221,64 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
         XCTAssertFalse(home.isRefreshing)
     }
 
+    func testResumeFailureWaitsForReconciledContentBeforePublication() async throws {
+        for merged in [true, false] {
+            for healthyCount in [0, 4] {
+                let pause = HomeResumePublicationPause(detailReads: healthyCount)
+                defer { pause.release.open() }
+                var accounts = (0..<healthyCount).map { index in
+                    let provider = FakeMediaProvider(allItems: [], kind: .plex)
+                    provider.continueWatchingItems = [
+                        MediaItem(id: "resume-\(index)", title: "Resume \(index)", kind: .movie)
+                    ]
+                    return resolved(provider, accountID: "healthy-\(index)")
+                }
+                let offline = FakeMediaProvider(allItems: [], kind: .jellyfin)
+                offline.continueWatchingError = .serverUnreachable
+                accounts.append(resolved(offline, accountID: "offline"))
+                let visibility = HomeLibraryVisibility(mergeLibrariesOnHome: merged)
+                let home = HomeViewModel(
+                    accounts: accounts, layoutStore: InMemoryHomeLayoutStore(),
+                    contentStore: InMemoryHomeContentStore(),
+                    currentVisibility: { visibility },
+                    recentlyAppliedRecency: {
+                        await pause.waitForPublication()
+                        return [:]
+                    }
+                )
+                let load = Task { await home.load() }
+                let deadline = ContinuousClock.now + .seconds(2)
+                while !(await pause.isWaiting), ContinuousClock.now < deadline { await Task.yield() }
+                let isWaiting = await pause.isWaiting
+                XCTAssertTrue(isWaiting, "Hold the publication after every server has settled.")
+                XCTAssertTrue(home.loadingRows.contains(.continueWatching))
+                XCTAssertNil(home.rowFailures[.continueWatching],
+                             "Publishing a failure before its usable cards tears down the loading focus target.")
+                let row = try XCTUnwrap(HomeRow.rows(
+                    for: try XCTUnwrap(home.state.value), isLibraryVisible: { _ in true },
+                    loadingRows: home.loadingRows, failures: home.rowFailures
+                ).first { $0.kind == .continueWatching })
+                XCTAssertNil(row.failure)
+                XCTAssertGreaterThan(row.loadingPlaceholderCount, 0)
+
+                pause.release.open()
+                await load.value
+                XCTAssertEqual(home.state.value?.continueWatching.map(\.id),
+                               (0..<healthyCount).map { "resume-\($0)" })
+                XCTAssertEqual(home.rowFailures[.continueWatching], .serverUnreachable,
+                               "Retain the source failure; only an empty settled row presents its error.")
+                XCTAssertTrue(home.loadingRows.isEmpty)
+                let settledRow = try XCTUnwrap(HomeRow.rows(
+                    for: try XCTUnwrap(home.state.value), isLibraryVisible: { _ in true },
+                    loadingRows: home.loadingRows, failures: home.rowFailures
+                ).first { $0.kind == .continueWatching })
+                XCTAssertEqual(settledRow.items.count, healthyCount)
+                XCTAssertEqual(settledRow.loadingPlaceholderCount, 0)
+                XCTAssertEqual(settledRow.failure, .serverUnreachable)
+            }
+        }
+    }
+
     func testVisibilityChangeDuringCachedLaunchCancelsAndReplacesTheOldLoad() async {
         let gate = HomeRefreshGate()
         defer { gate.open() }
@@ -651,6 +709,22 @@ final class HomeViewModelSnapshotHydrationTests: XCTestCase {
 private actor HomeProgressCounter {
     private(set) var count = 0
     func record() { count += 1 }
+}
+
+private actor HomeResumePublicationPause {
+    nonisolated let release = HomeRefreshGate()
+    private let detailReads: Int
+    private var reads = 0
+    private(set) var isWaiting = false
+
+    init(detailReads: Int) { self.detailReads = detailReads }
+
+    func waitForPublication() async {
+        reads += 1
+        guard reads > detailReads else { return }
+        isWaiting = true
+        await release.wait()
+    }
 }
 
 private final class HomeRefreshGate: @unchecked Sendable {

@@ -26,9 +26,8 @@ public actor CloudTraktRefreshTransport: TraktSharedRefreshTransport {
         self.containerIdentifier = containerIdentifier
     }
 
-    /// Fail closed BEFORE constructing CKContainer, including test hosts and
-    /// branded applications. A receipt is the distribution-build fallback where
-    /// Apple removes the embedded provisioning profile.
+    /// Check capability BEFORE constructing CKContainer, including test hosts
+    /// and branded applications. Store receipts do not establish iCloud capability.
     public static func isAvailable(containerIdentifier: String, bundle: Bundle = .main) -> Bool {
         guard !isTestHost else { return false }
         #if os(macOS)
@@ -38,14 +37,27 @@ public actor CloudTraktRefreshTransport: TraktSharedRefreshTransport {
               ) as? [String] else { return false }
         return values.contains(containerIdentifier)
         #else
-        if let values = provisionedContainers(bundle) { return values.contains(containerIdentifier) }
-        guard bundle.url(forResource: "embedded", withExtension: "mobileprovision") == nil else { return false }
-        guard containerIdentifier == "iCloud.com.thatcube.Plozz",
-              bundle.bundleIdentifier == "com.thatcube.Plozz",
-              let receipt = bundle.appStoreReceiptURL,
-              FileManager.default.fileExists(atPath: receipt.path) else { return false }
-        return true
+        #if targetEnvironment(simulator)
+        let isSimulator = true
+        #else
+        let isSimulator = false
         #endif
+        return permitsCloudKit(
+            containerIdentifier: containerIdentifier, bundle: bundle, isSimulator: isSimulator
+        )
+        #endif
+    }
+
+    static func permitsCloudKit(
+        containerIdentifier: String, bundle: Bundle, isSimulator: Bool
+    ) -> Bool {
+        if let values = provisionedContainers(bundle) { return values.contains(containerIdentifier) }
+        guard bundle.url(forResource: "embedded", withExtension: "mobileprovision") == nil,
+              !isSimulator else { return false }
+        // Apple removes distribution profiles; sandbox receipts can also be absent.
+        // Only the canonical device app has this profileless distribution fallback.
+        return containerIdentifier == "iCloud.com.thatcube.Plozz"
+            && bundle.bundleIdentifier == "com.thatcube.Plozz"
     }
 
     /// Unknown capability in the canonical app must fail as "iCloud unavailable",
