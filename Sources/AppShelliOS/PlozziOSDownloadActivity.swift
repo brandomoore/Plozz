@@ -246,7 +246,7 @@ struct PlozziOSSystemDownloadActivityScheduler: PlozziOSDownloadActivityScheduli
             }
         }
         guard registered else { throw RegistrationError.identifierNotPermitted }
-        let title = progress.displayTitle ?? String(localized: "Downloads") // l10n:content - system task requires resolved text.
+        let title = Self.title(for: progress)
         let subtitle = Self.subtitle(for: progress)
         // Construct/submit away from the main executor, including the iOS 27
         // asynchronous submission API. Rejection must not stop HTTP transfers.
@@ -269,43 +269,77 @@ struct PlozziOSSystemDownloadActivityScheduler: PlozziOSDownloadActivityScheduli
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
     }
 
+    static func title( // l10n:content - pinned media metadata and resolved system activity copy.
+        for progress: DownloadActivityProgress,
+        locale: Locale = .current
+    ) -> String {
+        if let title = progress.displayTitle {
+            if let item = progress.currentItem, let episode = episodeLabel(item, locale: locale) {
+                return joinedDetails(title, episode, locale: locale)
+            }
+            return title
+        }
+        if progress.activeItemCount > 1 {
+            let count = progress.activeItemCount.formatted(.number.locale(locale))
+            return resolve(
+                .init("Active downloads: \(count)", comment: "Live Activity title for several unrelated downloads running at once. Placeholder is the localized number currently preparing, transferring, or finishing."),
+                locale: locale
+            )
+        }
+        return resolve("Downloads", locale: locale)
+    }
+
     static func subtitle( // l10n:content - resolved text for the system task, refreshed on each update.
         for progress: DownloadActivityProgress,
         locale: Locale = .current
     ) -> String {
         let completed = progress.completedCount.formatted(.number.locale(locale))
         let total = progress.totalCount.formatted(.number.locale(locale))
-        if progress.succeeded, progress.totalCount > 1 {
-            return resolve(
-                .init("\(completed)/\(total) complete", comment: "Compact Live Activity completion counter. The two placeholders are locale-formatted completed and total download counts, in that order. All downloads have finished."),
-                locale: locale
-            )
-        }
+        let completion = resolve(
+            .init("Completed: \(completed) of \(total)", comment: "Compact download Live Activity completion count. First placeholder is the localized number fully finished; second is the total. Keep an explicit completion label, including when zero have finished. This is not the current download's position."),
+            locale: locale
+        )
+        if progress.succeeded, progress.totalCount > 1 { return completion }
         let detail: String
         if progress.activeItemCount > 1 {
+            if progress.displayTitle == nil { return completion }
             let count = progress.activeItemCount.formatted(.number.locale(locale))
             detail = resolve(
                 .init("Active: \(count)", comment: "Compact Live Activity label counting downloads currently preparing, transferring, or finishing in parallel. The placeholder is a locale-formatted count."),
                 locale: locale
             )
         } else if let item = progress.currentItem {
-            let itemDetail = Self.detail(for: item, locale: locale)
-            if let label = itemLabel(item, includesTitle: progress.totalCount > 1, locale: locale) {
-                detail = joinedDetails(label, itemDetail, locale: locale)
-            } else if item.phase == .downloading, item.fractionCompleted != nil {
-                let status = resolve("Downloading", locale: locale)
-                detail = joinedDetails(status, itemDetail, locale: locale)
-            } else {
-                detail = itemDetail
+            if let number = progress.currentItemNumber, progress.totalCount > 1 {
+                let current = number.formatted(.number.locale(locale))
+                let stage: String
+                switch item.phase {
+                case .preparing:
+                    stage = resolve(
+                        .init("Preparing \(current) of \(total)", comment: "Compact Live Activity subtitle for sequential downloads. First placeholder is the one-based current download number, second is the queue total. This item is being prepared, not yet transferred. Both numbers are already localized."),
+                        locale: locale
+                    )
+                case .downloading:
+                    stage = resolve(
+                        .init("Downloading \(current) of \(total)", comment: "Compact Live Activity subtitle for sequential downloads. First placeholder is the one-based current download number, second is the queue total. This is the item in progress, not a completed count. Both numbers are already localized."),
+                        locale: locale
+                    )
+                case .finishing:
+                    stage = resolve(
+                        .init("Finishing \(current) of \(total)", comment: "Compact Live Activity subtitle for sequential downloads. First placeholder is the one-based current download number, second is the queue total. Bytes have arrived, but validation/finalization is not complete. Both numbers are already localized."),
+                        locale: locale
+                    )
+                }
+                if let percentage = percentage(for: item, locale: locale) {
+                    return joinedDetails(stage, percentage, locale: locale)
+                }
+                return stage
             }
+            detail = Self.detail(for: item, locale: locale)
         } else {
             detail = resolve(status(for: progress.status), locale: locale)
         }
         if progress.totalCount > 1 {
-            return resolve(
-                .init("\(detail) · \(completed)/\(total) complete", comment: "Compact download Live Activity subtitle. First placeholder is an already localized item/progress or queue-status detail. Second and third are locale-formatted completed and total download counts. Use a grammar-neutral completed-count label; some downloads are still unfinished."),
-                locale: locale
-            )
+            return joinedDetails(detail, completion, locale: locale)
         }
         return detail
     }
@@ -325,8 +359,7 @@ struct PlozziOSSystemDownloadActivityScheduler: PlozziOSDownloadActivityScheduli
     ) -> String {
         switch item.phase {
         case .preparing:
-            if let fraction = item.fractionCompleted {
-                let percentage = fraction.formatted(.percent.precision(.fractionLength(0)).locale(locale))
+            if let percentage = percentage(for: item, locale: locale) {
                 return resolve(
                     .init("Preparing \(percentage)", comment: "Live Activity preparation stage followed by its measured, already localized percentage. This is server preparation, not downloaded bytes or overall batch progress."),
                     locale: locale
@@ -334,8 +367,8 @@ struct PlozziOSSystemDownloadActivityScheduler: PlozziOSDownloadActivityScheduli
             }
             return resolve("Preparing Download", locale: locale)
         case .downloading:
-            if let fraction = item.fractionCompleted {
-                return min(0.99, fraction).formatted(.percent.precision(.fractionLength(0)).locale(locale))
+            if let percentage = percentage(for: item, locale: locale) {
+                return joinedDetails(resolve("Downloading", locale: locale), percentage, locale: locale)
             }
             return resolve("Downloading", locale: locale)
         case .finishing:
@@ -346,9 +379,16 @@ struct PlozziOSSystemDownloadActivityScheduler: PlozziOSDownloadActivityScheduli
         }
     }
 
-    private static func itemLabel(
+    private static func percentage(
+        for item: DownloadActivityProgress.ItemProgress, locale: Locale
+    ) -> String? {
+        guard item.phase != .finishing, let fraction = item.fractionCompleted else { return nil }
+        let value = item.phase == .downloading ? min(0.99, fraction) : fraction
+        return value.formatted(.percent.precision(.fractionLength(0)).locale(locale))
+    }
+
+    private static func episodeLabel(
         _ item: DownloadActivityProgress.ItemProgress,
-        includesTitle: Bool,
         locale: Locale
     ) -> String? { // l10n:content - pinned media title or the app's S/E episode notation.
         if let episode = item.episodeNumber, episode >= 0 {
@@ -358,7 +398,7 @@ struct PlozziOSSystemDownloadActivityScheduler: PlozziOSDownloadActivityScheduli
             }
             return episodeLabel
         }
-        return includesTitle && !item.title.isEmpty ? item.title : nil
+        return nil
     }
 
     private static func status(for status: DownloadStatus) -> LocalizedStringResource {
@@ -399,7 +439,7 @@ private final class PlozziOSSystemDownloadActivityTask: PlozziOSDownloadActivity
         task.progress.completedUnitCount = progress.completedUnitCount
         task.progress.estimatedTimeRemaining = progress.estimatedTimeRemaining
         task.updateTitle(
-            progress.displayTitle ?? String(localized: "Downloads"), // l10n:content - system task requires resolved text.
+            PlozziOSSystemDownloadActivityScheduler.title(for: progress),
             subtitle: PlozziOSSystemDownloadActivityScheduler.subtitle(for: progress)
         )
     }

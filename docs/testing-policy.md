@@ -411,6 +411,10 @@ metadata, unknown sizes, preparation, finalization before completion, parallel
 work, and completed/paused/failed queues. Episode handoffs must update the same
 activity only after the preceding record is finalized; do not round an unfinished
 transfer up to 100% or select an arbitrary item when several are active.
+Native title/subtitle assertions keep media names and episode codes out of the
+progress line. Sequential work uses a one-based current step, independent of
+registry ordering; paused/failed peers and parallel work use explicit completed
+counts instead. Preparation and finalization must never be labeled transferring.
 
 `DownloadNotificationNavigationTests` checks versioned, credential-free routing
 payloads, exact item generations, batch/show/season destinations, cold-start

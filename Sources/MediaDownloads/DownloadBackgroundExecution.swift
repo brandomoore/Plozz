@@ -59,6 +59,7 @@ public struct DownloadActivityProgress: Equatable, Sendable {
     public let estimatedTimeRemaining: TimeInterval?
     public let activeItemCount: Int
     public let currentItem: ItemProgress?
+    public let currentItemNumber: Int?
 
     public init(records: [DownloadedMediaRecord], bytesPerSecond: Int64 = 0) {
         totalCount = records.count
@@ -68,6 +69,11 @@ public struct DownloadActivityProgress: Equatable, Sendable {
         let activeItems = records.filter { $0.status == .downloading || $0.status == .preparing }
         activeItemCount = activeItems.count
         currentItem = activeItems.count == 1 ? activeItems.first.map(ItemProgress.init(record:)) : nil
+        // Count the current step through sequential work, not the unordered registry.
+        // Paused or failed peers leave gaps, so they require explicit completion counts.
+        currentItemNumber = activeItems.count == 1 && records.allSatisfy({
+            $0.status == .completed || $0.status.isActive
+        }) ? completedCount + 1 : nil
         totalUnitCount = Int64(records.count) * 1_000
         // Equal-weight item progress, not an invented aggregate byte total.
         // Receiving every byte is not completion until engine finalization passes.
@@ -88,11 +94,13 @@ public struct DownloadActivityProgress: Equatable, Sendable {
             }
             return result + Int64(min(999, fraction * 1_000))
         }
-        if records.count == 1 {
-            displayTitle = records.first?.snapshot.title
+        if activeItems.count == 1, let record = activeItems.first {
+            displayTitle = Self.mediaTitle(for: record)
+        } else if records.count == 1, let record = records.first {
+            displayTitle = Self.mediaTitle(for: record)
         } else if let batchID = records.first?.batchID,
                   records.allSatisfy({ $0.batchID == batchID }) {
-            displayTitle = records.first?.batchTitle
+            displayTitle = records.first?.batchTitle.flatMap(Self.nonemptyTitle)
         } else {
             displayTitle = nil
         }
@@ -112,5 +120,18 @@ public struct DownloadActivityProgress: Equatable, Sendable {
         } else {
             estimatedTimeRemaining = nil
         }
+    }
+
+    private static func mediaTitle(for record: DownloadedMediaRecord) -> String? {
+        if record.snapshot.kind == .episode {
+            if let title = record.snapshot.seriesTitle.flatMap(nonemptyTitle) { return title }
+            if let title = record.batchTitle.flatMap(nonemptyTitle) { return title }
+        }
+        return nonemptyTitle(record.snapshot.title)
+    }
+
+    private static func nonemptyTitle(_ title: String) -> String? {
+        let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 }

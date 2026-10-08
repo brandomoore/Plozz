@@ -188,8 +188,11 @@ limits and refuses an incompatible plan rather than quietly using Maximum.
   using per-item progress, including measured rendition preparation; time
   estimates use only known sizes and current throughput. Receiving every byte
   is not completion until offline validation finishes.
-  The subtitle shows the current episode or item, its measured percentage or
-  preparation/finalization stage, and the completed/total count for the queue.
+  The title names the current movie or show, including episode numbers. The
+  subtitle shows the current step through sequential downloads (for example,
+  "Downloading 1 of 2") and its measured percentage or preparation/finalization
+  stage. Finished counts are explicitly labeled "Completed" rather than shown
+  as an ambiguous fraction; paused or failed peers also use completed counts.
   The main progress indicator remains queue-wide. Parallel transfers show an
   active count instead of presenting one arbitrary episode as the only download.
   Network-share transfers can continue while the system grants execution.

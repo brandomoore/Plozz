@@ -15,12 +15,15 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         record.snapshot = .init(title: "Episode", kind: .episode, seasonNumber: 1, episodeNumber: 4)
         let progress = DownloadActivityProgress(records: [record], bytesPerSecond: 0)
         for language in ["ar", "he", "fa"] {
-            let subtitle = PlozziOSSystemDownloadActivityScheduler.subtitle(
-                for: progress, locale: Locale(identifier: language)
-            )
-            XCTAssertTrue(subtitle.hasPrefix("\u{2068}"), subtitle)
-            XCTAssertTrue(subtitle.contains("\u{2069} · \u{2068}"), subtitle)
-            XCTAssertTrue(subtitle.hasSuffix("\u{2069}"), subtitle)
+            let locale = Locale(identifier: language)
+            for text in [
+                PlozziOSSystemDownloadActivityScheduler.title(for: progress, locale: locale),
+                PlozziOSSystemDownloadActivityScheduler.subtitle(for: progress, locale: locale)
+            ] {
+                XCTAssertTrue(text.hasPrefix("\u{2068}"), text)
+                XCTAssertTrue(text.contains("\u{2069} · \u{2068}"), text)
+                XCTAssertTrue(text.hasSuffix("\u{2069}"), text)
+            }
         }
     }
 
@@ -42,9 +45,47 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         XCTAssertEqual(progress.displayTitle, "Example Show")
         XCTAssertEqual(progress.completedUnitCount, 3_620)
         XCTAssertEqual(
-            PlozziOSSystemDownloadActivityScheduler.subtitle(for: progress, locale: Locale(identifier: "en")),
-            "S1 E4 · 62% · 3/10 complete"
+            PlozziOSSystemDownloadActivityScheduler.title(for: progress, locale: Locale(identifier: "en")),
+            "Example Show · S1 E4"
         )
+        XCTAssertEqual(
+            PlozziOSSystemDownloadActivityScheduler.subtitle(for: progress, locale: Locale(identifier: "en")),
+            "Downloading 4 of 10 · 62%"
+        )
+    }
+
+    func testMixedMovieQueueKeepsTitleSeparateFromOneBasedProgress() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Native continued-processing task requires iOS 26.") }
+        var first = downloadActivityRecord(id: "first")
+        first.snapshot = .init(title: "Spider-Man: Far From Home", kind: .movie)
+        first.bytesDownloaded = 53
+        var second = downloadActivityRecord(id: "second")
+        second.status = .queued
+        second.snapshot = .init(title: "Another movie", kind: .movie)
+        let locale = Locale(identifier: "en")
+        func assertPresentation(_ title: String, _ subtitle: String) {
+            let progress = DownloadActivityProgress(records: [second, first])
+            XCTAssertEqual(PlozziOSSystemDownloadActivityScheduler.title(for: progress, locale: locale), title)
+            XCTAssertEqual(PlozziOSSystemDownloadActivityScheduler.subtitle(for: progress, locale: locale), subtitle)
+        }
+        assertPresentation("Spider-Man: Far From Home", "Downloading 1 of 2 · 53%")
+        first.status = .preparing
+        first.preparationFraction = 0.4
+        assertPresentation("Spider-Man: Far From Home", "Preparing 1 of 2 · 40%")
+        first.preparationFraction = nil
+        assertPresentation("Spider-Man: Far From Home", "Preparing 1 of 2")
+        first.status = .downloading
+        first.totalBytes = nil
+        assertPresentation("Spider-Man: Far From Home", "Downloading 1 of 2")
+        first.totalBytes = 100
+        first.bytesDownloaded = 100
+        assertPresentation("Spider-Man: Far From Home", "Finishing 1 of 2")
+        first.status = .completed
+        second.status = .downloading
+        second.bytesDownloaded = 25
+        assertPresentation("Another movie", "Downloading 2 of 2 · 25%")
+        second.status = .completed
+        assertPresentation("Downloads", "Completed: 2 of 2")
     }
 
     func testNativeSubtitleDoesNotConfuseTransferAndFinalization() throws {
@@ -60,19 +101,25 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         }
         record.status = .preparing
         record.preparationFraction = 0.4
-        XCTAssertEqual(subtitle(), "S1 E4 · Preparing 40%")
+        XCTAssertEqual(subtitle(), "Preparing 40%")
         record.preparationFraction = nil
-        XCTAssertEqual(subtitle(), "S1 E4 · Preparing Download")
+        XCTAssertEqual(subtitle(), "Preparing Download")
         record.status = .downloading
         record.totalBytes = 1_000
         record.bytesDownloaded = 999
-        XCTAssertEqual(subtitle(), "S1 E4 · 99%")
+        XCTAssertEqual(subtitle(), "Downloading · 99%")
         record.bytesDownloaded = 1_000
-        XCTAssertEqual(subtitle(), "S1 E4 · Finishing")
+        XCTAssertEqual(subtitle(), "Finishing")
         record.totalBytes = nil
-        XCTAssertEqual(subtitle(), "S1 E4 · Downloading")
+        XCTAssertEqual(subtitle(), "Downloading")
         record.snapshot.seasonNumber = nil
-        XCTAssertEqual(subtitle(), "E4 · Downloading")
+        XCTAssertEqual(subtitle(), "Downloading")
+        XCTAssertEqual(
+            PlozziOSSystemDownloadActivityScheduler.title(
+                for: DownloadActivityProgress(records: [record]), locale: Locale(identifier: "en")
+            ),
+            "episode · E4"
+        )
         record.snapshot.episodeNumber = nil
         XCTAssertEqual(subtitle(), "Downloading")
         record.bytesDownloaded = 40
@@ -91,17 +138,40 @@ final class DownloadActivityLifecycleTests: XCTestCase {
                 for: DownloadActivityProgress(records: [first, second]), locale: Locale(identifier: "en")
             )
         }
-        XCTAssertEqual(subtitle(), "Active: 2 · 0/2 complete")
+        XCTAssertEqual(subtitle(), "Completed: 0 of 2")
+        XCTAssertEqual(
+            PlozziOSSystemDownloadActivityScheduler.title(
+                for: DownloadActivityProgress(records: [first, second]), locale: Locale(identifier: "en")
+            ),
+            "Active downloads: 2"
+        )
+        first.batchID = "show"
+        second.batchID = "show"
+        first.batchTitle = "Example Show"
+        second.batchTitle = "Example Show"
+        XCTAssertEqual(subtitle(), "Active: 2 · Completed: 0 of 2")
+        XCTAssertEqual(
+            PlozziOSSystemDownloadActivityScheduler.title(
+                for: DownloadActivityProgress(records: [first, second]), locale: Locale(identifier: "en")
+            ),
+            "Example Show"
+        )
         first.status = .queued
         second.status = .queued
-        XCTAssertEqual(subtitle(), "Queued · 0/2 complete")
+        XCTAssertEqual(subtitle(), "Queued · Completed: 0 of 2")
         first.status = .completed
         second.status = .paused
-        XCTAssertEqual(subtitle(), "Download Paused · 1/2 complete")
+        XCTAssertEqual(subtitle(), "Download Paused · Completed: 1 of 2")
         second.status = .failed
-        XCTAssertEqual(subtitle(), "Download Failed · 1/2 complete")
+        XCTAssertEqual(subtitle(), "Download Failed · Completed: 1 of 2")
         second.status = .completed
-        XCTAssertEqual(subtitle(), "2/2 complete")
+        XCTAssertEqual(subtitle(), "Completed: 2 of 2")
+        second.status = .downloading
+        second.bytesDownloaded = 53
+        first.status = .paused
+        XCTAssertEqual(subtitle(), "Downloading · 53% · Completed: 0 of 2")
+        first.status = .failed
+        XCTAssertEqual(subtitle(), "Downloading · 53% · Completed: 0 of 2")
     }
 
     func testCurrentEpisodeAdvancesWithinTheSameActivityAfterFinalization() async throws {
@@ -125,6 +195,7 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         activity.update(records: [first, second], bytesPerSecond: 10)
         XCTAssertEqual(task.updates.last?.currentItem?.phase, .finishing)
         XCTAssertEqual(task.updates.last?.completedCount, 0)
+        XCTAssertEqual(task.updates.last?.currentItemNumber, 1)
         first.status = .completed
         second.status = .downloading
         second.bytesDownloaded = 62
@@ -132,6 +203,7 @@ final class DownloadActivityLifecycleTests: XCTestCase {
         XCTAssertEqual(task.updates.last?.currentItem?.episodeNumber, 2)
         XCTAssertEqual(task.updates.last?.currentItem?.fractionCompleted, 0.62)
         XCTAssertEqual(task.updates.last?.completedCount, 1)
+        XCTAssertEqual(task.updates.last?.currentItemNumber, 2)
         XCTAssertEqual(task.updates.last?.totalCount, 2)
         XCTAssertEqual(scheduler.submissions.count, 1)
         XCTAssertTrue(task.completions.isEmpty)

@@ -17,7 +17,8 @@ final class DownloadActivityTests: XCTestCase {
         XCTAssertEqual(progress.totalUnitCount, 2_000)
         XCTAssertEqual(progress.completedUnitCount, 1_999)
         XCTAssertEqual(progress.completedCount, 1)
-        XCTAssertEqual(progress.displayTitle, "Season One")
+        XCTAssertEqual(progress.displayTitle, second.snapshot.title)
+        XCTAssertEqual(progress.currentItemNumber, 2)
         XCTAssertTrue(progress.hasActiveWork)
         XCTAssertFalse(progress.succeeded)
         XCTAssertNil(progress.estimatedTimeRemaining)
@@ -109,6 +110,7 @@ final class DownloadActivityTests: XCTestCase {
         XCTAssertEqual(progress.totalUnitCount, 10_000)
         XCTAssertEqual(progress.completedCount, 3)
         XCTAssertEqual(progress.activeItemCount, 1)
+        XCTAssertEqual(progress.currentItemNumber, 4)
         XCTAssertEqual(progress.currentItem?.seasonNumber, 1)
         XCTAssertEqual(progress.currentItem?.episodeNumber, 4)
         XCTAssertEqual(progress.currentItem?.fractionCompleted, 0.62)
@@ -152,10 +154,59 @@ final class DownloadActivityTests: XCTestCase {
         var progress = DownloadActivityProgress(records: [first, second])
         XCTAssertEqual(progress.activeItemCount, 2)
         XCTAssertNil(progress.currentItem)
+        XCTAssertNil(progress.currentItemNumber)
         second.status = .queued
         progress = DownloadActivityProgress(records: [second, first])
         XCTAssertEqual(progress.activeItemCount, 1)
+        XCTAssertEqual(progress.currentItemNumber, 1)
         XCTAssertEqual(progress.currentItem?.title, first.snapshot.title)
+    }
+
+    func testCurrentMediaTitleDoesNotDependOnMixedQueueOrderOrCompletedItems() throws {
+        var first = try DownloadTestFactory.record(status: .completed)
+        first.snapshot.title = "Earlier movie"
+        var second = try DownloadTestFactory.record(
+            identity: DownloadTestFactory.imdbIdentity("second"), status: .downloading
+        )
+        second.snapshot.title = "Spider-Man: Far From Home"
+        var third = try DownloadTestFactory.record(
+            identity: DownloadTestFactory.imdbIdentity("third"), status: .queued
+        )
+        third.snapshot.title = "Later movie"
+        let progress = DownloadActivityProgress(records: [third, second, first])
+        XCTAssertEqual(progress.displayTitle, "Spider-Man: Far From Home")
+        XCTAssertEqual(progress.currentItemNumber, 2)
+        XCTAssertEqual(progress, DownloadActivityProgress(records: [first, third, second]))
+    }
+
+    func testEpisodeTitleUsesPinnedSeriesThenBatchThenEpisodeWithoutBlankTitles() throws {
+        var record = try DownloadTestFactory.record(status: .downloading)
+        record.snapshot.kind = .episode
+        record.snapshot.title = "Episode title"
+        record.snapshot.seriesTitle = "Your Honor"
+        record.batchTitle = "Season One"
+        XCTAssertEqual(DownloadActivityProgress(records: [record]).displayTitle, "Your Honor")
+        record.snapshot.seriesTitle = " \n"
+        XCTAssertEqual(DownloadActivityProgress(records: [record]).displayTitle, "Season One")
+        record.batchTitle = nil
+        XCTAssertEqual(DownloadActivityProgress(records: [record]).displayTitle, "Episode title")
+        record.snapshot.title = ""
+        XCTAssertNil(DownloadActivityProgress(records: [record]).displayTitle)
+    }
+
+    func testPausedOrFailedPeersDoNotPretendThereIsASequentialPosition() throws {
+        let current = try DownloadTestFactory.record(status: .downloading)
+        var peer = try DownloadTestFactory.record(
+            identity: DownloadTestFactory.imdbIdentity("peer"), status: .paused
+        )
+        for status in [DownloadStatus.paused, .failed] {
+            peer.status = status
+            let progress = DownloadActivityProgress(records: [current, peer])
+            XCTAssertNil(progress.currentItemNumber)
+            XCTAssertEqual(progress.activeItemCount, 1)
+            XCTAssertEqual(progress.completedCount, 0)
+            XCTAssertEqual(progress.displayTitle, current.snapshot.title)
+        }
     }
 
     func testUnknownSizeAndInactiveRecordsDoNotInventCurrentProgress() throws {
@@ -167,6 +218,7 @@ final class DownloadActivityTests: XCTestCase {
             let progress = DownloadActivityProgress(records: [record])
             XCTAssertEqual(progress.activeItemCount, 0)
             XCTAssertNil(progress.currentItem)
+            XCTAssertNil(progress.currentItemNumber)
         }
     }
 }
